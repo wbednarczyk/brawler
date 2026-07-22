@@ -1239,42 +1239,6 @@ fn deletes_all_unsaved_feed_items_when_requested() {
                 )
                 .expect("feed item attachment should insert");
         }
-
-        connection
-                .execute(
-                    "
-                    INSERT INTO ai_analysis_results (
-                        id,
-                        feed_item_id,
-                        provider_id,
-                        model,
-                        summary,
-                        significance,
-                        reasoning,
-                        language
-                    ) VALUES ('analysis_unsaved', 'feed_old_unsaved', 'local', 'test', 'summary', 'medium', 'reasoning', 'en')
-                    ",
-                    [],
-                )
-                .expect("analysis result should insert");
-        connection
-            .execute(
-                "
-                    INSERT INTO ai_analysis_tags (ai_analysis_result_id, tag)
-                    VALUES ('analysis_unsaved', 'important')
-                    ",
-                [],
-            )
-            .expect("analysis tag should insert");
-        connection
-                .execute(
-                    "
-                    INSERT INTO ai_analysis_source_references (id, ai_analysis_result_id, source_url, label)
-                    VALUES ('analysis_reference_unsaved', 'analysis_unsaved', 'https://example.local/report', 'Report')
-                    ",
-                    [],
-                )
-                .expect("analysis source reference should insert");
     }
 
     let result = state
@@ -1283,7 +1247,7 @@ fn deletes_all_unsaved_feed_items_when_requested() {
 
     assert_eq!(result.items_deleted, 2);
 
-    let (remaining_ids, attachment_count, company_link_count, analysis_count) = {
+    let (remaining_ids, attachment_count, company_link_count) = {
         let connection = state.checkout().expect("database connection");
         let mut statement = connection
             .prepare("SELECT id FROM feed_items ORDER BY id")
@@ -1303,24 +1267,12 @@ fn deletes_all_unsaved_feed_items_when_requested() {
                 row.get(0)
             })
             .expect("company link count should query");
-        let analysis_count: i64 = connection
-            .query_row("SELECT COUNT(*) FROM ai_analysis_results", [], |row| {
-                row.get(0)
-            })
-            .expect("analysis count should query");
-
-        (
-            remaining_ids,
-            attachment_count,
-            company_link_count,
-            analysis_count,
-        )
+        (remaining_ids, attachment_count, company_link_count)
     };
 
     assert_eq!(remaining_ids, vec!["feed_saved".to_owned()]);
     assert_eq!(attachment_count, 1);
     assert_eq!(company_link_count, 1);
-    assert_eq!(analysis_count, 0);
 }
 
 #[test]

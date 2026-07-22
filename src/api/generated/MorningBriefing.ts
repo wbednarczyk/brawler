@@ -9,9 +9,4 @@ export type MorningBriefing = { id: string, composedAt: string,
  * Domain-date lower bound the composer used (`YYYY-MM-DD`; `''` on the
  * first-ever briefing = everything).
  */
-since: string, 
-/**
- * The AI narrative markdown, or `None` (no provider configured, or the
- * narrative was rejected on citation integrity).
- */
-narrativeMarkdown: string | null, narrativeProviderId: string | null, narrativeModel: string | null, language: string | null, createdAt: string, items: Array<MorningBriefingItem>, };
+since: string, language: string | null, createdAt: string, items: Array<MorningBriefingItem>, };

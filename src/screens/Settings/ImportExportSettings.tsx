@@ -277,16 +277,8 @@ function SummaryGrid({ summary }: { summary: ImportApplySummary }) {
     [text("Research questions merged"), summary.researchQuestionsMerged],
     [text("Evidence links created"), summary.evidenceLinksCreated],
     [text("Evidence links skipped"), summary.evidenceLinksSkipped],
-    [text("AI research briefs created"), summary.aiResearchBriefsCreated],
-    [text("AI research briefs skipped"), summary.aiResearchBriefsSkipped],
-    [text("AI research brief citations created"), summary.aiResearchBriefCitationsCreated],
-    [text("AI research brief citations skipped"), summary.aiResearchBriefCitationsSkipped],
     [text("Research reminders created"), summary.researchRemindersCreated],
     [text("Research reminders skipped"), summary.researchRemindersSkipped],
-    [text("AI research digests created"), summary.aiResearchDigestsCreated],
-    [text("AI research digests skipped"), summary.aiResearchDigestsSkipped],
-    [text("AI research digest citations created"), summary.aiResearchDigestCitationsCreated],
-    [text("AI research digest citations skipped"), summary.aiResearchDigestCitationsSkipped],
     [text("Settings updated"), summary.settingsUpdated],
   ] as const;
 

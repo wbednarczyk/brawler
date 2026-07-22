@@ -8,7 +8,8 @@
 //!    upcoming-report snapshot. Ordered by domain date (NEVER `created_at`). This
 //!    layer is a pure function ([`compose_briefing`]) over reads gathered by the
 //!    job, so it is snapshot-stable and unit-testable offline.
-//! 2. An **optional AI narrative** phrased via the research-digest provider
+//! 2. (removed) The AI narrative half — retired with the in-app AI layer
+//!    (ADR 0084 decision 5; its three columns are dropped by migration 0102).
 //!    contract (capability `morning_briefing`, ADR 0060). With no provider
 //!    configured the briefing still persists as the structured list (narrative
 //!    absent) — never blocked, never an error. A narrative is stored ONLY when
@@ -51,11 +52,6 @@ pub struct MorningBriefing {
     /// Domain-date lower bound the composer used (`YYYY-MM-DD`; `''` on the
     /// first-ever briefing = everything).
     pub since: String,
-    /// The AI narrative markdown, or `None` (no provider configured, or the
-    /// narrative was rejected on citation integrity).
-    pub narrative_markdown: Option<String>,
-    pub narrative_provider_id: Option<String>,
-    pub narrative_model: Option<String>,
     pub language: Option<String>,
     pub created_at: String,
     pub items: Vec<MorningBriefingItem>,
@@ -287,98 +283,6 @@ pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> 
     }
 }
 
-/// Adapt composed items into the `ResearchEvidenceItem` set the research-digest
-/// provider contract consumes (ADR 0068 reuses that contract). `source_id` =
-/// `evidence_ref`, so a returned citation's `(evidence_type, evidence_id)`
-/// resolves against [`research::supplied_evidence_refs`].
-pub fn briefing_evidence_items(items: &[ComposedBriefingItem]) -> Vec<ResearchEvidenceItem> {
-    items
-        .iter()
-        .map(|item| ResearchEvidenceItem {
-            id: item.evidence_ref.clone(),
-            evidence_type: item.evidence_type.clone(),
-            source_domain: "morning_briefing".to_owned(),
-            source_id: item.evidence_ref.clone(),
-            company_id: item.company_id.clone(),
-            occurred_at: item.domain_date.clone(),
-            title: item.title.clone(),
-            summary: item.detail.clone(),
-            source_url: None,
-            attribution: None,
-            trust_category: "app_derived".to_owned(),
-            review_state: ResearchEvidenceReviewState {
-                changed_since_company_review: true,
-                changed_since_watchlist_review: true,
-            },
-        })
-        .collect()
-}
-
-/// A validated narrative ready to persist alongside a briefing.
-#[derive(Debug, Clone)]
-pub struct CompletedNarrative {
-    pub markdown: String,
-    pub language: Option<String>,
-    pub provider_id: String,
-    pub model: String,
-}
-
-/// Validate a provider narrative against the composed item list and render it to
-/// markdown, mirroring `completed_digest_from_provider_output`. Returns `Err`
-/// (the caller stores the briefing WITHOUT a narrative) when the output has no
-/// sections, no citations, or references a citation that does not resolve to a
-/// composed item — never store an uncited/unknown-citation narrative (ADR 0068
-/// tripwire).
-pub fn build_briefing_narrative(
-    items: &[ComposedBriefingItem],
-    provider_id: &str,
-    model: &str,
-    output: crate::providers::analysis::ResearchBriefProviderOutput,
-) -> Result<CompletedNarrative, String> {
-    if output.sections.is_empty() {
-        return Err("morning briefing narrative had no sections".to_owned());
-    }
-    if output.citations.is_empty() {
-        return Err("morning briefing narrative had no citations".to_owned());
-    }
-    let evidence_items = briefing_evidence_items(items);
-    let evidence_refs = research::supplied_evidence_refs(&evidence_items);
-    for citation in &output.citations {
-        if !research::citation_resolves(
-            &evidence_refs,
-            &citation.evidence_type,
-            &citation.evidence_id,
-        ) {
-            return Err(format!(
-                "morning briefing narrative citation {} references an item not in the composed list",
-                citation.citation_key
-            ));
-        }
-    }
-    let markdown = output
-        .sections
-        .iter()
-        .map(|section| {
-            let keys = section
-                .citation_keys
-                .iter()
-                .map(|key| format!("[{key}]"))
-                .collect::<Vec<_>>()
-                .join(" ");
-            format!("## {}\n\n{} {}", section.heading, section.body, keys)
-                .trim()
-                .to_owned()
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    Ok(CompletedNarrative {
-        markdown,
-        language: output.language,
-        provider_id: provider_id.to_owned(),
-        model: model.to_owned(),
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
@@ -393,33 +297,12 @@ fn next_morning_briefing_id(connection: &Connection) -> StorageResult<String> {
 pub(super) fn insert_morning_briefing(
     connection: &Connection,
     composed: &ComposedBriefing,
-    narrative: Option<CompletedNarrative>,
 ) -> StorageResult<MorningBriefing> {
     let id = next_morning_briefing_id(connection)?;
-    let (narrative_markdown, provider_id, model, language) = match narrative {
-        Some(narrative) => (
-            Some(narrative.markdown),
-            Some(narrative.provider_id),
-            Some(narrative.model),
-            narrative.language,
-        ),
-        None => (None, None, None, None),
-    };
     let transaction = connection.unchecked_transaction()?;
     transaction.execute(
-        "
-        INSERT INTO morning_briefings (
-            id, since, narrative_markdown, narrative_provider_id, narrative_model, language
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-        ",
-        params![
-            id,
-            composed.since,
-            narrative_markdown,
-            provider_id,
-            model,
-            language
-        ],
+        "INSERT INTO morning_briefings (id, since) VALUES (?1, ?2)",
+        params![id, composed.since],
     )?;
     for (index, item) in composed.items.iter().enumerate() {
         transaction.execute(
@@ -454,8 +337,7 @@ pub(super) fn get_morning_briefing(
 ) -> StorageResult<MorningBriefing> {
     let mut briefing = connection.query_row(
         "
-        SELECT id, composed_at, since, narrative_markdown, narrative_provider_id,
-               narrative_model, language, created_at
+        SELECT id, composed_at, since, language, created_at
         FROM morning_briefings WHERE id = ?1
         ",
         [id],
@@ -504,11 +386,8 @@ fn morning_briefing_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Mornin
         id: row.get(0)?,
         composed_at: row.get(1)?,
         since: row.get(2)?,
-        narrative_markdown: row.get(3)?,
-        narrative_provider_id: row.get(4)?,
-        narrative_model: row.get(5)?,
-        language: row.get(6)?,
-        created_at: row.get(7)?,
+        language: row.get(3)?,
+        created_at: row.get(4)?,
         items: Vec::new(),
     })
 }
@@ -575,10 +454,9 @@ impl MorningBriefingStore {
     pub fn insert_morning_briefing(
         &self,
         composed: &ComposedBriefing,
-        narrative: Option<CompletedNarrative>,
     ) -> StorageResult<MorningBriefing> {
         let connection = self.db.checkout()?;
-        insert_morning_briefing(&connection, composed, narrative)
+        insert_morning_briefing(&connection, composed)
     }
 
     pub fn get_morning_briefing(&self, id: &str) -> StorageResult<MorningBriefing> {
@@ -605,9 +483,6 @@ impl MorningBriefingStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::analysis::{
-        ResearchBriefCitationOutput, ResearchBriefProviderOutput, ResearchBriefSectionOutput,
-    };
     use crate::storage::open_in_memory_database;
 
     fn signal(id: &str, company: &str, date: Option<&str>, status: &str) -> CompanySignal {
@@ -683,7 +558,6 @@ mod tests {
             status: "pending".to_owned(),
             source_evidence_type: "manual".to_owned(),
             source_evidence_id: None,
-            extraction_proposal_id: None,
             target_metric_key: None,
             target_comparator: None,
             target_value_numeric: None,
@@ -791,60 +665,10 @@ mod tests {
         }
     }
 
-    fn narrative_output(citation_ref: &str) -> ResearchBriefProviderOutput {
-        ResearchBriefProviderOutput {
-            title: "Morning briefing".to_owned(),
-            summary: "What changed".to_owned(),
-            sections: vec![ResearchBriefSectionOutput {
-                heading: "Signals".to_owned(),
-                body: "A profit warning landed.".to_owned(),
-                citation_keys: vec!["b1".to_owned()],
-            }],
-            language: Some("en".to_owned()),
-            citations: vec![ResearchBriefCitationOutput {
-                citation_key: "b1".to_owned(),
-                evidence_type: "company_signal".to_owned(),
-                evidence_id: citation_ref.to_owned(),
-                label: "Signal".to_owned(),
-                snippet: None,
-            }],
-        }
-    }
-
-    #[test]
-    fn narrative_rejected_when_citation_is_unknown() {
-        // Citation-integrity tripwire (ADR 0068): a narrative citing an evidence id
-        // that is NOT in the composed item list is rejected (Err → stored without
-        // narrative), never persisted.
-        let composed = compose_briefing(&full_sources(), "2026-07-10", "2026-07-15");
-        let result = build_briefing_narrative(
-            &composed.items,
-            "provider_test",
-            "model_test",
-            narrative_output("does_not_exist"),
-        );
-        assert!(result.is_err(), "unknown citation must be rejected");
-    }
-
-    #[test]
-    fn narrative_accepted_when_every_citation_resolves() {
-        let composed = compose_briefing(&full_sources(), "2026-07-10", "2026-07-15");
-        // `sig_new` is a composed item (evidence_type company_signal, ref sig_new).
-        let result = build_briefing_narrative(
-            &composed.items,
-            "provider_test",
-            "model_test",
-            narrative_output("sig_new"),
-        );
-        let narrative = result.expect("resolvable citation is accepted");
-        assert!(narrative.markdown.contains("## Signals"));
-        assert_eq!(narrative.provider_id, "provider_test");
-    }
-
     #[test]
     fn persists_briefing_with_items_and_no_narrative() {
         // No-provider path at the persistence layer: a composed briefing with items
-        // is stored with narrative_markdown = None, and reads back intact — the
+        // is stored and reads back intact — the
         // briefing completes as a structured list, never blocked.
         let state = crate::storage::AppState::new(open_in_memory_database().expect("db"));
         let composed = compose_briefing(&full_sources(), "2026-07-10", "2026-07-15");
@@ -852,9 +676,8 @@ mod tests {
 
         let stored = state
             .morning_briefings()
-            .insert_morning_briefing(&composed, None)
+            .insert_morning_briefing(&composed)
             .expect("insert briefing");
-        assert!(stored.narrative_markdown.is_none(), "no narrative stored");
         assert_eq!(stored.items.len(), composed.items.len());
         assert_eq!(stored.since, "2026-07-10");
 
@@ -882,7 +705,7 @@ mod tests {
         };
         let stored = state
             .morning_briefings()
-            .insert_morning_briefing(&composed, None)
+            .insert_morning_briefing(&composed)
             .expect("insert");
         let today = &stored.composed_at[..10];
         assert!(state.morning_briefings().briefing_exists_on(today).unwrap());

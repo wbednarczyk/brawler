@@ -272,6 +272,25 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
         rate_limit_policy: "Manual refresh plus daily scheduled refresh; one public rekomendacje-spolki page per tracked GPW company with a polite inter-request delay; append-only recommendation history",
         policy_note: "BiznesRadar public \"Rekomendacje\" pages as an analyst-recommendation source (ADR 0073), displayed strictly as attributed third-party opinion, never advice. robots.txt is fully permissive for /rekomendacje-spolki/; the GPW ticker redirects to the canonical slug. The free page carries the most recent items only — our own history accumulates append-only from ingestion start. Each new recommendation emits a recommendation_change signal.",
     },
+    // Fundamentals PRIMARY (ADR 0086 dec. 2, plan TOR C; promoted from witness,
+    // ADR 0085). Catalog row seeded by migration 0104. Deliberately NOT in
+    // `runtime_adapters()`: it is not a scheduled feed refresh and NOT part of the
+    // manual "Odśwież źródła" sweep — the three report pages are pulled by the
+    // BiznesRadar-primary fundamentals pull (jobs::aggregator_fundamentals_pull),
+    // once per page per tracked company per day, and on demand by the rebuild flow.
+    SourceAdapterDescriptor {
+        id: crate::source_adapters::biznesradar_fundamentals::ADAPTER_ID,
+        role: SourceRole::Primary,
+        display_name: crate::source_adapters::biznesradar_fundamentals::DISPLAY_NAME,
+        source_url: crate::source_adapters::biznesradar_fundamentals::SOURCE_URL,
+        source_type: "fundamentals",
+        fetch_mode: "public_page",
+        markets: GPW,
+        visibility: SourceVisibility::Optional,
+        default_poll_interval_seconds: 86_400,
+        rate_limit_policy: "Pulled by the BiznesRadar-primary fundamentals pull, never a background crawl and not in the manual source sweep; at most THREE public raporty-finansowe pages (income, balance, cash flow) per tracked GPW company per day, one fetch per page per day (cached per (company, page_kind) in fundamentals_aggregator_pages), sequential per host, shared BiznesRadar politeness posture; no bulk sweeps, no untracked-company fetches, no historical paths",
+        policy_note: "BiznesRadar public financial-report pages as the PRIMARY core-KPI source (ADR 0086, promoted from the ADR 0085 witness): three robots-allowed pages per company — raporty-finansowe-rachunek-zyskow-i-strat / -bilans / -przeplywy-pieniezne — each parsed for every period column and written as source_tier=html_aggregator with a citation naming the page. Manual and issuer tiers (ESEF/WDF/positional) always outrank it; where an issuer tier holds a slot a divergent aggregator value records an informational witness_disagreement, never an overwrite, and an empty/zero aggregator cell is never written (ADR 0085 zero-guard). robots.txt allows /raporty-finansowe-* (its four disallows cover the historical-quote paths ADR 0082 rejected); the GPW ticker 301-redirects to the canonical slug. Attribution stays visible; no redistribution.",
+    },
     SourceAdapterDescriptor {
         id: crate::source_adapters::gpw_espi_ebi::ADAPTER_ID,
         role: SourceRole::Witness,

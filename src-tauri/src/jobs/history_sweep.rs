@@ -90,8 +90,11 @@ pub(crate) fn history_sweep_candidates(
             if !report.fetched {
                 return None;
             }
-            // Already extracted, or a review already in flight — not a gap.
-            if row.facts.total != 0 || row.review.pending_proposals != 0 {
+            // Already extracted — not a gap. The "review already in flight"
+            // half of this gate went with the KPI staging ledger (ADR 0084
+            // decision 5): with no proposals table, stored facts are the only
+            // signal that a period is already covered.
+            if row.facts.total != 0 {
                 return None;
             }
             let document_id = select_sweep_document(
@@ -369,9 +372,8 @@ pub fn run_history_sweep_job(state: &AppState, payload: &str) -> Result<(), Stri
 mod tests {
     use super::*;
     use crate::storage::{
-        open_in_memory_database, AppState, CaptureReportDocumentInput, CompletedKpiExtraction,
-        ListAutopilotRunsInput, NewCompany, NewFinancialFact, NewFinancialPeriod,
-        NewKpiExtractionJob, NewKpiProposal,
+        open_in_memory_database, AppState, CaptureReportDocumentInput, ListAutopilotRunsInput,
+        NewCompany, NewFinancialFact, NewFinancialPeriod,
     };
 
     const NET_PROFIT: &str = "kpidef_net_profit";
@@ -422,14 +424,8 @@ mod tests {
                 "skip"
             };
             eprintln!(
-                "{:>9} | {} {} | facts={} pending={} fetched={} | {}",
-                verdict,
-                row.fiscal_year,
-                row.period_type,
-                row.facts.total,
-                row.review.pending_proposals,
-                fetched,
-                title
+                "{:>9} | {} {} | facts={} fetched={} | {}",
+                verdict, row.fiscal_year, row.period_type, row.facts.total, fetched, title
             );
         }
         eprintln!("candidates: {}", candidates.len());
@@ -527,51 +523,6 @@ mod tests {
 
     /// Seed a succeeded extraction job with one pending proposal detected at
     /// `(fiscal_year, period_type)`.
-    fn pending_proposal(
-        state: &AppState,
-        company_id: &str,
-        report_document_id: &str,
-        fiscal_year: i64,
-        period_type: &str,
-    ) {
-        let job = state
-            .kpi_extraction()
-            .create_kpi_extraction_job(NewKpiExtractionJob {
-                company_id: company_id.to_owned(),
-                report_document_id: report_document_id.to_owned(),
-                provider_id: "provider".to_owned(),
-                model: "model".to_owned(),
-                prompt_version: "v1".to_owned(),
-                period_hint: None,
-            })
-            .expect("job");
-        state
-            .kpi_extraction()
-            .complete_kpi_extraction_job(CompletedKpiExtraction {
-                job_id: job.id,
-                detected_fiscal_year: Some(fiscal_year),
-                detected_period_type: Some(period_type.to_owned()),
-                detected_period_end_date: None,
-                detected_currency: None,
-                detected_language: None,
-                committed_fact_count: 0,
-                proposals: vec![NewKpiProposal {
-                    metric_key: "net_profit".to_owned(),
-                    label: "Net profit".to_owned(),
-                    value_numeric: "1000".to_owned(),
-                    unit: None,
-                    currency: None,
-                    as_reported_value: None,
-                    as_reported_scale: None,
-                    measure_window: None,
-                    confidence: None,
-                    source_snippet: None,
-                    is_proposed_kpi: false,
-                }],
-            })
-            .expect("complete job");
-    }
-
     /// (a) A fetched canonical report whose period has no facts and nothing in
     /// review is exactly a sweep candidate.
     #[test]
@@ -612,28 +563,6 @@ mod tests {
         assert!(
             candidates.is_empty(),
             "a period with facts must not be swept"
-        );
-    }
-
-    /// (c) A pending extraction proposal means a review is already in flight — not
-    /// a gap to re-attack.
-    #[test]
-    fn period_with_pending_proposals_is_not_a_candidate() {
-        let s = state();
-        let c = company(&s);
-        let doc = report(
-            &s,
-            &c,
-            "Skonsolidowany raport roczny 2025 SSF",
-            "x/ssf-2025.pdf",
-            true,
-        );
-        pending_proposal(&s, &c, &doc, 2025, "FY");
-
-        let candidates = history_sweep_candidates(&s, &c).expect("candidates");
-        assert!(
-            candidates.is_empty(),
-            "a period with pending proposals must not be swept"
         );
     }
 

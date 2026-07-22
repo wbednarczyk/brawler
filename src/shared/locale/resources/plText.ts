@@ -1,4 +1,17 @@
 export const plText: Record<string, string> = {
+  // ADR 0084 — retirement of the in-app AI analysis layer: stored outputs stay
+  // readable, every generation affordance is gone.
+  "Saved AI research": "Zapisane analizy AI",
+  "No saved research brief.": "Brak zapisanej notatki badawczej.",
+  "No saved research digest.": "Brak zapisanego podsumowania.",
+  "Resize saved AI research panel": "Zmień szerokość panelu zapisanych analiz AI",
+  "Not assessed yet.": "Jeszcze nie oceniono.",
+  "Some report has an unreadable text layer (non-standard font), so its shareholder table could not be read. The gap is flagged here rather than guessed.":
+    "Któryś raport ma nieczytelną warstwę tekstową (niestandardowa czcionka), więc nie udało się odczytać tabeli akcjonariatu. Luka jest tu oznaczona, zamiast zgadywana.",
+  "Speech-to-text for saved video sources. Set the Gemini API key in Credentials.":
+    "Zamiana mowy na tekst dla zapisanych źródeł wideo. Klucz API Gemini ustawisz w Poświadczeniach.",
+  "Worker threads per lane. Worker counts apply on the next app launch.":
+    "Liczba wątków roboczych na tor. Zmiany działają po ponownym uruchomieniu aplikacji.",
   // Company health scores — Piotroski F / Altman Z″ (ADR 0083)
   "Company health": "Kondycja spółki",
   "Published-formula health scores over confirmed annual facts. Decision support only.":
@@ -211,10 +224,19 @@ export const plText: Record<string, string> = {
   "KPI extraction unavailable (the AI provider returned an error)":
     "Ekstrakcja KPI niedostępna (dostawca AI zwrócił błąd)",
   "KPI extraction unavailable ({reason})": "Ekstrakcja KPI niedostępna ({reason})",
-  "{confirmed} KPI auto-confirmed (unreviewed) of {proposed} extracted":
-    "{confirmed} KPI auto-zatwierdzonych (niezweryfikowane) z {proposed} wyciągniętych",
-  "{proposed} KPI extracted, pending your confirmation":
-    "{proposed} KPI wyciągniętych, czeka na Twoje potwierdzenie",
+  // ADR 0084 decision 6 (completion): typed reason CODES from the backend token
+  // stream (jobs/autopilot.rs `KpiUnavailableReason`).
+  "KPI extraction unavailable (a third-party quota was exhausted)":
+    "Ekstrakcja KPI niedostępna (wyczerpano limit zewnętrznego dostawcy)",
+  "KPI extraction unavailable (no reader could read this report)":
+    "Ekstrakcja KPI niedostępna (żaden czytnik nie odczytał tego raportu)",
+  // "Figures taken from a third-party source…" (the witness_fallback copy) is
+  // defined once, in the Coverage flagged-periods section below.
+  "expectations recorded — review vs actuals":
+    "zapisano oczekiwania — porównaj z wynikami",
+  "{confirmed} of {proposed} KPI recorded":
+    "zapisano {confirmed} z {proposed} wskaźników KPI",
+  "{proposed} KPI recorded": "zapisano {proposed} wskaźników KPI",
   "report diff vs the previous statement available":
     "dostępne porównanie raportu z poprzednim sprawozdaniem",
   "to verify": "do weryfikacji",
@@ -298,8 +320,6 @@ export const plText: Record<string, string> = {
   "My quality checklist": "Moja lista kontrolna jakości",
   // Qualitative assessment (ADR 0075)
   "Assess": "Oceń jakościowo",
-  "Assessment queued. Agent results appear here when the job completes.":
-    "Ocena w kolejce. Wyniki agenta pojawią się tutaj po zakończeniu zadania.",
   "Insufficient evidence": "Niewystarczające dowody",
   "Agent-assessed": "Oceniono przez agenta",
   "Confidence": "Pewność",
@@ -309,10 +329,6 @@ export const plText: Record<string, string> = {
   "Re-run assessment": "Uruchom ocenę ponownie",
   "Assess this criterion": "Oceń to kryterium",
   "Not assessed yet": "Jeszcze nie oceniono",
-  "Not assessed yet. Click Assess to evaluate this criterion.":
-    "Jeszcze nie oceniono. Kliknij Oceń jakościowo, aby ocenić to kryterium.",
-  "No citations for this assessment.": "Brak cytowań dla tej oceny.",
-  "Prompt": "Prompt",
   "Add qualitative criterion": "Dodaj kryterium jakościowe",
   "Criterion type": "Typ kryterium",
   "Quantitative": "Ilościowe",
@@ -353,8 +369,6 @@ export const plText: Record<string, string> = {
   "Acquire timeout (ms)": "Limit oczekiwania (ms)",
   "Reset to defaults": "Przywróć domyślne",
   "Background work": "Praca w tle",
-  "Worker threads per lane and the per-AI-provider concurrency limit. Worker counts apply on the next app launch.":
-    "Wątki robocze na tor oraz limit równoległości na dostawcę AI. Liczby wątków działają po następnym uruchomieniu aplikacji.",
   "Source workers": "Wątki źródeł",
   "Autopilot workers": "Wątki autopilota",
   "AI workers": "Wątki AI",
@@ -425,7 +439,7 @@ export const plText: Record<string, string> = {
   "Not validated": "Niezwalidowane",
   "ESEF (tagged)": "ESEF (otagowane)",
   "Structured HTML": "Ustrukturyzowany HTML",
-  "PDF": "PDF",
+  "Structured read (xHTML)": "Odczyt strukturalny (xHTML)",
   "Aggregator": "Agregator",
   "AI": "AI",
   "Inbox source": "Źródło inboxu",
@@ -443,8 +457,6 @@ export const plText: Record<string, string> = {
   "Delete unsaved failed": "Usuwanie niezapisanych nie powiodło się",
   "Resize feed details": "Zmień rozmiar szczegółów kanału",
   "Drag to resize feed details": "Przeciągnij, aby zmienić rozmiar szczegółów kanału",
-  "Resize AI research brief panel": "Zmień rozmiar panelu briefu AI",
-  "Drag to resize AI research brief panel": "Przeciągnij, aby zmienić rozmiar panelu briefu AI",
   "Resize watchlist company list": "Zmień rozmiar listy spółek z listy obserwowanych",
   "Drag to resize watchlist company list": "Przeciągnij, aby zmienić rozmiar listy spółek z listy obserwowanych",
   "Resize navigation": "Zmień rozmiar nawigacji",
@@ -480,41 +492,16 @@ export const plText: Record<string, string> = {
   "Health command failed": "Polecenie stanu nie powiodło się",
   "Workspace refresh failed": "Odświeżenie obszaru pracy nie powiodło się",
   "AI analysis": "Analiza AI",
-  "Source-grounded decision support for the selected feed item.": "Wsparcie decyzyjne oparte na źródłach dla wybranego elementu kanału.",
-  "Configure a general AI provider in Settings before running analysis.": "Skonfiguruj ogólnego dostawcę AI w Ustawieniach przed uruchomieniem analizy.",
-  "Suggested AI prompts": "Sugerowane prompty AI",
   "Summarize impact": "Podsumuj wpływ",
   "Find risks": "Znajdź ryzyka",
-  "Extract claims": "Wyodrębnij obietnice",
-  "Custom question": "Własne pytanie",
   "AI custom question": "Własne pytanie AI",
-  "Ask about impact, risks, management claims, or follow-up questions": "Zapytaj o wpływ, ryzyka, obietnice zarządu lub pytania kontrolne",
   "Analyze": "Analizuj",
-  "AI analysis result": "Wynik analizy AI",
-  "Significance": "Znaczenie",
-  "AI analysis tags": "Tagi analizy AI",
-  "AI analysis source references": "Odwołania źródłowe analizy AI",
-  "AI analysis failed.": "Analiza AI nie powiodła się.",
-  "Refresh analysis": "Odśwież analizę",
-  "AI analysis command failed": "Polecenie analizy AI nie powiodło się",
   "Research": "Research",
   "Company evidence timeline and review checkpoint.": "Oś dowodów spółki i punkt przeglądu.",
-  "AI research": "Research AI",
-  "AI research modes": "Tryby researchu AI",
-  "Generate either a review checkpoint or a source-grounded research summary.": "Wygeneruj punkt przeglądu albo podsumowanie oparte na źródłach.",
-  "What needs attention": "Wymaga uwagi",
-  "Research summary": "Podsumowanie researchu",
-  "Brief": "Brief",
-  "Summarizes open reminders and changed evidence for this research scope.": "Podsumowuje otwarte przypomnienia i zmienione dowody dla tego zakresu.",
-  "Creates a cited research snapshot from the selected evidence.": "Tworzy cytowany snapshot researchu z wybranych dowodów.",
-  "Digest output": "Wynik digestu",
-  "Brief output": "Wynik briefu",
-  "Reminder and changed-evidence checkpoint.": "Punkt przeglądu przypomnień i zmian w dowodach.",
-  "Source-grounded memo for the selected scope.": "Notatka oparta na źródłach dla wybranego zakresu.",
   "Review queue": "Do przeglądu",
   "Items that need a concrete follow-up action.": "Elementy wymagające konkretnej akcji kontrolnej.",
   "Open questions you are actively tracking.": "Otwarte pytania, które aktywnie śledzisz.",
-  "Source items, notes, events, transcripts, and AI analysis for this scope.": "Elementy kanału, notatki, wydarzenia, transkrypcje i analizy AI dla tego zakresu.",
+  "Source items, notes, events, and transcripts for this scope.": "Elementy kanału, notatki, wydarzenia i transkrypcje dla tego zakresu.",
   "Refresh": "Odśwież",
   "Marking reviewed": "Oznaczanie jako przejrzane",
   "Mark reviewed": "Oznacz jako przejrzane",
@@ -566,20 +553,10 @@ export const plText: Record<string, string> = {
   "Reminder": "Przypomnienie",
   "AI brief": "Brief AI",
   "Digest": "Digest",
-  "Research digest": "Digest researchu",
-  "AI research briefs": "Briefy AI researchu",
   "Generate brief": "Generuj brief",
   "Generate digest": "Generuj digest",
-  "Generating": "Generowanie",
-  "Generating digest…": "Generowanie digestu…",
-  "Generating brief…": "Generowanie briefu…",
-  "Investor research brief": "Brief inwestorski",
   "Citations": "Cytowania",
   "Generated": "Wygenerowano",
-  "Research brief failed": "Brief researchu nie powiódł się",
-  "Research digest failed": "Digest researchu nie powiódł się",
-  "No research brief generated yet.": "Nie wygenerowano jeszcze briefu researchu.",
-  "No research digest generated yet.": "Nie wygenerowano jeszcze digestu researchu.",
   "Research reminders": "Przypomnienia researchu",
   "No research reminders.": "Brak przypomnień researchu.",
   "Add reminder": "Dodaj przypomnienie",
@@ -1067,11 +1044,7 @@ export const plText: Record<string, string> = {
   "General AI provider": "Ogólny dostawca AI",
   "General AI model": "Ogólny model AI",
   "General AI timeout": "Limit czasu ogólnego AI",
-  "General AI disclosure": "Ujawnienie ogólnego AI",
-  "Starting feed analysis sends the selected source text and metadata to the configured AI provider.": "Uruchomienie analizy kanału wysyła wybrany tekst źródłowy i metadane do skonfigurowanego dostawcy AI.",
   "Scope": "Zakres",
-  "Source-grounded feed analysis": "Analiza kanału oparta na źródłach",
-  "AI analysis mode": "Tryb analizy AI",
   "Gemini transcription model": "Model transkrypcji Gemini",
   "Default": "Domyślne",
   "Cheapest supported": "Najtańszy obsługiwany",
@@ -1205,50 +1178,22 @@ export const plText: Record<string, string> = {
   "API key": "Klucz API",
   "API Key": "Klucz API",
   "Gemini": "Gemini",
-  "Source-grounded": "Oparte na źródłach",
   "Working week events": "Wydarzenia dni roboczych",
   "Weekend events": "Wydarzenia weekendowe",
   "Weekend": "Weekend",
-  "AI KPI extraction": "Ekstrakcja KPI przez AI",
-  "Extract reported KPIs from this report; confirm each value before it is saved.":
-    "Wyodrębnij raportowane KPI z tego raportu; potwierdź każdą wartość przed zapisaniem.",
-  "Track this company to extract KPIs from its reports.":
-    "Dodaj tę spółkę do obserwowanych, aby wyodrębniać KPI z jej raportów.",
   "Extract from attachment": "Wyodrębnij z załącznika",
   "Fetch report from IR page": "Pobierz raport ze strony relacji inwestorskich",
-  "Paste a report PDF URL": "Wklej adres URL PDF raportu",
-  "Report PDF URL": "Adres URL PDF raportu",
-  "Capture & extract": "Pobierz i wyodrębnij",
   "Extract KPIs": "Wyodrębnij KPI",
-  "Stored report documents": "Zapisane dokumenty raportów",
-  "Web page — limited": "Strona WWW — ograniczone",
-  "This looks like a web page, not a report PDF — extraction will be limited to the figures shown on the page.":
-    "To wygląda na stronę WWW, a nie raport PDF — ekstrakcja ograniczy się do danych widocznych na stronie.",
-  "Pick the report on the IR page:": "Wybierz raport na stronie relacji inwestorskich:",
-  "No report links found on the IR page.":
-    "Nie znaleziono linków do raportów na stronie relacji inwestorskich.",
   "Use this": "Użyj tego",
   "Proposed KPI values": "Proponowane wartości KPI",
-  "No KPI values were proposed.": "Nie zaproponowano żadnych wartości KPI.",
-  "Suggested KPI": "Sugerowane KPI",
-  "Track as new KPI": "Śledź jako nowe KPI",
   "Confirm": "Potwierdź",
   "Reject": "Odrzuć",
   "Review extracted KPIs": "Przejrzyj wyodrębnione KPI",
   "Analyze with AI": "Analizuj z AI",
   "View analysis": "Zobacz analizę",
-  "Open the extractor to pick a report source and review proposed KPIs.":
-    "Otwórz ekstraktor, aby wybrać źródło raportu i przejrzeć proponowane KPI.",
-  "Run a preset prompt or ask a custom question about this item.":
-    "Uruchom gotowy prompt lub zadaj własne pytanie o ten element.",
-  "Open the analysis for reasoning, tags, and sources.":
-    "Otwórz analizę, aby zobaczyć uzasadnienie, tagi i źródła.",
   "Confirm all known": "Potwierdź wszystkie znane",
   "Accept all suggestions": "Zaakceptuj wszystkie sugestie",
-  "KPI values extracted": "wyodrębnionych wartości KPI",
-  "facts committed": "zapisanych faktów",
   "to review": "do przeglądu",
-  "As reported": "Jak w raporcie",
   "As stored": "Jak zapisano",
   "Trend": "Trend",
   "trend": "trend",
@@ -1268,7 +1213,6 @@ export const plText: Record<string, string> = {
   "percentage": "procent",
   "count": "liczba",
   "ratio": "wskaźnik",
-  "KPI extraction failed.": "Ekstrakcja KPI nie powiodła się.",
   "Fundamentals": "Wskaźniki finansowe",
   "Company fundamentals": "Wskaźniki finansowe spółki",
   "fact": "fakt",
@@ -1327,10 +1271,6 @@ export const plText: Record<string, string> = {
   "All signals": "Wszystkie sygnały",
   "Proposed": "Propozycja",
   "Signal classification failed": "Klasyfikacja sygnałów nie powiodła się",
-  "Classify unknown official filings with the AI fallback":
-    "Sklasyfikuj nierozpoznane komunikaty oficjalne za pomocą AI",
-  "Classify with AI": "Klasyfikuj z AI",
-  "Classifying": "Klasyfikowanie",
   "AI proposal — confirm to apply": "Propozycja AI — potwierdź, aby zastosować",
   "Rule-classified": "Sklasyfikowano regułą",
   "Signal review": "Przegląd sygnału",
@@ -1432,25 +1372,13 @@ export const plText: Record<string, string> = {
   "Unchanged": "Bez zmian",
   // Per-capability AI provider routing + OpenAI-compatible provider (ADR 0060 as amended, S7)
   "AI capability routing": "Trasowanie zdolności AI",
-  "Route each AI capability to an ordered provider fallback list. An empty list uses the general AI provider above.":
-    "Skieruj każdą zdolność AI do uporządkowanej listy zapasowych dostawców. Pusta lista używa ogólnego dostawcy AI powyżej.",
   "Claim extraction": "Ekstrakcja obietnic",
-  "Feed analysis": "Analiza kanału",
-  "Research brief": "Brief researchu",
-  "Signal classification": "Klasyfikacja sygnałów",
   // ADR 0077 T4.2 — tier-4 vision-extraction capability routing label
   "Vision extraction": "Ekstrakcja wizyjna",
   // ADR 0072 §3 (v0.56 T5) — ownership holder-type classification residual
-  "Ownership holder classification": "Klasyfikacja typu akcjonariusza",
   "Classify unknown holders (AI)": "Zaklasyfikuj nieznanych akcjonariuszy (AI)",
-  "Classification proposals ready:": "Propozycje klasyfikacji gotowe:",
-  "Uses the general AI provider.": "Używa ogólnego dostawcy AI.",
-  "Move up": "Przesuń w górę",
-  "Move down": "Przesuń w dół",
   "Add provider": "Dodaj dostawcę",
   "OpenAI-compatible base URL": "Bazowy URL zgodny z OpenAI",
-  "Presets for common OpenAI-compatible endpoints live in the wiki. Set the API key in Credentials below.":
-    "Gotowe presety typowych punktów końcowych zgodnych z OpenAI znajdziesz w wiki. Klucz API ustaw w sekcji Poświadczenia poniżej.",
   // U7-C — density contracts: Notebook + Claims panels (ADR 0076 D6)
   "Back to note list": "Wróć do listy notatek",
   "Claims summary": "Podsumowanie obietnic",
@@ -1477,9 +1405,7 @@ export const plText: Record<string, string> = {
   "Extract data": "Wyciągnij dane",
   "Data extracted — review in Fundamentals": "Dane wyciągnięte — sprawdź Fundamenty",
   // T7-A — Qualitative assessment failure surfacing (P1, ADR 0075)
-  "Qualitative assessment failed": "Ocena jakościowa nie powiodła się",
   // T7-C — Qualitative assessment capability routing label (P1, ADR 0075)
-  "Qualitative assessment": "Ocena jakościowa",
   // T7-D — Report-documents declutter + honest extraction toast (P1, ADR 0061 S5 / 0076 D6)
   "Extracted new values: {n}": "Wyciągnięto nowe wartości: {n}",
   "No new values extracted from this document": "Nie wyciągnięto nowych wartości z tego dokumentu",
@@ -1518,6 +1444,9 @@ export const plText: Record<string, string> = {
   // ("Period" and "Validated" are shared keys defined earlier in this map.)
   "Coverage": "Pokrycie",
   "Data": "Dane",
+  // "Flagged" (ADR 0086 dec. 5) is an informational origin label, not a review
+  // to-do — the coverage "To review" bucket was retired with review-free facts.
+  "Flagged": "Oflagowane",
   "To review": "Do przeglądu",
   "Coverage map": "Mapa pokrycia",
   "No report": "Brak raportu",
@@ -1527,19 +1456,10 @@ export const plText: Record<string, string> = {
   "not processed": "nieprzetworzony",
   "click → Extract": "kliknij → Ekstrahuj",
   "Skipped — AI budget": "Pominięto — budżet AI",
-  "→ review queue": "→ do przeglądu",
   // F5 review-queue panel (ADR 0077 §4/§5, T5.3b). "AI", "Confirm", "Reject"
   // already have plText entries above.
   "OCR bootstrap": "OCR bootstrap",
   "OCR · flagged": "OCR · oflagowany",
-  "No proposals to review — deterministic extractions write facts directly.":
-    "Brak propozycji do przeglądu — ekstrakcje deterministyczne zapisują fakty bezpośrednio.",
-  "Confirmed — validation flagged {metric}. Check it in the coverage map.":
-    "Zatwierdzono — walidacja oflagowała {metric}. Sprawdź w mapie pokrycia.",
-  "Can't confirm {metric}: a different value is already saved (saved {stored}, this proposal {proposed}). The saved value stays — reject this proposal or keep the saved fact; nothing was overwritten.":
-    "Nie można zatwierdzić {metric}: dla tego slotu zapisano już inną wartość (zapisano {stored}, ta propozycja {proposed}). Zapisana wartość pozostaje — odrzuć tę propozycję albo zachowaj zapisany fakt; nic nie zostało nadpisane.",
-  "Confirming an OCR proposal confirms the company's extraction profile — later documents read with the deterministic parser.":
-    "Zatwierdzenie propozycji OCR konfirmuje profil ekstrakcji spółki — kolejne dokumenty czyta deterministyczny parser.",
   "Open report documents": "Otwórz dokumenty raportowe",
   "No coverage data yet.": "Brak danych o pokryciu.",
   "Needs review": "Do przeglądu",
@@ -1559,6 +1479,10 @@ export const plText: Record<string, string> = {
   // Card bfc4c98: NewConnect / unsupported-market backfill failure.
   "Backfill isn't available for this company's market (NewConnect) yet":
     "Uzupełnianie historii nie jest jeszcze dostępne dla rynku tej spółki (NewConnect)",
+  "No Bankier page was found for this company": "Nie znaleziono strony Bankier dla tej spółki",
+  "Couldn't reach Bankier — try again later": "Błąd połączenia z Bankier — spróbuj ponownie później",
+  "The page was fetched but couldn't be read": "Pobrano stronę, ale nie udało się jej odczytać",
+  "This company isn't tracked by this source": "Ta spółka nie jest śledzona przez to źródło",
   "History sweep is taking longer than expected — reopen this company to check its status.":
     "Przemiatanie historii trwa dłużej niż zwykle — otwórz spółkę ponownie, aby sprawdzić jej stan.",
   // T3.3 (ADR 0077 §3): sweep drain counter, truncation honesty, metadata-only
@@ -1567,7 +1491,6 @@ export const plText: Record<string, string> = {
   "History truncated at the page cap — older filings may be missing.":
     "Historia obcięta na limicie stron — starsze raporty mogą być niedostępne.",
   "link-only — no stored file": "tylko odnośnik — brak pliku",
-  "OCR proposals to review: {n}": "Propozycje OCR do przeglądu: {n}",
   "Backfill history depth": "Głębokość pobierania historii",
   "Backfill depth presets": "Szybki wybór głębokości historii",
   "Backfill history depth (slider)": "Głębokość pobierania historii (suwak)",
@@ -1575,14 +1498,7 @@ export const plText: Record<string, string> = {
   "Years of company history to fetch (1–10).": "Lata historii spółki do pobrania (1–10).",
   // T5.3 (ADR 0077 §6): the history-sweep AI budget control (Settings → AI)
   // and its matching Coverage-footer readout.
-  "History sweep AI budget": "Budżet AI na przegląd historii",
-  "History sweep AI budget presets": "Szybki wybór budżetu AI na przegląd historii",
-  "History sweep AI budget (slider)": "Budżet AI na przegląd historii (suwak)",
   "History sweep AI budget in calls": "Budżet AI na przegląd historii w wywołaniach",
-  "AI calls per history sweep (0 = unlimited).": "Wywołania AI na jeden przegląd historii (0 = bez limitu).",
-  "AI: {used}/{limit}": "AI: {used}/{limit}",
-  "AI: {used}": "AI: {used}",
-  "(no limit)": "(bez limitu)",
   // Short selling — KNF register (v0.55 T4b, ADR 0069 decision 3)
   "Short selling (KNF)": "Krótka sprzedaż (KNF)",
   "KNF short-selling register": "Rejestr krótkiej sprzedaży KNF",
@@ -1825,20 +1741,10 @@ export const plText: Record<string, string> = {
   "Change type to": "Zmień na",
   "Changed to": "Zmieniono na",
   "manually": "ręcznie",
-  "Some report has an unreadable text layer (non-standard font). Its shareholder table goes through OCR — the result lands here for review and is never saved automatically.":
-    "Któryś raport ma nieczytelną warstwę tekstu (niestandardowy font). Jego tabela akcjonariuszy idzie przez OCR — wynik trafia tutaj do przeglądu i nigdy nie zapisuje się sam.",
-  "OCR shareholder table to review": "Tabela akcjonariuszy z OCR do przeglądu",
-  "OCR — confirm to save": "OCR — potwierdź, aby zapisać",
-  "read from a companion PDF": "odczytane z towarzyszącego PDF",
   "Confirm and save": "Potwierdź i zapisz",
   "Read with OCR": "Odczytaj przez OCR",
   "Retry OCR": "Ponów OCR",
   "Reading with OCR…": "Odczytuję przez OCR…",
-  "OCR could not find a shareholder table in the last run.":
-    "OCR nie znalazł tabeli akcjonariuszy w ostatnim przebiegu.",
-  "OCR result rejected — not re-proposed.": "Wynik OCR odrzucony — nie będzie proponowany ponownie.",
-  "No OCR provider configured, or OCR found no shareholder table.":
-    "Brak skonfigurowanego dostawcy OCR albo OCR nie znalazł tabeli akcjonariuszy.",
   "A manual type always wins — automation never overwrites it.":
     "Ręczny typ ma zawsze pierwszeństwo — automat nigdy go nie nadpisze.",
   "Started reading ownership from": "Zaczynam czytać akcjonariat z",
@@ -1873,4 +1779,48 @@ export const plText: Record<string, string> = {
   "filing": "zgłoszenie",
   "Counts and who — decision support only. Volume, price and date are often in the notification attachment (not yet fetched), so aggregates state their coverage.":
     "Liczby i kto — tylko wsparcie decyzji. Wolumen, cena i data często są w załączniku do powiadomienia (jeszcze niepobieranym), dlatego agregaty podają swoje pokrycie.",
+  // Flagged extraction periods (ADR 0061 decision 2, ADR 0084 decision 4/6) —
+  // the Coverage panel's "never silently wrong" section. The seven typed reason
+  // codes read as plain investor language, not transliterated machine codes.
+  "Flagged periods": "Oflagowane okresy",
+  "Periods the app refused to record rather than guess — nothing is silently missing.":
+    "Okresy, których aplikacja nie zapisała, zamiast je zgadywać — nic nie znika po cichu.",
+  "Checking for flagged periods…": "Sprawdzanie oflagowanych okresów…",
+  "Couldn't load flagged periods.": "Nie udało się wczytać oflagowanych okresów.",
+  "Nothing flagged — every attempted period produced data.":
+    "Nic nie jest oflagowane — każdy sprawdzony okres dał dane.",
+  // The seven typed reasonCode values.
+  "The figures failed a consistency check": "Liczby nie przeszły kontroli zgodności",
+  "The report's layout changed": "Układ raportu się zmienił",
+  "A second source reported different figures": "Drugie źródło podało inne liczby",
+  "Figures taken from a third-party source (no reader could read the filing)":
+    "Liczby wzięte z zewnętrznego serwisu (żaden czytnik nie odczytał raportu)",
+  "PDF report — core figures arrive from the aggregator source":
+    "Raport PDF — podstawowe liczby przychodzą ze źródła agregatora",
+  "No reader could handle this document": "Żaden czytnik nie poradził sobie z tym dokumentem",
+  "The reporting period could not be determined": "Nie udało się ustalić okresu sprawozdawczego",
+  "The document could not be read": "Nie udało się odczytać dokumentu",
+  // Validation-gate detail lines (the expanded flagged-period evidence).
+  "Assets = Liabilities + Equity": "Aktywa = zobowiązania + kapitał własny",
+  "reported {actual}, expected {expected}": "wykazano {actual}, oczekiwano {expected}",
+  "(difference {residual})": "(różnica {residual})",
+  "filing reports {actual}, the third-party source {expected}":
+    "raport podaje {actual}, zewnętrzny serwis {expected}",
+  "Data was recorded for this period": "Dane dla tego okresu zostały zapisane",
+  "This period could not be recorded": "Tego okresu nie udało się zapisać",
+  // Which reader attempted the document.
+  "No reader": "Brak czytnika",
+  // "Structured HTML" is already translated above (report-documents taxonomy) —
+  // one key, one home.
+  "ESPI cover note": "Raport bieżący ESPI",
+  "Web cross-check": "Porównanie ze źródłem w sieci",
+  "Manual entry": "Wpis ręczny",
+  // Row + detail.
+  "Period unknown": "Okres nieznany",
+  "Layout changed": "Zmieniony układ",
+  "Failing check": "Nieudana kontrola",
+  "No further detail was recorded for this period.":
+    "Dla tego okresu nie zapisano więcej szczegółów.",
+  "Attempts: {n}": "Podejść: {n}",
+  "Trying again…": "Ponawianie…",
 };

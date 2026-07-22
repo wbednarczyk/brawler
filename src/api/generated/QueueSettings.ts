@@ -5,9 +5,4 @@ export type QueueSettings = {
  * Worker threads per lane (ADR 0059). Applied at startup (the lanes are
  * spawned once); a change takes effect on restart, like the pool settings.
  */
-sourcesWorkers: number, autopilotWorkers: number, aiWorkers: number, 
-/**
- * Max concurrent calls to any one AI provider, shared across the autopilot +
- * ai lanes — the real AI cost/rate ceiling.
- */
-aiProviderConcurrency: number, };
+sourcesWorkers: number, autopilotWorkers: number, };

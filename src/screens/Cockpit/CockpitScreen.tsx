@@ -16,7 +16,6 @@ import { CompanyBasicInfoPanel } from "../../shared/components/CompanyBasicInfoP
 import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
 import { CompanyCoveragePanel } from "../../shared/components/CompanyCoveragePanel";
-import { CompanyReviewQueuePanel } from "../../shared/components/CompanyReviewQueuePanel";
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
 import { FundamentalsPanel } from "../Companies/FundamentalsPanel";
@@ -67,7 +66,6 @@ type PinnedKind =
   | "basicInfo"
   | "fundamentals"
   | "coverage"
-  | "review"
   | "reportDiff"
   | "claims"
   | "quality"
@@ -90,7 +88,6 @@ const PINNED_KINDS: PinnedKind[] = [
   "basicInfo",
   "fundamentals",
   "coverage",
-  "review",
   "reportDiff",
   "claims",
   "quality",
@@ -208,8 +205,6 @@ function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string 
       return text("Fundamentals");
     case "coverage":
       return text("Coverage");
-    case "review":
-      return text("Review queue");
     case "reportDiff":
       return text("Report comparison");
     case "claims":
@@ -651,16 +646,7 @@ function CockpitWorkspace({
             companyId={companyId}
             reloadKey={fundamentalsRevision}
             onOpenDocuments={() => openPinned(companyId, "documents")}
-            onOpenReview={() => openPinned(companyId, "review")}
             onHistoryRefreshed={bumpFundamentals}
-          />
-        );
-      case "review":
-        return (
-          <CompanyReviewQueuePanel
-            companyId={companyId}
-            reloadKey={fundamentalsRevision}
-            onReviewed={bumpFundamentals}
           />
         );
       case "reportDiff":
@@ -1356,9 +1342,6 @@ function CockpitCompanyFeedPanel({ company, feedItems }: { company: Company; fee
       company={company}
       feedItems={feed.items}
       selectedFeedItem={feed.selectedFeedItem}
-      aiAnalysisJobsByFeedItemId={feed.aiAnalysisJobsByFeedItemId}
-      aiAnalysisErrorByFeedItemId={feed.aiAnalysisErrorByFeedItemId}
-      aiAnalysisRequestInFlightByFeedItemId={feed.aiAnalysisRequestInFlightByFeedItemId}
       toggleFeedItem={feed.toggleFeedItem}
       selectFeedItemFromKeyboard={(event, item) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -1367,8 +1350,6 @@ function CockpitCompanyFeedPanel({ company, feedItems }: { company: Company; fee
         }
       }}
       updateFeedItemState={feed.updateFeedItemState}
-      startFeedItemAiAnalysis={feed.startFeedItemAiAnalysis}
-      retryFeedItemAiAnalysis={feed.retryFeedItemAiAnalysis}
       formatTimestamp={formatTimestamp}
       feedItemSummary={(item) => item.summary.trim() || item.title}
     />

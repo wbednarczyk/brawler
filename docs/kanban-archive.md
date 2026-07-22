@@ -2935,3 +2935,34 @@ M24 reviewed the large/coordinating files in light of the research-workspace roa
 ### From docs/modularization-design.md — "Research Workspace Readiness Check"
 
 Before implementing the (then-future) research-workspace direction, M24 ran a focused modularization readiness check to decide whether existing boundaries could support a shared research evidence model, timeline/read model, review workflow, research questions, claim expansion, source-grounded AI briefs, digests, reminders, and evidence links. Areas inspected: frontend app state/view-model ownership (whether `AppStateRoot` should compose a new research controller); frontend API DTO ownership (whether research evidence/timeline/review types should live outside the generic `src/api/types.ts`); screen ownership between Companies, Notebooks, Events, Inbox, Sources, and a future Research/Review surface; Rust command ownership for research evidence, review state, links, questions, reminders, and generated briefs; storage ownership for cross-domain evidence/read models versus existing feed/notebook/event/transcript/AI-analysis tables; import/export, backup, retention, and migration impact for new research-workspace entities; AI brief boundaries for evidence collection, prompt/building, provider execution, citation mapping, rendering, and persistence; test ownership for evidence aggregation, review state, linking integrity, citation grounding, and real-browser workflow/layout coverage. Output was a refactor-before-feature decision list (required before implementation / foldable into the first feature slice / defer until concrete pressure / no action needed). The resulting accepted research/evidence boundary (ADR 0022) is retained live in modularization-design.md § "Research/Evidence Boundary Ownership" — the readiness-check process itself was a one-time M24 planning exercise, now superseded by the delivered Research screen (M25/M26/M29/M31, see [ui-information-architecture.md](ui-information-architecture.md) and [ADR 0022](adr/0022-research-evidence-read-model-boundary.md)).
+
+## v0.59.0 — AI-layer retirement + deterministic fundamentals (Track C: BR-primary, review-free)
+
+Epics `3579e69` (retire in-app AI, ADR 0084) + `971aff6` (deterministic fundamentals, ADR 0061,
+extended by Track C / ADR 0086). Closed 2026-07-22.
+
+- **R-track**: all 11 AI capabilities, routing/pools, provider adapters, tier-4 OCR, AI
+  settings/credentials removed; Gemini stays transcripts-only; typed reason codes replace guessed
+  diagnoses; stored AI outputs readable as historical data.
+- **A/C-track**: ladder ESEF → xHTML/positional → WDF cover note → **BiznesRadar-primary** (3
+  pages/company/day, every header-derived period column, daily scheduler trigger, batched writes);
+  shared slot precedence with higher-tier takeover (`Upgraded`); reversed witnessing + zero rule +
+  manual-divergence recording; **review-free facts** (confirmation_state frozen at `confirmed`);
+  PDF fact arm deleted (−4.4k LOC; text reading survives for period derivation + insider
+  attachments; Today card reports the by-design `pdf_document` gap); one-off live wipe+rebuild via
+  `rebuild_fundamentals` (final: ~10.5k facts — esef 675+ / aggregator 9.7k+ / positional 112).
+- **Hardening**: 22 code-review findings fixed (incl. parent-equity dictionary routing, catalog
+  seeds 0111/0112, tier-aware cross-check priors, ESEF-Failed→Flagged, ~9k→~150 tx/pull);
+  mapping guardrails G1 (emittable-keys↔catalog source scan), G2 (source-vocabulary golden over
+  real BR pages), G3 (cross-company mapping-suspect threshold) — G1/G2 each caught a real bug on
+  first run (16 unseeded WDF keys; discontinued-ops row shadowing group net profit at 19 companies).
+- **Spec-conformance audit (ADR 0086, live-path evidence 2026-07-22)**: dec.1 PDF-arm retirement —
+  conforms (PDF route early-returns; live cards show `pdf_document`); dec.2 BR-primary — conforms
+  (150/150 pages, daily auto-trigger observed at app open); dec.3 precedence — conforms (live tier
+  takeover esef 218→675; manual untouchable pinned by tests); dec.4 reversed witnessing —
+  conforms (live disagreements incl. positional+manual, canonical detail shape rendered); dec.5
+  review-free — conforms (no ratification surface; both modes commit `confirmed`); dec.6
+  wipe+rebuild — executed live (1,596→0→10.5k, backup in `private/db-backups/`); dec.7 MCP-additive
+  — conforms by absence (no nondeterministic tier exists). ADR 0084 audited at its own wave.
+- Deferred/open: in-app report viewer (`3fe3f34`, Future), pull-serialization race (`8248dcd`),
+  WDF comma ambiguity residual (`389c82a`), toast stacking → v0.60 (`abd456e`).

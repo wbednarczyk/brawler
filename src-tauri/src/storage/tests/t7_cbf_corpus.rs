@@ -43,7 +43,7 @@ use crate::fundamentals::extraction::esef::parse_esef;
 use crate::fundamentals::extraction::pipeline::{run_pipeline, PipelineInput};
 use crate::fundamentals::extraction::{esef_package, primary_period_end};
 use crate::report_diff::classify::period_sort_key;
-use crate::report_diff::extraction::{extract_report, SourceFormat};
+use crate::report_diff::extraction::SourceFormat;
 
 const CORPUS_TICKER: &str = "CBF";
 
@@ -113,16 +113,16 @@ fn run_new(state: &AppState, company_id: &str, document: &ReportDocument) -> Out
 
     // Same source resolution as production `esef_instance_bytes`: a ZIP report
     // package unpacks to its inner instance; a bare xhtml uses its own bytes;
-    // everything else is the PDF tier.
+    // everything else has no surviving tier (the PDF fact-extraction arm is
+    // retired, ADR 0086 dec. 1).
     let ct = document.content_type.as_deref();
-    let (esef, pdf): (Option<Vec<u8>>, Option<String>) =
-        if esef_package::is_report_package(local_path, &bytes) {
-            (esef_package::extract_instance(&bytes), None)
-        } else if SourceFormat::resolve(ct, local_path) == SourceFormat::Xhtml {
-            (Some(bytes.clone()), None)
-        } else {
-            (None, Some(pdf_text(&bytes)))
-        };
+    let esef: Option<Vec<u8>> = if esef_package::is_report_package(local_path, &bytes) {
+        esef_package::extract_instance(&bytes)
+    } else if SourceFormat::resolve(ct, local_path) == SourceFormat::Xhtml {
+        Some(bytes.clone())
+    } else {
+        None
+    };
 
     let outcome = run_pipeline_for(
         state,
@@ -131,7 +131,6 @@ fn run_new(state: &AppState, company_id: &str, document: &ReportDocument) -> Out
         period_type,
         &period_end,
         esef,
-        pdf,
     );
     Outcome {
         period: period_label(&derived),
@@ -190,9 +189,11 @@ fn run_legacy(state: &AppState, company_id: &str, document: &ReportDocument) -> 
             facts: 0,
         };
     };
-    let (esef, pdf): (Option<Vec<u8>>, Option<String>) = match format {
-        SourceFormat::Xhtml => (Some(bytes.clone()), None),
-        SourceFormat::Pdf => (None, Some(pdf_text(&bytes))),
+    // The PDF fact-extraction arm is retired (ADR 0086 dec. 1): a PDF-format
+    // document has no surviving tier to feed.
+    let esef: Option<Vec<u8>> = match format {
+        SourceFormat::Xhtml => Some(bytes.clone()),
+        SourceFormat::Pdf => None,
     };
     let outcome = run_pipeline_for(
         state,
@@ -201,21 +202,11 @@ fn run_legacy(state: &AppState, company_id: &str, document: &ReportDocument) -> 
         period_type,
         &period_end,
         esef,
-        pdf,
     );
     Outcome {
         period: period_label(&derived),
         ..outcome
     }
-}
-
-fn pdf_text(bytes: &[u8]) -> String {
-    extract_report(bytes, SourceFormat::Pdf)
-        .sections
-        .iter()
-        .map(|s| s.body.clone())
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn run_pipeline_for(
@@ -225,12 +216,7 @@ fn run_pipeline_for(
     period_type: &str,
     period_end: &str,
     esef: Option<Vec<u8>>,
-    pdf: Option<String>,
 ) -> Outcome {
-    let profile = state
-        .fundamentals_provenance()
-        .get_profile(company_id)
-        .expect("get profile");
     let prior_end = {
         let y: i64 = period_end
             .get(0..4)
@@ -247,12 +233,9 @@ fn run_pipeline_for(
     let input = PipelineInput {
         period_end,
         esef_bytes: esef.as_deref(),
-        pdf_text: pdf.as_deref(),
-        profile: profile.as_ref(),
         prior: prior.as_ref(),
         prior_period_end: prior_end.as_deref(),
         expected_keys: None,
-        witness: None,
     };
     let out = run_pipeline(&input);
     Outcome {
@@ -526,7 +509,6 @@ fn t7_cbf_double_extraction_is_idempotent_on_the_real_corpus() {
             period_type,
             &period_end,
             MODE_AUTOPILOT,
-            crate::jobs::structured_extraction::Tier4Gate::DeniedSweep,
         )
         .unwrap_or_else(|e| panic!("{label} extraction must not error (owner T7-F): {e}"))
     };

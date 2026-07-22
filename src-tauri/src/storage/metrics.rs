@@ -195,10 +195,9 @@ pub(crate) fn collect_local_metrics_snapshot(
     })
 }
 
-fn collectors() -> [&'static dyn MetricCollector; 8] {
+fn collectors() -> [&'static dyn MetricCollector; 7] {
     [
         &SourceMetricsCollector,
-        &AiAnalysisMetricsCollector,
         &TranscriptMetricsCollector,
         &CredentialMetricsCollector,
         &DiagnosticMetricsCollector,
@@ -356,31 +355,6 @@ impl MetricCollector for SourceMetricsCollector {
     }
 }
 
-struct AiAnalysisMetricsCollector;
-
-impl MetricCollector for AiAnalysisMetricsCollector {
-    fn collect(
-        &self,
-        connection: &Connection,
-        _runtime_metrics: &RuntimeMetricCounters,
-        _app_data_dir: &Path,
-        collected_at: &str,
-    ) -> StorageResult<Vec<MetricSample>> {
-        collect_job_status_metrics(
-            connection,
-            "ai_analysis_jobs",
-            "brawler_ai_analysis_jobs_total",
-            "AI analysis jobs by provider, model, and status.",
-            &[
-                ("provider_id", "provider_id"),
-                ("model", "model"),
-                ("status", "status"),
-            ],
-            collected_at,
-        )
-    }
-}
-
 struct TranscriptMetricsCollector;
 
 impl MetricCollector for TranscriptMetricsCollector {
@@ -425,25 +399,14 @@ impl MetricCollector for CredentialMetricsCollector {
         collected_at: &str,
     ) -> StorageResult<Vec<MetricSample>> {
         let settings = settings::get_settings(connection)?;
-        let providers = [
-            (
-                "provider_gemini",
-                "youtube_transcription",
-                settings
-                    .ai_providers
-                    .youtube_transcription_provider
-                    .as_str(),
-            ),
-            (
-                "provider_gemini",
-                "general_analysis",
-                settings
-                    .ai_providers
-                    .general_analysis_provider
-                    .as_deref()
-                    .unwrap_or("not_configured"),
-            ),
-        ];
+        let providers = [(
+            "provider_gemini",
+            "youtube_transcription",
+            settings
+                .ai_providers
+                .youtube_transcription_provider
+                .as_str(),
+        )];
         let mut samples = Vec::new();
 
         for (provider_id, purpose, configured_provider) in providers {
@@ -607,7 +570,6 @@ impl MetricCollector for SqliteMetricsCollector {
             "diagnostic_events",
             "transcript_jobs",
             "transcript_segments",
-            "ai_analysis_jobs",
             "notebook_entries",
             "company_events",
         ] {
@@ -727,16 +689,6 @@ fn runtime_metric_contract(name: &str) -> (&'static str, MetricKind, MetricUnit)
             "Process-lifetime scheduled task skips.",
             MetricKind::Counter,
             MetricUnit::Count,
-        ),
-        "brawler_ai_analysis_runs_total" => (
-            "Process-lifetime AI analysis executions by provider, model, and status.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
-        "brawler_ai_analysis_duration_seconds" => (
-            "Process-lifetime cumulative AI analysis execution duration by provider, model, and status.",
-            MetricKind::Counter,
-            MetricUnit::Seconds,
         ),
         "brawler_transcript_runs_total" => (
             "Process-lifetime transcript executions by provider and status.",
@@ -890,7 +842,6 @@ fn is_allowed_table_name(table: &str) -> bool {
             | "diagnostic_events"
             | "transcript_jobs"
             | "transcript_segments"
-            | "ai_analysis_jobs"
             | "notebook_entries"
             | "company_events"
     )
@@ -967,10 +918,7 @@ fn process_started_at_seconds() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        source_adapters::bankier_company::BankierCompanyItem,
-        storage::{open_in_memory_database, AppState, NewAiAnalysisJob, NewCompany},
-    };
+    use crate::storage::open_in_memory_database;
 
     #[test]
     fn rejects_private_or_high_cardinality_label_values() {
@@ -1002,73 +950,5 @@ mod tests {
         assert_eq!(sample.kind, MetricKind::Counter);
         assert_eq!(sample.unit, MetricUnit::Count);
         assert_eq!(sample.value, 1.0);
-    }
-
-    #[test]
-    fn durable_collectors_aggregate_ai_jobs_without_user_text_labels() {
-        let connection = open_in_memory_database().expect("database should open");
-        let state = AppState::new(connection);
-        let company = state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "CDR".to_owned(),
-                display_name: "CD PROJEKT S.A.".to_owned(),
-                isin: Some("PLOPTTC00011".to_owned()),
-                cik: None,
-                lei: None,
-            })
-            .expect("company should create");
-        state
-            .ingest_bankier_company_items(&[BankierCompanyItem {
-                company_id: company.id,
-                qualified_ticker: "GPW:CDR".to_owned(),
-                title: "Wyniki finansowe QSr 1/2026".to_owned(),
-                link: "https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-Wyniki-finansowe-QSr-1-2026-9141553.html"
-                    .to_owned(),
-                summary: "raporty okresowe".to_owned(),
-                published_at: Some("2026-05-28T17:33:09".to_owned()),
-                fetched_at: "2026-05-31T10:00:00Z".to_owned(),
-                article_id: "9141553".to_owned(),
-                pub_id: 3,
-                dedupe_key: "bankier-company-komunikaty:article:9141553".to_owned(),
-                duplicate_signature:
-                    "official-secondary:GPW:CDR:wyniki-finansowe-qsr-1-2026:9141553".to_owned(),
-                body_text: Some("Official Bankier report body.".to_owned()),
-                attachments: Vec::new(),
-                detail_fetch_attempted: true,
-            }])
-            .expect("feed item should ingest");
-        let feed_item = state
-            .list_feed_items()
-            .expect("feed items should list")
-            .pop()
-            .expect("feed item should exist");
-
-        state
-            .create_ai_analysis_job(NewAiAnalysisJob {
-                feed_item_id: feed_item.id,
-                prompt_preset_id: Some("default_summary".to_owned()),
-                custom_question: Some("Should not appear as metric label".to_owned()),
-                provider_id: "test_sample".to_owned(),
-                model: "test_sample_model".to_owned(),
-                prompt_version: None,
-            })
-            .expect("job should create");
-
-        let snapshot = state
-            .local_metrics_snapshot(Path::new("/tmp"))
-            .expect("metrics should collect");
-        let sample = snapshot
-            .samples
-            .iter()
-            .find(|sample| sample.name == "brawler_ai_analysis_jobs_total")
-            .expect("ai job metric should exist");
-
-        assert_eq!(sample.value, 1.0);
-        assert!(sample.labels.iter().any(|label| label.key == "provider_id"));
-        assert!(!sample
-            .labels
-            .iter()
-            .any(|label| label.value.contains("Should not appear")));
     }
 }

@@ -392,6 +392,72 @@ pub fn cross_check_prior(
 }
 
 // ---------------------------------------------------------------------------
+// Magnitude plausibility against the metric's own history
+// ---------------------------------------------------------------------------
+
+/// The relative bound past which a value is implausible against its own history:
+/// 100× the median in either direction. A genuine year-over-year move stays well
+/// inside this; a dropped unit multiplier or a note reference read as the value
+/// lands ~1000× out.
+const HISTORY_PLAUSIBILITY_RATIO: i64 = 100;
+
+/// Whether `metric_key`'s scale is set by corporate actions (splits) rather than
+/// performance, so a >100× move is legitimate and must not be flagged.
+fn is_split_sensitive_metric(metric_key: &str) -> bool {
+    matches!(
+        metric_key,
+        "eps_basic" | "eps_diluted" | "dividend_per_share" | "shares_outstanding"
+    )
+}
+
+/// Whether `value` is implausible for `metric_key` given the SAME metric's
+/// values already stored for the company's OTHER periods — at least
+/// [`HISTORY_PLAUSIBILITY_RATIO`]× the median, larger or smaller.
+///
+/// This is the guard for a uniform scale error that no same-period identity can
+/// see and no comparative column exists to catch: a note reference read as the
+/// cash value, or a dropped `w tys.` multiplier, in a company's first stored
+/// period of that metric (card 22ac70c: Atrem cash 19 000 against siblings
+/// ~3.8 M). It **abstains** (returns `false`) when there are fewer than two
+/// historical values (no stable median), when the metric is split-sensitive, or
+/// when either side is zero. It is a signal to **downgrade acceptance to
+/// `flagged`**, never to reject — a genuine collapse or acquisition is surfaced
+/// for review, not dropped.
+pub fn implausible_against_history(metric_key: &str, value: Decimal, history: &[Decimal]) -> bool {
+    if is_split_sensitive_metric(metric_key) {
+        return false;
+    }
+    let Some(median) = history_median(history) else {
+        return false;
+    };
+    let magnitude = value.abs();
+    if median.is_zero() || magnitude.is_zero() {
+        return false;
+    }
+    let ratio = Decimal::from(HISTORY_PLAUSIBILITY_RATIO);
+    magnitude > median * ratio || magnitude * ratio < median
+}
+
+/// The magnitude median of a metric's history — the robust center the
+/// plausibility bound in [`implausible_against_history`] is measured against, and
+/// the figure the quarantine outcome cites. `None` when fewer than two non-zero
+/// magnitudes exist (no stable median); zeros are excluded because a reported
+/// zero is not a scale reference. Uses the upper-middle element so it agrees with
+/// the check exactly.
+pub fn history_median(history: &[Decimal]) -> Option<Decimal> {
+    let mut magnitudes: Vec<Decimal> = history
+        .iter()
+        .filter(|v| !v.is_zero())
+        .map(|v| v.abs())
+        .collect();
+    if magnitudes.len() < 2 {
+        return None;
+    }
+    magnitudes.sort();
+    Some(magnitudes[magnitudes.len() / 2])
+}
+
+// ---------------------------------------------------------------------------
 // Top-level entry point
 // ---------------------------------------------------------------------------
 

@@ -39,7 +39,6 @@ function claim(overrides: Partial<ManagementClaim> = {}): ManagementClaim {
     status: "pending",
     sourceEvidenceType: "manual",
     sourceEvidenceId: null,
-    extractionProposalId: null,
     targetMetricKey: null,
     targetComparator: null,
     targetValueNumeric: null,

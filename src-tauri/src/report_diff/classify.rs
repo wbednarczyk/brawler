@@ -6,6 +6,10 @@
 //! parsed from the title/URL; documents whose period cannot be parsed fall back to
 //! `created_at` ordering so they still pair, just less precisely.
 
+use std::collections::BTreeSet;
+use std::sync::OnceLock;
+
+use regex::Regex;
 use serde::Serialize;
 
 use crate::fundamentals::extraction::classify::{classify_doc_kind, DocKind};
@@ -65,10 +69,155 @@ pub fn classify_statement(title: &str, url: &str) -> Option<StatementType> {
 /// where period_index is 1..=4 for quarters, 2 for H1, 4 for annual. `None` when
 /// no period can be parsed.
 pub fn period_sort_key(title: &str, url: &str) -> Option<(i32, u8)> {
-    let t = format!("{} {}", title, url).to_lowercase();
-    let year = parse_year(&t)?;
-    let period = parse_period(&t);
-    Some((year, period))
+    period_index_from_text(&format!("{} {}", title, url))
+}
+
+/// Which carrier feeds the grammar, and therefore which pass leads.
+#[derive(Clone, Copy)]
+enum PeriodTextMode {
+    /// Document title/URL and cover-page text: an explicit calendar date is the
+    /// most reliable signal and is tried FIRST (the tuned v0.59 order). The
+    /// filename/document route depends on this order — do not change it.
+    DateFirst,
+    /// ESPI feed-title carrier: a bare date in a feed title is typically the
+    /// publication date, so an explicit period MARKER (`za I kwartał 2025`,
+    /// `1H2025`, `za rok 2024`) is tried before the dates pass (C3). The
+    /// publication-date idiom (`z dnia <date>`) is stripped by the caller.
+    MarkerFirst,
+}
+
+/// The grammar behind [`period_sort_key`], over one free-text carrier.
+///
+/// Two carriers feed it and there is deliberately **one** grammar for both
+/// (v0.59, card `fc692da`): a document's title+URL, and — when those name no
+/// period — the document's own cover page (`jobs::structured_extraction::
+/// derive_report_period`). Adding a form here fixes it for both routes at once.
+fn period_index_from_text(text: &str) -> Option<(i32, u8)> {
+    period_index_from_text_mode(text, PeriodTextMode::DateFirst)
+}
+
+fn period_index_from_text_mode(text: &str, mode: PeriodTextMode) -> Option<(i32, u8)> {
+    let lowered = text.to_lowercase();
+    let tokens = tokenize(&lowered);
+
+    // Feed-title carrier: an explicit marker wins over a lone bare date (C3). The
+    // filename/document carrier keeps the date-first order untouched.
+    if matches!(mode, PeriodTextMode::MarkerFirst) {
+        if let Some(resolved) = marker_period(&tokens, &lowered) {
+            return Some(resolved);
+        }
+    }
+
+    match dates_period(&tokens) {
+        DatePeriod::NonCalendarWindow => {
+            // The document states its reporting window and the window is not a
+            // calendar one (a non-December fiscal year): the calendar mapping
+            // below would be a guess, so abstain on the intra-year period while
+            // still ordering by year (ADR 0061 decision 1).
+            return parse_year(&lowered).map(|year| (year, 0));
+        }
+        DatePeriod::Resolved(year, index) => return Some((year, index)),
+        DatePeriod::None => {}
+    }
+    // Marker pass. When no marker names an intra-year period we still keep the
+    // year (index `0`) as the sort key — unchanged from v0.59.
+    if let Some(resolved) = marker_period(&tokens, &lowered) {
+        return Some(resolved);
+    }
+    parse_year(&lowered).map(|year| (year, 0))
+}
+
+/// Period resolution from an explicit marker only: a glued compact form
+/// (`1Q2026`, `1HY2025`), or a period marker (`QSr 3`, `III kwartał`, `roczny`)
+/// plus the first standalone year. `None` when nothing explicitly names an
+/// intra-year period — the caller decides whether that abstains or falls through
+/// to a year-only key.
+fn marker_period(tokens: &[String], lowered: &str) -> Option<(i32, u8)> {
+    if let Some(resolved) = compact_period(tokens) {
+        return Some(resolved);
+    }
+    let year = parse_year(lowered)?;
+    let index = parse_period(&normalize(tokens));
+    (index != 0).then_some((year, index))
+}
+
+/// The full reporting period `(fiscal_year, period_type, period_end)` a
+/// title/URL names, assuming a calendar fiscal year: index 1→`Q1`/`-03-31`,
+/// 2→`H1`/`-06-30`, 3→`Q3`/`-09-30`, 4→`FY`/`-12-31`.
+///
+/// The single home of the title/URL period derivation for the **document/
+/// filename** carrier — the fetched-document route
+/// ([`crate::jobs::structured_extraction::derive_report_period`]). Here an
+/// explicit calendar date is the most reliable signal and leads (date-first, the
+/// tuned v0.59 order). The ESPI **feed-title** carrier uses the sibling
+/// [`period_from_feed_title`], which strips the publication-date idiom and lets a
+/// period marker win over a lone date. An unparseable year or an ambiguous
+/// intra-year period (index `0`) yields `None`: **never guessed** (ADR 0061
+/// decision 1 / ADR 0084 — no tier invents a period).
+pub fn period_from_title_url(title: &str, url: &str) -> Option<(i64, &'static str, String)> {
+    to_period(period_sort_key(title, url))
+}
+
+/// The period an **ESPI feed title** names — the ingest-time cover-note tier's
+/// carrier, which has a feed item's title/link, never a stored document (ADR
+/// 0061 tier 2a). Two things distinguish it from the document/filename route
+/// ([`period_from_title_url`]) and both are title-specific (C3):
+///
+/// 1. The Polish publication-date idiom `z dnia <date>` is stripped first — that
+///    phrase is ALWAYS a filing/publication reference, never the reporting
+///    period, and a lone date on a calendar boundary would otherwise be read as
+///    the period.
+/// 2. An explicit period marker (`za I kwartał 2025`, `1H2025`, `za rok 2024`)
+///    wins over a lone bare date, because a bare date in a feed title is usually
+///    the publication date (`MarkerFirst`). The document/filename order is
+///    deliberately left unchanged.
+pub fn period_from_feed_title(title: &str, url: &str) -> Option<(i64, &'static str, String)> {
+    let cleaned = strip_publication_date_idiom(title);
+    let text = format!("{} {}", cleaned, url);
+    to_period(period_index_from_text_mode(
+        &text,
+        PeriodTextMode::MarkerFirst,
+    ))
+}
+
+/// Removes the Polish `z dnia <date>` publication-date idiom (and its close
+/// separator/month-word variants) from a feed title, so the publication date it
+/// carries cannot be mistaken for the reporting period. Only the idiom's own date
+/// is removed; any period marker or reporting-period date in the title stays.
+fn strip_publication_date_idiom(title: &str) -> std::borrow::Cow<'_, str> {
+    static IDIOM: OnceLock<Regex> = OnceLock::new();
+    let idiom = IDIOM.get_or_init(|| {
+        Regex::new(
+            r"(?i)\bz\s+dnia\s+(?:\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}|\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}|\d{1,2}\s+\p{L}+\s+\d{4})",
+        )
+        .expect("static publication-date idiom pattern")
+    });
+    idiom.replace_all(title, " ")
+}
+
+/// The same derivation applied to free document text — the cover page of a
+/// periodic report, which states the period the title/URL failed to name
+/// (v0.59, card `fc692da`). Same grammar, same abstention contract.
+pub fn period_from_text(text: &str) -> Option<(i64, &'static str, String)> {
+    to_period(period_index_from_text(text))
+}
+
+fn to_period(key: Option<(i32, u8)>) -> Option<(i64, &'static str, String)> {
+    let (year, period_index) = key?;
+    let period_type = match period_index {
+        1 => "Q1",
+        2 => "H1",
+        3 => "Q3",
+        4 => "FY",
+        _ => return None,
+    };
+    let period_end = match period_type {
+        "Q1" => format!("{year}-03-31"),
+        "H1" => format!("{year}-06-30"),
+        "Q3" => format!("{year}-09-30"),
+        _ => format!("{year}-12-31"),
+    };
+    Some((i64::from(year), period_type, period_end))
 }
 
 /// A short human label for the period, for the candidate read model.
@@ -110,32 +259,254 @@ fn parse_year(t: &str) -> Option<i32> {
     None
 }
 
-fn parse_period(t: &str) -> u8 {
-    if t.contains("q1") || t.contains("i kwarta") || t.contains("1 kwarta") || t.contains("1q") {
-        1
-    } else if t.contains("q3")
-        || t.contains("iii kwarta")
-        || t.contains("3 kwarta")
-        || t.contains("3q")
-    {
-        3
-    } else if t.contains("q4") || t.contains("roczn") || t.contains("annual") {
-        4
-    } else if t.contains("q2")
-        || t.contains("psr")
-        || t.contains("półrocz")
-        || t.contains("polrocz")
-        || t.contains("h1")
-        // The title form "1H" (e.g. "za_1H_2023") — the mirror of the already-
-        // present "h1"; bare `contains` matches the existing arm's idiom.
-        || t.contains("1h")
-        || t.contains("ii kwarta")
-    {
-        2
+// ---------------------------------------------------------------------------
+// Period grammar (v0.59, card `fc692da`).
+//
+// Derived from the REAL title/URL forms in the maintainer's database, in three
+// ordered passes — cheapest and least ambiguous first:
+//
+//   1. an explicit calendar period-end date (`30.06.2025`, `2025_09_30`),
+//   2. a glued quarter/half token carrying its own year (`1Q2026`, `Q125`,
+//      `2023q3`, `1HY2025`),
+//   3. a period marker (`QSr 3`, `III kwartał`, `HY`, `9M`, `roczny`, …) plus
+//      the first standalone year in the text.
+//
+// Every pass abstains rather than guesses: an unstated period stays index `0`,
+// and an explicitly NON-calendar reporting window (a non-December fiscal year,
+// e.g. Synektik's 1 Oct – 30 Sep) abstains outright — the calendar mapping the
+// contract assumes would be wrong there.
+// ---------------------------------------------------------------------------
+
+/// Calendar period ends: `(month, day)` → period index.
+const CALENDAR_PERIOD_ENDS: [((u32, u32), u8); 4] =
+    [((3, 31), 1), ((6, 30), 2), ((9, 30), 3), ((12, 31), 4)];
+
+/// Lowercased alphanumeric runs, in order. Titles and URLs separate their parts
+/// with `_`, `-`, `.`, `/`, spaces and brackets interchangeably, so the grammar
+/// works on tokens rather than on raw substrings.
+fn tokenize(lowered: &str) -> Vec<String> {
+    lowered
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Tokens joined by single spaces, with the two Polish words that *contain*
+/// `roczn` but do not mean "annual" rewritten first: `śródroczny` (interim) and
+/// `półroczny` (half-year). Without this the annual arm swallowed every interim
+/// report — a measured defect on the maintainer's real titles.
+fn normalize(tokens: &[String]) -> String {
+    tokens
+        .iter()
+        .map(|token| {
+            if token.starts_with("srodroczn") || token.starts_with("śródroczn") {
+                "interim"
+            } else if token.starts_with("polrocz") || token.starts_with("półrocz") {
+                "polrocze"
+            } else {
+                token.as_str()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+enum DatePeriod {
+    Resolved(i32, u8),
+    /// A stated reporting window that does not start on 1 January.
+    NonCalendarWindow,
+    None,
+}
+
+fn numeric(token: &str) -> Option<(usize, u32)> {
+    if token.chars().all(|c| c.is_ascii_digit()) {
+        token.parse().ok().map(|value| (token.len(), value))
     } else {
-        // Unknown intra-year period; sort before Q1 so it is not mistaken for newer.
-        0
+        None
     }
+}
+
+/// A `(year, month, day)` starting at `i`, in either `YYYY ? ?` or `? ? YYYY`
+/// order, when three adjacent tokens are all numeric and form a valid date.
+fn date_at(tokens: &[String], i: usize) -> Option<(i32, u32, u32)> {
+    let a = numeric(tokens.get(i)?)?;
+    let b = numeric(tokens.get(i + 1)?)?;
+    let c = numeric(tokens.get(i + 2)?)?;
+    let (year, month, day) = if a.0 == 4 {
+        (a.1, b.1, c.1)
+    } else if c.0 == 4 {
+        (c.1, b.1, a.1)
+    } else {
+        return None;
+    };
+    if !(2000..=2099).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    Some((year as i32, month, day))
+}
+
+fn calendar_period_index(month: u32, day: u32) -> Option<u8> {
+    CALENDAR_PERIOD_ENDS
+        .iter()
+        .find(|((m, d), _)| *m == month && *d == day)
+        .map(|(_, index)| *index)
+}
+
+fn dates_period(tokens: &[String]) -> DatePeriod {
+    let mut ends: BTreeSet<(i32, u8)> = BTreeSet::new();
+    for i in 0..tokens.len() {
+        let Some((year, month, day)) = date_at(tokens, i) else {
+            continue;
+        };
+        let this_index = calendar_period_index(month, day);
+        // A range (`01.10.2024-31.03.2025`) or a comparative header pair
+        // (`31.03.2025 31.12.2024`) is six adjacent numeric tokens: two dates back
+        // to back.
+        if let Some((year2, month2, day2)) = date_at(tokens, i + 3) {
+            // A comparative balance-sheet header pairs the current period end with
+            // the prior one: both are calendar boundaries and the current is listed
+            // FIRST (and is therefore the LATER date). It names the period
+            // explicitly, so resolve to the current (first) period rather than
+            // abstaining — abstaining lost real statements (card `fc692da`). Only
+            // this shape is rescued; anything else keeps the abstention below.
+            if let (Some(index), Some(_)) = (this_index, calendar_period_index(month2, day2)) {
+                if (year, month, day) > (year2, month2, day2) {
+                    return DatePeriod::Resolved(year, index);
+                }
+            }
+            // A window that does not open on 1 January is not a calendar period,
+            // whatever its end date looks like.
+            if (month, day) != (1, 1) {
+                return DatePeriod::NonCalendarWindow;
+            }
+        }
+        if let Some(index) = this_index {
+            ends.insert((year, index));
+        }
+    }
+    // Exactly one calendar period end is a statement; several are a comparison.
+    if ends.len() == 1 {
+        let (year, index) = ends.into_iter().next().expect("one element");
+        DatePeriod::Resolved(year, index)
+    } else {
+        DatePeriod::None
+    }
+}
+
+struct Grammar {
+    /// Glued forms carrying their own year, matched per token.
+    quarter_then_year: Regex,
+    year_then_quarter_prefix: Regex,
+    quarter_after_year: Regex,
+    half_then_year: Regex,
+    year_then_half: Regex,
+    q1: Regex,
+    q2: Regex,
+    q3: Regex,
+    q4: Regex,
+    months: Vec<(Regex, u8)>,
+}
+
+fn grammar() -> &'static Grammar {
+    static GRAMMAR: OnceLock<Grammar> = OnceLock::new();
+    GRAMMAR.get_or_init(|| {
+        let compile = |pattern: &str| Regex::new(pattern).expect("static period pattern");
+        Grammar {
+            // `1Q2026`, `raport1h24`  → quarter, then a 2- or 4-digit year.
+            quarter_then_year: compile(r"^[a-z]*([1-4])q(\d{2}|\d{4})[a-z]*$"),
+            // `Q125`, `Q324` → quarter after a leading `q`, then the year.
+            year_then_quarter_prefix: compile(r"^[a-z]*q([1-4])(\d{2}|\d{4})[a-z]*$"),
+            // `2023q3` → year first.
+            quarter_after_year: compile(r"^(\d{4})q([1-4])[a-z]*$"),
+            // `HY25`, `1HY2025`, `1h2025`, `HYR2025`.
+            half_then_year: compile(r"^[a-z]*1?hy?r?(\d{2}|\d{4})[a-z]*$"),
+            // `2024H1SSF`.
+            year_then_half: compile(r"^(\d{4})h1[a-z]*$"),
+            q1: compile(
+                r"\bq1\b|\b1q\b|\bi q\b|\biq\b|\bi kwarta|\b1 kwarta|\bpierwsz\w* kwarta|\bqsr ?1\b|\bqsr i\b|\bsa q1\b|\b3m\b|\b3 miesi|\bthree months\b",
+            ),
+            q2: compile(
+                r"\bq2\b|\b2q\b|\bii q\b|\biiq\b|\bii kwarta|\b2 kwarta|\bdrug\w* kwarta|\bqsr ?2\b|\bqsr ii\b|\bpsr\d*\b|\bpolrocze\b|\bh1\b|\b1h\b|\bhy\d*\b|\bhyr\d*\b|\bsa p\b|\bpssf\b|\bpsf\b|\bpjsf\b|\b6m\b|\b6 miesi|\bsix months\b|\bhalf year\b",
+            ),
+            q3: compile(
+                r"\bq3\b|\b3q\b|\biii q\b|\biiiq\b|\biii kwarta|\b3 kwarta|\btrzeci\w* kwarta|\bqsr ?3\b|\bqsr iii\b|\bsa q3\b|\b9m\b|\b9 miesi",
+            ),
+            q4: compile(
+                r"\bq4\b|\b4q\b|\biv q\b|\bivq\b|\biv kwarta|\b4 kwarta|\bczwart\w* kwarta|\bqsr ?4\b|\broczn\w*|\bannual\b|\brok obrotowy\b|\bza \d{4} r\b|\bsa r\b|\b12m\b|\b12 miesi",
+            ),
+            months: vec![
+                (compile(r"\b31 (marca|march)\b"), 1),
+                (compile(r"\b30 (czerwca|june)\b"), 2),
+                (compile(r"\b30 (wrzesnia|września|september)\b"), 3),
+                (compile(r"\b31 (grudnia|december)\b"), 4),
+            ],
+        }
+    })
+}
+
+fn two_or_four_digit_year(raw: &str) -> i32 {
+    let value: i32 = raw.parse().expect("digits");
+    if value < 100 {
+        2000 + value
+    } else {
+        value
+    }
+}
+
+/// Glued `quarter+year` filename forms. Ambiguity (two different readings in one
+/// string) abstains rather than picking one.
+fn compact_period(tokens: &[String]) -> Option<(i32, u8)> {
+    let g = grammar();
+    let mut hits: BTreeSet<(i32, u8)> = BTreeSet::new();
+    for token in tokens {
+        for (regex, quarter_first) in [
+            (&g.quarter_then_year, true),
+            (&g.year_then_quarter_prefix, true),
+            (&g.quarter_after_year, false),
+        ] {
+            if let Some(captures) = regex.captures(token) {
+                let (quarter, year) = if quarter_first {
+                    (&captures[1], &captures[2])
+                } else {
+                    (&captures[2], &captures[1])
+                };
+                hits.insert((
+                    two_or_four_digit_year(year),
+                    quarter.parse::<u8>().expect("1..=4"),
+                ));
+            }
+        }
+        for regex in [&g.half_then_year, &g.year_then_half] {
+            if let Some(captures) = regex.captures(token) {
+                hits.insert((two_or_four_digit_year(&captures[1]), 2));
+            }
+        }
+    }
+    if hits.len() == 1 {
+        hits.into_iter().next()
+    } else {
+        None
+    }
+}
+
+/// The intra-year period a marker names, or `0` when none does — the abstention
+/// [`period_from_title_url`] turns into `None`. Quarter and half-year markers are
+/// tested before the annual arm: an interim report often carries both.
+fn parse_period(normalized: &str) -> u8 {
+    let g = grammar();
+    for (regex, index) in [(&g.q1, 1), (&g.q3, 3), (&g.q2, 2), (&g.q4, 4)] {
+        if regex.is_match(normalized) {
+            return index;
+        }
+    }
+    for (regex, index) in &g.months {
+        if regex.is_match(normalized) {
+            return *index;
+        }
+    }
+    // Unknown intra-year period; sort before Q1 so it is not mistaken for newer.
+    0
 }
 
 #[cfg(test)]
@@ -311,6 +682,240 @@ mod tests {
         // byte — reproducing the char-boundary slicing panic (same class as
         // signal_dates::find_date_for_labels).
         assert_eq!(period_sort_key("1abł", ""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Real-issuer title forms (v0.59, card fc692da).
+    //
+    // Every literal below is a REAL title/URL from the maintainer's database:
+    // the A4 sweep measured 1 144 of 1 544 eligible stored documents never
+    // reaching extraction because no period could be derived, and 83 of those
+    // (31.7 % of the kind) were `periodic_ssf` — genuine financial statements
+    // invisible to the pipeline purely for want of a period parse.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn derives_period_from_calendar_period_end_date_in_title() {
+        // The single most common real form: the statement names its balance-sheet
+        // date instead of a quarter label (PKO BP, PZU, GPW, Cognor, Decora, …).
+        assert_eq!(
+            period_from_title_url("SSF_PZU_SA_Raport_30.06.2025.pdf", ""),
+            Some((2025, "H1", "2025-06-30".to_owned()))
+        );
+        assert_eq!(
+            period_from_title_url("GK_DECORA_SSF_2025_09_30_PL.pdf", ""),
+            Some((2025, "Q3", "2025-09-30".to_owned()))
+        );
+        assert_eq!(
+            period_from_title_url("Text_SA_31_03_2025_BSSF_MSSF_PL.xhtml", ""),
+            Some((2025, "Q1", "2025-03-31".to_owned()))
+        );
+        assert_eq!(
+            period_from_title_url("SSF Cognor IFRS skonsolidowane 30-09-2025.pdf", ""),
+            Some((2025, "Q3", "2025-09-30".to_owned()))
+        );
+    }
+
+    #[test]
+    fn derives_qsr_and_glued_quarter_forms() {
+        // `QSr N` (KGHM, Comp, Develia, Inter Cars) and the glued `NQyyyy` /
+        // `QNyy` / `yyyyQN` filename forms (GPW, Benefit Systems, Asseco, Text).
+        assert_eq!(
+            period_sort_key("Skonsolidowany raport kwartalny QSr_3_2025.pdf", ""),
+            Some((2025, 3))
+        );
+        assert_eq!(period_sort_key("Comp_Qsr1_2026.pdf", ""), Some((2026, 1)));
+        assert_eq!(
+            period_sort_key("SSF GK GPW 1Q2026-sig-sig-sig-sig.pdf", ""),
+            Some((2026, 1))
+        );
+        assert_eq!(
+            period_sort_key("Q125_Raport_kwartalny_Grupa_Asseco.pdf", ""),
+            Some((2025, 1))
+        );
+        assert_eq!(
+            period_sort_key("txt_2023q3_ssf_signed.pdf", ""),
+            Some((2023, 3))
+        );
+    }
+
+    #[test]
+    fn derives_roman_and_word_quarter_forms_across_separators() {
+        // Underscore-separated roman numerals never matched (the old arms assumed a
+        // space), and `III kwartał` fell into the `i kwarta` arm when it did.
+        assert_eq!(
+            period_sort_key("Raport_kwartalny_Grupa_ABS_III_kwartal_2025.pdf", ""),
+            Some((2025, 3))
+        );
+        assert_eq!(
+            period_sort_key("ABS_Sprawozdanie_finansowe_I_kwartal_2024.pdf", ""),
+            Some((2024, 1))
+        );
+        assert_eq!(
+            period_sort_key("Raport_kwartalny_GK_Mo-BRUK_SA_IIIQ_2025.pdf", ""),
+            Some((2025, 3))
+        );
+        assert_eq!(
+            period_sort_key(
+                "Skonsolidowany_raport_kwartalny_Grupy_Kapitalowej_Echo_Investment_za_pierwszy_kwartal_2024_r.pdf",
+                ""
+            ),
+            Some((2024, 1))
+        );
+    }
+
+    #[test]
+    fn derives_half_year_and_month_count_forms() {
+        assert_eq!(
+            period_sort_key("ABS_Sprawozdanie_finansowe_HY_2024.pdf", ""),
+            Some((2024, 2))
+        );
+        assert_eq!(
+            period_sort_key(
+                "SKONSOLIDOWANE_SPRAWOZDANIE_FINANSOWE_GK_BS_1HY2025-sig.pdf",
+                ""
+            ),
+            Some((2025, 2))
+        );
+        // `PSSF` = półroczne skonsolidowane sprawozdanie finansowe.
+        assert_eq!(
+            period_sort_key("Elektrotim_2025_PSSF_MSSF_PL-sig.pdf", ""),
+            Some((2025, 2))
+        );
+        assert_eq!(
+            period_sort_key("Sprawozdanie finansowe za 9M 2025.pdf", ""),
+            Some((2025, 3))
+        );
+    }
+
+    #[test]
+    fn interim_marker_is_not_read_as_annual() {
+        // Regression: `śródroczny`/`półroczny` both contain `roczn`, so the annual
+        // arm swallowed every interim report whose quarter marker sorted later.
+        assert_eq!(
+            period_sort_key("Srodroczny_skonsolidowany_raport_za_1Q_2025-sig.pdf", ""),
+            Some((2025, 1))
+        );
+        assert_eq!(
+            period_sort_key("Skonsolidowany_raport_polroczny_PSr_2025.pdf", ""),
+            Some((2025, 2))
+        );
+        assert_eq!(
+            period_sort_key(
+                "Srodroczne_skonsolidowane_sprawozdanie_finansowe_Grupy_Kapitalowej_PZU_SA_za_III_kwartal_2024.pdf",
+                ""
+            ),
+            Some((2024, 3))
+        );
+    }
+
+    #[test]
+    fn abstains_on_a_non_calendar_reporting_window() {
+        // Synektik's fiscal year starts 1 October: `31.03.2026` is its H1 end, not
+        // Q1. The window is stated, it disagrees with the calendar assumption, so
+        // the derivation must abstain rather than guess (ADR 0061 decision 1).
+        assert_eq!(
+            period_from_title_url(
+                "Sprawozdanie_finansowe_SYNEKTIK_SA_i_Grupy_Kapitalowej_SYNEKTIK_za_okres_01.10.2024-31.03.2025.pdf",
+                ""
+            ),
+            None
+        );
+        // A calendar-year-to-date window is unambiguous and IS derived.
+        assert_eq!(
+            period_from_title_url("Sprawozdanie za okres 01.01.2025-30.06.2025.pdf", ""),
+            Some((2025, "H1", "2025-06-30".to_owned()))
+        );
+    }
+
+    #[test]
+    fn abstains_when_no_period_is_derivable() {
+        // Real bare attachment names: nothing in the title or URL names a period.
+        assert_eq!(period_from_title_url("SSF.pdf", ""), None);
+        assert_eq!(
+            period_from_title_url("Benefit_Systems_SSF_Raport_signed.pdf", ""),
+            None
+        );
+        // Two different calendar period ends in one string: ambiguous, never guessed.
+        assert_eq!(
+            period_from_title_url("Porownanie 30.06.2024 oraz 31.12.2024.pdf", ""),
+            None
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // A1 — comparative balance-sheet header (v0.59 recall regression fix).
+    //
+    // A stored statement's SFP header pairs the current period-end with the prior
+    // one — both calendar boundaries, current listed FIRST (and therefore later):
+    // "31.03.2025 31.12.2024", or annual "31.12.2024 31.12.2023". This explicitly
+    // names the period; the old code abstained (NonCalendarWindow) and lost it on
+    // exactly the card-fc692da documents this milestone recovered.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn comparative_header_resolves_to_current_period() {
+        // Quarter vs prior year-end → Q1 of the current (first, later) date.
+        assert_eq!(
+            period_sort_key("31.03.2025 31.12.2024", ""),
+            Some((2025, 1))
+        );
+        assert_eq!(
+            period_from_text("SPRAWOZDANIE Z SYTUACJI FINANSOWEJ 31.03.2025 31.12.2024"),
+            Some((2025, "Q1", "2025-03-31".to_owned()))
+        );
+        // Annual comparative → FY of the current (first, later) date.
+        assert_eq!(
+            period_sort_key("31.12.2024 31.12.2023", ""),
+            Some((2024, 4))
+        );
+        assert_eq!(
+            period_from_text("Bilans 31.12.2024 31.12.2023"),
+            Some((2024, "FY", "2024-12-31".to_owned()))
+        );
+    }
+
+    #[test]
+    fn comparative_guards_still_abstain_or_resolve_as_before() {
+        // A NON-boundary first date is still a non-calendar window → abstain.
+        assert_eq!(period_from_text("15.02.2025 31.12.2024"), None);
+        // A calendar-year-to-date range opening 1 January resolves as before.
+        assert_eq!(
+            period_from_text("okres 01.01.2025 31.03.2025"),
+            Some((2025, "Q1", "2025-03-31".to_owned()))
+        );
+        // A non-December fiscal-year window (Synektik) still abstains.
+        assert_eq!(period_from_text("01.10.2024 31.03.2025"), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // C3 — ESPI feed-title carrier: markers win over a publication date.
+    //
+    // Feed titles state their period with an explicit marker and often carry a
+    // "z dnia <date>" PUBLICATION reference — never the reporting period. The
+    // marker must win, and the publication date must be stripped so it cannot be
+    // mistaken for a balance-sheet date on the no-marker fall-through.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn feed_title_marker_wins_over_publication_date() {
+        // Marker present + publication date on a boundary → the marker's period.
+        assert_eq!(
+            period_from_feed_title("Raport okresowy za I kwartał 2025 z dnia 30.06.2025", ""),
+            Some((2025, "Q1", "2025-03-31".to_owned()))
+        );
+        // No marker, only the publication date → stripped, so it abstains rather
+        // than mis-keying to that date's calendar period.
+        assert_eq!(
+            period_from_feed_title("Skonsolidowany raport z dnia 30.06.2025", ""),
+            None
+        );
+        // A bare boundary date with NO marker and NO publication idiom is still the
+        // period — feed-title mode must not regress the lone-date resolution.
+        assert_eq!(
+            period_from_feed_title("SSF_PZU_SA_Raport_30.06.2025.pdf", ""),
+            Some((2025, "H1", "2025-06-30".to_owned()))
+        );
     }
 }
 

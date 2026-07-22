@@ -99,13 +99,6 @@ fn seeds_default_settings_and_source_adapters() {
             |row| row.get(0),
         )
         .expect("locale setting should be seeded");
-    let general_analysis_model: String = connection
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'general_analysis_model'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("general analysis model setting should be seeded");
     let developer_mode: String = connection
         .query_row(
             "SELECT value FROM settings WHERE key = 'developer_mode'",
@@ -180,7 +173,6 @@ fn seeds_default_settings_and_source_adapters() {
 
     assert_eq!(theme, "dark");
     assert_eq!(locale, "en");
-    assert_eq!(general_analysis_model, "gemini-3.5-flash");
     assert_eq!(developer_mode, "false");
     assert_eq!(log_level, "info");
     // v0.55 T3 (ADR 0069 D2): migration 0081 re-enabled gpw-espi-ebi as the
@@ -218,6 +210,9 @@ fn reports_database_status() {
         status.source_adapters,
         crate::source_adapters::registry::REGISTRY.len() as i64
     );
-    // +4 queue worker/concurrency settings seeded by migration 0056 (ADR 0059).
-    assert_eq!(status.settings, 26);
+    // Seeded settings after the ADR 0084 clean cut: migration 0102 deletes the
+    // seven retired AI rows (analysis mode, ai_workers, ai_provider_concurrency,
+    // capability_providers, general_analysis_*, espi_ai_fallback_enabled,
+    // history_sweep_ai_call_limit) plus the general-analysis model/timeout rows.
+    assert_eq!(status.settings, 19);
 }

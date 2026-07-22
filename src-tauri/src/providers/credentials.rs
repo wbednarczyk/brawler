@@ -9,21 +9,11 @@ const GEMINI_TARGET: &str = "brawler/provider_gemini/api_key";
 const GEMINI_ACCOUNT: &str = "provider_gemini:api_key";
 const GEMINI_ENV_VAR: &str = "GEMINI_API_KEY";
 
-const ANTHROPIC_TARGET: &str = "brawler/provider_anthropic/api_key";
-const ANTHROPIC_ACCOUNT: &str = "provider_anthropic:api_key";
-const ANTHROPIC_ENV_VAR: &str = "ANTHROPIC_API_KEY";
-
-const OPENAI_TARGET: &str = "brawler/provider_openai/api_key";
-const OPENAI_ACCOUNT: &str = "provider_openai:api_key";
-const OPENAI_ENV_VAR: &str = "OPENAI_API_KEY";
-
-const OPENAI_COMPATIBLE_TARGET: &str = "brawler/provider_openai_compatible/api_key";
-const OPENAI_COMPATIBLE_ACCOUNT: &str = "provider_openai_compatible:api_key";
-const OPENAI_COMPATIBLE_ENV_VAR: &str = "OPENAI_COMPATIBLE_API_KEY";
-
-const MISTRAL_TARGET: &str = "brawler/provider_mistral/api_key";
-const MISTRAL_ACCOUNT: &str = "provider_mistral:api_key";
-const MISTRAL_ENV_VAR: &str = "MISTRAL_API_KEY";
+// The Claude / OpenAI / OpenAI-compatible / Mistral credentials are removed
+// with the in-app AI analysis layer (ADR 0084 decision 7): every adapter that
+// used them is gone, so Gemini — which powers **transcription only** — is the
+// last provider key the app asks for. Existing OS-keychain entries for the
+// retired providers are deliberately NOT deleted (outside app scope, harmless).
 
 // The MCP server bearer token (ADR 0078 decision 4) generalizes the credential
 // boundary beyond AI providers: same keychain service, same descriptor flow,
@@ -44,10 +34,6 @@ const MCP_AUTH_TOKEN_ENV_VAR: &str = "BRAWLER_MCP_TOKEN";
 pub(crate) fn scrub_provider_env_fallbacks() {
     for var in [
         GEMINI_ENV_VAR,
-        ANTHROPIC_ENV_VAR,
-        OPENAI_ENV_VAR,
-        OPENAI_COMPATIBLE_ENV_VAR,
-        MISTRAL_ENV_VAR,
         // Not a provider key, but the same dev-fallback class: an exported
         // MCP token would flip missing-token assertions (ADR 0078 M1).
         MCP_AUTH_TOKEN_ENV_VAR,
@@ -102,13 +88,7 @@ pub struct CredentialStatus {
 
 /// The provider ids that authenticate with a single OS-keychain API key.
 pub fn credentialed_provider_ids() -> &'static [&'static str] {
-    &[
-        "provider_gemini",
-        "provider_anthropic",
-        "provider_openai",
-        "provider_openai_compatible",
-        "provider_mistral",
-    ]
+    &["provider_gemini"]
 }
 
 /// Every provider id `provider_credential_descriptor` resolves — the canonical
@@ -118,13 +98,7 @@ pub fn credentialed_provider_ids() -> &'static [&'static str] {
 /// adding the id here: a test pins this list to the shared fixture
 /// `src/test/scenarios/credentialProviders.json`, and the frontend test checks
 /// every fixture id has a Settings form entry.
-pub const CREDENTIAL_PROVIDER_IDS: &[&str] = &[
-    "provider_gemini",
-    "provider_anthropic",
-    "provider_openai",
-    "provider_openai_compatible",
-    "provider_mistral",
-];
+pub const CREDENTIAL_PROVIDER_IDS: &[&str] = &["provider_gemini"];
 
 /// Resolve the credential descriptor for a provider id, if it uses a credential.
 pub fn provider_credential_descriptor(provider_id: &str) -> Option<CredentialDescriptor> {
@@ -132,42 +106,11 @@ pub fn provider_credential_descriptor(provider_id: &str) -> Option<CredentialDes
         "provider_gemini" => Some(CredentialDescriptor {
             provider_id: "provider_gemini",
             secret_kind: "api_key",
+            // Transcription only, since ADR 0084 — the analysis adapters are gone.
             label: "Gemini API key",
             target: GEMINI_TARGET,
             account: GEMINI_ACCOUNT,
             development_env_var: Some(GEMINI_ENV_VAR),
-        }),
-        "provider_anthropic" => Some(CredentialDescriptor {
-            provider_id: "provider_anthropic",
-            secret_kind: "api_key",
-            label: "Anthropic (Claude) API key",
-            target: ANTHROPIC_TARGET,
-            account: ANTHROPIC_ACCOUNT,
-            development_env_var: Some(ANTHROPIC_ENV_VAR),
-        }),
-        "provider_openai" => Some(CredentialDescriptor {
-            provider_id: "provider_openai",
-            secret_kind: "api_key",
-            label: "OpenAI API key",
-            target: OPENAI_TARGET,
-            account: OPENAI_ACCOUNT,
-            development_env_var: Some(OPENAI_ENV_VAR),
-        }),
-        "provider_openai_compatible" => Some(CredentialDescriptor {
-            provider_id: "provider_openai_compatible",
-            secret_kind: "api_key",
-            label: "OpenAI-compatible API key",
-            target: OPENAI_COMPATIBLE_TARGET,
-            account: OPENAI_COMPATIBLE_ACCOUNT,
-            development_env_var: Some(OPENAI_COMPATIBLE_ENV_VAR),
-        }),
-        "provider_mistral" => Some(CredentialDescriptor {
-            provider_id: "provider_mistral",
-            secret_kind: "api_key",
-            label: "Mistral API key",
-            target: MISTRAL_TARGET,
-            account: MISTRAL_ACCOUNT,
-            development_env_var: Some(MISTRAL_ENV_VAR),
         }),
         _ => None,
     }
@@ -522,7 +465,7 @@ mod tests {
 
     #[test]
     fn verified_save_status_reports_os_keychain_when_read_back_succeeds() {
-        let descriptor = provider_credential_descriptor("provider_anthropic").expect("exists");
+        let descriptor = provider_credential_descriptor("provider_gemini").expect("exists");
         let status = verified_save_status(&descriptor, Some("test-secret".to_owned()))
             .expect("read-back secret should verify persistence");
 

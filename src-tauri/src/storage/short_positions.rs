@@ -341,7 +341,8 @@ fn upsert_position(
             id, company_id, holder_name, isin, net_position_pct, position_date, modify_date, exited_at
         )
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)
-        ON CONFLICT(company_id, holder_name) DO UPDATE SET
+        ON CONFLICT(id) DO UPDATE SET
+            holder_name = excluded.holder_name,
             isin = excluded.isin,
             net_position_pct = excluded.net_position_pct,
             position_date = excluded.position_date,

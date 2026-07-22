@@ -1,4 +1,3 @@
-use super::common::*;
 use super::*;
 
 #[test]
@@ -76,73 +75,6 @@ fn derives_and_completes_research_reminders_from_claims_events_and_questions() {
 
     assert_eq!(completed.status, "completed");
     assert!(completed.completed_at.is_some());
-}
-
-#[test]
-fn creates_and_collects_event_aware_digest_with_reminders() {
-    let connection = open_in_memory_database().expect("database should initialize");
-    let state = AppState::new(connection);
-    let company = tracked_company(&state);
-    state
-        .ingest_gpw_report_listings(&[sample_cdr_listing()])
-        .expect("listing should ingest");
-    state
-        .create_research_reminder(NewResearchReminder {
-            scope_type: "company".to_owned(),
-            scope_id: company.id.clone(),
-            company_id: Some(company.id.clone()),
-            reminder_kind: "manual_research".to_owned(),
-            source_type: None,
-            source_id: None,
-            title: "Check new evidence".to_owned(),
-            body: Some("Review the report before closing the week.".to_owned()),
-            due_at: Some("2026-06-10T08:00:00Z".to_owned()),
-        })
-        .expect("manual reminder should create");
-
-    let job = state
-        .create_research_digest_job(NewResearchDigestJob {
-            scope_type: "company".to_owned(),
-            scope_id: company.id,
-            provider_id: "test_sample".to_owned(),
-            model: "test-sample-analysis-v1".to_owned(),
-        })
-        .expect("digest job should create");
-    let context = state
-        .collect_research_digest_evidence(&job.id)
-        .expect("digest evidence should collect");
-
-    assert!(context
-        .evidence_items
-        .iter()
-        .any(|item| item.evidence_type == "reminder"));
-
-    let reminder_evidence = context
-        .evidence_items
-        .iter()
-        .find(|item| item.evidence_type == "reminder")
-        .expect("reminder evidence should exist");
-    let completed = state
-        .complete_research_digest_job(CompletedResearchDigest {
-            job_id: job.id,
-            title: "Research digest".to_owned(),
-            summary: "Digest summary.".to_owned(),
-            content_markdown: "## Review\n\nCheck reminder. [E1]".to_owned(),
-            language: Some("en".to_owned()),
-            citations: vec![NewResearchBriefCitation {
-                citation_key: "E1".to_owned(),
-                evidence_type: "reminder".to_owned(),
-                evidence_id: reminder_evidence.source_id.clone(),
-                label: reminder_evidence.title.clone(),
-                snippet: reminder_evidence.summary.clone(),
-            }],
-        })
-        .expect("digest should complete");
-
-    let digest = completed.digest.expect("digest should be returned");
-    assert_eq!(completed.status, "succeeded");
-    assert_eq!(digest.prompt_version, RESEARCH_DIGEST_PROMPT_VERSION);
-    assert_eq!(digest.citations.len(), 1);
 }
 
 fn tracked_company(state: &AppState) -> Company {

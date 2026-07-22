@@ -717,6 +717,11 @@ pub(super) fn ingest_bankier_company_items(
     // Load tracked issuers once so the per-attachment mis-association guard
     // (T-A3) does not re-query per item.
     let issuers = load_tracked_issuers(&transaction)?;
+    // Komunikaty whose body is still in hand, paired with the feed item they
+    // landed as — handed to the ingest-time ESPI cover-note tier after the
+    // commit (ADR 0061 tier 2a: the carrier body is prunable, so it is parsed
+    // now or never).
+    let mut cover_note_carriers: Vec<espi_cover_note_facts::CoverNoteCarrier<'_>> = Vec::new();
 
     for item in items {
         let existing_feed_item_id =
@@ -742,6 +747,10 @@ pub(super) fn ingest_bankier_company_items(
                 ],
             )?;
             register_bankier_company_attachments(&transaction, item, &feed_item_id, &issuers)?;
+            cover_note_carriers.push(espi_cover_note_facts::CoverNoteCarrier {
+                feed_item_id: feed_item_id.clone(),
+                item,
+            });
         } else {
             let feed_item_id = existing_feed_item_id
                 .clone()
@@ -771,6 +780,10 @@ pub(super) fn ingest_bankier_company_items(
                     params![feed_item_id, item.company_id, "bankier_tag_id"],
                 )?;
                 register_bankier_company_attachments(&transaction, item, &feed_item_id, &issuers)?;
+                cover_note_carriers.push(espi_cover_note_facts::CoverNoteCarrier {
+                    feed_item_id: feed_item_id.clone(),
+                    item,
+                });
             }
         }
     }
@@ -842,6 +855,36 @@ pub(super) fn ingest_bankier_company_items(
     // failure here never rolls back ingestion or fails the refresh.
     if let Err(error) = insider::parse_insider_transactions(connection) {
         log::warn!("module=insider stage=cover_note_parse error={error}");
+    }
+
+    // ESPI cover-note "WYBRANE DANE FINANSOWE" → deterministic fundamentals
+    // facts (ADR 0061 decision 1, tier 2a). Runs HERE, at ingest time, with the
+    // just-committed komunikat bodies still in hand: feed retention can delete
+    // the carrier text (a measured prune removed 448/451 WDF bodies), so a body
+    // not parsed now is a body lost — a later lazy read is not a viable route.
+    // Post-commit and best-effort, like every other enhancer above: feed
+    // ingestion is the stronger guarantee and is never rolled back or failed by
+    // an extraction problem.
+    match espi_cover_note_facts::extract_cover_note_facts(connection, &cover_note_carriers) {
+        Ok(summary) if summary.attempted > 0 => log::info!(
+            "module=espi_cover_note stage=ingest_sweep attempted={} created={} upgraded={} \
+             deferred={} abstained={} no_period={} empty={} flagged={} errors={} \
+             witness_agreed={} witness_disagreed={} witness_pending={}",
+            summary.attempted,
+            summary.created,
+            summary.upgraded,
+            summary.deferred,
+            summary.abstained,
+            summary.no_period,
+            summary.empty,
+            summary.flagged,
+            summary.errors,
+            summary.witness_agreed,
+            summary.witness_disagreed,
+            summary.witness_pending,
+        ),
+        Ok(_) => {}
+        Err(error) => log::warn!("module=espi_cover_note stage=ingest_sweep error={error}"),
     }
 
     Ok(SourceIngestionResult {

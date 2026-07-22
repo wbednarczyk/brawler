@@ -26,7 +26,6 @@ const RAW_CATALOG = [
   { screen: "quality", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "report-documents", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "coverage", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
-  { screen: "review-queue", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "research", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "events", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "report-season", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },

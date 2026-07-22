@@ -358,17 +358,6 @@ export function CompanyReportDocumentsPanel({
           });
           // New facts landed → let the sibling fundamentals panel refetch.
           onExtracted?.();
-        } else if (summary.tier4Proposals > 0) {
-          // Tier-4 bootstrap/pending runs emit PROPOSALS (ADR 0077 §4): the OCR
-          // layout awaits the user's confirmation — that is progress, not
-          // "no new values".
-          toast.show({
-            message: text("OCR proposals to review: {n}").replace(
-              "{n}",
-              String(summary.tier4Proposals),
-            ),
-            tone: "positive",
-          });
         } else if (summary.divergentCount > 0) {
           toast.show({
             message: text(

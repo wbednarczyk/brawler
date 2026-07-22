@@ -109,15 +109,15 @@ How it works:
 - Answers are written in the app's current language.
 - **Re-run assessment** regenerates a verdict whenever you want (e.g. after new
   reports arrive). When [Autopilot](autopilot.md) processes a new report, it
-  re-assesses qualitative criteria automatically, and a **changed verdict** is
-  surfaced in your research digest so shifts don't slip by silently.
+  keeps quantitative checks fresh automatically; qualitative verdicts stay
+  yours to update when your view changes.
 - Asking for an assessment while one is already running is safe — the request
   is parked and runs right after, so nothing is lost and nothing runs twice.
 
-Qualitative assessment needs an AI provider: route the **Qualitative
-assessment** capability to a provider (and optionally a failover pool) in
-Settings → AI — see [AI provider pools](ai-provider-presets.md). Everything
-else on this page stays fully offline.
+Qualitative criteria are **manual verdicts** since v0.59 (the in-app AI
+assessment is retired): you set each verdict yourself with an optional note and
+citation. Agent-assisted verdicts return later through the MCP write path.
+Everything else on this page is fully offline and deterministic.
 
 ## Running an evaluation
 

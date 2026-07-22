@@ -1,6 +1,6 @@
 # ADR 0055: Autonomous Report Pipeline — Trust Ladder, Orchestration, and Run Record
 
-Status: Accepted (2026-06-24)
+Status: Accepted (2026-06-24) — **amended by [ADR 0086](0086-aggregator-primary-fundamentals.md) (2026-07-21): facts are review-free.** No fact ever lands `pending`/`auto_unreviewed` or awaits ratification; every automatic writer stamps `confirmation_state = confirmed` (the column is frozen for compatibility). The trust ladder survives only as **provenance labels** (`source_tier` + `extraction_method` + `validation_status` + citation), never as a confirmation workflow — the confirm-before-commit / assist-vs-autopilot pending distinction below is superseded. Editing (manual now, MCP write-tools later) is an option, not a duty.
 
 Milestone: `v0.49.0` (North Star). Epic: Radicle `9a607da`. Composes and does not change: report-document persistence ([ADR 0036](0036-report-document-storage-and-backfill.md)), AI KPI extraction (`v0.35.0`), report-over-report diff ([ADR 0052](0052-report-over-report-diff.md)), the claims tracker ([ADR 0040](0040-management-claims-tracker.md)), report-season/calendar events ([ADR 0044](0044-report-season-cockpit.md)), and the durable job queue ([ADR 0050](0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md), Decision 5). Surfaced in the Today/Pulse attention home ([ADR 0054](0054-mode-based-thesis-centric-shell.md)). Stays decision-support only ([ADR 0042](0042-advisory-verdict-port-and-open-core-boundary.md)). Roadmap: [roadmap.md](../roadmap.md).
 

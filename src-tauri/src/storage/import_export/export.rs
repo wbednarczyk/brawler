@@ -8,11 +8,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
     let management_claims = export_management_claims(connection)?;
     let research_questions = export_research_questions(connection)?;
     let evidence_links = export_evidence_links(connection)?;
-    let ai_research_briefs = export_ai_research_briefs(connection)?;
-    let ai_research_brief_citations = export_ai_research_brief_citations(connection)?;
     let research_reminders = export_research_reminders(connection)?;
-    let ai_research_digests = export_ai_research_digests(connection)?;
-    let ai_research_digest_citations = export_ai_research_digest_citations(connection)?;
     let quality_frameworks = export_quality_frameworks(connection)?;
     let user_metrics = export_user_metrics(connection)?;
     let ownership_stakes = export_ownership_stakes(connection)?;
@@ -29,9 +25,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
             "management_claims".to_owned(),
             "research_questions".to_owned(),
             "evidence_links".to_owned(),
-            "ai_research_briefs".to_owned(),
             "research_reminders".to_owned(),
-            "ai_research_digests".to_owned(),
             "quality_frameworks".to_owned(),
             "ownership_stakes".to_owned(),
         ],
@@ -42,11 +36,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         management_claims,
         research_questions,
         evidence_links,
-        ai_research_briefs,
-        ai_research_brief_citations,
         research_reminders,
-        ai_research_digests,
-        ai_research_digest_citations,
         quality_frameworks,
         user_metrics,
         ownership_stakes,
@@ -59,11 +49,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         management_claims: document.management_claims.len(),
         research_questions: document.research_questions.len(),
         evidence_links: document.evidence_links.len(),
-        ai_research_briefs: document.ai_research_briefs.len(),
-        ai_research_brief_citations: document.ai_research_brief_citations.len(),
         research_reminders: document.research_reminders.len(),
-        ai_research_digests: document.ai_research_digests.len(),
-        ai_research_digest_citations: document.ai_research_digest_citations.len(),
         quality_frameworks: document.quality_frameworks.len(),
         user_metrics: document.user_metrics.len(),
         ownership_stakes: document.ownership_stakes.len(),
@@ -100,12 +86,6 @@ pub(super) fn export_settings_data(connection: &Connection) -> StorageResult<Exp
             youtube_transcription_timeout_seconds: Some(
                 settings.ai_providers.youtube_transcription_timeout_seconds,
             ),
-            general_analysis_provider: settings.ai_providers.general_analysis_provider,
-            general_analysis_model: Some(settings.ai_providers.general_analysis_model),
-            general_analysis_timeout_seconds: Some(
-                settings.ai_providers.general_analysis_timeout_seconds,
-            ),
-            ai_analysis_mode: Some(settings.ai_analysis_mode),
             log_level: Some(settings.logs.level),
             log_max_files: Some(settings.logs.max_files),
             log_max_file_bytes: Some(settings.logs.max_file_bytes),
@@ -410,93 +390,6 @@ fn export_evidence_links(connection: &Connection) -> StorageResult<Vec<ExportEvi
         .map_err(StorageError::from)
 }
 
-fn export_ai_research_briefs(connection: &Connection) -> StorageResult<Vec<ExportAiResearchBrief>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT
-            ai_research_briefs.id,
-            ai_research_briefs.job_id,
-            ai_research_briefs.scope_type,
-            ai_research_briefs.scope_id,
-            companies.qualified_ticker,
-            ai_research_briefs.provider_id,
-            ai_research_briefs.model,
-            ai_research_briefs.prompt_version,
-            ai_research_briefs.evidence_collector_version,
-            ai_research_briefs.renderer_version,
-            ai_research_briefs.title,
-            ai_research_briefs.summary,
-            ai_research_briefs.content_markdown,
-            ai_research_briefs.language,
-            ai_research_briefs.generated_at,
-            ai_research_briefs.created_at
-        FROM ai_research_briefs
-        LEFT JOIN companies
-            ON ai_research_briefs.scope_type = 'company'
-            AND companies.id = ai_research_briefs.scope_id
-        ORDER BY datetime(ai_research_briefs.generated_at) DESC, ai_research_briefs.id
-        ",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(ExportAiResearchBrief {
-            id: row.get(0)?,
-            job_id: row.get(1)?,
-            scope_type: row.get(2)?,
-            scope_id: row.get(3)?,
-            scope_company_qualified_ticker: row.get(4)?,
-            provider_id: row.get(5)?,
-            model: row.get(6)?,
-            prompt_version: row.get(7)?,
-            evidence_collector_version: row.get(8)?,
-            renderer_version: row.get(9)?,
-            title: row.get(10)?,
-            summary: row.get(11)?,
-            content_markdown: row.get(12)?,
-            language: row.get(13)?,
-            generated_at: row.get(14)?,
-            created_at: row.get(15)?,
-        })
-    })?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(StorageError::from)
-}
-
-fn export_ai_research_brief_citations(
-    connection: &Connection,
-) -> StorageResult<Vec<ExportAiResearchBriefCitation>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT
-            id,
-            brief_id,
-            citation_key,
-            evidence_type,
-            evidence_id,
-            label,
-            snippet,
-            created_at
-        FROM ai_research_brief_citations
-        ORDER BY brief_id, citation_key, id
-        ",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(ExportAiResearchBriefCitation {
-            id: row.get(0)?,
-            brief_id: row.get(1)?,
-            citation_key: row.get(2)?,
-            evidence_type: row.get(3)?,
-            evidence_id: row.get(4)?,
-            label: row.get(5)?,
-            snippet: row.get(6)?,
-            created_at: row.get(7)?,
-        })
-    })?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(StorageError::from)
-}
-
 fn export_research_reminders(
     connection: &Connection,
 ) -> StorageResult<Vec<ExportResearchReminder>> {
@@ -549,95 +442,6 @@ fn export_research_reminders(
             dismissed_at: row.get(14)?,
             created_at: row.get(15)?,
             updated_at: row.get(16)?,
-        })
-    })?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(StorageError::from)
-}
-
-fn export_ai_research_digests(
-    connection: &Connection,
-) -> StorageResult<Vec<ExportAiResearchDigest>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT
-            ai_research_digests.id,
-            ai_research_digests.job_id,
-            ai_research_digests.scope_type,
-            ai_research_digests.scope_id,
-            companies.qualified_ticker,
-            ai_research_digests.provider_id,
-            ai_research_digests.model,
-            ai_research_digests.prompt_version,
-            ai_research_digests.evidence_collector_version,
-            ai_research_digests.renderer_version,
-            ai_research_digests.title,
-            ai_research_digests.summary,
-            ai_research_digests.content_markdown,
-            ai_research_digests.language,
-            ai_research_digests.generated_at,
-            ai_research_digests.created_at
-        FROM ai_research_digests
-        LEFT JOIN companies
-            ON ai_research_digests.scope_type = 'company'
-            AND companies.id = ai_research_digests.scope_id
-        ORDER BY datetime(ai_research_digests.generated_at) DESC, ai_research_digests.id
-        ",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(ExportAiResearchDigest {
-            id: row.get(0)?,
-            job_id: row.get(1)?,
-            scope_type: row.get(2)?,
-            scope_id: row.get(3)?,
-            scope_company_qualified_ticker: row.get(4)?,
-            provider_id: row.get(5)?,
-            model: row.get(6)?,
-            prompt_version: row.get(7)?,
-            evidence_collector_version: row.get(8)?,
-            renderer_version: row.get(9)?,
-            title: row.get(10)?,
-            summary: row.get(11)?,
-            content_markdown: row.get(12)?,
-            language: row.get(13)?,
-            generated_at: row.get(14)?,
-            created_at: row.get(15)?,
-        })
-    })?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(StorageError::from)
-}
-
-fn export_ai_research_digest_citations(
-    connection: &Connection,
-) -> StorageResult<Vec<ExportAiResearchDigestCitation>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT
-            id,
-            digest_id,
-            citation_key,
-            evidence_type,
-            evidence_id,
-            label,
-            snippet,
-            created_at
-        FROM ai_research_digest_citations
-        ORDER BY digest_id, citation_key, id
-        ",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(ExportAiResearchDigestCitation {
-            id: row.get(0)?,
-            digest_id: row.get(1)?,
-            citation_key: row.get(2)?,
-            evidence_type: row.get(3)?,
-            evidence_id: row.get(4)?,
-            label: row.get(5)?,
-            snippet: row.get(6)?,
-            created_at: row.get(7)?,
         })
     })?;
 

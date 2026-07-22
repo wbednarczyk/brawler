@@ -5,7 +5,9 @@
  */
 export type FactProvenance = { factId: string, 
 /**
- * esef | structured_xhtml | pdf | html_aggregator | ai_text
+ * esef | structured_xhtml | espi_cover_note | pdf | html_aggregator
+ * (`ai_text` appears only on rows written before ADR 0084 retired the AI
+ * tier; they stay readable, never rewritten)
  */
 sourceTier: string, 
 /**

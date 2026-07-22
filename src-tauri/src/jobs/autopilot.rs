@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
-use crate::storage::{self, MODE_AUTOPILOT};
+use crate::storage;
 
 /// Durable-queue job kind for one pipeline stage.
 pub const AUTOPILOT_STAGE_KIND: &str = "autopilot_stage";
@@ -165,294 +165,154 @@ fn stage_fetch(state: &AppState, run: &storage::AutopilotRun) -> Result<(), Stri
     Ok(())
 }
 
-/// How many of a structured-extraction result's produced facts need no further
-/// review (`confirmed` or `auto_unreviewed`), given the run's mode. Bug e77a1a2:
-/// the run's `kpi_delta_json` used to carry only `produced` (a raw fact count)
-/// for the structured tier, with no honest "auto-confirmed" figure — the Today
-/// card's summary then read a *different* branch's `autoConfirmed` key (always
-/// absent here) and silently defaulted to 0, showing "0 of 0" for a run that had
-/// just committed dozens of facts. [`Acceptance`] is a single verdict for the
-/// whole batch (`run_structured_extraction` applies one `confirmation_state` to
-/// every fact it emits), so every produced fact shares the same state:
-/// `Accepted`/`AcceptedViaWitness` auto-confirm in **both** modes (the clean gate
-/// already proved them); `AcceptedUnreviewed` follows the mode ladder
-/// (`auto_unreviewed` in autopilot, `pending` in assist — not yet reviewed, so
-/// not counted here). `Flagged`/`Empty` never reach this (nothing was emitted).
+/// How many of a structured-extraction result's produced facts are recorded
+/// (`confirmed`). Facts are review-free (ADR 0086 dec. 5): every emitted fact
+/// lands `confirmed` in **both** modes, so every produced fact is counted. Bug
+/// e77a1a2 context: the run's `kpi_delta_json` used to carry only `produced` (a
+/// raw fact count) with no honest "confirmed" figure — the Today card then read a
+/// *different* branch's key (always absent here) and silently showed "0 of 0" for
+/// a run that had just committed dozens of facts; this figure keeps the count
+/// honest. `acceptance`/`mode` no longer change the answer (every emit confirms)
+/// but stay in the signature so callers pass them uniformly. `Flagged`/`Empty`
+/// never reach this (nothing was emitted).
 fn structured_facts_auto_confirmed(
-    acceptance: crate::fundamentals::extraction::pipeline::Acceptance,
+    _acceptance: crate::fundamentals::extraction::pipeline::Acceptance,
     produced: usize,
-    mode: &str,
+    _mode: &str,
 ) -> usize {
-    use crate::fundamentals::extraction::pipeline::Acceptance;
-    match acceptance {
-        Acceptance::Accepted | Acceptance::AcceptedViaWitness => produced,
-        Acceptance::AcceptedUnreviewed if mode == MODE_AUTOPILOT => produced,
-        _ => 0,
-    }
+    produced
 }
 
-/// Merges a "structure changed" flag carried over from a structured-extraction
-/// attempt into whichever branch's `kpi_delta` ends up composed (structured
-/// itself, or the AI fallback it fell through to) — so a drift/contradiction
-/// is never silently dropped just because AI ultimately produced the facts.
-/// A no-op when nothing changed (the common case).
-fn merge_structure_flag(
-    delta: &mut serde_json::Value,
-    structure_changed: bool,
-    drift_json: Option<&str>,
-) {
-    if !structure_changed {
-        return;
-    }
-    if let Some(obj) = delta.as_object_mut() {
-        obj.insert("structureChanged".to_owned(), serde_json::Value::Bool(true));
-        if let Some(drift) = drift_json {
-            obj.insert(
-                "driftJson".to_owned(),
-                serde_json::Value::String(drift.to_owned()),
-            );
-        }
-    }
-}
-
-/// Stage 2 — extract KPIs from the report. Reuses the AI KPI-extraction job. In
-/// `autopilot` mode, auto-confirms each proposal as an `auto_unreviewed` fact
-/// (cited, flagged, reversible); in `assist` mode the proposals stay `pending`
-/// for the user to confirm. Degrades gracefully when no real AI provider is
-/// configured — and, in `autopilot` mode, also when the configured provider is
-/// the **test-sample** provider (its placeholder KPIs must never be auto-committed
-/// as facts) — recording that extraction was unavailable and continuing to diff
-/// (AI cost stays bounded: at most one extraction per detected report).
+/// Stage 2 — extract the report's KPIs through the **deterministic** pipeline
+/// (ADR 0061 dec. 3/8/9). The tier-4 OCR fallback is retired with the in-app AI
+/// layer (ADR 0084 decision 4), so this stage has no AI branch at all: either a
+/// deterministic tier emits validated facts, or the run records an honest
+/// `extractionAvailable:false` delta carrying a typed
+/// [`KpiUnavailableReason`] — flagged for the user via the run's notification,
+/// never guessed and never silently absent.
 fn stage_extract(state: &AppState, run: &storage::AutopilotRun) -> Result<(), String> {
-    use crate::jobs::structured_extraction::{StructuredExtractionResult, Tier4Gate};
-
-    // Structured-first (ADR 0061 dec. 3/8/9), then the tier-4 OCR fallback inside
-    // `run_structured_extraction` (ADR 0077 §4). Caller gate: detection/manual
-    // triggers permit tier-4; a history-sweep run is denied until F3b (also
-    // enforced by the explicit early-return below, for defense in depth).
-    let gate = if run.trigger == TRIGGER_HISTORY_SWEEP {
-        Tier4Gate::DeniedSweep
-    } else {
-        Tier4Gate::Allowed
-    };
-
-    let mut carried_structure_changed = false;
-    let mut carried_drift_json: Option<String> = None;
-    // The non-emitting structured result (with any tier-4 outcome folded in),
-    // held for the delta composition below.
-    let mut non_emitting: Option<StructuredExtractionResult> = None;
-
-    match try_structured_extraction(state, run, gate) {
+    let no_tier = KpiUnavailableReason::NoDeterministicTier.as_str();
+    let reason = match try_structured_extraction(state, run) {
         Ok(Some(result)) if result.emitted => {
-            // Facts emitted — by a structured tier, or by the tier-4 OCR fallback
-            // (whose verdict is folded into `result` as the `ai_text` tier).
             if !result.produced_fact_ids.is_empty() {
                 state
                     .autopilot()
                     .add_produced_facts(&run.id, &result.produced_fact_ids)
                     .map_err(|e| e.to_string())?;
             }
-            let mut delta = emitted_extract_delta(&result, &run.mode);
-            merge_structure_flag(
-                &mut delta,
-                result.structure_changed,
-                result.drift_json.as_deref(),
-            );
+            let delta = emitted_extract_delta(&result, &run.mode);
             let _ = state
                 .autopilot()
                 .set_kpi_delta_json(&run.id, &delta.to_string());
             return Ok(());
         }
-        // Determinism did not emit (flagged/empty). The tier-4 fallback (if the
-        // gate allowed it) already ran inside `run_structured_extraction`; hold
-        // the result for the delta below. Carry the structure-changed signal.
-        Ok(Some(result)) => {
-            carried_structure_changed = result.structure_changed;
-            carried_drift_json = result.drift_json.clone();
-            non_emitting = Some(result);
-        }
-        // Not eligible for structured extraction (no derivable period, unparsable).
-        Ok(None) => {}
-        Err(error) => log::info!(
-            "autopilot run {}: structured extraction skipped: {error}",
-            run.id
-        ),
-    }
-
-    // F3b (ADR 0077 §3 amendment (b) lifted, §6 budget governs): a sweep run may
-    // now use tier-4 — but only under the per-sweep AI budget snapshotted on its
-    // sweep row. Reached ONLY when the deterministic pipeline did not emit; a
-    // deterministic Accepted returned at the emit branch above, so it never spends
-    // budget (decision 4). Never a silent skip.
-    if run.trigger == TRIGGER_HISTORY_SWEEP {
-        // Not structured-eligible (no derivable period) → the PDF+period-only
-        // tier-4 cannot run either. Record the gap; spend no budget.
-        if non_emitting.is_none() {
-            let mut delta =
-                serde_json::json!({ "extractionAvailable": false, "reason": "not_extractable" });
-            merge_structure_flag(
-                &mut delta,
-                carried_structure_changed,
-                carried_drift_json.as_deref(),
+        // A deterministic tier ran but produced no ISSUER emit — an honest gap.
+        // A raw-PDF document is the EXPECTED gap (machine fact-reading retired,
+        // ADR 0086 dec. 1: core KPIs arrive from the BR-primary pull), reported
+        // with its own reason so the Today card never frames it as a failure.
+        // (The aggregator-fallback reason is retired with ADR 0086; stored
+        // `witness_fallback` deltas stay readable as legacy.)
+        Ok(Some(_result)) => gap_reason(state, run, no_tier),
+        // Not eligible for the deterministic path (no derivable period, unparsable).
+        Ok(None) => gap_reason(state, run, no_tier),
+        Err(error) => {
+            log::info!(
+                "autopilot run {}: structured extraction skipped: {error}",
+                run.id
             );
-            let _ = state
-                .autopilot()
-                .set_kpi_delta_json(&run.id, &delta.to_string());
-            return Ok(());
+            no_tier
         }
-
-        // No VisionExtraction pool member → tier-4 has nothing to invoke. Degrade
-        // BEFORE consuming: a budget unit buys a provider invocation, not a
-        // configuration check — charging here would burn the whole sweep budget
-        // on nothing and mislabel later periods `skipped_budget`. (The same check
-        // inside `run_tier4_extraction` stays as defense in depth; a settings
-        // change racing this pre-check at worst misdirects one run's reason.)
-        if !has_vision_provider(state) {
-            let mut delta = serde_json::json!({
-                "extractionAvailable": false,
-                "reason": "no_vision_provider",
-            });
-            merge_structure_flag(
-                &mut delta,
-                carried_structure_changed,
-                carried_drift_json.as_deref(),
-            );
-            let _ = state
-                .autopilot()
-                .set_kpi_delta_json(&run.id, &delta.to_string());
-            return Ok(());
-        }
-
-        // Statically tier-4-ineligible document → degrade BEFORE consuming (G-4
-        // class, ADR 0077 §6). A budget unit buys a provider invocation; tier-4
-        // can only degrade on a statically-decidable document — no stored file, or
-        // the ESEF/iXBRL route (tier-4 is PDF-only). Replicates
-        // `run_tier4_extraction`'s early degrades (`no_stored_file` / `not_pdf`)
-        // BEFORE the budget consume, mirroring the no-vision-provider pre-check
-        // above; charging here would burn the whole sweep budget on a document no
-        // invocation could read and mislabel later periods `skipped_budget`. (The
-        // same checks inside `run_tier4_extraction` stay as defense in depth.)
-        let document = state
-            .get_report_document(&run.report_document_id)
-            .map_err(|e| e.to_string())?;
-        let static_ineligible_reason = match document.local_path.as_deref() {
-            None => Some("no_stored_file"),
-            Some(local_path)
-                if crate::jobs::structured_extraction::is_esef_route(
-                    document.content_type.as_deref(),
-                    local_path,
-                ) =>
-            {
-                Some("not_pdf")
-            }
-            Some(_) => None,
-        };
-        if let Some(reason) = static_ineligible_reason {
-            let mut delta = serde_json::json!({
-                "extractionAvailable": false,
-                "reason": reason,
-            });
-            merge_structure_flag(
-                &mut delta,
-                carried_structure_changed,
-                carried_drift_json.as_deref(),
-            );
-            let _ = state
-                .autopilot()
-                .set_kpi_delta_json(&run.id, &delta.to_string());
-            return Ok(());
-        }
-
-        // Budget gate (decision 3): a legacy run with no sweep_id, or an exhausted
-        // budget, skips honestly — never a silent drop. One granted unit lets this
-        // run enter tier-4.
-        let granted = match run.sweep_id.as_deref() {
-            Some(sweep_id) => state
-                .history_sweeps()
-                .try_consume_sweep_ai_budget(sweep_id)
-                .unwrap_or(false),
-            None => false,
-        };
-        if !granted {
-            let mut delta =
-                serde_json::json!({ "extractionAvailable": false, "reason": "skipped_budget" });
-            merge_structure_flag(
-                &mut delta,
-                carried_structure_changed,
-                carried_drift_json.as_deref(),
-            );
-            let _ = state
-                .autopilot()
-                .set_kpi_delta_json(&run.id, &delta.to_string());
-            return Ok(());
-        }
-
-        // Budget granted → enter tier-4 exactly like a detection run
-        // (Tier4Gate::Allowed). The deterministic-only first pass emitted nothing,
-        // so re-running it is side-effect-free apart from the tier-4 fallback we
-        // now want. A transient provider failure propagates as Err so the queue's
-        // capped backoff retries (a retry re-charges a unit — one budget unit is
-        // one tier-4 invocation, ADR 0077 §6).
-        let rerun = try_structured_extraction(state, run, Tier4Gate::Allowed)?;
-        let mut delta = match &rerun {
-            Some(result) if result.emitted => {
-                if !result.produced_fact_ids.is_empty() {
-                    state
-                        .autopilot()
-                        .add_produced_facts(&run.id, &result.produced_fact_ids)
-                        .map_err(|e| e.to_string())?;
-                }
-                emitted_extract_delta(result, &run.mode)
-            }
-            Some(result) => tier4_extract_delta(result, &run.mode),
-            // Deterministic eligibility cannot vanish between two passes over the
-            // same document, but stay total.
-            None => {
-                serde_json::json!({ "extractionAvailable": false, "reason": "not_extractable" })
-            }
-        };
-        // The fresh pass carries the same drift as the first; merge it so a
-        // structure change is never dropped.
-        let (structure_changed, drift_json) = match &rerun {
-            Some(result) => (result.structure_changed, result.drift_json.clone()),
-            None => (carried_structure_changed, carried_drift_json.clone()),
-        };
-        merge_structure_flag(&mut delta, structure_changed, drift_json.as_deref());
-        let _ = state
-            .autopilot()
-            .set_kpi_delta_json(&run.id, &delta.to_string());
-        return Ok(());
-    }
-
-    // Detection/manual, determinism did not emit: record the tier-4 OCR fallback's
-    // honest outcome (proposals landed for confirmation, or a benign degradation).
-    // The old text-AI number-reading path is retired (ADR 0077 §4: the LLM must
-    // never read numbers) — tier-4 is now the single AI fallback, and it lives in
-    // `run_structured_extraction`.
-    let mut delta = match &non_emitting {
-        Some(result) => tier4_extract_delta(result, &run.mode),
-        // Not eligible for the deterministic path (no derivable period / unparsable):
-        // tier-4 is PDF+period-only, so nothing can extract this document.
-        None => serde_json::json!({ "extractionAvailable": false, "reason": "not_extractable" }),
     };
-    merge_structure_flag(
-        &mut delta,
-        carried_structure_changed,
-        carried_drift_json.as_deref(),
-    );
+
+    // No issuer tier could read this document. Record the gap with its typed
+    // reason so the notification says what actually happened — and, for a witness
+    // fallback, so the re-arm logic keeps the period retryable.
+    // Stamp the pipeline version that produced this couldn't-extract verdict so
+    // the re-arm gate (`terminal_run_should_rearm`) retries the period exactly
+    // once per capability upgrade, not on every sweep pass. No schema migration:
+    // `pipelineVersion` is a JSON field, tolerantly read (missing = version 0).
+    let delta = serde_json::json!({
+        "extractionAvailable": false,
+        "reason": reason,
+        "pipelineVersion": crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION,
+    });
     let _ = state
         .autopilot()
         .set_kpi_delta_json(&run.id, &delta.to_string());
     Ok(())
 }
 
+/// Why a run could not produce KPI facts, as a **typed code** rather than an
+/// English sentence (ADR 0084 decision 6).
+///
+/// `compose_summary` used to hardcode "KPI extraction unavailable (no AI
+/// provider configured)" for every cause, which misdiagnosed a real quota
+/// exhaustion as a missing configuration during owner dogfooding (2026-07-19).
+/// The backend now emits the code and the frontend renders it through the
+/// translation layer, so distinct causes can never collapse into one wrong
+/// sentence again.
+///
+/// After the AI retirement the only cause this app can still produce is
+/// [`Self::NoDeterministicTier`]; the provider-shaped variants remain so that
+/// **stored** AI-era deltas (which are user data and stay readable, ADR 0084
+/// decision 5) keep reporting their original, distinguishable cause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KpiUnavailableReason {
+    /// A third-party quota/rate limit was exhausted (historical runs only).
+    QuotaExhausted,
+    /// No provider was configured for the capability (historical runs only).
+    ProviderNotConfigured,
+    /// The provider was reached but failed (historical runs only).
+    ProviderError,
+    /// No deterministic tier could parse the document — a live cause.
+    NoDeterministicTier,
+    /// The aggregator witness sourced this period's figures because no issuer
+    /// tier could read the filing — a live cause, distinct from a plain
+    /// no-tier gap so the notification names the real reason (ADR 0085 / C1).
+    WitnessFallback,
+    /// The document is a raw PDF — machine fact-reading is retired by design
+    /// (ADR 0086 dec. 1), so the gap is EXPECTED: core KPIs arrive from the
+    /// BiznesRadar-primary daily pull. Distinct from `NoDeterministicTier`
+    /// so the Today card never frames a by-design gap as a per-report failure
+    /// (review 2026-07-22).
+    PdfDocument,
+}
+
+impl KpiUnavailableReason {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::QuotaExhausted => "quota_exhausted",
+            Self::ProviderNotConfigured => "provider_not_configured",
+            Self::ProviderError => "provider_error",
+            Self::NoDeterministicTier => "no_deterministic_tier",
+            Self::WitnessFallback => "witness_fallback",
+            Self::PdfDocument => "pdf_document",
+        }
+    }
+
+    /// Map a `reason` string stored in a run's `kpi_delta_json` onto a typed
+    /// code. Covers the AI-era vocabulary so historical runs keep an honest,
+    /// distinguishable diagnosis instead of being re-labelled after the fact.
+    pub(crate) fn from_delta_reason(reason: &str) -> Self {
+        match reason {
+            "quota_exhausted" => Self::QuotaExhausted,
+            "provider_not_configured" | "no_vision_provider" => Self::ProviderNotConfigured,
+            // The aggregator sourced this period; distinct from a plain no-tier gap
+            // so the run reports its real cause and re-arm stays honest (C1).
+            "witness_fallback" => Self::WitnessFallback,
+            "pdf_document" => Self::PdfDocument,
+            // AI-era codes were stored as `provider_error:<code>`.
+            other if other.starts_with("provider_error") => Self::ProviderError,
+            _ => Self::NoDeterministicTier,
+        }
+    }
+}
+
 /// Compose the `extractionAvailable:true` `kpi_delta_json` for an emitting run —
-/// facts produced by a structured tier or by the tier-4 OCR fallback (whose
-/// verdict is folded into `result` as the `ai_text` tier). Shared by the
-/// detection/manual emit path and the sweep's budget-granted tier-4 re-run so the
-/// two compose one honest shape. The caller records produced facts + merges any
-/// structure-changed flag; this only builds the counts (bug e77a1a2: normalized
-/// so both tiers report `factsProposed`/`factsAutoConfirmed` identically).
+/// facts produced by a deterministic tier. The caller records produced facts +
+/// merges any structure-changed flag; this only builds the counts (bug e77a1a2:
+/// normalized so every tier reports `factsProposed`/`factsAutoConfirmed`
+/// identically).
 fn emitted_extract_delta(
     result: &crate::jobs::structured_extraction::StructuredExtractionResult,
     mode: &str,
@@ -461,11 +321,9 @@ fn emitted_extract_delta(
     let auto_confirmed = structured_facts_auto_confirmed(result.acceptance, produced, mode);
     serde_json::json!({
         "extractionAvailable": true,
-        // `structured` distinguishes a deterministic tier from the tier-4 OCR
-        // fallback for the Today card / diagnostics.
-        "structured": result.tier4.is_none(),
+        // Every emitting tier is deterministic now (ADR 0084 decision 4).
+        "structured": true,
         "tier": result.tier.map(|t| t.as_str()),
-        "tier4": result.tier4,
         "produced": produced,
         "factsProposed": produced,
         "factsAutoConfirmed": auto_confirmed,
@@ -473,39 +331,11 @@ fn emitted_extract_delta(
     })
 }
 
-/// Compose the `kpi_delta_json` for a non-emitting detection/manual run from the
-/// tier-4 fallback's outcome (ADR 0077 §4): proposals landed for confirmation
-/// report `extractionAvailable:true` with the proposal count; a benign
-/// degradation (`no_vision_provider`, `not_pdf`, a terminal provider error)
-/// reports `extractionAvailable:false` with the honest reason.
-fn tier4_extract_delta(
-    result: &crate::jobs::structured_extraction::StructuredExtractionResult,
-    mode: &str,
-) -> serde_json::Value {
-    match result.tier4.as_deref() {
-        Some("bootstrap_proposals") | Some("proposals_flagged") => serde_json::json!({
-            "extractionAvailable": true,
-            "tier4": result.tier4,
-            "factsProposed": result.tier4_proposals,
-            "factsAutoConfirmed": 0,
-            "mode": mode,
-        }),
-        Some(reason) => serde_json::json!({
-            "extractionAvailable": false,
-            "reason": reason,
-            "tier4": result.tier4,
-        }),
-        // The gate denied tier-4 (should not happen on the detection/manual path)
-        // or nothing ran: an honest, benign no-op.
-        None => serde_json::json!({ "extractionAvailable": false, "reason": "no_extraction" }),
-    }
-}
-
 /// Attempts structured-first extraction for a document eligible for it (ADR
 /// 0061 dec. 3/8/9): a tagged ESEF/iXBRL `.xhtml` filing, or a PDF whose
 /// reporting period can be derived from its title/URL. Returns `Ok(None)` when
 /// the document is not eligible (unparsable ESEF, or a PDF whose period can't
-/// be classified), so the caller falls back to the AI path. Runs in **both**
+/// be classified) — an honest gap the caller flags. Runs in **both**
 /// trust-ladder modes — [`crate::jobs::structured_extraction::
 /// run_structured_extraction`] derives the per-fact confirmation state from
 /// `run.mode` and the pipeline's acceptance. The period derivation (ESEF vs
@@ -514,14 +344,13 @@ fn tier4_extract_delta(
 fn try_structured_extraction(
     state: &AppState,
     run: &storage::AutopilotRun,
-    tier4: crate::jobs::structured_extraction::Tier4Gate,
 ) -> Result<Option<crate::jobs::structured_extraction::StructuredExtractionResult>, String> {
     let document = state
         .get_report_document(&run.report_document_id)
         .map_err(|e| e.to_string())?;
     // Period derivation is shared with the on-demand "Extract data" command so
     // the two paths never drift (`derive_report_period`). `None` → not eligible
-    // for the deterministic path (nor the PDF-only tier-4 fallback).
+    // for the deterministic path.
     let Some((fiscal_year, period_type, period_end)) =
         crate::jobs::structured_extraction::derive_report_period(state, &document)
     else {
@@ -536,7 +365,6 @@ fn try_structured_extraction(
         period_type,
         &period_end,
         &run.mode,
-        tier4,
     )?;
     Ok(Some(result))
 }
@@ -608,44 +436,7 @@ fn stage_cross_reference(state: &AppState, run: &storage::AutopilotRun) -> Resul
         .autopilot()
         .set_cross_refs_json(&run.id, &cross_refs.to_string());
 
-    reenqueue_qualitative_assessments(state, run);
     Ok(())
-}
-
-/// §T6d (ADR 0075 Decision 5): on a new report, re-enqueue qualitative assessment
-/// for each framework that already has a prior agent assessment for this company
-/// — the bounded, meaningful "refresh existing judgment on new evidence" set (no
-/// explicit framework↔company assignment model exists). The assessment runs as
-/// its own durable job; this only re-arms it. Idempotent per `company:framework`
-/// via [`enqueue_assessment`] — a re-arm arriving while a run is in flight is parked
-/// in that pair's follow-up row, never dropped. Best-effort: a storage hiccup here
-/// must never fail the pipeline (the report is already processed).
-fn reenqueue_qualitative_assessments(state: &AppState, run: &storage::AutopilotRun) {
-    let frameworks = match state.frameworks_with_qualitative_assessments(&run.company_id) {
-        Ok(frameworks) => frameworks,
-        Err(error) => {
-            log::warn!(
-                "autopilot cross_reference: list assessed frameworks failed for {}: {error}",
-                run.company_id
-            );
-            return;
-        }
-    };
-    for framework in frameworks {
-        // `None` criterion set ⇒ refresh all qualitative criteria (§T6d, D3).
-        if let Err(error) = crate::commands::quality_frameworks::enqueue_assessment(
-            state,
-            &run.company_id,
-            &framework.framework_id,
-            None,
-        ) {
-            log::warn!(
-                "autopilot cross_reference: re-enqueue assessment failed for {}:{}: {error}",
-                run.company_id,
-                framework.framework_id
-            );
-        }
-    }
 }
 
 /// Stage 5 — compose the single notification summary and finalize the run. The
@@ -688,35 +479,35 @@ fn compose_summary(run: &storage::AutopilotRun) -> String {
         .and_then(|j| serde_json::from_str::<serde_json::Value>(j).ok())
     {
         if delta.get("extractionAvailable").and_then(|v| v.as_bool()) == Some(false) {
-            parts.push("KPI extraction unavailable (no AI provider configured)".to_owned());
+            // ADR 0084 decision 6: emit the typed reason code, never a guessed
+            // English diagnosis. The frontend renders the code through the
+            // translation layer.
+            let reason = delta
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("no_deterministic_tier");
+            parts.push(format!(
+                "kpi_extraction_unavailable:{}",
+                KpiUnavailableReason::from_delta_reason(reason).as_str()
+            ));
         } else {
-            // Normalized counts (bug e77a1a2): both the structured and AI branches of
-            // `stage_extract` write these same keys now, so this reads one honest
-            // shape regardless of which tier produced the facts — previously this
-            // read AI-only `proposed`/`autoConfirmed`, which the structured branch
-            // never wrote, silently defaulting to 0 for every structured-tier run.
-            let proposed = delta
-                .get("factsProposed")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let confirmed = delta
-                .get("factsAutoConfirmed")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            if run.mode == MODE_AUTOPILOT {
-                parts.push(format!(
-                    "{confirmed} KPI auto-confirmed (unreviewed) of {proposed} extracted"
-                ));
-            } else {
-                parts.push(format!(
-                    "{proposed} KPI extracted, pending your confirmation"
-                ));
+            // Normalized counts (bug e77a1a2): both extraction branches write
+            // these keys now. Only emit a KPI count token when the delta actually
+            // carries the counts — never fabricate "0 of 0" for a shape that never
+            // reported them (that is bug e77a1a2's symptom).
+            // Review-free (ADR 0086 dec. 5): facts land `confirmed` in BOTH
+            // modes, so both emit the same `kpi_confirmed` token — there is no
+            // `kpi_pending`/awaiting-confirmation semantics anymore.
+            let proposed = delta.get("factsProposed").and_then(|v| v.as_u64());
+            let confirmed = delta.get("factsAutoConfirmed").and_then(|v| v.as_u64());
+            if let (Some(confirmed), Some(proposed)) = (confirmed, proposed) {
+                parts.push(format!("kpi_confirmed:{confirmed}:{proposed}"));
             }
         }
     }
 
     if run.report_diff_ref.is_some() {
-        parts.push("report diff vs the previous statement available".to_owned());
+        parts.push("report_diff_available".to_owned());
     }
 
     if let Some(refs) = run
@@ -735,10 +526,10 @@ fn compose_summary(run: &storage::AutopilotRun) -> String {
             .unwrap_or(0);
         let to_verify = overdue + due;
         if to_verify > 0 {
-            parts.push(format!("{to_verify} claim(s) to verify"));
+            parts.push(format!("claims_to_verify:{to_verify}"));
         }
         if questions > 0 {
-            parts.push(format!("{questions} open research question(s)"));
+            parts.push(format!("research_questions:{questions}"));
         }
         // J4 (ADR 0071): the user recorded expectations for this occurrence —
         // nudge them to review vs actuals (they record their own verdict).
@@ -748,14 +539,18 @@ fn compose_summary(run: &storage::AutopilotRun) -> String {
             .unwrap_or(0)
             > 0
         {
-            parts.push("expectations recorded — review vs actuals".to_owned());
+            parts.push("expectations_to_review".to_owned());
         }
     }
 
+    // ADR 0084 decision 6 (completed 2026-07-21): the stored summary is a typed
+    // token stream — NO user-visible English prose. The frontend translates each
+    // token through the locale layer (`renderAutopilotSummaryTokens`); an
+    // unrecognized/legacy summary passes through verbatim. Tokens join with "; ".
     if parts.is_empty() {
-        "New report processed.".to_owned()
+        "report_processed".to_owned()
     } else {
-        format!("New report processed — {}.", parts.join("; "))
+        parts.join("; ")
     }
 }
 
@@ -864,17 +659,24 @@ pub(crate) fn enqueue_extraction_run(
 /// emitted facts (`extractionAvailable:true`), or is `partial`/`failed`, is never
 /// re-armed. The re-arm classes:
 ///
-/// - `not_extractable` / `not_pdf` / `no_stored_file` — a couldn't-extract verdict.
-///   Re-armed **iff the document is now extractable** ([`history_sweep::
-///   document_is_extractable`], reused not duplicated): a capability upgrade (the
-///   tier-3b positional tier) can now read documents a prior version couldn't. A
-///   still-dead file (unreadable/zero-byte) stays deduped — no per-sweep re-parse.
-/// - `skipped_budget` — a budget-denied period. A **fresh sweep carries fresh
-///   budget**, so re-attack it (still gated on extractability); the new sweep's own
-///   budget naturally caps how many actually re-invoke tier-4 (G-4).
-/// - `no_vision_provider` — tier-4 had no OCR provider. Re-armed only once one is
-///   configured ([`has_vision_provider`], a cheap settings check the extractability
-///   test can't see), so we never loop re-arming a period nothing can yet read.
+/// A couldn't-extract verdict is re-armed **iff (a) the pipeline's capability
+/// version advanced since the run recorded its verdict AND (b) the document is
+/// now extractable** ([`history_sweep::document_is_extractable`], reused not
+/// duplicated). `document_is_extractable` is constant-true for any well-formed
+/// PDF, so on its own it re-armed every flagged period on every sweep pass,
+/// forever (the extraction storm, owner dogfooding 2026-07-21). The version gate
+/// —`stored_pipeline_version(run) < EXTRACTION_PIPELINE_VERSION`— is what makes a
+/// capability upgrade (a newly landed/changed deterministic tier) retry a period
+/// **once**: after the re-run stamps the current version the period settles. A
+/// still-dead file (unreadable/zero-byte, or one no tier can parse) stays
+/// deduped regardless. Manual per-period retry ("Try again" /
+/// `rerun_extraction_outcome`) does NOT route through here — it calls
+/// `run_structured_extraction` directly and stays unconditional.
+///
+/// The AI-era reasons (`no_vision_provider`, `skipped_budget`) are no longer
+/// produced (ADR 0084) but remain readable on stored runs; they re-arm on the
+/// same extractability test as any other gap — the retired provider budget no
+/// longer gates anything.
 ///
 /// Deterministic-emitted outcomes (`extractionAvailable:true`) return `None` from
 /// [`extraction_unavailable_reason`] and are therefore never re-armed.
@@ -885,13 +687,37 @@ fn terminal_run_should_rearm(state: &AppState, run: &storage::AutopilotRun) -> b
     let Some(reason) = extraction_unavailable_reason(run.kpi_delta_json.as_deref()) else {
         return false;
     };
+    // VERSION GATE (owner dogfooding 2026-07-21): a couldn't-extract verdict only
+    // becomes stale when the pipeline gains the ability to read a document it
+    // previously could not — signalled by a bump of
+    // `EXTRACTION_PIPELINE_VERSION`. Re-arm ONLY when this build's version is
+    // newer than the one the run recorded; once the re-run stamps the current
+    // version, the next enqueue dedups. Without this gate,
+    // `document_is_extractable` is constant-true for any well-formed PDF, so
+    // every sweep pass re-armed every flagged period forever (attempt_count
+    // reached ~1100+ in a day). Missing field = version 0 (pre-versioning era) →
+    // eligible for exactly one re-arm under the current build.
+    if stored_pipeline_version(run.kpi_delta_json.as_deref())
+        >= crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION
+    {
+        return false;
+    }
     match reason.as_str() {
-        "not_extractable" | "not_pdf" | "no_stored_file" | "skipped_budget" => {
-            document_now_extractable(state, &run.report_document_id)
-        }
-        "no_vision_provider" => {
-            document_now_extractable(state, &run.report_document_id) && has_vision_provider(state)
-        }
+        // `witness_fallback`: the aggregator sourced this period but no issuer
+        // tier could read the filing. Re-arm on the same extractability test as
+        // any other gap, so a later parser fix re-extracts it with real issuer
+        // data instead of leaving the period permanently on third-party numbers
+        // (ADR 0085 amendment / C1).
+        "no_deterministic_tier"
+        | "witness_fallback"
+        | "not_extractable"
+        | "not_pdf"
+        | "no_stored_file"
+        | "skipped_budget"
+        | "no_vision_provider" => document_now_extractable(state, &run.report_document_id),
+        // `pdf_document` is the BY-DESIGN gap (ADR 0086 dec. 1): machine
+        // fact-reading of PDFs is retired, so no capability upgrade ever makes
+        // the document extractable — never re-armed (falls through to false).
         _ => false,
     }
 }
@@ -911,6 +737,19 @@ fn extraction_unavailable_reason(kpi_delta_json: Option<&str>) -> Option<String>
         .map(str::to_owned)
 }
 
+/// The `EXTRACTION_PIPELINE_VERSION` a run stamped into its `kpi_delta_json` when
+/// it recorded a couldn't-extract verdict. A missing/garbled delta or an absent
+/// `pipelineVersion` field reads as `0` — the pre-versioning era — so a legacy
+/// run is eligible for exactly one re-arm under the current build (see the
+/// version gate in [`terminal_run_should_rearm`]).
+fn stored_pipeline_version(kpi_delta_json: Option<&str>) -> u32 {
+    kpi_delta_json
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .and_then(|delta| delta.get("pipelineVersion").and_then(|v| v.as_u64()))
+        .map(|v| v.min(u64::from(u32::MAX)) as u32)
+        .unwrap_or(0)
+}
+
 /// Whether the run's document could now be read by SOME tier — the shared
 /// `history_sweep::document_is_extractable` test. A load failure means the document
 /// is gone/unreadable → not extractable (stay deduped).
@@ -921,20 +760,33 @@ fn document_now_extractable(state: &AppState, report_document_id: &str) -> bool 
     }
 }
 
-/// Whether a `VisionExtraction` pool member is configured — the cheap settings
-/// check deciding if tier-4 (OCR) could invoke a provider at all. Shared by
-/// [`stage_extract`]'s pre-check and the [`terminal_run_should_rearm`] gate (a
-/// `no_vision_provider` run is worth re-arming only once a provider exists).
-fn has_vision_provider(state: &AppState) -> bool {
-    state
-        .get_settings()
-        .map(|settings| {
-            settings
-                .capability_providers
-                .get(crate::providers::analysis::capabilities::AiCapability::VisionExtraction.key())
-                .is_some_and(|entries| !entries.is_empty())
+/// The typed reason for a run that produced no facts: a raw-PDF document is the
+/// by-design `pdf_document` gap (ADR 0086 dec. 1 — never re-armed, rendered as
+/// "core KPIs arrive from the aggregator"); anything else keeps the caller's
+/// fallback (an honest `no_deterministic_tier`). Resolution is name/content-type
+/// only (`SourceFormat::resolve`), no byte read.
+fn gap_reason(
+    state: &AppState,
+    run: &storage::AutopilotRun,
+    fallback: &'static str,
+) -> &'static str {
+    let is_pdf = state
+        .get_report_document(&run.report_document_id)
+        .ok()
+        .and_then(|document| {
+            document.local_path.as_deref().map(|path| {
+                crate::report_diff::extraction::SourceFormat::resolve(
+                    document.content_type.as_deref(),
+                    path,
+                ) == crate::report_diff::extraction::SourceFormat::Pdf
+            })
         })
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if is_pdf {
+        KpiUnavailableReason::PdfDocument.as_str()
+    } else {
+        fallback
+    }
 }
 
 /// Detection sweep — event-driven off source-refresh completion. For every company
@@ -1092,7 +944,11 @@ fn disclosure_month_from_url(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{open_in_memory_database, CaptureReportDocumentInput, NewCompany};
+    // MODE_AUTOPILOT is now test-only (production no longer branches on mode for
+    // confirmation state — facts are review-free, ADR 0086 dec. 5).
+    use crate::storage::{
+        open_in_memory_database, CaptureReportDocumentInput, NewCompany, MODE_AUTOPILOT,
+    };
 
     // A minimal balanced ESEF/iXBRL instance (45m = 20m + 25m at 2026-03-31).
     const ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
@@ -1106,8 +962,8 @@ mod tests {
     </html>"#;
 
     /// ADR 0061: in autopilot mode a tagged ESEF filing is extracted
-    /// deterministically before AI — validated facts land auto_unreviewed with
-    /// `esef`/`passed` provenance, and the AI path is skipped.
+    /// deterministically before AI — facts land `confirmed` (review-free, ADR
+    /// 0086 dec. 5) with `esef`/`passed` provenance, and the AI path is skipped.
     #[test]
     fn autopilot_esef_uses_structured_extraction_and_skips_ai() {
         let dir =
@@ -1198,8 +1054,8 @@ mod tests {
             .iter()
             .all(|p| p.source_tier == "esef" && p.validation_status == "passed"));
 
-        // ADR 0061 dec. 3/8/9: a validation-clean structured set auto-confirms
-        // outright — even in autopilot mode, it does not land `auto_unreviewed`.
+        // Review-free (ADR 0086 dec. 5): every emitted fact lands `confirmed` —
+        // no `auto_unreviewed`/`pending` awaiting-confirmation state survives.
         let facts = state
             .list_financial_facts(storage::ListFinancialFactsInput {
                 company_id: Some(company.id.clone()),
@@ -1215,22 +1071,13 @@ mod tests {
             "facts: {facts:?}"
         );
 
-        // No AI job was ever created — structured extraction alone satisfied the stage.
-        assert!(
-            state
-                .list_kpi_extraction_jobs_by_document(&document.id)
-                .expect("list jobs")
-                .is_empty(),
-            "AI must be skipped entirely when structured extraction emits"
-        );
-
         // The composed notification summary itself must reflect the honest count,
         // not "0 KPI auto-confirmed (unreviewed) of 0 extracted" — the exact
         // real-world symptom of bug e77a1a2.
         let summary = compose_summary(&after);
         assert!(
-            summary.contains("3 KPI auto-confirmed (unreviewed) of 3 extracted"),
-            "summary: {summary}"
+            summary.contains("kpi_confirmed:3:3"),
+            "summary must carry the honest typed count token: {summary}"
         );
     }
 
@@ -1278,8 +1125,246 @@ mod tests {
 
         let summary = compose_summary(&run);
         assert!(
-            summary.contains("40 KPI auto-confirmed (unreviewed) of 40 extracted"),
+            summary.contains("kpi_confirmed:40:40"),
+            "summary must carry the honest typed count token: {summary}"
+        );
+        // ADR 0084 dec 6: no user-visible English prose in the stored summary.
+        assert!(
+            !summary.contains("auto-confirmed"),
+            "English prose leaked into the typed summary: {summary}"
+        );
+    }
+
+    /// ADR 0084 decision 6 (completion) — `compose_summary` emits a **typed token
+    /// stream** for every fragment, not just the extraction-unavailable branch.
+    /// A run with KPI counts, claims-to-verify and open questions must serialize
+    /// as machine tokens the frontend translates, with NO user-visible English
+    /// prose reaching the stored summary (the misdiagnosis class the dogfooding
+    /// screenshot exposed, generalized to every fragment).
+    #[test]
+    fn compose_summary_emits_only_typed_tokens_with_no_english_prose() {
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "TOK".to_owned(),
+                display_name: "Tokens S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let run_id = "run_all_tokens";
+        state
+            .autopilot()
+            .create_run_if_absent(
+                run_id,
+                &company.id,
+                "docTok",
+                "manual",
+                MODE_AUTOPILOT,
+                None,
+            )
+            .expect("create run")
+            .expect("run created");
+        state
+            .autopilot()
+            .set_kpi_delta_json(
+                run_id,
+                &serde_json::json!({
+                    "extractionAvailable": true,
+                    "structured": true,
+                    "factsProposed": 7,
+                    "factsAutoConfirmed": 7,
+                })
+                .to_string(),
+            )
+            .expect("set delta");
+        state
+            .autopilot()
+            .set_cross_refs_json(
+                run_id,
+                &serde_json::json!({
+                    "claimsOverdue": 2,
+                    "claimsDue": 1,
+                    "openQuestions": 3,
+                    "expectationsToReview": 0,
+                })
+                .to_string(),
+            )
+            .expect("set cross refs");
+        let run = state.autopilot().get_run(run_id).expect("get run");
+
+        let summary = compose_summary(&run);
+        // Every fragment is a typed token.
+        assert!(summary.contains("kpi_confirmed:7:7"), "summary: {summary}");
+        assert!(summary.contains("claims_to_verify:3"), "summary: {summary}");
+        assert!(
+            summary.contains("research_questions:3"),
             "summary: {summary}"
+        );
+        // No user-visible English prose fragment may reach the stored summary.
+        for prose in [
+            "auto-confirmed",
+            "to verify",
+            "open research question",
+            "New report processed",
+            "extracted",
+        ] {
+            assert!(
+                !summary.contains(prose),
+                "English prose {prose:?} leaked into the typed summary: {summary}"
+            );
+        }
+    }
+
+    /// ADR 0085 / C1 — a witness-fallback gap (the aggregator sourced the period
+    /// because no issuer tier could read the filing) must surface its OWN typed
+    /// code, never collapse into `no_deterministic_tier`. Before this the run's
+    /// notification lied about its cause.
+    #[test]
+    fn compose_summary_maps_witness_fallback_to_its_own_typed_code() {
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "WFB".to_owned(),
+                display_name: "Witness Fallback S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let run_id = "run_witness_fallback";
+        state
+            .autopilot()
+            .create_run_if_absent(
+                run_id,
+                &company.id,
+                "docWfb",
+                "manual",
+                MODE_AUTOPILOT,
+                None,
+            )
+            .expect("create run")
+            .expect("run created");
+        state
+            .autopilot()
+            .set_kpi_delta_json(
+                run_id,
+                &serde_json::json!({
+                    "extractionAvailable": false,
+                    "reason": "witness_fallback",
+                })
+                .to_string(),
+            )
+            .expect("set delta");
+        let run = state.autopilot().get_run(run_id).expect("get run");
+
+        let summary = compose_summary(&run);
+        assert!(
+            summary.contains("kpi_extraction_unavailable:witness_fallback"),
+            "witness fallback must surface its own typed code: {summary}"
+        );
+        assert!(
+            !summary.contains("no_deterministic_tier"),
+            "witness fallback must not collapse into no_deterministic_tier: {summary}"
+        );
+    }
+
+    /// ADR 0084 decision 6 — honest failure reporting. `compose_summary` used to
+    /// hardcode the English sentence "KPI extraction unavailable (no AI provider
+    /// configured)" for *any* unavailability, which misdiagnosed a real quota
+    /// exhaustion as a missing configuration during owner dogfooding
+    /// (2026-07-19). The summary must now carry a **typed reason code** from the
+    /// fixed vocabulary, and distinct causes must stay distinguishable — never
+    /// collapsed into one. Rendering the code into a sentence is the frontend's
+    /// job (the v0.60.0 Today seam); the backend emits typed data.
+    #[test]
+    fn compose_summary_emits_typed_reason_codes_that_stay_distinguishable() {
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "RSN".to_owned(),
+                display_name: "Reason Codes S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        // (stored delta reason, expected typed code). The AI-era stored reasons
+        // remain readable (ADR 0084 decision 5) and each maps to a typed code;
+        // after the retirement the live one is `no_deterministic_tier`.
+        let cases: [(&str, &str); 6] = [
+            ("no_deterministic_tier", "no_deterministic_tier"),
+            ("not_extractable", "no_deterministic_tier"),
+            ("no_vision_provider", "provider_not_configured"),
+            ("quota_exhausted", "quota_exhausted"),
+            ("provider_error", "provider_error"),
+            // The by-design PDF gap (ADR 0086 dec. 1) keeps its own code.
+            ("pdf_document", "pdf_document"),
+        ];
+
+        let mut emitted: Vec<String> = Vec::new();
+        for (index, (stored_reason, expected_code)) in cases.into_iter().enumerate() {
+            let run_id = format!("run_reason_{index}");
+            // Distinct document id per run: `create_run_if_absent` dedups on
+            // (company, document), so reusing one id would return None after the
+            // first insert.
+            let document_id = format!("doc_{index}");
+            state
+                .autopilot()
+                .create_run_if_absent(
+                    &run_id,
+                    &company.id,
+                    &document_id,
+                    "manual",
+                    MODE_AUTOPILOT,
+                    None,
+                )
+                .expect("create run")
+                .expect("run created");
+            let delta = serde_json::json!({
+                "extractionAvailable": false,
+                "reason": stored_reason,
+            });
+            state
+                .autopilot()
+                .set_kpi_delta_json(&run_id, &delta.to_string())
+                .expect("set delta");
+            let run = state.autopilot().get_run(&run_id).expect("get run");
+
+            let summary = compose_summary(&run);
+            assert!(
+                summary.contains(expected_code),
+                "stored reason {stored_reason} must surface the typed code \
+                 {expected_code}, got: {summary}"
+            );
+            assert!(
+                !summary.contains("no AI provider configured"),
+                "the guessed English diagnosis must be gone, got: {summary}"
+            );
+            emitted.push(summary);
+        }
+
+        // The three distinct causes must not collapse into one string — that
+        // collapse is the exact defect this test pins.
+        assert_ne!(
+            emitted[0], emitted[2],
+            "a missing deterministic tier and an exhausted quota must stay distinguishable"
+        );
+        assert_ne!(
+            emitted[2], emitted[3],
+            "an exhausted quota and a provider error must stay distinguishable"
+        );
+        assert_ne!(
+            emitted[1], emitted[3],
+            "an unconfigured provider and a provider error must stay distinguishable"
         );
     }
 
@@ -1401,330 +1486,6 @@ mod tests {
         (company.id, document.id)
     }
 
-    /// ASCII-only profile so the fixture never has to round-trip Polish
-    /// diacritics through the hand-built PDF (matches the technique in
-    /// `jobs::structured_extraction`'s test module).
-    fn ascii_profile(
-        company_id: &str,
-        labels: &[(&str, &str)],
-    ) -> crate::fundamentals::extraction::profile::ExtractionProfile {
-        crate::fundamentals::extraction::profile::ExtractionProfile {
-            company_id: company_id.to_owned(),
-            template_hash: "test-template".to_owned(),
-            unit_scale: crate::fundamentals::extraction::pdf::UnitScale::Thousands,
-            label_map: labels
-                .iter()
-                .map(|(l, m)| (l.to_string(), m.to_string()))
-                .collect(),
-            version: 1,
-        }
-    }
-
-    /// ADR 0061 dec. 3/8/9: a PDF report is equally eligible for structured-first
-    /// extraction in autopilot mode (not just ESEF/iXBRL); a validation-clean
-    /// balance-sheet set auto-confirms and the AI job is skipped entirely.
-    #[test]
-    fn autopilot_pdf_with_derivable_period_uses_structured_extraction_and_skips_ai() {
-        let dir = unique_temp_dir("pdf-autopilot");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let connection = open_in_memory_database().expect("db");
-        let state = AppState::with_data_dir(connection, dir.clone());
-        let (company_id, document_id) = seed_pdf_report(
-            &state,
-            &dir,
-            "CD PROJEKT 2026 Q1 SSF",
-            &[
-                "Total Assets Line 45 000",
-                "Total Liabilities Line 20 000",
-                "Total Equity Line 25 000",
-            ],
-        );
-        let profile = ascii_profile(
-            &company_id,
-            &[
-                ("total assets line", "total_assets"),
-                ("total liabilities line", "total_liabilities"),
-                ("total equity line", "total_equity"),
-            ],
-        );
-        state
-            .fundamentals_provenance()
-            .upsert_profile(&profile)
-            .expect("seed profile");
-
-        let run_id = "run_pdf_autopilot";
-        state
-            .autopilot()
-            .create_run_if_absent(
-                run_id,
-                &company_id,
-                &document_id,
-                "manual",
-                MODE_AUTOPILOT,
-                None,
-            )
-            .expect("create run")
-            .expect("run created");
-        let run = state.autopilot().get_run(run_id).expect("get run");
-
-        stage_extract(&state, &run).expect("extract stage");
-
-        let after = state.autopilot().get_run(run_id).expect("get run");
-        assert!(
-            !after.produced_fact_ids.is_empty(),
-            "PDF-tier facts should be committed"
-        );
-        let delta = after.kpi_delta_json.clone().expect("kpi delta recorded");
-        assert!(delta.contains("\"structured\":true"), "delta: {delta}");
-        assert!(
-            delta.contains("pdf"),
-            "delta should name the pdf tier: {delta}"
-        );
-
-        let provenance = state
-            .fundamentals_provenance()
-            .get_many(&after.produced_fact_ids)
-            .expect("provenance");
-        assert!(provenance
-            .iter()
-            .all(|p| p.source_tier == "pdf" && p.validation_status == "passed"));
-
-        let facts = state
-            .list_financial_facts(storage::ListFinancialFactsInput {
-                company_id: Some(company_id.clone()),
-                period_id: None,
-                definition_id: None,
-            })
-            .expect("list facts");
-        assert!(
-            facts
-                .iter()
-                .filter(|f| after.produced_fact_ids.contains(&f.id))
-                .all(|f| f.confirmation_state == "confirmed"),
-            "facts: {facts:?}"
-        );
-
-        assert!(
-            state
-                .list_kpi_extraction_jobs_by_document(&document_id)
-                .expect("list jobs")
-                .is_empty(),
-            "no AI job should be created when structured extraction emits"
-        );
-    }
-
-    /// ADR 0061 dec. 3/8/9: structured-first runs in **both** modes now, not
-    /// just autopilot. An uncontradicted-but-unproven (`AcceptedUnreviewed`) set
-    /// keeps the pre-existing trust ladder: `auto_unreviewed` in autopilot,
-    /// `pending` in assist.
-    #[test]
-    fn structured_first_runs_in_assist_mode_and_unreviewed_facts_follow_trust_ladder() {
-        for (mode, expected_state) in [
-            (MODE_AUTOPILOT, "auto_unreviewed"),
-            (storage::MODE_ASSIST, "pending"),
-        ] {
-            let dir = unique_temp_dir("pdf-ladder");
-            std::fs::create_dir_all(&dir).expect("temp dir");
-            let connection = open_in_memory_database().expect("db");
-            let state = AppState::with_data_dir(connection, dir.clone());
-            let (company_id, document_id) = seed_pdf_report(
-                &state,
-                &dir,
-                "CD PROJEKT 2026 Q1 SSF",
-                &["Zysk netto 12 000"],
-            );
-
-            let run_id = format!("run_ladder_{mode}");
-            state
-                .autopilot()
-                .create_run_if_absent(&run_id, &company_id, &document_id, "manual", mode, None)
-                .expect("create run")
-                .expect("run created");
-            let run = state.autopilot().get_run(&run_id).expect("get run");
-
-            stage_extract(&state, &run).expect("extract stage");
-
-            let after = state.autopilot().get_run(&run_id).expect("get run");
-            assert!(
-                !after.produced_fact_ids.is_empty(),
-                "mode={mode}: an uncontradicted parse should still emit"
-            );
-            let facts = state
-                .list_financial_facts(storage::ListFinancialFactsInput {
-                    company_id: Some(company_id.clone()),
-                    period_id: None,
-                    definition_id: None,
-                })
-                .expect("list facts");
-            let states: Vec<&str> = facts
-                .iter()
-                .filter(|f| after.produced_fact_ids.contains(&f.id))
-                .map(|f| f.confirmation_state.as_str())
-                .collect();
-            assert_eq!(states, vec![expected_state], "mode={mode}");
-        }
-    }
-
-    /// ADR 0061 dec. 3/8/9 + ADR 0077 §4: a flagged (drifted) structured attempt
-    /// must not blind the company — it falls through to the tier-4 OCR fallback —
-    /// and the "structure changed" signal is carried into the composed delta
-    /// (here, the `no_vision_provider` degrade, since no vision provider is
-    /// configured in this offline test).
-    #[test]
-    fn flagged_structured_attempt_falls_through_and_carries_structure_changed_flag() {
-        let dir = unique_temp_dir("pdf-flagged");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let connection = open_in_memory_database().expect("db");
-        connection
-            .execute(
-                "UPDATE settings SET value = '' WHERE key = 'general_analysis_provider'",
-                [],
-            )
-            .expect("clear default provider for offline drain");
-        let state = AppState::with_data_dir(connection, dir.clone());
-        // The confirmed profile expects three lines; this report drops the
-        // equity line entirely — a real "structure changed" scenario.
-        let (company_id, document_id) = seed_pdf_report(
-            &state,
-            &dir,
-            "CD PROJEKT 2026 Q1 SSF",
-            &["Total Assets Line 45 000", "Total Liabilities Line 20 000"],
-        );
-        let profile = ascii_profile(
-            &company_id,
-            &[
-                ("total assets line", "total_assets"),
-                ("total liabilities line", "total_liabilities"),
-                ("total equity line", "total_equity"),
-            ],
-        );
-        state
-            .fundamentals_provenance()
-            .upsert_profile(&profile)
-            .expect("seed profile");
-
-        let run_id = "run_flagged";
-        state
-            .autopilot()
-            .create_run_if_absent(
-                run_id,
-                &company_id,
-                &document_id,
-                "manual",
-                MODE_AUTOPILOT,
-                None,
-            )
-            .expect("create run")
-            .expect("run created");
-        let run = state.autopilot().get_run(run_id).expect("get run");
-
-        stage_extract(&state, &run).expect("extract stage");
-
-        let after = state.autopilot().get_run(run_id).expect("get run");
-        assert!(
-            after.produced_fact_ids.is_empty(),
-            "a flagged drift must not commit structured facts"
-        );
-        let delta = after.kpi_delta_json.expect("kpi delta recorded");
-        assert!(delta.contains("no_vision_provider"), "delta: {delta}");
-        assert!(
-            delta.contains("\"structureChanged\":true"),
-            "delta: {delta}"
-        );
-        assert!(delta.contains("driftJson"), "delta: {delta}");
-        assert!(
-            delta.contains("total equity line"),
-            "the drift diff should name the dropped label: {delta}"
-        );
-    }
-    /// F3b (ADR 0077 §3 amendment (b) lifted, §6 budget governs) — re-expected
-    /// from the T3.2 "deterministic-only" pin: a `history_sweep` run under budget
-    /// now ENTERS the tier-4 OCR fallback exactly like a detection run, and NEVER
-    /// the retired text-AI `kpi_extraction` path. With no `VisionExtraction` pool
-    /// member configured the run degrades `no_vision_provider` (a benign terminal
-    /// reason) — still zero text-AI calls, zero `kpi_extraction` jobs — and the
-    /// budget is NOT charged: without a provider there is nothing a unit could
-    /// buy, and charging would burn the whole sweep budget on nothing while
-    /// mislabeling later periods `skipped_budget` (QG re-expectation of the
-    /// subagent's charge-on-entry variant). Once a provider exists, entering
-    /// tier-4 charges BEFORE the invocation (upper-bound counter, ADR 0077 §6) —
-    /// that half is G-4 below.
-    #[test]
-    fn history_sweep_run_enters_tier4_under_budget_never_text_ai() {
-        let dir = unique_temp_dir("pdf-sweep-gate");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let connection = open_in_memory_database().expect("db");
-        // A real (non-test-sample) general provider is configured to prove the
-        // retired text-AI path is gone: even so, a sweep run makes zero text-AI
-        // calls — tier-4 (OCR) is the only AI fallback, and it needs a
-        // `VisionExtraction` member (absent here), so it degrades cleanly.
-        connection
-            .execute(
-                "UPDATE settings SET value = 'provider_gemini' WHERE key = 'general_analysis_provider'",
-                [],
-            )
-            .expect("configure general provider");
-        let state = AppState::with_data_dir(connection, dir.clone());
-        // A structured-eligible PDF (period derivable from the title) whose body
-        // is prose-only → determinism emits nothing → the run reaches the budget
-        // gate → tier-4.
-        let (company_id, document_id) =
-            seed_pdf_report(&state, &dir, "CD PROJEKT 2026 Q1 SSF", &["prose only"]);
-
-        // A real sweep row carries the default budget (30) snapshotted at creation;
-        // the run charges it.
-        let sweep = state
-            .history_sweeps()
-            .create_history_sweep(&company_id, "manual")
-            .expect("create sweep");
-        let run_id = "run_sweep_gate";
-        state
-            .autopilot()
-            .create_run_if_absent(
-                run_id,
-                &company_id,
-                &document_id,
-                TRIGGER_HISTORY_SWEEP,
-                MODE_AUTOPILOT,
-                Some(&sweep.id),
-            )
-            .expect("create run")
-            .expect("run created");
-        let run = state.autopilot().get_run(run_id).expect("get run");
-
-        stage_extract(&state, &run).expect("sweep extract stage completes");
-
-        let after = state.autopilot().get_run(run_id).expect("get run");
-        let delta = after.kpi_delta_json.expect("kpi delta recorded");
-        assert!(
-            delta.contains("no_vision_provider"),
-            "a budgeted sweep run enters tier-4 and degrades no_vision_provider, got: {delta}"
-        );
-        assert!(
-            delta.contains("\"extractionAvailable\":false"),
-            "extraction is unavailable (no OCR provider), got: {delta}"
-        );
-
-        // Entering tier-4 spent one budget unit even though it degraded.
-        let sweep = state
-            .history_sweeps()
-            .get_history_sweep(&sweep.id)
-            .expect("reload sweep");
-        assert_eq!(
-            sweep.ai_calls_used, 0,
-            "with no vision provider configured, no budget unit is spent — \
-             a unit buys a provider invocation, not a configuration check"
-        );
-
-        // The retired text-AI path is never taken — no kpi_extraction job exists.
-        let jobs = state
-            .list_kpi_extraction_jobs_by_document(&document_id)
-            .expect("jobs should list");
-        assert!(
-            jobs.is_empty(),
-            "a history_sweep run must not create a text-AI kpi_extraction job, got: {jobs:?}"
-        );
-    }
     fn report_doc(id: &str, url: &str, title: &str, created_at: &str) -> storage::ReportDocument {
         storage::ReportDocument {
             id: id.to_owned(),
@@ -1863,111 +1624,6 @@ mod tests {
 
     /// Helper: a company × framework with one qualitative criterion already
     /// carrying a prior agent assessment (the §T6d re-enqueue precondition).
-    fn framework_with_prior_assessment(
-        state: &AppState,
-        company_id: &str,
-        name: &str,
-    ) -> storage::QualityFramework {
-        let framework = state
-            .create_quality_framework(storage::NewQualityFramework {
-                name: name.to_owned(),
-                description: None,
-            })
-            .expect("framework");
-        let criterion = state
-            .create_framework_criterion(storage::NewFrameworkCriterion {
-                framework_id: framework.id.clone(),
-                label: "Wide moat".to_owned(),
-                expression: String::new(),
-                weight: None,
-                partial_band: None,
-                ordinal: None,
-                kind: Some("qualitative".to_owned()),
-                assessment_guidance: Some("Assess moat.".to_owned()),
-            })
-            .expect("criterion");
-        state
-            .persist_qualitative_assessment(storage::PersistQualitativeAssessmentInput {
-                framework_id: framework.id.clone(),
-                company_id: company_id.to_owned(),
-                results: vec![storage::QualitativeCriterionResult {
-                    criterion_id: criterion.id,
-                    ordinal: 0,
-                    label: "Wide moat".to_owned(),
-                    verdict: "pass".to_owned(),
-                    reasoning: "Durable.".to_owned(),
-                    citations_json: "[]".to_owned(),
-                    confidence: "medium".to_owned(),
-                    prompt_version: "qualitative_assessment_v1".to_owned(),
-                }],
-            })
-            .expect("prior assessment");
-        framework
-    }
-
-    /// §T6d (ADR 0075 Decision 5): on a new report, the cross-reference stage
-    /// re-enqueues qualitative assessment for each framework that already has a
-    /// prior agent assessment for the company — and only those (bounded).
-    #[test]
-    fn cross_reference_reenqueues_qualitative_assessment_for_assessed_frameworks() {
-        let connection = open_in_memory_database().expect("db");
-        let state = AppState::new(connection);
-        let company = state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "CBF".to_owned(),
-                display_name: "Cyber_Folks S.A.".to_owned(),
-                isin: None,
-                cik: None,
-                lei: None,
-            })
-            .expect("company");
-        let assessed = framework_with_prior_assessment(&state, &company.id, "Kroeze");
-        // A framework never assessed for this company must NOT be re-enqueued.
-        let unassessed = state
-            .create_quality_framework(storage::NewQualityFramework {
-                name: "Unassessed".to_owned(),
-                description: None,
-            })
-            .expect("framework");
-
-        let run_id = "run_xref_qual";
-        state
-            .autopilot()
-            .create_run_if_absent(
-                run_id,
-                &company.id,
-                "doc1",
-                "manual",
-                storage::MODE_ASSIST,
-                None,
-            )
-            .expect("create run")
-            .expect("run created");
-        let run = state.autopilot().get_run(run_id).expect("get run");
-
-        stage_cross_reference(&state, &run).expect("cross_reference stage");
-
-        let assessed_job = format!("qualitative_assessment:{}:{}", company.id, assessed.id);
-        assert!(
-            state
-                .jobs()
-                .pending_payload(&assessed_job)
-                .expect("pending lookup")
-                .is_some(),
-            "an assessed framework should be re-enqueued"
-        );
-        let unassessed_job = format!("qualitative_assessment:{}:{}", company.id, unassessed.id);
-        assert!(
-            state
-                .jobs()
-                .pending_payload(&unassessed_job)
-                .expect("pending lookup")
-                .is_none(),
-            "a framework with no prior assessment must not be re-enqueued"
-        );
-    }
-
     /// Seed a financial period + one confirmed fact for `(company, 2026, H1)` so
     /// the occurrence's facts exist — the moment expectations freeze (mirrors the
     /// `storage::tests::report_expectations` helper).
@@ -2046,8 +1702,8 @@ mod tests {
 
         let summary = compose_summary(&run);
         assert!(
-            summary.contains("expectations recorded — review vs actuals"),
-            "summary should nudge the review: {summary}"
+            summary.contains("expectations_to_review"),
+            "summary should carry the typed expectations token: {summary}"
         );
     }
 
@@ -2081,8 +1737,8 @@ mod tests {
 
         let summary = compose_summary(&run);
         assert!(
-            !summary.contains("expectations recorded"),
-            "no expectations line when none exist: {summary}"
+            !summary.contains("expectations_to_review"),
+            "no expectations token when none exist: {summary}"
         );
     }
 
@@ -2127,42 +1783,18 @@ mod tests {
     /// member, bypassing settings validation (test_sample is not a *selectable*
     /// provider) exactly like `build_capability_provider`'s own tests — so the full
     /// tier-4 path builds a deterministic offline OCR provider.
-    fn seed_test_sample_vision(connection: &rusqlite::Connection) {
-        use crate::providers::analysis::capabilities::AiCapability;
-        use crate::providers::analysis::{
-            TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
-        };
-        let json = serde_json::json!({
-            AiCapability::VisionExtraction.key(): [
-                { "provider": TEST_SAMPLE_ANALYSIS_PROVIDER_ID, "model": TEST_SAMPLE_ANALYSIS_MODEL }
-            ]
-        })
-        .to_string();
-        connection
-            .execute(
-                "INSERT INTO settings (key, value, value_type) VALUES ('capability_providers', ?1, 'json') \
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                [json],
-            )
-            .expect("seed vision provider");
-    }
-
-    /// G-4 (ADR 0077 §6, budget-stop): a sweep with `ai_call_limit=2` over three
-    /// tier-4-eligible candidates spends exactly two units, budget-skips the third
-    /// (`skipped_budget`, zero facts), and never silently drops a run.
+    /// ADR 0084 decision 4 — flagged, never silent. With the AI layer retired,
+    /// a report document that **no deterministic tier can parse** must still
+    /// produce a completed run carrying an unread notification whose summary
+    /// names the typed `no_deterministic_tier` reason — never a silently absent
+    /// run, never a guessed value, and with no AI branch anywhere in the path.
+    /// Driven end-to-end through the real durable queue (no network).
     #[test]
-    fn g4_history_sweep_stops_at_the_budget_never_silently_dropping() {
-        let dir = unique_temp_dir("g4-budget");
+    fn unparseable_report_is_flagged_with_a_notification_and_no_ai_branch() {
+        let dir = unique_temp_dir("flagged-no-tier");
         std::fs::create_dir_all(&dir).expect("temp dir");
         let connection = open_in_memory_database().expect("db");
-        seed_test_sample_vision(&connection);
         let state = AppState::with_data_dir(connection, dir.clone());
-        state
-            .update_settings(storage::SettingsUpdate {
-                history_sweep_ai_call_limit: Some(2),
-                ..Default::default()
-            })
-            .expect("set budget to 2");
         let company = state
             .create_company(NewCompany {
                 exchange: "GPW".to_owned(),
@@ -2177,190 +1809,100 @@ mod tests {
             .autopilot()
             .set_mode(&company.id, "assist")
             .expect("assist mode");
-        for (year, file) in [(2023, "r23.pdf"), (2024, "r24.pdf"), (2025, "r25.pdf")] {
-            seed_periodic_pdf(
-                &state,
-                &dir,
-                &company.id,
-                &format!("Skonsolidowany raport roczny {year} SSF"),
-                file,
-            );
-        }
+        // A text PDF with no financial table: every deterministic tier declines.
+        let document_id = seed_periodic_pdf(
+            &state,
+            &dir,
+            &company.id,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "unparseable.pdf",
+        );
 
-        // Drive the whole sweep end-to-end through the durable queue.
-        let sweep =
-            crate::jobs::history_sweep::enqueue_history_sweep(&state, &company.id, "manual")
-                .expect("enqueue sweep");
+        let outcome = enqueue_extraction_run(
+            &state,
+            &company.id,
+            &document_id,
+            "detection",
+            "assist",
+            None,
+        );
+        assert_eq!(outcome, EnqueueExtractionOutcome::Created);
         crate::jobs::handlers::build_worker(state.clone())
             .run_until_idle()
             .expect("drain the queue");
-
-        let sweep = state
-            .history_sweeps()
-            .get_history_sweep(&sweep.id)
-            .expect("reload sweep");
-        assert_eq!(sweep.candidates_total, 3);
-        assert_eq!(sweep.runs_enqueued, 3, "all three runs enqueued");
-        assert_eq!(
-            sweep.ai_calls_used, 2,
-            "exactly two tier-4 invocations are charged"
-        );
 
         let runs = state
             .autopilot()
             .list_runs(&crate::storage::ListAutopilotRunsInput {
                 company_id: Some(company.id.clone()),
-                limit: Some(500),
+                limit: Some(50),
                 ..Default::default()
             })
             .expect("list runs");
-        assert_eq!(runs.len(), 3, "no run is silently dropped");
-        let skipped: Vec<_> = runs
-            .iter()
-            .filter(|r| {
-                r.kpi_delta_json
-                    .as_deref()
-                    .is_some_and(|d| d.contains("skipped_budget"))
-            })
-            .collect();
-        assert_eq!(skipped.len(), 1, "exactly one run is budget-skipped");
-        assert!(
-            skipped[0].produced_fact_ids.is_empty(),
-            "the budget-skipped run produces no facts"
+        assert_eq!(runs.len(), 1, "the run must not be silently dropped");
+        let run = &runs[0];
+
+        assert_eq!(
+            run.stage, STAGE_NOTIFY,
+            "an unparseable document still reaches the notify stage"
         );
-        // The other two runs each entered tier-4 (their delta carries the `tier4`
-        // outcome field; the budget-skipped run's delta does not).
-        let entered = runs
-            .iter()
-            .filter(|r| {
-                r.kpi_delta_json
-                    .as_deref()
-                    .is_some_and(|d| d.contains("\"tier4\"") && !d.contains("skipped_budget"))
-            })
-            .count();
-        assert_eq!(entered, 2, "the other two runs entered tier-4 under budget");
-    }
-
-    /// G-4 static-ineligibility (ADR 0077 §6): a sweep run whose canonical
-    /// document is XHTML (the ESEF route — non-PDF) is **statically** ineligible
-    /// for the PDF-only tier-4 OCR fallback; it can ONLY degrade `not_pdf`. A
-    /// budget unit buys a PROVIDER INVOCATION, so this must be caught BEFORE
-    /// `try_consume_sweep_ai_budget` — exactly like the no-vision-provider
-    /// pre-check. Regression (live MDV): the run consumed 1 unit, THEN degraded
-    /// `not_pdf` inside `run_tier4_extraction`, burning the unit on nothing and
-    /// mislabeling later periods `skipped_budget`. Vision provider IS configured
-    /// here to prove the charge is skipped for static ineligibility, not for a
-    /// missing provider.
-    #[test]
-    fn history_sweep_statically_ineligible_xhtml_charges_no_budget() {
-        let dir = unique_temp_dir("sweep-xhtml-ineligible");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let connection = open_in_memory_database().expect("db");
-        seed_test_sample_vision(&connection);
-        let state = AppState::with_data_dir(connection, dir.clone());
-        let company = state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "CBF".to_owned(),
-                display_name: "Cyber_Folks S.A.".to_owned(),
-                isin: None,
-                cik: None,
-                lei: None,
-            })
-            .expect("company");
-        // A *valid* iXBRL instance (period self-derives → structured-eligible) but
-        // UNBALANCED (45 ≠ 20 + 30) → the ESEF tier flags it and emits nothing →
-        // the sweep run reaches the budget gate. Because it is the ESEF route it is
-        // statically tier-4-ineligible: it can only degrade `not_pdf`.
-        let unbalanced_esef = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
-          xmlns:xbrli="http://www.xbrl.org/2003/instance"
-          xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
-          <xbrli:context id="c"><xbrli:period><xbrli:instant>2026-03-31</xbrli:instant></xbrli:period></xbrli:context>
-          <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
-          <ix:nonFraction name="ifrs-full:Assets" contextRef="c" unitRef="pln" scale="3">45 000</ix:nonFraction>
-          <ix:nonFraction name="ifrs-full:Liabilities" contextRef="c" unitRef="pln" scale="3">20 000</ix:nonFraction>
-          <ix:nonFraction name="ifrs-full:Equity" contextRef="c" unitRef="pln" scale="3">30 000</ix:nonFraction>
-        </html>"#;
-        let document = state
-            .create_or_find_pending_report_document(CaptureReportDocumentInput {
-                company_id: company.id.clone(),
-                source_type: "user_url".to_owned(),
-                url: "https://example.com/annual-2026.xhtml".to_owned(),
-                period_id: None,
-                origin_ref: None,
-                title: Some("Annual 2026 ESEF".to_owned()),
-                attribution: None,
-            })
-            .expect("document");
-        std::fs::write(dir.join("report.xhtml"), unbalanced_esef.as_bytes()).expect("write esef");
-        state
-            .mark_report_document_fetched(
-                &document.id,
-                Some("report.xhtml"),
-                Some("application/xhtml+xml"),
-                None,
-                Some(unbalanced_esef.len() as i64),
-            )
-            .expect("mark fetched");
-
-        let sweep = state
-            .history_sweeps()
-            .create_history_sweep(&company.id, "manual")
-            .expect("create sweep");
-        let run_id = "run_sweep_xhtml";
-        state
-            .autopilot()
-            .create_run_if_absent(
-                run_id,
-                &company.id,
-                &document.id,
-                TRIGGER_HISTORY_SWEEP,
-                MODE_AUTOPILOT,
-                Some(&sweep.id),
-            )
-            .expect("create run")
-            .expect("run created");
-        let run = state.autopilot().get_run(run_id).expect("get run");
-
-        stage_extract(&state, &run).expect("sweep extract stage completes");
-
-        let after = state.autopilot().get_run(run_id).expect("get run");
-        let delta = after.kpi_delta_json.expect("kpi delta recorded");
-        assert!(
-            delta.contains("not_pdf"),
-            "an XHTML (ESEF-route) document degrades not_pdf, got: {delta}"
+        assert_eq!(
+            run.notification_state, "unread",
+            "the gap must be surfaced as an unread notification, not swallowed"
         );
+        assert!(
+            run.produced_fact_ids.is_empty(),
+            "nothing may be guessed for a document no tier parsed"
+        );
+
+        let delta = run
+            .kpi_delta_json
+            .as_deref()
+            .expect("a non-emitting run still records its honest delta");
         assert!(
             delta.contains("\"extractionAvailable\":false"),
-            "extraction is unavailable for a non-PDF document, got: {delta}"
+            "delta: {delta}"
+        );
+        assert!(
+            // A raw-PDF document reports the BY-DESIGN `pdf_document` gap
+            // (ADR 0086 dec. 1, review 2026-07-22) — the honest replacement for
+            // the generic no_deterministic_tier this test originally pinned.
+            delta.contains("pdf_document"),
+            "the delta must carry the typed reason code, got: {delta}"
+        );
+        assert!(
+            !delta.contains("tier4") && !delta.contains("vision"),
+            "no AI/tier-4 branch may appear in the path, got: {delta}"
         );
 
-        let sweep = state
-            .history_sweeps()
-            .get_history_sweep(&sweep.id)
-            .expect("reload sweep");
-        assert_eq!(
-            sweep.ai_calls_used, 0,
-            "a statically-ineligible (non-PDF/ESEF-route) document must not consume \
-             a budget unit — a unit buys a provider invocation, not a format check"
+        let summary = run
+            .summary_text
+            .as_deref()
+            .expect("the notification must carry a summary");
+        assert!(
+            summary.contains("pdf_document"),
+            "the notification must name the typed reason, got: {summary}"
+        );
+        assert!(
+            !summary.contains("no AI provider configured"),
+            "the retired guessed diagnosis must be gone, got: {summary}"
         );
     }
 
-    /// (d) A detection-triggered run never charges any sweep budget — only a
-    /// `history_sweep`-trigger run spends units.
-    #[test]
-    fn detection_run_never_charges_a_sweep_budget() {
-        let dir = unique_temp_dir("detection-nobudget");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let connection = open_in_memory_database().expect("db");
-        let state = AppState::with_data_dir(connection, dir.clone());
-        let (company_id, document_id) =
-            seed_pdf_report(&state, &dir, "CD PROJEKT 2026 Q1 SSF", &["prose only"]);
-        let sweep = state
-            .history_sweeps()
-            .create_history_sweep(&company_id, "manual")
-            .expect("sweep");
-        let run_id = "det_run";
+    /// Helper: seed a succeeded, couldn't-extract terminal run over a real
+    /// (extractable-by-construction) PDF, with a caller-built `kpi_delta_json`.
+    fn seed_terminal_unavailable_run(
+        state: &AppState,
+        dir: &std::path::Path,
+        run_id: &str,
+        delta: serde_json::Value,
+    ) -> storage::AutopilotRun {
+        let (company_id, document_id) = seed_pdf_report(
+            state,
+            dir,
+            "Cyber Folks raport roczny 2025 SSF",
+            &["Brak danych"],
+        );
         state
             .autopilot()
             .create_run_if_absent(
@@ -2371,85 +1913,202 @@ mod tests {
                 MODE_AUTOPILOT,
                 None,
             )
-            .expect("create")
-            .expect("created");
-        let run = state.autopilot().get_run(run_id).expect("run");
-        stage_extract(&state, &run).expect("extract");
-        assert_eq!(
-            state
-                .history_sweeps()
-                .get_history_sweep(&sweep.id)
-                .expect("reload")
-                .ai_calls_used,
-            0,
-            "a detection run charges no sweep budget"
-        );
+            .expect("create run")
+            .expect("run created");
+        state
+            .autopilot()
+            .set_kpi_delta_json(run_id, &delta.to_string())
+            .expect("set delta");
+        state
+            .autopilot()
+            .finalize_run(run_id, "succeeded", STAGE_NOTIFY, Some("s"), None)
+            .expect("finalize");
+        state.autopilot().get_run(run_id).expect("get run")
     }
 
-    /// (e) A sweep run whose deterministic pipeline Accepts (and emits) returns
-    /// before the budget gate — a deterministic outcome spends no budget
-    /// (ADR 0077 §6 decision 4).
+    /// THE STORM (owner dogfooding 2026-07-21): a couldn't-extract run whose
+    /// delta already carries the CURRENT `pipelineVersion` must NOT re-arm on a
+    /// subsequent enqueue — nothing about the pipeline's read capability changed,
+    /// so re-running the full file IO + PDF parse with identical inputs is pure
+    /// waste (attempt_count reached ~1100+ in one day). Before the version gate,
+    /// `document_is_extractable` was constant-true for any PDF, so every sweep
+    /// pass re-armed every flagged period forever.
     #[test]
-    fn sweep_run_whose_determinism_accepts_spends_no_budget() {
-        let dir = unique_temp_dir("accept-nobudget");
+    fn a_current_version_couldnt_extract_run_is_not_re_armed() {
+        let dir = unique_temp_dir("rearm-current-version");
         std::fs::create_dir_all(&dir).expect("temp dir");
         let connection = open_in_memory_database().expect("db");
         let state = AppState::with_data_dir(connection, dir.clone());
-        let (company_id, document_id) = seed_pdf_report(
-            &state,
-            &dir,
-            "CD PROJEKT 2026 Q1 SSF",
-            &[
-                "Total Assets Line 45 000",
-                "Total Liabilities Line 20 000",
-                "Total Equity Line 25 000",
-            ],
+        let delta = serde_json::json!({
+            "extractionAvailable": false,
+            "reason": crate::jobs::structured_extraction::reason::NO_DETERMINISTIC_TIER,
+            "pipelineVersion": crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION,
+        });
+        let run = seed_terminal_unavailable_run(&state, &dir, "run_current_ver", delta);
+        assert!(
+            !terminal_run_should_rearm(&state, &run),
+            "a run stamped with the current pipeline version must settle (no re-arm) — \
+             this is the fix for the extraction storm"
         );
-        state
-            .fundamentals_provenance()
-            .upsert_profile(&ascii_profile(
-                &company_id,
-                &[
-                    ("total assets line", "total_assets"),
-                    ("total liabilities line", "total_liabilities"),
-                    ("total equity line", "total_equity"),
-                ],
-            ))
-            .expect("seed profile");
-        let sweep = state
-            .history_sweeps()
-            .create_history_sweep(&company_id, "manual")
-            .expect("sweep");
-        let run_id = "sweep_accept";
+    }
+
+    /// A legacy run (delta predates versioning, no `pipelineVersion`) re-arms
+    /// ONCE under the new build; after the re-run records a delta stamped with
+    /// the current version, the next enqueue dedups. Deterministic, no time-based
+    /// backoff: the version is the only knob.
+    #[test]
+    fn a_legacy_run_re_arms_once_then_settles() {
+        let dir = unique_temp_dir("rearm-legacy-once");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let legacy = serde_json::json!({
+            "extractionAvailable": false,
+            "reason": crate::jobs::structured_extraction::reason::NO_DETERMINISTIC_TIER,
+        });
+        let run = seed_terminal_unavailable_run(&state, &dir, "run_legacy", legacy);
+        assert!(
+            terminal_run_should_rearm(&state, &run),
+            "a legacy (unstamped) couldn't-extract run must re-arm once under the new build"
+        );
+
+        // Simulate the re-run recording its new, stamped delta (what stage_extract
+        // writes on the extractionAvailable:false path). The period must then settle.
+        let stamped = serde_json::json!({
+            "extractionAvailable": false,
+            "reason": crate::jobs::structured_extraction::reason::NO_DETERMINISTIC_TIER,
+            "pipelineVersion": crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION,
+        });
         state
             .autopilot()
-            .create_run_if_absent(
-                run_id,
-                &company_id,
-                &document_id,
-                TRIGGER_HISTORY_SWEEP,
-                MODE_AUTOPILOT,
-                Some(&sweep.id),
-            )
-            .expect("create")
-            .expect("created");
-        let run = state.autopilot().get_run(run_id).expect("run");
-        stage_extract(&state, &run).expect("extract");
-
-        let after = state.autopilot().get_run(run_id).expect("run");
-        let delta = after.kpi_delta_json.expect("delta");
+            .set_kpi_delta_json("run_legacy", &stamped.to_string())
+            .expect("set stamped delta");
+        let settled = state.autopilot().get_run("run_legacy").expect("get run");
         assert!(
-            delta.contains("\"extractionAvailable\":true"),
-            "determinism should have emitted: {delta}"
+            !terminal_run_should_rearm(&state, &settled),
+            "after recording a stamped delta the period must dedup on the next enqueue"
+        );
+    }
+
+    /// Regression: when the version gate is OPEN (a run stamped with a version
+    /// LOWER than the current build — a genuine parser upgrade), a witness_fallback
+    /// period still re-arms so the upgrade reaches it with real issuer data. The
+    /// version gate must not close the door on legitimate capability upgrades.
+    #[test]
+    fn a_lower_version_witness_fallback_still_re_arms_on_upgrade() {
+        let dir = unique_temp_dir("rearm-lower-version");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let older_version =
+            crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION.saturating_sub(1);
+        let delta = serde_json::json!({
+            "extractionAvailable": false,
+            "reason": "witness_fallback",
+            "pipelineVersion": older_version,
+        });
+        let run = seed_terminal_unavailable_run(&state, &dir, "run_lower_ver", delta);
+        assert!(
+            terminal_run_should_rearm(&state, &run),
+            "a parser upgrade (higher current version) must still reach a lower-version \
+             witness_fallback period"
+        );
+    }
+
+    /// ADR 0086 dec. 1 (review 2026-07-22): `pdf_document` is the BY-DESIGN gap —
+    /// machine fact-reading of PDFs is retired, so no pipeline upgrade ever makes
+    /// the document readable. Even a lower-version delta must never re-arm.
+    #[test]
+    fn a_pdf_document_gap_is_never_rearmed() {
+        let dir = unique_temp_dir("rearm-pdf-doc");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let older_version =
+            crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION.saturating_sub(1);
+        let delta = serde_json::json!({
+            "extractionAvailable": false,
+            "reason": "pdf_document",
+            "pipelineVersion": older_version,
+        });
+        let run = seed_terminal_unavailable_run(&state, &dir, "run_pdf_gap", delta);
+        assert!(
+            !terminal_run_should_rearm(&state, &run),
+            "the by-design PDF gap must never re-arm — no upgrade makes a PDF readable"
+        );
+    }
+
+    /// The gap-reason derivation: a raw-PDF document reports the by-design
+    /// `pdf_document` reason; anything else keeps the caller's fallback.
+    #[test]
+    fn gap_reason_names_a_pdf_document_and_keeps_the_fallback_otherwise() {
+        let dir = unique_temp_dir("gap-reason");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "GAP".to_owned(),
+                display_name: "Gap Reason S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        let run_for = |suffix: &str, url: &str, local: &str, mime: &str| {
+            let document = state
+                .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                    company_id: company.id.clone(),
+                    source_type: "user_url".to_owned(),
+                    url: url.to_owned(),
+                    period_id: None,
+                    origin_ref: None,
+                    title: Some(format!("doc {suffix}")),
+                    attribution: None,
+                })
+                .expect("document");
+            std::fs::write(dir.join(local), b"stub").expect("write file");
+            state
+                .mark_report_document_fetched(&document.id, Some(local), Some(mime), None, Some(4))
+                .expect("mark fetched");
+            let run_id = format!("run_gap_{suffix}");
+            state
+                .autopilot()
+                .create_run_if_absent(
+                    &run_id,
+                    &company.id,
+                    &document.id,
+                    "manual",
+                    MODE_AUTOPILOT,
+                    None,
+                )
+                .expect("create run")
+                .expect("run created");
+            state.autopilot().get_run(&run_id).expect("get run")
+        };
+
+        let pdf_run = run_for(
+            "pdf",
+            "https://example.com/report.pdf",
+            "report.pdf",
+            "application/pdf",
         );
         assert_eq!(
-            state
-                .history_sweeps()
-                .get_history_sweep(&sweep.id)
-                .expect("reload")
-                .ai_calls_used,
-            0,
-            "a deterministic Accept spends no budget"
+            gap_reason(&state, &pdf_run, "no_deterministic_tier"),
+            "pdf_document"
+        );
+
+        let xhtml_run = run_for(
+            "xhtml",
+            "https://example.com/report.xhtml",
+            "report.xhtml",
+            "application/xhtml+xml",
+        );
+        assert_eq!(
+            gap_reason(&state, &xhtml_run, "no_deterministic_tier"),
+            "no_deterministic_tier"
         );
     }
 }

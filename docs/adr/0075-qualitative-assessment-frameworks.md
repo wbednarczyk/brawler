@@ -1,6 +1,6 @@
 # ADR 0075: Qualitative Assessment Frameworks — Agent-Assessed Criteria with Citations
 
-Status: Accepted (v0.50.0)
+Status: Accepted (v0.50.0) — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the agent-assessed criteria path (report-excerpt + transcript evidence sent to a provider) is removed in `v0.59.0`. Qualitative criteria verdicts become user-entered; agent-written verdicts with mandatory provenance return through MCP write-tools (`v0.61.0`). The framework/criteria model, evidence linking, and snapshot semantics are unchanged.
 
 Quality frameworks ([ADR 0046](0046-quality-frameworks-quantitative.md), shipped v0.44) evaluate a
 user-owned checklist of **quantitative** criteria (a DSL over KPI metric keys) deterministically into an

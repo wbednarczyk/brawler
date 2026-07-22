@@ -42,7 +42,7 @@ use super::*;
 use crate::fundamentals::extraction::esef_package;
 use crate::fundamentals::extraction::pipeline::{run_pipeline, PipelineInput};
 use crate::fundamentals::validation::Tolerance;
-use crate::report_diff::extraction::{extract_report, SourceFormat};
+use crate::report_diff::extraction::SourceFormat;
 
 // ---------------------------------------------------------------------------
 // Ratchet floors (G-3) — pinned at the measured baseline of 2026-07-08 after
@@ -118,7 +118,8 @@ fn ratio(matched: usize, total: usize) -> f64 {
 
 /// Resolve one stored document to pipeline inputs and run the read-only
 /// pipeline — the same source resolution as `t7_cbf_corpus::run_new` (ESEF
-/// report package → inner instance; bare xhtml → own bytes; else PDF text),
+/// report package → inner instance; bare xhtml → own bytes; else no
+/// surviving tier — the PDF fact-extraction arm is retired, ADR 0086 dec. 1),
 /// but returning the emitted facts themselves so values can be graded.
 fn run_pipeline_facts(
     state: &AppState,
@@ -140,26 +141,18 @@ fn run_pipeline_facts(
     let bytes =
         std::fs::read(state.data_dir().join(local_path)).expect("read labeled document bytes");
 
+    // The PDF fact-extraction arm is retired (ADR 0086 dec. 1): a document
+    // that is neither an ESEF report package nor bare xhtml has no
+    // surviving tier to feed.
     let ct = document.content_type.as_deref();
-    let (esef, pdf): (Option<Vec<u8>>, Option<String>) =
-        if esef_package::is_report_package(local_path, &bytes) {
-            (esef_package::extract_instance(&bytes), None)
-        } else if SourceFormat::resolve(ct, local_path) == SourceFormat::Xhtml {
-            (Some(bytes.clone()), None)
-        } else {
-            let text = extract_report(&bytes, SourceFormat::Pdf)
-                .sections
-                .iter()
-                .map(|s| s.body.clone())
-                .collect::<Vec<_>>()
-                .join("\n");
-            (None, Some(text))
-        };
+    let esef: Option<Vec<u8>> = if esef_package::is_report_package(local_path, &bytes) {
+        esef_package::extract_instance(&bytes)
+    } else if SourceFormat::resolve(ct, local_path) == SourceFormat::Xhtml {
+        Some(bytes.clone())
+    } else {
+        None
+    };
 
-    let profile = state
-        .fundamentals_provenance()
-        .get_profile(company_id)
-        .expect("get profile");
     let prior_end = prior_period_end(&period_end);
     let prior = state
         .financials()
@@ -169,12 +162,9 @@ fn run_pipeline_facts(
     let input = PipelineInput {
         period_end: &period_end,
         esef_bytes: esef.as_deref(),
-        pdf_text: pdf.as_deref(),
-        profile: profile.as_ref(),
         prior: prior.as_ref(),
         prior_period_end: prior_end.as_deref(),
         expected_keys: None,
-        witness: None,
     };
     let out = run_pipeline(&input);
     let mut emitted = BTreeMap::new();

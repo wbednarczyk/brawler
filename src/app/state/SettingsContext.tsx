@@ -31,16 +31,6 @@ export function useDeveloperMode(): boolean {
   return Boolean(useContext(SettingsContext)?.developerMode);
 }
 
-/** Whether the opt-in ESPI AI signal-classification fallback is enabled (ADR 0036). */
-export function useAiFallbackEnabled(): boolean {
-  return Boolean(useContext(SettingsContext)?.espiAiFallbackEnabled);
-}
-
-/** Whether a general-analysis AI provider is configured (gates AI analysis actions). */
-export function useAiAnalysisProviderConfigured(): boolean {
-  return Boolean(useContext(SettingsContext)?.aiProviders.generalAnalysisProvider);
-}
-
 /** Company IDs pinned to the sidebar spine (ADR 0054); empty before settings load. */
 export function usePinnedCompanyIds(): string[] {
   return useContext(SettingsContext)?.pinnedCompanyIds ?? [];

@@ -42,14 +42,8 @@ enqueuedRunIds: Array<string>,
 /**
  * Tier-4 AI call units this sweep has spent so far (ADR 0077 §6). Bumped
  * atomically as each document enters tier-4; one unit = one invocation.
- */
-aiCallsUsed: number, 
-/**
  * The tier-4 budget snapshotted onto this sweep at creation (ADR 0077 §6);
  * `0` means unlimited. A mid-sweep settings change never moves this gate.
- */
-aiCallLimit: number, 
-/**
  * A storage-level abort that failed the whole sweep.
  */
 error: string | null, createdAt: string, updatedAt: string, };

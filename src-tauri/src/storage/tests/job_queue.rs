@@ -255,57 +255,22 @@ fn defer_requeues_without_consuming_an_attempt() {
 
 #[test]
 fn queue_config_reads_seeded_defaults_and_clamps_updates() {
-    // Configurable pools (ADR 0059): migration 0056 seeds 2/3/2 workers + provider
-    // concurrency 2. Out-of-range updates are clamped (never rejected), like the
-    // pool settings.
+    // Configurable pools (ADR 0059, as amended by ADR 0084 — the per-AI-provider
+    // concurrency gate is gone with the analysis layer): migration 0056 seeds
+    // 2/3/2 workers. Out-of-range updates are clamped (never rejected).
     let state = state();
     let cfg = state.queue_config();
     assert_eq!(cfg.sources_workers, 2);
     assert_eq!(cfg.autopilot_workers, 3);
-    assert_eq!(cfg.ai_workers, 2);
-    assert_eq!(cfg.ai_provider_concurrency, 2);
 
     state
         .update_settings(SettingsUpdate {
             sources_workers: Some(999),
-            ai_provider_concurrency: Some(0),
             ..Default::default()
         })
         .expect("update");
     let cfg = state.queue_config();
     assert_eq!(cfg.sources_workers, 16, "clamped to the worker max");
-    assert_eq!(
-        cfg.ai_provider_concurrency, 1,
-        "clamped to the concurrency min"
-    );
-}
-
-#[test]
-fn provider_semaphore_is_shared_per_provider_and_bounded() {
-    // Per-provider concurrency gate (ADR 0059): one semaphore per provider id,
-    // created once with the configured permit count and shared across lanes, so the
-    // limit bounds total concurrent calls to that provider.
-    let state = state();
-    let gemini = state.provider_semaphore("provider_gemini", 2);
-    // The same provider returns the same instance; the limit is fixed at creation.
-    let gemini_again = state.provider_semaphore("provider_gemini", 5);
-    assert!(std::sync::Arc::ptr_eq(&gemini, &gemini_again));
-
-    let p1 = gemini.try_acquire().expect("permit 1");
-    let _p2 = gemini.try_acquire().expect("permit 2");
-    assert!(
-        gemini.try_acquire().is_err(),
-        "the third concurrent call is blocked by the limit"
-    );
-    drop(p1);
-    assert!(
-        gemini.try_acquire().is_ok(),
-        "a released permit frees a slot"
-    );
-
-    // A different provider has its own independent semaphore.
-    let anthropic = state.provider_semaphore("provider_anthropic", 2);
-    assert!(!std::sync::Arc::ptr_eq(&gemini, &anthropic));
 }
 
 #[test]

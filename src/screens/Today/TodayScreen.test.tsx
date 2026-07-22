@@ -90,9 +90,6 @@ function morningBriefing(overrides: Partial<MorningBriefing> = {}): MorningBrief
     id: "briefing_1",
     composedAt: "2026-07-10T09:00:00Z",
     since: "2026-07-01",
-    narrativeMarkdown: null,
-    narrativeProviderId: null,
-    narrativeModel: null,
     language: null,
     createdAt: "2026-07-10T09:00:00Z",
     items: [morningBriefingItem()],
@@ -660,7 +657,7 @@ describe("Today autopilot detail — undo / dismiss / drift behind the expandabl
       expect(screen.queryByText(/Reverted/)).not.toBeInTheDocument();
     });
 
-    it("hides Undo for an assist-mode run — its facts go through the confirm/reject review instead", async () => {
+    it("shows Undo for an assist-mode run too — facts are review-free, so both modes commit and undo the same way (ADR 0086 dec. 5)", async () => {
       const user = userEvent.setup();
       appTestState.financialFactsResponse = [baseFinancialFact];
       appTestState.autopilotRunsResponse = [
@@ -670,7 +667,7 @@ describe("Today autopilot detail — undo / dismiss / drift behind the expandabl
       renderApp({ section: "Today" });
       await user.click(await screen.findByRole("button", { name: "Details" }));
 
-      expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
     });
   });
 });
@@ -696,9 +693,8 @@ describe("Today morning-briefing card (ADR 0068 decision 4, v0.54 §T5)", () => 
     ).not.toBeInTheDocument();
   });
 
-  it("renders the structured item list when no narrative was phrased, and Review opens the item's evidence", async () => {
+  it("renders the deterministic item list (the only briefing mode after ADR 0084) and Review opens the item's evidence", async () => {
     appTestState.morningBriefingResponse = morningBriefing({
-      narrativeMarkdown: null,
       items: [morningBriefingItem({ title: "Profit warning issued", detail: "Profit warning" })],
     });
     renderApp({ section: "Today" });
@@ -709,21 +705,6 @@ describe("Today morning-briefing card (ADR 0068 decision 4, v0.54 §T5)", () => 
     fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "Review" }));
 
     // `signal` items open the evidence company's Feed (the company workspace).
-    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
-  });
-
-  it("renders the narrative variant with a citation source that click-throughs to its evidence", async () => {
-    appTestState.morningBriefingResponse = morningBriefing({
-      narrativeMarkdown: "## Signals\n\nCD PROJEKT reported a profit warning [b1]",
-      items: [morningBriefingItem({ title: "Profit warning issued", citationKey: "b1" })],
-    });
-    renderApp({ section: "Today" });
-
-    expect(await screen.findByText(/CD PROJEKT reported a profit warning/)).toBeInTheDocument();
-    const sourceButton = await screen.findByRole("button", { name: "Profit warning issued" });
-
-    fireEvent.click(sourceButton);
-
     expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
   });
 });

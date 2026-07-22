@@ -292,7 +292,13 @@ pub(super) fn list_kpi_definitions(
         FROM kpi_definitions
         WHERE (?1 IS NULL OR scope = ?1)
             AND (?2 IS NULL OR sector = ?2)
-            AND (?3 IS NULL OR company_id = ?3)
+            -- company_id with NO scope = the catalog this company can see:
+            -- shared rows (company_id NULL: canonical/sector/user) PLUS its own
+            -- company-scoped rows. Never another company s customs, and never a
+            -- filter that hides the shared catalog (owner-dogfooding catch
+            -- 2026-07-22: the fact matrix synthesized placeholder definitions).
+            -- With an explicit scope the exact filter applies unchanged.
+            AND (?3 IS NULL OR company_id = ?3 OR (?1 IS NULL AND company_id IS NULL))
         ORDER BY metric_key COLLATE NOCASE, label COLLATE NOCASE
         ",
     )?;
@@ -729,12 +735,74 @@ pub(super) fn list_financial_facts(
 /// Returns `Ok(None)` when no period matches, or the period has no facts (a
 /// fresh company/period — not an error). Facts whose `value_numeric` doesn't
 /// parse as a decimal are skipped rather than failing the whole read.
-pub(super) fn stored_fact_set(
+/// The company's expected primary-KPI `metric_key`s (ADR 0061 dec. 4d): every
+/// `kpi_relevance` row that is `active` and ranked `primary` (case-insensitively),
+/// bridged to its `metric_key` via the definition catalog. `None` when there are
+/// none (nothing to check completeness against) — never blocks emission by itself.
+///
+/// Lives here, at the connection level, so BOTH the document pipeline
+/// (`jobs::structured_extraction`) and the ingest-time ESPI cover-note tier feed
+/// the completeness gate from one query.
+pub(super) fn expected_primary_metric_keys(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<Option<std::collections::BTreeSet<String>>> {
+    use std::collections::BTreeSet;
+
+    let relevance = list_kpi_relevance(connection, company_id)?;
+    let primary_definition_ids: BTreeSet<String> = relevance
+        .into_iter()
+        .filter(|r| {
+            r.status == "active"
+                && r.rank
+                    .as_deref()
+                    .is_some_and(|rank| rank.eq_ignore_ascii_case("primary"))
+        })
+        .map(|r| r.definition_id)
+        .collect();
+    if primary_definition_ids.is_empty() {
+        return Ok(None);
+    }
+
+    let definitions = list_kpi_definitions(
+        connection,
+        ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        },
+    )?;
+    let keys: BTreeSet<String> = definitions
+        .into_iter()
+        .filter(|d| primary_definition_ids.contains(&d.id))
+        .map(|d| d.metric_key)
+        .collect();
+    Ok(if keys.is_empty() { None } else { Some(keys) })
+}
+
+/// The stored fact set for one `(company, fiscal_year, period_type)`, bridged to
+/// `metric_key`s — the ONE general body [`stored_fact_set`] and
+/// [`stored_fact_set_for_cross_check`] share. `veto_filter` is the only knob:
+/// - `None`: every stored fact (the plain comparative prior — [`stored_fact_set`]).
+/// - `Some(incoming_tier)`: only facts an `incoming_tier` extraction may be VETOED
+///   by (ADR 0086 dec. 3/4) — facts with no provenance row (manual, top of the
+///   ladder) and facts whose provenance tier the incoming tier does NOT outrank. A
+///   strictly-LOWER-tier prior (e.g. the daily BiznesRadar pull) is excluded so a
+///   third-party number never fails an issuer filing's comparative cross-check and
+///   discards the whole set.
+///
+/// The tier lookup is ONE provenance query for the whole period (not a per-fact
+/// SELECT — the N+1 this consolidation removed, hot in the rebuild's pass-2 over
+/// ~250 docs).
+fn stored_fact_set_filtered(
     connection: &Connection,
     company_id: &str,
     fiscal_year: i64,
     period_type: &str,
+    veto_filter: Option<crate::fundamentals::extraction::SourceTier>,
 ) -> StorageResult<Option<FactSet>> {
+    use crate::fundamentals::extraction::SourceTier;
+
     let periods = list_financial_periods(
         connection,
         ListFinancialPeriodsInput {
@@ -753,7 +821,7 @@ pub(super) fn stored_fact_set(
         connection,
         ListFinancialFactsInput {
             company_id: None,
-            period_id: Some(period.id),
+            period_id: Some(period.id.clone()),
             definition_id: None,
         },
     )?;
@@ -778,8 +846,32 @@ pub(super) fn stored_fact_set(
         .map(|d| (d.id, d.metric_key))
         .collect();
 
+    // One provenance query for the whole period, only when a veto filter is
+    // active — a fact absent from this map has no provenance row (a manual entry).
+    let tier_by_fact: HashMap<String, String> = if veto_filter.is_some() {
+        fact_tiers_for_period(connection, &period.id)?
+    } else {
+        HashMap::new()
+    };
+
     let mut set = FactSet::new();
     for fact in facts {
+        if let Some(incoming_tier) = veto_filter {
+            // A fact with no provenance row is a manual entry — always
+            // veto-capable. A provenanced fact is veto-capable only when the
+            // incoming tier does not outrank it; an unparsable stored tier is
+            // treated as veto-capable (never silently discounted).
+            let veto_capable = match tier_by_fact.get(&fact.id) {
+                None => true,
+                Some(stored) => match SourceTier::parse(stored) {
+                    Some(stored_tier) => !incoming_tier.outranks(stored_tier),
+                    None => true,
+                },
+            };
+            if !veto_capable {
+                continue;
+            }
+        }
         let Some(metric_key) = metric_key_by_definition.get(&fact.definition_id) else {
             continue;
         };
@@ -794,6 +886,211 @@ pub(super) fn stored_fact_set(
     } else {
         Ok(Some(set))
     }
+}
+
+/// `fact_id → source_tier` for every provenanced fact in one period, in a single
+/// JOIN — the batched replacement for the per-fact `fact_source_tier` SELECT.
+fn fact_tiers_for_period(
+    connection: &Connection,
+    period_id: &str,
+) -> StorageResult<HashMap<String, String>> {
+    let mut statement = connection.prepare(
+        "SELECT p.fact_id, p.source_tier
+         FROM financial_fact_provenance p
+         JOIN financial_facts f ON f.id = p.fact_id
+         WHERE f.period_id = ?1",
+    )?;
+    let rows = statement.query_map([period_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    rows.collect::<rusqlite::Result<HashMap<_, _>>>()
+        .map_err(StorageError::from)
+}
+
+/// The plain comparative prior — every stored fact for the period, bridged to
+/// `metric_key`s (ADR 0061 dec. 4b). This is the cross-check-UNAWARE variant: a
+/// future author wanting the reversed-witnessing veto semantics wants
+/// [`stored_fact_set_for_cross_check`] instead. Only test harnesses read this
+/// unfiltered form today (production callers go through the cross-check variant).
+pub(super) fn stored_fact_set(
+    connection: &Connection,
+    company_id: &str,
+    fiscal_year: i64,
+    period_type: &str,
+) -> StorageResult<Option<FactSet>> {
+    stored_fact_set_filtered(connection, company_id, fiscal_year, period_type, None)
+}
+
+/// [`stored_fact_set`] restricted to facts an `incoming_tier` extraction may be
+/// VETOED by (ADR 0086 decisions 3/4). See [`stored_fact_set_filtered`] for the
+/// veto semantics.
+pub(super) fn stored_fact_set_for_cross_check(
+    connection: &Connection,
+    company_id: &str,
+    fiscal_year: i64,
+    period_type: &str,
+    incoming_tier: crate::fundamentals::extraction::SourceTier,
+) -> StorageResult<Option<FactSet>> {
+    stored_fact_set_filtered(
+        connection,
+        company_id,
+        fiscal_year,
+        period_type,
+        Some(incoming_tier),
+    )
+}
+
+/// All stored values of `metric_key` for `company_id` across every period OTHER
+/// than `(exclude_fiscal_year, exclude_period_type)` — the history the runtime
+/// plausibility gate ([`crate::fundamentals::validation::implausible_against_history`])
+/// measures an about-to-persist fact against. The current period is excluded so a
+/// re-extraction of a landed slot never checks a value against a stale copy of
+/// itself. CONFIRMED values are INCLUDED: a user- or witness-trusted figure is
+/// the trust anchor of the history, never a contaminant. Read-only. Bridges
+/// `metric_key` to its definition id the same 1:1 way [`stored_fact_set`] does;
+/// values that don't parse as decimals are skipped rather than failing the read.
+pub(super) fn metric_history(
+    connection: &Connection,
+    company_id: &str,
+    metric_key: &str,
+    exclude_fiscal_year: i64,
+    exclude_period_type: &str,
+) -> StorageResult<Vec<Decimal>> {
+    use std::collections::HashSet;
+
+    let periods = list_financial_periods(
+        connection,
+        ListFinancialPeriodsInput {
+            company_id: company_id.to_owned(),
+            fiscal_year: None,
+        },
+    )?;
+    let excluded: HashSet<String> = periods
+        .iter()
+        .filter(|p| {
+            p.fiscal_year == exclude_fiscal_year
+                && p.period_type.eq_ignore_ascii_case(exclude_period_type)
+        })
+        .map(|p| p.id.clone())
+        .collect();
+
+    let facts = list_financial_facts(
+        connection,
+        ListFinancialFactsInput {
+            company_id: Some(company_id.to_owned()),
+            period_id: None,
+            definition_id: Some(kpi_definition_id(metric_key)),
+        },
+    )?;
+
+    let mut values = Vec::new();
+    for fact in facts {
+        if excluded.contains(&fact.period_id) {
+            continue;
+        }
+        if let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) {
+            values.push(value);
+        }
+    }
+    Ok(values)
+}
+
+/// The stored history of MANY metrics in a single read — the batched form of
+/// [`metric_history`], for the per-fact history-plausibility gate that would
+/// otherwise call `metric_history` once per fact (≈20 facts/document → 20
+/// connection checkouts and 20 identical, loop-invariant period scans). The
+/// period list and the whole-company fact scan are each done ONCE here and
+/// grouped in memory.
+///
+/// Equivalence contract (the refactor's oracle): `result[k]` is byte-identical
+/// to what `metric_history(company_id, k, exclude_fiscal_year,
+/// exclude_period_type)` would return — same values, same order (the company
+/// fact scan preserves the `created_at DESC, id` order each single read sees, and
+/// filtering to one definition preserves that relative order). Every requested
+/// key is present; a key with no history maps to an empty vector, exactly as the
+/// single read returns `[]`.
+pub(super) fn metric_histories(
+    connection: &Connection,
+    company_id: &str,
+    metric_keys: &std::collections::BTreeSet<String>,
+    exclude_fiscal_year: i64,
+    exclude_period_type: &str,
+) -> StorageResult<std::collections::HashMap<String, Vec<Decimal>>> {
+    use std::collections::{HashMap, HashSet};
+
+    // Pre-seed every requested key so a metric with no stored facts still maps to
+    // an empty vector (parity with the single read's `Ok(vec![])`).
+    let mut result: HashMap<String, Vec<Decimal>> = metric_keys
+        .iter()
+        .map(|k| (k.clone(), Vec::new()))
+        .collect();
+    if metric_keys.is_empty() {
+        return Ok(result);
+    }
+
+    // Loop-invariant across all metrics: the company's periods, read ONCE, and the
+    // excluded-period set (the very period being extracted) computed ONCE — the
+    // waste `metric_history` repeated per fact.
+    let periods = list_financial_periods(
+        connection,
+        ListFinancialPeriodsInput {
+            company_id: company_id.to_owned(),
+            fiscal_year: None,
+        },
+    )?;
+    let excluded: HashSet<String> = periods
+        .iter()
+        .filter(|p| {
+            p.fiscal_year == exclude_fiscal_year
+                && p.period_type.eq_ignore_ascii_case(exclude_period_type)
+        })
+        .map(|p| p.id.clone())
+        .collect();
+
+    // `kpi_definition_id` is a 1:1 function of `metric_key`, so this reverse map
+    // is unambiguous — the group a scanned fact belongs to.
+    let def_to_metric: HashMap<String, String> = metric_keys
+        .iter()
+        .map(|k| (kpi_definition_id(k), k.clone()))
+        .collect();
+
+    // One scan for the whole company (definition_id = None), grouped by the
+    // requested definitions — replaces N per-definition scans.
+    let facts = list_financial_facts(
+        connection,
+        ListFinancialFactsInput {
+            company_id: Some(company_id.to_owned()),
+            period_id: None,
+            definition_id: None,
+        },
+    )?;
+    for fact in facts {
+        let Some(metric_key) = def_to_metric.get(&fact.definition_id) else {
+            continue;
+        };
+        if excluded.contains(&fact.period_id) {
+            continue;
+        }
+        if let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) {
+            result
+                .get_mut(metric_key)
+                .expect("every requested key is pre-seeded")
+                .push(value);
+        }
+    }
+    Ok(result)
+}
+
+/// A cached per-document reporting-period derivation (migration 0109). `None`
+/// period columns with `has_period = false` is the explicit none-marker — a
+/// document whose content yields no derivable period, recorded so it is not
+/// re-parsed on the next read.
+pub struct CachedDerivedPeriod {
+    pub has_period: bool,
+    pub fiscal_year: Option<i64>,
+    pub period_type: Option<String>,
+    pub period_end: Option<String>,
+    pub derivation_version: i64,
 }
 
 /// The five slot-dimension columns of a fact with per-column defaults applied —
@@ -1472,9 +1769,22 @@ impl FinancialsStore {
         list_financial_facts(&connection, input)
     }
 
+    /// The company's expected primary-KPI `metric_key`s (ADR 0061 dec. 4d). See
+    /// [`expected_primary_metric_keys`] for the semantics.
+    pub fn expected_primary_metric_keys(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Option<std::collections::BTreeSet<String>>> {
+        let connection = self.db.checkout()?;
+
+        expected_primary_metric_keys(&connection, company_id)
+    }
+
     /// The previously-stored fact set for one `(company, fiscal_year,
-    /// period_type)`, bridged to `metric_key`s (ADR 0061 dec. 4b). See
-    /// [`stored_fact_set`] for the read semantics.
+    /// period_type)`, bridged to `metric_key`s (ADR 0061 dec. 4b) — the
+    /// cross-check-UNAWARE variant (every stored fact, no reversed-witnessing
+    /// veto). A comparative cross-check wants [`Self::stored_fact_set_for_cross_check`]
+    /// instead; only test harnesses read this unfiltered form today.
     pub fn stored_fact_set(
         &self,
         company_id: &str,
@@ -1484,6 +1794,139 @@ impl FinancialsStore {
         let connection = self.db.checkout()?;
 
         stored_fact_set(&connection, company_id, fiscal_year, period_type)
+    }
+
+    /// [`Self::stored_fact_set`] restricted to veto-capable facts for an
+    /// `incoming_tier` cross-check (ADR 0086 dec. 3/4) — see
+    /// [`stored_fact_set_for_cross_check`].
+    pub fn stored_fact_set_for_cross_check(
+        &self,
+        company_id: &str,
+        fiscal_year: i64,
+        period_type: &str,
+        incoming_tier: crate::fundamentals::extraction::SourceTier,
+    ) -> StorageResult<Option<FactSet>> {
+        let connection = self.db.checkout()?;
+
+        stored_fact_set_for_cross_check(
+            &connection,
+            company_id,
+            fiscal_year,
+            period_type,
+            incoming_tier,
+        )
+    }
+
+    /// A metric's stored history across the company's other periods, for the
+    /// runtime plausibility gate. See [`metric_history`] for the read semantics.
+    pub fn metric_history(
+        &self,
+        company_id: &str,
+        metric_key: &str,
+        exclude_fiscal_year: i64,
+        exclude_period_type: &str,
+    ) -> StorageResult<Vec<Decimal>> {
+        let connection = self.db.checkout()?;
+
+        metric_history(
+            &connection,
+            company_id,
+            metric_key,
+            exclude_fiscal_year,
+            exclude_period_type,
+        )
+    }
+
+    /// The stored history of many metrics in one read (one checkout, one period
+    /// scan, one company fact scan). Batched form of [`Self::metric_history`] —
+    /// see [`metric_histories`] for the equivalence contract the per-fact
+    /// history-plausibility gate relies on.
+    pub fn metric_histories(
+        &self,
+        company_id: &str,
+        metric_keys: &std::collections::BTreeSet<String>,
+        exclude_fiscal_year: i64,
+        exclude_period_type: &str,
+    ) -> StorageResult<std::collections::HashMap<String, Vec<Decimal>>> {
+        let connection = self.db.checkout()?;
+
+        metric_histories(
+            &connection,
+            company_id,
+            metric_keys,
+            exclude_fiscal_year,
+            exclude_period_type,
+        )
+    }
+
+    /// The cached period derivation for one document, if any (migration 0109).
+    /// A hit lets `derive_report_period` skip the file read + text extraction the
+    /// last-resort cover-page tier would otherwise run on every call.
+    pub fn cached_derived_period(
+        &self,
+        report_document_id: &str,
+    ) -> StorageResult<Option<CachedDerivedPeriod>> {
+        let connection = self.db.checkout()?;
+
+        connection
+            .query_row(
+                "SELECT has_period, fiscal_year, period_type, period_end, derivation_version
+                 FROM document_derived_periods
+                 WHERE report_document_id = ?1",
+                [report_document_id],
+                |row| {
+                    Ok(CachedDerivedPeriod {
+                        has_period: row.get::<_, i64>(0)? != 0,
+                        fiscal_year: row.get(1)?,
+                        period_type: row.get(2)?,
+                        period_end: row.get(3)?,
+                        derivation_version: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
+    /// Persist a document's derived period (migration 0109). `period = None`
+    /// writes the explicit none-marker so an abstention is not re-parsed either.
+    /// Upserts on the document key so a version bump re-derives and overwrites in
+    /// place (self-healing). `derivation_version` is the caller's current
+    /// derivation-grammar version.
+    pub fn store_derived_period(
+        &self,
+        report_document_id: &str,
+        period: Option<(i64, &str, &str)>,
+        derivation_version: i64,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        let (has_period, fiscal_year, period_type, period_end) = match period {
+            Some((fy, pt, pe)) => (1i64, Some(fy), Some(pt.to_owned()), Some(pe.to_owned())),
+            None => (0i64, None, None, None),
+        };
+        connection.execute(
+            "INSERT INTO document_derived_periods (
+                report_document_id, has_period, fiscal_year, period_type, period_end,
+                derivation_version, derived_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            ON CONFLICT(report_document_id) DO UPDATE SET
+                has_period = excluded.has_period,
+                fiscal_year = excluded.fiscal_year,
+                period_type = excluded.period_type,
+                period_end = excluded.period_end,
+                derivation_version = excluded.derivation_version,
+                derived_at = excluded.derived_at",
+            params![
+                report_document_id,
+                has_period,
+                fiscal_year,
+                period_type,
+                period_end,
+                derivation_version
+            ],
+        )?;
+        Ok(())
     }
 
     pub fn create_financial_fact(&self, input: NewFinancialFact) -> StorageResult<FinancialFact> {

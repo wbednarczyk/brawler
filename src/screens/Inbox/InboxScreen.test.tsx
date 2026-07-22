@@ -1,6 +1,5 @@
 import { describe, it } from "vitest";
-import { act, fireEvent } from "@testing-library/react";
-import type { AiAnalysisJob } from "../../api/types";
+import { fireEvent } from "@testing-library/react";
 import {
   appTestState,
   expect,
@@ -96,119 +95,34 @@ describe("Inbox screen workflows", () => {
     expect(detailPane.queryByRole("link", { name: "Polityka Cookies" })).not.toBeInTheDocument();
   });
 
-  it("starts AI analysis from a selected feed item", async () => {
-    const user = userEvent.setup();
-    appTestState.settingsResponse = {
-      ...appTestState.settingsResponse,
-      aiProviders: {
-        ...appTestState.settingsResponse.aiProviders,
-        generalAnalysisProvider: "provider_gemini",
-      },
-    };
-
+  // ADR 0084 decision 5 (clean cut, revised 2026-07-20): the AI analysis tables
+  // are DROPPED, so the read-only viewer the earlier slice kept has nothing to
+  // display and is gone too. The detail rail must render no AI-analysis surface
+  // at all, and no retired AI command may be reachable from it.
+  it("renders no AI-analysis surface in the detail rail (ADR 0084 clean cut)", async () => {
     renderApp();
 
-    // AI analysis controls now live in a modal launched from the detail rail.
-    await user.click(await screen.findByRole("button", { name: "Analyze with AI" }));
-    await user.click(await screen.findByRole("button", { name: "Summarize impact" }));
+    // A feed item is selected and its detail rail is rendered.
+    expect((await screen.findAllByText(initialFeedItems[0].title)).length).toBeGreaterThan(0);
 
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("start_ai_analysis", {
-        input: {
-          feedItemId: "feed_sample_cdr_report",
-          promptPresetId: "default_summary",
-          customQuestion: undefined,
-        },
-      });
-    });
-    expect(await screen.findByText("AI summary for Current report placeholder for watchlist company")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "GPW ESPI/EBI" })).toHaveAttribute(
-      "href",
-      "https://www.gpw.pl/komunikaty",
-    );
-  });
+    // Every AI-analysis affordance — read-only viewer included — is gone.
+    for (const name of [
+      "Analyze with AI",
+      "Analyze",
+      "Summarize impact",
+      "Find risks",
+      "Retry",
+      "View analysis",
+    ]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByLabelText("AI custom question")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI analysis")).not.toBeInTheDocument();
 
-  it("polls visible running AI analysis until the result is stored", async () => {
-    vi.useFakeTimers();
-
-    try {
-      const createdAt = "2026-01-01T10:00:00.000Z";
-      const runningJob: AiAnalysisJob = {
-        id: "ai_job_running_cdr",
-        feedItemId: "feed_sample_cdr_report",
-        promptPresetId: "default_summary",
-        customQuestion: null,
-        providerId: "provider_gemini",
-        model: "gemini-2.5-flash",
-        promptVersion: "analysis_v1",
-        status: "running",
-        errorCode: null,
-        error: null,
-        createdAt,
-        startedAt: createdAt,
-        finishedAt: null,
-        result: null,
-      };
-      const completedJob: AiAnalysisJob = {
-        ...runningJob,
-        status: "succeeded",
-        finishedAt: "2026-01-01T10:00:02.000Z",
-        result: {
-          id: "ai_result_polled_cdr",
-          aiAnalysisJobId: runningJob.id,
-          feedItemId: runningJob.feedItemId,
-          providerId: runningJob.providerId,
-          model: runningJob.model,
-          promptVersion: runningJob.promptVersion,
-          summary: "Polled AI summary for CDR.",
-          significance: "medium",
-          reasoning: "Completed by the background poll.",
-          language: "en",
-          tags: ["analysis"],
-          sourceReferences: [
-            {
-              id: "ai_source_polled_cdr",
-              sourceUrl: "https://www.gpw.pl/komunikaty",
-              label: "GPW ESPI/EBI",
-              createdAt,
-            },
-          ],
-          createdAt,
-        },
-      };
-
-      appTestState.settingsResponse = {
-        ...appTestState.settingsResponse,
-        aiProviders: {
-          ...appTestState.settingsResponse.aiProviders,
-          generalAnalysisProvider: "provider_gemini",
-        },
-      };
-      appTestState.aiAnalysisJobsResponse = {
-        feed_sample_cdr_report: [runningJob],
-      };
-
-      renderApp();
-
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(screen.getByText("running")).toBeInTheDocument();
-
-      appTestState.aiAnalysisJobsResponse = {
-        feed_sample_cdr_report: [completedJob],
-      };
-
-      await act(async () => {
-        vi.advanceTimersByTime(1500);
-        await Promise.resolve();
-      });
-
-      expect(screen.getByText("Polled AI summary for CDR.")).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Refresh analysis" })).not.toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
+    // Nothing reached a retired AI command.
+    const commands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    for (const retired of ["list_ai_analysis", "start_ai_analysis", "retry_ai_analysis"]) {
+      expect(commands).not.toContain(retired);
     }
   });
 

@@ -1,45 +1,10 @@
-use crate::{app_state, providers::analysis::registry, storage};
-use serde::{Deserialize, Serialize};
+use crate::{app_state, storage};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeveloperModeUnlockInput {
     passphrase: String,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct AiProviderCatalogEntry {
-    pub provider_id: String,
-    pub label: String,
-    pub models: Vec<String>,
-    pub default_model: String,
-    pub requires_credential: bool,
-}
-
-/// The selectable AI analysis providers and their curated models (ADR 0028).
-/// Single source of truth for the settings provider/model selection UI.
-#[tauri::command]
-pub fn list_ai_provider_catalog() -> Vec<AiProviderCatalogEntry> {
-    registry::analysis_provider_catalog()
-        .iter()
-        .map(|entry| AiProviderCatalogEntry {
-            provider_id: entry.provider_id.to_owned(),
-            label: entry.label.to_owned(),
-            models: entry
-                .models
-                .iter()
-                .map(|model| (*model).to_owned())
-                .collect(),
-            default_model: entry.default_model.to_owned(),
-            requires_credential: entry.requires_credential,
-        })
-        .collect()
 }
 
 #[tauri::command]

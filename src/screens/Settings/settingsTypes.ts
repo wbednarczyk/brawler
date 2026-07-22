@@ -1,6 +1,5 @@
 import type { FormEvent } from "react";
 import type { AccentPalette, AppLocale, CredentialStatus, FeedPruneResult, LicenseStatus, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
-import type { CapabilityProviderEntry } from "../../api/generated/CapabilityProviderEntry";
 import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 
 export type SettingsScreenProps = {
@@ -28,16 +27,9 @@ export type SettingsScreenProps = {
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
   onBackfillYearsChange: (backfillYears: number) => void;
   onMcpPortChange: (port: number) => void;
-  onHistorySweepAiCallLimitChange: (historySweepAiCallLimit: number) => void;
   onShortcutBindingsChange: (shortcutBindings: Record<string, ShortcutBindingSetting>) => void;
   onYoutubeTranscriptionModelChange: (model: string) => void;
   onYoutubeTranscriptionTimeoutChange: (timeoutSeconds: number) => void;
-  onGeneralAnalysisProviderChange: (provider: string) => void;
-  onGeneralAnalysisModelChange: (model: string) => void;
-  onGeneralAnalysisTimeoutChange: (timeoutSeconds: number) => void;
-  onEspiAiFallbackChange: (enabled: boolean) => void;
-  onOpenAiCompatibleBaseUrlChange: (baseUrl: string) => void;
-  onCapabilityProvidersChange: (capabilityProviders: Record<string, CapabilityProviderEntry[]>) => void;
   onLogLevelChange: (level: string) => void;
   onLogMaxFilesChange: (maxFiles: number) => void;
   onLogMaxFileBytesChange: (maxFileBytes: number) => void;
@@ -47,8 +39,6 @@ export type SettingsScreenProps = {
   onResetDatabaseSettings: () => void;
   onSourcesWorkersChange: (workers: number) => void;
   onAutopilotWorkersChange: (workers: number) => void;
-  onAiWorkersChange: (workers: number) => void;
-  onAiProviderConcurrencyChange: (concurrency: number) => void;
   onResetQueueSettings: () => void;
   onClearLicenseKey: () => void;
   onLicenseKeyDraftChange: (licenseKey: string) => void;
@@ -60,7 +50,6 @@ export type SettingsScreenProps = {
   onImportApplied: () => void;
   formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   formatPollInterval: (seconds: number) => string;
-  formatAiProvider: (value: string | null | undefined) => string;
   formatGeminiModel: (value: string | null | undefined) => string;
   formatCredentialConfigured: (status: CredentialStatus | null) => string;
   formatCredentialKind: (value: string | null | undefined) => string;

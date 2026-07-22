@@ -215,24 +215,6 @@ function buildTimeline(data: ScenarioData, input: ResearchEvidenceInput) {
   };
 }
 
-/** Locate a KPI extraction proposal (and its job) by id across all jobs. */
-function findKpiProposal(data: ScenarioData, proposalId: string | null) {
-  if (!proposalId) return null;
-  for (const job of data.kpiExtractionJobs) {
-    const proposal = job.proposals.find((p) => p.id === proposalId);
-    if (proposal) return { job, proposal };
-  }
-  return null;
-}
-
-/** The first feed-item evidence in a scope, used to ground generated citations. */
-function scopeFeedEvidence(data: ScenarioData, scopeId: string) {
-  return (
-    data.researchEvidence.find((e) => e.companyId === scopeId && e.evidenceType === "feed_item") ??
-    data.researchEvidence.find((e) => e.evidenceType === "feed_item") ??
-    null
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Search (ported intent of ADR 0032 FTS over the in-memory store)
@@ -404,8 +386,6 @@ function emptyOwnershipOverview(companyId: string): OwnershipOverview {
     history: [],
     freeFloatHistory: [],
     residuals: [],
-    pendingProposals: [],
-    ocrProposals: [],
   };
 }
 
@@ -461,7 +441,6 @@ function buildHandlers(): Record<string, Handler> {
     list_source_reconciliation: (d) => d.reconciliationResults,
     get_log_status: (d) => d.logStatus,
     list_log_entries: (d) => d.logEntries,
-    list_ai_provider_catalog: (d) => d.providerCatalog,
     get_provider_credential_status: (d, a) => {
       const providerId = str(unwrap(a).providerId);
       const found = providerId
@@ -664,87 +643,6 @@ function buildHandlers(): Record<string, Handler> {
       );
       return overview;
     },
-    confirm_ownership_holder_type_proposal: (d, a) => {
-      const input = unwrap(a);
-      const companyId = str(input.companyId) ?? "";
-      const proposalId = str(input.proposalId) ?? "";
-      const overview = ensureOwnershipOverview(d, companyId);
-      const proposal = overview.pendingProposals.find((p) => p.id === proposalId);
-      if (proposal) {
-        overview.holders = overview.holders.map((h) =>
-          h.holderKey === proposal.holderKey ? { ...h, holderType: proposal.proposedType } : h,
-        );
-        overview.pendingProposals = overview.pendingProposals.filter((p) => p.id !== proposalId);
-      }
-      return overview;
-    },
-    reject_ownership_holder_type_proposal: (d, a) => {
-      const input = unwrap(a);
-      const companyId = str(input.companyId) ?? "";
-      const proposalId = str(input.proposalId) ?? "";
-      const overview = ensureOwnershipOverview(d, companyId);
-      overview.pendingProposals = overview.pendingProposals.filter((p) => p.id !== proposalId);
-      return overview;
-    },
-    run_ownership_classification: () => ({ examined: 0, proposed: 0, skipped: 0, errors: 0 }),
-
-    // --- Tier-4 OCR over ownership residuals (v0.57 T8, ADR 0077) ---
-    run_ownership_ocr_extraction: () => ({
-      examined: 0,
-      proposed: 0,
-      noTable: 0,
-      skipped: 0,
-      errors: 0,
-    }),
-    run_company_ownership_ocr: (d, a) => {
-      const companyId = str(unwrap(a).companyId) ?? "";
-      // No vision provider / no residual in the mock world → a clean no-op that
-      // returns the (unchanged) overview, mirroring the Rust no-op.
-      return d.ownershipOverviews?.find((o) => o.companyId === companyId) ??
-        emptyOwnershipOverview(companyId);
-    },
-    confirm_ownership_ocr_proposal: (d, a) => {
-      const input = unwrap(a);
-      const companyId = str(input.companyId) ?? "";
-      const reportDocumentId = str(input.reportDocumentId) ?? "";
-      const overview = ensureOwnershipOverview(d, companyId);
-      // Confirm applies each proposed row as a stake, then drops the proposal.
-      const proposal = overview.ocrProposals.find((p) => p.reportDocumentId === reportDocumentId);
-      if (proposal) {
-        for (const holder of proposal.holders) {
-          overview.holders.push({
-            holderKey: holder.holderNameRaw.trim().toUpperCase(),
-            name: holder.holderNameRaw,
-            capitalPct: holder.capitalPct,
-            votesPct: holder.votesPct,
-            asOf: proposal.asOf,
-            source: "report_document",
-          });
-        }
-        overview.ocrProposals = overview.ocrProposals.filter(
-          (p) => p.reportDocumentId !== reportDocumentId,
-        );
-        overview.residuals = overview.residuals.filter(
-          (r) => r.reportDocumentId !== reportDocumentId,
-        );
-      }
-      return overview;
-    },
-    reject_ownership_ocr_proposal: (d, a) => {
-      const input = unwrap(a);
-      const companyId = str(input.companyId) ?? "";
-      const reportDocumentId = str(input.reportDocumentId) ?? "";
-      const overview = ensureOwnershipOverview(d, companyId);
-      overview.ocrProposals = overview.ocrProposals.filter(
-        (p) => p.reportDocumentId !== reportDocumentId,
-      );
-      overview.residuals = overview.residuals.map((r) =>
-        r.reportDocumentId === reportDocumentId ? { ...r, ocrState: "rejected" } : r,
-      );
-      return overview;
-    },
-
-    // --- Cockpit layouts (ADR 0053) ---
     list_cockpit_layouts: (d) => d.cockpitLayouts,
     save_cockpit_layout: (d, a, ctx) => {
       const input = unwrap(a);
@@ -1025,10 +923,6 @@ function buildHandlers(): Record<string, Handler> {
       return undefined;
     },
     confirm_derived_event: ok,
-    run_ai_signal_classification: () => ({ enabled: true, examined: 2, proposed: 1, skipped: 0 }),
-    run_ai_event_derivation: () => ({ enabled: true, examined: 2, derived: 1, skipped: 0 }),
-
-    // --- Attention routing: alert rules + fired events (ADR 0068) ---
     list_alert_rules: (d) => d.alertRules,
     create_alert_rule: (d, a, ctx) => {
       const input = unwrap(a);
@@ -1205,9 +1099,6 @@ function buildHandlers(): Record<string, Handler> {
         id: briefingId,
         composedAt: SAMPLE_NOW,
         since: d.morningBriefing?.composedAt ?? "",
-        narrativeMarkdown: null,
-        narrativeProviderId: null,
-        narrativeModel: null,
         language: null,
         createdAt: SAMPLE_NOW,
         items,
@@ -1216,60 +1107,6 @@ function buildHandlers(): Record<string, Handler> {
     },
     get_latest_morning_briefing: (d) => d.morningBriefing ?? null,
 
-    // --- AI analysis ---
-    list_ai_analysis: (d, a) => {
-      const feedItemId = str(unwrap(a).feedItemId);
-      return d.aiAnalysisJobs.filter((j) => !feedItemId || j.feedItemId === feedItemId);
-    },
-    start_ai_analysis: (d, a, ctx) => {
-      const input = unwrap(a);
-      const feedItemId = str(input.feedItemId) ?? "";
-      const item = d.feedItems.find((f) => f.id === feedItemId) ?? d.feedItems[0];
-      const provider = d.settings.aiProviders.generalAnalysisProvider ?? "provider_gemini";
-      const model = d.settings.aiProviders.generalAnalysisModel;
-      const job = {
-        id: ctx.nextId("ai_job"),
-        feedItemId,
-        promptPresetId: str(input.promptPresetId) ?? "default_summary",
-        customQuestion: str(input.customQuestion),
-        providerId: provider,
-        model,
-        promptVersion: "analysis_v1",
-        status: "succeeded" as const,
-        errorCode: null,
-        error: null,
-        createdAt: SAMPLE_NOW,
-        startedAt: SAMPLE_NOW,
-        finishedAt: SAMPLE_NOW,
-        result: {
-          id: `ai_result_${feedItemId}`,
-          aiAnalysisJobId: null,
-          feedItemId,
-          providerId: provider,
-          model,
-          promptVersion: "analysis_v1",
-          summary: `AI summary for ${item?.title ?? feedItemId}`,
-          significance: "medium" as const,
-          reasoning: "Grounded in the selected feed item summary and source metadata.",
-          language: item?.language ?? "en",
-          tags: ["analysis", "feed"],
-          sourceReferences: [
-            { id: `ai_source_${feedItemId}`, sourceUrl: item?.sourceUrl ?? null, label: item?.source ?? "Source", createdAt: SAMPLE_NOW },
-          ],
-          createdAt: SAMPLE_NOW,
-        },
-      };
-      d.aiAnalysisJobs = [job, ...d.aiAnalysisJobs];
-      return job;
-    },
-    retry_ai_analysis: (d, a) => {
-      const jobId = str(unwrap(a).jobId);
-      const job = d.aiAnalysisJobs.find((j) => j.id === jobId);
-      if (job) job.status = "succeeded";
-      return job ?? d.aiAnalysisJobs[0];
-    },
-
-    // --- Notebooks ---
     list_notebook_entries: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       return companyId ? d.notebookEntries.filter((n) => n.companyId === companyId) : d.notebookEntries;
@@ -1601,132 +1438,6 @@ function buildHandlers(): Record<string, Handler> {
       d.researchReminders = d.researchReminders.filter((r) => r.id !== id);
       return undefined;
     },
-    list_research_briefs: (d, a) => {
-      const input = unwrap(a);
-      const scopeId = str(input.scopeId);
-      return d.researchBriefJobs.filter((j) => !scopeId || j.scopeId === scopeId);
-    },
-    start_research_brief: (d, a, ctx) => {
-      const input = unwrap(a);
-      const scopeType = (str(input.scopeType) ?? "company") as "company" | "watchlist";
-      const scopeId = str(input.scopeId) ?? "";
-      const feed = scopeFeedEvidence(d, scopeId);
-      const id = ctx.nextId("research_brief_job");
-      const briefId = ctx.nextId("research_brief");
-      const job = {
-        id,
-        scopeType,
-        scopeId,
-        providerId: "test_sample",
-        model: "test-sample-analysis-v1",
-        promptVersion: "m30.research_brief.v1",
-        evidenceCollectorVersion: "m30.collector.v1",
-        rendererVersion: "m30.renderer.v1",
-        status: "succeeded" as const,
-        errorCode: null,
-        error: null,
-        createdAt: SAMPLE_NOW,
-        startedAt: SAMPLE_NOW,
-        finishedAt: SAMPLE_NOW,
-        brief: {
-          id: briefId,
-          jobId: id,
-          scopeType,
-          scopeId,
-          providerId: "test_sample",
-          model: "test-sample-analysis-v1",
-          promptVersion: "m30.research_brief.v1",
-          evidenceCollectorVersion: "m30.collector.v1",
-          rendererVersion: "m30.renderer.v1",
-          title: "Generated research brief",
-          summary: "Source-grounded brief summary.",
-          contentMarkdown: "## What changed\n\nReview cited evidence together. [E1]",
-          language: "en",
-          generatedAt: SAMPLE_NOW,
-          createdAt: SAMPLE_NOW,
-          citations: feed
-            ? [
-                {
-                  id: `${briefId}_citation_1`,
-                  briefId,
-                  citationKey: "E1",
-                  evidenceType: "feed_item" as const,
-                  evidenceId: feed.sourceId,
-                  label: feed.title,
-                  snippet: feed.summary ?? null,
-                  createdAt: SAMPLE_NOW,
-                },
-              ]
-            : [],
-        },
-      };
-      d.researchBriefJobs = [job, ...d.researchBriefJobs];
-      return job;
-    },
-    list_research_digests: (d, a) => {
-      const input = unwrap(a);
-      const scopeId = str(input.scopeId);
-      return d.researchDigestJobs.filter((j) => !scopeId || j.scopeId === scopeId);
-    },
-    start_research_digest: (d, a, ctx) => {
-      const input = unwrap(a);
-      const scopeType = (str(input.scopeType) ?? "company") as "company" | "watchlist";
-      const scopeId = str(input.scopeId) ?? "";
-      const feed = scopeFeedEvidence(d, scopeId);
-      const id = ctx.nextId("research_digest_job");
-      const digestId = ctx.nextId("research_digest");
-      const job = {
-        id,
-        scopeType,
-        scopeId,
-        providerId: "test_sample",
-        model: "test-sample-analysis-v1",
-        promptVersion: "m31.research_digest.v1",
-        evidenceCollectorVersion: "m31.collector.v1",
-        rendererVersion: "m31.renderer.v1",
-        status: "succeeded" as const,
-        errorCode: null,
-        error: null,
-        createdAt: SAMPLE_NOW,
-        startedAt: SAMPLE_NOW,
-        finishedAt: SAMPLE_NOW,
-        digest: {
-          id: digestId,
-          jobId: id,
-          scopeType,
-          scopeId,
-          providerId: "test_sample",
-          model: "test-sample-analysis-v1",
-          promptVersion: "m31.research_digest.v1",
-          evidenceCollectorVersion: "m31.collector.v1",
-          rendererVersion: "m31.renderer.v1",
-          title: "Research digest",
-          summary: "Open reminders and changed evidence to review.",
-          contentMarkdown: "## Today's review\n\nStart with open reminders. [E1]",
-          language: "en",
-          generatedAt: SAMPLE_NOW,
-          createdAt: SAMPLE_NOW,
-          citations: feed
-            ? [
-                {
-                  id: `${digestId}_citation_1`,
-                  digestId,
-                  citationKey: "E1",
-                  evidenceType: "feed_item" as const,
-                  evidenceId: feed.sourceId,
-                  label: feed.title,
-                  snippet: feed.summary ?? null,
-                  createdAt: SAMPLE_NOW,
-                },
-              ]
-            : [],
-        },
-      };
-      d.researchDigestJobs = [job, ...d.researchDigestJobs];
-      return job;
-    },
-
-    // --- Management claims ---
     list_management_claims: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       return companyId ? d.managementClaims.filter((c) => c.companyId === companyId) : d.managementClaims;
@@ -1770,36 +1481,6 @@ function buildHandlers(): Record<string, Handler> {
       d.managementClaims = next;
       return updated ?? d.managementClaims[0];
     },
-    list_claim_extraction: (d, a) => {
-      const companyId = str(unwrap(a).companyId);
-      return companyId ? d.claimExtractionJobs.filter((j) => j.companyId === companyId) : d.claimExtractionJobs;
-    },
-    start_claim_extraction: (d, a, ctx) => {
-      const job = { ...d.claimExtractionJobs[0] };
-      job.id = ctx.nextId("claim_job");
-      job.status = "succeeded";
-      d.claimExtractionJobs = [...d.claimExtractionJobs, job];
-      void a;
-      return job;
-    },
-    retry_claim_extraction: (d, a) => {
-      const jobId = str(unwrap(a).jobId);
-      const job = d.claimExtractionJobs.find((j) => j.id === jobId);
-      if (job) job.status = "succeeded";
-      return job ?? d.claimExtractionJobs[0];
-    },
-    confirm_claim_proposal: (d) => d.managementClaims[0],
-    reject_claim_proposal: (d, a) => {
-      const proposalId = str(unwrap(a).proposalId);
-      const job = d.claimExtractionJobs.find((j) => j.proposals.some((p) => p.id === proposalId));
-      if (job) {
-        const proposal = job.proposals.find((p) => p.id === proposalId);
-        if (proposal) proposal.status = "rejected";
-      }
-      return job ?? d.claimExtractionJobs[0];
-    },
-
-    // --- Fundamentals: financials ---
     list_financial_periods: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       return companyId ? d.financialPeriods.filter((p) => p.companyId === companyId) : d.financialPeriods;
@@ -1900,22 +1581,6 @@ function buildHandlers(): Record<string, Handler> {
       d.kpiRelevance = d.kpiRelevance.filter((r) => r.id !== id);
       return undefined;
     },
-    list_kpi_extraction: (d, a) => {
-      const input = unwrap(a);
-      const reportDocumentId = str(input.reportDocumentId);
-      const companyId = str(input.companyId);
-      if (reportDocumentId) {
-        const matches = d.kpiExtractionJobs.filter((j) => j.reportDocumentId === reportDocumentId);
-        // Fall back to any extraction job so the review UI always has proposals
-        // even when the report id was minted by a fresh capture this session.
-        return matches.length > 0 ? matches : d.kpiExtractionJobs;
-      }
-      if (companyId) return d.kpiExtractionJobs.filter((j) => j.companyId === companyId);
-      return d.kpiExtractionJobs;
-    },
-    // Structured-first fundamentals provenance (ADR 0061). Provenance is an
-    // optional seed on the store (default none), so legacy scenarios render no
-    // badges and a provenance-seeded scenario exercises the tier/validation UI.
     list_fact_provenance: (d, a) => {
       const store = (d as { factProvenance?: Array<{ factId: string }> }).factProvenance ?? [];
       const ids = new Set(((unwrap(a).factIds as string[] | undefined) ?? []).map(String));
@@ -1925,6 +1590,39 @@ function buildHandlers(): Record<string, Handler> {
       ((d as { factProvenance?: Array<{ validationStatus: string }> }).factProvenance ?? []).filter(
         (p) => p.validationStatus === "flagged",
       ),
+    // The company's NON-EMITTING extraction outcomes, newest attempt first (ADR
+    // 0061 decision 2). Clean periods are excluded, and an absent row means
+    // "never attempted" — so `[]` is the honest "nothing flagged" state, never a
+    // stand-in for a failed read.
+    list_flagged_extraction_outcomes: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return [...(d.flaggedExtractionOutcomes ?? [])]
+        .filter((o) => o.companyId === companyId && o.reasonCode !== "emitted")
+        .sort((left, right) => right.lastAttemptedAt.localeCompare(left.lastAttemptedAt));
+    },
+    // "Try again" on a flagged period. The company/document/period come from the
+    // STORED row, so the retry cannot target a different slot than the one shown.
+    // The real backend updates that row in place; the mock models the outcome the
+    // UI depends on — a period whose cause is fixed LEAVES the flagged list.
+    rerun_extraction_outcome: (d, a) => {
+      const outcomeId = str(unwrap(a).outcomeId) ?? "";
+      const outcome = (d.flaggedExtractionOutcomes ?? []).find((o) => o.id === outcomeId);
+      if (!outcome) {
+        throw new Error(`no extraction outcome with id ${outcomeId}`);
+      }
+      d.flaggedExtractionOutcomes = (d.flaggedExtractionOutcomes ?? []).filter(
+        (o) => o.id !== outcomeId,
+      );
+      return {
+        acceptance: "accepted",
+        tier: outcome.tier ?? "pdf",
+        emitted: true,
+        producedFactIds: [],
+        skippedFactIds: [],
+        divergentCount: 0,
+        driftJson: null,
+      };
+    },
     run_structured_extraction: () => ({
       acceptance: "accepted",
       tier: "esef",
@@ -1934,7 +1632,6 @@ function buildHandlers(): Record<string, Handler> {
       divergentCount: 0,
       driftJson: null,
       tier4: null,
-      tier4Proposals: 0,
     }),
     // Per-document structured extraction (ADR 0061 S5) — the period is derived
     // server-side; the mock returns the same summary shape as the raw pipeline.
@@ -1947,131 +1644,7 @@ function buildHandlers(): Record<string, Handler> {
       divergentCount: 0,
       driftJson: null,
       tier4: null,
-      tier4Proposals: 0,
     }),
-    start_kpi_extraction: (d, a, ctx) => {
-      // Build a fresh extraction job for the requested report, carrying the
-      // seeded proposals so the review UI has something to confirm/reject.
-      const reportDocumentId = str(unwrap(a).reportDocumentId) ?? d.kpiExtractionJobs[0]?.reportDocumentId ?? "";
-      const template = d.kpiExtractionJobs[0];
-      const jobId = ctx.nextId("kpi_job");
-      const job = {
-        ...template,
-        id: jobId,
-        reportDocumentId,
-        status: "succeeded",
-        // Job-scoped proposal ids so confirm/reject target THIS job, not the
-        // seeded template (which carries the same base proposal ids).
-        proposals: (template?.proposals ?? []).map((p) => ({ ...p, id: `${jobId}_${p.id}`, jobId, status: "pending", factId: null })),
-      };
-      d.kpiExtractionJobs = [...d.kpiExtractionJobs.filter((j) => j.reportDocumentId !== reportDocumentId), job];
-      return job;
-    },
-    retry_kpi_extraction: (d, a) => {
-      const jobId = str(unwrap(a).jobId);
-      let updated: ScenarioData["kpiExtractionJobs"][number] | undefined;
-      d.kpiExtractionJobs = d.kpiExtractionJobs.map((job) => {
-        if (job.id !== jobId) return job;
-        updated = { ...job, status: "succeeded" };
-        return updated;
-      });
-      return updated ?? d.kpiExtractionJobs[0];
-    },
-    confirm_kpi_proposal: (d, a) => {
-      const input = unwrap(a);
-      const proposalId = str(input.proposalId);
-      const found = findKpiProposal(d, proposalId);
-      const factId = `fact_confirmed_${d.financialFacts.length}`;
-      if (found) {
-        // Mark the proposal confirmed (new object refs for re-render).
-        d.kpiExtractionJobs = d.kpiExtractionJobs.map((job) =>
-          job.id !== found.job.id
-            ? job
-            : { ...job, proposals: job.proposals.map((p) => (p.id === proposalId ? { ...p, status: "confirmed", factId } : p)) },
-        );
-      }
-      const fact = {
-        id: factId,
-        companyId: found?.job.companyId ?? d.companies[0]?.id ?? "",
-        periodId: "period_cdr_2025_q3",
-        definitionId: found ? `def_${found.proposal.metricKey}` : "def_revenue",
-        valueNumeric: str(input.valueNumeric) ?? found?.proposal.valueNumeric ?? "0",
-        currency: "PLN",
-        statementBasis: "consolidated",
-        attribution: "total",
-        variant: "actual",
-        measureWindow: "period",
-        dataQuality: "final",
-        asReportedValue: found?.proposal.asReportedValue ?? null,
-        asReportedScale: found?.proposal.asReportedScale ?? null,
-        reportingStandard: "IFRS",
-        extractionMethod: "ai_confirmed",
-        confidence: found?.proposal.confidence ?? "high",
-        confirmationState: "confirmed",
-        supersedesId: null,
-        sourceDocumentRef: found?.job.reportDocumentId ?? null,
-        createdAt: SAMPLE_NOW,
-        updatedAt: SAMPLE_NOW,
-      };
-      d.financialFacts = [...d.financialFacts, fact];
-      // ADR 0077 T4.4: the confirm path returns the fact plus the validation
-      // status recorded on its provenance row (the retired `none` is never
-      // written). The mock reports the common lone-value verdict.
-      return { fact, validationStatus: "unreviewed" };
-    },
-    reject_kpi_proposal: (d, a) => {
-      const proposalId = str(unwrap(a).proposalId);
-      const found = findKpiProposal(d, proposalId);
-      if (found) {
-        const rejected = { ...found.proposal, status: "rejected" };
-        d.kpiExtractionJobs = d.kpiExtractionJobs.map((job) =>
-          job.id !== found.job.id
-            ? job
-            : { ...job, proposals: job.proposals.map((p) => (p.id === proposalId ? rejected : p)) },
-        );
-        return rejected;
-      }
-      return d.kpiExtractionJobs[0]?.proposals[0];
-    },
-    // F5 review-queue read model (ADR 0077 §4/§5, T5.3b). Every pending proposal
-    // for the company joined to its job's detected period and its source document
-    // (id/title/url) — an inner join, so a proposal whose document is absent is
-    // dropped, mirroring the Rust query. Per-row correctness is pinned Rust-side
-    // (unit tests + the dual-execution fidelity corpus).
-    list_pending_kpi_proposals: (d, a) => {
-      const companyId = str(unwrap(a).companyId) ?? "";
-      const docById = new Map(d.reportDocuments.map((doc) => [doc.id, doc]));
-      const rows: Array<Record<string, unknown>> = [];
-      for (const job of d.kpiExtractionJobs) {
-        if (job.companyId !== companyId) continue;
-        const doc = docById.get(job.reportDocumentId);
-        if (!doc) continue;
-        for (const p of job.proposals) {
-          if (p.status !== "pending") continue;
-          rows.push({
-            id: p.id,
-            jobId: job.id,
-            metricKey: p.metricKey,
-            label: p.label,
-            valueNumeric: p.valueNumeric,
-            unit: p.unit ?? null,
-            currency: p.currency ?? null,
-            sourceSnippet: p.sourceSnippet ?? null,
-            status: p.status,
-            fiscalYear: job.detectedFiscalYear ?? null,
-            periodType: job.detectedPeriodType ?? null,
-            documentId: doc.id,
-            documentTitle: doc.title ?? null,
-            documentUrl: doc.url,
-            createdAt: p.createdAt,
-            updatedAt: p.updatedAt,
-          });
-        }
-      }
-      return rows;
-    },
-
-    // --- Report documents / season ---
     list_report_documents: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       return companyId ? d.reportDocuments.filter((r) => r.companyId === companyId) : d.reportDocuments;
@@ -2151,18 +1724,6 @@ function buildHandlers(): Record<string, Handler> {
         facts.set(k, cell);
       }
 
-      // Pending proposals grouped by the job's detected period.
-      const pending = new Map<Key, number>();
-      for (const job of d.kpiExtractionJobs) {
-        if (job.companyId !== companyId) continue;
-        if (job.detectedFiscalYear == null || job.detectedPeriodType == null) continue;
-        const count = job.proposals.filter((p) => p.status === "pending").length;
-        if (count === 0) continue;
-        const k = key(job.detectedFiscalYear, job.detectedPeriodType);
-        rows.set(k, { fiscalYear: job.detectedFiscalYear, periodType: canonicalLabel(job.detectedPeriodType) });
-        pending.set(k, (pending.get(k) ?? 0) + count);
-      }
-
       const periods = [...rows.entries()]
         .map(([k, { fiscalYear, periodType }]) => {
           const factCell = facts.get(k) ?? { total: 0, validated: 0, unvalidated: 0, flagged: 0 };
@@ -2171,7 +1732,7 @@ function buildHandlers(): Record<string, Handler> {
             periodType,
             report: reports.get(k) ?? null,
             facts: factCell,
-            review: { pendingProposals: pending.get(k) ?? 0, flaggedFacts: factCell.flagged },
+            review: { flaggedFacts: factCell.flagged },
             skippedBudget: false,
           };
         })
@@ -2674,7 +2235,10 @@ function buildHandlers(): Record<string, Handler> {
     },
     resolve_ir_report: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return d.irResolutions.find((r) => r.document?.companyId === companyId) ?? d.irResolutions[0];
+      // IrReportResolution is candidates-only after ADR 0084 (the AI pick is gone),
+      // so there is nothing company-scoped to match on: return the single sample.
+      void companyId;
+      return d.irResolutions[0];
     },
 
     // --- Quality frameworks ---
@@ -2836,64 +2400,6 @@ function buildHandlers(): Record<string, Handler> {
       const referencedMetricKeys = d.metricKeys.map((m) => m.key).filter((key) => expression.includes(key));
       return { ok: true, error: null, referencedMetricKeys };
     },
-    // Qualitative assessment (ADR 0075). run/rerun enqueue an async job — no
-    // synchronous result to surface (progress lands via the jobs read model),
-    // matching the real enqueue commands.
-    run_qualitative_assessment: () => undefined,
-    rerun_qualitative_criterion: () => undefined,
-    get_qualitative_assessment: (d, a) => {
-      const input = unwrap(a);
-      const companyId = str(input.companyId);
-      const frameworkId = str(input.frameworkId);
-      // Current-state read: per criterion, the most-recent agent-assessed row
-      // across all snapshots (ADR 0075 Decision 5). Mirror the real backend's
-      // MAX(created_at). The forward scan keeps the row with the newest createdAt;
-      // on an EQUAL createdAt it must keep the LATER-scanned row, because the
-      // backend (quality_frameworks.rs get_qualitative_assessment) tie-breaks on
-      // created_at THEN framework_evaluations.rowid — the last-inserted snapshot
-      // wins. Array order == insertion order == rowid order, so `>=` (not strict
-      // `>`) lets a later array element overwrite an equal-timestamp earlier one.
-      type QualRow = ScenarioData["frameworkEvaluations"][number]["results"][number];
-      const latestByCriterion = new Map<string, { row: QualRow; createdAt: string }>();
-      for (const evaluation of d.frameworkEvaluations) {
-        if (companyId && evaluation.companyId !== companyId) continue;
-        if (frameworkId && evaluation.frameworkId !== frameworkId) continue;
-        for (const result of evaluation.results) {
-          if (result.source !== "agent" || !result.criterionId) continue;
-          const seen = latestByCriterion.get(result.criterionId);
-          if (!seen || evaluation.createdAt >= seen.createdAt) {
-            latestByCriterion.set(result.criterionId, { row: result, createdAt: evaluation.createdAt });
-          }
-        }
-      }
-      return [...latestByCriterion.values()]
-        .map((entry) => entry.row)
-        .sort((x, y) => x.ordinal - y.ordinal || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
-    },
-    // Lifecycle status of the durable assessment job (P1, ADR 0075). The mock
-    // does not model the job queue, so it reports the two states derivable from
-    // stored data — exactly what the real backend returns for a MISSING queue
-    // row: `succeeded` when an agent assessment is already stored, else `idle`.
-    // The `queued`/`running`/`failed` transitions live behind the queue and are
-    // covered by the Rust status tests + the panel test's direct mock.
-    get_qualitative_assessment_status: (d, a) => {
-      const input = unwrap(a);
-      const companyId = str(input.companyId);
-      const frameworkId = str(input.frameworkId);
-      const hasAssessment = d.frameworkEvaluations.some(
-        (evaluation) =>
-          (!companyId || evaluation.companyId === companyId) &&
-          (!frameworkId || evaluation.frameworkId === frameworkId) &&
-          evaluation.results.some((result) => result.source === "agent" && result.criterionId),
-      );
-      return {
-        status: hasAssessment ? "succeeded" : "idle",
-        attempts: 0,
-        lastError: null,
-      };
-    },
-
-    // --- Sources ---
     list_source_adapters: (d, a) => {
       const includeDeveloperOnly = unwrap(a).includeDeveloperOnly === true;
       return includeDeveloperOnly ? d.sourceAdapters : d.sourceAdapters.filter((s) => s.visibility !== "developer");
@@ -3024,8 +2530,6 @@ function buildHandlers(): Record<string, Handler> {
         runsFailed: 0,
         skippedReason: null,
         enqueuedRunIds: [],
-        aiCallsUsed: 0,
-        aiCallLimit: 30,
         error: null,
         createdAt: SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
@@ -3052,8 +2556,6 @@ function buildHandlers(): Record<string, Handler> {
         runsFailed: 0,
         skippedReason: null,
         enqueuedRunIds: [],
-        aiCallsUsed: 0,
-        aiCallLimit: 30,
         error: null,
         createdAt: SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
@@ -3076,11 +2578,7 @@ function buildHandlers(): Record<string, Handler> {
         developerMode: pick("developerMode", d.settings.developerMode),
         pollIntervalSeconds: pick("pollIntervalSeconds", d.settings.pollIntervalSeconds),
         backfillYears: pick("backfillYears", d.settings.backfillYears),
-        historySweepAiCallLimit: pick("historySweepAiCallLimit", d.settings.historySweepAiCallLimit),
-        aiAnalysisMode: pick("aiAnalysisMode", d.settings.aiAnalysisMode),
-        espiAiFallbackEnabled: pick("espiAiFallbackEnabled", d.settings.espiAiFallbackEnabled),
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),
-        capabilityProviders: pick("capabilityProviders", d.settings.capabilityProviders),
         pinnedCompanyIds: pick("pinnedCompanyIds", d.settings.pinnedCompanyIds),
         mcp: {
           enabled: pick("mcpEnabled", d.settings.mcp.enabled),
@@ -3092,10 +2590,6 @@ function buildHandlers(): Record<string, Handler> {
           youtubeTranscriptionProvider: pick("youtubeTranscriptionProvider", ai.youtubeTranscriptionProvider),
           youtubeTranscriptionModel: pick("youtubeTranscriptionModel", ai.youtubeTranscriptionModel),
           youtubeTranscriptionTimeoutSeconds: pick("youtubeTranscriptionTimeoutSeconds", ai.youtubeTranscriptionTimeoutSeconds),
-          generalAnalysisProvider: pick("generalAnalysisProvider", ai.generalAnalysisProvider),
-          generalAnalysisModel: pick("generalAnalysisModel", ai.generalAnalysisModel),
-          generalAnalysisTimeoutSeconds: pick("generalAnalysisTimeoutSeconds", ai.generalAnalysisTimeoutSeconds),
-          openaiCompatibleBaseUrl: pick("openaiCompatibleBaseUrl", ai.openaiCompatibleBaseUrl),
         },
       };
       return d.settings;
@@ -3307,7 +2801,6 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_source_reconciliation",
   "get_log_status",
   "list_log_entries",
-  "list_ai_provider_catalog",
   "get_provider_credential_status",
   "mcp_token_status",
   "mcp_status",
@@ -3324,16 +2817,12 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_video_transcript_jobs",
   "list_research_questions",
   "list_research_reminders",
-  "list_research_briefs",
-  "list_research_digests",
   "list_management_claims",
   "list_claims_to_verify",
-  "list_claim_extraction",
   "list_financial_periods",
   "list_financial_facts",
   "list_kpi_definitions",
   "list_kpi_relevance",
-  "list_kpi_extraction",
   "list_report_documents",
   "list_report_season",
   "list_quality_frameworks",

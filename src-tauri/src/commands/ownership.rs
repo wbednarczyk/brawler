@@ -8,7 +8,7 @@
 //! (`storage::ownership`) — no stored projection, so it can never go stale.
 //!
 //! The mutation commands (`set_ownership_holder_type`,
-//! `confirm/reject_ownership_holder_type_proposal`) return the FRESHLY recomputed
+//! `set_ownership_holder_type`) return the FRESHLY recomputed
 //! overview so the UI updates in one round-trip; `backfill_ownership_extraction`
 //! enqueues the deterministic extraction jobs and returns how many documents were
 //! queued; `run_ownership_classification` drives the AI classify-with-confirm job
@@ -58,12 +58,6 @@ pub struct OwnershipOverview {
     /// Documents whose shareholders table the deterministic parser could not read
     /// (glyph-mangled / image table / missing section) — awaiting OCR/AI.
     pub residuals: Vec<OwnershipResidual>,
-    /// Pending AI holder-type proposals awaiting user confirmation.
-    pub pending_proposals: Vec<OwnershipProposal>,
-    /// Pending tier-4 OCR shareholders-table proposals awaiting confirmation
-    /// (v0.57 T8, ADR 0077): a whole table read from a residual document's OCR,
-    /// never auto-applied — the review surface renders these with per-holder rows.
-    pub ocr_proposals: Vec<OwnershipOcrProposal>,
 }
 
 /// One current holder (latest disclosed stake).
@@ -189,104 +183,6 @@ pub struct OwnershipResidual {
     pub ocr_state: Option<String>,
 }
 
-/// A pending AI holder-type proposal (never auto-applied).
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct OwnershipProposal {
-    pub id: String,
-    /// Normalized holder name this proposal classifies.
-    pub holder_key: String,
-    pub proposed_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-export", ts(optional))]
-    pub confidence: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-export", ts(optional))]
-    pub rationale: Option<String>,
-}
-
-/// Outcome of one AI classification run (ts-rs mirror of the T5 job summary).
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct OwnershipClassificationResult {
-    pub examined: u32,
-    pub proposed: u32,
-    pub skipped: u32,
-    pub errors: u32,
-}
-
-/// One proposed shareholder row from the tier-4 OCR pass (v0.57 T8).
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct OwnershipOcrHolder {
-    pub holder_name_raw: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-export", ts(optional))]
-    pub capital_pct: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-export", ts(optional))]
-    pub votes_pct: Option<String>,
-}
-
-/// A pending tier-4 OCR shareholders-table proposal (v0.57 T8) — the whole table
-/// read from one residual document, awaiting confirm/reject. Confirm writes the
-/// rows as `report_document` stakes and clears the residual; reject parks it.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct OwnershipOcrProposal {
-    /// Identifies the proposal (one per residual document) for confirm/reject.
-    pub report_document_id: String,
-    /// The document actually OCR'd (v0.57 T8): equals `reportDocumentId` for a PDF
-    /// residual, or the fetched PDF **sibling** when the residual is an xhtml
-    /// pdf2htmlEX container. Provenance of the OCR run for the review card.
-    pub source_document_id: String,
-    /// The disclosure date every written stake will carry.
-    pub as_of: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-export", ts(optional))]
-    pub matched_heading: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-export", ts(optional))]
-    pub provider_id: Option<String>,
-    pub holders: Vec<OwnershipOcrHolder>,
-}
-
-/// Outcome of one bulk OCR-extraction pass (ts-rs mirror of the T8 job summary).
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct OwnershipOcrExtractionResult {
-    pub examined: u32,
-    pub proposed: u32,
-    pub no_table: u32,
-    pub skipped: u32,
-    pub errors: u32,
-}
-
 // ============================================================================
 // Read model assembly
 // ============================================================================
@@ -311,12 +207,6 @@ pub fn compute_ownership_overview(
         .map_err(|error| error.to_string())?;
     let residuals = ownership
         .list_extraction_residuals(company_id)
-        .map_err(|error| error.to_string())?;
-    let proposals = ownership
-        .list_holder_type_proposals(company_id, true)
-        .map_err(|error| error.to_string())?;
-    let ocr_proposals = ownership
-        .list_ocr_proposals(company_id)
         .map_err(|error| error.to_string())?;
     // Skin-in-the-game corroboration keyed by canonical holder identity (the
     // founder-badge join over the management-holdings + insider substrates).
@@ -430,35 +320,6 @@ pub fn compute_ownership_overview(
                 ocr_state: r.ocr_state,
             })
             .collect(),
-        pending_proposals: proposals
-            .into_iter()
-            .map(|p| OwnershipProposal {
-                id: p.id,
-                holder_key: p.holder_name_normalized,
-                proposed_type: p.proposed_type,
-                confidence: p.confidence,
-                rationale: p.rationale,
-            })
-            .collect(),
-        ocr_proposals: ocr_proposals
-            .into_iter()
-            .map(|p| OwnershipOcrProposal {
-                report_document_id: p.report_document_id,
-                source_document_id: p.source_document_id,
-                as_of: p.as_of,
-                matched_heading: p.matched_heading,
-                provider_id: p.provider_id,
-                holders: p
-                    .rows
-                    .into_iter()
-                    .map(|row| OwnershipOcrHolder {
-                        holder_name_raw: row.holder_name_raw,
-                        capital_pct: row.capital_pct,
-                        votes_pct: row.votes_pct,
-                    })
-                    .collect(),
-            })
-            .collect(),
     })
 }
 
@@ -520,162 +381,12 @@ pub async fn set_ownership_holder_type(
     .map_err(|error| format!("set holder type task failed: {error}"))?
 }
 
-/// Confirm a pending AI holder-type proposal (applies the type across the
-/// holder's rows), then return the refreshed overview.
-#[tauri::command]
-pub async fn confirm_ownership_holder_type_proposal(
-    company_id: String,
-    proposal_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<OwnershipOverview, String> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        state
-            .ownership()
-            .confirm_holder_type_proposal(&proposal_id)
-            .map_err(|error| error.to_string())?;
-        compute_ownership_overview(&state, &company_id)
-    })
-    .await
-    .map_err(|error| format!("confirm proposal task failed: {error}"))?
-}
-
-/// Reject a pending AI holder-type proposal (leaves the holder unclassified),
-/// then return the refreshed overview.
-#[tauri::command]
-pub async fn reject_ownership_holder_type_proposal(
-    company_id: String,
-    proposal_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<OwnershipOverview, String> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        state
-            .ownership()
-            .reject_holder_type_proposal(&proposal_id)
-            .map_err(|error| error.to_string())?;
-        compute_ownership_overview(&state, &company_id)
-    })
-    .await
-    .map_err(|error| format!("reject proposal task failed: {error}"))?
-}
-
-/// Run the AI holder-type classify-with-confirm job over every company's residual
-/// holders (T5 core). Already async (provider IO); awaited directly.
-#[tauri::command]
-pub async fn run_ownership_classification(
-    state: tauri::State<'_, AppState>,
-) -> Result<OwnershipClassificationResult, String> {
-    let state = state.inner().clone();
-    let summary =
-        crate::jobs::ownership_classification::run_ai_ownership_classification(&state).await?;
-    Ok(OwnershipClassificationResult {
-        examined: summary.examined as u32,
-        proposed: summary.proposed as u32,
-        skipped: summary.skipped as u32,
-        errors: summary.errors as u32,
-    })
-}
-
-/// Run the tier-4 OCR pass over EVERY company's eligible ownership residuals
-/// (v0.57 T8, ADR 0077). Lands shareholders tables as confirm-before-apply
-/// proposals; a no-vision-provider state is a clean no-op (skipped), never an
-/// error. Already async (provider IO); awaited directly.
-#[tauri::command]
-pub async fn run_ownership_ocr_extraction(
-    state: tauri::State<'_, AppState>,
-) -> Result<OwnershipOcrExtractionResult, String> {
-    let state = state.inner().clone();
-    let summary =
-        crate::jobs::ownership_ocr_extraction::run_ownership_ocr_extraction(&state).await?;
-    Ok(OwnershipOcrExtractionResult {
-        examined: summary.examined as u32,
-        proposed: summary.proposed as u32,
-        no_table: summary.no_table as u32,
-        skipped: summary.skipped as u32,
-        errors: summary.errors as u32,
-    })
-}
-
-/// Run the tier-4 OCR pass over ONE company's residuals (the residual-warnbox
-/// action), re-arming its `no_table` markers (an explicit user retry). Returns
-/// the freshly recomputed overview so the warnbox re-renders with any new
-/// proposal in one round-trip.
-#[tauri::command]
-pub async fn run_company_ownership_ocr(
-    company_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<OwnershipOverview, String> {
-    let state = state.inner().clone();
-    crate::jobs::ownership_ocr_extraction::run_company_ownership_ocr_extraction(
-        &state,
-        &company_id,
-    )
-    .await?;
-    let recompute_state = state.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        compute_ownership_overview(&recompute_state, &company_id)
-    })
-    .await
-    .map_err(|error| format!("ownership overview task failed: {error}"))?
-}
-
-/// Confirm a pending OCR shareholders-table proposal: write its rows as
-/// `report_document` stakes, classify holder types, and clear the residual.
-/// Returns the refreshed overview.
-#[tauri::command]
-pub async fn confirm_ownership_ocr_proposal(
-    company_id: String,
-    report_document_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<OwnershipOverview, String> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        state
-            .ownership()
-            .confirm_ocr_proposal(&report_document_id)
-            .map_err(|error| error.to_string())?;
-        // Same ownership-ingest seam the deterministic extraction job uses: a
-        // holder that vanished from the newly-confirmed full-picture basis raises
-        // a `fund_exit` (ADR 0083 D8, T7). Best-effort — never fails the confirm.
-        if let Err(error) = state.red_flags().detect_fund_exits(&company_id) {
-            log::warn!(
-                "ownership OCR confirm: fund_exit detection failed for {company_id}: {error}"
-            );
-        }
-        compute_ownership_overview(&state, &company_id)
-    })
-    .await
-    .map_err(|error| format!("confirm OCR proposal task failed: {error}"))?
-}
-
-/// Reject a pending OCR shareholders-table proposal: discard it and park the
-/// residual so it is not re-proposed. Returns the refreshed overview.
-#[tauri::command]
-pub async fn reject_ownership_ocr_proposal(
-    company_id: String,
-    report_document_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<OwnershipOverview, String> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        state
-            .ownership()
-            .reject_ocr_proposal(&report_document_id)
-            .map_err(|error| error.to_string())?;
-        compute_ownership_overview(&state, &company_id)
-    })
-    .await
-    .map_err(|error| format!("reject OCR proposal task failed: {error}"))?
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::{
         open_in_memory_database, AppState, CaptureReportDocumentInput, NewCompany,
-        NewHolderTypeProposal, NewManagementHolding, NewOwnershipStake,
-        OwnershipExtractionResidual,
+        NewManagementHolding, NewOwnershipStake,
     };
 
     fn state() -> AppState {
@@ -731,7 +442,6 @@ mod tests {
         assert!(overview.holders.is_empty());
         assert!(overview.history.is_empty());
         assert!(overview.residuals.is_empty());
-        assert!(overview.pending_proposals.is_empty());
         assert_eq!(overview.free_float_pct, "100");
         assert_eq!(overview.disclosed_sum, "0");
         assert!(overview.as_of.is_none());
@@ -788,79 +498,6 @@ mod tests {
         assert_eq!(duch.points.len(), 2);
         assert_eq!(duch.points[0].as_of, "2024-12-31");
         assert_eq!(duch.points[1].as_of, "2025-12-31");
-    }
-
-    #[test]
-    fn overview_surfaces_residuals_and_pending_proposals() {
-        let s = state();
-        let c = company(&s, "VRC");
-        stake(
-            &s,
-            &c,
-            "cyber_Folks S.A.",
-            Some("parent_company"),
-            "50.0",
-            "50.2",
-            "2023-05-01",
-        );
-        // A holder awaiting AI classification (unclassified stake + proposal).
-        stake(
-            &s,
-            &c,
-            "Itema Ventures UAB",
-            None,
-            "5.5",
-            "5.5",
-            "2025-12-31",
-        );
-        s.ownership()
-            .upsert_holder_type_proposal(NewHolderTypeProposal {
-                company_id: c.clone(),
-                holder_name_normalized: "ITEMA VENTURES UAB".to_owned(),
-                proposed_type: "other_institutional".to_owned(),
-                confidence: Some(0.7),
-                rationale: Some("foreign holding".to_owned()),
-                provider_id: Some("test".to_owned()),
-                model: Some("scripted".to_owned()),
-            })
-            .expect("proposal");
-        let document = s
-            .report_documents()
-            .create_or_find_pending_report_document(CaptureReportDocumentInput {
-                company_id: c.clone(),
-                source_type: "espi".to_owned(),
-                url: "https://example.com/vrc-2023.pdf".to_owned(),
-                period_id: None,
-                origin_ref: None,
-                title: Some("Raport roczny 2023".to_owned()),
-                attribution: None,
-            })
-            .expect("document");
-        s.ownership()
-            .record_extraction_residual(OwnershipExtractionResidual {
-                report_document_id: document.id.clone(),
-                company_id: c.clone(),
-                parse_state: "glyph_encoded".to_owned(),
-                detected_as_of: Some("2023-12-31".to_owned()),
-                matched_heading: Some("Akcjonariat".to_owned()),
-                ocr_state: None,
-                created_at: String::new(),
-                updated_at: String::new(),
-            })
-            .expect("residual");
-
-        let overview = compute_ownership_overview(&s, &c).expect("overview");
-        assert_eq!(overview.residuals.len(), 1);
-        assert_eq!(overview.residuals[0].parse_state, "glyph_encoded");
-        assert_eq!(overview.pending_proposals.len(), 1);
-        assert_eq!(
-            overview.pending_proposals[0].holder_key,
-            "ITEMA VENTURES UAB"
-        );
-        assert_eq!(
-            overview.pending_proposals[0].proposed_type,
-            "other_institutional"
-        );
     }
 
     #[test]
@@ -1115,18 +752,6 @@ mod tests {
                 feed_item_id: None,
             })
             .expect("itema stake");
-        s.ownership()
-            .upsert_holder_type_proposal(NewHolderTypeProposal {
-                company_id: c.clone(),
-                holder_name_normalized: "ITEMA VENTURES UAB".to_owned(),
-                proposed_type: "other_institutional".to_owned(),
-                confidence: Some(0.7),
-                rationale: Some("foreign holding entity".to_owned()),
-                provider_id: Some("test".to_owned()),
-                model: Some("scripted".to_owned()),
-            })
-            .expect("proposal");
-
         // Company id is deterministic (`company_gpw_cbf`); the fixture pins it.
         assert_eq!(c, "company_gpw_cbf");
         let overview = compute_ownership_overview(&s, &c).expect("overview");

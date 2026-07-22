@@ -1,20 +1,14 @@
 import { callCommand } from "./tauri";
 import type {
   CloneFrameworkInput,
-  CriterionResult,
   EvaluateFrameworkInput,
   FrameworkCriterion,
   FrameworkEvaluation,
-  GetQualitativeAssessmentInput,
-  GetQualitativeAssessmentStatusInput,
   ListFrameworkEvaluationsInput,
   MetricKeyInfo,
   NewFrameworkCriterion,
   NewQualityFramework,
-  QualitativeAssessmentStatus,
   QualityFramework,
-  RerunQualitativeCriterionInput,
-  RunQualitativeAssessmentInput,
   UpdateFrameworkCriterion,
   UpdateQualityFramework,
   ValidateCriterionResult,
@@ -99,25 +93,11 @@ export function listAvailableMetricKeys(companyId?: string) {
 }
 
 // ============================================================================
-// Qualitative assessment (ADR 0075)
+// Qualitative criteria (ADR 0075, amended by ADR 0084)
 // ============================================================================
-
-/** Enqueue the agent assessment over a framework's qualitative criteria. */
-export function runQualitativeAssessment(input: RunQualitativeAssessmentInput) {
-  return callCommand<void>("run_qualitative_assessment", { input });
-}
-
-/** Re-enqueue assessment for a single qualitative criterion (panel re-run). */
-export function rerunQualitativeCriterion(input: RerunQualitativeCriterionInput) {
-  return callCommand<void>("rerun_qualitative_criterion", { input });
-}
-
-/** Current-state read: most-recent agent result per qualitative criterion. */
-export function getQualitativeAssessment(input: GetQualitativeAssessmentInput) {
-  return callCommand<CriterionResult[]>("get_qualitative_assessment", { input });
-}
-
-/** Lifecycle status of the durable assessment job (poll surface for the panel). */
-export function getQualitativeAssessmentStatus(input: GetQualitativeAssessmentStatusInput) {
-  return callCommand<QualitativeAssessmentStatus>("get_qualitative_assessment_status", { input });
-}
+//
+// Qualitative criteria remain user-authored (label + assessment guidance) and
+// are managed through the criterion CRUD above. The in-app AI assessor is
+// retired and its stored verdicts were dropped with their table (ADR 0084
+// decision 5), so there is no `get_qualitative_assessment` read any more —
+// verdicts return as agent writes over MCP (v0.61.0).

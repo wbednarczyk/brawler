@@ -8,9 +8,12 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use super::financials::{create_or_reobserve_financial_fact, stored_fact_set, FactWriteOutcome};
-use super::{slug_part, FinancialFact, NewFinancialFact, StorageError, StorageResult};
-use crate::fundamentals::validation::{validate, Status, Tolerance};
+use super::financials::{
+    create_or_reobserve_financial_fact, update_financial_fact, FactWriteOutcome,
+    UpdateFinancialFact,
+};
+use super::fundamentals_provenance::fact_source_tier;
+use super::{slug_part, FinancialFact, NewFinancialFact, StorageResult};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -68,42 +71,6 @@ pub struct KpiExtractionProposal {
     pub is_proposed_kpi: bool,
     pub status: String,
     pub fact_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// One pending proposal with the period + document context the review queue
-/// panel (F5, ADR 0077 §4/§5) renders: the proposed metric/value, the job's
-/// detected period (the grouping axis), the source document it came from, and
-/// the `source_snippet` whose `ocr_bootstrap` / `ocr_pending_profile` /
-/// `ocr_flagged` prefix the UI derives the source chip from. Only `pending`
-/// proposals appear — confirmed ones own facts, rejected ones are discarded.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingKpiProposal {
-    pub id: String,
-    pub job_id: String,
-    pub metric_key: String,
-    pub label: String,
-    pub value_numeric: String,
-    pub unit: Option<String>,
-    pub currency: Option<String>,
-    pub source_snippet: Option<String>,
-    /// Always `"pending"` (the read model filters to it); kept explicit so the
-    /// DTO reads honestly and the fidelity corpus can pin its absence.
-    pub status: String,
-    /// The job's detected fiscal year — the review queue groups by period, so a
-    /// job with no detected period yields `None` (an ungrouped bucket).
-    pub fiscal_year: Option<i64>,
-    pub period_type: Option<String>,
-    pub document_id: String,
-    pub document_title: Option<String>,
-    pub document_url: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -174,275 +141,6 @@ pub struct ConfirmKpiProposalInput {
     pub accept_as_new_kpi: bool,
 }
 
-pub(crate) fn create_kpi_extraction_job(
-    connection: &Connection,
-    input: NewKpiExtractionJob,
-) -> StorageResult<KpiExtractionJob> {
-    require("company_id", &input.company_id)?;
-    require("report_document_id", &input.report_document_id)?;
-    require("provider_id", &input.provider_id)?;
-    require("model", &input.model)?;
-    require("prompt_version", &input.prompt_version)?;
-
-    let period_hint = trimmed_option(input.period_hint);
-    let id = job_id(&input.report_document_id);
-
-    // Re-running on the same document re-queues the job; confirmed proposals are
-    // preserved (a re-run refreshes only pending/rejected ones).
-    connection.execute(
-        "
-        INSERT INTO kpi_extraction_jobs (
-            id, company_id, report_document_id, provider_id, model, prompt_version, period_hint, status
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'queued')
-        ON CONFLICT(id) DO UPDATE SET
-            provider_id = excluded.provider_id,
-            model = excluded.model,
-            prompt_version = excluded.prompt_version,
-            period_hint = excluded.period_hint,
-            status = 'queued',
-            error_code = NULL,
-            error = NULL,
-            started_at = NULL,
-            finished_at = NULL
-        ",
-        params![
-            id,
-            input.company_id,
-            input.report_document_id,
-            input.provider_id,
-            input.model,
-            input.prompt_version,
-            period_hint
-        ],
-    )?;
-
-    get_kpi_extraction_job(connection, &id)
-}
-
-pub(crate) fn mark_kpi_extraction_job_running(
-    connection: &Connection,
-    job_id: &str,
-) -> StorageResult<KpiExtractionJob> {
-    connection.execute(
-        "
-        UPDATE kpi_extraction_jobs
-        SET status = 'running',
-            started_at = COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-            error_code = NULL,
-            error = NULL
-        WHERE id = ?1
-        ",
-        [job_id],
-    )?;
-    get_kpi_extraction_job(connection, job_id)
-}
-
-pub(crate) fn mark_kpi_extraction_job_failed(
-    connection: &Connection,
-    job_id: &str,
-    error_code: &str,
-    error: &str,
-) -> StorageResult<KpiExtractionJob> {
-    require("error_code", error_code)?;
-    require("error", error)?;
-    connection.execute(
-        "
-        UPDATE kpi_extraction_jobs
-        SET status = 'failed',
-            finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-            error_code = ?2,
-            error = ?3
-        WHERE id = ?1
-        ",
-        params![job_id, error_code, error],
-    )?;
-    get_kpi_extraction_job(connection, job_id)
-}
-
-pub(crate) fn complete_kpi_extraction_job(
-    connection: &mut Connection,
-    input: CompletedKpiExtraction,
-) -> StorageResult<KpiExtractionJob> {
-    let job_id = input.job_id.clone();
-    let transaction =
-        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-
-    // Refresh pending/rejected proposals; never disturb confirmed ones (they own facts).
-    transaction.execute(
-        "DELETE FROM kpi_extraction_proposals WHERE job_id = ?1 AND status != 'confirmed'",
-        [&job_id],
-    )?;
-
-    for proposal in &input.proposals {
-        let metric_key = proposal.metric_key.trim();
-        if metric_key.is_empty() || proposal.value_numeric.trim().is_empty() {
-            continue;
-        }
-        let proposal_id = proposal_id(&job_id, metric_key);
-        // Skip a metric already confirmed for this job.
-        let confirmed: bool = transaction
-            .query_row(
-                "SELECT status = 'confirmed' FROM kpi_extraction_proposals WHERE id = ?1",
-                [&proposal_id],
-                |row| row.get(0),
-            )
-            .optional()?
-            .unwrap_or(false);
-        if confirmed {
-            continue;
-        }
-
-        let label = if proposal.label.trim().is_empty() {
-            metric_key
-        } else {
-            proposal.label.trim()
-        };
-        transaction.execute(
-            "
-            INSERT INTO kpi_extraction_proposals (
-                id, job_id, metric_key, label, value_numeric, unit, currency,
-                as_reported_value, as_reported_scale, measure_window, confidence,
-                source_snippet, is_proposed_kpi, status
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'pending')
-            ON CONFLICT(id) DO UPDATE SET
-                label = excluded.label,
-                value_numeric = excluded.value_numeric,
-                unit = excluded.unit,
-                currency = excluded.currency,
-                as_reported_value = excluded.as_reported_value,
-                as_reported_scale = excluded.as_reported_scale,
-                measure_window = excluded.measure_window,
-                confidence = excluded.confidence,
-                source_snippet = excluded.source_snippet,
-                is_proposed_kpi = excluded.is_proposed_kpi,
-                status = 'pending',
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            ",
-            params![
-                proposal_id,
-                job_id,
-                metric_key,
-                label,
-                proposal.value_numeric.trim(),
-                trimmed_ref(&proposal.unit),
-                trimmed_ref(&proposal.currency),
-                trimmed_ref(&proposal.as_reported_value),
-                trimmed_ref(&proposal.as_reported_scale),
-                trimmed_ref(&proposal.measure_window),
-                trimmed_ref(&proposal.confidence),
-                trimmed_ref(&proposal.source_snippet),
-                proposal.is_proposed_kpi as i64,
-            ],
-        )?;
-    }
-
-    transaction.execute(
-        "
-        UPDATE kpi_extraction_jobs
-        SET status = 'succeeded',
-            finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-            error_code = NULL,
-            error = NULL,
-            detected_fiscal_year = ?2,
-            detected_period_type = ?3,
-            detected_period_end_date = ?4,
-            detected_currency = ?5,
-            detected_language = ?6,
-            committed_fact_count = ?7
-        WHERE id = ?1
-        ",
-        params![
-            job_id,
-            input.detected_fiscal_year,
-            trimmed_option(input.detected_period_type),
-            trimmed_option(input.detected_period_end_date),
-            trimmed_option(input.detected_currency),
-            trimmed_option(input.detected_language),
-            input.committed_fact_count,
-        ],
-    )?;
-
-    transaction.commit()?;
-    get_kpi_extraction_job(connection, &job_id)
-}
-
-pub(crate) fn list_kpi_extraction_jobs_by_document(
-    connection: &Connection,
-    report_document_id: &str,
-) -> StorageResult<Vec<KpiExtractionJob>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT id, company_id, report_document_id, provider_id, model, prompt_version, period_hint,
-               status, error_code, error, detected_fiscal_year, detected_period_type,
-               detected_period_end_date, detected_currency, detected_language,
-               created_at, started_at, finished_at, committed_fact_count
-        FROM kpi_extraction_jobs
-        WHERE report_document_id = ?1
-        ORDER BY created_at DESC, id DESC
-        ",
-    )?;
-    let rows = statement.query_map([report_document_id], job_from_row)?;
-    let mut jobs = rows.collect::<Result<Vec<_>, _>>()?;
-    for job in &mut jobs {
-        job.proposals = list_proposals(connection, &job.id)?;
-    }
-    Ok(jobs)
-}
-
-pub(crate) fn get_kpi_extraction_job(
-    connection: &Connection,
-    job_id: &str,
-) -> StorageResult<KpiExtractionJob> {
-    let mut job = connection.query_row(
-        "
-        SELECT id, company_id, report_document_id, provider_id, model, prompt_version, period_hint,
-               status, error_code, error, detected_fiscal_year, detected_period_type,
-               detected_period_end_date, detected_currency, detected_language,
-               created_at, started_at, finished_at, committed_fact_count
-        FROM kpi_extraction_jobs
-        WHERE id = ?1
-        ",
-        [job_id],
-        job_from_row,
-    )?;
-    job.proposals = list_proposals(connection, &job.id)?;
-    Ok(job)
-}
-
-fn list_proposals(
-    connection: &Connection,
-    job_id: &str,
-) -> StorageResult<Vec<KpiExtractionProposal>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT id, job_id, metric_key, label, value_numeric, unit, currency,
-               as_reported_value, as_reported_scale, measure_window, confidence,
-               source_snippet, is_proposed_kpi, status, fact_id, created_at, updated_at
-        FROM kpi_extraction_proposals
-        WHERE job_id = ?1
-        ORDER BY is_proposed_kpi, metric_key COLLATE NOCASE
-        ",
-    )?;
-    let rows = statement.query_map([job_id], proposal_from_row)?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
-pub(crate) fn reject_kpi_proposal(
-    connection: &Connection,
-    proposal_id: &str,
-) -> StorageResult<KpiExtractionProposal> {
-    connection.execute(
-        "
-        UPDATE kpi_extraction_proposals
-        SET status = 'rejected',
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ?1 AND status != 'confirmed'
-        ",
-        [proposal_id],
-    )?;
-    get_proposal(connection, proposal_id)
-}
-
 /// The outcome of confirming a KPI proposal (ADR 0077 T4.4): the committed fact
 /// plus the validation status recorded on its provenance row. The confirmed
 /// value always persists (the user explicitly confirmed it) — the status
@@ -465,241 +163,11 @@ pub struct ConfirmedKpiFact {
 /// Confirm a proposal into a committed financial fact. Ensures the period exists,
 /// resolves (or, for accepted suggestions, creates) the KPI definition, writes the
 /// fact, and records the proposal as confirmed with the new fact id.
-pub(crate) fn confirm_kpi_proposal(
-    connection: &Connection,
-    input: ConfirmKpiProposalInput,
-) -> StorageResult<ConfirmedKpiFact> {
-    confirm_kpi_proposal_with_state(connection, input, "confirmed")
-}
-
 /// Auto-confirm a proposal on the autopilot path (North Star, v0.49.0 / ADR 0055):
 /// commit the model-detected value as a fact in the **`auto_unreviewed`**
 /// provenance state — cited, flagged, and reversible — using the job's detected
 /// period (no user overrides). The global confirm-before-commit default is
 /// unchanged; this only runs for a company explicitly opted into `autopilot`.
-pub(crate) fn auto_confirm_kpi_proposal(
-    connection: &Connection,
-    proposal_id: &str,
-) -> StorageResult<FinancialFact> {
-    confirm_kpi_proposal_with_state(
-        connection,
-        ConfirmKpiProposalInput {
-            proposal_id: proposal_id.to_owned(),
-            value_numeric: None,
-            currency: None,
-            fiscal_year: None,
-            period_type: None,
-            period_end_date: None,
-            accept_as_new_kpi: false,
-        },
-        "auto_unreviewed",
-    )
-    .map(|confirmed| confirmed.fact)
-}
-
-fn confirm_kpi_proposal_with_state(
-    connection: &Connection,
-    input: ConfirmKpiProposalInput,
-    confirmation_state: &str,
-) -> StorageResult<ConfirmedKpiFact> {
-    let proposal = get_proposal(connection, &input.proposal_id)?;
-    if proposal.status == "confirmed" {
-        return Err(invalid("status", "already confirmed"));
-    }
-    let job = get_kpi_extraction_job(connection, &proposal.job_id)?;
-
-    let fiscal_year = input
-        .fiscal_year
-        .or(job.detected_fiscal_year)
-        .ok_or_else(|| invalid("fiscal_year", "missing"))?;
-    let period_type = trimmed_option(input.period_type)
-        .or_else(|| job.detected_period_type.clone())
-        .ok_or_else(|| invalid("period_type", "missing"))?;
-    let period_end_date =
-        trimmed_option(input.period_end_date).or_else(|| job.detected_period_end_date.clone());
-
-    let period_id = ensure_period(
-        connection,
-        &job.company_id,
-        fiscal_year,
-        &period_type,
-        period_end_date.as_deref(),
-        &job.report_document_id,
-    )?;
-    let definition_id = resolve_definition(
-        connection,
-        &job.company_id,
-        &proposal,
-        input.accept_as_new_kpi,
-    )?;
-
-    let value_numeric = trimmed_option(input.value_numeric).unwrap_or(proposal.value_numeric);
-    let currency = trimmed_option(input.currency).or(proposal.currency);
-
-    // Slot-aware confirm (owner live find, 2026-07-10): a leftover proposal may
-    // target a slot a later run already committed. Resolve the uniqueness slot
-    // before inserting instead of raising its raw sqlite UNIQUE violation —
-    // mirrors the structured pipeline's re-observation model (`record_structured_fact`).
-    let (fact, reobserved) = match create_or_reobserve_financial_fact(
-        connection,
-        NewFinancialFact {
-            company_id: job.company_id.clone(),
-            period_id,
-            definition_id,
-            value_numeric,
-            currency,
-            statement_basis: None,
-            attribution: None,
-            variant: None,
-            measure_window: None,
-            data_quality: None,
-            as_reported_value: proposal.as_reported_value,
-            as_reported_scale: proposal.as_reported_scale,
-            reporting_standard: None,
-            extraction_method: Some("ai".to_owned()),
-            confidence: proposal.confidence,
-            confirmation_state: Some(confirmation_state.to_owned()),
-            supersedes_id: None,
-            source_document_ref: Some(job.report_document_id.clone()),
-        },
-    )? {
-        // Fresh value → committed as usual.
-        FactWriteOutcome::Created(fact) => (fact, false),
-        // Same slot, same value → re-observed: link the proposal to the EXISTING
-        // fact (no dupe row), keeping its original provenance untouched. The
-        // confirm still validates + confirms the OCR profile below.
-        FactWriteOutcome::Reobserved(existing) => (existing, true),
-        // Same slot, different value → never silently overwrite a stored
-        // (possibly confirmed) fact and never mutate the proposal. Surface a typed
-        // conflict carrying both values so the user decides (keep/reject).
-        FactWriteOutcome::Divergent { existing, incoming } => {
-            return Err(invalid(
-                "value_conflict",
-                &format!(
-                    "stored={} proposed={}",
-                    existing.value_numeric.trim(),
-                    incoming.trim()
-                ),
-            ));
-        }
-    };
-
-    connection.execute(
-        "
-        UPDATE kpi_extraction_proposals
-        SET status = 'confirmed',
-            fact_id = ?2,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ?1
-        ",
-        params![input.proposal_id, fact.id],
-    )?;
-
-    // ADR 0077 T4.4: the AI-confirm path validates like every other fact source
-    // — the retired `'none'` is never written. Assemble the period's fact set
-    // (the freshly-confirmed value is already stored, plus any facts already in
-    // the period) via the same storage read the structured pipeline's
-    // cross-check uses, and run the deterministic identity gate. The confirmed
-    // fact persists regardless (the user explicitly confirmed it) — the status
-    // records only what validation *saw*, it does not block the confirm.
-    let current = stored_fact_set(connection, &job.company_id, fiscal_year, &period_type)?
-        .unwrap_or_default();
-    let prior = stored_fact_set(connection, &job.company_id, fiscal_year - 1, &period_type)?;
-    let report = validate(&current, prior.as_ref(), None, None, &Tolerance::default());
-    let validation_status = match report.status {
-        Status::Passed => "passed",
-        Status::Failed => "flagged",
-        Status::Inconclusive => "unreviewed",
-    };
-
-    // `ai` (not `ai_text`) because this path sends the native document to the
-    // model today, not extracted text. Inline SQL (mirrors
-    // `record_structured_fact` below) because only a `&Connection` is held here.
-    // Skipped when re-observing an existing fact: that fact already carries the
-    // provenance of the source that actually produced it, and a re-observation
-    // must not repaint it as `ai` (mirrors the structured path's `Reobserved`).
-    if !reobserved {
-        connection.execute(
-            "
-            INSERT INTO financial_fact_provenance
-                (fact_id, source_tier, validation_status, drift_json, citation)
-            VALUES (?1, 'ai', ?2, NULL, ?3)
-            ON CONFLICT(fact_id) DO UPDATE SET
-                source_tier = excluded.source_tier,
-                validation_status = excluded.validation_status,
-                citation = excluded.citation,
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            ",
-            params![fact.id, validation_status, proposal.label],
-        )?;
-    }
-
-    // ADR 0077 §4 kickoff decision 3: confirming a tier-4 OCR proposal is what
-    // CONFIRMS the company's bootstrap profile — the user has reviewed values
-    // parsed through the proposed map, so the version-1 profile bumps to 2 and
-    // tier-4 may start committing validated facts. Idempotent: only a v1 row
-    // bumps; later confirms are no-ops. The snippet prefix is the marker the
-    // tier-4 proposal writer stamps (`ocr_bootstrap` / `ocr_pending_profile`).
-    let is_ocr_proposal = proposal
-        .source_snippet
-        .as_deref()
-        .is_some_and(|s| s.starts_with("ocr_bootstrap") || s.starts_with("ocr_pending_profile"));
-    if is_ocr_proposal {
-        confirm_ocr_profile_if_pending(connection, &job.company_id)?;
-    }
-
-    Ok(ConfirmedKpiFact {
-        fact,
-        validation_status: validation_status.to_owned(),
-    })
-}
-
-/// Bump a company's version-1 (unconfirmed bootstrap) OCR profile to its
-/// confirmed version, keeping the serialized `profile_json` in sync with the
-/// `version` column. A missing row or an already-confirmed profile is a no-op.
-fn confirm_ocr_profile_if_pending(connection: &Connection, company_id: &str) -> StorageResult<()> {
-    use crate::fundamentals::extraction::ocr::OcrExtractionProfile;
-    let row: Option<(i64, String)> = connection
-        .query_row(
-            "SELECT version, profile_json FROM company_ocr_extraction_profile
-             WHERE company_id = ?1",
-            [company_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    let Some((1, json)) = row else {
-        return Ok(());
-    };
-    let Ok(stored) = serde_json::from_str::<OcrExtractionProfile>(&json) else {
-        // A corrupt profile row must not fail the confirm; the profile simply
-        // stays unconfirmed (tier-4 keeps landing proposals — the safe side).
-        return Ok(());
-    };
-    // Re-affirm the same layout: confirmation reviews the map, it does not edit it.
-    let confirmed = stored.clone().confirm(
-        stored.scale,
-        stored.label_map.clone(),
-        stored.value_column,
-        stored.skip_columns.clone(),
-        stored.strip_enumerators,
-    );
-    connection.execute(
-        "UPDATE company_ocr_extraction_profile
-         SET version = ?2,
-             profile_json = ?3,
-             template_hash = ?4,
-             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-         WHERE company_id = ?1 AND version = 1",
-        params![
-            company_id,
-            confirmed.version,
-            serde_json::to_string(&confirmed).map_err(StorageError::Json)?,
-            confirmed.template_hash,
-        ],
-    )?;
-    Ok(())
-}
-
 fn ensure_period(
     connection: &Connection,
     company_id: &str,
@@ -774,6 +242,16 @@ pub struct StructuredFactInput<'a> {
 pub enum StructuredFactCommit {
     Created(String),
     Reobserved(String),
+    /// A HIGHER tier took over a lower-tier slot (ADR 0086 decision 3): the
+    /// provenance (and, on a disagreement, the value) now belong to the incoming
+    /// tier. `previous_value` is `Some` when the stored value was overwritten,
+    /// `None` when the tiers agreed and only the label/evidence moved.
+    Upgraded {
+        fact_id: String,
+        previous_value: Option<String>,
+        /// The tier the slot carried before the takeover (for upgrade evidence).
+        previous_tier: String,
+    },
     Divergent {
         fact_id: String,
         metric_key: String,
@@ -783,10 +261,38 @@ pub enum StructuredFactCommit {
     NoDefinition,
 }
 
-pub(crate) fn record_structured_fact(
+/// The STORED fact's tier when the incoming tier strictly outranks it (ADR 0086
+/// decision 3), `None` otherwise. A fact with no provenance row is a manual
+/// entry — untouchable by every automatic path — and an unparsable stored tier
+/// is treated the same.
+fn outranked_stored_tier_of(
     connection: &Connection,
-    input: StructuredFactInput<'_>,
-) -> StorageResult<StructuredFactCommit> {
+    fact_id: &str,
+    incoming_tier: &str,
+) -> StorageResult<Option<String>> {
+    use crate::fundamentals::extraction::SourceTier;
+    let Some(stored) = fact_source_tier(connection, fact_id)? else {
+        return Ok(None);
+    };
+    let (Some(stored_tier), Some(incoming)) =
+        (SourceTier::parse(&stored), SourceTier::parse(incoming_tier))
+    else {
+        return Ok(None);
+    };
+    Ok(incoming.outranks(stored_tier).then_some(stored))
+}
+
+/// Shared prologue for both fact-recording paths ([`record_structured_fact`] and
+/// [`record_aggregator_fact`]): ensure the period, resolve the catalog definition,
+/// build the ~20-field [`NewFinancialFact`] identically, and run the slot-aware
+/// write. `Ok(None)` means the metric has no catalog definition (a defensive skip
+/// the caller maps to its own `NoDefinition` variant). Everything downstream —
+/// the divergent precedence policy — is the caller's, so this is the ONE place the
+/// two paths share their fact construction (byte-identical before this extraction).
+fn prepare_fact_write(
+    connection: &Connection,
+    input: &StructuredFactInput<'_>,
+) -> StorageResult<Option<FactWriteOutcome>> {
     let period_id = ensure_period(
         connection,
         input.company_id,
@@ -798,14 +304,14 @@ pub(crate) fn record_structured_fact(
     let Some(definition_id) =
         resolve_definition_by_metric_key(connection, input.company_id, input.metric_key)?
     else {
-        // Not a catalog metric — the structured pipeline only emits canonical
-        // keys, so this is a defensive skip, never a silent bad write.
-        return Ok(StructuredFactCommit::NoDefinition);
+        // Not a catalog metric — both pipelines only emit canonical keys, so this
+        // is a defensive skip, never a silent bad write.
+        return Ok(None);
     };
 
     // Slot-aware write: a re-extraction of a period whose facts already landed
     // re-observes each slot instead of raising its UNIQUE violation (owner T7).
-    let fact = match create_or_reobserve_financial_fact(
+    let outcome = create_or_reobserve_financial_fact(
         connection,
         NewFinancialFact {
             company_id: input.company_id.to_owned(),
@@ -821,33 +327,284 @@ pub(crate) fn record_structured_fact(
             as_reported_value: None,
             as_reported_scale: None,
             reporting_standard: None,
-            // Deterministic structured extraction, not an AI read. The specific
-            // deterministic mechanism (`api` vs `html_positional`) is the caller's.
+            // The specific deterministic mechanism (`api` vs `html_positional`) is
+            // the caller's — never an AI read.
             extraction_method: Some(input.extraction_method.to_owned()),
             confidence: None,
             confirmation_state: Some(input.confirmation_state.to_owned()),
             supersedes_id: None,
             source_document_ref: Some(input.report_document_id.to_owned()),
         },
-    )? {
-        FactWriteOutcome::Created(fact) => fact,
-        // Same slot, same value — idempotent re-observation. Provenance already
-        // records the original tier/validation; leave it untouched.
-        FactWriteOutcome::Reobserved(existing) => {
-            return Ok(StructuredFactCommit::Reobserved(existing.id));
+    )?;
+    Ok(Some(outcome))
+}
+
+pub(super) fn record_structured_fact(
+    connection: &Connection,
+    input: StructuredFactInput<'_>,
+) -> StorageResult<StructuredFactCommit> {
+    let Some(outcome) = prepare_fact_write(connection, &input)? else {
+        return Ok(StructuredFactCommit::NoDefinition);
+    };
+
+    match outcome {
+        FactWriteOutcome::Created(fact) => {
+            write_fact_provenance(connection, &fact.id, &input)?;
+            Ok(StructuredFactCommit::Created(fact.id))
         }
-        // Same slot, different value — never silently overwrite a stored
-        // (possibly confirmed) fact. Skip + report for ratification.
+        // Same slot, same value. A HIGHER tier re-observing a lower-tier slot
+        // takes the label/evidence over (ADR 0086 decision 3 — the fact is now
+        // the issuer's filing, not the third party that agreed with it);
+        // otherwise an idempotent re-observation leaves provenance untouched.
+        FactWriteOutcome::Reobserved(existing) => {
+            if let Some(previous_tier) =
+                outranked_stored_tier_of(connection, &existing.id, input.source_tier)?
+            {
+                write_fact_provenance(connection, &existing.id, &input)?;
+                return Ok(StructuredFactCommit::Upgraded {
+                    fact_id: existing.id,
+                    previous_value: None,
+                    previous_tier,
+                });
+            }
+            Ok(StructuredFactCommit::Reobserved(existing.id))
+        }
+        // Same slot, different value. A HIGHER tier overwrites a lower-tier slot
+        // (ADR 0086 decision 3 — the issuer's number wins its own slot); between
+        // peers, or against a manual/no-provenance fact, the stored value is
+        // never silently overwritten — skip + report the divergence.
         FactWriteOutcome::Divergent { existing, incoming } => {
-            return Ok(StructuredFactCommit::Divergent {
+            if let Some(previous_tier) =
+                outranked_stored_tier_of(connection, &existing.id, input.source_tier)?
+            {
+                update_financial_fact(
+                    connection,
+                    UpdateFinancialFact {
+                        id: existing.id.clone(),
+                        value_numeric: Some(incoming),
+                        currency: input.currency.map(str::to_owned),
+                        data_quality: None,
+                        confirmation_state: Some(input.confirmation_state.to_owned()),
+                        supersedes_id: None,
+                        source_document_ref: Some(input.report_document_id.to_owned()),
+                    },
+                )?;
+                write_fact_provenance(connection, &existing.id, &input)?;
+                return Ok(StructuredFactCommit::Upgraded {
+                    fact_id: existing.id,
+                    previous_value: Some(existing.value_numeric),
+                    previous_tier,
+                });
+            }
+            Ok(StructuredFactCommit::Divergent {
                 fact_id: existing.id,
                 metric_key: input.metric_key.to_owned(),
                 existing: existing.value_numeric,
                 incoming,
-            });
+            })
         }
-    };
+    }
+}
 
+/// Outcome of committing one BiznesRadar-primary aggregator fact into its slot,
+/// applying the ADR 0086 decision 3 precedence: `manual` > `esef` >
+/// `espi_cover_note` > positional > `html_aggregator`. The aggregator only ever
+/// overwrites its OWN (`html_aggregator`, non-manual) slot and NEVER a manual or
+/// higher-tier fact.
+#[derive(Debug, Clone)]
+pub enum AggregatorFactCommit {
+    /// The slot was empty — a new aggregator fact was written.
+    Created(String),
+    /// The slot held an aggregator fact with a different value — overwritten in
+    /// place with the fresh aggregator value.
+    Updated(String),
+    /// The slot already held this exact value (aggregator's own or an agreeing
+    /// higher tier) — no write, no change.
+    Reobserved(String),
+    /// The slot is held by a higher-precedence fact (manual / esef /
+    /// structured_xhtml / espi_cover_note / positional) — left untouched. The
+    /// caller decides whether the divergence warrants an informational
+    /// `witness_disagreement` outcome (issuer tiers only).
+    SkippedHigherTier {
+        fact_id: String,
+        /// The provenance `source_tier` of the holding fact, or `manual` when it
+        /// has no provenance row (a hand-entered fact).
+        existing_tier: String,
+        existing_method: String,
+        existing_value: String,
+    },
+    /// The metric has no catalog definition — a defensive skip.
+    NoDefinition,
+}
+
+/// Persists one BiznesRadar-primary fact under the ADR 0086 tier precedence. The
+/// `input` must carry `source_tier = html_aggregator`, `extraction_method = api`
+/// and `confirmation_state = confirmed`. Unlike [`record_structured_fact`], this
+/// OVERWRITES the aggregator's own occupied slot (BR re-observing its own figure
+/// with a fresh value), while never touching a manual or higher-tier fact.
+pub(super) fn record_aggregator_fact(
+    connection: &Connection,
+    input: StructuredFactInput<'_>,
+) -> StorageResult<AggregatorFactCommit> {
+    let Some(outcome) = prepare_fact_write(connection, &input)? else {
+        return Ok(AggregatorFactCommit::NoDefinition);
+    };
+    apply_aggregator_precedence(connection, &input, outcome)
+}
+
+/// Applies the ADR 0086 decision-3 aggregator precedence to a slot-write outcome —
+/// the divergent policy that is the aggregator path's own (the structured path's
+/// `outranked_stored_tier_of` policy is the mirror). Shared by the single-fact
+/// [`record_aggregator_fact`] and the batched [`record_aggregator_facts`] so the
+/// precedence lives in exactly one place.
+fn apply_aggregator_precedence(
+    connection: &Connection,
+    input: &StructuredFactInput<'_>,
+    outcome: FactWriteOutcome,
+) -> StorageResult<AggregatorFactCommit> {
+    match outcome {
+        FactWriteOutcome::Created(fact) => {
+            write_fact_provenance(connection, &fact.id, input)?;
+            Ok(AggregatorFactCommit::Created(fact.id))
+        }
+        // Slot holds this exact value already — aggregator's own row, or a higher
+        // tier that happens to agree. Either way nothing to write and no conflict.
+        FactWriteOutcome::Reobserved(existing) => Ok(AggregatorFactCommit::Reobserved(existing.id)),
+        FactWriteOutcome::Divergent { existing, incoming } => {
+            let existing_tier = fact_source_tier(connection, &existing.id)?;
+            if aggregator_owns_slot(existing_tier.as_deref(), &existing.extraction_method) {
+                // BR overwrites its OWN slot with the fresh aggregator value.
+                update_financial_fact(
+                    connection,
+                    UpdateFinancialFact {
+                        id: existing.id.clone(),
+                        value_numeric: Some(incoming),
+                        currency: input.currency.map(str::to_owned),
+                        data_quality: None,
+                        confirmation_state: Some(input.confirmation_state.to_owned()),
+                        supersedes_id: None,
+                        source_document_ref: Some(input.report_document_id.to_owned()),
+                    },
+                )?;
+                write_fact_provenance(connection, &existing.id, input)?;
+                Ok(AggregatorFactCommit::Updated(existing.id))
+            } else {
+                Ok(AggregatorFactCommit::SkippedHigherTier {
+                    fact_id: existing.id,
+                    existing_tier: existing_tier.unwrap_or_else(|| "manual".to_owned()),
+                    existing_method: existing.extraction_method,
+                    existing_value: existing.value_numeric,
+                })
+            }
+        }
+    }
+}
+
+/// Batched BiznesRadar-primary write for one `(company, page)`: the whole page's
+/// facts under ONE transaction (the caller opens it), with `ensure_period`
+/// resolved once per distinct period and a `metric_key → definition_id` cache
+/// instead of a per-fact SELECT — the daily pull writes ~9k facts, so a
+/// per-fact checkout+IMMEDIATE transaction was ~9k fsyncs a run.
+///
+/// Returns one [`AggregatorFactCommit`] per input, in order — **byte-identical**
+/// to calling [`record_aggregator_fact`] per input (idempotent `ensure_period`
+/// and a pure definition read make the caching invisible to the outcome). The
+/// caller applies the reversed-witnessing / summary bookkeeping OUTSIDE this
+/// transaction, exactly as the per-fact path did.
+pub(super) fn record_aggregator_facts(
+    connection: &Connection,
+    inputs: &[StructuredFactInput<'_>],
+) -> StorageResult<Vec<AggregatorFactCommit>> {
+    // Resolve each distinct `(fiscal_year, period_type)` period once, and each
+    // distinct `metric_key` definition once — the loop-invariant work
+    // `prepare_fact_write` otherwise repeats per fact.
+    use std::collections::HashMap;
+    let mut period_by_key: HashMap<(i64, String), String> = HashMap::new();
+    let mut definition_by_metric: HashMap<String, Option<String>> = HashMap::new();
+
+    let mut commits = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let definition_id = match definition_by_metric.get(input.metric_key) {
+            Some(cached) => cached.clone(),
+            None => {
+                let resolved = resolve_definition_by_metric_key(
+                    connection,
+                    input.company_id,
+                    input.metric_key,
+                )?;
+                definition_by_metric.insert(input.metric_key.to_owned(), resolved.clone());
+                resolved
+            }
+        };
+        let Some(definition_id) = definition_id else {
+            commits.push(AggregatorFactCommit::NoDefinition);
+            continue;
+        };
+
+        let period_key = (input.fiscal_year, input.period_type.to_owned());
+        let period_id = match period_by_key.get(&period_key) {
+            Some(cached) => cached.clone(),
+            None => {
+                let resolved = ensure_period(
+                    connection,
+                    input.company_id,
+                    input.fiscal_year,
+                    input.period_type,
+                    input.period_end,
+                    input.report_document_id,
+                )?;
+                period_by_key.insert(period_key, resolved.clone());
+                resolved
+            }
+        };
+
+        let outcome = create_or_reobserve_financial_fact(
+            connection,
+            NewFinancialFact {
+                company_id: input.company_id.to_owned(),
+                period_id,
+                definition_id,
+                value_numeric: input.value_numeric.to_owned(),
+                currency: input.currency.map(str::to_owned),
+                statement_basis: None,
+                attribution: None,
+                variant: None,
+                measure_window: None,
+                data_quality: None,
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: Some(input.extraction_method.to_owned()),
+                confidence: None,
+                confirmation_state: Some(input.confirmation_state.to_owned()),
+                supersedes_id: None,
+                source_document_ref: Some(input.report_document_id.to_owned()),
+            },
+        )?;
+        commits.push(apply_aggregator_precedence(connection, input, outcome)?);
+    }
+    Ok(commits)
+}
+
+/// Whether a slot's holding fact is the aggregator's OWN — i.e. the aggregator
+/// may overwrite it. True only for a non-manual `html_aggregator` fact; a manual
+/// fact (no provenance row → `None` tier, `extraction_method = 'manual'`) and
+/// every issuer tier are untouchable (ADR 0086 decision 3).
+fn aggregator_owns_slot(source_tier: Option<&str>, extraction_method: &str) -> bool {
+    use crate::fundamentals::extraction::SourceTier;
+    source_tier.and_then(SourceTier::parse) == Some(SourceTier::HtmlAggregator)
+        && extraction_method != "manual"
+}
+
+/// Upserts the provenance row (tier + validation verdict + drift + citation) for
+/// a fact — the ONE writer shared by both the structured
+/// ([`record_structured_fact`]) and aggregator ([`record_aggregator_fact`]) paths
+/// (they wrote byte-identical rows before this consolidation).
+fn write_fact_provenance(
+    connection: &Connection,
+    fact_id: &str,
+    input: &StructuredFactInput<'_>,
+) -> StorageResult<()> {
     connection.execute(
         "
         INSERT INTO financial_fact_provenance
@@ -861,15 +618,14 @@ pub(crate) fn record_structured_fact(
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         ",
         params![
-            fact.id,
+            fact_id,
             input.source_tier,
             input.validation_status,
             input.drift_json,
             input.citation,
         ],
     )?;
-
-    Ok(StructuredFactCommit::Created(fact.id))
+    Ok(())
 }
 
 /// Resolves a canonical/company KPI definition by metric key, without creating
@@ -894,164 +650,6 @@ fn resolve_definition_by_metric_key(
     Ok(existing)
 }
 
-fn resolve_definition(
-    connection: &Connection,
-    company_id: &str,
-    proposal: &KpiExtractionProposal,
-    accept_as_new_kpi: bool,
-) -> StorageResult<String> {
-    let metric_key = proposal.metric_key.trim();
-    // Prefer a company-scoped definition, then any global/sector definition.
-    let existing: Option<String> = connection
-        .query_row(
-            "
-            SELECT id FROM kpi_definitions
-            WHERE metric_key = ?1 AND (company_id = ?2 OR company_id IS NULL)
-            ORDER BY (company_id IS NULL)
-            LIMIT 1
-            ",
-            params![metric_key, company_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if let Some(id) = existing {
-        return Ok(id);
-    }
-
-    if !accept_as_new_kpi {
-        return Err(invalid(
-            "metric_key",
-            "no KPI definition; accept it as a new custom KPI to confirm",
-        ));
-    }
-
-    // Create a company-scoped definition for the accepted suggestion.
-    let id = company_definition_id(company_id, metric_key);
-    connection.execute(
-        "
-        INSERT OR IGNORE INTO kpi_definitions (
-            id, scope, company_id, metric_key, label, value_kind, unit, computation
-        ) VALUES (?1, 'company', ?2, ?3, ?4, 'monetary', ?5, 'reported')
-        ",
-        params![
-            id,
-            company_id,
-            metric_key,
-            proposal.label.trim(),
-            proposal.unit.as_deref()
-        ],
-    )?;
-    let resolved: String = connection.query_row(
-        "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'company' AND company_id = ?2",
-        params![metric_key, company_id],
-        |row| row.get(0),
-    )?;
-    Ok(resolved)
-}
-
-fn get_proposal(
-    connection: &Connection,
-    proposal_id: &str,
-) -> StorageResult<KpiExtractionProposal> {
-    connection
-        .query_row(
-            "
-            SELECT id, job_id, metric_key, label, value_numeric, unit, currency,
-                   as_reported_value, as_reported_scale, measure_window, confidence,
-                   source_snippet, is_proposed_kpi, status, fact_id, created_at, updated_at
-            FROM kpi_extraction_proposals
-            WHERE id = ?1
-            ",
-            [proposal_id],
-            proposal_from_row,
-        )
-        .map_err(StorageError::from)
-}
-
-fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KpiExtractionJob> {
-    Ok(KpiExtractionJob {
-        id: row.get(0)?,
-        company_id: row.get(1)?,
-        report_document_id: row.get(2)?,
-        provider_id: row.get(3)?,
-        model: row.get(4)?,
-        prompt_version: row.get(5)?,
-        period_hint: row.get(6)?,
-        status: row.get(7)?,
-        error_code: row.get(8)?,
-        error: row.get(9)?,
-        detected_fiscal_year: row.get(10)?,
-        detected_period_type: row.get(11)?,
-        detected_period_end_date: row.get(12)?,
-        detected_currency: row.get(13)?,
-        detected_language: row.get(14)?,
-        created_at: row.get(15)?,
-        started_at: row.get(16)?,
-        finished_at: row.get(17)?,
-        committed_fact_count: row.get(18)?,
-        proposals: Vec::new(),
-    })
-}
-
-fn proposal_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KpiExtractionProposal> {
-    Ok(KpiExtractionProposal {
-        id: row.get(0)?,
-        job_id: row.get(1)?,
-        metric_key: row.get(2)?,
-        label: row.get(3)?,
-        value_numeric: row.get(4)?,
-        unit: row.get(5)?,
-        currency: row.get(6)?,
-        as_reported_value: row.get(7)?,
-        as_reported_scale: row.get(8)?,
-        measure_window: row.get(9)?,
-        confidence: row.get(10)?,
-        source_snippet: row.get(11)?,
-        is_proposed_kpi: row.get::<_, i64>(12)? != 0,
-        status: row.get(13)?,
-        fact_id: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
-    })
-}
-
-fn require(key: &'static str, value: &str) -> StorageResult<()> {
-    if value.trim().is_empty() {
-        Err(invalid(key, value))
-    } else {
-        Ok(())
-    }
-}
-
-fn invalid(key: &'static str, value: &str) -> StorageError {
-    StorageError::InvalidFinancialsValue {
-        key,
-        value: value.to_owned(),
-    }
-}
-
-fn trimmed_option(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-}
-
-fn trimmed_ref(value: &Option<String>) -> Option<String> {
-    value
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
-fn job_id(report_document_id: &str) -> String {
-    format!("kpi_ext_{}", slug_part(report_document_id))
-}
-
-fn proposal_id(job_id: &str, metric_key: &str) -> String {
-    format!("kpi_prop_{}_{}", slug_part(job_id), slug_part(metric_key))
-}
-
 fn period_id(company_id: &str, fiscal_year: i64, period_type: &str) -> String {
     format!(
         "finper_{}_{}_{}",
@@ -1059,10 +657,6 @@ fn period_id(company_id: &str, fiscal_year: i64, period_type: &str) -> String {
         fiscal_year,
         slug_part(period_type)
     )
-}
-
-fn company_definition_id(company_id: &str, metric_key: &str) -> String {
-    format!("kpidef_{}_{}", slug_part(company_id), slug_part(metric_key))
 }
 
 use super::database::Database;
@@ -1078,72 +672,6 @@ impl KpiExtractionStore {
         Self { db }
     }
 
-    pub fn create_kpi_extraction_job(
-        &self,
-        input: NewKpiExtractionJob,
-    ) -> StorageResult<KpiExtractionJob> {
-        let connection = self.db.checkout()?;
-
-        create_kpi_extraction_job(&connection, input)
-    }
-
-    pub fn get_kpi_extraction_job(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        let connection = self.db.checkout()?;
-
-        get_kpi_extraction_job(&connection, job_id)
-    }
-
-    pub fn list_kpi_extraction_jobs_by_document(
-        &self,
-        report_document_id: &str,
-    ) -> StorageResult<Vec<KpiExtractionJob>> {
-        let connection = self.db.checkout()?;
-
-        list_kpi_extraction_jobs_by_document(&connection, report_document_id)
-    }
-
-    pub fn mark_kpi_extraction_job_running(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        let connection = self.db.checkout()?;
-
-        mark_kpi_extraction_job_running(&connection, job_id)
-    }
-
-    pub fn mark_kpi_extraction_job_failed(
-        &self,
-        job_id: &str,
-        error_code: &str,
-        error: &str,
-    ) -> StorageResult<KpiExtractionJob> {
-        let connection = self.db.checkout()?;
-
-        mark_kpi_extraction_job_failed(&connection, job_id, error_code, error)
-    }
-
-    pub fn complete_kpi_extraction_job(
-        &self,
-        input: CompletedKpiExtraction,
-    ) -> StorageResult<KpiExtractionJob> {
-        let mut connection = self.db.checkout()?;
-
-        complete_kpi_extraction_job(&mut connection, input)
-    }
-
-    pub fn confirm_kpi_proposal(
-        &self,
-        input: ConfirmKpiProposalInput,
-    ) -> StorageResult<ConfirmedKpiFact> {
-        let connection = self.db.checkout()?;
-
-        confirm_kpi_proposal(&connection, input)
-    }
-
-    /// Auto-confirm a proposal as an `auto_unreviewed` fact (autopilot path, ADR 0055).
-    pub fn auto_confirm_kpi_proposal(&self, proposal_id: &str) -> StorageResult<FinancialFact> {
-        let connection = self.db.checkout()?;
-
-        auto_confirm_kpi_proposal(&connection, proposal_id)
-    }
-
     /// Persists one deterministically-extracted fact (ADR 0061): ensures the
     /// period, resolves the canonical KPI definition, writes the fact with the
     /// given confirmation state, and records its structured provenance (source
@@ -1151,6 +679,11 @@ impl KpiExtractionStore {
     /// [`StructuredFactCommit`]: `Created` for a new value, `Reobserved`/`Divergent`
     /// when the slot is already occupied (idempotent re-extraction, never a UNIQUE
     /// violation), or `NoDefinition` when the metric has no catalog definition.
+    ///
+    /// This is all that remains of the module: the KPI proposal/job ledger went
+    /// with the in-app AI layer (ADR 0084 decision 5 — `kpi_extraction_jobs` and
+    /// `kpi_extraction_proposals` are dropped), leaving only the deterministic
+    /// fact-recording path the structured pipeline uses.
     pub fn record_structured_fact(
         &self,
         input: StructuredFactInput<'_>,
@@ -1162,114 +695,40 @@ impl KpiExtractionStore {
         Ok(result)
     }
 
-    pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {
-        let connection = self.db.checkout()?;
-
-        reject_kpi_proposal(&connection, proposal_id)
-    }
-
-    /// Pending-proposal counts per detected `(fiscal_year, period_type)` for a
-    /// company — the review axis of the coverage read model (ADR 0077 §2). Only
-    /// `pending` proposals count, and only jobs whose document detected a period
-    /// (both `detected_fiscal_year` and `detected_period_type` present) — a job
-    /// with no detected period cannot be keyed to a coverage row.
-    pub fn pending_proposals_by_period(
+    /// Persists one BiznesRadar-primary aggregator fact under the ADR 0086 tier
+    /// precedence (see [`record_aggregator_fact`]): writes an empty slot,
+    /// overwrites the aggregator's OWN slot with a fresh value, and never touches
+    /// a manual or higher-tier fact (the divergence is reported for the caller to
+    /// log as an informational `witness_disagreement`).
+    pub fn record_aggregator_fact(
         &self,
-        company_id: &str,
-    ) -> StorageResult<Vec<PeriodPendingProposals>> {
-        let connection = self.db.checkout()?;
-
-        pending_proposals_by_period(&connection, company_id)
+        input: StructuredFactInput<'_>,
+    ) -> StorageResult<AggregatorFactCommit> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let result = record_aggregator_fact(&tx, input)?;
+        tx.commit()?;
+        Ok(result)
     }
 
-    /// Every `pending` proposal for a company with its period + document context,
-    /// newest period first — the F5 review-queue read model (ADR 0077 §4/§5).
-    pub fn list_pending_kpi_proposals(
+    /// Persist a whole `(company, page)` batch of BiznesRadar-primary facts under
+    /// ONE `IMMEDIATE` transaction (see [`record_aggregator_facts`]) — one
+    /// checkout+commit for the page instead of one per fact. Returns one
+    /// [`AggregatorFactCommit`] per input, in order; the daily pull applies the
+    /// reversed-witnessing / summary bookkeeping to them outside this transaction.
+    pub fn record_aggregator_facts(
         &self,
-        company_id: &str,
-    ) -> StorageResult<Vec<PendingKpiProposal>> {
-        let connection = self.db.checkout()?;
-
-        list_pending_kpi_proposals(&connection, company_id)
+        inputs: &[StructuredFactInput<'_>],
+    ) -> StorageResult<Vec<AggregatorFactCommit>> {
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let result = record_aggregator_facts(&tx, inputs)?;
+        tx.commit()?;
+        Ok(result)
     }
-}
-
-/// One `(fiscal_year, period_type)` bucket of pending-proposal counts for the
-/// coverage read model. Not an IPC DTO — the coverage command folds it into
-/// `CoverageReviewCell.pending_proposals`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PeriodPendingProposals {
-    pub fiscal_year: i64,
-    pub period_type: String,
-    pub pending: i64,
-}
-
-fn pending_proposals_by_period(
-    connection: &Connection,
-    company_id: &str,
-) -> StorageResult<Vec<PeriodPendingProposals>> {
-    let mut statement = connection.prepare(
-        "SELECT j.detected_fiscal_year, j.detected_period_type, COUNT(*) AS pending
-         FROM kpi_extraction_proposals pr
-         JOIN kpi_extraction_jobs j ON j.id = pr.job_id
-         WHERE j.company_id = ?1
-           AND pr.status = 'pending'
-           AND j.detected_fiscal_year IS NOT NULL
-           AND j.detected_period_type IS NOT NULL
-         GROUP BY j.detected_fiscal_year, j.detected_period_type",
-    )?;
-    let rows = statement.query_map([company_id], |row| {
-        Ok(PeriodPendingProposals {
-            fiscal_year: row.get(0)?,
-            period_type: row.get(1)?,
-            pending: row.get(2)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-}
-
-/// Every `pending` proposal for a company joined to its job's detected period
-/// and its source document (id/title/url) — the F5 review-queue read model
-/// (ADR 0077 §4/§5). Newest period first; jobs with no detected period sort
-/// last (they cannot key to a period group). Confirmed/rejected proposals are
-/// excluded (confirmed ones own facts, rejected ones are discarded).
-fn list_pending_kpi_proposals(
-    connection: &Connection,
-    company_id: &str,
-) -> StorageResult<Vec<PendingKpiProposal>> {
-    let mut statement = connection.prepare(
-        "SELECT pr.id, pr.job_id, pr.metric_key, pr.label, pr.value_numeric, pr.unit,
-                pr.currency, pr.source_snippet, pr.status,
-                j.detected_fiscal_year, j.detected_period_type,
-                j.report_document_id, d.title, d.url,
-                pr.created_at, pr.updated_at
-         FROM kpi_extraction_proposals pr
-         JOIN kpi_extraction_jobs j ON j.id = pr.job_id
-         JOIN report_documents d ON d.id = j.report_document_id
-         WHERE j.company_id = ?1 AND pr.status = 'pending'
-         ORDER BY j.detected_fiscal_year DESC, pr.metric_key COLLATE NOCASE",
-    )?;
-    let rows = statement.query_map([company_id], |row| {
-        Ok(PendingKpiProposal {
-            id: row.get(0)?,
-            job_id: row.get(1)?,
-            metric_key: row.get(2)?,
-            label: row.get(3)?,
-            value_numeric: row.get(4)?,
-            unit: row.get(5)?,
-            currency: row.get(6)?,
-            source_snippet: row.get(7)?,
-            status: row.get(8)?,
-            fiscal_year: row.get(9)?,
-            period_type: row.get(10)?,
-            document_id: row.get(11)?,
-            document_title: row.get(12)?,
-            document_url: row.get(13)?,
-            created_at: row.get(14)?,
-            updated_at: row.get(15)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 #[cfg(test)]
@@ -1309,181 +768,13 @@ mod tests {
     /// confirm/auto-confirm tests exercise the real proposal->fact plumbing
     /// without depending on the AI provider job runner (which lives outside
     /// this module).
-    fn seed_pending_revenue_proposal(
-        connection: &mut Connection,
-        company_id: &str,
-        document_id: &str,
-    ) -> KpiExtractionProposal {
-        let job = create_kpi_extraction_job(
-            connection,
-            NewKpiExtractionJob {
-                company_id: company_id.to_owned(),
-                report_document_id: document_id.to_owned(),
-                provider_id: "test-sample".to_owned(),
-                model: "test-sample-model".to_owned(),
-                prompt_version: "kpi-extraction.v1".to_owned(),
-                period_hint: None,
-            },
-        )
-        .expect("extraction job created");
-
-        let job = complete_kpi_extraction_job(
-            connection,
-            CompletedKpiExtraction {
-                job_id: job.id,
-                detected_fiscal_year: Some(2025),
-                detected_period_type: Some("FY".to_owned()),
-                detected_period_end_date: Some("2025-12-31".to_owned()),
-                detected_currency: Some("PLN".to_owned()),
-                detected_language: Some("pl".to_owned()),
-                committed_fact_count: 0,
-                proposals: vec![NewKpiProposal {
-                    metric_key: "revenue".to_owned(),
-                    label: "Revenue".to_owned(),
-                    value_numeric: "1000000".to_owned(),
-                    unit: None,
-                    currency: Some("PLN".to_owned()),
-                    as_reported_value: Some("1,000,000".to_owned()),
-                    as_reported_scale: Some("units".to_owned()),
-                    measure_window: None,
-                    confidence: Some("high".to_owned()),
-                    source_snippet: Some("Revenue for FY2025 was PLN 1,000,000.".to_owned()),
-                    is_proposed_kpi: false,
-                }],
-            },
-        )
-        .expect("job completed");
-
-        job.proposals
-            .into_iter()
-            .find(|p| p.metric_key == "revenue")
-            .expect("revenue proposal")
-    }
-
     /// Seeds a pending proposal for an arbitrary canonical `metric_key`/`value`
     /// (2025 FY period), so the T4.4 confirm-validation tests can drive a
     /// balance-sheet total through the real proposal→fact→validate plumbing.
-    fn seed_pending_proposal(
-        connection: &mut Connection,
-        company_id: &str,
-        document_id: &str,
-        metric_key: &str,
-        label: &str,
-        value: &str,
-    ) -> KpiExtractionProposal {
-        seed_pending_proposal_with_snippet(
-            connection,
-            company_id,
-            document_id,
-            metric_key,
-            label,
-            value,
-            None,
-        )
-    }
-
     #[allow(clippy::too_many_arguments)]
-    fn seed_pending_proposal_with_snippet(
-        connection: &mut Connection,
-        company_id: &str,
-        document_id: &str,
-        metric_key: &str,
-        label: &str,
-        value: &str,
-        source_snippet: Option<&str>,
-    ) -> KpiExtractionProposal {
-        let job = create_kpi_extraction_job(
-            connection,
-            NewKpiExtractionJob {
-                company_id: company_id.to_owned(),
-                report_document_id: document_id.to_owned(),
-                provider_id: "test-sample".to_owned(),
-                model: "test-sample-model".to_owned(),
-                prompt_version: "kpi-extraction.v1".to_owned(),
-                period_hint: None,
-            },
-        )
-        .expect("extraction job created");
-        let job = complete_kpi_extraction_job(
-            connection,
-            CompletedKpiExtraction {
-                job_id: job.id,
-                detected_fiscal_year: Some(2025),
-                detected_period_type: Some("FY".to_owned()),
-                detected_period_end_date: Some("2025-12-31".to_owned()),
-                detected_currency: Some("PLN".to_owned()),
-                detected_language: Some("pl".to_owned()),
-                committed_fact_count: 0,
-                proposals: vec![NewKpiProposal {
-                    metric_key: metric_key.to_owned(),
-                    label: label.to_owned(),
-                    value_numeric: value.to_owned(),
-                    unit: None,
-                    currency: Some("PLN".to_owned()),
-                    as_reported_value: None,
-                    as_reported_scale: None,
-                    measure_window: None,
-                    confidence: Some("high".to_owned()),
-                    source_snippet: source_snippet.map(str::to_owned),
-                    is_proposed_kpi: false,
-                }],
-            },
-        )
-        .expect("job completed");
-        job.proposals
-            .into_iter()
-            .find(|p| p.metric_key == metric_key)
-            .unwrap_or_else(|| panic!("{metric_key} proposal"))
-    }
-
     /// Seeds an already-confirmed fact for `metric_key` in the 2025 FY period,
     /// so a subsequent confirm assembles a multi-fact period the balance-sheet
     /// identity can actually evaluate.
-    fn seed_period_fact(
-        connection: &Connection,
-        company_id: &str,
-        document_id: &str,
-        metric_key: &str,
-        value: &str,
-    ) {
-        let period_id = ensure_period(
-            connection,
-            company_id,
-            2025,
-            "FY",
-            Some("2025-12-31"),
-            document_id,
-        )
-        .expect("ensure period");
-        let definition_id = resolve_definition_by_metric_key(connection, company_id, metric_key)
-            .expect("definition query")
-            .unwrap_or_else(|| panic!("{metric_key} must exist in the canonical catalog"));
-        create_or_reobserve_financial_fact(
-            connection,
-            NewFinancialFact {
-                company_id: company_id.to_owned(),
-                period_id,
-                definition_id,
-                value_numeric: value.to_owned(),
-                currency: Some("PLN".to_owned()),
-                statement_basis: None,
-                attribution: None,
-                variant: None,
-                measure_window: None,
-                data_quality: None,
-                as_reported_value: None,
-                as_reported_scale: None,
-                reporting_standard: None,
-                extraction_method: None,
-                confidence: None,
-                confirmation_state: Some("confirmed".to_owned()),
-                supersedes_id: None,
-                source_document_ref: None,
-            },
-        )
-        .expect("seed period fact");
-    }
-
     fn fact_provenance_row(
         connection: &Connection,
         fact_id: &str,
@@ -1504,370 +795,18 @@ mod tests {
     /// text), so its provenance tier is the honest `ai` — not `ai_text`.
     /// ADR 0077 T4.4 (approved contract change): the confirm path now *validates*
     /// — a lone revenue value has no identity to check, so the status is the
-    /// honest `unreviewed`, never the retired `none`.
-    #[test]
-    fn confirming_a_proposal_records_ai_provenance() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-        let proposal = seed_pending_revenue_proposal(&mut connection, &company_id, &document_id);
-
-        let confirmed = confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: proposal.id.clone(),
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("confirm proposal");
-
-        assert_eq!(confirmed.validation_status, "unreviewed");
-        let (source_tier, validation_status, drift_json, citation) =
-            fact_provenance_row(&connection, &confirmed.fact.id)
-                .expect("a confirmed AI proposal must carry a provenance row");
-        assert_eq!(source_tier, "ai");
-        assert_eq!(validation_status, "unreviewed");
-        assert_eq!(drift_json, None);
-        assert_eq!(citation.as_deref(), Some(proposal.label.as_str()));
-    }
-
-    /// Same guardrail on the autopilot auto-confirm path (ADR 0055): the
-    /// `auto_unreviewed` confirmation state must not skip provenance either.
-    /// ADR 0077 T4.4: it validates identically — a lone value is `unreviewed`.
-    #[test]
-    fn auto_confirming_a_proposal_records_ai_provenance() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-        let proposal = seed_pending_revenue_proposal(&mut connection, &company_id, &document_id);
-
-        let fact =
-            auto_confirm_kpi_proposal(&connection, &proposal.id).expect("auto-confirm proposal");
-
-        let (source_tier, validation_status, drift_json, citation) =
-            fact_provenance_row(&connection, &fact.id)
-                .expect("an auto-confirmed AI proposal must carry a provenance row");
-        assert_eq!(source_tier, "ai");
-        assert_eq!(validation_status, "unreviewed");
-        assert_eq!(drift_json, None);
-        assert_eq!(citation.as_deref(), Some(proposal.label.as_str()));
-    }
-
-    /// ADR 0077 T4.4: confirming a total that satisfies the balance-sheet
-    /// identity over the period's fact set records a real `passed` status —
-    /// AI-confirmed facts are validated like every other source.
-    #[test]
-    fn confirming_a_balance_sheet_consistent_total_records_passed() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-        // Liabilities + equity already stored for the same (2025, FY) period.
-        seed_period_fact(
-            &connection,
-            &company_id,
-            &document_id,
-            "total_liabilities",
-            "100000000",
-        );
-        seed_period_fact(
-            &connection,
-            &company_id,
-            &document_id,
-            "total_equity",
-            "200000000",
-        );
-        // Confirm the matching total: 300 == 100 + 200 → balance sheet passes.
-        let proposal = seed_pending_proposal(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Total assets",
-            "300000000",
-        );
-
-        let confirmed = confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: proposal.id.clone(),
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("confirm proposal");
-
-        assert_eq!(confirmed.validation_status, "passed");
-        let (_, validation_status, _, _) = fact_provenance_row(&connection, &confirmed.fact.id)
-            .expect("provenance row must exist");
-        assert_eq!(validation_status, "passed");
-    }
-
-    /// ADR 0077 T4.4 (the spike's repainted-total case): confirming a total that
-    /// violates the balance-sheet identity records `flagged`, and the flag is
-    /// surfaced in the command's return value. The fact still persists — the
-    /// user explicitly confirmed it; the status records what validation *saw*.
-    #[test]
-    fn confirming_a_balance_sheet_violating_total_records_flagged() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-        seed_period_fact(
-            &connection,
-            &company_id,
-            &document_id,
-            "total_liabilities",
-            "100000000",
-        );
-        seed_period_fact(
-            &connection,
-            &company_id,
-            &document_id,
-            "total_equity",
-            "200000000",
-        );
-        // 999 != 100 + 200 → balance-sheet identity fails.
-        let proposal = seed_pending_proposal(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Total assets",
-            "999000000",
-        );
-
-        let confirmed = confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: proposal.id.clone(),
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("confirm proposal");
-
-        assert_eq!(confirmed.validation_status, "flagged");
-        // The fact persists regardless — the confirm is never blocked.
-        assert_eq!(confirmed.fact.value_numeric.trim(), "999000000");
-        let (_, validation_status, _, _) = fact_provenance_row(&connection, &confirmed.fact.id)
-            .expect("provenance row must exist");
-        assert_eq!(validation_status, "flagged");
-    }
-
-    /// ADR 0077 T4.4: a confirm with no other facts in the period has no
-    /// identity to evaluate → `unreviewed` (never `none`).
-    #[test]
-    fn confirming_with_no_other_facts_records_unreviewed() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-        let proposal = seed_pending_proposal(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Total assets",
-            "300000000",
-        );
-
-        let confirmed = confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: proposal.id.clone(),
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("confirm proposal");
-
-        assert_eq!(confirmed.validation_status, "unreviewed");
-    }
-
-    /// ADR 0077 T4.4: the autopilot auto-confirm path maps the verdict the same
-    /// way — a balance-sheet-consistent total records `passed`.
-    #[test]
-    fn auto_confirm_maps_validation_status_from_the_verdict() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-        seed_period_fact(
-            &connection,
-            &company_id,
-            &document_id,
-            "total_liabilities",
-            "100000000",
-        );
-        seed_period_fact(
-            &connection,
-            &company_id,
-            &document_id,
-            "total_equity",
-            "200000000",
-        );
-        let proposal = seed_pending_proposal(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Total assets",
-            "300000000",
-        );
-
-        let fact = auto_confirm_kpi_proposal(&connection, &proposal.id).expect("auto-confirm");
-        let (_, validation_status, _, _) =
-            fact_provenance_row(&connection, &fact.id).expect("provenance row must exist");
-        assert_eq!(validation_status, "passed");
-    }
-
-    /// ADR 0077 §4 kickoff decision 3: confirming a tier-4 OCR proposal (the
-    /// `ocr_bootstrap`/`ocr_pending_profile` snippet marker) is what CONFIRMS
-    /// the company's bootstrap profile — the version-1 row bumps to 2 (both the
-    /// column and the serialized profile_json), and only then does tier-4 start
-    /// committing facts. A non-OCR proposal must not touch the profile.
-    #[test]
-    fn confirming_an_ocr_bootstrap_proposal_confirms_the_profile() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-        let profile = crate::fundamentals::extraction::ocr::OcrExtractionProfile::bootstrap(
-            &company_id,
-            crate::fundamentals::extraction::pdf::UnitScale::Thousands,
-            std::collections::BTreeMap::from([(
-                "aktywa razem".to_owned(),
-                "total_assets".to_owned(),
-            )]),
-            crate::fundamentals::extraction::ocr::ValueColumnLayout::CurrentPeriodFirst,
-            Vec::new(),
-            false,
-        );
-        connection
-            .execute(
-                "INSERT INTO company_ocr_extraction_profile
-                    (company_id, template_hash, scale, profile_json, version)
-                 VALUES (?1, ?2, 'Thousands', ?3, 1)",
-                params![
-                    company_id,
-                    profile.template_hash,
-                    serde_json::to_string(&profile).expect("profile json"),
-                ],
-            )
-            .expect("seed v1 profile");
-
-        // A non-OCR confirm first: the profile must stay v1.
-        let plain = seed_pending_proposal(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "revenue",
-            "Przychody",
-            "1000000",
-        );
-        confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: plain.id,
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("confirm plain proposal");
-        let version: i64 = connection
-            .query_row(
-                "SELECT version FROM company_ocr_extraction_profile WHERE company_id = ?1",
-                [&company_id],
-                |row| row.get(0),
-            )
-            .expect("profile row");
-        assert_eq!(version, 1, "a non-OCR confirm must not confirm the profile");
-
-        // Confirming an OCR-bootstrap proposal confirms the profile.
-        let ocr = seed_pending_proposal_with_snippet(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Aktywa razem",
-            "45000000",
-            Some("ocr_bootstrap: Aktywa razem"),
-        );
-        confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: ocr.id,
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("confirm ocr proposal");
-
-        let (version, json): (i64, String) = connection
-            .query_row(
-                "SELECT version, profile_json FROM company_ocr_extraction_profile
-                 WHERE company_id = ?1",
-                [&company_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .expect("profile row");
-        assert_eq!(version, 2, "the OCR confirm must bump the profile version");
-        let stored: crate::fundamentals::extraction::ocr::OcrExtractionProfile =
-            serde_json::from_str(&json).expect("stored profile parses");
-        assert_eq!(stored.version, 2, "profile_json must stay in sync");
-    }
-
-    /// G-1 class-closer (ADR 0077): exercise every production write path —
-    /// manual confirm, autopilot auto-confirm, and a structured-pipeline
-    /// emission — in one DB and assert not a single provenance row carries the
-    /// retired `validation_status='none'`.
+    /// G-1 class-closer (ADR 0077): exercise every production write path in one
+    /// DB and assert not a single provenance row carries the retired
+    /// `validation_status='none'`. Post-ADR-0084 the surviving write paths are
+    /// the deterministic ones — the manual-confirm and autopilot auto-confirm
+    /// proposal paths went with the KPI staging ledger — so this now pins the
+    /// structured tier and the tier-3b positional tier.
     #[test]
     fn no_production_path_writes_validation_status_none() {
-        let mut connection = open_in_memory_database().expect("db");
+        let connection = open_in_memory_database().expect("db");
         let (company_id, document_id) = seed_company_and_document(&connection);
 
-        // Manual confirm.
-        let manual = seed_pending_revenue_proposal(&mut connection, &company_id, &document_id);
-        confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: manual.id,
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("manual confirm");
-
-        // Autopilot auto-confirm.
-        let auto = seed_pending_proposal(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Total assets",
-            "300000000",
-        );
-        auto_confirm_kpi_proposal(&connection, &auto.id).expect("auto-confirm");
-
-        // Structured-pipeline emission (a different period, avoiding slot reuse).
+        // Structured-pipeline emission.
         record_structured_fact(
             &connection,
             StructuredFactInput {
@@ -2046,310 +985,240 @@ mod tests {
         );
     }
 
-    /// F5 review-queue read model (ADR 0077 §4/§5, T5.3b): a company's job with a
-    /// detected period carries 4 proposals — 2 pending, 1 confirmed, 1 rejected.
-    /// `list_pending_kpi_proposals` returns exactly the 2 pending ones, each
-    /// stamped with the job's detected period, the source document's id/title/url,
-    /// and its `source_snippet` verbatim (the UI derives the source chip from it).
+    /// ADR 0086 decision 3: an issuer tier re-observing an aggregator-held slot
+    /// takes the slot's LABEL over — the fact's evidence becomes the issuer's
+    /// filing, not the third-party page that happened to agree with it.
     #[test]
-    fn list_pending_kpi_proposals_returns_only_pending_with_period_and_document_context() {
-        let mut connection = open_in_memory_database().expect("db");
+    fn an_issuer_reobservation_upgrades_an_aggregator_slot_label() {
+        let connection = open_in_memory_database().expect("db");
         let (company_id, document_id) = seed_company_and_document(&connection);
-        // Give the document a title so the read model can pass it through.
-        connection
-            .execute(
-                "UPDATE report_documents SET title = ?2 WHERE id = ?1",
-                params![document_id, "CBF 2025 Q3 raport kwartalny"],
-            )
-            .expect("set document title");
-
-        let job = create_kpi_extraction_job(
+        record_structured_fact(
             &connection,
-            NewKpiExtractionJob {
-                company_id: company_id.clone(),
-                report_document_id: document_id.clone(),
-                provider_id: "test-sample".to_owned(),
-                model: "test-sample-model".to_owned(),
-                prompt_version: "kpi-extraction.v1".to_owned(),
-                period_hint: None,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
             },
         )
-        .expect("job");
+        .expect("aggregator write");
 
-        let proposal = |metric: &str, label: &str, snippet: &str| NewKpiProposal {
-            metric_key: metric.to_owned(),
-            label: label.to_owned(),
-            value_numeric: "120400000".to_owned(),
-            unit: None,
-            currency: Some("PLN".to_owned()),
-            as_reported_value: None,
-            as_reported_scale: None,
-            measure_window: None,
-            confidence: Some("high".to_owned()),
-            source_snippet: Some(snippet.to_owned()),
-            is_proposed_kpi: false,
-        };
-
-        let job = complete_kpi_extraction_job(
-            &mut connection,
-            CompletedKpiExtraction {
-                job_id: job.id,
-                detected_fiscal_year: Some(2025),
-                detected_period_type: Some("Q3".to_owned()),
-                detected_period_end_date: Some("2025-09-30".to_owned()),
-                detected_currency: Some("PLN".to_owned()),
-                detected_language: Some("pl".to_owned()),
-                committed_fact_count: 0,
-                proposals: vec![
-                    proposal(
-                        "revenue",
-                        "Przychody ze sprzedaży",
-                        "ocr_bootstrap: przychody",
-                    ),
-                    proposal("net_profit", "Zysk netto", "ocr_bootstrap: zysk netto"),
-                    proposal(
-                        "total_liabilities",
-                        "Zobowiązania razem",
-                        "ocr_flagged: zobowiązania",
-                    ),
-                    proposal("ebitda", "EBITDA", "ebitda"),
-                ],
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Revenue"),
             },
         )
-        .expect("complete job");
+        .expect("issuer re-observation");
 
-        // Reject one, confirm another (direct status update to isolate the read
-        // model's status filter from the confirm-validation machinery). Reference
-        // by metric_key — `complete_kpi_extraction_job` returns proposals sorted.
-        let by_metric = |metric: &str| {
-            job.proposals
-                .iter()
-                .find(|p| p.metric_key == metric)
-                .unwrap_or_else(|| panic!("{metric} proposal"))
-                .id
-                .clone()
-        };
-        reject_kpi_proposal(&connection, &by_metric("total_liabilities")).expect("reject");
-        connection
-            .execute(
-                "UPDATE kpi_extraction_proposals SET status = 'confirmed' WHERE id = ?1",
-                [&by_metric("ebitda")],
-            )
-            .expect("confirm one");
-
-        let pending = list_pending_kpi_proposals(&connection, &company_id).expect("read model");
-        assert_eq!(pending.len(), 2, "only the 2 still-pending proposals");
-        let metrics: Vec<&str> = pending.iter().map(|p| p.metric_key.as_str()).collect();
-        assert!(metrics.contains(&"revenue"));
-        assert!(metrics.contains(&"net_profit"));
-
-        let revenue = pending
-            .iter()
-            .find(|p| p.metric_key == "revenue")
-            .expect("revenue proposal");
-        assert_eq!(revenue.status, "pending");
-        assert_eq!(revenue.fiscal_year, Some(2025));
-        assert_eq!(revenue.period_type.as_deref(), Some("Q3"));
-        assert_eq!(revenue.document_id, document_id);
-        assert_eq!(
-            revenue.document_title.as_deref(),
-            Some("CBF 2025 Q3 raport kwartalny")
-        );
-        assert_eq!(revenue.document_url, "https://x/doc1.pdf");
-        assert_eq!(
-            revenue.source_snippet.as_deref(),
-            Some("ocr_bootstrap: przychody")
-        );
-    }
-
-    /// The defect fix (owner live find, 2026-07-10): confirming a proposal whose
-    /// slot is ALREADY occupied by an identical fact re-observes it — the proposal
-    /// links to the EXISTING fact id, no new `financial_facts` row is written, the
-    /// real validation status is returned, and (for an OCR-bootstrap proposal) the
-    /// profile is still confirmed. Mirrors the extraction path's re-observation.
-    #[test]
-    fn confirming_a_reobserved_identical_fact_links_the_existing_row() {
-        let mut connection = open_in_memory_database().expect("db");
-        let (company_id, document_id) = seed_company_and_document(&connection);
-
-        // A v1 (unconfirmed bootstrap) OCR profile, so the OCR-bootstrap confirm
-        // has a profile to bump.
-        let profile = crate::fundamentals::extraction::ocr::OcrExtractionProfile::bootstrap(
-            &company_id,
-            crate::fundamentals::extraction::pdf::UnitScale::Thousands,
-            std::collections::BTreeMap::from([(
-                "aktywa razem".to_owned(),
-                "total_assets".to_owned(),
-            )]),
-            crate::fundamentals::extraction::ocr::ValueColumnLayout::CurrentPeriodFirst,
-            Vec::new(),
-            false,
-        );
-        connection
-            .execute(
-                "INSERT INTO company_ocr_extraction_profile
-                    (company_id, template_hash, scale, profile_json, version)
-                 VALUES (?1, ?2, 'Thousands', ?3, 1)",
-                params![
-                    company_id,
-                    profile.template_hash,
-                    serde_json::to_string(&profile).expect("profile json"),
-                ],
-            )
-            .expect("seed v1 profile");
-
-        // A later tier-4 profile run already committed total_assets for 2025 FY.
-        seed_period_fact(
-            &connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "45000000",
-        );
-        let existing_id: String = connection
-            .query_row("SELECT id FROM financial_facts", [], |row| row.get(0))
-            .expect("existing fact id");
-        let facts_before: i64 = connection
-            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
-            .expect("count facts");
-
-        // A leftover OCR-bootstrap proposal for the same slot, same value.
-        let proposal = seed_pending_proposal_with_snippet(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Aktywa razem",
-            "45000000",
-            Some("ocr_bootstrap: Aktywa razem"),
-        );
-
-        let confirmed = confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: proposal.id.clone(),
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
-            },
-        )
-        .expect("confirm re-observed proposal");
-
-        // No new row; the confirmed fact IS the existing one, with its real status.
-        let facts_after: i64 = connection
-            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
-            .expect("count facts");
-        assert_eq!(
-            facts_after, facts_before,
-            "re-observation must not add a row"
-        );
-        assert_eq!(confirmed.fact.id, existing_id, "links the existing fact id");
-        assert_eq!(confirmed.fact.value_numeric.trim(), "45000000");
-        // Honest validation over the period's fact set (a lone total → unreviewed).
-        assert_eq!(confirmed.validation_status, "unreviewed");
-
-        // The proposal is confirmed and points at the existing fact.
-        let stored = get_proposal(&connection, &proposal.id).expect("proposal");
-        assert_eq!(stored.status, "confirmed");
-        assert_eq!(stored.fact_id.as_deref(), Some(existing_id.as_str()));
-
-        // The OCR-bootstrap confirm still bumps the profile to v2 — re-observing a
-        // committed value is still a human confirmation of the profile.
-        let version: i64 = connection
+        let (tier, citation): (String, String) = connection
             .query_row(
-                "SELECT version FROM company_ocr_extraction_profile WHERE company_id = ?1",
-                [&company_id],
-                |row| row.get(0),
+                "SELECT p.source_tier, p.citation FROM financial_fact_provenance p",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .expect("profile row");
+            .expect("provenance row");
         assert_eq!(
-            version, 2,
-            "a re-observed OCR confirm still confirms the profile"
+            tier, "esef",
+            "the issuer tier must take over the slot label"
         );
+        assert_eq!(citation, "Revenue", "the evidence must point at the filing");
     }
 
-    /// The defect fix: confirming a proposal whose slot already holds a DIFFERENT
-    /// value returns a typed `value_conflict` error carrying both values, writes
-    /// nothing, and leaves the proposal pending — the user decides. Never a raw
-    /// sqlite UNIQUE error, never a silent overwrite of possibly-confirmed data.
+    /// ADR 0086 decision 3: an issuer tier DISAGREEING with an aggregator-held
+    /// slot overwrites it — the issuer's number wins its own slot (the reverse
+    /// of the old T7 stored-wins rule, which now applies only between peers).
     #[test]
-    fn confirming_a_conflicting_fact_errors_without_writing() {
-        let mut connection = open_in_memory_database().expect("db");
+    fn an_issuer_divergence_overwrites_an_aggregator_slot() {
+        let connection = open_in_memory_database().expect("db");
         let (company_id, document_id) = seed_company_and_document(&connection);
-        seed_period_fact(
+        record_structured_fact(
             &connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "300000000",
-        );
-        let facts_before: i64 = connection
-            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
-            .expect("count facts");
-
-        let proposal = seed_pending_proposal(
-            &mut connection,
-            &company_id,
-            &document_id,
-            "total_assets",
-            "Total assets",
-            "999000000",
-        );
-
-        let err = confirm_kpi_proposal(
-            &connection,
-            ConfirmKpiProposalInput {
-                proposal_id: proposal.id.clone(),
-                value_numeric: None,
-                currency: None,
-                fiscal_year: None,
-                period_type: None,
-                period_end_date: None,
-                accept_as_new_kpi: false,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "999000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
             },
         )
-        .expect_err("a slot conflict must be a typed error, not a raw sqlite panic");
-        match err {
-            StorageError::InvalidFinancialsValue { key, value } => {
-                assert_eq!(key, "value_conflict");
-                assert!(
-                    value.contains("300000000"),
-                    "carries the stored value: {value}"
-                );
-                assert!(
-                    value.contains("999000000"),
-                    "carries the proposed value: {value}"
-                );
-            }
-            other => panic!("expected a value_conflict error, got {other:?}"),
-        }
+        .expect("aggregator write");
 
-        // Nothing written; the proposal stays pending; the stored value is intact.
-        let facts_after: i64 = connection
-            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
-            .expect("count facts");
-        assert_eq!(
-            facts_after, facts_before,
-            "a conflict must not write a fact"
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000123",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Revenue"),
+            },
+        )
+        .expect("issuer divergence");
+
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier FROM financial_facts f \
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(value, "1000123", "the issuer's number must win its slot");
+        assert_eq!(tier, "esef");
+    }
+
+    /// A fact with NO provenance row is a manual entry — untouchable by every
+    /// automatic path (ADR 0086 decision 3), including an issuer-tier write.
+    #[test]
+    fn a_manual_slot_is_never_upgraded_or_overwritten() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "555000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "manual",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("hand-entered"),
+            },
+        )
+        .expect("seed");
+        // Strip the provenance row — a hand-entered fact never gets one.
+        connection
+            .execute("DELETE FROM financial_fact_provenance", [])
+            .expect("strip provenance");
+
+        let commit = record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "560000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Revenue"),
+            },
+        )
+        .expect("issuer write against a manual slot");
+
+        assert!(
+            matches!(commit, StructuredFactCommit::Divergent { .. }),
+            "a manual slot is reported as a divergence, never overwritten: {commit:?}"
         );
-        let stored = get_proposal(&connection, &proposal.id).expect("proposal");
-        assert_eq!(
-            stored.status, "pending",
-            "a conflicting proposal stays pending"
-        );
-        assert_eq!(stored.fact_id, None);
         let value: String = connection
             .query_row("SELECT value_numeric FROM financial_facts", [], |row| {
                 row.get(0)
             })
-            .expect("stored value");
-        assert_eq!(
-            value.trim(),
-            "300000000",
-            "the stored fact is never overwritten"
-        );
+            .expect("fact");
+        assert_eq!(value, "555000", "the hand-entered value must survive");
+    }
+
+    /// F4 (ADR 0086 perf): a multi-fact page writes through the ONE batched call,
+    /// resolving each period once and returning a commit per input in order. The
+    /// second identical batch re-observes every catalog slot — proof the batch
+    /// wrote real rows as one logical unit (not per-fact best-effort).
+    #[test]
+    fn record_aggregator_facts_batches_a_page_in_order() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        let make = |value: &'static str, metric: &'static str| StructuredFactInput {
+            company_id: &company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: &document_id,
+            metric_key: metric,
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "html_aggregator",
+            extraction_method: "api",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("https://biznesradar.example/page | Przychody"),
+        };
+        // Two catalog facts sharing ONE period + a non-catalog key (order matters).
+        let inputs = vec![
+            make("1000000", "revenue"),
+            make("2000000", "total_assets"),
+            make("3", "definitely_not_a_catalog_metric"),
+        ];
+
+        let commits = record_aggregator_facts(&connection, &inputs).expect("batch write");
+        assert_eq!(commits.len(), 3, "one commit per input, in order");
+        assert!(matches!(commits[0], AggregatorFactCommit::Created(_)));
+        assert!(matches!(commits[1], AggregatorFactCommit::Created(_)));
+        assert!(matches!(commits[2], AggregatorFactCommit::NoDefinition));
+
+        // Both catalog facts actually landed (the batch committed them together).
+        let fact_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(fact_count, 2);
+
+        let again = record_aggregator_facts(&connection, &inputs).expect("re-batch");
+        assert!(matches!(again[0], AggregatorFactCommit::Reobserved(_)));
+        assert!(matches!(again[1], AggregatorFactCommit::Reobserved(_)));
+        assert!(matches!(again[2], AggregatorFactCommit::NoDefinition));
     }
 }

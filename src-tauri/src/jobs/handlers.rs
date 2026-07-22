@@ -12,16 +12,6 @@ use std::sync::Arc;
 use crate::app_state::AppState;
 use crate::jobs::queue::{JobHandler, JobWorker, WorkerPool};
 
-/// Job kind: run an AI analysis for a feed item (status tracked in `ai_analysis_jobs`).
-pub const AI_ANALYSIS_KIND: &str = "ai_analysis";
-/// Job kind: extract management claims for a source (status in `claim_extraction_jobs`).
-pub const CLAIM_EXTRACTION_KIND: &str = "claim_extraction";
-/// Job kind: extract KPI proposals for a document (status in `kpi_extraction_jobs`).
-pub const KPI_EXTRACTION_KIND: &str = "kpi_extraction";
-/// Job kind: generate a research brief (status in `research_brief_jobs`).
-pub const RESEARCH_BRIEF_KIND: &str = "research_brief";
-/// Job kind: generate a research digest (status in `research_digest_jobs`).
-pub const RESEARCH_DIGEST_KIND: &str = "research_digest";
 /// Job kind: one stage of an autopilot run (North Star, v0.49.0 / ADR 0055). The
 /// payload carries `{run_id, stage}`; the handler runs that stage and chains the
 /// next, so a crash mid-stage resumes that stage only.
@@ -55,109 +45,6 @@ pub use crate::jobs::morning_briefing::MORNING_BRIEFING_KIND;
 /// deterministic CPU parse chained from ingestion — assigned to the **autopilot**
 /// lane (the history-sweep family), never a provider call. Defined with the job.
 pub use crate::jobs::ownership_extraction::OWNERSHIP_EXTRACTION_KIND;
-/// Job kind: assess qualitative quality-framework criteria (ADR 0075, v0.50.0).
-/// The payload carries `{companyId, frameworkId, criterionIds?}`; the handler
-/// gathers evidence, assesses each criterion through the capability pool, and
-/// writes `source = agent` criterion results. Defined with the job.
-pub use crate::jobs::qualitative_assessment::QUALITATIVE_ASSESSMENT_KIND;
-
-/// Handlers for the user-initiated AI jobs. Each preserves the prior
-/// fire-and-forget behavior exactly: run the job (which updates its own
-/// per-job status table that the UI polls), and on error mark that table
-/// failed. Returning `Ok` means "the job executed" — the domain outcome lives
-/// in the per-job table, and there is no queue-level retry (single attempt, as
-/// before); the gain is crash-resumability (a job left running is re-run).
-macro_rules! per_job_handler {
-    ($name:ident, $kind:expr, $run:path, $mark_failed:ident, $reason:expr) => {
-        struct $name;
-        impl JobHandler for $name {
-            fn kind(&self) -> &'static str {
-                $kind
-            }
-            fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
-                if let Err(error) = $run(state, payload) {
-                    let _ = state.$mark_failed(payload, $reason, &error);
-                }
-                Ok(())
-            }
-        }
-    };
-}
-
-per_job_handler!(
-    AiAnalysisHandler,
-    AI_ANALYSIS_KIND,
-    crate::jobs::ai_analysis::run_ai_analysis_job,
-    mark_ai_analysis_job_failed,
-    "unknown"
-);
-per_job_handler!(
-    ClaimExtractionHandler,
-    CLAIM_EXTRACTION_KIND,
-    crate::jobs::claim_extraction::run_claim_extraction_job,
-    mark_claim_extraction_job_failed,
-    "extraction_failed"
-);
-/// KPI extraction departs from the `per_job_handler` shape (T5.1, ADR 0077
-/// pacing fix): a transient provider failure (429 rate limit, temporary
-/// unavailability, network error) propagates as `Err` so the queue's capped
-/// backoff retry (2..64s, [`crate::jobs::queue::retry_backoff_seconds`])
-/// engages instead of killing the job on the first 429 — the runner has
-/// already left the domain row re-runnable and recorded a `retry_scheduled`
-/// diagnostic. Every other failure keeps the prior semantics exactly: the
-/// domain row is marked failed and the queue row completes (no retry).
-/// [`enqueue_per_job`] gives this kind a retry budget > 1.
-struct KpiExtractionHandler;
-
-impl JobHandler for KpiExtractionHandler {
-    fn kind(&self) -> &'static str {
-        KPI_EXTRACTION_KIND
-    }
-
-    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
-        use crate::jobs::kpi_extraction::KpiExtractionJobError;
-        match crate::jobs::kpi_extraction::run_kpi_extraction_job(state, payload) {
-            Ok(_) => Ok(()),
-            Err(KpiExtractionJobError::TransientRetryScheduled(message)) => Err(message),
-            Err(KpiExtractionJobError::Internal(error)) => {
-                let _ = state.mark_kpi_extraction_job_failed(payload, "unknown", &error);
-                Ok(())
-            }
-        }
-    }
-}
-
-per_job_handler!(
-    ResearchBriefHandler,
-    RESEARCH_BRIEF_KIND,
-    crate::jobs::research_briefs::run_research_brief_job,
-    mark_research_brief_job_failed,
-    "unknown"
-);
-per_job_handler!(
-    ResearchDigestHandler,
-    RESEARCH_DIGEST_KIND,
-    crate::jobs::research_digests::run_research_digest_job,
-    mark_research_digest_job_failed,
-    "unknown"
-);
-
-/// Qualitative assessment (ADR 0075). Runs the job directly and returns its
-/// Result: a provider/parse/citation failure returns `Err` so the queue retries
-/// with backoff, and nothing is persisted unless every criterion produced a
-/// valid, cited result. No per-job status table (the read model is the
-/// evaluation snapshots it writes).
-struct QualitativeAssessmentHandler;
-
-impl JobHandler for QualitativeAssessmentHandler {
-    fn kind(&self) -> &'static str {
-        QUALITATIVE_ASSESSMENT_KIND
-    }
-
-    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
-        crate::jobs::qualitative_assessment::run_qualitative_assessment_job(state, payload)
-    }
-}
 
 /// A morning briefing (ADR 0068 decision 4). Runs the composer + optional
 /// narrative and returns its Result: a storage-level failure returns `Err` (the
@@ -374,12 +261,6 @@ impl JobHandler for ScheduledRegistryRefreshHandler {
 /// this, then [`crate::jobs::queue::spawn`] to reclaim residue and run the loop.
 pub fn build_worker(state: AppState) -> JobWorker {
     let mut worker = JobWorker::new(state);
-    worker.register(Arc::new(AiAnalysisHandler));
-    worker.register(Arc::new(ClaimExtractionHandler));
-    worker.register(Arc::new(KpiExtractionHandler));
-    worker.register(Arc::new(ResearchBriefHandler));
-    worker.register(Arc::new(ResearchDigestHandler));
-    worker.register(Arc::new(QualitativeAssessmentHandler));
     worker.register(Arc::new(MorningBriefingHandler));
     worker.register(Arc::new(HistorySweepHandler));
     worker.register(Arc::new(OwnershipExtractionHandler));
@@ -390,15 +271,22 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(ScheduledRegistryRefreshHandler));
     worker.register(Arc::new(QuoteBackfillHandler));
     worker.register(Arc::new(CompanyBackfillHandler));
+    worker.register(Arc::new(
+        crate::jobs::aggregator_fundamentals_pull::AggregatorFundamentalsPullHandler,
+    ));
     worker
 }
 
 /// The isolated worker-lane layout (ADR 0059): which job kinds each pool drains,
 /// and how many threads it runs. Lanes keep a slow source refresh from starving
-/// autopilot; the shared per-provider AI limit (not the thread count) is the real
-/// ceiling on AI cost, so generous defaults are safe. Worker counts come from
-/// `config` (settings-driven, tolerant defaults). Every registered kind must appear
-/// in exactly one lane.
+/// autopilot. Worker counts come from `config` (settings-driven, tolerant
+/// defaults). Every registered kind must appear in exactly one lane.
+///
+/// The `ai` lane is gone with the in-app AI analysis layer (ADR 0084, amending
+/// ADR 0059): every kind it drained was retired, and the morning briefing —
+/// now a purely deterministic composition (`gather_sources` + `compose_briefing`)
+/// — joins the autopilot lane rather than keeping a lane named after a
+/// dependency it no longer has.
 pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
     use crate::jobs::scheduler::{REGISTRY_REFRESH_KIND, SOURCE_REFRESH_KIND};
     use crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND;
@@ -411,6 +299,10 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 REGISTRY_REFRESH_KIND,
                 crate::jobs::quote_backfill::QUOTE_BACKFILL_KIND,
                 COMPANY_BACKFILL_KIND,
+                // BiznesRadar-primary fundamentals pull: shares the BiznesRadar
+                // host politeness posture with the other source fetches; serializes
+                // on its own adapter id (ADR 0059 / ADR 0086).
+                crate::jobs::aggregator_fundamentals_pull::AGGREGATOR_FUNDAMENTALS_PULL_KIND,
             ],
             workers: config.sources_workers.max(1) as usize,
         },
@@ -421,102 +313,17 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 HISTORY_SWEEP_KIND,
                 OWNERSHIP_EXTRACTION_KIND,
                 MANAGEMENT_EXTRACTION_KIND,
+                MORNING_BRIEFING_KIND,
             ],
             workers: config.autopilot_workers.max(1) as usize,
         },
-        WorkerPool {
-            name: "ai",
-            kinds: vec![
-                AI_ANALYSIS_KIND,
-                KPI_EXTRACTION_KIND,
-                CLAIM_EXTRACTION_KIND,
-                RESEARCH_BRIEF_KIND,
-                RESEARCH_DIGEST_KIND,
-                QUALITATIVE_ASSESSMENT_KIND,
-                MORNING_BRIEFING_KIND,
-            ],
-            workers: config.ai_workers.max(1) as usize,
-        },
     ]
-}
-
-/// Enqueue a per-job-table job onto the durable queue, keyed by the job's own
-/// id (attempts budget per kind — see [`per_job_max_attempts`]). Replaces the
-/// prior fire-and-forget `spawn_blocking`; the
-/// worker runs the handler, so a crash mid-run resumes. Logs and drops on
-/// enqueue error (best-effort, matching the prior detached spawn).
-///
-/// Uses `reschedule`, not plain `enqueue`: every `per_job_handler` (ai_analysis,
-/// claim_extraction, research_brief, research_digest) always returns `Ok` — and
-/// [`KpiExtractionHandler`] does too except while a transient retry is pending —
-/// so the `job_queue` row ends `succeeded` regardless of the *domain* outcome
-/// recorded in the job's own table — that is precisely what
-/// lets a domain job land `failed` while its `job_queue` row is already terminal.
-/// The `retry_*` commands (`retry_kpi_extraction`, `retry_claim_extraction`,
-/// `retry_ai_analysis`) then re-enqueue under the **same** `job_id`; plain
-/// `enqueue` (`INSERT OR IGNORE`) would silently no-op against that already-
-/// `succeeded` row and the retry would never actually run (bug class dce9ce8).
-/// `reschedule` re-arms a terminal row to `pending` and leaves a `running` row
-/// untouched (never double-run); a fresh `job_id` is inserted exactly as before.
-pub fn enqueue_per_job(state: &AppState, kind: &'static str, job_id: &str) {
-    if let Err(error) = state
-        .jobs()
-        .reschedule(job_id, kind, job_id, per_job_max_attempts(kind))
-    {
-        log::warn!("failed to enqueue {kind} job {job_id}: {error}");
-    }
-}
-
-/// Queue attempts budget for kpi_extraction: 1 first run + 4 backoff retries
-/// (2/4/8/16s waits) for transient provider failures — enough to ride out a
-/// short 429 window without hammering a rate-limited provider (T5.1, ADR 0077).
-const KPI_EXTRACTION_MAX_ATTEMPTS: i64 = 5;
-
-/// Retry budget per per-job kind. Only kpi_extraction gets queue-level backoff
-/// retries (its handler returns `Err` on transient provider failures); every
-/// other per-job kind keeps the original single-attempt semantics — their
-/// handlers always return `Ok`, so a larger budget would be dead config.
-fn per_job_max_attempts(kind: &str) -> i64 {
-    if kind == KPI_EXTRACTION_KIND {
-        KPI_EXTRACTION_MAX_ATTEMPTS
-    } else {
-        1
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::open_in_memory_database;
-
-    #[test]
-    fn enqueue_per_job_rearms_a_stale_terminal_row_under_the_same_id() {
-        // Bug class dce9ce8: every `per_job_handler` always returns `Ok` (the
-        // domain outcome lives in its own job table), so its `job_queue` row
-        // always ends `succeeded` — even when the domain job itself failed. The
-        // `retry_*` commands then re-enqueue under the SAME job id; if that used
-        // plain `enqueue` (`INSERT OR IGNORE`), the already-`succeeded` row would
-        // silently swallow the retry forever.
-        let state = AppState::new(open_in_memory_database().expect("db"));
-        enqueue_per_job(&state, KPI_EXTRACTION_KIND, "job-1");
-        let worker = build_worker(state.clone());
-        assert!(worker.process_one().expect("process one"));
-        assert_eq!(state.jobs().counts().expect("counts").succeeded, 1);
-
-        // Retry: same job id, same kind.
-        enqueue_per_job(&state, KPI_EXTRACTION_KIND, "job-1");
-        let counts = state.jobs().counts().expect("counts");
-        assert_eq!(
-            counts.pending, 1,
-            "the retry re-arms the terminal row instead of silently no-opping"
-        );
-        assert_eq!(counts.succeeded, 0);
-
-        assert!(
-            worker.process_one().expect("process one"),
-            "the re-armed job is actually dispatched again"
-        );
-    }
 
     #[test]
     fn every_registered_kind_is_in_exactly_one_lane() {
@@ -554,31 +361,25 @@ mod tests {
 
     #[test]
     fn every_registered_kind_dispatches_without_unknown_handler() {
-        // Each migrated fire-and-forget job has a handler, so an enqueued job is
+        // A migrated fire-and-forget job has a handler, so an enqueued job is
         // claimed + dispatched (and its handler returns Ok after handling a
         // missing-row failure on the bogus id) — never left pending or terminally
-        // failed as an unknown kind.
+        // failed as an unknown kind. Uses the deterministic morning briefing (the
+        // AI per-job kinds are retired, ADR 0084).
         let state = AppState::new(open_in_memory_database().expect("db"));
-        for kind in [
-            AI_ANALYSIS_KIND,
-            CLAIM_EXTRACTION_KIND,
-            KPI_EXTRACTION_KIND,
-            RESEARCH_BRIEF_KIND,
-            RESEARCH_DIGEST_KIND,
-        ] {
-            state
-                .jobs()
-                .enqueue(&format!("{kind}:bogus"), kind, "bogus", 1)
-                .expect("enqueue");
-        }
+        let kind = MORNING_BRIEFING_KIND;
+        state
+            .jobs()
+            .enqueue(&format!("{kind}:bogus"), kind, "{\"force\":true}", 1)
+            .expect("enqueue");
 
         let worker = build_worker(state.clone());
         let processed = worker.run_until_idle().expect("drain");
 
-        assert_eq!(processed, 5);
+        assert_eq!(processed, 1);
         let counts = state.jobs().counts().expect("counts");
         assert_eq!(counts.pending, 0);
-        assert_eq!(counts.failed, 0, "handlers found and ran (no unknown-kind)");
-        assert_eq!(counts.succeeded, 5);
+        assert_eq!(counts.failed, 0, "handler found and ran (no unknown-kind)");
+        assert_eq!(counts.succeeded, 1);
     }
 }

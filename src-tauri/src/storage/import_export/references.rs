@@ -77,28 +77,6 @@ pub(super) fn imported_or_existing_evidence_reference(
     }
 }
 
-pub(super) fn imported_or_existing_evidence_reference_with_reminders(
-    connection: &Connection,
-    evidence_type: &str,
-    evidence_id: &str,
-    imported_note_ids: &HashSet<String>,
-    imported_claim_ids: &HashSet<String>,
-    imported_question_ids: &HashSet<String>,
-    imported_reminder_ids: &HashSet<String>,
-) -> bool {
-    match evidence_type {
-        "reminder" if imported_reminder_ids.contains(evidence_id) => true,
-        _ => imported_or_existing_evidence_reference(
-            connection,
-            evidence_type,
-            evidence_id,
-            imported_note_ids,
-            imported_claim_ids,
-            imported_question_ids,
-        ),
-    }
-}
-
 pub(super) fn evidence_reference_exists_for_import(
     connection: &Connection,
     evidence_type: &str,
@@ -112,12 +90,10 @@ pub(super) fn evidence_reference_exists_for_import(
             table_reference_exists(connection, "transcript_segments", evidence_id)
         }
         "company_event" => table_reference_exists(connection, "company_events", evidence_id),
-        "ai_analysis" => table_reference_exists(connection, "ai_analysis_results", evidence_id),
         "research_question" => {
             table_reference_exists(connection, "research_questions", evidence_id)
         }
         "reminder" => table_reference_exists(connection, "research_reminders", evidence_id),
-        "digest" => table_reference_exists(connection, "ai_research_digests", evidence_id),
         _ => Ok(false),
     }
 }

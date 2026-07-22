@@ -40,7 +40,7 @@ Scoped, explicit contracts for a decision surface — never a whole-page CTA sca
 - **Icon-only buttons** keep the existing accessible-name requirement (axe is the general authority, `expectNoA11yViolations`). A **non-obvious** icon action additionally needs a visible explanation or a `title` — a human call at review time, not something a helper infers.
 - **Helpers** (`tests/browser/helpers/interactionContracts.ts`): `expectPrimaryActionCount(surface, { max, reason? })`, `expectActionBeforeScroll(action, scrollOwner)`, `expectFocusOrder(page, locators)`, `expectNamedIconActions(surface)`, `expectNextStepVisible(locator)`. Every helper takes an explicit surface/action locator supplied by the caller — never scans the whole page.
 - **Multi-primary exemption.** `expectPrimaryActionCount` with `max > 1` requires a non-empty `reason`, which must pair with a matching entry in that surface's experience contract (template § 6). Without a `reason`, the surface's primary-action count must match `max` exactly (so a dropped marker reddens as loudly as a doubled one).
-- **Pilot adoption:** J1 (`tests/browser/journeys/j1-morning-review.spec.ts`) and J2 (`j2-company-published-a-report.spec.ts`) mark their real primary actions (Today row "Review", the KPI-extraction launcher) and assert the contract against them.
+- **Pilot adoption:** J1 (`tests/browser/journeys/j1-morning-review.spec.ts`) and J2 (`j2-company-published-a-report.spec.ts`) mark their real primary actions (Today row "Review"; J2 marks the Notebook "New note" since `v0.59.0`, the KPI-extraction launcher having been retired with the in-app AI layer — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)) and assert the contract against them.
 
 ## Pre-write self-check (do this every time)
 

@@ -1,55 +1,28 @@
 //! Structured-first fundamentals extraction service (ADR 0061 S5).
 //!
 //! Loads a stored report document, runs the deterministic tiered pipeline
-//! (ESEF → PDF+profile → HTML witness), and persists the accepted facts with
-//! their provenance (source tier + validation verdict + citation) and the
-//! learned per-company extraction profile. This is the structured-first path
-//! that runs *before* the AI proposal job — AI is only the last resort when no
-//! structured tier produces a validated set.
+//! (ESEF → positional xHTML → EspiCoverNote → HTML aggregator), and persists
+//! the accepted facts with their provenance (source tier + validation verdict +
+//! citation). The pipeline is deterministic end to end.
 //!
-//! Live aggregator (BiznesRadar/Bankier) fetch is gated on a source-specific
-//! scraping ADR (see ADR 0061 decision 4), so the witness tier runs with no
-//! remote fetch here yet; the pipeline degrades cleanly to ESEF + PDF.
+//! The **PDF fact-extraction arm is retired** (ADR 0086 dec. 1): a real PDF
+//! document spawns NO extraction attempt here — its route survives only so
+//! [`derive_report_period`] can group the registry. Core KPIs for a PDF-only
+//! company arrive from the BiznesRadar-primary daily pull (a separate job), not
+//! from this seam. A markup/ESEF document no tier parses is an honest gap; the
+//! former tier-4 OCR fallback was already retired with the in-app AI layer
+//! (ADR 0084 decision 4).
 
 use std::collections::BTreeSet;
 
 use crate::app_state::AppState;
-use crate::fundamentals::extraction::ocr::{parse_ocr_markdown, OcrExtractionProfile};
-use crate::fundamentals::extraction::pdf::parse_pdf_text;
+use crate::fundamentals::extraction::container::{detect_container, Container};
 use crate::fundamentals::extraction::pipeline::{
-    run_pipeline, validate_parsed_set, Acceptance, PipelineInput,
+    run_pipeline, validate_parsed_set_report, Acceptance, PipelineInput,
 };
-use crate::fundamentals::extraction::profile::ExtractionProfile;
-use crate::fundamentals::extraction::{ExtractedFact, FactPeriod, SourceTier};
-use crate::providers::analysis::{
-    capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
-    ocr_profile_bootstrap_prompt, AiAnalysisProvider, AnalysisDocument, KpiCatalogEntry,
-    OCR_PROFILE_BOOTSTRAP_PROMPT_VERSION,
-};
-use crate::report_diff::extraction::{extract_report, SourceFormat};
-use crate::storage::{
-    CompletedKpiExtraction, ListKpiDefinitionsInput, NewKpiExtractionJob, NewKpiProposal,
-    StructuredFactInput, MODE_AUTOPILOT,
-};
-
-/// The tier-4 (OCR) caller gate (ADR 0077 §4 kickoff decision 4). The vision
-/// fallback runs **only** when this is [`Tier4Gate::Allowed`]; the two denied
-/// variants keep it off with an honest reason so nothing is skipped silently.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Tier4Gate {
-    /// Determinism ended Flagged|Empty and the caller (manual/detection) permits
-    /// the OCR fallback.
-    Allowed,
-    /// A history-sweep run: tier-4 stays off until the F3b budget counter exists
-    /// (ADR 0077 §3 amendment (b)); passed for defense in depth alongside the
-    /// autopilot stage's own pre-hook early-return.
-    DeniedSweep,
-    /// Reserved for the T5.2 budget counter (`history_sweep_ai_call_limit`): the
-    /// budget seam the ADR approved, wired here so plugging it in later needs no
-    /// hook-shape change. Unused until T5.2.
-    #[allow(dead_code)]
-    DeniedBudget,
-}
+use crate::fundamentals::extraction::SourceTier;
+use crate::report_diff::extraction::SourceFormat;
+use crate::storage::StructuredFactInput;
 
 /// The immediately-prior period's end date for `period_end` (`YYYY-MM-DD`),
 /// by decrementing the leading year — the same fiscal period one year
@@ -59,47 +32,17 @@ fn prior_period_end(period_end: &str) -> Option<String> {
     Some(format!("{:04}{}", year - 1, period_end.get(4..)?))
 }
 
-/// The company's expected primary-KPI `metric_key`s (ADR 0061 dec. 4d): every
-/// `kpi_relevance` row that is `active` and ranked `primary` (case-
-/// insensitively), bridged to its `metric_key` via the definition catalog.
-/// `None` when there are none (nothing to check completeness against) —
-/// never blocks emission by itself.
+/// The company's expected primary-KPI `metric_key`s for the completeness gate
+/// (ADR 0061 dec. 4d). Delegates to the storage-owned query so this pipeline and
+/// the ingest-time ESPI cover-note tier check completeness identically.
 fn expected_primary_keys(
     state: &AppState,
     company_id: &str,
 ) -> Result<Option<BTreeSet<String>>, String> {
-    let relevance = state
+    state
         .financials()
-        .list_kpi_relevance(company_id)
-        .map_err(|e| e.to_string())?;
-    let primary_definition_ids: BTreeSet<String> = relevance
-        .into_iter()
-        .filter(|r| {
-            r.status == "active"
-                && r.rank
-                    .as_deref()
-                    .is_some_and(|rank| rank.eq_ignore_ascii_case("primary"))
-        })
-        .map(|r| r.definition_id)
-        .collect();
-    if primary_definition_ids.is_empty() {
-        return Ok(None);
-    }
-
-    let definitions = state
-        .financials()
-        .list_kpi_definitions(ListKpiDefinitionsInput {
-            scope: None,
-            sector: None,
-            company_id: None,
-        })
-        .map_err(|e| e.to_string())?;
-    let keys: BTreeSet<String> = definitions
-        .into_iter()
-        .filter(|d| primary_definition_ids.contains(&d.id))
-        .map(|d| d.metric_key)
-        .collect();
-    Ok(if keys.is_empty() { None } else { Some(keys) })
+        .expected_primary_metric_keys(company_id)
+        .map_err(|e| e.to_string())
 }
 
 /// A re-extraction that observed an already-stored slot with a *different* value
@@ -112,6 +55,200 @@ pub struct FactDivergence {
     pub metric_key: String,
     pub existing: String,
     pub incoming: String,
+}
+
+/// The typed reason an extraction attempt landed where it did — never English
+/// prose (ADR 0084 decision 6). These strings are the `reason_code` vocabulary
+/// the `fundamentals_extraction_outcomes` CHECK constraint enforces and the
+/// frontend renders through the translation layer.
+pub(crate) mod reason {
+    /// The run emitted facts — the non-failure value.
+    pub const EMITTED: &str = "emitted";
+    /// The validation gate found a contradiction (identity or comparative).
+    pub const VALIDATION_FAILED: &str = "validation_failed";
+    // The `structure_drift` reason (PDF profile-drift arm) is retired with the
+    // PDF fact arm (ADR 0086 dec. 1): no new row carries it. Already-stored rows
+    // keep the literal string; there is no producing constant anymore.
+    /// The aggregator disagreed with an issuer-held value — recorded by the
+    /// reversed-witnessing paths (the BR-primary pull and the WDF ingest seam),
+    /// never by this pipeline (ADR 0086 dec. 4).
+    pub const WITNESS_DISAGREEMENT: &str = "witness_disagreement";
+    // The `witness_fallback` reason (ADR 0085 aggregator gap-fill) is retired
+    // with ADR 0086: BiznesRadar sources core KPIs through its own primary
+    // pull. Already-stored rows keep the literal string; readers stay tolerant.
+    /// No deterministic tier could read the document (post-ADR-0084 there is no
+    /// AI fallback: this is an honest, explicit gap, never a guess).
+    pub const NO_DETERMINISTIC_TIER: &str = "no_deterministic_tier";
+    /// The document's stored file is missing or unreadable.
+    pub const DOCUMENT_UNREADABLE: &str = "document_unreadable";
+}
+
+/// The typed reason + structured detail for one pipeline verdict.
+///
+/// `Flagged` is deliberately disambiguated: "the numbers contradict each other"
+/// (`validation_failed`) and "the witness disagrees" (`witness_disagreement`)
+/// are different problems with different fixes, and a single `flagged` label
+/// would hide that. (The `structure_drift` reason is retired with the PDF fact
+/// arm, ADR 0086 dec. 1.)
+fn reason_for(
+    outcome: &crate::fundamentals::extraction::pipeline::PipelineOutcome,
+) -> &'static str {
+    if outcome.acceptance.emits() {
+        return reason::EMITTED;
+    }
+    match outcome.acceptance {
+        Acceptance::Empty => reason::NO_DETERMINISTIC_TIER,
+        // A non-emitting non-empty outcome is a failed gate. (`structure_drift`
+        // died with the PDF fact arm and `witness_disagreement` is recorded by
+        // the aggregator pull's reversed witnessing, never by this pipeline —
+        // ADR 0086 dec. 1/4.)
+        _ => reason::VALIDATION_FAILED,
+    }
+}
+
+/// The failing-check detail behind a verdict, as JSON — which identities and
+/// which comparative cross-checks objected, with their expected/actual/residual.
+///
+/// Only *failures* are recorded: a `NotApplicable` check (inputs absent) is not
+/// a contradiction and listing it would bury the signal. `None` when nothing
+/// failed, so a detail payload always means "here is what objected".
+fn failing_check_detail(
+    outcome: &crate::fundamentals::extraction::pipeline::PipelineOutcome,
+) -> Option<String> {
+    use crate::fundamentals::validation::Outcome;
+
+    let describe = |o: &Outcome| match o {
+        Outcome::Fail {
+            expected,
+            actual,
+            residual,
+        } => Some(serde_json::json!({
+            "expected": expected.to_string(),
+            "actual": actual.to_string(),
+            "residual": residual.to_string(),
+        })),
+        _ => None,
+    };
+
+    let report = outcome.validation.as_ref()?;
+
+    let identities: Vec<serde_json::Value> = report
+        .identities
+        .iter()
+        .filter_map(|check| {
+            describe(&check.outcome).map(|detail| {
+                serde_json::json!({ "id": check.id, "label": check.label, "detail": detail })
+            })
+        })
+        .collect();
+    let cross_checks: Vec<serde_json::Value> = report
+        .cross_checks
+        .iter()
+        .filter_map(|check| {
+            describe(&check.outcome).map(
+                |detail| serde_json::json!({ "metricKey": check.metric_key, "detail": detail }),
+            )
+        })
+        .collect();
+
+    if identities.is_empty() && cross_checks.is_empty() {
+        return None;
+    }
+    serde_json::to_string(&serde_json::json!({
+        "failedIdentities": identities,
+        "failedCrossChecks": cross_checks,
+    }))
+    .ok()
+}
+
+/// Persists one attempt's outcome. Best-effort by design: the extraction result
+/// the caller already holds is the more important guarantee, so a bookkeeping
+/// failure is logged, never propagated — the same policy the ingest-time
+/// cover-note tier applies to its own recording.
+#[allow(clippy::too_many_arguments)]
+fn record_outcome(
+    state: &AppState,
+    company_id: &str,
+    report_document_id: &str,
+    fiscal_year: i64,
+    period_type: &str,
+    period_end: &str,
+    tier: Option<&str>,
+    acceptance: Acceptance,
+    reason_code: &str,
+    detail_json: Option<&str>,
+    drift_json: Option<&str>,
+    fact_count: i64,
+) {
+    // Always-on structured log line (the cover-note tier's precedent): the
+    // durable row is the record, this is the trail even before anyone looks.
+    log::info!(
+        "module=structured_extraction stage=outcome company={company_id} document={report_document_id} \
+         period={period_end} acceptance={} reason={reason_code} tier={} facts={fact_count}",
+        acceptance.as_str(),
+        tier.unwrap_or("none"),
+    );
+    if let Err(error) = state.fundamentals_provenance().record_extraction_outcome(
+        crate::storage::NewExtractionOutcome {
+            company_id,
+            report_document_id,
+            fiscal_year,
+            period_type,
+            period_end,
+            tier,
+            acceptance: acceptance.as_str(),
+            reason_code,
+            detail_json,
+            drift_json,
+            structure_changed: drift_json.is_some(),
+            fact_count,
+        },
+    ) {
+        log::warn!(
+            "module=structured_extraction stage=outcome_record_failed \
+             company={company_id} document={report_document_id} error={error}"
+        );
+    }
+}
+
+/// Record a `tier_upgrade` diagnostic when an issuer tier OVERWROTE a lower-tier
+/// slot's VALUE (ADR 0086 dec. 3) — the same upgrade evidence the WDF cover-note
+/// seam records ([`crate::storage::espi_cover_note_facts`]). A label-only upgrade
+/// (`previous_value` is `None`: the tiers agreed and only the label/evidence
+/// moved) records nothing. Best-effort + developer-mode gated (the diagnostic
+/// sink is a no-op otherwise) — never fails the extraction.
+fn record_tier_upgrade_diagnostic(
+    state: &AppState,
+    company_id: &str,
+    metric_key: &str,
+    previous_value: Option<&str>,
+    previous_tier: &str,
+    new_value: &str,
+) {
+    let Some(previous_value) = previous_value else {
+        return;
+    };
+    log::info!(
+        "module=structured_extraction stage=tier_upgrade company={company_id} \
+         metric={metric_key} previous_tier={previous_tier} previous={previous_value} new={new_value}"
+    );
+    let _ = state.record_diagnostic_event(crate::storage::NewDiagnosticEvent {
+        occurred_at: None,
+        module: "structured_extraction".to_owned(),
+        scope: Some(crate::storage::DiagnosticScope {
+            scope_type: "company".to_owned(),
+            id: Some(company_id.to_owned()),
+        }),
+        stage: "tier_upgrade".to_owned(),
+        severity: "warning".to_owned(),
+        message: "issuer tier overwrote a lower-tier stored value".to_owned(),
+        metadata: Some(serde_json::json!({
+            "metricKey": metric_key,
+            "previousValue": previous_value,
+            "previousTier": previous_tier,
+            "newValue": new_value,
+        })),
+    });
 }
 
 /// The outcome of a structured extraction attempt.
@@ -127,53 +264,162 @@ pub struct StructuredExtractionResult {
     pub skipped_fact_ids: Vec<String>,
     /// Slots re-observed with a value that disagrees with the stored fact.
     pub divergences: Vec<FactDivergence>,
-    /// Serialized `DriftReport` when the layout drifted (for the notification).
-    pub drift_json: Option<String>,
-    /// Whether the pipeline detected a layout drift (`drift_json.is_some()`),
-    /// surfaced separately so callers can merge a `structureChanged` flag into
-    /// a run's `kpi_delta_json` without re-deriving it from the option.
-    pub structure_changed: bool,
-    /// Whether the pipeline emitted any facts (structured tiers **or** tier-4).
+    /// Whether a deterministic **issuer** tier emitted facts this run.
+    /// (The ADR 0085 aggregator-fallback flag is retired with ADR 0086 —
+    /// BiznesRadar sources facts through its own primary pull; stored
+    /// `witness_fallback` outcome rows remain readable as legacy.)
     pub emitted: bool,
-    /// The tier-4 (OCR) fallback's honest outcome when it ran (ADR 0077 §4), else
-    /// `None` (determinism emitted, or the gate denied it). One of:
-    /// `facts_emitted` · `bootstrap_proposals` · `proposals_flagged` ·
-    /// `no_vision_provider` · `not_pdf` · `provider_error:<code>` · `empty`.
-    pub tier4: Option<String>,
-    /// How many proposals the tier-4 fallback landed for confirmation (bootstrap
-    /// or validation-failing values). `0` when tier-4 emitted facts or did not run.
-    pub tier4_proposals: usize,
 }
 
-/// The per-fact `confirmation_state` for an accepted outcome, given the run
-/// mode (ADR 0061 dec. 3/8/9). A structured, validation-clean set — `Accepted`
-/// or `AcceptedViaWitness` — auto-confirms in **both** modes: the "good gate"
-/// already proved it, so review would add no signal. An `AcceptedUnreviewed`
-/// set (nothing proven, nothing contradicted) keeps the pre-existing trust
-/// ladder: `auto_unreviewed` in autopilot, `pending` in assist. `Flagged`/
-/// `Empty` never reach here (`Acceptance::emits()` is `false`), so their arm is
-/// unreachable in practice but still total.
-fn confirmation_state_for(acceptance: Acceptance, mode: &str) -> &'static str {
-    match acceptance {
-        Acceptance::Accepted | Acceptance::AcceptedViaWitness => "confirmed",
-        Acceptance::AcceptedUnreviewed => {
-            if mode == MODE_AUTOPILOT {
-                "auto_unreviewed"
-            } else {
-                "pending"
-            }
-        }
-        Acceptance::Flagged | Acceptance::Empty => "pending",
-    }
+/// The per-fact `confirmation_state` for an accepted outcome. Facts are
+/// review-free (ADR 0086 dec. 5, amending ADR 0061 dec. 3/8/9): every accepted
+/// set lands `confirmed` in **both** modes — there is no `pending`/`auto_unreviewed`
+/// awaiting-confirmation grace period. Whether the "good gate" proved a value
+/// (`Accepted`/`AcceptedViaWitness`) or it was merely uncontradicted
+/// (`AcceptedUnreviewed`) is provenance, not a review to-do: it lives in the
+/// fact's `validation_status` + `source_tier` + citation, surfaced as labels.
+/// `confirmation_state` is a frozen compatibility column. `mode` no longer
+/// affects it — the parameter stays so callers pass it uniformly. `Flagged`/
+/// `Empty` never reach here (`Acceptance::emits()` is `false`).
+fn confirmation_state_for(_acceptance: Acceptance, _mode: &str) -> &'static str {
+    "confirmed"
+}
+
+/// One fact held back by the runtime history-plausibility gate — its magnitude
+/// was ≥100× off its own stored history (a dropped `w tys.` multiplier or a note
+/// reference read as the value). Carries the figures the flagged-outcome detail
+/// cites so a reviewer sees *why* it was quarantined.
+struct QuarantinedFact {
+    metric_key: String,
+    value: rust_decimal::Decimal,
+    history_median: rust_decimal::Decimal,
+}
+
+/// The `validation_failed` detail for a set with one or more facts quarantined by
+/// the history-plausibility gate: each quarantined metric, its rejected value and
+/// the history median it defied, folded onto any identity/cross-check failures
+/// the same set already carried (so a set that both self-contradicted AND had a
+/// scale outlier records both). Object-merged, never nested, so the review
+/// surface reads one flat payload.
+fn quarantine_detail(quarantined: &[QuarantinedFact], base: Option<String>) -> Option<String> {
+    let facts: Vec<serde_json::Value> = quarantined
+        .iter()
+        .map(|q| {
+            serde_json::json!({
+                "metricKey": q.metric_key,
+                "value": q.value.to_string(),
+                "historyMedian": q.history_median.to_string(),
+            })
+        })
+        .collect();
+    let mut payload = base
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    payload.insert(
+        "quarantinedFacts".to_owned(),
+        serde_json::Value::Array(facts),
+    );
+    serde_json::to_string(&serde_json::Value::Object(payload)).ok()
+}
+
+/// The derivation-grammar version stamped on every persisted period (migration
+/// 0109). A document's bytes are immutable once ingested, so the ONLY reason to
+/// re-derive a cached period is a change to the derivation grammar itself
+/// ([`derive_report_period_uncached`] — the ESEF/title/cover-page rules). Bump
+/// this when that grammar changes: any cached row stamped with an older version
+/// is re-derived and overwritten on next read (self-healing).
+pub const DERIVATION_VERSION: i64 = 1;
+
+/// The extraction-pipeline capability version stamped into an autopilot run's
+/// `kpi_delta_json` on the `extractionAvailable:false` path. A document's bytes
+/// are immutable, so a couldn't-extract verdict only becomes stale when the
+/// pipeline itself gains the ability to read a document it previously could not
+/// — a new/changed tier, parser, or derivation capability. This is the single
+/// knob that makes flagged periods retry: [`crate::jobs::autopilot`] re-arms a
+/// terminal couldn't-extract run exactly when the running build's version is
+/// newer than the one the run recorded, so each capability upgrade retries a
+/// flagged period **once**, then it settles (dedup) until the next bump.
+///
+/// Bump this whenever a tier/parser/derivation change alters what documents can
+/// be read. **Do not** bump for changes that cannot affect readability.
+///
+/// `2` is the first stamped era; `1` is the implicit pre-versioning era, so a
+/// legacy stored run (delta with no `pipelineVersion`, read as `0`) re-arms
+/// once under this build and then settles. `3` versions the ADR 0086 dec. 1
+/// ladder change (PDF fact arm retired) — it re-arms nothing PDF-wise, since a
+/// PDF document no longer arms any extraction attempt.
+pub const EXTRACTION_PIPELINE_VERSION: u32 = 3;
+
+/// Re-intern a cached `period_type` string back to the `&'static str` the
+/// derivation returns. [`crate::report_diff::classify`] only ever yields these
+/// four labels (`to_period`), plus ESEF's `FY`. An unrecognised cached label
+/// (never written by the current code) yields `None`, forcing a safe re-derive.
+fn intern_period_type(period_type: &str) -> Option<&'static str> {
+    Some(match period_type {
+        "Q1" => "Q1",
+        "H1" => "H1",
+        "Q3" => "Q3",
+        "FY" => "FY",
+        _ => return None,
+    })
 }
 
 /// Derives the reporting period `(fiscal_year, period_type, period_end)` for a
-/// stored report document the SAME way the autopilot pipeline does (ADR 0061
-/// dec. 3/8/9) — the single source of truth shared by the autopilot stage and
-/// the on-demand "Extract data" command, so the two never drift. `None` when the
-/// document has no stored file, or its period can't be classified from the iXBRL
-/// contexts NOR its title/URL (the caller then falls back to AI, or surfaces an
-/// error).
+/// stored report document, reading a persisted derivation (migration 0109) when
+/// one exists so the file read + text extraction the cover-page tier costs is
+/// paid at most once per document — the Coverage panel and every re-extraction
+/// then read the index instead of recomputing the corpus (CLAUDE.md). Cache
+/// misses (and stale-version rows) fall through to [`derive_report_period_uncached`]
+/// and persist its result — a period OR the explicit none-marker, so an
+/// abstention is not re-parsed either. A not-yet-ingested document (no stored
+/// file) is never cached: its `None` is transient, not a property of its bytes.
+pub fn derive_report_period(
+    state: &AppState,
+    document: &crate::storage::ReportDocument,
+) -> Option<(i64, &'static str, String)> {
+    // Read the persisted derivation first — a fresh-enough hit avoids ALL file IO.
+    if let Ok(Some(cached)) = state.financials().cached_derived_period(&document.id) {
+        if cached.derivation_version >= DERIVATION_VERSION {
+            if !cached.has_period {
+                return None; // persisted none-marker: never re-parse
+            }
+            if let (Some(fiscal_year), Some(period_type), Some(period_end)) = (
+                cached.fiscal_year,
+                cached.period_type.as_deref().and_then(intern_period_type),
+                cached.period_end.clone(),
+            ) {
+                return Some((fiscal_year, period_type, period_end));
+            }
+            // Unexpected shape (e.g. an unknown interned label) — fall through and
+            // re-derive rather than trust a row this code could not have written.
+        }
+        // Older version → re-derive and overwrite below.
+    }
+
+    let derived = derive_report_period_uncached(state, document);
+
+    // Persist ONLY once the document is ingested (fetched, with a stored file):
+    // its bytes — hence its derived period — are then stable. Caching a
+    // pre-fetch `None` would poison a document into never being re-derived after
+    // it is fetched.
+    if document.fetch_status == "fetched" && document.local_path.is_some() {
+        let _ = state.financials().store_derived_period(
+            &document.id,
+            derived.as_ref().map(|(fy, pt, pe)| (*fy, *pt, pe.as_str())),
+            DERIVATION_VERSION,
+        );
+    }
+
+    derived
+}
+
+/// The uncached derivation — the SAME grammar the autopilot pipeline uses (ADR
+/// 0061 dec. 3/8/9), the single source of truth shared by the autopilot stage
+/// and the on-demand "Extract data" command. `None` when the document has no
+/// stored file, or its period can't be classified from the iXBRL contexts NOR
+/// its title/URL NOR its cover page.
 ///
 /// - **Xhtml/ESEF**: the period is self-derived from the iXBRL contexts (ESEF is
 ///   an annual filing → `FY` at the latest context date). A file on the ESEF
@@ -184,12 +430,12 @@ fn confirmation_state_for(acceptance: Acceptance, mode: &str) -> &'static str {
 ///   fiscal year (index 1→`Q1`/`-03-31`, 2→`H1`/`-06-30`, 3→`Q3`/`-09-30`,
 ///   4→`FY`/`-12-31`). An unparseable or ambiguous intra-year period (index `0`)
 ///   is not guessed.
-pub fn derive_report_period(
+fn derive_report_period_uncached(
     state: &AppState,
     document: &crate::storage::ReportDocument,
 ) -> Option<(i64, &'static str, String)> {
     use crate::fundamentals::extraction::{esef::parse_esef, primary_period_end};
-    use crate::report_diff::classify::period_sort_key;
+    use crate::report_diff::classify::period_from_title_url;
 
     let local_path = document.local_path.as_deref()?;
     let content_type = document.content_type.as_deref();
@@ -217,24 +463,74 @@ pub fn derive_report_period(
     }
 
     // PDF (or a non-iXBRL XHTML that could not self-derive): period from the
-    // document's title/URL.
+    // document's title/URL — the SAME derivation the ingest-time cover-note tier
+    // uses, so the two can never drift.
     let title = document.title.as_deref().unwrap_or("");
-    let (year, period_index) = period_sort_key(title, &document.url)?;
-    let period_type = match period_index {
-        1 => "Q1",
-        2 => "H1",
-        3 => "Q3",
-        4 => "FY",
-        // Unknown intra-year period (0) — never guess.
-        _ => return None,
-    };
-    let period_end = match period_type {
-        "Q1" => format!("{year}-03-31"),
-        "H1" => format!("{year}-06-30"),
-        "Q3" => format!("{year}-09-30"),
-        _ => format!("{year}-12-31"),
-    };
-    Some((i64::from(year), period_type, period_end))
+    if let Some(period) = period_from_title_url(title, &document.url) {
+        return Some(period);
+    }
+
+    // Last resort: the document's own cover page. A Polish periodic report states
+    // its reporting period in the title block ("za okres 6 miesięcy zakończony
+    // 30.06.2025"), and on the maintainer's database a run of real statements is
+    // stored under a bare `SSF.pdf` whose title/URL name nothing (card fc692da).
+    // Same grammar as above — one derivation, two carriers — so a form added for
+    // titles works here too, and an unstated period still abstains.
+    period_from_cover_page(state, document)
+}
+
+/// How much of a document's text counts as its cover page. The title block is at
+/// the very top; reading further would drag in comparative-column dates and the
+/// notes, where a period reference no longer describes *this* report.
+const COVER_PAGE_CHARS: usize = 1_500;
+
+fn period_from_cover_page(
+    state: &AppState,
+    document: &crate::storage::ReportDocument,
+) -> Option<(i64, &'static str, String)> {
+    use crate::report_diff::classify::period_from_text;
+    use crate::report_diff::extraction::{extract_report, ExtractionState};
+
+    // Only for a periodic statement. Reading a period out of a document costs a
+    // full text extraction, and the documents that legitimately have no period —
+    // governance filings, auditor work products, announcements — are the large
+    // majority of the corpus (~3 000 of 3 790 stored files on the maintainer's
+    // database). Spending an extraction on them to confirm an expected `None`
+    // would make every sweep an overnight run for no coverage.
+    if !matches!(
+        crate::fundamentals::extraction::classify::classify_doc_kind(
+            document.title.as_deref().unwrap_or(""),
+            &document.url,
+        ),
+        crate::fundamentals::extraction::classify::DocKind::PeriodicSsf
+            | crate::fundamentals::extraction::classify::DocKind::PeriodicJsf
+    ) {
+        return None;
+    }
+    let local_path = document.local_path.as_deref()?;
+    let format = SourceFormat::resolve(document.content_type.as_deref(), local_path);
+    let bytes = std::fs::read(state.data_dir().join(local_path)).ok()?;
+    let outcome = extract_report(&bytes, format);
+    if outcome.state != ExtractionState::Extracted {
+        // A scanned or unreadable document yields no text to read a period from;
+        // it stays a measured `no_period_derived` gap rather than a guess.
+        return None;
+    }
+    let mut cover = String::new();
+    let mut taken = 0usize;
+    'sections: for section in &outcome.sections {
+        for part in [section.heading.as_str(), section.body.as_str()] {
+            for ch in part.chars() {
+                if taken >= COVER_PAGE_CHARS {
+                    break 'sections;
+                }
+                cover.push(ch);
+                taken += 1;
+            }
+            cover.push('\n');
+        }
+    }
+    period_from_text(&cover)
 }
 
 /// Whether a stored document should be resolved through the ESEF/iXBRL tier
@@ -319,11 +615,56 @@ fn esef_instance_bytes(
     }
 }
 
+/// How a stored document should be parsed, decided from its **magic bytes** and
+/// not its filename (card `eb71488`). A measured 4.4% of the maintainer's stored
+/// `.pdf` documents are XML/ZIP/HTML under a `.pdf` name; trusting the extension
+/// hands those to the PDF reader, where they fail 100%. The container is ground
+/// truth — the extension and content-type are hints the corpus disproves (every
+/// mislabeled file was `application/octet-stream`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DocumentRoute {
+    /// A real PDF → the text/PDF tier (unchanged from before this card).
+    Pdf,
+    /// Markup that is inline-XBRL → the ESEF tier reads it as its own instance.
+    IxbrlInstance,
+    /// Bare markup that is NOT inline-XBRL (a pdf2htmlEX render, an HTML export)
+    /// → the deterministic positional parser (ADR 0077 T-B2).
+    Positional,
+    /// A ZIP → an ESEF/eSprawozdanie report package; the inner instance is
+    /// unpacked before the ESEF tier reads it.
+    ZipPackage,
+    /// A container the pipeline cannot act on → an honest `document_unreadable`
+    /// outcome naming what was detected, never a PDF-reader failure or a crash.
+    Unsupported(Container),
+}
+
+/// Route a document from its bytes alone — pure and unit-testable, so the
+/// routing decision is provable without an [`AppState`]. The `%PDF`/ZIP magic
+/// and the markup preamble are read by [`detect_container`]; the iXBRL-vs-
+/// positional split reuses [`crate::fundamentals::extraction::esef::is_inline_xbrl`]
+/// (the SAME sniff the history sweep and the T-B2 router already share), so
+/// routing and extractability can never disagree.
+pub(crate) fn route_document(bytes: &[u8]) -> DocumentRoute {
+    match detect_container(bytes) {
+        Container::Pdf => DocumentRoute::Pdf,
+        Container::Zip => DocumentRoute::ZipPackage,
+        Container::Xml | Container::Html => {
+            let prefix = &bytes[..bytes.len().min(64 * 1024)];
+            if crate::fundamentals::extraction::esef::is_inline_xbrl(prefix) {
+                DocumentRoute::IxbrlInstance
+            } else {
+                DocumentRoute::Positional
+            }
+        }
+        unsupported @ Container::Unknown => DocumentRoute::Unsupported(unsupported),
+    }
+}
+
 /// Runs the structured pipeline for one report document and persists the
-/// result. `mode` is the run's trust-ladder mode (`MODE_AUTOPILOT` /
-/// `MODE_ASSIST`) — it drives the per-fact `confirmation_state` via
-/// [`confirmation_state_for`], not a caller-chosen literal, so a validated set
-/// auto-confirms consistently regardless of who calls this.
+/// result. `mode` is the run's mode (`MODE_AUTOPILOT` / `MODE_ASSIST`); it no
+/// longer affects the per-fact `confirmation_state` — facts are review-free
+/// (ADR 0086 dec. 5), so [`confirmation_state_for`] stamps `confirmed` for every
+/// accepted set regardless of mode or caller.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_structured_extraction(
     state: &AppState,
@@ -333,29 +674,84 @@ pub(crate) fn run_structured_extraction(
     period_type: &str,
     period_end: &str,
     mode: &str,
-    tier4: Tier4Gate,
 ) -> Result<StructuredExtractionResult, String> {
     // --- Load the document bytes + format -------------------------------
     let document = state
         .get_report_document(report_document_id)
         .map_err(|e| e.to_string())?;
-    let local_path = document
-        .local_path
-        .ok_or_else(|| "the report document has no stored file".to_owned())?;
+    // A document we cannot even open is an outcome, not a silence: record the
+    // typed reason before propagating, so the period is visibly attempted-and-
+    // unreadable rather than indistinguishable from never attempted.
+    let unreadable = |error: String| -> String {
+        record_outcome(
+            state,
+            company_id,
+            report_document_id,
+            fiscal_year,
+            period_type,
+            period_end,
+            None,
+            Acceptance::Empty,
+            reason::DOCUMENT_UNREADABLE,
+            serde_json::to_string(&serde_json::json!({ "error": error }))
+                .ok()
+                .as_deref(),
+            None,
+            0,
+        );
+        error
+    };
+    // A container the pipeline cannot parse is the same kind of honest gap as an
+    // unreadable file — but recorded with the DETECTED container named, so the
+    // review surface shows "this .pdf is actually a <zip/xml/html>" rather than a
+    // mute PDF-reader failure (card `eb71488`).
+    let unsupported_container = |container: Container, reason_text: &str| -> String {
+        let detail = serde_json::json!({
+            "detectedContainer": container.as_str(),
+            "reason": reason_text,
+        });
+        record_outcome(
+            state,
+            company_id,
+            report_document_id,
+            fiscal_year,
+            period_type,
+            period_end,
+            None,
+            Acceptance::Empty,
+            reason::DOCUMENT_UNREADABLE,
+            serde_json::to_string(&detail).ok().as_deref(),
+            None,
+            0,
+        );
+        format!(
+            "unsupported container: {} ({reason_text})",
+            container.as_str()
+        )
+    };
+    let Some(local_path) = document.local_path else {
+        return Err(unreadable(
+            "the report document has no stored file".to_owned(),
+        ));
+    };
     let path = state.data_dir().join(&local_path);
-    let bytes = std::fs::read(&path).map_err(|e| format!("failed to read report file: {e}"))?;
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) => return Err(unreadable(format!("failed to read report file: {error}"))),
+    };
 
-    // --- Tier-3b positional route (ADR 0077 T-B2) -----------------------
-    // A bare XHTML that is NOT valid iXBRL is a pdf2htmlEX visual render: no ESEF
-    // tier can read it (no `ix:` tags) and it is not a PDF for the text/vision
-    // tiers. Route it to the deterministic positional parser instead of letting it
-    // fall through the ESEF tier as not-extractable. `.xbri`/`.zip` packages
-    // (which `is_esef_route` also covers) are NOT bare XHTML and stay on the ESEF
-    // package path. The sniff shares `esef::is_inline_xbrl` with the history
-    // sweep, so routing and extractability can never disagree.
-    if SourceFormat::resolve(document.content_type.as_deref(), &local_path) == SourceFormat::Xhtml {
-        let prefix = &bytes[..bytes.len().min(64 * 1024)];
-        if !crate::fundamentals::extraction::esef::is_inline_xbrl(prefix) {
+    // --- Route on container MAGIC BYTES, not the filename (card eb71488) -----
+    // The stored `.pdf` name is not trusted: 4.4% of the maintainer's stored
+    // "PDF" documents are XML/ZIP/HTML under a `.pdf` name and fail 100% when
+    // handed to the PDF reader (19 of 430 periodic filings, 7 companies). The
+    // bytes decide; several of those XMLs carry real financial data, so correct
+    // routing ADDS coverage via the ESEF/iXBRL/positional tiers. An unsupported
+    // container is an explicit outcome row, never an error that aborts the sweep.
+    let esef_opt: Option<Vec<u8>> = match route_document(&bytes) {
+        // Bare markup that is NOT iXBRL — a pdf2htmlEX visual render or an HTML
+        // export. The deterministic positional parser (ADR 0077 T-B2) persists
+        // its own result, so this arm early-returns just as before.
+        DocumentRoute::Positional => {
             return run_positional_extraction(
                 state,
                 company_id,
@@ -367,62 +763,105 @@ pub(crate) fn run_structured_extraction(
                 &bytes,
             );
         }
-    }
-
-    // --- Build the pipeline input ---------------------------------------
-    let profile = state
-        .fundamentals_provenance()
-        .get_profile(company_id)
-        .map_err(|e| e.to_string())?;
-
-    // ESEF tier gets the inline-XBRL instance bytes — the document's own bytes
-    // for a bare `.xhtml`, or the inner instance unpacked from a `.xbri`/`.zip`
-    // report package (ADR 0061 dec. 1). Everything else is the PDF tier.
-    let (esef_opt, pdf_opt): (Option<Vec<u8>>, Option<String>) =
-        match esef_instance_bytes(document.content_type.as_deref(), &local_path, &bytes) {
-            Some(instance) => (Some(instance), None),
-            None => {
-                let extracted = extract_report(&bytes, SourceFormat::Pdf);
-                let text = extracted
-                    .sections
-                    .iter()
-                    .map(|s| s.body.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                (None, Some(text))
+        // Markup that IS inline-XBRL → the ESEF tier reads it as its own instance
+        // (a bare `.xhtml` instance stored under any name).
+        DocumentRoute::IxbrlInstance => Some(bytes.clone()),
+        // A ZIP report package (ESEF/eSprawozdanie): unpack the inner iXBRL
+        // instance (ADR 0061 dec. 1). A ZIP with no readable instance is
+        // unreadable-by-container, recorded as such — never fed to the PDF reader.
+        DocumentRoute::ZipPackage => {
+            match crate::fundamentals::extraction::esef_package::extract_instance(&bytes) {
+                Some(instance) => Some(instance),
+                None => {
+                    return Err(unsupported_container(
+                        Container::Zip,
+                        "the ZIP report package holds no readable iXBRL instance",
+                    ));
+                }
             }
-        };
+        }
+        // A real PDF → NO extraction attempt (ADR 0086 dec. 1: the PDF fact arm is
+        // retired). The route survives so the registry/period derivation still
+        // group this document, but no tier reads financial facts out of it — core
+        // KPIs for a PDF-only company arrive from the BiznesRadar-primary daily
+        // pull. Returns a benign empty result and records NO outcome, so a PDF
+        // never generates a `no_deterministic_tier` extraction-outcome row.
+        DocumentRoute::Pdf => {
+            return Ok(StructuredExtractionResult {
+                acceptance: Acceptance::Empty,
+                tier: None,
+                produced_fact_ids: Vec::new(),
+                skipped_fact_ids: Vec::new(),
+                divergences: Vec::new(),
+                emitted: false,
+            });
+        }
+        // Not a container the pipeline can act on (e.g. garbage bytes under a
+        // `.pdf` name): an honest, explicit gap naming what was detected.
+        DocumentRoute::Unsupported(container) => {
+            return Err(unsupported_container(
+                container,
+                "the stored file's bytes are not a PDF, ZIP, XML, or HTML container",
+            ));
+        }
+    };
 
     // --- Comparative cross-check + completeness inputs (ADR 0061 dec. 4b/4d) --
     let prior_end = prior_period_end(period_end);
+    // Veto-capable priors only (ADR 0086 dec. 3/4): a lower-tier (aggregator)
+    // stored prior must not fail the issuer filing's comparative cross-check.
     let stored_prior = state
         .financials()
-        .stored_fact_set(company_id, fiscal_year - 1, period_type)
+        .stored_fact_set_for_cross_check(company_id, fiscal_year - 1, period_type, SourceTier::Esef)
         .map_err(|e| e.to_string())?;
     let expected_keys = expected_primary_keys(state, company_id)?;
 
+    // The ADR 0085 pipeline witness seam is retired with ADR 0086: only ESEF
+    // routes reach this point (positional and PDF routes early-return above),
+    // and issuer-tagged ESEF was always out of witness scope. BiznesRadar
+    // corroboration now runs reversed — the aggregator's own primary pull
+    // (`jobs::aggregator_fundamentals_pull`) records `witness_disagreement`
+    // against issuer-held slots.
     let input = PipelineInput {
         period_end,
         esef_bytes: esef_opt.as_deref(),
-        pdf_text: pdf_opt.as_deref(),
-        profile: profile.as_ref(),
         prior: stored_prior.as_ref(),
         prior_period_end: prior_end.as_deref(),
         expected_keys: expected_keys.as_ref(),
-        witness: None,
     };
-    let outcome = run_pipeline(&input);
+    let mut outcome = run_pipeline(&input);
 
-    let drift_json = outcome
-        .drift
-        .as_ref()
-        .and_then(|d| serde_json::to_string(d).ok());
-    let structure_changed = drift_json.is_some();
+    // ADR 0085 amendment (2026-07-21) condition 2: an aggregator-SOURCED set is
+    // never auto-confirmed. The pipeline's aggregator arm can return `Accepted`
+    // for a clean aggregator set, which would make `confirmation_state_for`
+    // commit it as `confirmed` in autopilot — claiming issuer-grade trust for a
+    // third-party number. Downgrading the acceptance here fixes the whole ladder
+    // at once (confirmation state, `validation_status`, and the recorded
+    // acceptance), rather than special-casing three call sites that could drift
+    // apart. It never *blocks* the fallback — it only refuses to over-trust it.
+    if outcome.tier == Some(SourceTier::HtmlAggregator)
+        && outcome.acceptance == Acceptance::Accepted
+    {
+        outcome.acceptance = Acceptance::AcceptedUnreviewed;
+    }
+
+    // The PDF profile-drift arm is retired (ADR 0086 dec. 1), so the pipeline no
+    // longer produces a drift diff. The provenance `drift_json` column + the
+    // extraction-outcome `drift_json` param are kept (append-only) and simply
+    // carry `None` — the dead result/summary plumbing is gone (F7).
+    let drift_json: Option<String> = None;
 
     // --- Persist accepted facts + provenance ----------------------------
     let mut produced_fact_ids = Vec::new();
     let mut skipped_fact_ids = Vec::new();
     let mut divergences = Vec::new();
+    // Facts held back by the history-plausibility gate (ADR 0061 magnitude guard,
+    // card 22ac70c). Per-FACT: the outlier is quarantined while its plausible
+    // siblings still emit; any quarantine downgrades the SET's recorded acceptance
+    // to Flagged so the period surfaces for review. Migration 0108 runs before any
+    // extraction, so the medians this reads are already scale-cleaned on the
+    // maintainer's machine — the check never modifies anything stored.
+    let mut quarantined: Vec<QuarantinedFact> = Vec::new();
     if outcome.acceptance.emits() {
         let validation_status = outcome.acceptance.validation_status();
         let tier = outcome.tier.map(|t| t.as_str()).unwrap_or("unknown");
@@ -433,9 +872,44 @@ pub(crate) fn run_structured_extraction(
         // collapse to one slot. Keep the FIRST occurrence deterministically — a
         // later same-key fact would otherwise re-observe the row this same run
         // just wrote and be mis-counted as a skip.
+        // History-plausibility quarantine input, read ONCE for the whole set: a
+        // metric's own stored history (excluding this very period) is invariant
+        // across the facts of this run, so batch it rather than re-reading the
+        // company's periods per fact (the batched read is bit-identical to N
+        // single `metric_history` calls — see `metric_histories`).
+        let history_keys: BTreeSet<String> =
+            outcome.facts.iter().map(|f| f.metric_key.clone()).collect();
+        let histories = state
+            .financials()
+            .metric_histories(company_id, &history_keys, fiscal_year, period_type)
+            .map_err(|e| e.to_string())?;
         let mut seen_keys = BTreeSet::new();
         for fact in &outcome.facts {
             if !seen_keys.insert(fact.metric_key.clone()) {
+                continue;
+            }
+            // History-plausibility quarantine: a magnitude ≥100× off this metric's
+            // own stored history (excluding this very period) is a uniform-scale
+            // error no same-period identity or comparative column can see. Hold the
+            // outlier back — never persist it — and record it so the set flags; its
+            // plausible siblings continue to emit below. History INCLUDES confirmed
+            // values (the trust anchor); the gate abstains with <2 history periods.
+            let empty_history = Vec::new();
+            let history = histories.get(&fact.metric_key).unwrap_or(&empty_history);
+            if crate::fundamentals::validation::implausible_against_history(
+                &fact.metric_key,
+                fact.value,
+                history,
+            ) {
+                if let Some(history_median) =
+                    crate::fundamentals::validation::history_median(history)
+                {
+                    quarantined.push(QuarantinedFact {
+                        metric_key: fact.metric_key.clone(),
+                        value: fact.value,
+                        history_median,
+                    });
+                }
                 continue;
             }
             let value = fact.value.to_string();
@@ -459,6 +933,25 @@ pub(crate) fn run_structured_extraction(
                 .map_err(|e| e.to_string())?;
             match commit {
                 crate::storage::StructuredFactCommit::Created(id) => produced_fact_ids.push(id),
+                // A higher tier took over a lower-tier slot (ADR 0086 dec. 3):
+                // the fact now carries this run's value/evidence — an emit. A VALUE
+                // overwrite (previous_value Some) is a real disagreement — leave the
+                // upgrade evidence as a diagnostic (F6), mirroring the WDF seam.
+                crate::storage::StructuredFactCommit::Upgraded {
+                    fact_id,
+                    previous_value,
+                    previous_tier,
+                } => {
+                    record_tier_upgrade_diagnostic(
+                        state,
+                        company_id,
+                        &fact.metric_key,
+                        previous_value.as_deref(),
+                        &previous_tier,
+                        &value,
+                    );
+                    produced_fact_ids.push(fact_id);
+                }
                 crate::storage::StructuredFactCommit::Reobserved(id) => skipped_fact_ids.push(id),
                 crate::storage::StructuredFactCommit::Divergent {
                     fact_id,
@@ -478,90 +971,88 @@ pub(crate) fn run_structured_extraction(
                 crate::storage::StructuredFactCommit::NoDefinition => {}
             }
         }
-
-        // Learn the PDF layout on a clean accept: bootstrap or merge the
-        // per-company profile so the next period parses zero-touch.
-        if outcome.tier == Some(SourceTier::Pdf) && outcome.acceptance == Acceptance::Accepted {
-            if let Some(text) = pdf_opt.as_deref() {
-                let parse = parse_pdf_text(text, period_end, profile.as_ref());
-                let learned = match &profile {
-                    Some(existing) => existing.merge_confirmed(&parse),
-                    None => ExtractionProfile::bootstrap(company_id, &parse),
-                };
-                let _ = state.fundamentals_provenance().upsert_profile(&learned);
-            }
-        }
     }
 
-    // --- Tier-4 (OCR) fallback (ADR 0077 §4) ----------------------------
-    // Only when determinism ended Flagged|Empty (`!emits()`) AND the caller gate
-    // permits it. Lives here in the job layer, never in pure `pipeline.rs`. Its
-    // facts fold into `produced_fact_ids` (they are persisted through the same
-    // slot-aware `record_structured_fact`); its proposals land in the existing
-    // confirm substrate via a synthetic completed job. A transient provider
-    // failure propagates as `Err` so the queue's backoff retry engages; a
-    // terminal one degrades with an honest reason.
-    let mut tier4_reason: Option<String> = None;
-    let mut tier4_proposals = 0usize;
-    let mut tier4_effective: Option<(Acceptance, SourceTier)> = None;
-    if !outcome.acceptance.emits() && tier4 == Tier4Gate::Allowed {
-        match run_tier4_extraction(
-            state,
-            company_id,
-            report_document_id,
-            fiscal_year,
-            period_type,
-            period_end,
-            mode,
-        ) {
-            Ok(t4) => {
-                tier4_reason = Some(t4.reason.clone());
-                if let Some(acceptance) = t4.acceptance {
-                    tier4_effective = Some((acceptance, SourceTier::AiText));
-                }
-                // Facts and proposals are mutually exclusive (an emitting profile
-                // parse yields facts; a bootstrap / validation-failing parse yields
-                // proposals) — so branch rather than partially move `t4`.
-                if t4.proposals.is_empty() {
-                    produced_fact_ids.extend(t4.produced_fact_ids);
-                } else {
-                    tier4_proposals = t4.proposals.len();
-                    persist_tier4_proposals(state, company_id, report_document_id, t4)?;
-                }
-            }
-            Err((code, message)) => {
-                if is_transient_provider_code(code) {
-                    return Err(format!(
-                        "tier-4 extraction transient failure ({code}): {message}"
-                    ));
-                }
-                let reason = format!("provider_error:{code}");
-                warn_tier4_degrade(&reason, company_id, report_document_id, None, None);
-                tier4_reason = Some(reason);
-            }
-        }
-    }
+    // The ADR 0085 aggregator gap-fill fallback is retired with ADR 0086:
+    // BiznesRadar sources core KPIs through its own primary pull, under the tier
+    // precedence, never through this extraction run.
+    let issuer_emitted = !produced_fact_ids.is_empty();
 
-    // When tier-4 emitted facts, the honest final outcome is its `ai_text` verdict
-    // (the structured tiers only flagged/emptied); otherwise keep the structured
-    // outcome so a flagged/empty run still reports its tier + acceptance.
-    let (final_acceptance, final_tier) = match tier4_effective {
-        Some((acceptance, tier)) => (acceptance, Some(tier)),
-        None => (outcome.acceptance, outcome.tier),
+    // --- Persist the OUTCOME, emitting or not (ADR 0061 dec. 2 guardrail) ---
+    // The emit branch above is unchanged; this records what the run concluded
+    // for every attempt, so a Flagged/Empty period leaves a durable, reviewable
+    // trace instead of evaporating with the in-memory result.
+    //
+    // Precedence of the set-level reason: a quarantine downgrades the acceptance
+    // to Flagged and forces a `validation_failed` reason naming the quarantined
+    // metric(s) — a persisted scale outlier is the most actionable signal.
+    // Otherwise the normal outcome reason (an honest gap, a drift, …).
+    let recorded_acceptance = if quarantined.is_empty() {
+        outcome.acceptance
+    } else {
+        Acceptance::Flagged
     };
+    let (reason_code, detail_json) = if !quarantined.is_empty() {
+        (
+            reason::VALIDATION_FAILED,
+            quarantine_detail(&quarantined, failing_check_detail(&outcome)),
+        )
+    } else {
+        (reason_for(&outcome), failing_check_detail(&outcome))
+    };
+    record_outcome(
+        state,
+        company_id,
+        report_document_id,
+        fiscal_year,
+        period_type,
+        period_end,
+        outcome.tier.map(|t| t.as_str()),
+        recorded_acceptance,
+        reason_code,
+        detail_json.as_deref(),
+        drift_json.as_deref(),
+        produced_fact_ids.len() as i64,
+    );
 
     Ok(StructuredExtractionResult {
-        acceptance: final_acceptance,
-        tier: final_tier,
-        emitted: !produced_fact_ids.is_empty(),
+        acceptance: recorded_acceptance,
+        tier: outcome.tier,
+        emitted: issuer_emitted,
         produced_fact_ids,
         skipped_fact_ids,
         divergences,
-        drift_json,
-        structure_changed,
-        tier4: tier4_reason,
-        tier4_proposals,
     })
+}
+
+/// Re-runs the extraction for a **recorded outcome slot**, by its id.
+///
+/// The review surface's retry action. It re-uses the company/document/period the
+/// outcome row already carries instead of asking the UI to re-derive a period —
+/// the same rule as everywhere else in this module: the period is derived once,
+/// server-side, and never invented downstream. Because the slot id is
+/// deterministic, the re-run updates the same row: a repaired period stops being
+/// flagged rather than leaving a stale flag next to a fresh success.
+pub(crate) fn rerun_extraction_outcome(
+    state: &AppState,
+    outcome_id: &str,
+    mode: &str,
+) -> Result<StructuredExtractionResult, String> {
+    let outcome = state
+        .fundamentals_provenance()
+        .get_extraction_outcome(outcome_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no recorded extraction outcome '{outcome_id}'"))?;
+
+    run_structured_extraction(
+        state,
+        &outcome.company_id,
+        &outcome.report_document_id,
+        outcome.fiscal_year,
+        &outcome.period_type,
+        &outcome.period_end,
+        mode,
+    )
 }
 
 /// Tier-3b positional route (ADR 0077 T-B2): parse a non-iXBRL pdf2htmlEX XHTML
@@ -570,8 +1061,7 @@ pub(crate) fn run_structured_extraction(
 /// clean set under `source_tier='pdf'` with the identifiable
 /// `extraction_method='html_positional'` provenance marker. A flagged/empty set
 /// emits nothing (like any deterministic tier) — never `validation_status='none'`
-/// (G-1). Tier-4 is skipped for this path (the render is not a PDF; a sweep run
-/// degrades `not_pdf` upstream, spending zero budget), so this returns directly.
+/// (G-1).
 #[allow(clippy::too_many_arguments)]
 fn run_positional_extraction(
     state: &AppState,
@@ -596,10 +1086,10 @@ fn run_positional_extraction(
     let prior_end = prior_period_end(period_end);
     let stored_prior = state
         .financials()
-        .stored_fact_set(company_id, fiscal_year - 1, period_type)
+        .stored_fact_set_for_cross_check(company_id, fiscal_year - 1, period_type, SourceTier::Pdf)
         .map_err(|e| e.to_string())?;
     let expected_keys = expected_primary_keys(state, company_id)?;
-    let (acceptance, _status) = validate_parsed_set(
+    let (acceptance, validation) = validate_parsed_set_report(
         &facts,
         period_end,
         stored_prior.as_ref(),
@@ -610,13 +1100,42 @@ fn run_positional_extraction(
     let mut produced_fact_ids = Vec::new();
     let mut skipped_fact_ids = Vec::new();
     let mut divergences = Vec::new();
+    // Same per-fact history-plausibility quarantine as the tiered path: a
+    // positional-tier fact grossly off its own history is held back while its
+    // siblings emit, and any quarantine flags the set.
+    let mut quarantined: Vec<QuarantinedFact> = Vec::new();
     if acceptance.emits() {
         let validation_status = acceptance.validation_status();
         let confirmation_state = confirmation_state_for(acceptance, mode);
         let store = state.kpi_extraction();
+        // Same batched history read as the tiered path: one company-wide read, not
+        // one per positional fact (bit-identical to N single `metric_history`s).
+        let history_keys: BTreeSet<String> = facts.iter().map(|f| f.metric_key.clone()).collect();
+        let histories = state
+            .financials()
+            .metric_histories(company_id, &history_keys, fiscal_year, period_type)
+            .map_err(|e| e.to_string())?;
         let mut seen_keys = BTreeSet::new();
         for fact in &facts {
             if !seen_keys.insert(fact.metric_key.clone()) {
+                continue;
+            }
+            let empty_history = Vec::new();
+            let history = histories.get(&fact.metric_key).unwrap_or(&empty_history);
+            if crate::fundamentals::validation::implausible_against_history(
+                &fact.metric_key,
+                fact.value,
+                history,
+            ) {
+                if let Some(history_median) =
+                    crate::fundamentals::validation::history_median(history)
+                {
+                    quarantined.push(QuarantinedFact {
+                        metric_key: fact.metric_key.clone(),
+                        value: fact.value,
+                        history_median,
+                    });
+                }
                 continue;
             }
             let value = fact.value.to_string();
@@ -642,6 +1161,24 @@ fn run_positional_extraction(
                 .map_err(|e| e.to_string())?;
             match commit {
                 crate::storage::StructuredFactCommit::Created(id) => produced_fact_ids.push(id),
+                // The positional tier outranks html_aggregator (ADR 0086 dec. 3)
+                // — a takeover of an aggregator-held slot is this run's emit. A
+                // VALUE overwrite leaves upgrade evidence as a diagnostic (F6).
+                crate::storage::StructuredFactCommit::Upgraded {
+                    fact_id,
+                    previous_value,
+                    previous_tier,
+                } => {
+                    record_tier_upgrade_diagnostic(
+                        state,
+                        company_id,
+                        &fact.metric_key,
+                        previous_value.as_deref(),
+                        &previous_tier,
+                        &value,
+                    );
+                    produced_fact_ids.push(fact_id);
+                }
                 crate::storage::StructuredFactCommit::Reobserved(id) => skipped_fact_ids.push(id),
                 crate::storage::StructuredFactCommit::Divergent {
                     fact_id,
@@ -662,526 +1199,250 @@ fn run_positional_extraction(
         }
     }
 
-    Ok(StructuredExtractionResult {
+    let tier = (!facts.is_empty()).then_some(SourceTier::Pdf);
+    // The positional route is a full deterministic tier, so it records its
+    // outcome on the same terms as the tiered pipeline — a non-emitting
+    // positional parse must not be the one silent path left.
+    let positional_outcome = crate::fundamentals::extraction::pipeline::PipelineOutcome {
         acceptance,
-        tier: (!facts.is_empty()).then_some(SourceTier::Pdf),
+        tier,
+        facts: Vec::new(),
+        status: validation
+            .as_ref()
+            .map(|r| r.status)
+            .unwrap_or(crate::fundamentals::validation::Status::Inconclusive),
+        validation,
+    };
+    let recorded_acceptance = if quarantined.is_empty() {
+        acceptance
+    } else {
+        Acceptance::Flagged
+    };
+    let (reason_code, detail_json) = if quarantined.is_empty() {
+        (
+            reason_for(&positional_outcome),
+            failing_check_detail(&positional_outcome),
+        )
+    } else {
+        (
+            reason::VALIDATION_FAILED,
+            quarantine_detail(&quarantined, failing_check_detail(&positional_outcome)),
+        )
+    };
+    record_outcome(
+        state,
+        company_id,
+        report_document_id,
+        fiscal_year,
+        period_type,
+        period_end,
+        tier.map(|t| t.as_str()),
+        recorded_acceptance,
+        reason_code,
+        detail_json.as_deref(),
+        None,
+        produced_fact_ids.len() as i64,
+    );
+
+    Ok(StructuredExtractionResult {
+        acceptance: recorded_acceptance,
+        tier,
         emitted: !produced_fact_ids.is_empty(),
         produced_fact_ids,
         skipped_fact_ids,
         divergences,
-        drift_json: None,
-        structure_changed: false,
-        tier4: None,
-        tier4_proposals: 0,
     })
-}
-
-/// Transient (queue-retryable) provider error codes — availability failures only,
-/// mirroring [`crate::providers::analysis::AnalysisProviderError::is_availability_error`]
-/// (the same split `jobs::kpi_extraction` pins). A transient tier-4 failure must
-/// propagate so the queue's capped backoff retries; every other code degrades.
-fn is_transient_provider_code(code: &str) -> bool {
-    matches!(
-        code,
-        "provider_limit" | "provider_unavailable" | "network_error"
-    )
-}
-
-/// The tier-4 (OCR) attempt's outcome, folded into a [`StructuredExtractionResult`]
-/// by [`run_structured_extraction`] and translated into a [`CompletedKpiExtraction`]
-/// by the rewired manual job (T4.5). Either facts were emitted (validated OCR
-/// parse through a confirmed profile) or proposals were produced (bootstrap, or a
-/// validation-failing parse) — never both.
-#[derive(Debug)]
-pub(crate) struct Tier4Outcome {
-    /// Honest state string (see [`StructuredExtractionResult::tier4`]).
-    pub reason: String,
-    /// The acceptance verdict when facts were emitted (drives the confirmation
-    /// state + the caller's honest auto-confirm count); `None` for proposals or a
-    /// degradation.
-    pub acceptance: Option<Acceptance>,
-    /// Ids of the facts this run created (empty for bootstrap/proposals/degrade).
-    pub produced_fact_ids: Vec<String>,
-    /// Proposals to land in the confirm substrate (empty when facts were emitted).
-    pub proposals: Vec<NewKpiProposal>,
-    pub detected_fiscal_year: Option<i64>,
-    pub detected_period_type: Option<String>,
-    pub detected_period_end_date: Option<String>,
-    pub detected_currency: Option<String>,
-    pub detected_language: Option<String>,
-}
-
-impl Tier4Outcome {
-    /// A degradation with no facts/proposals — tier-4 could not run for a benign,
-    /// terminal reason (no vision provider, a non-PDF document, an unbuildable
-    /// pool). The run still succeeds deterministically-quiet.
-    fn degraded(reason: &str) -> Self {
-        Self {
-            reason: reason.to_owned(),
-            acceptance: None,
-            produced_fact_ids: Vec::new(),
-            proposals: Vec::new(),
-            detected_fiscal_year: None,
-            detected_period_type: None,
-            detected_period_end_date: None,
-            detected_currency: None,
-            detected_language: None,
-        }
-    }
-}
-
-/// Emit one production-visible warning per tier-4 degradation (ADR 0077 §4
-/// annotation 2026-07-10) — the trail an operator reads in Diagnostics → Logs when
-/// a period comes back empty. The logger redacts every message string via
-/// `redact_text` (logging.rs), which only masks sensitive `key=value` tokens, so a
-/// bootstrap response prefix is safe to include. `ocr_len` is the OCR markdown
-/// length when an OCR response already exists at the degrade point (`None` for a
-/// degrade before OCR runs); `response_prefix` carries a ~200-char LLM-response
-/// prefix, passed only for `bootstrap_failed`.
-fn warn_tier4_degrade(
-    reason: &str,
-    company_id: &str,
-    report_document_id: &str,
-    ocr_len: Option<usize>,
-    response_prefix: Option<&str>,
-) {
-    let ocr = ocr_len
-        .map(|len| format!(" ocr_markdown_len={len}"))
-        .unwrap_or_default();
-    let response = response_prefix
-        .map(|text| {
-            let prefix: String = text.chars().take(200).collect();
-            format!(" llm_response_prefix={prefix:?}")
-        })
-        .unwrap_or_default();
-    log::warn!(
-        "tier-4 degraded: reason={reason} company_id={company_id} report_document_id={report_document_id}{ocr}{response}"
-    );
-}
-
-/// Runs the tier-4 OCR fallback for one report document (ADR 0077 §4). Resolves
-/// the `VisionExtraction` pool, OCRs the stored PDF, and either parses it
-/// deterministically through a confirmed [`OcrExtractionProfile`] (→ validated
-/// facts, or proposals when validation fails) or, for a never-bootstrapped
-/// company, bootstraps the profile with the text-LLM (labels only) and lands ALL
-/// output as proposals (a bootstrap run **never** writes facts). `Err` carries a
-/// provider error `(code, message)`; the caller propagates transient codes and
-/// degrades terminal ones.
-pub(crate) fn run_tier4_extraction(
-    state: &AppState,
-    company_id: &str,
-    report_document_id: &str,
-    fiscal_year: i64,
-    period_type: &str,
-    period_end: &str,
-    mode: &str,
-) -> Result<Tier4Outcome, (&'static str, String)> {
-    let document = state
-        .get_report_document(report_document_id)
-        .map_err(|e| ("provider_error", e.to_string()))?;
-    let Some(local_path) = document.local_path.clone() else {
-        warn_tier4_degrade("no_stored_file", company_id, report_document_id, None, None);
-        return Ok(Tier4Outcome::degraded("no_stored_file"));
-    };
-    // Tier-4 is PDF-only: an ESEF/iXBRL instance or report package must never
-    // reach the OCR path (the ESEF tier owns those). Degrade honestly.
-    if is_esef_route(document.content_type.as_deref(), &local_path) {
-        warn_tier4_degrade("not_pdf", company_id, report_document_id, None, None);
-        return Ok(Tier4Outcome::degraded("not_pdf"));
-    }
-
-    // The `VisionExtraction` pool routes ONLY to an explicitly-configured
-    // document-native provider (Mistral OCR) — never the general-analysis
-    // fallback (Gemini was rejected for tier-4, ADR 0077 verdict; it cannot OCR).
-    let settings = state
-        .get_settings()
-        .map_err(|e| ("provider_error", e.to_string()))?;
-    let has_vision = settings
-        .capability_providers
-        .get(AiCapability::VisionExtraction.key())
-        .is_some_and(|entries| !entries.is_empty());
-    if !has_vision {
-        warn_tier4_degrade(
-            "no_vision_provider",
-            company_id,
-            report_document_id,
-            None,
-            None,
-        );
-        return Ok(Tier4Outcome::degraded("no_vision_provider"));
-    }
-    let timeout = settings.ai_providers.general_analysis_timeout_seconds;
-    let provider = match crate::jobs::build_capability_provider(
-        state,
-        AiCapability::VisionExtraction,
-        timeout,
-    ) {
-        Ok(provider) => provider,
-        Err(error) => {
-            log::warn!("tier-4: vision provider unbuildable for {company_id}: {error}");
-            return Ok(Tier4Outcome::degraded("no_vision_provider"));
-        }
-    };
-
-    let bytes = std::fs::read(state.data_dir().join(&local_path))
-        .map_err(|e| ("provider_error", format!("failed to read report file: {e}")))?;
-    // Tier-4 only reaches here for a PDF (the ESEF route degraded above), so the
-    // OCR data-URL MIME is `application/pdf` regardless of a generic stored
-    // content type (servers often deliver report PDFs as octet-stream).
-    let mime_type = "application/pdf";
-
-    tier4_with_provider(
-        state,
-        provider.as_ref(),
-        company_id,
-        report_document_id,
-        &bytes,
-        mime_type,
-        fiscal_year,
-        period_type,
-        period_end,
-        mode,
-    )
-}
-
-/// The provider-driven core of tier-4 (OCR → profile parse / bootstrap → persist),
-/// split out so tests inject a scripted provider without a live pool. See
-/// [`run_tier4_extraction`] for the contract.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn tier4_with_provider(
-    state: &AppState,
-    provider: &dyn AiAnalysisProvider,
-    company_id: &str,
-    report_document_id: &str,
-    bytes: &[u8],
-    mime_type: &str,
-    fiscal_year: i64,
-    period_type: &str,
-    period_end: &str,
-    mode: &str,
-) -> Result<Tier4Outcome, (&'static str, String)> {
-    let markdown = tauri::async_runtime::block_on(provider.ocr_document(bytes, mime_type))
-        .map_err(|error| (error.code(), error.to_string()))?;
-    let period = FactPeriod::Instant(period_end.to_owned());
-
-    let profile = state
-        .fundamentals_provenance()
-        .get_ocr_profile(company_id)
-        .map_err(|e| ("provider_error", e.to_string()))?;
-
-    match profile {
-        // ADR 0077 §4 kickoff decision 3: only a CONFIRMED profile (version ≥ 2 —
-        // the version bumps when the user confirms the bootstrap's first
-        // proposals) may commit facts. A version-1 profile is a stored bootstrap
-        // PROPOSAL: parse with it, but keep landing proposals — a plausible-but-
-        // wrong bootstrap map that happens to satisfy the identities must never
-        // commit facts no one reviewed.
-        Some(profile) if profile.version >= 2 => tier4_profile_path(
-            state,
-            &markdown,
-            &profile,
-            &period,
-            company_id,
-            report_document_id,
-            fiscal_year,
-            period_type,
-            period_end,
-            mode,
-        ),
-        Some(profile) => {
-            let facts = parse_ocr_markdown(&markdown, &profile, &period, SourceTier::AiText);
-            let proposals = facts
-                .iter()
-                .map(|fact| tier4_proposal(fact, "ocr_pending_profile"))
-                .collect();
-            Ok(Tier4Outcome {
-                reason: "proposals_pending_profile".to_owned(),
-                acceptance: None,
-                produced_fact_ids: Vec::new(),
-                proposals,
-                detected_fiscal_year: Some(fiscal_year),
-                detected_period_type: Some(period_type.to_owned()),
-                detected_period_end_date: Some(period_end.to_owned()),
-                detected_currency: None,
-                detected_language: None,
-            })
-        }
-        None => tier4_bootstrap_path(
-            state,
-            provider,
-            &markdown,
-            &period,
-            company_id,
-            report_document_id,
-            fiscal_year,
-            period_type,
-            period_end,
-        ),
-    }
-}
-
-/// Tier-4 profile path: parse the OCR markdown through the confirmed profile,
-/// validate through the same gate every tier uses, and either persist validated
-/// facts (`source_tier='ai'`, confirmation state per `mode`) or route the
-/// validation-failing values to proposals — never a silent emit.
-#[allow(clippy::too_many_arguments)]
-fn tier4_profile_path(
-    state: &AppState,
-    markdown: &str,
-    profile: &OcrExtractionProfile,
-    period: &FactPeriod,
-    company_id: &str,
-    report_document_id: &str,
-    fiscal_year: i64,
-    period_type: &str,
-    period_end: &str,
-    mode: &str,
-) -> Result<Tier4Outcome, (&'static str, String)> {
-    let facts = parse_ocr_markdown(markdown, profile, period, SourceTier::AiText);
-    if facts.is_empty() {
-        warn_tier4_degrade(
-            "empty",
-            company_id,
-            report_document_id,
-            Some(markdown.len()),
-            None,
-        );
-        return Ok(Tier4Outcome::degraded("empty"));
-    }
-
-    // Comparative cross-check + completeness inputs — the SAME the structured
-    // pipeline assembles (magnitude/prior cross-check catches a 1000× mis-scale).
-    let prior_end = prior_period_end(period_end);
-    let stored_prior = state
-        .financials()
-        .stored_fact_set(company_id, fiscal_year - 1, period_type)
-        .map_err(|e| ("provider_error", e.to_string()))?;
-    let expected_keys =
-        expected_primary_keys(state, company_id).map_err(|e| ("provider_error", e))?;
-
-    let (acceptance, _status) = validate_parsed_set(
-        &facts,
-        period_end,
-        stored_prior.as_ref(),
-        prior_end.as_deref(),
-        expected_keys.as_ref(),
-    );
-
-    if acceptance.emits() {
-        let validation_status = acceptance.validation_status();
-        let confirmation_state = confirmation_state_for(acceptance, mode);
-        let store = state.kpi_extraction();
-        let mut produced_fact_ids = Vec::new();
-        for fact in &facts {
-            let value = fact.value.to_string();
-            let commit = store
-                .record_structured_fact(StructuredFactInput {
-                    company_id,
-                    fiscal_year,
-                    period_type,
-                    period_end: Some(period_end),
-                    report_document_id,
-                    metric_key: &fact.metric_key,
-                    value_numeric: &value,
-                    currency: fact.currency.as_deref(),
-                    confirmation_state,
-                    // Tier-4 facts persist under the honest `ai` tier; the OCR
-                    // label read is the provenance citation (ADR 0077 dec. 2). The
-                    // `source_tier`/`validation_status` carry the trust; the
-                    // `extraction_method` marker stays `api` (unchanged) — the
-                    // positional path is the only one that overrides it (T-B2).
-                    source_tier: "ai",
-                    extraction_method: "api",
-                    validation_status,
-                    drift_json: None,
-                    citation: Some(&fact.citation),
-                })
-                .map_err(|e| ("provider_error", e.to_string()))?;
-            if let crate::storage::StructuredFactCommit::Created(id) = commit {
-                produced_fact_ids.push(id);
-            }
-        }
-        Ok(Tier4Outcome {
-            reason: "facts_emitted".to_owned(),
-            acceptance: Some(acceptance),
-            produced_fact_ids,
-            proposals: Vec::new(),
-            detected_fiscal_year: Some(fiscal_year),
-            detected_period_type: Some(period_type.to_owned()),
-            detected_period_end_date: Some(period_end.to_owned()),
-            detected_currency: None,
-            detected_language: None,
-        })
-    } else {
-        // Validation failed (a contradicted identity / mis-scale): never a fact —
-        // route the values to the confirm flow as proposals.
-        let proposals = facts
-            .iter()
-            .map(|fact| tier4_proposal(fact, "ocr_flagged"))
-            .collect();
-        Ok(Tier4Outcome {
-            reason: "proposals_flagged".to_owned(),
-            acceptance: None,
-            produced_fact_ids: Vec::new(),
-            proposals,
-            detected_fiscal_year: Some(fiscal_year),
-            detected_period_type: Some(period_type.to_owned()),
-            detected_period_end_date: Some(period_end.to_owned()),
-            detected_currency: None,
-            detected_language: None,
-        })
-    }
-}
-
-/// Tier-4 bootstrap path (ADR 0077 §4 kickoff decision 3): the text-LLM proposes
-/// the profile (labels only), which is stored as version 1, then the markdown is
-/// parsed through it and ALL output lands as proposals. A bootstrap run NEVER
-/// writes facts — the LLM proposes the MAP, never reads numbers into facts.
-#[allow(clippy::too_many_arguments)]
-fn tier4_bootstrap_path(
-    state: &AppState,
-    provider: &dyn AiAnalysisProvider,
-    markdown: &str,
-    period: &FactPeriod,
-    company_id: &str,
-    report_document_id: &str,
-    fiscal_year: i64,
-    period_type: &str,
-    period_end: &str,
-) -> Result<Tier4Outcome, (&'static str, String)> {
-    let known_kpis = known_kpi_catalog(state, company_id).map_err(|e| ("provider_error", e))?;
-    let prompt = ocr_profile_bootstrap_prompt(&known_kpis);
-    let response = tauri::async_runtime::block_on(provider.complete_document(
-        &prompt,
-        &AnalysisDocument::Text {
-            text: markdown.to_owned(),
-        },
-    ))
-    .map_err(|error| (error.code(), error.to_string()))?;
-
-    let Some(profile) = OcrExtractionProfile::from_bootstrap_json(company_id, &response) else {
-        // The one degrade that carries the LLM response prefix: bootstrap failed
-        // because the text-LLM's profile JSON did not parse — the prefix is what an
-        // operator needs to see why (ADR 0077 §4 annotation).
-        warn_tier4_degrade(
-            "bootstrap_failed",
-            company_id,
-            report_document_id,
-            Some(markdown.len()),
-            Some(&response),
-        );
-        return Ok(Tier4Outcome::degraded("bootstrap_failed"));
-    };
-    state
-        .fundamentals_provenance()
-        .upsert_ocr_profile(&profile)
-        .map_err(|e| ("provider_error", e.to_string()))?;
-
-    let facts = parse_ocr_markdown(markdown, &profile, period, SourceTier::AiText);
-    let proposals = facts
-        .iter()
-        .map(|fact| tier4_proposal(fact, "ocr_bootstrap"))
-        .collect();
-    Ok(Tier4Outcome {
-        reason: "bootstrap_proposals".to_owned(),
-        acceptance: None,
-        produced_fact_ids: Vec::new(),
-        proposals,
-        detected_fiscal_year: Some(fiscal_year),
-        detected_period_type: Some(period_type.to_owned()),
-        detected_period_end_date: Some(period_end.to_owned()),
-        detected_currency: None,
-        detected_language: None,
-    })
-}
-
-/// One tier-4 proposal from a parsed OCR fact. `citation` marks its origin
-/// (`ocr_bootstrap` / `ocr_flagged`) in the source-snippet trail.
-fn tier4_proposal(fact: &ExtractedFact, citation: &str) -> NewKpiProposal {
-    NewKpiProposal {
-        metric_key: fact.metric_key.clone(),
-        label: fact.citation.clone(),
-        value_numeric: fact.value.to_string(),
-        unit: None,
-        currency: fact.currency.clone(),
-        as_reported_value: None,
-        as_reported_scale: None,
-        measure_window: None,
-        confidence: None,
-        source_snippet: Some(format!("{citation}: {}", fact.citation)),
-        is_proposed_kpi: false,
-    }
-}
-
-/// The company's applicable KPI catalog (canonical + company-scoped, no derived
-/// metrics) as bootstrap-prompt grounding — the same filter the text-AI KPI job
-/// used, so the label map targets real catalog keys.
-fn known_kpi_catalog(state: &AppState, company_id: &str) -> Result<Vec<KpiCatalogEntry>, String> {
-    Ok(state
-        .list_kpi_definitions(ListKpiDefinitionsInput {
-            scope: None,
-            sector: None,
-            company_id: None,
-        })
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .filter(|d| d.computation != "derived")
-        .filter(|d| {
-            d.scope == "canonical"
-                || (d.scope == "company" && d.company_id.as_deref() == Some(company_id))
-        })
-        .map(|d| KpiCatalogEntry {
-            metric_key: d.metric_key,
-            label: d.label,
-            value_kind: d.value_kind,
-            unit: d.unit,
-        })
-        .collect())
-}
-
-/// Lands tier-4 proposals in the existing confirm substrate via a synthetic
-/// completed KPI-extraction job (the substrate keys proposals by a job row). Used
-/// by the structured hook, which has no pre-existing job — the rewired manual job
-/// (T4.5) completes its own job instead.
-fn persist_tier4_proposals(
-    state: &AppState,
-    company_id: &str,
-    report_document_id: &str,
-    outcome: Tier4Outcome,
-) -> Result<(), String> {
-    let job = state
-        .create_kpi_extraction_job(NewKpiExtractionJob {
-            company_id: company_id.to_owned(),
-            report_document_id: report_document_id.to_owned(),
-            provider_id: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
-            model: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
-            prompt_version: OCR_PROFILE_BOOTSTRAP_PROMPT_VERSION.to_owned(),
-            period_hint: None,
-        })
-        .map_err(|e| e.to_string())?;
-    state
-        .complete_kpi_extraction_job(CompletedKpiExtraction {
-            job_id: job.id,
-            detected_fiscal_year: outcome.detected_fiscal_year,
-            detected_period_type: outcome.detected_period_type,
-            detected_period_end_date: outcome.detected_period_end_date,
-            detected_currency: outcome.detected_currency,
-            detected_language: outcome.detected_language,
-            proposals: outcome.proposals,
-            committed_fact_count: 0,
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app_state::AppState;
+    // MODE_AUTOPILOT is now test-only (production no longer branches on mode for
+    // confirmation state — facts are review-free, ADR 0086 dec. 5).
     use crate::storage::{
-        open_in_memory_database, CaptureReportDocumentInput, NewCompany, NewFinancialFact,
-        NewFinancialPeriod, NewKpiRelevance, MODE_ASSIST,
+        open_in_memory_database, CaptureReportDocumentInput, ListKpiDefinitionsInput, NewCompany,
+        NewFinancialFact, NewFinancialPeriod, MODE_ASSIST, MODE_AUTOPILOT,
     };
+
+    /// A minimal ZIP archive holding one named entry — enough for
+    /// [`detect_container`] to see the `PK\x03\x04` magic and for
+    /// `esef_package::extract_instance` to unpack it.
+    fn minimal_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        let mut buf = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            for (name, body) in entries {
+                writer
+                    .start_file(*name, SimpleFileOptions::default())
+                    .unwrap();
+                writer.write_all(body).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        buf
+    }
+
+    // --- route_document: magic-byte container routing (card eb71488) --------
+    // The routing decision is a pure function of the bytes, so it is provable
+    // without an AppState — these pin every arm the router relies on.
+
+    #[test]
+    fn route_pdf_bytes_keep_the_pdf_tier() {
+        // A real `%PDF` document routes exactly as before this card — no regression.
+        let pdf = minimal_text_pdf(&["Przychody 100"]);
+        assert_eq!(route_document(&pdf), DocumentRoute::Pdf);
+    }
+
+    #[test]
+    fn route_non_ixbrl_markup_under_pdf_name_goes_positional() {
+        // The maintainer's pdf2htmlEX render: XML preamble, an `<html>` root, no
+        // `ix:` tags. It must reach the positional parser, not the PDF reader.
+        let render = b"\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+            <!-- Created by pdf2htmlEX -->\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\
+            <body><div>Przychody 100</div></body></html>";
+        assert_eq!(route_document(render), DocumentRoute::Positional);
+    }
+
+    #[test]
+    fn route_ixbrl_markup_goes_to_the_esef_instance() {
+        let ixbrl = br#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"><body>
+            <ix:nonFraction name="ifrs-full:Revenue">100</ix:nonFraction></body></html>"#;
+        assert_eq!(route_document(ixbrl), DocumentRoute::IxbrlInstance);
+    }
+
+    #[test]
+    fn route_zip_under_pdf_name_goes_to_the_package_path() {
+        let zip = minimal_zip(&[("reports/instance.xhtml", b"<html></html>")]);
+        assert_eq!(route_document(&zip), DocumentRoute::ZipPackage);
+    }
+
+    #[test]
+    fn route_garbage_bytes_are_unsupported() {
+        assert_eq!(
+            route_document(b"\x00\x01\x02 definitely not a document"),
+            DocumentRoute::Unsupported(Container::Unknown)
+        );
+    }
+
+    /// Seeds one fetched document whose stored file is `filename` holding exactly
+    /// `bytes` — used to prove the extraction entry routes on the BYTES, not the
+    /// `.pdf` in the name.
+    fn seed_document_with_bytes(
+        label: &str,
+        ticker: &str,
+        title: &str,
+        filename: &str,
+        bytes: &[u8],
+    ) -> (AppState, String, String) {
+        let dir = unique_temp_dir(label);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: ticker.to_owned(),
+                display_name: format!("{ticker} S.A."),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: format!("https://example.com/{filename}"),
+                period_id: None,
+                origin_ref: None,
+                title: Some(title.to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        std::fs::write(dir.join(filename), bytes).expect("write bytes");
+        state
+            .mark_report_document_fetched(
+                &document.id,
+                Some(filename),
+                // The maintainer's real mislabeled files are all octet-stream.
+                Some("application/octet-stream"),
+                None,
+                Some(bytes.len() as i64),
+            )
+            .expect("mark fetched");
+        (state, company.id, document.id)
+    }
+
+    #[test]
+    fn xml_content_under_pdf_name_routes_to_structured_tier_and_extracts() {
+        // The maintainer's real failure: a pdf2htmlEX render stored as `*.pdf`.
+        // Before this card the `.pdf` name sent it to the PDF reader, where it
+        // produced nothing; now the XML magic routes it to the positional tier and
+        // it EXTRACTS. Coverage the extension was silently throwing away.
+        let (state, company_id, document_id) = seed_document_with_bytes(
+            "xml-under-pdf",
+            "CDR",
+            "Interim condensed consolidated statement Q3 2024",
+            "raport_q3_2024_signed.pdf",
+            POSITIONAL_XHTML.as_bytes(),
+        );
+        let result = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2024,
+            "Q3",
+            "2024-09-30",
+            MODE_AUTOPILOT,
+        )
+        .expect("routes to the structured tier despite the .pdf name");
+        assert!(
+            result.emitted && !result.produced_fact_ids.is_empty(),
+            "an XML-content file named .pdf must extract via the positional tier, not fail on the PDF reader"
+        );
+    }
+
+    #[test]
+    fn garbage_under_pdf_name_records_document_unreadable_with_container() {
+        // Genuine garbage under a `.pdf` name lands an explicit, typed outcome
+        // naming the detected container — never a mute PDF-reader failure, and
+        // never an error that aborts the sweep (the caller catches the Err).
+        let (state, company_id, document_id) = seed_document_with_bytes(
+            "garbage-under-pdf",
+            "ATR",
+            "Zawiadomienie",
+            "zawiadomienie.pdf",
+            b"\x00\x01\x02\x03 not a document at all",
+        );
+        let err = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "Q1",
+            "2025-03-31",
+            MODE_AUTOPILOT,
+        )
+        .expect_err("an unsupported container is a recorded gap, surfaced as Err");
+        assert!(
+            err.contains("unsupported container"),
+            "err names the gap: {err}"
+        );
+
+        let outcome = all_outcomes(&state, &company_id)
+            .into_iter()
+            .find(|o| o.report_document_id == document_id)
+            .expect("an outcome row is recorded, not silence");
+        assert_eq!(outcome.reason_code, reason::DOCUMENT_UNREADABLE);
+        let detail = outcome.detail_json.expect("detail names the container");
+        assert!(
+            detail.contains("\"detectedContainer\":\"unknown\""),
+            "detailJson must name the detected container: {detail}"
+        );
+    }
 
     /// Builds a minimal, valid single-page PDF whose extracted text reproduces
     /// `lines` (one label+value statement line per output line) — just enough
@@ -1391,6 +1652,173 @@ mod tests {
         (state, company.id, document.id)
     }
 
+    /// A stored PDF whose title/URL name no period at all — the real
+    /// `SSF.pdf` / `Benefit_Systems_SSF_Raport_signed.pdf` attachment shape —
+    /// with `cover` as its first page text.
+    fn seed_untitled_pdf(cover: &[&str]) -> (AppState, String) {
+        let dir = unique_temp_dir("cover-period");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "ABC".to_owned(),
+                display_name: "ABC S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "espi_attachment".to_owned(),
+                url: "https://example.com/SSF.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("SSF.pdf".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        let bytes = minimal_text_pdf(cover);
+        std::fs::write(dir.join("ssf.pdf"), &bytes).expect("write pdf");
+        state
+            .mark_report_document_fetched(
+                &document.id,
+                Some("ssf.pdf"),
+                Some("application/pdf"),
+                None,
+                Some(bytes.len() as i64),
+            )
+            .expect("mark fetched");
+        (state, document.id)
+    }
+
+    #[test]
+    fn period_falls_back_to_the_documents_own_cover_page() {
+        // Card fc692da: on the maintainer's database a run of periodic statements
+        // is stored as a bare `SSF.pdf` — nothing in the title or URL names a
+        // period, so the document never reached extraction. Its cover page states
+        // the period, and the SAME grammar reads it.
+        let (state, document_id) = seed_untitled_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+            "za okres 6 miesiecy zakonczony 30.06.2025",
+        ]);
+        let document = state.get_report_document(&document_id).expect("document");
+        assert_eq!(
+            derive_report_period(&state, &document),
+            Some((2025, "H1", "2025-06-30".to_owned()))
+        );
+    }
+
+    #[test]
+    fn period_abstains_when_neither_title_nor_cover_page_names_one() {
+        // The abstention contract survives the new fallback: a cover page that
+        // states no period persists nothing and records `no_period_derived`
+        // (ADR 0061 decision 1) — widening the parse must never turn "I don't
+        // know" into a guess.
+        let (state, document_id) = seed_untitled_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+            "Nota informacyjna do sprawozdania.",
+        ]);
+        let document = state.get_report_document(&document_id).expect("document");
+        assert_eq!(derive_report_period(&state, &document), None);
+    }
+
+    #[test]
+    fn cover_page_period_is_derived_once_then_served_from_cache() {
+        // E2/C4: the bare-SSF cover-page tier costs a full PDF text extraction.
+        // The first derivation persists the period (migration 0109); a second one
+        // reads the cache — proven by DELETING the file between the two calls, so a
+        // second call that still returns the period cannot have re-read/extracted.
+        let (state, document_id) = seed_untitled_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+            "za okres 6 miesiecy zakonczony 30.06.2025",
+        ]);
+        let document = state.get_report_document(&document_id).expect("document");
+
+        let first = derive_report_period(&state, &document);
+        assert_eq!(first, Some((2025, "H1", "2025-06-30".to_owned())));
+
+        let cached = state
+            .financials()
+            .cached_derived_period(&document_id)
+            .expect("cache read")
+            .expect("the first derivation persisted a row");
+        assert!(cached.has_period);
+
+        // Any re-extraction now fails, so an identical result proves the cache.
+        let local_path = document.local_path.clone().expect("local path");
+        std::fs::remove_file(state.data_dir().join(&local_path)).expect("remove pdf");
+
+        assert_eq!(
+            derive_report_period(&state, &document),
+            first,
+            "second derivation must be served from the cache, not re-extracted"
+        );
+    }
+
+    #[test]
+    fn cover_page_abstention_is_cached_as_a_none_marker() {
+        // An abstention (cover page names no period) is recorded too — has_period
+        // = 0 — so the next load does not re-extract a document that once again
+        // yields nothing.
+        let (state, document_id) = seed_untitled_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+            "Nota informacyjna do sprawozdania.",
+        ]);
+        let document = state.get_report_document(&document_id).expect("document");
+
+        assert_eq!(derive_report_period(&state, &document), None);
+        let cached = state
+            .financials()
+            .cached_derived_period(&document_id)
+            .expect("cache read")
+            .expect("the abstention is persisted");
+        assert!(
+            !cached.has_period,
+            "an abstention is an explicit none-marker"
+        );
+
+        // Delete the file: the second call must still return None from the marker
+        // without touching the (now absent) file.
+        let local_path = document.local_path.clone().expect("local path");
+        std::fs::remove_file(state.data_dir().join(&local_path)).expect("remove pdf");
+        assert_eq!(derive_report_period(&state, &document), None);
+    }
+
+    #[test]
+    fn a_stale_derivation_version_is_re_derived_not_served() {
+        // Self-healing invalidation: a row stamped with an older DERIVATION_VERSION
+        // is ignored and re-derived. Proven by planting a stale row with a BOGUS
+        // period, deleting the file, and asserting the derive returns None (a
+        // re-derivation of a now-fileless document) rather than the stale period.
+        let (state, document_id) = seed_untitled_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+            "za okres 6 miesiecy zakonczony 30.06.2025",
+        ]);
+        let document = state.get_report_document(&document_id).expect("document");
+
+        state
+            .financials()
+            .store_derived_period(
+                &document_id,
+                Some((1999, "FY", "1999-12-31")),
+                DERIVATION_VERSION - 1,
+            )
+            .expect("plant a stale-version row");
+
+        let local_path = document.local_path.clone().expect("local path");
+        std::fs::remove_file(state.data_dir().join(&local_path)).expect("remove pdf");
+
+        assert_eq!(
+            derive_report_period(&state, &document),
+            None,
+            "a stale-version row must be re-derived, never served"
+        );
+    }
+
     #[test]
     fn esef_package_derives_fy_period_from_ixbrl_not_the_filename() {
         // T7-C: a `.xbri` ZIP package resolves to the ESEF tier; the period is
@@ -1422,7 +1850,6 @@ mod tests {
             period_type,
             &period_end,
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("structured extraction runs");
 
@@ -1507,7 +1934,6 @@ mod tests {
             "Q3",
             "2024-09-30",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("positional extraction runs");
 
@@ -1517,10 +1943,6 @@ mod tests {
             "reuses the deterministic Pdf tier"
         );
         assert!(result.emitted, "the positional render emits facts");
-        assert_eq!(
-            result.tier4, None,
-            "tier-4 is never invoked for the XHTML render"
-        );
         assert!(!result.produced_fact_ids.is_empty());
 
         // Revenue is the current YTD, and provenance is honest + identifiable.
@@ -1570,7 +1992,6 @@ mod tests {
             "FY",
             "2025-12-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("first extraction runs");
         assert_eq!(first.produced_fact_ids.len(), 3);
@@ -1586,7 +2007,6 @@ mod tests {
             "FY",
             "2025-12-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("re-extraction must not error with a UNIQUE violation");
 
@@ -1631,7 +2051,6 @@ mod tests {
             "FY",
             "2025-12-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("first extraction runs");
         assert_eq!(first.produced_fact_ids.len(), 3);
@@ -1667,7 +2086,6 @@ mod tests {
             "FY",
             "2025-12-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("re-extraction must not error");
 
@@ -1946,7 +2364,6 @@ mod tests {
                 "FY",
                 "2026-03-31",
                 mode,
-                Tier4Gate::DeniedSweep,
             )
             .expect("structured extraction runs");
 
@@ -1954,10 +2371,9 @@ mod tests {
             assert_eq!(result.tier, Some(SourceTier::Esef));
             assert_eq!(result.acceptance, Acceptance::Accepted);
             assert_eq!(result.produced_fact_ids.len(), 3);
-            assert!(!result.structure_changed);
-            assert_eq!(result.drift_json, None);
 
             // Every produced fact carries structured provenance: tier + passed status.
+            // (The retired drift plumbing is asserted absent at the DB level below.)
             let provenance = state
                 .fundamentals_provenance()
                 .get_many(&result.produced_fact_ids)
@@ -2006,7 +2422,6 @@ mod tests {
             "FY",
             "2026-03-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("structured extraction runs");
 
@@ -2042,7 +2457,6 @@ mod tests {
             "FY",
             "2026-03-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("structured extraction runs");
 
@@ -2055,28 +2469,62 @@ mod tests {
         assert!(result.produced_fact_ids.is_empty());
     }
 
+    /// ADR 0086 decisions 3/4: a stored prior sourced by a LOWER tier (the daily
+    /// BiznesRadar pull) must never veto an ISSUER tier's emission — the issuer
+    /// witnesses the aggregator, not the other way around. (Live regression,
+    /// 2026-07-22: CBF's whole FY2025 ESEF set was discarded because BR's stored
+    /// FY2024 equity disagreed with the filing's own comparative by 68%.)
     #[test]
-    fn pdf_with_mismatching_stored_prior_cross_check_is_flagged() {
-        let (state, company_id, document_id) = seed_pdf(&[
-            "Total Assets Line 45 000  40 000",
-            "Total Liabilities Line 20 000  18 000",
-            "Total Equity Line 25 000  22 000",
-        ]);
-        let profile = ascii_profile(
-            &company_id,
-            &[
-                ("total assets line", "total_assets"),
-                ("total liabilities line", "total_liabilities"),
-                ("total equity line", "total_equity"),
-            ],
-        );
+    fn esef_emits_despite_a_mismatching_aggregator_sourced_prior() {
+        let (state, company_id, document_id) = seed_esef_with_prior();
+        // Seed the prior period the way the BR-primary pull does: value + an
+        // html_aggregator provenance row.
         state
-            .fundamentals_provenance()
-            .upsert_profile(&profile)
-            .expect("seed profile");
-        // Stored prior disagrees with the report's own comparative column
-        // (40m) — a column-misalignment signal — and no witness is wired
-        // (ADR 0061 decision 4), so it must flag, never emit.
+            .kpi_extraction()
+            .record_structured_fact(crate::storage::StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2025,
+                period_type: "FY",
+                period_end: Some("2025-03-31"),
+                report_document_id: &document_id,
+                metric_key: "total_assets",
+                value_numeric: "999000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example | Aktywa razem"),
+            })
+            .expect("aggregator prior");
+
+        let result = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2026,
+            "FY",
+            "2026-03-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("structured extraction runs");
+
+        assert_eq!(
+            result.acceptance,
+            Acceptance::Accepted,
+            "an aggregator-sourced prior must not veto the issuer's filing"
+        );
+        assert!(result.emitted);
+        assert_eq!(result.tier, Some(SourceTier::Esef));
+    }
+
+    /// The honesty half (ADR 0061 dec. 2): an ESEF set a SAME-or-higher-tier
+    /// prior contradicts is a FLAGGED outcome carrying the failing checks —
+    /// never a silent `empty` that reads like "nothing to extract".
+    #[test]
+    fn esef_failed_validation_is_flagged_with_detail_not_silent_empty() {
+        let (state, company_id, document_id) = seed_esef_with_prior();
         seed_prior_period(
             &state,
             &company_id,
@@ -2091,146 +2539,29 @@ mod tests {
             &document_id,
             2026,
             "FY",
-            "2026-12-31",
+            "2026-03-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         )
         .expect("structured extraction runs");
 
-        assert_eq!(result.acceptance, Acceptance::Flagged);
-        assert!(!result.emitted, "a flagged cross-check must not emit facts");
-        assert!(result.produced_fact_ids.is_empty());
-    }
-
-    #[test]
-    fn pdf_zero_overlap_expected_keys_downgrades_to_accepted_unreviewed() {
-        let (state, company_id, document_id) = seed_pdf(&[
-            "Total Assets Line 45 000",
-            "Total Liabilities Line 20 000",
-            "Total Equity Line 25 000",
-        ]);
-        let profile = ascii_profile(
-            &company_id,
-            &[
-                ("total assets line", "total_assets"),
-                ("total liabilities line", "total_liabilities"),
-                ("total equity line", "total_equity"),
-            ],
+        assert_eq!(
+            result.acceptance,
+            Acceptance::Flagged,
+            "a contradicted filing is flagged, never a silent empty"
         );
-        state
+        assert!(!result.emitted);
+        let outcome = state
             .fundamentals_provenance()
-            .upsert_profile(&profile)
-            .expect("seed profile");
-
-        // Mark "revenue" as the company's primary KPI — absent from this
-        // report, so completeness is zero-overlap despite the balance sheet
-        // validating cleanly.
-        let definitions = state
-            .list_kpi_definitions(ListKpiDefinitionsInput {
-                scope: Some("canonical".to_owned()),
-                sector: None,
-                company_id: None,
-            })
-            .expect("canonical definitions should list");
-        let revenue_def = definitions
-            .iter()
-            .find(|d| d.metric_key == "revenue")
-            .expect("revenue should exist in the canonical catalog");
-        state
-            .create_kpi_relevance(NewKpiRelevance {
-                company_id: company_id.clone(),
-                definition_id: revenue_def.id.clone(),
-                source: "user".to_owned(),
-                rank: Some("primary".to_owned()),
-                first_seen_period: None,
-                last_seen_period: None,
-            })
-            .expect("kpi relevance should create");
-
-        let result = run_structured_extraction(
-            &state,
-            &company_id,
-            &document_id,
-            2026,
-            "FY",
-            "2026-12-31",
-            MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
-        )
-        .expect("structured extraction runs");
-
-        assert_eq!(result.acceptance, Acceptance::AcceptedUnreviewed);
-        assert!(result.emitted, "a downgrade must never block emission");
-        assert_eq!(result.produced_fact_ids.len(), 3);
-        let provenance = state
-            .fundamentals_provenance()
-            .get_many(&result.produced_fact_ids)
-            .expect("provenance");
-        assert!(provenance
-            .iter()
-            .all(|p| p.validation_status == "unreviewed"));
-        let states = confirmation_states(&state, &company_id, &result.produced_fact_ids);
+            .list_flagged_extraction_outcomes(&company_id)
+            .expect("outcomes")
+            .into_iter()
+            .find(|o| o.report_document_id == document_id)
+            .expect("the flagged run must leave a reviewable outcome row");
+        assert_eq!(outcome.reason_code, "validation_failed");
         assert!(
-            states.iter().all(|s| s == "auto_unreviewed"),
-            "states={states:?}"
+            outcome.detail_json.is_some(),
+            "the failing checks must be persisted for review"
         );
-    }
-
-    #[test]
-    fn pdf_overlapping_expected_keys_keeps_full_accepted() {
-        let (state, company_id, document_id) = seed_pdf(&[
-            "Total Assets Line 45 000",
-            "Total Liabilities Line 20 000",
-            "Total Equity Line 25 000",
-        ]);
-        let profile = ascii_profile(
-            &company_id,
-            &[
-                ("total assets line", "total_assets"),
-                ("total liabilities line", "total_liabilities"),
-                ("total equity line", "total_equity"),
-            ],
-        );
-        state
-            .fundamentals_provenance()
-            .upsert_profile(&profile)
-            .expect("seed profile");
-
-        let definitions = state
-            .list_kpi_definitions(ListKpiDefinitionsInput {
-                scope: Some("canonical".to_owned()),
-                sector: None,
-                company_id: None,
-            })
-            .expect("canonical definitions should list");
-        let total_assets_def = definitions
-            .iter()
-            .find(|d| d.metric_key == "total_assets")
-            .expect("total_assets should exist in the canonical catalog");
-        state
-            .create_kpi_relevance(NewKpiRelevance {
-                company_id: company_id.clone(),
-                definition_id: total_assets_def.id.clone(),
-                source: "user".to_owned(),
-                rank: Some("primary".to_owned()),
-                first_seen_period: None,
-                last_seen_period: None,
-            })
-            .expect("kpi relevance should create");
-
-        let result = run_structured_extraction(
-            &state,
-            &company_id,
-            &document_id,
-            2026,
-            "FY",
-            "2026-12-31",
-            MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
-        )
-        .expect("structured extraction runs");
-
-        assert_eq!(result.acceptance, Acceptance::Accepted);
     }
 
     #[test]
@@ -2246,211 +2577,8 @@ mod tests {
             "FY",
             "2026-03-31",
             MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
         );
         assert!(err.is_err());
-    }
-
-    fn seed_pdf(lines: &[&str]) -> (AppState, String, String) {
-        let dir = unique_temp_dir("pdf");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let connection = open_in_memory_database().expect("db");
-        let state = AppState::with_data_dir(connection, dir.clone());
-        let company = state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "CBF".to_owned(),
-                display_name: "Cyber_Folks S.A.".to_owned(),
-                isin: None,
-                cik: None,
-                lei: None,
-            })
-            .expect("company");
-        let document = state
-            .create_or_find_pending_report_document(CaptureReportDocumentInput {
-                company_id: company.id.clone(),
-                source_type: "user_url".to_owned(),
-                url: "https://example.com/annual-2026.pdf".to_owned(),
-                period_id: None,
-                origin_ref: None,
-                title: Some("Annual 2026 PDF".to_owned()),
-                attribution: None,
-            })
-            .expect("document");
-        let bytes = minimal_text_pdf(lines);
-        std::fs::write(dir.join("annual.pdf"), &bytes).expect("write pdf");
-        state
-            .mark_report_document_fetched(
-                &document.id,
-                Some("annual.pdf"),
-                Some("application/pdf"),
-                None,
-                Some(bytes.len() as i64),
-            )
-            .expect("mark fetched");
-        (state, company.id, document.id)
-    }
-
-    /// A profile with ASCII-only labels so the fixture never has to round-trip
-    /// Polish diacritics through the hand-built PDF (a real profile's labels
-    /// are read out of the actual PDF; this test cares only about the
-    /// pipeline's acceptance/confirmation/drift plumbing, not label matching).
-    fn ascii_profile(company_id: &str, labels: &[(&str, &str)]) -> ExtractionProfile {
-        let label_map = labels
-            .iter()
-            .map(|(label, metric)| (label.to_string(), metric.to_string()))
-            .collect();
-        ExtractionProfile {
-            company_id: company_id.to_owned(),
-            template_hash: "test-template".to_owned(),
-            unit_scale: crate::fundamentals::extraction::pdf::UnitScale::Thousands,
-            label_map,
-            version: 1,
-        }
-    }
-
-    #[test]
-    fn pdf_extraction_with_clean_profile_match_confirms_in_both_modes() {
-        for mode in [MODE_ASSIST, MODE_AUTOPILOT] {
-            let (state, company_id, document_id) = seed_pdf(&[
-                "Total Assets Line 45 000",
-                "Total Liabilities Line 20 000",
-                "Total Equity Line 25 000",
-            ]);
-            let profile = ascii_profile(
-                &company_id,
-                &[
-                    ("total assets line", "total_assets"),
-                    ("total liabilities line", "total_liabilities"),
-                    ("total equity line", "total_equity"),
-                ],
-            );
-            state
-                .fundamentals_provenance()
-                .upsert_profile(&profile)
-                .expect("seed profile");
-
-            let result = run_structured_extraction(
-                &state,
-                &company_id,
-                &document_id,
-                2026,
-                "FY",
-                "2026-12-31",
-                mode,
-                Tier4Gate::DeniedSweep,
-            )
-            .expect("structured extraction runs");
-
-            assert!(result.emitted, "a balanced PDF parse should emit facts");
-            assert_eq!(result.tier, Some(SourceTier::Pdf));
-            assert_eq!(result.acceptance, Acceptance::Accepted);
-            assert_eq!(result.produced_fact_ids.len(), 3);
-            assert!(!result.structure_changed, "a matching profile has no drift");
-
-            let provenance = state
-                .fundamentals_provenance()
-                .get_many(&result.produced_fact_ids)
-                .expect("provenance");
-            assert!(provenance.iter().all(|p| p.source_tier == "pdf"));
-            assert!(provenance.iter().all(|p| p.validation_status == "passed"));
-
-            let states = confirmation_states(&state, &company_id, &result.produced_fact_ids);
-            assert!(
-                states.iter().all(|s| s == "confirmed"),
-                "mode={mode} states={states:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn pdf_extraction_with_no_identity_evidence_follows_trust_ladder_by_mode() {
-        // Only a P&L line is present (no balance-sheet triple) — every identity
-        // is not-applicable, so validation is Inconclusive → AcceptedUnreviewed.
-        // No profile is needed: "zysk netto" is an ASCII-safe default-dictionary
-        // label, so this also covers the no-profile PDF path.
-        let cases = [
-            (MODE_AUTOPILOT, "auto_unreviewed"),
-            (MODE_ASSIST, "pending"),
-        ];
-        for (mode, expected_state) in cases {
-            let (state, company_id, document_id) = seed_pdf(&["Zysk netto 12 000"]);
-            let result = run_structured_extraction(
-                &state,
-                &company_id,
-                &document_id,
-                2026,
-                "FY",
-                "2026-12-31",
-                mode,
-                Tier4Gate::DeniedSweep,
-            )
-            .expect("structured extraction runs");
-
-            assert!(result.emitted, "an uncontradicted parse should still emit");
-            assert_eq!(result.acceptance, Acceptance::AcceptedUnreviewed);
-            assert_eq!(result.produced_fact_ids.len(), 1);
-            assert!(!result.structure_changed);
-
-            let provenance = state
-                .fundamentals_provenance()
-                .get_many(&result.produced_fact_ids)
-                .expect("provenance");
-            assert!(provenance
-                .iter()
-                .all(|p| p.validation_status == "unreviewed"));
-
-            let states = confirmation_states(&state, &company_id, &result.produced_fact_ids);
-            assert_eq!(states, vec![expected_state.to_owned()], "mode={mode}");
-        }
-    }
-
-    #[test]
-    fn pdf_profile_drift_flags_emits_nothing_but_reports_structure_changed() {
-        // The confirmed profile expects three lines (assets/liabilities/equity);
-        // the new report drops the equity line entirely — a real "the company
-        // restructured its statement layout" scenario. No witness is wired
-        // (ADR 0061 decision 4), so a drifted PDF is flagged, never silently
-        // emitted or silently dropped: the caller gets the drift back to surface.
-        let (state, company_id, document_id) =
-            seed_pdf(&["Total Assets Line 45 000", "Total Liabilities Line 20 000"]);
-        let profile = ascii_profile(
-            &company_id,
-            &[
-                ("total assets line", "total_assets"),
-                ("total liabilities line", "total_liabilities"),
-                ("total equity line", "total_equity"),
-            ],
-        );
-        state
-            .fundamentals_provenance()
-            .upsert_profile(&profile)
-            .expect("seed profile");
-
-        let result = run_structured_extraction(
-            &state,
-            &company_id,
-            &document_id,
-            2026,
-            "FY",
-            "2026-12-31",
-            MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
-        )
-        .expect("structured extraction runs");
-
-        assert!(!result.emitted, "a flagged drift must not emit facts");
-        assert_eq!(result.acceptance, Acceptance::Flagged);
-        assert!(result.produced_fact_ids.is_empty());
-        assert!(
-            result.structure_changed,
-            "a dropped confirmed label is a structure change"
-        );
-        let drift_json = result.drift_json.expect("drift diff must be reported");
-        assert!(
-            drift_json.contains("total equity line"),
-            "drift: {drift_json}"
-        );
     }
 
     #[test]
@@ -2477,392 +2605,62 @@ mod tests {
         );
     }
 
-    // -------------------------------------------------------------------
-    // Tier-4 (OCR) fallback (ADR 0077 §4)
-    // -------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // A2 — the persistence half of "never silently wrong" (ADR 0061 dec. 2,
+    // ADR 0084 dec. 4). A run that emits nothing must still leave a durable,
+    // queryable record of what the pipeline tried and what objected.
+    // -----------------------------------------------------------------------
 
-    use crate::fundamentals::extraction::ocr::{OcrExtractionProfile, ValueColumnLayout};
-    use crate::fundamentals::extraction::pdf::UnitScale;
-    use crate::providers::analysis::{
-        AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest, DocumentSupport,
-        ResearchBriefProviderOutput, ResearchBriefRequest, ResearchDigestRequest,
-    };
-    use async_trait::async_trait;
-
-    /// A scripted vision provider (follows the pool.rs `ScriptedProvider` pattern):
-    /// `ocr_document` returns a canned markdown or a scripted error, and
-    /// `complete_document` returns a canned bootstrap JSON.
-    struct MockVisionProvider {
-        ocr_markdown: String,
-        ocr_error: Option<&'static str>,
-        bootstrap_json: String,
-    }
-
-    impl MockVisionProvider {
-        fn ocr(markdown: &str) -> Self {
-            Self {
-                ocr_markdown: markdown.to_owned(),
-                ocr_error: None,
-                bootstrap_json: String::new(),
-            }
-        }
-        fn with_bootstrap(markdown: &str, bootstrap_json: &str) -> Self {
-            Self {
-                ocr_markdown: markdown.to_owned(),
-                ocr_error: None,
-                bootstrap_json: bootstrap_json.to_owned(),
-            }
-        }
-        fn ocr_failing(kind: &'static str) -> Self {
-            Self {
-                ocr_markdown: String::new(),
-                ocr_error: Some(kind),
-                bootstrap_json: String::new(),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl AiAnalysisProvider for MockVisionProvider {
-        fn provider_id(&self) -> &'static str {
-            "provider_mistral"
-        }
-        fn model(&self) -> &str {
-            "mock-vision"
-        }
-        async fn analyze(
-            &self,
-            _request: &AnalysisRequest,
-        ) -> Result<AnalysisProviderOutput, AnalysisProviderError> {
-            Err(AnalysisProviderError::ProviderError("unused".to_owned()))
-        }
-        async fn generate_research_brief(
-            &self,
-            _request: &ResearchBriefRequest,
-        ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
-            Err(AnalysisProviderError::ProviderError("unused".to_owned()))
-        }
-        async fn generate_research_digest(
-            &self,
-            _request: &ResearchDigestRequest,
-        ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
-            Err(AnalysisProviderError::ProviderError("unused".to_owned()))
-        }
-        fn document_support(&self) -> DocumentSupport {
-            DocumentSupport::Native
-        }
-        async fn ocr_document(
-            &self,
-            _bytes: &[u8],
-            _mime_type: &str,
-        ) -> Result<String, AnalysisProviderError> {
-            match self.ocr_error {
-                Some("limit") => Err(AnalysisProviderError::ProviderLimit),
-                Some(_) => Err(AnalysisProviderError::ProviderError("scripted".to_owned())),
-                None => Ok(self.ocr_markdown.clone()),
-            }
-        }
-        async fn complete_document(
-            &self,
-            _prompt: &str,
-            _document: &AnalysisDocument,
-        ) -> Result<String, AnalysisProviderError> {
-            Ok(self.bootstrap_json.clone())
-        }
-    }
-
-    fn balance_sheet_profile(company_id: &str, equity_key: &str) -> OcrExtractionProfile {
-        let label_map = std::collections::BTreeMap::from([
-            ("aktywa razem".to_string(), "total_assets".to_string()),
-            (
-                "zobowiązania razem".to_string(),
-                "total_liabilities".to_string(),
-            ),
-            ("kapitał własny".to_string(), equity_key.to_string()),
-        ]);
-        OcrExtractionProfile::bootstrap(
-            company_id,
-            UnitScale::Thousands,
-            label_map,
-            ValueColumnLayout::CurrentPeriodFirst,
-            Vec::new(),
-            false,
-        )
-    }
-
-    /// A CONFIRMED (version-2) profile — the facts-path precondition (ADR 0077
-    /// §4 kickoff decision 3: a v1 bootstrap only ever yields proposals).
-    fn confirmed_balance_sheet_profile(company_id: &str, equity_key: &str) -> OcrExtractionProfile {
-        let p = balance_sheet_profile(company_id, equity_key);
-        p.clone().confirm(
-            p.scale,
-            p.label_map.clone(),
-            p.value_column,
-            p.skip_columns.clone(),
-            p.strip_enumerators,
-        )
-    }
-
-    const BALANCED_OCR: &str = "\
-| Pozycja | 2025 |
-| --- | --- |
-| Aktywa razem | 45 000 |
-| Zobowiązania razem | 20 000 |
-| Kapitał własny | 25 000 |
-";
-
-    /// ADR 0077 §4 kickoff decision 3: a version-1 profile is a stored bootstrap
-    /// PROPOSAL, not a confirmation — a human confirms it by accepting its first
-    /// proposals. Until then tier-4 must keep landing proposals, never facts:
-    /// a plausible-but-wrong bootstrap map that happens to satisfy the identities
-    /// would otherwise commit facts no one ever reviewed.
-    #[test]
-    fn tier4_unconfirmed_profile_emits_proposals_not_facts() {
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        // Version 1 = fresh bootstrap, never confirmed.
+    /// Every outcome the store holds for a company, flagged or not — the
+    /// "was this period ever attempted?" question the review read model
+    /// deliberately narrows.
+    fn all_outcomes(state: &AppState, company_id: &str) -> Vec<crate::storage::ExtractionOutcome> {
+        // `list_flagged_extraction_outcomes` is the review surface (non-emitting
+        // only); for the never-attempted assertions the tests need the raw set,
+        // so read both and merge with the by-id lookup of the emitting slots.
         state
             .fundamentals_provenance()
-            .upsert_ocr_profile(&balance_sheet_profile(&company_id, "total_equity"))
-            .expect("seed ocr profile v1");
-        let provider = MockVisionProvider::ocr(BALANCED_OCR);
-
-        let outcome = tier4_with_provider(
-            &state,
-            &provider,
-            &company_id,
-            &document_id,
-            b"%PDF",
-            "application/pdf",
-            2025,
-            "FY",
-            "2025-12-31",
-            MODE_AUTOPILOT,
-        )
-        .expect("tier-4 runs");
-
-        assert_eq!(outcome.reason, "proposals_pending_profile");
-        assert!(
-            outcome.produced_fact_ids.is_empty(),
-            "an unconfirmed profile must never commit facts"
-        );
-        assert_eq!(outcome.proposals.len(), 3);
-        assert!(outcome.proposals.iter().all(|p| p
-            .source_snippet
-            .as_deref()
-            .unwrap_or_default()
-            .starts_with("ocr_pending_profile")));
+            .list_flagged_extraction_outcomes(company_id)
+            .expect("list outcomes")
     }
 
-    /// T4.3-1: a confirmed profile parses the OCR markdown to a validation-clean
-    /// set → tier-4 emits FACTS with `source_tier='ai'` and a real (`passed`)
-    /// validation status.
+    /// F6 (ADR 0086 code-review): when an issuer tier OVERWRITES a lower-tier
+    /// slot's VALUE (a real disagreement, not a label-only takeover), the ESEF /
+    /// positional emit path records a `tier_upgrade` diagnostic carrying the
+    /// previous value + tier — mirroring the WDF cover-note seam. A label-only
+    /// upgrade (values agreed) records nothing.
     #[test]
-    fn tier4_profile_path_emits_validated_facts_as_source_tier_ai() {
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        state
-            .fundamentals_provenance()
-            .upsert_ocr_profile(&confirmed_balance_sheet_profile(
-                &company_id,
-                "total_equity",
-            ))
-            .expect("seed ocr profile");
-        let provider = MockVisionProvider::ocr(BALANCED_OCR);
-
-        let outcome = tier4_with_provider(
-            &state,
-            &provider,
-            &company_id,
-            &document_id,
-            b"%PDF",
-            "application/pdf",
-            2025,
-            "FY",
-            "2025-12-31",
-            MODE_AUTOPILOT,
-        )
-        .expect("tier-4 runs");
-
-        assert_eq!(outcome.reason, "facts_emitted");
-        assert_eq!(outcome.produced_fact_ids.len(), 3);
-        assert!(outcome.proposals.is_empty());
-
-        let provenance = state
-            .fundamentals_provenance()
-            .get_many(&outcome.produced_fact_ids)
-            .expect("provenance");
-        assert!(provenance.iter().all(|p| p.source_tier == "ai"));
-        assert!(provenance.iter().all(|p| p.validation_status == "passed"));
-    }
-
-    /// T4.3-9: a second tier-4 run over the same document re-observes the slots —
-    /// no duplicate facts (`record_structured_fact` idempotency holds).
-    #[test]
-    fn tier4_re_run_is_idempotent_no_duplicate_facts() {
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        state
-            .fundamentals_provenance()
-            .upsert_ocr_profile(&confirmed_balance_sheet_profile(
-                &company_id,
-                "total_equity",
-            ))
-            .expect("seed ocr profile");
-
-        let run = || {
-            tier4_with_provider(
-                &state,
-                &MockVisionProvider::ocr(BALANCED_OCR),
-                &company_id,
-                &document_id,
-                b"%PDF",
-                "application/pdf",
-                2025,
-                "FY",
-                "2025-12-31",
-                MODE_AUTOPILOT,
-            )
-            .expect("tier-4 runs")
-        };
-        assert_eq!(run().produced_fact_ids.len(), 3);
-        let second = run();
-        assert!(
-            second.produced_fact_ids.is_empty(),
-            "a re-observation produces no new facts"
-        );
-        let facts = state
-            .list_financial_facts(crate::storage::ListFinancialFactsInput {
-                company_id: Some(company_id.clone()),
-                period_id: None,
-                definition_id: None,
-            })
-            .expect("facts");
-        assert_eq!(facts.len(), 3, "no duplicate facts on re-run");
-    }
-
-    /// T4.3-3: a parsed set that violates the balance-sheet identity is NEVER a
-    /// fact — the values route to proposals for the confirm flow.
-    #[test]
-    fn tier4_validation_failing_set_routes_to_proposals_never_facts() {
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        state
-            .fundamentals_provenance()
-            .upsert_ocr_profile(&confirmed_balance_sheet_profile(
-                &company_id,
-                "total_equity",
-            ))
-            .expect("seed ocr profile");
-        // 45 != 20 + 30 → the balance-sheet identity fails.
-        let unbalanced = "\
-| Pozycja | 2025 |
-| --- | --- |
-| Aktywa razem | 45 000 |
-| Zobowiązania razem | 20 000 |
-| Kapitał własny | 30 000 |
-";
-        let outcome = tier4_with_provider(
-            &state,
-            &MockVisionProvider::ocr(unbalanced),
-            &company_id,
-            &document_id,
-            b"%PDF",
-            "application/pdf",
-            2025,
-            "FY",
-            "2025-12-31",
-            MODE_AUTOPILOT,
-        )
-        .expect("tier-4 runs");
-
-        assert_eq!(outcome.reason, "proposals_flagged");
-        assert!(outcome.produced_fact_ids.is_empty());
-        assert_eq!(outcome.proposals.len(), 3);
-        let facts = state
-            .list_financial_facts(crate::storage::ListFinancialFactsInput {
-                company_id: Some(company_id.clone()),
-                period_id: None,
-                definition_id: None,
-            })
-            .expect("facts");
-        assert!(facts.is_empty(), "a validation-failing set writes no facts");
-    }
-
-    /// T4.3-2 (G-1 stays green): a never-bootstrapped company bootstraps the
-    /// profile (labels only) and lands ALL output as PROPOSALS — ZERO facts.
-    #[test]
-    fn tier4_bootstrap_emits_proposals_only_and_stores_profile_v1() {
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        assert!(state
-            .fundamentals_provenance()
-            .get_ocr_profile(&company_id)
-            .expect("profile read")
-            .is_none());
-        let bootstrap_json = r#"{"scale":"thousands","valueColumn":"current_period_first","labelMap":{"aktywa razem":"total_assets","zobowiązania razem":"total_liabilities","kapitał własny":"total_equity"}}"#;
-        let provider = MockVisionProvider::with_bootstrap(BALANCED_OCR, bootstrap_json);
-
-        let outcome = tier4_with_provider(
-            &state,
-            &provider,
-            &company_id,
-            &document_id,
-            b"%PDF",
-            "application/pdf",
-            2025,
-            "FY",
-            "2025-12-31",
-            MODE_AUTOPILOT,
-        )
-        .expect("tier-4 runs");
-
-        assert_eq!(outcome.reason, "bootstrap_proposals");
-        assert!(
-            outcome.produced_fact_ids.is_empty(),
-            "a bootstrap run NEVER writes facts (G-1)"
-        );
-        assert_eq!(outcome.proposals.len(), 3);
-        // The bootstrapped profile is now stored at version 1.
-        let profile = state
-            .fundamentals_provenance()
-            .get_ocr_profile(&company_id)
-            .expect("profile read")
-            .expect("profile stored");
-        assert_eq!(profile.version, 1);
-        // No facts at all.
-        let facts = state
-            .list_financial_facts(crate::storage::ListFinancialFactsInput {
-                company_id: Some(company_id.clone()),
-                period_id: None,
-                definition_id: None,
-            })
-            .expect("facts");
-        assert!(facts.is_empty(), "bootstrap must not write facts");
-    }
-
-    /// T4.3-6: no `VisionExtraction` member configured → the wrapper degrades with
-    /// `no_vision_provider` (the run stays deterministically-quiet, never errors).
-    #[test]
-    fn tier4_degrades_when_no_vision_provider_configured() {
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        // Default settings pin the general provider to gemini, but `vision_extraction`
-        // is not configured — tier-4 must NOT fall back to the general provider.
-        let outcome = run_tier4_extraction(
-            &state,
-            &company_id,
-            &document_id,
-            2025,
-            "FY",
-            "2025-12-31",
-            MODE_AUTOPILOT,
-        )
-        .expect("tier-4 degrades, never errors");
-        assert_eq!(outcome.reason, "no_vision_provider");
-        assert!(outcome.produced_fact_ids.is_empty());
-    }
-
-    /// T4.3-7: an ESEF/structured document must never reach the OCR path — tier-4
-    /// degrades with `not_pdf` (the ESEF tier owns those).
-    #[test]
-    fn tier4_degrades_not_pdf_for_an_esef_document() {
+    fn a_value_overwriting_upgrade_records_a_tier_upgrade_diagnostic() {
         let (state, company_id, document_id) = seed_esef();
-        let outcome = run_tier4_extraction(
+        state
+            .set_developer_mode_enabled(true)
+            .expect("developer mode enables the diagnostic sink");
+
+        // Seed a LOWER-tier (aggregator) fact holding a DIFFERENT value in the
+        // very slot the ESEF extraction will land total_assets into.
+        state
+            .kpi_extraction()
+            .record_aggregator_fact(crate::storage::StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2026,
+                period_type: "FY",
+                period_end: Some("2026-03-31"),
+                report_document_id: &document_id,
+                metric_key: "total_assets",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Aktywa"),
+            })
+            .expect("seed aggregator slot");
+
+        // ESEF (issuer) re-extracts total_assets = 45,000,000 — a value overwrite
+        // of the aggregator-held slot (Upgraded { previous_value: Some }).
+        run_structured_extraction(
             &state,
             &company_id,
             &document_id,
@@ -2871,133 +2669,30 @@ mod tests {
             "2026-03-31",
             MODE_AUTOPILOT,
         )
-        .expect("tier-4 degrades, never errors");
-        assert_eq!(outcome.reason, "not_pdf");
-    }
+        .expect("structured extraction");
 
-    /// T4.3-4: a transient OCR provider failure (rate limit) propagates as `Err`
-    /// (the code the queue retries on), never a silent degrade.
-    #[test]
-    fn tier4_transient_ocr_failure_propagates_as_err() {
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        let err = tier4_with_provider(
-            &state,
-            &MockVisionProvider::ocr_failing("limit"),
-            &company_id,
-            &document_id,
-            b"%PDF",
-            "application/pdf",
-            2025,
-            "FY",
-            "2025-12-31",
-            MODE_AUTOPILOT,
-        )
-        .expect_err("a transient OCR failure must be an Err");
-        assert_eq!(err.0, "provider_limit");
-        assert!(is_transient_provider_code(err.0));
-    }
-
-    /// T4.3-5: the caller gate is honored — a `DeniedSweep` gate never invokes the
-    /// tier-4 hook, even when determinism ends Flagged (a drifted PDF profile).
-    #[test]
-    fn tier4_gate_denied_sweep_does_not_invoke_the_hook() {
-        let (state, company_id, document_id) =
-            seed_pdf(&["Total Assets Line 45 000", "Total Liabilities Line 20 000"]);
-        let profile = ascii_profile(
-            &company_id,
-            &[
-                ("total assets line", "total_assets"),
-                ("total liabilities line", "total_liabilities"),
-                ("total equity line", "total_equity"),
-            ],
-        );
-        state
-            .fundamentals_provenance()
-            .upsert_profile(&profile)
-            .expect("seed profile");
-
-        // Determinism flags (dropped equity line). With the gate DENIED, tier-4
-        // must not run: `tier4` stays None.
-        let denied = run_structured_extraction(
-            &state,
-            &company_id,
-            &document_id,
-            2026,
-            "FY",
-            "2026-12-31",
-            MODE_AUTOPILOT,
-            Tier4Gate::DeniedSweep,
-        )
-        .expect("runs");
-        assert_eq!(denied.acceptance, Acceptance::Flagged);
-        assert_eq!(denied.tier4, None, "a denied gate must not invoke tier-4");
-
-        // With the gate ALLOWED, the hook runs (and degrades here: no vision
-        // provider), so `tier4` is populated — proving the gate is what gates it.
-        let allowed = run_structured_extraction(
-            &state,
-            &company_id,
-            &document_id,
-            2026,
-            "FY",
-            "2026-12-31",
-            MODE_AUTOPILOT,
-            Tier4Gate::Allowed,
-        )
-        .expect("runs");
-        assert_eq!(allowed.tier4.as_deref(), Some("no_vision_provider"));
-    }
-
-    // ---- tier-4 degrade log trail (T-A5) -----------------------------------
-
-    // The process-global capturing logger lives in `crate::test_support` so the
-    // backfill/source tests share one installed logger and buffer (lifted from
-    // here, T-A4). Assertions filter by the unique `report_document_id` under
-    // test rather than clearing the buffer, since other tests append too.
-    use crate::test_support::{captured_logs, install_capture_logger};
-
-    /// T-A5: a tier-4 degrade leaves a production-visible trail. A bootstrap whose
-    /// LLM profile JSON fails to parse degrades `bootstrap_failed` AND emits one
-    /// `log::warn!` carrying the reason, the ids, the OCR markdown length, and a
-    /// prefix of the offending LLM response (the one degrade that includes it).
-    #[test]
-    fn tier4_bootstrap_failure_degrades_and_logs_a_warning() {
-        install_capture_logger();
-        let (state, company_id, document_id) = seed_pdf(&["prose only"]);
-        // No stored OCR profile → the bootstrap path; a non-JSON bootstrap response
-        // fails `from_bootstrap_json` → degrade `bootstrap_failed`.
-        let bad_response = "totally not json — the model wrote prose";
-        let provider = MockVisionProvider::with_bootstrap(BALANCED_OCR, bad_response);
-
-        let outcome = tier4_with_provider(
-            &state,
-            &provider,
-            &company_id,
-            &document_id,
-            b"%PDF",
-            "application/pdf",
-            2025,
-            "FY",
-            "2025-12-31",
-            MODE_AUTOPILOT,
-        )
-        .expect("tier-4 degrades, never errors");
-        assert_eq!(outcome.reason, "bootstrap_failed");
-
-        let logs = captured_logs().lock().expect("logs");
-        let line = logs
+        let events = state.list_diagnostic_events(50).expect("list diagnostics");
+        let upgrade = events
             .iter()
-            .rev()
-            .find(|l| l.contains(&document_id) && l.contains("bootstrap_failed"))
-            .expect("a tier-4 degrade warn for this document was emitted");
-        assert!(line.contains(&company_id), "warn carries the company id");
-        assert!(
-            line.contains(&format!("ocr_markdown_len={}", BALANCED_OCR.len())),
-            "warn carries the OCR markdown length: {line}"
+            .find(|e| e.module == "structured_extraction" && e.stage == "tier_upgrade")
+            .expect("a value-overwriting upgrade must leave a tier_upgrade diagnostic");
+        assert_eq!(
+            upgrade.metadata.get("metricKey").and_then(|v| v.as_str()),
+            Some("total_assets")
         );
-        assert!(
-            line.contains("llm_response_prefix") && line.contains("not json"),
-            "bootstrap_failed warn carries the LLM response prefix: {line}"
+        assert_eq!(
+            upgrade
+                .metadata
+                .get("previousValue")
+                .and_then(|v| v.as_str()),
+            Some("1000000")
+        );
+        assert_eq!(
+            upgrade
+                .metadata
+                .get("previousTier")
+                .and_then(|v| v.as_str()),
+            Some("html_aggregator")
         );
     }
 }

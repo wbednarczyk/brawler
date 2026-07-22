@@ -323,17 +323,44 @@ pub(super) fn notebook_entry_origins(
         ",
     )?;
     let rows = statement.query_map([notebook_entry_id], |row| {
+        let source_type: String = row.get(1)?;
+        let stored_label: Option<String> = row.get(4)?;
         Ok(NotebookOrigin {
             id: row.get(0)?,
-            source_type: row.get(1)?,
+            label: resolve_origin_label(&source_type, stored_label),
             source_id: row.get(2)?,
             source_url: row.get(3)?,
-            label: row.get(4)?,
             created_at: row.get(5)?,
+            source_type,
         })
     })?;
 
     rows.collect::<Result<Vec<_>, _>>()
+}
+
+/// The `ai_analysis_results` table backing `source_type = "ai_analysis"` origins
+/// was dropped with the in-app AI layer (ADR 0084, migration 0102). Owner policy
+/// keeps the saved notes and their origins readable as user data, so rather than
+/// a dead lookup against the dropped table — or a bare, misleading `ai analysis`
+/// rendered from the raw `source_type` — such an origin resolves to an honest
+/// retired-source label when it carries none of its own.
+pub(super) const RETIRED_AI_ANALYSIS_ORIGIN_LABEL: &str = "retired AI analysis (source removed)";
+
+/// Resolves the display label for one origin: an explicit stored label always
+/// wins; a labelless retired-AI-analysis origin falls back to the honest
+/// retired-source label; every other type keeps its stored value (including
+/// `None`, which callers render from the `source_type`).
+pub(super) fn resolve_origin_label(
+    source_type: &str,
+    stored_label: Option<String>,
+) -> Option<String> {
+    let has_label = stored_label
+        .as_deref()
+        .is_some_and(|l| !l.trim().is_empty());
+    if !has_label && source_type == "ai_analysis" {
+        return Some(RETIRED_AI_ANALYSIS_ORIGIN_LABEL.to_owned());
+    }
+    stored_label
 }
 
 pub(super) fn notebook_entry_id(
@@ -431,6 +458,93 @@ mod proptests {
                 "tag not normalized: {out:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod retired_origin_tests {
+    //! ADR 0084 / migration 0102: the `ai_analysis` producer and its results
+    //! table are gone, but saved notes and their origins stay readable. A
+    //! retired-source origin with no explicit label must resolve to an honest
+    //! label — never a bare, misleading `ai analysis` implying a live source.
+    use crate::app_state::AppState;
+    use crate::storage::{
+        open_in_memory_database, NewCompany, NewNotebookEntry, NewNotebookOrigin,
+    };
+
+    fn state_with_company() -> (AppState, String) {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        (state, company.id)
+    }
+
+    #[test]
+    fn labelless_ai_analysis_origin_reads_the_retired_source_label() {
+        let (state, company_id) = state_with_company();
+        let entry = state
+            .create_notebook_entry(NewNotebookEntry {
+                company_id: company_id.clone(),
+                title: "Saved AI take".to_owned(),
+                body: "A note whose origin was a since-retired AI analysis.".to_owned(),
+                body_format: None,
+                tags: vec![],
+                kind: "observation".to_owned(),
+                claim_status: None,
+                event_date: None,
+                follow_up_after: None,
+                follow_up_date: None,
+                origins: vec![NewNotebookOrigin {
+                    source_type: "ai_analysis".to_owned(),
+                    source_id: Some("ai_result_dropped_42".to_owned()),
+                    source_url: None,
+                    label: None,
+                }],
+            })
+            .expect("entry");
+
+        assert_eq!(entry.origins.len(), 1);
+        assert_eq!(entry.origins[0].source_type, "ai_analysis");
+        assert_eq!(
+            entry.origins[0].label.as_deref(),
+            Some(super::RETIRED_AI_ANALYSIS_ORIGIN_LABEL),
+            "a labelless retired-AI-analysis origin must render an honest retired label"
+        );
+    }
+
+    #[test]
+    fn explicit_origin_label_is_preserved_for_ai_analysis() {
+        let (state, company_id) = state_with_company();
+        let entry = state
+            .create_notebook_entry(NewNotebookEntry {
+                company_id,
+                title: "Saved AI take with label".to_owned(),
+                body: "Origin carried its own label.".to_owned(),
+                body_format: None,
+                tags: vec![],
+                kind: "observation".to_owned(),
+                claim_status: None,
+                event_date: None,
+                follow_up_after: None,
+                follow_up_date: None,
+                origins: vec![NewNotebookOrigin {
+                    source_type: "ai_analysis".to_owned(),
+                    source_id: None,
+                    source_url: None,
+                    label: Some("Q1 thesis".to_owned()),
+                }],
+            })
+            .expect("entry");
+
+        assert_eq!(entry.origins[0].label.as_deref(), Some("Q1 thesis"));
     }
 }
 

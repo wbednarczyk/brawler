@@ -150,6 +150,63 @@ per-tier (esef/pdf/html_aggregator) rollup, and an overall summary.
 relying on this pipeline by default or before the ADR 0060 decision-3 default-model flip, per
 the real-data-validation-precedes-implementation guardrail above.
 
+### Corpus-wide deterministic sweep — the official coverage number (v0.59 A4)
+
+The labeled harness above measures precision where hand labels exist; it cannot say **how much
+of the owner's real filing corpus the deterministic-only pipeline actually reads**. That is what
+`storage::tests::real_data_extraction::deterministic_pipeline_real_data_sweep` measures. Since
+[ADR 0084](adr/0084-retire-in-app-ai-layer.md) retired the AI tier, this is the *official*
+fundamentals coverage number. The ratification question it once gated — whether cover-note facts
+graduate from `auto_unreviewed` — is now closed: facts are review-free
+([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) dec. 5), landing `confirmed` regardless
+of tier.
+
+It drives the **real job-layer path** (`jobs::structured_extraction::run_structured_extraction`),
+not just the pure pipeline, because the typed `reason_code` vocabulary and the aggregator
+fallback only exist there. It therefore **writes** (facts, provenance, outcome rows) and refuses
+to start against `brawler.sqlite3` or any path under `/mnt/d/` — point it at a throwaway copy.
+
+| Reports | Meaning |
+| --- | --- |
+| Eligible by `doc_kind`, with the no-period-derivable share | Documents stored but not routable to a reporting period. Split by kind because a `governance` document legitimately has none and a `periodic_ssf` that has none is a real gap. |
+| Attempts by route, `read_rate` | ESEF vs non-ESEF route (structured xHTML / positional — the PDF fact arm is retired, ADR 0086; PDF documents spawn no attempt), and the share that yielded ≥1 tracked fact. Counts produced **and** re-observed facts — on the owner's DB most slots are already filled, so "newly created" would read as 0. |
+| Document-level recall | Attempted documents yielding ≥1 tracked fact, plus facts per reading document. The recall denominator that *is* available (see below). |
+| Resolved tier / validation-gate verdict | Which tier read the document; `accepted` / `accepted_unreviewed` / `flagged` / `empty`. |
+| Flagged-gap breakdown by `reason_code` | `emitted`, `validation_failed`, `structure_drift`, `witness_disagreement`, `no_deterministic_tier`, `document_unreadable` (plus legacy-only `witness_fallback` rows, retained readable — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md)). |
+| Facts by provenance tier, **filing- vs aggregator-sourced** | Required by the [ADR 0085](adr/0085-biznesradar-fundamentals-witness.md) amendment: a coverage number that silently counts third-party fallback values overstates how well filings are read. |
+| Ground-truth-backed precision | Only the hand-labeled espi-wdf cover-note corpus (347 facts). Everything else is printed as a **production count with no precision claim**. |
+
+**Recall caveat, by design:** recall "against the company's expected primary-KPI profile" is
+**not measurable** on the owner's database — `expected_primary_metric_keys` derives that profile
+from `kpi_relevance` rows ranked `primary`, and the table is empty. The harness prints
+`NOT MEASURABLE` with the reason rather than substituting an invented denominator, and falls back
+to document-level recall. The same emptiness means the ADR 0061 dec. 4d completeness downgrade is
+inert in production — a finding, not a harness defect.
+
+**Env:** `BRAWLER_REAL_DB` + `BRAWLER_REAL_DATA_DIR` as above (absent → skips with a printed
+message, never fails CI), plus:
+
+- `BRAWLER_A4_LIMIT` — documents to attempt (default `250`; `0` = uncapped). Runtime is
+  ~1.7 s/document, dominated by PDF text extraction.
+- `BRAWLER_A4_LIVE_WITNESS=1` — install the real BiznesRadar fetcher. **Off by default**, so a
+  default run is offline and repeatable and the aggregator-sourced count is 0 *by construction*
+  (the harness says so explicitly rather than letting 0 read as a measurement).
+
+```bash
+cp private/realdata/brawler.sqlite3 private/realdata/a4_worktest.sqlite3
+BRAWLER_REAL_DB=../private/realdata/a4_worktest.sqlite3 \
+  BRAWLER_REAL_DATA_DIR=/mnt/d/Brawler/Builds/latest/data \
+  BRAWLER_A4_LIMIT=400 \
+  rtk cargo nextest run -p brawler deterministic_pipeline_real_data_sweep \
+    --run-ignored all --no-capture
+```
+
+**Policy:** asserts harness sanity only (something was attempted) plus one contract — every
+`reason_code` reaching the outcome row is in the typed vocabulary ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)
+§6), since an untyped reason makes every flagged-gap number above uninterpretable. It pins **no
+coverage floor on purpose**: the deliverable is the real number, and a harness asserting the
+number it hopes for is worse than no harness.
+
 ### Ownership shareholders-table harness (v0.56 T1)
 
 The ownership parser (`fundamentals::ownership::parse_shareholders`, ADR 0072) has its own
@@ -327,11 +384,14 @@ regenerable snapshot, labels are hand-assigned — a failing row is resolved by
 a conscious relabel, never `insta accept`. Extend it with every newly observed
 misclassified real title.
 
-The tier-4 OCR parser (ADR 0077 §4) follows the same property + golden pattern
-on a **synthetic OCR-v4-shaped sample** — realistic Polish financial-statement
-pipe tables authored in the test itself, never copied from `private/` real data
-(the `parse_ocr_markdown` proptest enforces no-fabrication + no-unknown-labels;
-its golden locks a stitched multi-table document's parsed facts).
+The **EspiCoverNote parser** (ADR 0061 tier 2a) follows the same property + golden
+pattern: proptest invariants (no panic, determinism, unique metric/basis identity)
+plus a golden snapshot over a synthetic body authored in the test itself, never
+copied from `private/` real data. Its acceptance bar is a separate `#[ignore]`
+real-data test against the hand-labeled spike corpus (347 facts; recall and
+precision both pinned at 347/347, zero false values), skipping cleanly when
+`private/` is absent. The retired tier-4 OCR parser's tests were removed with the
+layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 
 ### Scale & performance gates
 
@@ -378,7 +438,37 @@ thread would crash the job, so extraction wraps the call and turns a panic into 
 new dependency that parses real-world files gets the same `catch_unwind` + a
 flagged-not-crashed test.
 
+### Mapping guardrails — metric semantics under enforcement (2026-07-22)
+
+Finding-1 class (a source row filed under the wrong metric / silently dropped) is enforced by
+three gates:
+
+- **G1 — emittable-keys catalog contract** (`every_emittable_metric_key_has_a_canonical_definition`,
+  `storage/tests/migration_safety.rs`): scans the mapper SOURCES (shared dictionary, WDF row
+  mapper, ESEF concept map) at test time; every emitted `metric_key` must resolve to a seeded
+  canonical `kpi_definitions` row, else facts silently drop at `NoDefinition`. A new mapper key
+  reddens the gate until its seed migration lands (first catch: 16 unseeded WDF keys → 0112).
+- **G2 — source-vocabulary contract** (`source_vocabulary_contract_golden`, `html/tests.rs`): a
+  golden snapshot pinning every statement row of every checked-in real BiznesRadar page as
+  `(data-field, label, mapping outcome)`. A BR vocabulary change OR a dictionary prefix silently
+  capturing another row flips a line in the diff and forces a human decision — an unmapped row is
+  a REVIEWED skip, never an accident (first catch: the discontinued-operations row shadowing group
+  `net_profit`).
+- **G3 — mapping-suspect threshold** (`aggregator_fundamentals_pull`): the same metric disagreeing
+  with issuer/manual-held slots at ≥5 distinct companies in one pull run surfaces as
+  `mappingSuspects` on the pull summary + a `mapping_suspect` diagnostic + a warn log — the
+  systematic signature of a mismapped row, distinct from scattered per-company noise.
+
 ### Mock-runtime fidelity — the dual-execution contract
+
+**Scope exemption (owner decision, 2026-07-22):** commands with **no frontend
+caller and no mock-runtime handler** — the documented headless-only network/
+acquisition drivers `run_aggregator_fundamentals_pull` and `rebuild_fundamentals`
+(contracts.md) — are exempt from corpus membership: the corpus verifies the TS
+mock against the backend, and these commands have no mock half to keep faithful
+(same reason `run_structured_extraction` is absent). The exemption expires for a
+command the moment it gains a frontend/mock caller — add it to the corpus in the
+same change.
 
 The unified TS mock runtime (`src/test/scenarios/runtime.ts`) re-implements
 backend semantics; `ts-rs` guarantees the DTO *shapes* match Rust but not the
@@ -658,22 +748,6 @@ make smoke-gemini-transcript
 
 Failure interpretation: missing credentials → set `GEMINI_API_KEY`; provider limit/unavailable → retry or a smaller model; network timeout → use the short URL first, then raise the app timeout for long videos rather than treating Gemini as broken; provider rejection → try another public URL, and if the default model rejects supported URLs, change the default to the cheapest model that passes; parse error → fix provider prompting/parsing. **M10 cannot close until this passes at least once on the milestone branch.**
 
-### Gemini feed-item analysis — `make smoke-gemini-analysis`
-
-Proves the configured general-analysis model returns the provider-neutral AI analysis shape for one real feed-item-sized sample (ignored test `live_gemini_analyzes_feed_item`). Default model `gemini-2.5-flash`.
-
-Required env: `GEMINI_API_KEY`, `BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL`, `BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE`, `BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY`. Optional: `BRAWLER_GEMINI_ANALYSIS_SMOKE_MODEL`, `BRAWLER_GEMINI_ANALYSIS_TIMEOUT_SECONDS` (`45` fail-fast; `90` app default), `BRAWLER_GEMINI_ANALYSIS_SMOKE_QUESTION` (custom-question path), and `..._SMOKE_{COMPANY,TYPE,SOURCE,LANGUAGE,ATTRIBUTION,SUMMARY,PROMPT_PRESET}`.
-
-```bash
-GEMINI_API_KEY=... \
-BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL='https://example.com/report' \
-BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE='Example company report' \
-BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY='Paste a short source excerpt here.' \
-make smoke-gemini-analysis
-```
-
-Expect provider ID, model, `job_status=succeeded`, a non-empty summary, and ≥1 source reference. Failure interpretation mirrors the transcription smoke (set sample input explicitly — it does not read SQLite). **M13 cannot close until this passes once on the branch, or a documented provider outage/cost decision explicitly defers it.**
-
 ## Live drive (real app via CDP)
 
 Drives the **real running Windows app** (real Tauri backend, real local SQLite DB) via WebView2's Chrome DevTools Protocol, so an agent on WSL (no GUI) can verify a change against the real app directly instead of relying on the manual desktop smoke checklist above. Policy: [ADR 0066](adr/0066-live-drive-remote-debugging.md).
@@ -694,7 +768,7 @@ Or the pieces separately:
 
 `BRAWLER_CDP_URL` overrides the connection target (default `http://localhost:9222`); the helper (`tests/live/helpers/liveConnect.ts`) applies the same localhost → nameserver-IP fallback order when it is unset. Dev-only; **never** part of `make check`/`make check-epic` — no default/CI environment has a live GUI app with an open debug port.
 
-**Scoped runs + UX checkpoints (Q6, [ADR 0081](adr/0081-ux-quality-loop-v2.md)).** `make live-drive`/`live-cycle` default to the **full** historical live suite; set `LIVE_SPEC=<path>` to drive **one** spec (empty preserves the full-suite default), e.g. `make live-cycle LIVE_SPEC=tests/live/ux-checkpoint.live.spec.ts`. The generic UX checkpoint (`tests/live/ux-checkpoint.live.spec.ts`) drives the **mechanical** J1 path and records evidence for a human charter — it never judges clarity/usefulness ("UX good" is never emitted). It reads `BRAWLER_UX_JOURNEY`, `BRAWLER_UX_CARD`, `BRAWLER_UX_STAGE=vertical|mid|release` (`requireCheckpointMeta` **refuses** to run without them) and `BRAWLER_UX_DATASET` (optional non-sensitive label). Evidence (`manifest.json` + screenshots) is written under gitignored `test-results/live/checkpoints/<stage>-<card>/`; the manifest records build/version, Windows-native confirmation, viewport/DPR, locale/theme, and a **dataset LABEL only** — **never** the database path or contents. Outside a checkpoint run (no metadata) the spec skips, so an ordinary full live sweep is unaffected. Cadences + human charter: [dogfooding.md](dogfooding.md).
+**Scoped runs + UX checkpoints (Q6, [ADR 0081](adr/0081-ux-quality-loop-v2.md)).** `make live-drive`/`live-cycle` default to the **full** historical live suite; set `LIVE_SPEC=<path>` to drive **one** spec (empty preserves the full-suite default), e.g. `make live-cycle LIVE_SPEC=tests/live/ux-checkpoint.live.spec.ts`. The generic UX checkpoint (`tests/live/ux-checkpoint.live.spec.ts`) drives the **mechanical** J1 path and records evidence for a human charter — it never judges clarity/usefulness ("UX good" is never emitted). It reads `BRAWLER_UX_JOURNEY`, `BRAWLER_UX_CARD`, `BRAWLER_UX_STAGE=vertical|mid|release` (`requireCheckpointMeta` **refuses** to run without them) and `BRAWLER_UX_DATASET` (optional non-sensitive label). Evidence (`manifest.json` + screenshots) is written under gitignored `test-results/live/checkpoints/<stage>-<card>/`; the manifest records build/version, Windows-native confirmation, viewport/DPR, locale/theme, and a **dataset LABEL only** — **never** the database path or contents. Outside a checkpoint run (no metadata) the spec skips, so an ordinary full live sweep is unaffected. Cadences + human charter: [dogfooding.md](dogfooding.md). The env-gated `tests/live/rebuild-fundamentals.live.spec.ts` driver (`BRAWLER_REBUILD=1`) runs the [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) wipe+rebuild path (BR-primary pull + ESEF/WDF re-scan) against a live app; off by default so an ordinary sweep never triggers it.
 
 **Live-probe honesty rules (harvested 2026-07-10, ADR 0045).** Two classes that green-washed real defects on the owner's app:
 - **A punchline probe asserts the OUTCOME, not just settlement.** A probe whose purpose is "the flow produced X" must require a nonzero/expected result (`Wydobyto [1-9]`, a row count delta, a DB assertion) — "it settled" with a zero result is a probe FAILURE. A settle-only assert once passed while the feature under test silently did nothing.

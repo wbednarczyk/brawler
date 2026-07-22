@@ -20,24 +20,6 @@ pub(crate) fn clamp_backfill_years(value: i64) -> i64 {
     value.clamp(BACKFILL_YEARS_MIN, BACKFILL_YEARS_MAX)
 }
 
-/// Per-history-sweep tier-4 AI call budget (ADR 0077 §6). One unit = one tier-4
-/// invocation (the OCR + optional bootstrap-chat bundle for one document). The
-/// limit is snapshotted onto the sweep row at creation, so this setting only ever
-/// governs *future* sweeps. Same tolerant/clamp posture as `backfill_years`:
-/// `0` disables the cap (unlimited), and the write/read paths clamp to `[0, 500]`
-/// rather than rejecting, so a hand-edited database never drives an absurd budget.
-pub(crate) const HISTORY_SWEEP_AI_CALL_LIMIT_MIN: i64 = 0;
-pub(crate) const HISTORY_SWEEP_AI_CALL_LIMIT_MAX: i64 = 500;
-pub(crate) const HISTORY_SWEEP_AI_CALL_LIMIT_DEFAULT: i64 = 30;
-
-/// Clamp a requested history-sweep AI call budget into `[0, 500]` (0 = off).
-pub(crate) fn clamp_history_sweep_ai_call_limit(value: i64) -> i64 {
-    value.clamp(
-        HISTORY_SWEEP_AI_CALL_LIMIT_MIN,
-        HISTORY_SWEEP_AI_CALL_LIMIT_MAX,
-    )
-}
-
 /// MCP server listen port (ADR 0078 decision 4). Same tolerant/clamp posture as
 /// `backfill_years`: the write path clamps to the non-privileged port range
 /// `[1024, 65535]` rather than rejecting, and reads clamp an out-of-range (or
@@ -64,13 +46,6 @@ pub struct AiProviderSettings {
     pub youtube_transcription_provider: String,
     pub youtube_transcription_model: String,
     pub youtube_transcription_timeout_seconds: i64,
-    pub general_analysis_provider: Option<String>,
-    pub general_analysis_model: String,
-    pub general_analysis_timeout_seconds: i64,
-    /// Base URL for the generic OpenAI-compatible provider (ADR 0060). Empty
-    /// string when unconfigured; only consulted when
-    /// `general_analysis_provider` is `provider_openai_compatible`.
-    pub openai_compatible_base_url: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -102,21 +77,6 @@ pub struct ShortcutBindingSetting {
     pub disabled: Option<bool>,
 }
 
-/// One entry in a capability's ordered provider/model fallback pool (ADR
-/// 0060 as amended). Stored as an element of the `capability_providers`
-/// settings map, keyed by [`crate::providers::analysis::capabilities::AiCapability::key`].
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityProviderEntry {
-    pub provider: String,
-    pub model: String,
-}
-
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -142,10 +102,6 @@ pub struct QueueSettings {
     /// spawned once); a change takes effect on restart, like the pool settings.
     pub sources_workers: i64,
     pub autopilot_workers: i64,
-    pub ai_workers: i64,
-    /// Max concurrent calls to any one AI provider, shared across the autopilot +
-    /// ai lanes — the real AI cost/rate ceiling.
-    pub ai_provider_concurrency: i64,
 }
 
 /// MCP server settings group (ADR 0078 decisions 2 + 4). The server is off by
@@ -190,20 +146,16 @@ pub struct UserSettings {
     /// Per-history-sweep tier-4 AI call budget (ADR 0077 §6). Clamped to
     /// `[0, 500]` (0 = off); an absent row reads the default `30`. Snapshotted
     /// onto each sweep at creation, so a change only affects future sweeps.
-    pub history_sweep_ai_call_limit: i64,
     pub settings_source: &'static str,
     pub settings_import_export_format: String,
     pub yaml_import_export_status: &'static str,
     pub ai_providers: AiProviderSettings,
-    pub ai_analysis_mode: String,
-    pub espi_ai_fallback_enabled: bool,
     pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
     /// Per-capability ordered (provider, model) fallback pool (ADR 0060 as
     /// amended), keyed by `AiCapability::key`. An absent key or an empty list
     /// means "use the global fallback" — no seed row, so a database that
     /// predates this key loads an empty map rather than failing.
-    pub capability_providers: HashMap<String, Vec<CapabilityProviderEntry>>,
     pub database: DatabaseSettings,
     pub queue: QueueSettings,
     /// Company IDs the user has pinned to the sidebar spine (ADR 0054). A simple
@@ -246,32 +198,22 @@ pub struct SettingsUpdate {
     pub backfill_years: Option<i64>,
     /// Requested per-history-sweep tier-4 AI call budget (ADR 0077 §6); clamped
     /// to `[0, 500]` on write rather than rejected (0 = off).
-    pub history_sweep_ai_call_limit: Option<i64>,
     pub youtube_transcription_provider: Option<String>,
     pub youtube_transcription_model: Option<String>,
     pub youtube_transcription_timeout_seconds: Option<i64>,
-    pub general_analysis_provider: Option<String>,
-    pub general_analysis_model: Option<String>,
-    pub general_analysis_timeout_seconds: Option<i64>,
     /// Base URL for the generic OpenAI-compatible provider (ADR 0060).
-    pub openai_compatible_base_url: Option<String>,
-    pub ai_analysis_mode: Option<String>,
-    pub espi_ai_fallback_enabled: Option<bool>,
     pub log_level: Option<String>,
     pub log_max_files: Option<i64>,
     pub log_max_file_bytes: Option<i64>,
     pub shortcut_bindings: Option<HashMap<String, ShortcutBindingSetting>>,
-    /// Replace the full `capability_providers` map (ADR 0060 as amended). The
+    /// (removed) capability routing map (ADR 0060, retired by ADR 0084). The
     /// frontend sends the complete desired map, so this overwrites rather than
     /// merges — same contract as `shortcut_bindings`.
-    pub capability_providers: Option<HashMap<String, Vec<CapabilityProviderEntry>>>,
     pub db_max_connections: Option<i64>,
     pub db_busy_timeout_ms: Option<i64>,
     pub db_acquire_timeout_ms: Option<i64>,
     pub sources_workers: Option<i64>,
     pub autopilot_workers: Option<i64>,
-    pub ai_workers: Option<i64>,
-    pub ai_provider_concurrency: Option<i64>,
     /// Replace the full pinned-company list (ADR 0054). The frontend sends the
     /// complete desired order, so this overwrites rather than merges.
     pub pinned_company_ids: Option<Vec<String>>,
@@ -295,11 +237,6 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             "backfill_years",
             BACKFILL_YEARS_DEFAULT,
         )?),
-        history_sweep_ai_call_limit: clamp_history_sweep_ai_call_limit(setting_i64_or(
-            connection,
-            "history_sweep_ai_call_limit",
-            HISTORY_SWEEP_AI_CALL_LIMIT_DEFAULT,
-        )?),
         settings_source: "sqlite",
         settings_import_export_format: setting_string(connection, "settings_import_export_format")?,
         yaml_import_export_status: "accepted_deferred",
@@ -313,30 +250,13 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
                 connection,
                 "youtube_transcription_timeout_seconds",
             )?,
-            general_analysis_provider: empty_setting_to_none(setting_string(
-                connection,
-                "general_analysis_provider",
-            )?),
-            general_analysis_model: setting_string(connection, "general_analysis_model")?,
-            general_analysis_timeout_seconds: setting_i64(
-                connection,
-                "general_analysis_timeout_seconds",
-            )?,
-            openai_compatible_base_url: setting_string_or(
-                connection,
-                "openai_compatible_base_url",
-                "",
-            )?,
         },
-        ai_analysis_mode: setting_string(connection, "ai_analysis_mode")?,
-        espi_ai_fallback_enabled: setting_bool_or(connection, "espi_ai_fallback_enabled", false)?,
         logs: LogSettings {
             level: setting_string(connection, "log_level")?,
             max_files: setting_i64(connection, "log_max_files")?,
             max_file_bytes: setting_i64(connection, "log_max_file_bytes")?,
         },
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
-        capability_providers: setting_json_or_default(connection, "capability_providers")?,
         pinned_company_ids: setting_json_or_default(connection, "pinned_company_ids")?,
         mcp: McpSettings {
             enabled: setting_bool_or(connection, "mcp_enabled", false)?,
@@ -357,8 +277,6 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             QueueSettings {
                 sources_workers: config.sources_workers,
                 autopilot_workers: config.autopilot_workers,
-                ai_workers: config.ai_workers,
-                ai_provider_concurrency: config.ai_provider_concurrency,
             }
         },
     })
@@ -441,26 +359,13 @@ pub(crate) fn update_settings(
     }
 
     // Backfill depth is clamped to the safe range rather than rejected (ADR 0077
-    // §3, same posture as the pool settings). No seed row — upsert like
-    // `openai_compatible_base_url` so the value is never silently dropped.
+    // §3, same posture as the pool settings). No seed row — upsert so the value
+    // is never silently dropped.
     if let Some(backfill_years) = input.backfill_years {
         let clamped = clamp_backfill_years(backfill_years);
         upsert_setting(
             connection,
             "backfill_years",
-            &clamped.to_string(),
-            "integer",
-        )?;
-    }
-
-    // History-sweep AI budget, clamped to the safe range rather than rejected
-    // (ADR 0077 §6, same posture as `backfill_years`). No seed row — upsert so
-    // the value is never silently dropped.
-    if let Some(history_sweep_ai_call_limit) = input.history_sweep_ai_call_limit {
-        let clamped = clamp_history_sweep_ai_call_limit(history_sweep_ai_call_limit);
-        upsert_setting(
-            connection,
-            "history_sweep_ai_call_limit",
             &clamped.to_string(),
             "integer",
         )?;
@@ -511,109 +416,6 @@ pub(crate) fn update_settings(
         )?;
     }
 
-    // Captured before the provider/model blocks below mutate anything: the
-    // provider this update will leave in effect, used to decide whether
-    // `general_analysis_model` accepts a freeform value (OpenAI-compatible,
-    // ADR 0060) or must be one of the curated `analysis_model_ids()`.
-    let effective_general_analysis_provider = input
-        .general_analysis_provider
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            setting_string(connection, "general_analysis_provider")
-                .ok()
-                .and_then(empty_setting_to_none)
-        });
-
-    if let Some(general_analysis_provider) = input.general_analysis_provider {
-        let mut allowed_providers = vec![""];
-        allowed_providers
-            .extend(crate::providers::analysis::registry::selectable_analysis_provider_ids());
-        validate_allowed_setting(
-            "general_analysis_provider",
-            &general_analysis_provider,
-            &allowed_providers,
-        )?;
-        update_setting(
-            connection,
-            "general_analysis_provider",
-            &general_analysis_provider,
-        )?;
-    }
-
-    if let Some(general_analysis_model) = input.general_analysis_model {
-        let is_openai_compatible = effective_general_analysis_provider.as_deref()
-            == Some(crate::providers::analysis::registry::OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID);
-        if is_openai_compatible {
-            // The OpenAI-compatible provider has no curated model list (ADR
-            // 0060) — any non-empty, user-supplied model id is accepted.
-            if general_analysis_model.trim().is_empty() {
-                return Err(StorageError::InvalidSettingValue {
-                    key: "general_analysis_model",
-                    value: general_analysis_model,
-                });
-            }
-        } else {
-            validate_allowed_setting(
-                "general_analysis_model",
-                &general_analysis_model,
-                &crate::providers::analysis::registry::analysis_model_ids(),
-            )?;
-        }
-        update_setting(
-            connection,
-            "general_analysis_model",
-            &general_analysis_model,
-        )?;
-    }
-
-    if let Some(general_analysis_timeout_seconds) = input.general_analysis_timeout_seconds {
-        validate_allowed_setting_i64(
-            "general_analysis_timeout_seconds",
-            general_analysis_timeout_seconds,
-            &[45, 90, 180, 300, 600],
-        )?;
-        update_setting(
-            connection,
-            "general_analysis_timeout_seconds",
-            &general_analysis_timeout_seconds.to_string(),
-        )?;
-    }
-
-    if let Some(openai_compatible_base_url) = input.openai_compatible_base_url {
-        let trimmed = openai_compatible_base_url.trim();
-        if !trimmed.is_empty()
-            && !trimmed.starts_with("http://")
-            && !trimmed.starts_with("https://")
-        {
-            return Err(StorageError::InvalidSettingValue {
-                key: "openai_compatible_base_url",
-                value: openai_compatible_base_url,
-            });
-        }
-        // No seed row (introduced after the initial migration) — upsert like
-        // `pinned_company_ids` so the value is never silently dropped.
-        upsert_setting(connection, "openai_compatible_base_url", trimmed, "string")?;
-    }
-
-    if let Some(ai_analysis_mode) = input.ai_analysis_mode {
-        validate_allowed_setting("ai_analysis_mode", &ai_analysis_mode, &["source_grounded"])?;
-        update_setting(connection, "ai_analysis_mode", &ai_analysis_mode)?;
-    }
-
-    if let Some(espi_ai_fallback_enabled) = input.espi_ai_fallback_enabled {
-        update_setting(
-            connection,
-            "espi_ai_fallback_enabled",
-            if espi_ai_fallback_enabled {
-                "true"
-            } else {
-                "false"
-            },
-        )?;
-    }
-
     if let Some(log_level) = input.log_level {
         validate_allowed_setting(
             "log_level",
@@ -648,14 +450,6 @@ pub(crate) fn update_settings(
         update_setting(connection, "shortcut_bindings", &value)?;
     }
 
-    if let Some(capability_providers) = input.capability_providers {
-        validate_capability_providers(&capability_providers)?;
-        let value = serde_json::to_string(&capability_providers).map_err(StorageError::from)?;
-        // No seed row (introduced after the initial migration) — upsert like
-        // `pinned_company_ids` so the value is never silently dropped.
-        upsert_setting(connection, "capability_providers", &value, "json")?;
-    }
-
     if let Some(pinned_company_ids) = input.pinned_company_ids {
         let deduped = dedupe_preserving_order(pinned_company_ids);
         let value = serde_json::to_string(&deduped).map_err(StorageError::from)?;
@@ -667,7 +461,7 @@ pub(crate) fn update_settings(
     // clamped to the safe range rather than rejected.
     if let Some(mcp_enabled) = input.mcp_enabled {
         // Booleans are stored as 'string'-typed "true"/"false" rows everywhere
-        // else (developer_mode, espi_ai_fallback_enabled) — keep that.
+        // else (developer_mode) — keep that.
         upsert_setting(
             connection,
             "mcp_enabled",
@@ -726,22 +520,6 @@ pub(crate) fn update_settings(
         update_setting(
             connection,
             super::queue_config::AUTOPILOT_WORKERS_KEY,
-            &clamped.to_string(),
-        )?;
-    }
-    if let Some(ai_workers) = input.ai_workers {
-        let clamped = super::queue_config::clamp_workers(ai_workers);
-        update_setting(
-            connection,
-            super::queue_config::AI_WORKERS_KEY,
-            &clamped.to_string(),
-        )?;
-    }
-    if let Some(ai_provider_concurrency) = input.ai_provider_concurrency {
-        let clamped = super::queue_config::clamp_provider_concurrency(ai_provider_concurrency);
-        update_setting(
-            connection,
-            super::queue_config::AI_PROVIDER_CONCURRENCY_KEY,
             &clamped.to_string(),
         )?;
     }
@@ -978,105 +756,6 @@ fn validate_shortcut_bindings(
     }
 
     Ok(())
-}
-
-/// Validate a `capability_providers` map (ADR 0060 as amended, ADR 0061
-/// decision 5): every key must be a recognized
-/// [`crate::providers::analysis::capabilities::AiCapability`] key, and every
-/// entry's provider/model must be a currently selectable analysis provider /
-/// curated model — except the OpenAI-compatible provider, which has no
-/// curated model list and accepts any non-empty model id (same exemption as
-/// `general_analysis_model`). An empty entry list is valid: it is the
-/// explicit "use the global fallback" state. A `document`-kind capability
-/// (KPI/claim extraction) additionally requires every entry's provider to
-/// have **native** document support: a document-kind call site always sends
-/// `AnalysisDocument::Native`, and a `TextOnly` provider (OpenAI,
-/// OpenAI-compatible) hard-fails every such call and poisons pool failover
-/// (Radicle 6ea2a8a) — so this is rejected here, at settings-write time, not
-/// left to surface only when the job actually runs.
-fn validate_capability_providers(
-    capability_providers: &HashMap<String, Vec<CapabilityProviderEntry>>,
-) -> StorageResult<()> {
-    use crate::providers::analysis::capabilities::{AiCapability, CapabilityKind};
-    use crate::providers::analysis::registry::{
-        analysis_model_ids, analysis_provider_document_support, selectable_analysis_provider_ids,
-        OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID,
-    };
-    use crate::providers::analysis::DocumentSupport;
-
-    let selectable_providers = selectable_analysis_provider_ids();
-    let curated_models = analysis_model_ids();
-
-    for (capability_key, entries) in capability_providers {
-        let capability = match AiCapability::from_key(capability_key) {
-            Some(capability) => capability,
-            None => {
-                let valid_keys = AiCapability::ALL
-                    .iter()
-                    .map(|capability| capability.key())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(StorageError::InvalidSettingValue {
-                    key: "capability_providers",
-                    value: format!(
-                        "unknown capability key {capability_key} (expected one of {valid_keys})"
-                    ),
-                });
-            }
-        };
-
-        for entry in entries {
-            if !selectable_providers.contains(&entry.provider.as_str()) {
-                return Err(StorageError::InvalidSettingValue {
-                    key: "capability_providers",
-                    value: format!("{capability_key}: unknown provider {}", entry.provider),
-                });
-            }
-
-            if entry.model.trim().is_empty() {
-                return Err(StorageError::InvalidSettingValue {
-                    key: "capability_providers",
-                    value: format!(
-                        "{capability_key}: empty model for provider {}",
-                        entry.provider
-                    ),
-                });
-            }
-
-            let is_openai_compatible = entry.provider == OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID;
-            if !is_openai_compatible && !curated_models.contains(&entry.model.as_str()) {
-                return Err(StorageError::InvalidSettingValue {
-                    key: "capability_providers",
-                    value: format!(
-                        "{capability_key}: uncurated model {} for provider {}",
-                        entry.model, entry.provider
-                    ),
-                });
-            }
-
-            if capability.kind() == CapabilityKind::Document
-                && analysis_provider_document_support(&entry.provider) != DocumentSupport::Native
-            {
-                return Err(StorageError::InvalidSettingValue {
-                    key: "capability_providers",
-                    value: format!(
-                        "{capability_key}: provider {} cannot accept document input; route a document-capable provider (Gemini or Claude)",
-                        entry.provider
-                    ),
-                });
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn empty_setting_to_none(value: String) -> Option<String> {
-    if value.trim().is_empty() {
-        None
-    } else {
-        Some(value)
-    }
 }
 
 use super::database::Database;

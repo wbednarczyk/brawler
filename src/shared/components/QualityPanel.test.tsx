@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { QualityPanel } from "./QualityPanel";
@@ -7,13 +7,9 @@ import {
   createFrameworkCriterion,
   deleteFrameworkEvaluation,
   evaluateFramework,
-  getQualitativeAssessment,
-  getQualitativeAssessmentStatus,
   listAvailableMetricKeys,
   listFrameworkEvaluations,
   listQualityFrameworks,
-  rerunQualitativeCriterion,
-  runQualitativeAssessment,
   validateCriterionExpression,
 } from "../../api/qualityFrameworks";
 import type {
@@ -43,10 +39,6 @@ vi.mock("../../api/qualityFrameworks", () => ({
   cloneFramework: vi.fn(),
   resetFrameworkToTemplate: vi.fn(),
   deleteQualityFramework: vi.fn(),
-  getQualitativeAssessment: vi.fn(),
-  getQualitativeAssessmentStatus: vi.fn(),
-  runQualitativeAssessment: vi.fn(),
-  rerunQualitativeCriterion: vi.fn(),
 }));
 
 const listQualityFrameworksMock = vi.mocked(listQualityFrameworks);
@@ -55,10 +47,6 @@ const listAvailableMetricKeysMock = vi.mocked(listAvailableMetricKeys);
 const evaluateFrameworkMock = vi.mocked(evaluateFramework);
 const validateCriterionExpressionMock = vi.mocked(validateCriterionExpression);
 const createFrameworkCriterionMock = vi.mocked(createFrameworkCriterion);
-const getQualitativeAssessmentMock = vi.mocked(getQualitativeAssessment);
-const getQualitativeAssessmentStatusMock = vi.mocked(getQualitativeAssessmentStatus);
-const runQualitativeAssessmentMock = vi.mocked(runQualitativeAssessment);
-const rerunQualitativeCriterionMock = vi.mocked(rerunQualitativeCriterion);
 const deleteFrameworkEvaluationMock = vi.mocked(deleteFrameworkEvaluation);
 
 function framework(overrides: Partial<QualityFramework> = {}): QualityFramework {
@@ -150,14 +138,6 @@ describe("QualityPanel", () => {
       error: null,
       referencedMetricKeys: ["roe"],
     });
-    getQualitativeAssessmentMock.mockResolvedValue([]);
-    getQualitativeAssessmentStatusMock.mockResolvedValue({
-      status: "queued",
-      attempts: 0,
-      lastError: null,
-    });
-    runQualitativeAssessmentMock.mockResolvedValue(undefined);
-    rerunQualitativeCriterionMock.mockResolvedValue(undefined);
     createFrameworkCriterionMock.mockResolvedValue({
       id: "qcriterion_new",
       frameworkId: "qframework_1",
@@ -406,111 +386,23 @@ describe("QualityPanel", () => {
     });
   });
 
-  it("renders an agent assessment result, labelled and cited", async () => {
+  // ADR 0084 decision 5 (clean cut): `criterion_results` written by the AI
+  // assessor were DROPPED with their read command, so a qualitative criterion
+  // has no verdict to show — it renders as the user-authored check it is.
+  it("renders a qualitative criterion with its guidance and no verdict", async () => {
     const user = userEvent.setup();
     listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
-    getQualitativeAssessmentMock.mockResolvedValue([agentResult()]);
-
-    render(<QualityPanel companyId="company_gpw_cdr" />);
-
-    // Wait for the assessment to load (verdict chip proves the result branch,
-    // distinct from the not-yet-assessed row).
-    expect(await screen.findByText("Pass")).toBeInTheDocument();
-    expect(screen.getByText("Agent-assessed")).toBeInTheDocument();
-
-    // Expanding reveals the reasoning and its citation.
-    await user.click(screen.getByRole("button", { name: /Wide moat/ }));
-    expect(
-      await screen.findByText("The company shows durable pricing power across cycles."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Q4 report")).toBeInTheDocument();
-  });
-
-  it("does not label a never-assessed criterion as agent-assessed", async () => {
-    // "Agent-assessed" reads as a STATE (past tense) — it must appear only when
-    // an agent result actually exists; a never-assessed criterion shows the
-    // not-assessed state instead.
-    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
-    getQualitativeAssessmentMock.mockResolvedValue([]);
 
     render(<QualityPanel companyId="company_gpw_cdr" />);
     await screen.findByText("Wide moat");
 
-    expect(screen.queryByText("Agent-assessed")).not.toBeInTheDocument();
     expect(screen.getByText("Not assessed yet")).toBeInTheDocument();
-  });
+    expect(screen.queryByText("Agent-assessed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Citations")).not.toBeInTheDocument();
 
-  it("shows the insufficient-evidence verdict distinctly", async () => {
-    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
-    getQualitativeAssessmentMock.mockResolvedValue([
-      agentResult({ verdict: "insufficient_evidence", citations: null }),
-    ]);
-
-    render(<QualityPanel companyId="company_gpw_cdr" />);
-
-    expect(await screen.findByText("Insufficient evidence")).toBeInTheDocument();
-  });
-
-  it("enqueues an assessment run for the framework", async () => {
-    const user = userEvent.setup();
-    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
-
-    render(<QualityPanel companyId="company_gpw_cdr" />);
-    await screen.findByText("Wide moat");
-
-    await user.click(screen.getByRole("button", { name: "Assess" }));
-
-    await waitFor(() => {
-      expect(runQualitativeAssessmentMock).toHaveBeenCalledWith({
-        frameworkId: "qframework_1",
-        companyId: "company_gpw_cdr",
-      });
-    });
-    expect(
-      await screen.findByText(/Assessment queued/),
-    ).toBeInTheDocument();
-  });
-
-  it("surfaces a failed assessment run with the backend error (P1)", async () => {
-    // P1 (owner T7): a queued assessment that fails asynchronously (no provider,
-    // uncited response) used to clear its hint silently. The poll now reads the
-    // job status and, on a terminal failure, surfaces the backend error string.
-    // Fake timers drive the bounded poll deterministically; `fireEvent` (not
-    // userEvent) avoids userEvent's internal real-timer delays under fake clocks.
-    vi.useFakeTimers();
-    try {
-      listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
-      getQualitativeAssessmentStatusMock.mockResolvedValue({
-        status: "failed",
-        attempts: 3,
-        lastError:
-          "no usable AI provider for capability qualitative_assessment. Fix this in Settings → AI.",
-      });
-
-      render(<QualityPanel companyId="company_gpw_cdr" />);
-      const flush = async () => {
-        await act(async () => {
-          for (let i = 0; i < 8; i += 1) await Promise.resolve();
-        });
-      };
-      // Settle the initial async framework/assessment load.
-      await flush();
-
-      fireEvent.click(screen.getByRole("button", { name: "Assess" }));
-      await flush();
-      expect(screen.getByText(/Assessment queued/)).toBeInTheDocument();
-
-      // One poll interval elapses; the status read returns a terminal failure.
-      await act(async () => {
-        vi.advanceTimersByTime(3000);
-        for (let i = 0; i < 8; i += 1) await Promise.resolve();
-      });
-
-      expect(screen.getByText(/no usable AI provider/)).toBeInTheDocument();
-      expect(screen.queryByText(/Assessment queued/)).not.toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
+    // Expanding reveals the owner-authored guidance, not an AI reasoning blob.
+    await user.click(screen.getByRole("button", { name: /Wide moat/ }));
+    expect(await screen.findByText("Assess durable competitive advantage.")).toBeInTheDocument();
   });
 
   it("keeps the quantitative scorecard when a newer qual-only snapshot exists", async () => {
@@ -539,7 +431,6 @@ describe("QualityPanel", () => {
       results: [agentResult({ verdict: "fail" })],
     });
     listFrameworkEvaluationsMock.mockResolvedValue([qualOnly, evaluation()]);
-    getQualitativeAssessmentMock.mockResolvedValue([agentResult({ verdict: "fail" })]);
 
     render(<QualityPanel companyId="company_gpw_cdr" />);
     await screen.findByText("Strong return on equity");
@@ -590,22 +481,42 @@ describe("QualityPanel", () => {
     });
   });
 
-  it("re-runs a single qualitative criterion", async () => {
-    const user = userEvent.setup();
+  // ADR 0084 clean cut: no stored AI verdict surface survives, and no in-app
+  // (re-)assessment affordance exists. Verdicts return as agent writes over MCP.
+  it("renders no stored AI verdict surface at all (ADR 0084 clean cut)", async () => {
     listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
-    getQualitativeAssessmentMock.mockResolvedValue([agentResult()]);
 
     render(<QualityPanel companyId="company_gpw_cdr" />);
-    await screen.findByText("Agent-assessed");
+    await screen.findByText("Wide moat");
 
-    await user.click(screen.getByRole("button", { name: "Re-run assessment" }));
+    for (const name of ["Assess", "Re-run assessment", "Assess this criterion"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText(/Assessment queued/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Agent-assessed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Confidence")).not.toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(rerunQualitativeCriterionMock).toHaveBeenCalledWith({
-        frameworkId: "qframework_1",
-        companyId: "company_gpw_cdr",
-        criterionId: "qcriterion_moat",
-      });
-    });
+  // THE GUARD: `criterion_results` in the owner's real database are ALL
+  // `source: "engine"` — deterministic DSL evaluations (ADR 0046), never AI.
+  // ADR 0084 keeps them explicitly. This test passes before AND after the AI
+  // cut and reddens the moment the deterministic verdict path is over-deleted.
+  it("still renders engine-sourced criterion verdicts and the scorecard (ADR 0046)", async () => {
+    // One stored engine evaluation — the deterministic DSL snapshot (source:
+    // "engine"), the ONLY kind that exists in the owner's real database.
+    listFrameworkEvaluationsMock.mockResolvedValue([evaluation()]);
+
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+
+    // The engine criterion, its measured value, its threshold and its verdict.
+    expect(await screen.findByText("Strong return on equity")).toBeInTheDocument();
+    expect(screen.getByText("18%")).toBeInTheDocument();
+    expect(screen.getByText("Pass")).toBeInTheDocument();
+    // The deterministic scorecard summary.
+    expect(screen.getByText("1 pass")).toBeInTheDocument();
+
+    // The engine verdict came from the deterministic evaluation read, not from
+    // any retired AI assessment command.
+    expect(listFrameworkEvaluationsMock).toHaveBeenCalled();
   });
 });

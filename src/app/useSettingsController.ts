@@ -2,7 +2,6 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import * as credentialsApi from "../api/credentials";
 import * as settingsApi from "../api/settings";
 import type { AccentPalette, AppLocale, CredentialStatus, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
-import type { CapabilityProviderEntry } from "../api/generated/CapabilityProviderEntry";
 
 type SettingsControllerInput = {
   geminiApiKeyDraft: string;
@@ -79,46 +78,12 @@ export function useSettingsController({
     updateSettings({ mcpPort: nextPort });
   }
 
-  // Per-history-sweep tier-4 AI call budget (ADR 0077 §6). The backend clamps
-  // to [0, 500] (0 = unlimited); the UI offers presets + a bound input, so
-  // callers pass an already-sane value.
-  function updateHistorySweepAiCallLimit(nextLimit: number) {
-    updateSettings({ historySweepAiCallLimit: nextLimit });
-  }
-
   function updateYoutubeTranscriptionModel(nextModel: string) {
     updateSettings({ youtubeTranscriptionModel: nextModel });
   }
 
   function updateYoutubeTranscriptionTimeout(nextTimeoutSeconds: number) {
     updateSettings({ youtubeTranscriptionTimeoutSeconds: nextTimeoutSeconds });
-  }
-
-  function updateGeneralAnalysisProvider(nextProvider: string) {
-    updateSettings({ generalAnalysisProvider: nextProvider });
-  }
-
-  function updateGeneralAnalysisModel(nextModel: string) {
-    updateSettings({ generalAnalysisModel: nextModel });
-  }
-
-  function updateGeneralAnalysisTimeout(nextTimeoutSeconds: number) {
-    updateSettings({ generalAnalysisTimeoutSeconds: nextTimeoutSeconds });
-  }
-
-  function updateEspiAiFallbackEnabled(nextEnabled: boolean) {
-    updateSettings({ espiAiFallbackEnabled: nextEnabled });
-  }
-
-  function updateOpenAiCompatibleBaseUrl(nextBaseUrl: string) {
-    updateSettings({ openaiCompatibleBaseUrl: nextBaseUrl });
-  }
-
-  // Replace the full per-capability provider routing map (ADR 0060 as amended).
-  // Callers pass the complete desired map; the backend overwrites rather than
-  // merges — same contract as `updateShortcutBindings`.
-  function updateCapabilityProviders(nextCapabilityProviders: Record<string, CapabilityProviderEntry[]>) {
-    updateSettings({ capabilityProviders: nextCapabilityProviders });
   }
 
   function updateShortcutBindings(nextShortcutBindings: Record<string, ShortcutBindingSetting>) {
@@ -167,20 +132,10 @@ export function useSettingsController({
     updateSettings({ autopilotWorkers: nextWorkers });
   }
 
-  function updateAiWorkers(nextWorkers: number) {
-    updateSettings({ aiWorkers: nextWorkers });
-  }
-
-  function updateAiProviderConcurrency(nextConcurrency: number) {
-    updateSettings({ aiProviderConcurrency: nextConcurrency });
-  }
-
   function resetQueueSettings() {
     updateSettings({
       sourcesWorkers: 2,
       autopilotWorkers: 3,
-      aiWorkers: 2,
-      aiProviderConcurrency: 2,
     });
   }
 
@@ -245,27 +200,18 @@ export function useSettingsController({
     saveGeminiApiKey,
     unlockDeveloperMode,
     updateAccentPalette,
-    updateGeneralAnalysisModel,
-    updateGeneralAnalysisProvider,
-    updateGeneralAnalysisTimeout,
-    updateEspiAiFallbackEnabled,
-    updateOpenAiCompatibleBaseUrl,
-    updateCapabilityProviders,
     updateDbAcquireTimeoutMs,
     updateDbBusyTimeoutMs,
     updateDbMaxConnections,
     resetDatabaseSettings,
     updateSourcesWorkers,
     updateAutopilotWorkers,
-    updateAiWorkers,
-    updateAiProviderConcurrency,
     resetQueueSettings,
     updateLocale,
     updateLogLevel,
     updateLogMaxFileBytes,
     updateLogMaxFiles,
     updateBackfillYears,
-    updateHistorySweepAiCallLimit,
     updateMcpPort,
     updatePinnedCompanyIds,
     updatePollInterval,

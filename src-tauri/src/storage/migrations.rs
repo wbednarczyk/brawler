@@ -508,6 +508,66 @@ const MIGRATIONS: &[Migration] = &[
         name: "analyst_recommendations",
         sql: include_str!("../../migrations/0100_analyst_recommendations.sql"),
     },
+    Migration {
+        version: 101,
+        name: "purge_retired_ai_job_kinds",
+        sql: include_str!("../../migrations/0101_purge_retired_ai_job_kinds.sql"),
+    },
+    Migration {
+        version: 102,
+        name: "clean_cut_ai_artifacts",
+        sql: include_str!("../../migrations/0102_clean_cut_ai_artifacts.sql"),
+    },
+    Migration {
+        version: 103,
+        name: "fundamentals_extraction_outcomes",
+        sql: include_str!("../../migrations/0103_fundamentals_extraction_outcomes.sql"),
+    },
+    Migration {
+        version: 104,
+        name: "fundamentals_witness",
+        sql: include_str!("../../migrations/0104_fundamentals_witness.sql"),
+    },
+    Migration {
+        version: 105,
+        name: "witness_fallback_reason",
+        sql: include_str!("../../migrations/0105_witness_fallback_reason.sql"),
+    },
+    Migration {
+        version: 106,
+        name: "seed_core_kpi_relevance",
+        sql: include_str!("../../migrations/0106_seed_core_kpi_relevance.sql"),
+    },
+    Migration {
+        version: 107,
+        name: "repair_misassociation_and_note_ref_facts",
+        sql: include_str!("../../migrations/0107_repair_misassociation_and_note_ref_facts.sql"),
+    },
+    Migration {
+        version: 108,
+        name: "esef_anchored_refill_misscaled_pdf_facts",
+        sql: include_str!("../../migrations/0108_esef_anchored_refill_misscaled_pdf_facts.sql"),
+    },
+    Migration {
+        version: 109,
+        name: "document_derived_periods",
+        sql: include_str!("../../migrations/0109_document_derived_periods.sql"),
+    },
+    Migration {
+        version: 110,
+        name: "aggregator_fundamentals_pages",
+        sql: include_str!("../../migrations/0110_aggregator_fundamentals_pages.sql"),
+    },
+    Migration {
+        version: 111,
+        name: "parent_attributable_kpi_definitions",
+        sql: include_str!("../../migrations/0111_parent_attributable_kpi_definitions.sql"),
+    },
+    Migration {
+        version: 112,
+        name: "wdf_issuer_row_kpi_definitions",
+        sql: include_str!("../../migrations/0112_wdf_issuer_row_kpi_definitions.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

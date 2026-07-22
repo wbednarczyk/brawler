@@ -33,10 +33,7 @@ const baseProps = {
   company,
   aiAnalysisJobsByFeedItemId: {},
   aiAnalysisErrorByFeedItemId: {},
-  aiAnalysisRequestInFlightByFeedItemId: {},
   selectFeedItemFromKeyboard: noop,
-  startFeedItemAiAnalysis: async () => {},
-  retryFeedItemAiAnalysis: async () => {},
   formatTimestamp: (value: string | null | undefined) => value ?? "—",
   feedItemSummary: (item: FeedItem) => item.summary || item.title,
 };

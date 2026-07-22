@@ -28,8 +28,6 @@ vi.mock("../api/research", () => ({
   deleteResearchReminder: vi.fn(() => Promise.resolve()),
   createEvidenceLink: vi.fn(() => Promise.resolve()),
   deleteEvidenceLink: vi.fn(() => Promise.resolve()),
-  startResearchBrief: vi.fn(() => Promise.resolve()),
-  startResearchDigest: vi.fn(() => Promise.resolve()),
 }));
 
 import * as researchApi from "../api/research";

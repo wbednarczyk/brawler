@@ -55,27 +55,11 @@ const OVERVIEW: OwnershipOverview = {
     },
   ],
   residuals: [],
-  pendingProposals: [
-    {
-      id: "prop1",
-      holderKey: "ITEMA VENTURES UAB",
-      proposedType: "other_institutional",
-      confidence: 0.7,
-      rationale: "foreign fund",
-    },
-  ],
-  ocrProposals: [],
 };
 
 const NOOPS = {
   onBackfill: vi.fn(),
-  onRunClassification: vi.fn(),
   onSetHolderType: vi.fn(),
-  onConfirmProposal: vi.fn(),
-  onRejectProposal: vi.fn(),
-  onRunOcr: vi.fn(),
-  onConfirmOcrProposal: vi.fn(),
-  onRejectOcrProposal: vi.fn(),
 };
 
 describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
@@ -91,7 +75,7 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
     const onBackfill = vi.fn();
     render(
       <OwnershipSection
-        data={{ ...OVERVIEW, holders: [], history: [], residuals: [], pendingProposals: [] }}
+        data={{ ...OVERVIEW, holders: [], history: [], residuals: [] }}
         {...NOOPS}
         onBackfill={onBackfill}
       />,
@@ -112,28 +96,10 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
     expect(screen.getAllByText(/Founders?\/insiders?/).length).toBeGreaterThan(0);
   });
 
-  it("shows a pending AI proposal with confirm/reject wired to callbacks", async () => {
-    const user = userEvent.setup();
-    const onConfirmProposal = vi.fn();
-    const onRejectProposal = vi.fn();
-    render(
-      <OwnershipSection
-        data={OVERVIEW}
-        {...NOOPS}
-        onConfirmProposal={onConfirmProposal}
-        onRejectProposal={onRejectProposal}
-      />,
-    );
-    expect(screen.getByText("type? to confirm")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Confirm classification" }));
-    expect(onConfirmProposal).toHaveBeenCalledWith("prop1");
-    await user.click(screen.getByRole("button", { name: "Reject classification" }));
-    expect(onRejectProposal).toHaveBeenCalledWith("prop1");
-  });
-
-  it("surfaces the residual warnbox with a Run OCR action for an eligible residual", async () => {
-    const user = userEvent.setup();
-    const onRunOcr = vi.fn();
+  // ADR 0084 decision 4: tier-4 OCR is retired. An unreadable document is a
+  // FLAGGED gap the user can see — never silently absent, never guessed — but
+  // the panel offers no OCR run action any more.
+  it("flags an unreadable residual document with no OCR run action (ADR 0084)", () => {
     render(
       <OwnershipSection
         data={{
@@ -148,108 +114,32 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
           ],
         }}
         {...NOOPS}
-        onRunOcr={onRunOcr}
       />,
     );
     expect(screen.getByText(/unreadable text layer/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Read with OCR" }));
-    expect(onRunOcr).toHaveBeenCalledTimes(1);
+    for (const name of ["Read with OCR", "Retry OCR", "Reading with OCR…"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
   });
 
-  it("shows a running state and disables the OCR action while busy", () => {
-    render(
-      <OwnershipSection
-        data={{
-          ...OVERVIEW,
-          residuals: [{ reportDocumentId: "doc1", parseState: "glyph_encoded" }],
-        }}
-        {...NOOPS}
-        busy
-      />,
-    );
-    const button = screen.getByRole("button", { name: "Reading with OCR…" });
-    expect(button).toBeDisabled();
-  });
+  // ADR 0084 clean cut: the AI holder-type classifier AND every proposal it
+  // stored are gone. Holder types stay fully user-editable; no proposal review
+  // surface remains.
+  it("offers no AI classification or proposal review surface (ADR 0084)", () => {
+    render(<OwnershipSection data={OVERVIEW} {...NOOPS} />);
 
-  it("notes a rejected residual and offers no run action for it", () => {
-    render(
-      <OwnershipSection
-        data={{
-          ...OVERVIEW,
-          residuals: [
-            { reportDocumentId: "doc1", parseState: "glyph_encoded", ocrState: "rejected" },
-          ],
-        }}
-        {...NOOPS}
-      />,
-    );
-    expect(screen.getByText(/rejected — not re-proposed/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Read with OCR" })).not.toBeInTheDocument();
-  });
-
-  it("renders an OCR shareholders-table proposal with per-holder rows and confirm/reject", async () => {
-    const user = userEvent.setup();
-    const onConfirmOcrProposal = vi.fn();
-    const onRejectOcrProposal = vi.fn();
-    render(
-      <OwnershipSection
-        data={{
-          ...OVERVIEW,
-          residuals: [{ reportDocumentId: "doc1", parseState: "glyph_encoded", ocrState: "proposed" }],
-          ocrProposals: [
-            {
-              reportDocumentId: "doc1",
-              sourceDocumentId: "doc1_pdf",
-              asOf: "2023-12-31",
-              matchedHeading: "Akcjonariusze",
-              providerId: "mistral",
-              holders: [
-                { holderNameRaw: "Jan Kowalski", capitalPct: "12.34", votesPct: "15.00" },
-                { holderNameRaw: "Aviva OFE", capitalPct: "9.88", votesPct: "7.41" },
-              ],
-            },
-          ],
-        }}
-        {...NOOPS}
-        onConfirmOcrProposal={onConfirmOcrProposal}
-        onRejectOcrProposal={onRejectOcrProposal}
-      />,
-    );
-    expect(screen.getByText("OCR — confirm to save")).toBeInTheDocument();
-    // Both proposed holder rows render.
-    expect(screen.getByText("Jan Kowalski")).toBeInTheDocument();
-    expect(screen.getByText("Aviva OFE")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Confirm and save" }));
-    expect(onConfirmOcrProposal).toHaveBeenCalledWith("doc1");
-    await user.click(screen.getByRole("button", { name: "Reject" }));
-    expect(onRejectOcrProposal).toHaveBeenCalledWith("doc1");
-  });
-
-  it("offers the AI classification trigger only for unclassified holders without a proposal", async () => {
-    const user = userEvent.setup();
-    const onRunClassification = vi.fn();
-
-    // Base overview: Itema is unclassified but already has a pending proposal —
-    // no trigger (the proposal row carries the confirm/reject actions).
-    const { unmount } = render(
-      <OwnershipSection data={OVERVIEW} {...NOOPS} onRunClassification={onRunClassification} />,
-    );
     expect(
       screen.queryByRole("button", { name: "Classify unknown holders (AI)" }),
     ).not.toBeInTheDocument();
-    unmount();
+    expect(screen.queryByText("type? to confirm")).not.toBeInTheDocument();
+    for (const name of ["Confirm classification", "Reject classification", "Confirm and save"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
 
-    // Same overview without proposals: the unclassified holder exposes the
-    // explicit, user-initiated AI trigger (ADR 0072 §3 — proposals only).
-    render(
-      <OwnershipSection
-        data={{ ...OVERVIEW, pendingProposals: [] }}
-        {...NOOPS}
-        onRunClassification={onRunClassification}
-      />,
-    );
-    await user.click(screen.getByRole("button", { name: "Classify unknown holders (AI)" }));
-    expect(onRunClassification).toHaveBeenCalledTimes(1);
+    // The manual re-type path — the ONLY classification path now — still works.
+    expect(
+      screen.getByRole("button", { name: "Change type: Jacek Duch" }),
+    ).toBeInTheDocument();
   });
 
   it("labels the basis source per its actual value", () => {

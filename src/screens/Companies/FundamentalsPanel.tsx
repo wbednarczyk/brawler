@@ -78,7 +78,7 @@ export function tierLabel(tier: string, text: (value: string) => string): string
     case "structured_xhtml":
       return text("Structured HTML");
     case "pdf":
-      return text("PDF");
+      return text("Structured read (xHTML)");
     case "html_aggregator":
       return text("Aggregator");
     case "ai_text":
@@ -544,10 +544,10 @@ export function FundamentalsPanel({
                         label: text("Data quality"),
                         value: selectedFact.dataQuality,
                       },
-                      {
-                        label: text("Confirmation state"),
-                        value: selectedFact.confirmationState,
-                      },
+                      // Facts are review-free (ADR 0086 dec. 5): `confirmationState`
+                      // is a frozen compatibility column, always `confirmed` — it is
+                      // not a fact's origin. Origin lives in the Source (tier) +
+                      // Validation labels below, so the meaningless row is dropped.
                       ...(selectedProvenance
                         ? [
                             {

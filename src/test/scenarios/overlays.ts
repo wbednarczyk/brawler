@@ -20,7 +20,6 @@ import {
   makeCompany,
   makeFeedItem,
   makeFinancialPeriod,
-  makeResearchBriefJob,
   makeResearchEvidenceItem,
   makeSourceIngestionResult,
   type CompanySpec,
@@ -104,18 +103,10 @@ function applyPartialData(data: ScenarioData): ScenarioData {
 function applyStaleProcessing(data: ScenarioData): ScenarioData {
   const company = makeCompany(STALE_SPEC);
   const oldEvidence = { ...makeResearchEvidenceItem(STALE_SPEC), id: "research_overlay_stale_1" };
-  const runningBrief = {
-    ...makeResearchBriefJob(STALE_SPEC),
-    id: "brief_job_overlay_stale_1",
-    status: "running" as const,
-    finishedAt: null,
-    brief: null,
-  };
   return {
     ...data,
     companies: [company, ...data.companies],
     researchEvidence: [oldEvidence, ...data.researchEvidence],
-    researchBriefJobs: [runningBrief, ...data.researchBriefJobs],
   };
 }
 

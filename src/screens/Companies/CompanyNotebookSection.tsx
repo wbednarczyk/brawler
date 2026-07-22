@@ -93,6 +93,11 @@ export function CompanyNotebookSection({
         actions={
           <Button
             className="compact-button"
+            // ADR 0081 Q4: the Notebook panel's contracted primary action —
+            // capture a note. J2's former primary action (the KPI-extraction
+            // launcher) went with the AI layer (ADR 0084), and note capture is
+            // the journey's surviving single-primary decision surface.
+            data-ux-primary-action="true"
             onClick={() => setComposerOpen((current) => !current)}
             variant="primary"
           >

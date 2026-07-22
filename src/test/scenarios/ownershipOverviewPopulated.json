@@ -70,16 +70,6 @@
       "votesPct": "6.0"
     }
   ],
-  "pendingProposals": [
-    {
-      "confidence": 0.7,
-      "holderKey": "ITEMA VENTURES UAB",
-      "id": "ownhtp_company_gpw_cbf_itemaventuresuab",
-      "proposedType": "other_institutional",
-      "rationale": "foreign holding entity"
-    }
-  ],
   "residuals": [],
-  "ocrProposals": [],
   "source": "report_document"
 }

@@ -31,20 +31,18 @@ export { vi };
 // B/C). `appTestState` is a thin VIEW over its store — every `*Response` field
 // is a getter/setter over a `ScenarioData` collection, so a test that assigns
 // `appTestState.feedItemsResponse = [...]` mutates the same store the command
-// router reads. A few fields (`searchResponse`, `aiAnalysisJobsResponse`,
-// `refreshSourcesError`) are canned command-output overrides the old harness
-// exposed; they live as plain slots honored by `handleAppCommand`.
+// router reads. A few fields (`searchResponse`, `refreshSourcesError`) are
+// canned command-output overrides the old harness exposed; they live as plain
+// slots honored by `handleAppCommand`.
 const runtime = createMockRuntime("minimal");
 
 interface CannedOverrides {
   searchResponse: unknown | null;
-  aiAnalysisJobsResponse: Record<string, unknown>;
   refreshSourcesError: string | null;
 }
 
 const canned: CannedOverrides = {
   searchResponse: null,
-  aiAnalysisJobsResponse: {},
   refreshSourcesError: null,
 };
 
@@ -65,8 +63,6 @@ export interface AppTestState {
   researchEvidenceItemsResponse: Data["researchEvidence"];
   researchQuestionsResponse: Data["researchQuestions"];
   evidenceLinksResponse: Data["evidenceLinks"];
-  researchBriefJobsResponse: Data["researchBriefJobs"];
-  researchDigestJobsResponse: Data["researchDigestJobs"];
   researchRemindersResponse: Data["researchReminders"];
   companyEventsResponse: Data["events"];
   companySignalsResponse: Data["signals"];
@@ -94,7 +90,6 @@ export interface AppTestState {
   researchReviewCheckpointResponse: Data["researchReviewCheckpoints"][number] | null;
   geminiCredentialStatusResponse: Data["credentialStatuses"][number] | null;
   searchResponse: unknown | null;
-  aiAnalysisJobsResponse: Record<string, unknown>;
   refreshSourcesError: string | null;
 }
 
@@ -106,8 +101,6 @@ export const appTestState = Object.defineProperties(
     researchEvidenceItemsResponse: field("researchEvidence"),
     researchQuestionsResponse: field("researchQuestions"),
     evidenceLinksResponse: field("evidenceLinks"),
-    researchBriefJobsResponse: field("researchBriefJobs"),
-    researchDigestJobsResponse: field("researchDigestJobs"),
     researchRemindersResponse: field("researchReminders"),
     companyEventsResponse: field("events"),
     companySignalsResponse: field("signals"),
@@ -159,13 +152,6 @@ export const appTestState = Object.defineProperties(
       },
       enumerable: true,
     },
-    aiAnalysisJobsResponse: {
-      get: () => canned.aiAnalysisJobsResponse,
-      set: (value: Record<string, unknown>) => {
-        canned.aiAnalysisJobsResponse = value;
-      },
-      enumerable: true,
-    },
     refreshSourcesError: {
       get: () => canned.refreshSourcesError,
       set: (value: string | null) => {
@@ -176,20 +162,9 @@ export const appTestState = Object.defineProperties(
   },
 );
 
-function feedItemIdOf(args: unknown): string | undefined {
-  const a = args as { input?: { feedItemId?: string }; feedItemId?: string } | undefined;
-  return a?.input?.feedItemId ?? a?.feedItemId;
-}
-
 /** Route a command, honoring the canned overrides the old harness supported. */
 export function handleAppCommand(command: string, args?: unknown): Promise<unknown> {
   if (command === "search" && canned.searchResponse) return Promise.resolve(canned.searchResponse);
-  if (command === "list_ai_analysis") {
-    const feedItemId = feedItemIdOf(args);
-    if (feedItemId && feedItemId in canned.aiAnalysisJobsResponse) {
-      return Promise.resolve(canned.aiAnalysisJobsResponse[feedItemId]);
-    }
-  }
   if ((command === "refresh_sources" || command === "refresh_source") && canned.refreshSourcesError) {
     return Promise.reject(new Error(canned.refreshSourcesError));
   }
@@ -199,7 +174,6 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
 export function resetAppTestState() {
   runtime.reset("minimal");
   canned.searchResponse = null;
-  canned.aiAnalysisJobsResponse = {};
   canned.refreshSourcesError = null;
 }
 

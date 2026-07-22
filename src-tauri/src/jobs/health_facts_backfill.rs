@@ -17,9 +17,9 @@
 //! concept slot is `Created`. So a re-run adds nothing and alters no confirmed
 //! fact.
 //!
-//! **Deterministic-only.** The tier-4 OCR/AI fallback is denied
-//! ([`Tier4Gate::DeniedSweep`]) so the backfill spends no provider budget and
-//! never guesses; only the ESEF (and positional-xHTML) deterministic tier runs.
+//! **Deterministic-only.** The whole pipeline is deterministic (ADR 0084 — the
+//! tier-4 OCR fallback is retired), so the backfill never guesses; only the ESEF
+//! (and positional-xHTML) deterministic tier runs.
 //! PDF-only reports are skipped — the new concepts are ESEF/structured-xHTML
 //! mapped (ADR 0083 Decision 5).
 //!
@@ -34,7 +34,7 @@ use serde::Serialize;
 
 use crate::app_state::AppState;
 use crate::jobs::structured_extraction::{
-    derive_report_period, is_esef_route, is_fetched_periodic, run_structured_extraction, Tier4Gate,
+    derive_report_period, is_esef_route, is_fetched_periodic, run_structured_extraction,
 };
 use crate::storage::MODE_AUTOPILOT;
 
@@ -96,8 +96,6 @@ pub fn backfill_company_health_facts(
             period_type,
             &period_end,
             MODE_AUTOPILOT,
-            // Deterministic only — no OCR/AI budget, never a guess.
-            Tier4Gate::DeniedSweep,
         )?;
 
         result.documents_processed += 1;

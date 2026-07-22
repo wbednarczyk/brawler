@@ -1,0 +1,118 @@
+---
+source: src/fundamentals/extraction/espi_cover_note.rs
+expression: res
+---
+WdfParseResult {
+    facts: [
+        ExtractedFact {
+            metric_key: "revenue",
+            value: 100000000,
+            period: Instant(
+                "2026-03-31",
+            ),
+            basis: Some(
+                Consolidated,
+            ),
+            currency: Some(
+                "PLN",
+            ),
+            tier: EspiCoverNote,
+            citation: "Przychody ze sprzedaży",
+        },
+        ExtractedFact {
+            metric_key: "operating_profit",
+            value: 10000000,
+            period: Instant(
+                "2026-03-31",
+            ),
+            basis: Some(
+                Consolidated,
+            ),
+            currency: Some(
+                "PLN",
+            ),
+            tier: EspiCoverNote,
+            citation: "Zysk z działalności operacyjnej",
+        },
+        ExtractedFact {
+            metric_key: "net_profit",
+            value: 8000000,
+            period: Instant(
+                "2026-03-31",
+            ),
+            basis: Some(
+                Consolidated,
+            ),
+            currency: Some(
+                "PLN",
+            ),
+            tier: EspiCoverNote,
+            citation: "Zysk netto",
+        },
+        ExtractedFact {
+            metric_key: "total_assets",
+            value: 500000000,
+            period: Instant(
+                "2026-03-31",
+            ),
+            basis: Some(
+                Consolidated,
+            ),
+            currency: Some(
+                "PLN",
+            ),
+            tier: EspiCoverNote,
+            citation: "Aktywa razem",
+        },
+        ExtractedFact {
+            metric_key: "current_liabilities",
+            value: -2000000,
+            period: Instant(
+                "2026-03-31",
+            ),
+            basis: Some(
+                Consolidated,
+            ),
+            currency: Some(
+                "PLN",
+            ),
+            tier: EspiCoverNote,
+            citation: "Zobowiązania krótkoterminowe",
+        },
+        ExtractedFact {
+            metric_key: "shares_outstanding",
+            value: 12500,
+            period: Instant(
+                "2026-03-31",
+            ),
+            basis: Some(
+                Consolidated,
+            ),
+            currency: Some(
+                "PLN",
+            ),
+            tier: EspiCoverNote,
+            citation: "Liczba akcji",
+        },
+        ExtractedFact {
+            metric_key: "eps_basic",
+            value: 8.00,
+            period: Instant(
+                "2026-03-31",
+            ),
+            basis: Some(
+                Consolidated,
+            ),
+            currency: Some(
+                "PLN",
+            ),
+            tier: EspiCoverNote,
+            citation: "Zysk na jedną akcję",
+        },
+    ],
+    abstained: 0,
+    fx_resolved: 2,
+    empty_reason: None,
+    unit_scale: 1000,
+    base_consolidated: true,
+}

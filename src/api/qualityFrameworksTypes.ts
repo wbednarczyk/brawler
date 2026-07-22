@@ -23,9 +23,6 @@ export type { UpdateFrameworkCriterion } from "./generated/UpdateFrameworkCriter
 export type { EvaluateFrameworkInput } from "./generated/EvaluateFrameworkInput";
 export type { ListFrameworkEvaluationsInput } from "./generated/ListFrameworkEvaluationsInput";
 
-// Qualitative assessment (ADR 0075, v0.50.0)
-export type { RunQualitativeAssessmentInput } from "./generated/RunQualitativeAssessmentInput";
-export type { RerunQualitativeCriterionInput } from "./generated/RerunQualitativeCriterionInput";
-export type { GetQualitativeAssessmentInput } from "./generated/GetQualitativeAssessmentInput";
-export type { GetQualitativeAssessmentStatusInput } from "./generated/GetQualitativeAssessmentStatusInput";
-export type { QualitativeAssessmentStatus } from "./generated/QualitativeAssessmentStatus";
+// Qualitative criteria stay user-authored (ADR 0075 as amended by ADR 0084):
+// the in-app assessor and every stored verdict it produced are gone, so no
+// assessment input/status DTO is surfaced here any more.

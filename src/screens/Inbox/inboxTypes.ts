@@ -1,6 +1,5 @@
 import type { KeyboardEvent, PointerEvent } from "react";
 import type {
-  AiAnalysisJob,
   Company,
   CompanySignal,
   FeedItem,
@@ -31,12 +30,8 @@ export type InboxScreenProps = {
   filteredFeedItems: FeedItem[];
   signalsByFeedItemId: Record<string, CompanySignal[]>;
   signalsError: string | null;
-  aiSignalClassificationState: string;
   selectedFeedItem: FeedItem | null;
   selectedFeedCompany: Company | null;
-  aiAnalysisJobsByFeedItemId: Record<string, AiAnalysisJob[]>;
-  aiAnalysisErrorByFeedItemId: Record<string, string | null>;
-  aiAnalysisRequestInFlightByFeedItemId: Record<string, boolean>;
   inboxStatusFilter: InboxStatusFilter;
   searchQuery: string;
   inboxWatchlistFilter: string;
@@ -66,7 +61,6 @@ export type InboxScreenProps = {
   setInboxSourceFilter: (filter: string) => void;
   confirmCompanySignal: (signalId: string) => Promise<void> | void;
   rejectCompanySignal: (signalId: string) => Promise<void> | void;
-  runAiSignalClassification: () => Promise<void> | void;
   setSelectedFeedItemId: (itemId: string) => void;
   setActiveSection: (section: "Companies") => void;
   markVisibleInboxAsRead: () => void;
@@ -79,8 +73,6 @@ export type InboxScreenProps = {
   updateSelectedFeedItem: (update: (item: FeedItem) => FeedItem) => void;
   openCompanyWorkspaceFromFeedItem: (item: FeedItem) => void;
   openFeedItemNoteDraft: (item: FeedItem) => void;
-  startFeedItemAiAnalysis: (item: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
-  retryFeedItemAiAnalysis: (jobId: string, itemId: string) => Promise<void>;
   resizeDetailPaneWithKeyboard: (event: KeyboardEvent<HTMLDivElement>) => void;
   startDetailPaneResize: (event: PointerEvent<HTMLDivElement>) => void;
   resizeDetailPane: (event: PointerEvent<HTMLDivElement>) => void;

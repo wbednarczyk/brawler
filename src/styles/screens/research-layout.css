@@ -172,15 +172,6 @@
 .research-main-stack.watchlist {
   grid-template-rows: auto minmax(0, 1fr);
 }
-
-.research-aside {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  gap: var(--space-3);
-  min-height: 0;
-  overflow: hidden;
-}
-
 .research-resizer {
   align-self: stretch;
   width: 10px;

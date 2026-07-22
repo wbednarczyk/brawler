@@ -87,7 +87,6 @@ export const en = {
   "settings.sources.title": "Sources",
   "settings.feedCleanup.title": "Feed Cleanup",
   "settings.importExport.title": "Import And Export",
-  "settings.ai.title": "AI",
   "settings.credentials.title": "Credentials",
   "settings.credentials.save": "Save",
   "settings.credentials.clear": "Clear",

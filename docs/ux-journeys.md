@@ -20,6 +20,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 
 - **Trigger:** autopilot/alert notification of a new periodic report.
 - **Steps:** open the run card → review extracted KPIs (drift/diff views) → (v0.52: expectation-vs-actual review) → resolve claims-to-verify → capture a note / update the assessment.
+- **v0.59 ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)):** the AI KPI-extraction launcher and its modal are gone with the in-app AI layer — extraction is deterministic and runs unattended, so the journey opens on *results*, not on triggering a run. Facts a deterministic tier cannot produce appear as explicit flagged gaps rather than an on-demand AI extraction the user starts. The journey's marked primary action moved to the Notebook's "New note" (the durable artifact of the journey); the claims-review Delivered/Missed pair is a two-peer-primary surface and needs an owner-approved multi-primary `reason` in its experience contract before it can carry the mark. The J2 budget floor was re-baselined in the same milestone — a shortening caused by feature removal, not by a UX improvement.
 - **Screens:** Today, Company workspace (Fundamentals / Report diff / Claims), Notebook.
 - **Budget:** ≤25 interactions.
 - **Done well:** facts confirmed or rejected, due claims resolved, a trace of the user's judgment exists in the notebook/journal.

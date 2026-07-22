@@ -84,14 +84,14 @@ test.describe("browser UI regression smoke", () => {
     await expect(statusFilter).toBeVisible();
     await expect(filterReset).toBeVisible();
 
-    // Select a report feed item so the detail pane renders its full content
-    // (attachments, AI analysis panel, KPI extraction panel) — a wide descendant
-    // there must not blow out the grid track and clip the pane.
+    // Select a report feed item so the detail pane renders its full content —
+    // the PDF attachment list is the widest descendant (post-ADR 0084 there is no
+    // AI panel); it must not blow out the grid track and clip the pane.
     await page
       .getByLabel(/Select feed item: CD PROJEKT/)
       .first()
       .click();
-    await expect(detailPane.getByLabel("AI KPI extraction")).toBeVisible();
+    await expect(detailPane.getByLabel("Feed attachments")).toBeVisible();
 
     // The top navigation bar wraps to a second line at this width (ADR 0047)
     // rather than scrolling sideways — it must not introduce horizontal overflow.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Clock, History, Sparkles } from "lucide-react";
+import { Check, History, Sparkles } from "lucide-react";
 import { getFundamentalsCoverage } from "../../api/fundamentalsCoverage";
 import type {
   CoveragePeriodRow,
@@ -14,11 +14,13 @@ import { useLocale } from "../locale";
 import { pluralNoun, FACT_FORMS, type PluralForms } from "../locale/plural";
 import { Button, EmptyState, ErrorText, Hint, SectionHeader, StatusChip } from "../../ui";
 import { middleTruncate } from "./CompanyReportDocumentsPanel";
+import { CoverageFlaggedPeriods } from "./CoverageFlaggedPeriods";
 
-// Pending KPI proposals awaiting human review (three Polish forms).
-const PROPOSAL_FORMS: PluralForms = {
-  en: ["proposal", "proposals"],
-  pl: ["propozycja", "propozycje", "propozycji"],
+// Facts the pipeline flagged (drift/contradiction) — an informational origin
+// label, not a review to-do (ADR 0086 dec. 5). Three Polish forms.
+const FLAGGED_FORMS: PluralForms = {
+  en: ["flagged fact", "flagged facts"],
+  pl: ["oflagowany fakt", "oflagowane fakty", "oflagowanych faktów"],
 };
 
 // The sweep poll runs at a 1.5s cadence; cap it at a generous safety horizon
@@ -34,10 +36,6 @@ type CompanyCoveragePanelProps = {
   // Opens the company's report-documents pane. The whole period row is a click
   // target for it (ADR 0077 §2 mockup): reviewing a period starts from its docs.
   onOpenDocuments?: () => void;
-  // Opens the company's review-queue pane (ADR 0077 §5, T5.3b). The review cell
-  // is its own click target: clicking a period's pending-proposals cell jumps
-  // straight to the queue instead of the documents pane.
-  onOpenReview?: () => void;
   // Called after a backfill or history sweep finishes so the workspace can reload
   // sibling views (e.g. the Fundamentals map). Full progress UI is T3.3; here the
   // footer just triggers the refresh (ADR 0077 §3, T3.2).
@@ -69,7 +67,6 @@ export function CompanyCoveragePanel({
   companyId,
   reloadKey = 0,
   onOpenDocuments,
-  onOpenReview,
   onHistoryRefreshed,
 }: CompanyCoveragePanelProps) {
   const { text, locale } = useLocale();
@@ -82,7 +79,18 @@ export function CompanyCoveragePanel({
   const [backfilling, setBackfilling] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Local reload tick: a history sweep or a flagged-period re-run writes facts,
+  // so the coverage table AND the flagged list must both refetch — without
+  // depending on the host remembering to bump `reloadKey`.
+  const [localReloadTick, setLocalReloadTick] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Every path that lands new facts refreshes both this panel's own reads and
+  // the host's siblings (Fundamentals map etc.).
+  const refreshAfterExtraction = () => {
+    setLocalReloadTick((tick) => tick + 1);
+    onHistoryRefreshed?.();
+  };
 
   const stopPolling = () => {
     if (pollRef.current !== null) {
@@ -103,7 +111,7 @@ export function CompanyCoveragePanel({
     return () => {
       cancelled = true;
     };
-  }, [companyId, reloadKey]);
+  }, [companyId, reloadKey, localReloadTick]);
 
   // Load the automation mode + any prior backfill/sweep status on company change,
   // so the footer starts from the real state (not a blank one). In-flight action
@@ -167,7 +175,7 @@ export function CompanyCoveragePanel({
       if (terminal && drained) {
         stopPolling();
         setSweeping(false);
-        onHistoryRefreshed?.();
+        refreshAfterExtraction();
         return true;
       }
       return false;
@@ -232,7 +240,7 @@ export function CompanyCoveragePanel({
     try {
       const result = await backfillCompanyHistory(companyId);
       setBackfillProgress(result);
-      onHistoryRefreshed?.(); // new documents are visible before extraction lands
+      refreshAfterExtraction(); // new documents are visible before extraction lands
       setSweeping(true); // the chained sweep now drives the status line
       // Poll the sweep the backfill just chained, by its eager id. If the chain
       // failed (no id), fall back to the legacy give-up path.
@@ -263,8 +271,7 @@ export function CompanyCoveragePanel({
   // "Extracting…" with the live drain counter while runs settle (ADR 0077 §3,
   // T3.3): the sweep enqueues N extraction runs that drain after the job queues,
   // so show {done}/{total} once the total is known, plain otherwise. The AI
-  // used/limit slot renders alongside this counter (T5.3, see `aiBudgetLabel`).
-  const extractingLabel = (): string => {
+    const extractingLabel = (): string => {
     const total = sweepProgress?.runsTotal ?? 0;
     if (total > 0) {
       return text("Extracting… {done}/{total}")
@@ -275,21 +282,6 @@ export function CompanyCoveragePanel({
   };
 
   // AI-budget footer slot (ADR 0077 §6, T5.3): the latest sweep's tier-4
-  // AI-call spend, shown whenever a sweep row exists — independent of the
-  // sweep's own status, since a completed sweep's spend stays informative.
-  // `aiCallLimit === 0` means unlimited, rendered without a denominator (a
-  // "…/0" ratio would misleadingly read as an exhausted zero-call budget).
-  const aiBudgetLabel = (): string | null => {
-    const sweep = sweepProgress?.sweep;
-    if (!sweep) return null;
-    if (sweep.aiCallLimit === 0) {
-      return `${text("AI: {used}").replace("{used}", String(sweep.aiCallsUsed))} ${text("(no limit)")}`;
-    }
-    return text("AI: {used}/{limit}")
-      .replace("{used}", String(sweep.aiCallsUsed))
-      .replace("{limit}", String(sweep.aiCallLimit));
-  };
-
   // Lean status line (ADR 0077 §3, T3.2): backfill phase while backfilling, then the
   // sweep status. `automation_off` is explicit, never a silent skip.
   const statusLabel = (): string | null => {
@@ -302,6 +294,18 @@ export function CompanyCoveragePanel({
       // specifically, never the blanket "failed". Other errors keep the generic.
       if (backfillProgress.error.startsWith("unsupported_market")) {
         return text("Backfill isn't available for this company's market (NewConnect) yet");
+      }
+      if (backfillProgress.error.startsWith("no_bankier_page")) {
+        return text("No Bankier page was found for this company");
+      }
+      if (backfillProgress.error.startsWith("http_error")) {
+        return text("Couldn't reach Bankier — try again later");
+      }
+      if (backfillProgress.error.startsWith("parse_error")) {
+        return text("The page was fetched but couldn't be read");
+      }
+      if (backfillProgress.error.startsWith("not_tracked")) {
+        return text("This company isn't tracked by this source");
       }
       return text("Backfill failed");
     }
@@ -356,16 +360,6 @@ export function CompanyCoveragePanel({
 
   const renderFacts = (row: CoveragePeriodRow) => {
     const { total, validated, unvalidated, flagged } = row.facts;
-    // The AI-budget skip is an explicit, never-silent state (always false in v1
-    // until the F3/T5.2 budget substrate lands, but rendered so it can never be
-    // dropped once real).
-    if (row.skippedBudget) {
-      return (
-        <span className="coverage-cell-warn">
-          <Clock size={13} aria-hidden="true" /> {text("Skipped — AI budget")}
-        </span>
-      );
-    }
     if (total === 0) {
       // No report and no facts → simply absent.
       if (!row.report) {
@@ -417,41 +411,20 @@ export function CompanyCoveragePanel({
     );
   };
 
+  // "Flagged" = the period's flagged facts. Facts are review-free (ADR 0086 dec.
+  // 5): this is an informational origin label — the pipeline flagged a value as
+  // drifted/contradicted — never a confirmation the user owes. The KPI-proposal
+  // staging ledger was dropped in the ADR 0084 clean cut.
   const renderReview = (row: CoveragePeriodRow) => {
-    if (row.review.pendingProposals > 0) {
-      const proposals = row.review.pendingProposals;
-      const body = (
+    const flaggedFacts = row.review.flaggedFacts;
+    if (flaggedFacts > 0) {
+      return (
         <>
-          <span className="coverage-cell-acc">
-            {proposals} {pluralNoun(locale, proposals, PROPOSAL_FORMS)}
+          <span className="coverage-cell-warn">
+            {flaggedFacts} {pluralNoun(locale, flaggedFacts, FLAGGED_FORMS)}
           </span>
-          <span className="coverage-sub">{text("→ review queue")}</span>
         </>
       );
-      // The review cell is its own click target (T5.3b): jump straight to the
-      // review-queue pane. stopPropagation is scoped to this button so the row's
-      // documents handler doesn't also fire (ui-authoring styling rules).
-      if (onOpenReview) {
-        return (
-          <button
-            type="button"
-            className="coverage-review-button"
-            aria-label={`${text("Review queue")} — ${proposals} ${pluralNoun(locale, proposals, PROPOSAL_FORMS)}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenReview();
-            }}
-            onKeyDown={(event) => {
-              // Keep Enter/Space from also reaching the row's keydown handler
-              // (which opens documents) — the native button click already fires.
-              if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-            }}
-          >
-            {body}
-          </button>
-        );
-      }
-      return body;
     }
     return (
       <span className="coverage-cell-miss" aria-hidden="true">
@@ -484,7 +457,7 @@ export function CompanyCoveragePanel({
                   <th scope="col">{text("Period")}</th>
                   <th scope="col">{text("Report")}</th>
                   <th scope="col">{text("Data")}</th>
-                  <th scope="col">{text("To review")}</th>
+                  <th scope="col">{text("Flagged")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -543,13 +516,22 @@ export function CompanyCoveragePanel({
           </div>
           <div className="coverage-legend">
             <span>{text("Validated")}</span>
-            <span>{text("Needs review")}</span>
-            <span>{text("Skipped — AI budget")}</span>
+            <span>{text("Flagged")}</span>
             <span>{text("Missing")}</span>
             <span>{text("Row click → documents")}</span>
           </div>
         </>
       )}
+      {/* Flagged periods (ADR 0061 decision 2, ADR 0084 decision 4/6) — the UI
+          half of "never silently wrong". Rendered OUTSIDE the periods-empty
+          branch on purpose: a `no_period_derived` failure has no coverage row
+          (the period-union rule cannot name a period it could not derive), so
+          gating it on the table would hide exactly the gaps it exists to show. */}
+      <CoverageFlaggedPeriods
+        companyId={companyId}
+        reloadKey={reloadKey + localReloadTick}
+        onRerun={refreshAfterExtraction}
+      />
       {/* History actions footer (ADR 0077 §3, T3.2). Fixed slots: two actions +
           a status line (ui-authoring styling rules). Both actions disable in
           automation mode `off`; the status line names the phase, never silent. */}
@@ -576,8 +558,7 @@ export function CompanyCoveragePanel({
         </div>
         <div className="coverage-action-status" role="status">
           {statusLabel() ?? ""}
-          {aiBudgetLabel() ? <span className="coverage-ai-budget">{aiBudgetLabel()}</span> : null}
-        </div>
+                  </div>
         {/* Truncation honesty (ADR 0077 §3): a backfill that hit the page cap
             before the configured cutoff may be missing older filings — surface
             it, never silent. A caution, not an error (the fetch still succeeded). */}

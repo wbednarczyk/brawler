@@ -63,8 +63,16 @@ test.describe("layout smoke-walk", () => {
     await page.getByLabel(/Select feed item: CD PROJEKT/).first().click();
     const detail = page.getByLabel("Feed item details");
     await expect(detail).toBeVisible();
-    await expect(detail.getByLabel("AI KPI extraction")).toBeVisible();
-    await expect(detail.getByLabel("AI analysis")).toBeVisible();
+
+    // Post-ADR 0084 the detail rail carries no in-app AI surface. It renders the
+    // deterministic report detail: a summary, the disclosable official report
+    // body, and the PDF attachment list (the widest content in the rail, and the
+    // rich content that must not clip it).
+    await expect(detail.getByLabel("Feed summary")).toBeVisible();
+    await expect(detail.getByLabel("Official report body")).toBeVisible();
+    const attachments = detail.getByLabel("Feed attachments");
+    await expect(attachments).toBeVisible();
+    await expect(attachments.getByRole("link").first()).toBeVisible();
 
     // No descendant of the fixed-width rail forces it wider than its track.
     await expectNoHorizontalOverflow(detail);

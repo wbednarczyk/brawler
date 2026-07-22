@@ -21,7 +21,7 @@ per feature.
   flagged, and reversible.
 - **[Fundamentals coverage and history backfill](fundamentals-coverage.md)** —
   the Coverage map (what has data, what's missing, per period), one-click
-  history backfill + extraction, deterministic and OCR reading, the review
+  automatic arrival of core figures (BiznesRadar-primary + issuer filings), the
   queue, and the AI spend budget.
 - **[Price context, sectors, and company basics](price-context.md)** —
   automatic daily prices, the 52-week range, market cap and level-0 valuation
@@ -32,7 +32,7 @@ per feature.
   kept separate, stakes over time with ESPI threshold events, automatic holder
   classification with confirm-only AI, the BiznesRadar witness, the **Insiders**
   block (MAR art. 19 transactions, management holdings, skin-in-the-game badge),
-  and the OCR review flow for unreadable shareholder tables.
+  and how unreadable shareholder tables surface as honest gaps.
 - **[Composable cockpit views](cockpit-views.md)** — build your own
   multi-panel dashboards from a grid and a panel picker, save them by name,
   and switch between them from the sidebar.
@@ -59,7 +59,7 @@ per feature.
 - **[Report comparison](report-comparison.md)** — see what changed between a
   company's two most recent financial statements of the same kind, section by
   section — fully local, deterministic, no AI.
-- **[AI provider pools and the OpenAI-compatible provider](ai-provider-presets.md)**
+- **[AI in Brawler: transcripts only (BYOA)](ai-provider-presets.md)**
   — route each AI capability to its own provider with a failover pool, and add
   free/self-hosted open-model hosts (Groq, OpenRouter, local Ollama, and more)
   alongside Gemini, Claude, and OpenAI.

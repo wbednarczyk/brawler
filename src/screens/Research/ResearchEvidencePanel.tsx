@@ -25,10 +25,10 @@ type ResearchEvidencePanelProps = {
   linkedEvidenceKeys: Set<string>;
   setSelectedWatchlistCompanyId: (companyId: string | null) => void;
   resizeResearchPanelWithKeyboard: (
-    handle: "watchlistQueue" | "brief",
+    handle: "watchlistQueue",
     event: KeyboardEvent<HTMLDivElement>,
   ) => void;
-  startResearchResize: (handle: "watchlistQueue" | "brief", event: PointerEvent<HTMLDivElement>) => void;
+  startResearchResize: (handle: "watchlistQueue", event: PointerEvent<HTMLDivElement>) => void;
   resizeResearchPanels: (event: PointerEvent<HTMLDivElement>) => void;
   stopResearchResize: (event: PointerEvent<HTMLDivElement>) => void;
   openEvidence: (item: ResearchEvidenceItem) => void;
@@ -111,7 +111,7 @@ export function ResearchEvidencePanel({
       <section className="research-timeline-shell" aria-label={text("Evidence timeline")}>
         <SectionHeader
           className="research-section-evidence"
-          description={text("Source items, notes, events, transcripts, and AI analysis for this scope.")}
+          description={text("Source items, notes, events, and transcripts for this scope.")}
           meta={visibleItems.length}
           title={text("Evidence")}
           variant="accent"

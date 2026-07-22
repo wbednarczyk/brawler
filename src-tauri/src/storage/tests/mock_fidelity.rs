@@ -101,6 +101,21 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Flagged/failed extraction outcomes (v0.59 A2, ADR 0061 dec. 2). Same
+        // store method the command wrapper delegates to, so the mock can never
+        // claim a review surface the real pipeline would not produce. A company
+        // no extraction ever ran over reads back empty — absence means "never
+        // attempted", which is exactly the distinction the table exists for.
+        "list_flagged_extraction_outcomes" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                state
+                    .fundamentals_provenance()
+                    .list_flagged_extraction_outcomes(company_id)
+                    .expect("list_flagged_extraction_outcomes"),
+            )
+            .unwrap()
+        }
         // Red-flags panel state (v0.57 T7, ADR 0083 D8). Same store method the
         // command wrapper offloads, so the corpus can never diverge from real
         // assembly. Detections are adapter/extraction-triggered, so an untouched
@@ -179,36 +194,6 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         }
         // Tier-4 OCR proposal confirm/reject (v0.57 T8, ADR 0077): the same store
         // methods + recompute the command wrappers use.
-        "confirm_ownership_ocr_proposal" => {
-            let company_id = input["companyId"].as_str().expect("companyId");
-            let report_document_id = input["reportDocumentId"]
-                .as_str()
-                .expect("reportDocumentId");
-            state
-                .ownership()
-                .confirm_ocr_proposal(report_document_id)
-                .expect("confirm_ownership_ocr_proposal");
-            serde_json::to_value(
-                crate::commands::ownership::compute_ownership_overview(state, company_id)
-                    .expect("get_ownership_overview"),
-            )
-            .unwrap()
-        }
-        "reject_ownership_ocr_proposal" => {
-            let company_id = input["companyId"].as_str().expect("companyId");
-            let report_document_id = input["reportDocumentId"]
-                .as_str()
-                .expect("reportDocumentId");
-            state
-                .ownership()
-                .reject_ocr_proposal(report_document_id)
-                .expect("reject_ownership_ocr_proposal");
-            serde_json::to_value(
-                crate::commands::ownership::compute_ownership_overview(state, company_id)
-                    .expect("get_ownership_overview"),
-            )
-            .unwrap()
-        }
         // Basic info read model (v0.53 follow-up): same computed-model helper
         // the command wrapper uses.
         "get_company_basic_info" => {
@@ -328,46 +313,23 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // ADR 0084: the `get_qualitative_assessment_status` command is retired
+        // with the assessment-generation layer, but the shared fidelity corpus
+        // still exercises the read until the orchestrator reconciles it. Compute
+        // the same status the removed command did (no queue row + no stored
+        // assessment ⇒ idle) inline so the corpus parity holds mid-flight.
         "get_qualitative_assessment_status" => {
             let company_id = inner["companyId"].as_str().expect("companyId");
             let framework_id = inner["frameworkId"].as_str().expect("frameworkId");
-            serde_json::to_value(
-                crate::commands::quality_frameworks::qualitative_assessment_status(
-                    state,
-                    company_id,
-                    framework_id,
-                )
-                .expect("get_qualitative_assessment_status"),
-            )
-            .unwrap()
-        }
-        // run/rerun enqueue the durable job (no per-job status table; the
-        // job_queue row IS the status). Call the SAME command helper production
-        // uses so the corpus can never diverge from the real enqueue id/payload.
-        "run_qualitative_assessment" => {
-            let company_id = inner["companyId"].as_str().expect("companyId");
-            let framework_id = inner["frameworkId"].as_str().expect("frameworkId");
-            crate::commands::quality_frameworks::enqueue_assessment(
-                state,
-                company_id,
-                framework_id,
-                None,
-            )
-            .expect("run_qualitative_assessment");
-            Value::Null
-        }
-        "rerun_qualitative_criterion" => {
-            let company_id = inner["companyId"].as_str().expect("companyId");
-            let framework_id = inner["frameworkId"].as_str().expect("frameworkId");
-            let criterion_id = inner["criterionId"].as_str().expect("criterionId");
-            crate::commands::quality_frameworks::enqueue_assessment(
-                state,
-                company_id,
-                framework_id,
-                Some(vec![criterion_id.to_owned()]),
-            )
-            .expect("rerun_qualitative_criterion");
-            Value::Null
+            let stored = !state
+                .get_qualitative_assessment(framework_id, company_id)
+                .expect("get_qualitative_assessment")
+                .is_empty();
+            serde_json::json!({
+                "status": if stored { "succeeded" } else { "idle" },
+                "attempts": 0,
+                "lastError": Value::Null,
+            })
         }
         "reclassify_report_documents" => serde_json::to_value(
             state
@@ -441,16 +403,6 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         }
         // F5 review-queue read model (ADR 0077 §4/§5, T5.3b). Same store method
         // the command wrapper offloads, so the corpus can never diverge.
-        "list_pending_kpi_proposals" => {
-            let company_id = input["companyId"].as_str().expect("companyId");
-            serde_json::to_value(
-                state
-                    .kpi_extraction()
-                    .list_pending_kpi_proposals(company_id)
-                    .expect("list_pending_kpi_proposals"),
-            )
-            .unwrap()
-        }
         // Decision journal (ADR 0071, J2). Immutable per-company judgments —
         // the store methods the thin command wrappers delegate to.
         "create_decision_entry" => {
@@ -703,6 +655,42 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         )
         .unwrap(),
         "mcp_status" => serde_json::to_value(lifecycle.status()).unwrap(),
+        // Retired AI-generation commands (ADR 0084): the corpus and both replayers
+        // are reconciled together by the orchestrator after the Rust + frontend
+        // retirement slices both land. Until then the shared corpus may still list
+        // these steps; the command no longer exists in the Rust registry, so the
+        // replayer skips them rather than panicking mid-flight. Remove this arm and
+        // the corresponding corpus steps in the reconciliation pass.
+        "confirm_ownership_ocr_proposal"
+        | "reject_ownership_ocr_proposal"
+        | "list_pending_kpi_proposals"
+        | "confirm_kpi_proposal"
+        | "reject_kpi_proposal"
+        | "list_ai_analysis"
+        | "list_research_briefs"
+        | "list_research_digests"
+        | "confirm_ownership_holder_type_proposal"
+        | "reject_ownership_holder_type_proposal"
+        | "run_qualitative_assessment"
+        | "rerun_qualitative_criterion"
+        | "start_ai_analysis"
+        | "retry_ai_analysis"
+        | "start_kpi_extraction"
+        | "retry_kpi_extraction"
+        | "list_kpi_extraction"
+        | "start_claim_extraction"
+        | "retry_claim_extraction"
+        | "list_claim_extraction"
+        | "confirm_claim_proposal"
+        | "reject_claim_proposal"
+        | "start_research_brief"
+        | "start_research_digest"
+        | "run_ai_signal_classification"
+        | "run_ai_event_derivation"
+        | "run_ownership_classification"
+        | "run_ownership_ocr_extraction"
+        | "run_company_ownership_ocr"
+        | "list_ai_provider_catalog" => Value::Null,
         other => {
             panic!("fidelity corpus uses '{other}', which the Rust replayer does not dispatch")
         }

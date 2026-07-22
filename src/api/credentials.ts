@@ -1,27 +1,12 @@
 import { callCommand } from "./tauri";
 import type { CredentialStatus } from "./types";
 
-/** Stable provider ids that authenticate with a single OS-keychain API key. */
-export const GEMINI_PROVIDER_ID = "provider_gemini";
-export const ANTHROPIC_PROVIDER_ID = "provider_anthropic";
-export const OPENAI_PROVIDER_ID = "provider_openai";
-export const OPENAI_COMPATIBLE_PROVIDER_ID = "provider_openai_compatible";
-export const MISTRAL_PROVIDER_ID = "provider_mistral";
-
 /**
- * Credentialed analysis providers shown in settings besides Gemini (which keeps
- * its own form). The set of providers is stable; model lists come from the
- * server catalog (ADR 0028).
+ * The transcript provider's OS-keychain API key (ADR 0084 decision 7): since the
+ * in-app analysis layer was retired, Gemini transcription is the only
+ * credentialed provider left.
  */
-export const ADDITIONAL_CREDENTIAL_PROVIDERS: ReadonlyArray<{
-  providerId: string;
-  label: string;
-}> = [
-  { providerId: ANTHROPIC_PROVIDER_ID, label: "Claude (Anthropic)" },
-  { providerId: OPENAI_PROVIDER_ID, label: "OpenAI (ChatGPT)" },
-  { providerId: OPENAI_COMPATIBLE_PROVIDER_ID, label: "OpenAI-compatible (custom)" },
-  { providerId: MISTRAL_PROVIDER_ID, label: "Mistral" },
-];
+export const GEMINI_PROVIDER_ID = "provider_gemini";
 
 export function getProviderCredentialStatus(providerId: string) {
   return callCommand<CredentialStatus>("get_provider_credential_status", {

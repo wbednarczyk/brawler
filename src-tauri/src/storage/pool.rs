@@ -125,3 +125,28 @@ pub fn open_pool(database_path: PathBuf, data_dir: PathBuf) -> StorageResult<App
 
     Ok(AppState::with_pool(pool, data_dir))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The witness fetch is dependency-injected, and this is the ONE place the
+    /// live fetcher gets installed (ADR 0085). If a refactor drops it, every test
+    /// still passes — they inject their own stub — and the shipped app silently
+    /// resolves every witness as `witness_not_configured`: a capability that
+    /// looks wired, is fully tested, and does nothing in production. This guards
+    /// exactly that failure class.
+    #[test]
+    fn the_real_app_bootstrap_installs_the_live_fundamentals_witness_fetcher() {
+        let dir = std::env::temp_dir().join(format!("brawler-pool-witness-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let state = open_pool(dir.join("brawler.sqlite3"), dir.clone()).expect("pool opens");
+
+        assert!(
+            state.fundamentals_witness_fetcher().is_some(),
+            "open_pool must install the production witness fetcher"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

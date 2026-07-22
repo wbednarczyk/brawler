@@ -7,12 +7,21 @@
 //! runs every candidate set through the [`super::validation`] gate before any
 //! fact is persisted.
 //!
-//! Tiers, highest trust first:
+//! Tiers, highest trust first (ADR 0086 dec. 3, superseding ADR 0061 dec. 1/3):
 //! 1. [`esef`] — ESEF/iXBRL inline-XBRL facts (tagged IFRS concepts). Tier 1.
-//! 2. Structured xHTML "wybrane dane" tables (reuses the iXBRL table seam).
-//! 3. PDF parser + per-company extraction profiles (S3).
-//! 4. HTML aggregator witness/fallback (S4).
-//! 5. AI over extracted text, via the provider pool (S6) — last resort only.
+//! 2. Structured xHTML / positional "wybrane dane" tables ([`html_positional`],
+//!    persisted under `source_tier='pdf'`, `extraction_method='html_positional'`).
+//! 3. [`espi_cover_note`] — the ESPI cover-note "WYBRANE DANE FINANSOWE" table,
+//!    parsed from the already-ingested komunikat body (zero-fetch, WDF).
+//! 4. [`html`] — the BiznesRadar aggregator, now the PRIMARY source for core KPIs
+//!    (`source_tier='html_aggregator'`, pulled daily by a separate job).
+//!
+//! The PDF fact-extraction arm is RETIRED (ADR 0086 dec. 1): no tier reads
+//! financial facts out of PDF statements anymore — its shared number/label
+//! helpers moved to [`text_numbers`], serving the html + positional tiers. The
+//! pipeline is deterministic end to end; a document no deterministic tier parses
+//! is flagged, never guessed. (The tier-5 "AI over extracted text" was already
+//! retired with the in-app AI layer, ADR 0084 decision 4.)
 
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -20,14 +29,14 @@ use std::collections::BTreeMap;
 use super::validation::FactSet;
 
 pub mod classify;
+pub mod container;
 pub mod esef;
 pub mod esef_package;
+pub mod espi_cover_note;
 pub mod html;
 pub mod html_positional;
-pub mod ocr;
-pub mod pdf;
 pub mod pipeline;
-pub mod profile;
+pub mod text_numbers;
 
 /// Which tier of the pipeline produced a fact. Ordered highest-trust first so
 /// `SourceTier::Esef < SourceTier::Pdf` reflects precedence.
@@ -37,12 +46,20 @@ pub enum SourceTier {
     Esef,
     /// Structured xHTML "selected financial data" table.
     StructuredXhtml,
-    /// Deterministic PDF parser + per-company profile.
+    /// ESPI cover-note "WYBRANE DANE FINANSOWE" table, parsed from the already
+    /// ingested komunikat body (zero-fetch). Ranks below the tagged/structured
+    /// tiers — issuer cover-note figures are untagged — and above the PDF
+    /// parser. ADR 0061 decision 1 tier 2a.
+    EspiCoverNote,
+    /// Structured/positional xHTML reader token. Historically the deterministic
+    /// PDF-fact parser (retired, ADR 0086 dec. 1); the token is KEPT because the
+    /// surviving positional tier ([`html_positional`]) persists under it with
+    /// `extraction_method='html_positional'`. Legacy `extraction_method='api'`
+    /// rows under this tier are the retired PDF arm's output, distinguishable by
+    /// method.
     Pdf,
     /// HTML financial-data aggregator (witness / fallback).
     HtmlAggregator,
-    /// AI over extracted text (last resort).
-    AiText,
 }
 
 impl SourceTier {
@@ -50,10 +67,42 @@ impl SourceTier {
         match self {
             SourceTier::Esef => "esef",
             SourceTier::StructuredXhtml => "structured_xhtml",
+            SourceTier::EspiCoverNote => "espi_cover_note",
             SourceTier::Pdf => "pdf",
             SourceTier::HtmlAggregator => "html_aggregator",
-            SourceTier::AiText => "ai_text",
         }
+    }
+
+    /// The tier a stored `financial_fact_provenance.source_tier` string names.
+    /// `None` for an unknown/legacy marker (e.g. the retired `ai_text` rows ADR
+    /// 0084 left readable) — the caller then treats the stored fact as of
+    /// unknown trust and never outranks it.
+    pub fn parse(value: &str) -> Option<SourceTier> {
+        match value {
+            "esef" => Some(SourceTier::Esef),
+            "structured_xhtml" => Some(SourceTier::StructuredXhtml),
+            "espi_cover_note" => Some(SourceTier::EspiCoverNote),
+            "pdf" => Some(SourceTier::Pdf),
+            "html_aggregator" => Some(SourceTier::HtmlAggregator),
+            _ => None,
+        }
+    }
+
+    /// Whether `self` is strictly more trusted than `other` (the tier order is
+    /// highest-trust first, so a *smaller* variant outranks). ADR 0061 decision
+    /// 1: "a KPI is taken from the highest available tier".
+    pub fn outranks(self, other: SourceTier) -> bool {
+        self < other
+    }
+
+    /// Whether this tier is an ISSUER-produced tier — one read from the issuer's
+    /// own filing, whose held slot records a reversed-witnessing
+    /// `witness_disagreement` when the aggregator diverges (ADR 0086 decision 4,
+    /// amended 2026-07-22: the positional `Pdf` tier is the issuer's filing read
+    /// deterministically and counts as an issuer tier). The aggregator's own
+    /// `HtmlAggregator` tier is the only non-issuer tier.
+    pub fn is_issuer(self) -> bool {
+        !matches!(self, SourceTier::HtmlAggregator)
     }
 }
 
@@ -174,8 +223,34 @@ mod tests {
 
     #[test]
     fn tier_ordering_is_trust_ordering() {
-        assert!(SourceTier::Esef < SourceTier::Pdf);
+        assert!(SourceTier::Esef < SourceTier::StructuredXhtml);
+        assert!(SourceTier::StructuredXhtml < SourceTier::EspiCoverNote);
+        assert!(SourceTier::EspiCoverNote < SourceTier::Pdf);
         assert!(SourceTier::Pdf < SourceTier::HtmlAggregator);
-        assert!(SourceTier::HtmlAggregator < SourceTier::AiText);
+    }
+
+    /// Guardrail: `parse` must round-trip **every** `as_str` marker. Stored
+    /// provenance is compared by tier to decide whether a re-extraction may
+    /// upgrade an occupied slot (ADR 0061 dec. 1); a tier `as_str` writes but
+    /// `parse` cannot read back would silently make that comparison unknowable.
+    #[test]
+    fn every_tier_marker_round_trips_through_parse() {
+        for tier in [
+            SourceTier::Esef,
+            SourceTier::StructuredXhtml,
+            SourceTier::EspiCoverNote,
+            SourceTier::Pdf,
+            SourceTier::HtmlAggregator,
+        ] {
+            assert_eq!(
+                SourceTier::parse(tier.as_str()),
+                Some(tier),
+                "tier {tier:?} does not round-trip"
+            );
+        }
+        // An unknown/legacy marker is never mistaken for a known tier — the
+        // fact it belongs to is then never outranked (fails safe).
+        assert_eq!(SourceTier::parse("ai_text"), None);
+        assert_eq!(SourceTier::parse("ai"), None);
     }
 }

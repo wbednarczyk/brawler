@@ -91,14 +91,10 @@ describe("scenario overlays — required content", () => {
     expect(fact).toBeUndefined();
   });
 
-  it("stale-processing: an old visible result plus a currently-running job", () => {
+  it("stale-processing: an old research result stays visible", () => {
     const data = buildScenario({ base: "minimal", overlays: ["stale-processing"] });
     const evidence = data.researchEvidence.find((e) => e.id === "research_overlay_stale_1");
-    const job = data.researchBriefJobs.find((j) => j.id === "brief_job_overlay_stale_1");
     expect(evidence).toBeTruthy();
-    expect(job).toBeTruthy();
-    expect(job!.status).toBe("running");
-    expect(job!.finishedAt).toBeNull();
   });
 
   it("conflicting-statuses: adapter health and its latest ingestion result disagree", () => {

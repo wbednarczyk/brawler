@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { updateFeedItemState as persistFeedItemState } from "../../api/feed";
 import type { Company, FeedItem } from "../../api/types";
-import { useAiAnalysisController } from "../../app/useAiAnalysisController";
 
 // Cockpit-native company feed state for one company (ADR 0057). It seeds a local
 // item list from the global feed snapshot filtered to the company, owns the
 // selection, persists read/save toggles through the real `update_feed_item_state`
-// command (updating the local copy from the response), and composes the shared
-// `useAiAnalysisController` so the dashboard `companyFeed` panel works with no
-// AppStateRoot coupling — mirroring `useCockpitFundamentals`.
+// command (updating the local copy from the response), so the dashboard
+// `companyFeed` panel works with no AppStateRoot coupling — mirroring
+// `useCockpitFundamentals`.
 export function useCockpitCompanyFeed(company: Company, feedItems: FeedItem[]) {
   const companyItems = useMemo(
     () => feedItems.filter((item) => item.company === company.qualifiedTicker),
@@ -33,11 +32,6 @@ export function useCockpitCompanyFeed(company: Company, feedItems: FeedItem[]) {
   );
   const selectedFeedItem = items.find((item) => item.id === selectedId) ?? null;
 
-  const ai = useAiAnalysisController({
-    selectedFeedItem: null,
-    selectedCompanyFeedItem: selectedFeedItem,
-  });
-
   function toggleFeedItem(item: FeedItem) {
     setSelectedId((current) => (current === item.id ? null : item.id));
   }
@@ -54,6 +48,5 @@ export function useCockpitCompanyFeed(company: Company, feedItems: FeedItem[]) {
     selectedFeedItem,
     toggleFeedItem,
     updateFeedItemState,
-    ...ai,
   };
 }

@@ -42,10 +42,8 @@ pub struct HistorySweep {
     pub enqueued_run_ids: Vec<String>,
     /// Tier-4 AI call units this sweep has spent so far (ADR 0077 §6). Bumped
     /// atomically as each document enters tier-4; one unit = one invocation.
-    pub ai_calls_used: i64,
     /// The tier-4 budget snapshotted onto this sweep at creation (ADR 0077 §6);
     /// `0` means unlimited. A mid-sweep settings change never moves this gate.
-    pub ai_call_limit: i64,
     /// A storage-level abort that failed the whole sweep.
     pub error: Option<String>,
     pub created_at: String,
@@ -84,44 +82,18 @@ impl HistorySweepStore {
     ) -> StorageResult<HistorySweep> {
         let connection = self.db.checkout()?;
         let id = next_sweep_id(&connection, company_id)?;
-        // Snapshot the tier-4 budget onto the row at creation (ADR 0077 §6): the
-        // gate this sweep enforces is fixed here, so a mid-sweep settings change
-        // never moves it. A settings read error (a database that predates the
-        // key still reads tolerantly, so this is rare) falls back to the default.
-        let ai_call_limit = super::settings::get_settings(&connection)
-            .map(|s| s.history_sweep_ai_call_limit)
-            .unwrap_or(super::settings::HISTORY_SWEEP_AI_CALL_LIMIT_DEFAULT);
+        // The tier-4 AI budget columns are orphaned in place (ADR 0084 decision
+        // 4 retires tier-4; decision 5 forbids destructive migrations), so a new
+        // sweep simply leaves them at their schema defaults.
         connection.execute(
             "
-            INSERT INTO history_sweeps (id, company_id, trigger, ai_call_limit)
-            VALUES (?1, ?2, ?3, ?4)
+            INSERT INTO history_sweeps (id, company_id, trigger)
+            VALUES (?1, ?2, ?3)
             ",
-            params![id, company_id, trigger, ai_call_limit],
+            params![id, company_id, trigger],
         )?;
         drop(connection);
         self.get_history_sweep(&id)
-    }
-
-    /// Atomically charge one tier-4 unit against this sweep's budget (ADR 0077 §6,
-    /// decision 3). Returns `true` when the unit was granted (`changes() == 1`),
-    /// `false` when the budget is exhausted. A single guarded `UPDATE` is the whole
-    /// check-and-consume: the `WHERE` clause admits the write only while a unit
-    /// remains (`ai_call_limit = 0` ⇒ unlimited), so two concurrent callers can
-    /// never both succeed past the last unit. Deterministic outcomes never call
-    /// this — only a run actually entering tier-4 spends budget (decision 4).
-    pub fn try_consume_sweep_ai_budget(&self, sweep_id: &str) -> StorageResult<bool> {
-        let connection = self.db.checkout()?;
-        let changed = connection.execute(
-            "
-            UPDATE history_sweeps
-            SET ai_calls_used = ai_calls_used + 1,
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            WHERE id = ?1
-                AND (ai_call_limit = 0 OR ai_calls_used < ai_call_limit)
-            ",
-            params![sweep_id],
-        )?;
-        Ok(changed == 1)
     }
 
     /// Fetch one sweep by id.
@@ -272,8 +244,6 @@ fn map_sweep_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistorySweep> {
         runs_failed: row.get("runs_failed")?,
         skipped_reason: row.get("skipped_reason")?,
         enqueued_run_ids,
-        ai_calls_used: row.get("ai_calls_used")?,
-        ai_call_limit: row.get("ai_call_limit")?,
         error: row.get("error")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
@@ -418,180 +388,5 @@ mod tests {
             .expect("fail");
         assert_eq!(failed.status, "failed");
         assert_eq!(failed.error.as_deref(), Some("candidates unavailable"));
-    }
-
-    // ---- tier-4 AI budget (ADR 0077 §6, T5.2) ------------------------------
-
-    /// A `state()` whose `history_sweep_ai_call_limit` setting is `limit`, so a
-    /// sweep created afterwards snapshots that ceiling.
-    fn state_with_limit(limit: i64) -> AppState {
-        let s = state();
-        s.update_settings(crate::storage::SettingsUpdate {
-            history_sweep_ai_call_limit: Some(limit),
-            ..Default::default()
-        })
-        .expect("set limit");
-        s
-    }
-
-    fn new_sweep(state: &AppState, company_id: &str) -> HistorySweep {
-        state
-            .history_sweeps()
-            .create_history_sweep(company_id, "manual")
-            .expect("create sweep")
-    }
-
-    #[test]
-    fn create_snapshots_the_current_ai_call_limit() {
-        let s = state_with_limit(7);
-        let c = company(&s);
-        let sweep = new_sweep(&s, &c);
-        assert_eq!(sweep.ai_call_limit, 7, "limit snapshotted at creation");
-        assert_eq!(sweep.ai_calls_used, 0);
-    }
-
-    #[test]
-    fn try_consume_grants_exactly_the_limit_then_denies() {
-        // G-4 at the storage layer: a limit of 2 grants two units, denies the
-        // third; exactly two are recorded as spent.
-        let s = state_with_limit(2);
-        let c = company(&s);
-        let sweep = new_sweep(&s, &c);
-        let store = s.history_sweeps();
-        assert!(store
-            .try_consume_sweep_ai_budget(&sweep.id)
-            .expect("unit 1"));
-        assert!(store
-            .try_consume_sweep_ai_budget(&sweep.id)
-            .expect("unit 2"));
-        assert!(
-            !store
-                .try_consume_sweep_ai_budget(&sweep.id)
-                .expect("unit 3 denied"),
-            "the third unit is over budget"
-        );
-        assert_eq!(
-            store
-                .get_history_sweep(&sweep.id)
-                .expect("reload")
-                .ai_calls_used,
-            2,
-            "exactly two units spent"
-        );
-    }
-
-    #[test]
-    fn try_consume_is_unlimited_when_limit_is_zero() {
-        // (b) 0 = off: no cap, every consume is granted.
-        let s = state_with_limit(0);
-        let c = company(&s);
-        let sweep = new_sweep(&s, &c);
-        assert_eq!(sweep.ai_call_limit, 0);
-        let store = s.history_sweeps();
-        for unit in 0..5 {
-            assert!(
-                store
-                    .try_consume_sweep_ai_budget(&sweep.id)
-                    .expect("granted"),
-                "unit {unit} must be granted with limit 0"
-            );
-        }
-        assert_eq!(
-            store
-                .get_history_sweep(&sweep.id)
-                .expect("reload")
-                .ai_calls_used,
-            5
-        );
-    }
-
-    #[test]
-    fn budget_snapshot_governs_over_a_later_settings_change() {
-        // (f) The limit is fixed at creation: shrinking the setting mid-sweep does
-        // not move an already-created sweep's gate.
-        let s = state_with_limit(30);
-        let c = company(&s);
-        let sweep = new_sweep(&s, &c);
-        assert_eq!(sweep.ai_call_limit, 30);
-        s.update_settings(crate::storage::SettingsUpdate {
-            history_sweep_ai_call_limit: Some(1),
-            ..Default::default()
-        })
-        .expect("shrink setting to 1");
-        let store = s.history_sweeps();
-        assert!(store
-            .try_consume_sweep_ai_budget(&sweep.id)
-            .expect("unit 1"));
-        assert!(
-            store
-                .try_consume_sweep_ai_budget(&sweep.id)
-                .expect("unit 2"),
-            "the snapshot (30), not the new setting (1), governs"
-        );
-    }
-
-    #[test]
-    fn try_consume_is_atomic_under_concurrency() {
-        // (c) decision 3: two threads racing for the last unit — exactly one wins.
-        // The in-memory test DB is a single mutex-guarded connection, which would
-        // serialize the race away, so this uses a file-backed pool (real parallel
-        // connections under WAL); the guarded UPDATE makes check-and-consume atomic.
-        use std::sync::{Arc, Barrier};
-        let dir = std::env::temp_dir().join(format!(
-            "brawler-sweep-budget-conc-{}-{}",
-            std::process::id(),
-            time::OffsetDateTime::now_utc().unix_timestamp_nanos()
-        ));
-        std::fs::create_dir_all(&dir).expect("dir");
-        let state = crate::storage::open_pool(dir.join("brawler.sqlite3"), dir.clone())
-            .expect("open pooled db");
-        state
-            .update_settings(crate::storage::SettingsUpdate {
-                history_sweep_ai_call_limit: Some(1),
-                ..Default::default()
-            })
-            .expect("set limit 1");
-        let c = state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "TST".to_owned(),
-                display_name: "Test S.A.".to_owned(),
-                isin: None,
-                cik: None,
-                lei: None,
-            })
-            .expect("company")
-            .id;
-        let sweep = new_sweep(&state, &c);
-
-        let barrier = Arc::new(Barrier::new(2));
-        let handles: Vec<_> = (0..2)
-            .map(|_| {
-                let state = state.clone();
-                let barrier = barrier.clone();
-                let sweep_id = sweep.id.clone();
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    state
-                        .history_sweeps()
-                        .try_consume_sweep_ai_budget(&sweep_id)
-                        .expect("consume")
-                })
-            })
-            .collect();
-        let wins = handles
-            .into_iter()
-            .map(|h| h.join().expect("thread"))
-            .filter(|&won| won)
-            .count();
-        assert_eq!(wins, 1, "exactly one thread may claim the single unit");
-        assert_eq!(
-            state
-                .history_sweeps()
-                .get_history_sweep(&sweep.id)
-                .expect("reload")
-                .ai_calls_used,
-            1
-        );
     }
 }

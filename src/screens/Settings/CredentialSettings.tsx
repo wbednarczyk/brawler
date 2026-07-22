@@ -1,10 +1,8 @@
 import type { FormEvent } from "react";
 import { ExternalLink, Save, Trash2 } from "lucide-react";
-import { ADDITIONAL_CREDENTIAL_PROVIDERS } from "../../api/credentials";
 import type { CredentialStatus } from "../../api/types";
 import { ActionRow, Button, ErrorText, InfoGrid, TextField } from "../../ui";
 import { useLocale } from "../../shared/locale";
-import { ProviderApiKeyForm } from "./ProviderApiKeyForm";
 
 type CredentialSettingsProps = {
   geminiApiKeyDraft: string;
@@ -98,14 +96,6 @@ export function CredentialSettings({
       {geminiCredentialError ? (
         <ErrorText>{text("Credential command failed")}: {geminiCredentialError}</ErrorText>
       ) : null}
-      {ADDITIONAL_CREDENTIAL_PROVIDERS.map((entry) => (
-        <ProviderApiKeyForm
-          key={entry.providerId}
-          providerId={entry.providerId}
-          label={entry.label}
-          formatCredentialConfigured={formatCredentialConfigured}
-        />
-      ))}
     </section>
   );
 }

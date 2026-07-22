@@ -89,7 +89,6 @@ export const pl: LocaleResources = {
   "settings.sources.title": "Źródła",
   "settings.feedCleanup.title": "Czyszczenie kanału",
   "settings.importExport.title": "Import i eksport",
-  "settings.ai.title": "AI",
   "settings.credentials.title": "Poświadczenia",
   "settings.credentials.save": "Zapisz",
   "settings.credentials.clear": "Wyczyść",

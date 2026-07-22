@@ -1,0 +1,31 @@
+---
+source: src/fundamentals/extraction/html/tests.rs
+expression: rows
+---
+[
+    "2007|2007-12-31|current_assets|15301000",
+    "2007|2007-12-31|current_liabilities|37160000",
+    "2007|2007-12-31|inventories|7203000",
+    "2007|2007-12-31|total_assets|23030000",
+    "2007|2007-12-31|wdf_equity_parent|-14152000",
+    "2008|2008-12-31|current_assets|16815000",
+    "2008|2008-12-31|current_liabilities|17833000",
+    "2008|2008-12-31|inventories|1373000",
+    "2008|2008-12-31|total_assets|23754000",
+    "2008|2008-12-31|wdf_equity_parent|5899000",
+    "2009|2009-12-31|current_assets|2361000",
+    "2009|2009-12-31|current_liabilities|22449000",
+    "2009|2009-12-31|inventories|723000",
+    "2009|2009-12-31|total_assets|35227000",
+    "2009|2009-12-31|wdf_equity_parent|3620000",
+    "2010|2010-12-31|current_assets|77884000",
+    "2010|2010-12-31|current_liabilities|73893000",
+    "2010|2010-12-31|inventories|27739000",
+    "2010|2010-12-31|total_assets|167514000",
+    "2010|2010-12-31|wdf_equity_parent|77665000",
+    "2011|2011-12-31|current_assets|94513000",
+    "2011|2011-12-31|current_liabilities|54273000",
+    "2011|2011-12-31|inventories|31112000",
+    "2011|2011-12-31|total_assets|185275000",
+    "2011|2011-12-31|wdf_equity_parent|123412000",
+]

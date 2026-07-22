@@ -6,10 +6,6 @@ import type {
   NewEvidenceLink,
   ResearchEvidenceInput,
   NewResearchReminder,
-  ResearchBriefJob,
-  ResearchBriefScopeInput,
-  ResearchDigestJob,
-  ResearchDigestScopeInput,
   ResearchQuestion,
   ResearchQuestionListInput,
   ResearchQuestionUpdate,
@@ -69,14 +65,6 @@ export function deleteEvidenceLink(id: string) {
   return callCommand<void>("delete_evidence_link", { id });
 }
 
-export function startResearchBrief(input: ResearchBriefScopeInput) {
-  return callCommand<ResearchBriefJob>("start_research_brief", { input });
-}
-
-export function listResearchBriefs(input: ResearchBriefScopeInput) {
-  return callCommand<ResearchBriefJob[]>("list_research_briefs", { input });
-}
-
 export function listResearchReminders(input: ResearchReminderListInput) {
   return callCommand<ResearchReminder[]>("list_research_reminders", { input });
 }
@@ -93,10 +81,3 @@ export function deleteResearchReminder(id: string) {
   return callCommand<void>("delete_research_reminder", { id });
 }
 
-export function startResearchDigest(input: ResearchDigestScopeInput) {
-  return callCommand<ResearchDigestJob>("start_research_digest", { input });
-}
-
-export function listResearchDigests(input: ResearchDigestScopeInput) {
-  return callCommand<ResearchDigestJob[]>("list_research_digests", { input });
-}

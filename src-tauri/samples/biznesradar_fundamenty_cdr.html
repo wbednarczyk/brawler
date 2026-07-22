@@ -1,0 +1,25 @@
+<!-- Test sample: BiznesRadar public financial-report page, reduced to the
+     structure the witness parser reads (ADR 0085). Synthetic values; the markup
+     shape (report-table, `th` period headers "Q1 2026", grouped thousand
+     separators, the "Dane w tys. zł" unit line) mirrors the live page probed
+     2026-07-20. NOT owner data. -->
+<html lang="pl">
+  <head><title>CD PROJEKT (CDR) - Rachunek zysków i strat | BiznesRadar.pl</title></head>
+  <body>
+    <h1>CD PROJEKT — raporty finansowe</h1>
+    <p class="unit-note">Dane w tys. zł</p>
+    <table class="report-table">
+      <tr>
+        <th>Pozycja</th>
+        <th>Q1 2025</th>
+        <th>Q1 2026</th>
+      </tr>
+      <tr><td>Przychody ze sprzedaży</td><td>180 000</td><td>200 000</td></tr>
+      <tr><td>Zysk operacyjny</td><td>52 000</td><td>60 000</td></tr>
+      <tr><td>Zysk netto</td><td>44 000</td><td>50 000</td></tr>
+      <tr><td>Aktywa razem</td><td>40 000</td><td>45 000</td></tr>
+      <tr><td>Zobowiązania razem</td><td>18 000</td><td>20 000</td></tr>
+      <tr><td>Kapitał własny</td><td>22 000</td><td>25 000</td></tr>
+    </table>
+  </body>
+</html>

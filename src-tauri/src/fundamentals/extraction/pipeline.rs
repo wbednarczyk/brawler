@@ -1,30 +1,28 @@
-//! Structured-first extraction pipeline orchestrator (ADR 0061, S5).
+//! Structured-first extraction pipeline orchestrator (ADR 0061; ladder amended
+//! by ADR 0086 dec. 1/3).
 //!
 //! Walks the tiers highest-trust first and applies the deterministic "good"
-//! gate, so a fact is auto-accepted only when it is provably consistent — and a
-//! failure escalates to the HTML witness and then to a "structure changed"
-//! notification, never a silent emit:
+//! gate, so a fact is auto-accepted only when it is provably consistent:
 //!
 //! 1. **ESEF/iXBRL** — if a tagged instance parses and does not *fail*
 //!    validation, it is the source of truth. Done.
-//! 2. **PDF** — parse with the company profile; if validation passes and the
-//!    layout has not drifted, auto-accept. Otherwise consult the witness.
-//! 3. **HTML witness** — corroborate the PDF (agreement ⇒ accept via witness)
-//!    or, as a last structured resort, act as the source. Disagreement or drift
-//!    ⇒ *flagged*, with a clean diff for the notification.
+//! 2. **HTML aggregator** — as a last structured resort, act as the source
+//!    (an inconclusive-but-uncontradicted set is accepted unreviewed).
 //!
-//! Pure and IO-free: callers pass the already-fetched bytes/text and (lazily)
-//! the witness facts, so the whole chain is deterministic and unit-testable —
-//! this is the e2e pipeline test the ADR 0049 harness was missing.
+//! The PDF fact-extraction arm (parse-with-profile + drift) is RETIRED
+//! (ADR 0086 dec. 1): no tier reads financial facts out of PDF statements
+//! anymore. Core KPIs arrive from the BiznesRadar-primary daily pull; the
+//! positional xHTML reader persists separately in the job layer.
+//!
+//! Pure and IO-free: callers pass the already-fetched bytes and (lazily) the
+//! witness facts, so the whole chain is deterministic and unit-testable.
 
 use std::collections::BTreeSet;
 
 use super::esef::parse_esef;
-use super::pdf::{parse_pdf_text, parse_pdf_text_with_comparatives};
-use super::profile::{detect_drift, Drift, DriftReport, ExtractionProfile};
 use super::{fact_set_for_period, ExtractedFact, SourceTier};
 use crate::fundamentals::validation::{
-    completeness, cross_check_prior, validate, Completeness, FactSet, Status, Tolerance,
+    completeness, validate, Completeness, FactSet, Status, Tolerance, ValidationReport,
 };
 
 /// The inputs available for one report's extraction. Any tier whose input is
@@ -35,10 +33,6 @@ pub struct PipelineInput<'a> {
     pub period_end: &'a str,
     /// Raw inline-XBRL instance bytes (tier 1), if a structured filing exists.
     pub esef_bytes: Option<&'a [u8]>,
-    /// Extracted PDF text (tier 2), if only a PDF exists.
-    pub pdf_text: Option<&'a str>,
-    /// The confirmed per-company extraction profile (drives PDF parsing + drift).
-    pub profile: Option<&'a ExtractionProfile>,
     /// Previously-stored facts for the immediately prior period. Doubles as
     /// **both** inputs `validate` takes for cross-period checks: the
     /// cash-flow tie's opening balance, and the comparative cross-check's
@@ -54,9 +48,6 @@ pub struct PipelineInput<'a> {
     /// The company's expected primary-KPI `metric_key`s, for the completeness
     /// check (ADR 0061 dec. 4d). `None`/empty skips it.
     pub expected_keys: Option<&'a BTreeSet<String>>,
-    /// Aggregator (BiznesRadar/Bankier) facts for this period end (tier 3),
-    /// already parsed by [`super::html`]. Used as witness and last resort.
-    pub witness: Option<&'a [ExtractedFact]>,
 }
 
 /// How the pipeline resolved the report.
@@ -117,8 +108,12 @@ pub struct PipelineOutcome {
     pub facts: Vec<ExtractedFact>,
     /// The validation report for the chosen set.
     pub status: Status,
-    /// The clean layout diff, when a drift was detected (PDF tier).
-    pub drift: Option<DriftReport>,
+    /// The **full** gate report for the chosen set — which identities and
+    /// comparative cross-checks were evaluated and which of them objected.
+    /// `status` alone says a contradiction exists; this says *what* contradicted,
+    /// which is the detail a flagged outcome has to persist to be reviewable
+    /// (ADR 0061 decision 2). `None` when no tier produced a set to validate.
+    pub validation: Option<ValidationReport>,
 }
 
 impl PipelineOutcome {
@@ -128,7 +123,7 @@ impl PipelineOutcome {
             tier: None,
             facts: Vec::new(),
             status: Status::Inconclusive,
-            drift: None,
+            validation: None,
         }
     }
 }
@@ -143,6 +138,20 @@ fn accepted_unless_hollow(completeness: Option<&Completeness>) -> Acceptance {
     match completeness {
         Some(c) if c.expected > 0 && c.present == 0 => Acceptance::AcceptedUnreviewed,
         _ => Acceptance::Accepted,
+    }
+}
+
+/// The single acceptance decision table for a validated candidate set — the ONE
+/// home of "a contradiction is `Flagged`, a clean set is `Accepted` (downgraded to
+/// `AcceptedUnreviewed` when it covers none of the expected primary KPIs), and an
+/// uncontradicted-but-unproven set is `AcceptedUnreviewed`". Both the tier-1 ESEF
+/// arm ([`run_pipeline`]) and the job-layer [`validate_parsed_set_report`] route
+/// through here so the policy can never drift between them.
+fn acceptance_for(status: Status, completeness: Option<&Completeness>) -> Acceptance {
+    match status {
+        Status::Failed => Acceptance::Flagged,
+        Status::Passed => accepted_unless_hollow(completeness),
+        Status::Inconclusive => Acceptance::AcceptedUnreviewed,
     }
 }
 
@@ -179,114 +188,24 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
             let set = fact_set_for_period(&facts, input.period_end);
             if !set.is_empty() {
                 let report = validate_tier(&set, &facts, input, &tol);
-                if report.status != Status::Failed {
-                    // Tagged data is authoritative unless it self-contradicts.
-                    let acceptance = match report.status {
-                        Status::Passed => accepted_unless_hollow(report.completeness.as_ref()),
-                        _ => Acceptance::AcceptedUnreviewed,
-                    };
-                    return PipelineOutcome {
-                        acceptance,
-                        tier: Some(SourceTier::Esef),
-                        facts: facts_for_period(facts, input.period_end),
-                        status: report.status,
-                        drift: None,
-                    };
-                }
-                // ESEF failed validation (corrupt tagging) → fall to PDF.
-            }
-        }
-    }
-
-    // ---- Tier 2: PDF + profile + drift ---------------------------------
-    if let Some(text) = input.pdf_text {
-        let parse = match input.prior_period_end {
-            Some(prior_end) => {
-                parse_pdf_text_with_comparatives(text, input.period_end, prior_end, input.profile)
-            }
-            None => parse_pdf_text(text, input.period_end, input.profile),
-        };
-        let drift = input
-            .profile
-            .map(|p| detect_drift(p, &parse))
-            .unwrap_or(Drift::None);
-        let set = fact_set_for_period(&parse.facts, input.period_end);
-        if !set.is_empty() {
-            let report = validate_tier(&set, &parse.facts, input, &tol);
-            let drift_report = match &drift {
-                Drift::Detected(r) => Some(r.clone()),
-                Drift::None => None,
-            };
-            let clean = report.status == Status::Passed && !drift.is_drift();
-            if clean {
-                return PipelineOutcome {
-                    acceptance: accepted_unless_hollow(report.completeness.as_ref()),
-                    tier: Some(SourceTier::Pdf),
-                    facts: facts_for_period(parse.facts, input.period_end),
-                    status: report.status,
-                    drift: None,
-                };
-            }
-            // Not clean → consult the witness before deciding.
-            if let Some(witness) = input.witness {
-                let wset = fact_set_for_period(witness, input.period_end);
-                let checks = cross_check_prior(&set, &wset, &tol);
-                let corroborated = !checks.is_empty() && checks.iter().all(|c| c.outcome.is_pass());
-                if corroborated && report.status != Status::Failed {
-                    return PipelineOutcome {
-                        acceptance: Acceptance::AcceptedViaWitness,
-                        tier: Some(SourceTier::Pdf),
-                        facts: facts_for_period(parse.facts, input.period_end),
-                        status: report.status,
-                        drift: drift_report,
-                    };
-                }
-                // Witness disagrees (or PDF self-contradicts) → flag with diff.
-                return PipelineOutcome {
-                    acceptance: Acceptance::Flagged,
-                    tier: Some(SourceTier::Pdf),
-                    facts: Vec::new(),
-                    status: report.status,
-                    drift: drift_report,
-                };
-            }
-            // No witness: a hard failure or a drift is flagged; a merely
-            // inconclusive-but-uncontradicted set is accepted unreviewed.
-            if report.status == Status::Failed || drift.is_drift() {
-                return PipelineOutcome {
-                    acceptance: Acceptance::Flagged,
-                    tier: Some(SourceTier::Pdf),
-                    facts: Vec::new(),
-                    status: report.status,
-                    drift: drift_report,
-                };
-            }
-            return PipelineOutcome {
-                acceptance: Acceptance::AcceptedUnreviewed,
-                tier: Some(SourceTier::Pdf),
-                facts: facts_for_period(parse.facts, input.period_end),
-                status: report.status,
-                drift: None,
-            };
-        }
-    }
-
-    // ---- Tier 3: HTML aggregator as last structured resort -------------
-    if let Some(witness) = input.witness {
-        let set = fact_set_for_period(witness, input.period_end);
-        if !set.is_empty() {
-            let report = validate_tier(&set, witness, input, &tol);
-            if report.status != Status::Failed {
-                let acceptance = match report.status {
-                    Status::Passed => accepted_unless_hollow(report.completeness.as_ref()),
-                    _ => Acceptance::AcceptedUnreviewed,
+                // Tagged data is authoritative unless it self-contradicts — the
+                // shared acceptance table decides (a `Failed` set is `Flagged` and
+                // emits no facts; ADR 0061 dec. 2: what objected stays reviewable,
+                // never a silent empty. The aggregator-as-last-resort arm is retired
+                // with ADR 0086 — BiznesRadar sources core KPIs through its own
+                // primary pull, never through this pipeline).
+                let acceptance = acceptance_for(report.status, report.completeness.as_ref());
+                let facts = if acceptance.emits() {
+                    facts_for_period(facts, input.period_end)
+                } else {
+                    Vec::new()
                 };
                 return PipelineOutcome {
                     acceptance,
-                    tier: Some(SourceTier::HtmlAggregator),
-                    facts: facts_for_period(witness.to_vec(), input.period_end),
+                    tier: Some(SourceTier::Esef),
+                    facts,
                     status: report.status,
-                    drift: None,
+                    validation: Some(report.clone()),
                 };
             }
         }
@@ -298,11 +217,11 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
 /// Validates an already-parsed candidate set through the **same** gate the tiered
 /// pipeline applies to a structured tier, returning the acceptance verdict.
 ///
-/// This exists for the tier-4 OCR path (ADR 0077 §4): its OCR/provider call lives
-/// in the job layer (never in this pure module), but the facts the deterministic
-/// OCR parser produces must pass the identical `validate`/`validate_tier` regime
-/// as ESEF/PDF — the balance-sheet identity and the prior-period magnitude
-/// cross-check are exactly what catch a 1000× mis-scale or a repainted total. The
+/// This exists for the job-layer tiers whose parse lives outside this pure module
+/// — the ESPI cover-note (WDF) reader and the positional xHTML reader — whose
+/// facts must pass the identical `validate`/`validate_tier` regime as ESEF: the
+/// balance-sheet identity and the prior-period magnitude cross-check are exactly
+/// what catch a 1000× mis-scale or a repainted total. The
 /// verdict mirrors the tier-1 arm: a self-contradiction (`Failed`) is `Flagged`
 /// (the caller routes those values to proposals), a clean set is `Accepted`
 /// (downgraded to `AcceptedUnreviewed` when it covers none of the expected
@@ -315,9 +234,26 @@ pub fn validate_parsed_set(
     prior_period_end: Option<&str>,
     expected_keys: Option<&BTreeSet<String>>,
 ) -> (Acceptance, Status) {
+    let (acceptance, report) =
+        validate_parsed_set_report(facts, period_end, prior, prior_period_end, expected_keys);
+    let status = report.map(|r| r.status).unwrap_or(Status::Inconclusive);
+    (acceptance, status)
+}
+
+/// [`validate_parsed_set`] keeping the **full** gate report, so a caller that
+/// has to persist *what objected* (the flagged-outcome record, ADR 0061 dec. 2)
+/// gets the failing identities and cross-checks rather than a bare `Status`.
+/// `None` report = an empty set, where there was nothing to validate.
+pub fn validate_parsed_set_report(
+    facts: &[ExtractedFact],
+    period_end: &str,
+    prior: Option<&FactSet>,
+    prior_period_end: Option<&str>,
+    expected_keys: Option<&BTreeSet<String>>,
+) -> (Acceptance, Option<ValidationReport>) {
     let set = fact_set_for_period(facts, period_end);
     if set.is_empty() {
-        return (Acceptance::Empty, Status::Inconclusive);
+        return (Acceptance::Empty, None);
     }
     let input = PipelineInput {
         period_end,
@@ -327,12 +263,8 @@ pub fn validate_parsed_set(
         ..PipelineInput::default()
     };
     let report = validate_tier(&set, facts, &input, &Tolerance::default());
-    let acceptance = match report.status {
-        Status::Failed => Acceptance::Flagged,
-        Status::Passed => accepted_unless_hollow(report.completeness.as_ref()),
-        Status::Inconclusive => Acceptance::AcceptedUnreviewed,
-    };
-    (acceptance, report.status)
+    let acceptance = acceptance_for(report.status, report.completeness.as_ref());
+    (acceptance, Some(report))
 }
 
 /// Keeps only the facts whose period end matches (the accepted set drops

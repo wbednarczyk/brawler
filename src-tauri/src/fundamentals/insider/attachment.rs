@@ -13,8 +13,7 @@
 //! **Input is already-extracted text** — the job runs the shared ADR 0061 tier
 //! ([`crate::report_diff::extraction::extract_report`], PDF *or* xhtml) first, so
 //! this parser is pure/total over a `&str` and trivially testable without building
-//! real PDF bytes (mirrors [`crate::fundamentals::extraction::pdf::parse_pdf_text`]
-//! and [`crate::fundamentals::management_holdings`]).
+//! real PDF bytes (mirrors [`crate::fundamentals::management_holdings`]).
 //!
 //! **Conservative contract** (never fabricates): the standard form is anchored on
 //! its Polish field labels ("Imię i nazwisko"/"Nazwa", "Stanowisko"/"status",

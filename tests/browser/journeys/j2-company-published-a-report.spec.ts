@@ -10,15 +10,9 @@ import {
 import {
   expectPrimaryActionCount,
   expectActionBeforeScroll,
-  expectFocusOrder,
   expectNextStepVisible,
 } from "../helpers/interactionContracts";
-import {
-  holdInvocation,
-  releaseInvocation,
-  rejectInvocation,
-  type ScenarioSpec,
-} from "../helpers/mockRuntime";
+import { holdInvocation, releaseInvocation, type ScenarioSpec } from "../helpers/mockRuntime";
 import type { Page } from "@playwright/test";
 
 // `recentFeedItems`/`companies` are fetched exactly once at app bootstrap
@@ -48,15 +42,27 @@ async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> 
 
 // J2 — A company published a report (docs/ux-journeys.md, ADR 0074). The full
 // cross-screen path a user walks when a periodic report lands: open the report →
-// extract & review its KPIs → confirm a fact → open the company workspace → see
-// the confirmed fact in the fundamentals matrix → resolve a due management claim
-// → capture the judgment as a note. This spec absorbs the three legacy
-// journeys.spec.ts tests (extract→review→confirm, open-company-without-moving,
-// confirmed-KPI-in-matrix) into one measured journey; the old file is deleted.
+// open the company workspace → read the deterministically-extracted facts in the
+// fundamentals matrix → resolve a due management claim → capture the judgment as
+// a note.
 //
-// Future step (dated): v0.52 expectation-vs-actual review (ADR 0071 judgment
-// capture) inserts between "review KPIs" and "resolve claims"; it joins this
-// journey and its budget when it ships.
+// ADR 0084 (clean cut) reshaped this journey. The AI KPI-extraction launcher and
+// its review modal — J2's former opening act AND its former contracted primary
+// action — are removed with the in-app AI layer, together with the staging
+// proposals they wrote. What remains is the journey's actual substance: the
+// facts (now written by the deterministic extraction tiers, ADR 0061), the
+// manual management-claim verdict (explicitly kept by ADR 0084 decision 2), and
+// the note that records the judgment.
+//
+// ADR 0081 Q4 primary action: re-pointed to the company Notebook panel's
+// "New note". It is the surviving surface on this journey with an unambiguous
+// SINGLE primary action, and it is the step that produces the journey's durable
+// artifact. The claims review queue is this journey's decision moment, but its
+// Delivered/Missed pair is a deliberate binary — two peer primaries — which
+// would need an owner-approved multi-primary exemption reason in the surface's
+// experience contract (ui-authoring § interaction-hierarchy contracts). That is
+// a design decision, not an implementation one, so it is escalated rather than
+// invented here.
 //
 // Q3 note (ADR 0081): the Claims/Notebook panes no longer force a 900×700 pane
 // size — a user journey takes the real disclosure path at the current project
@@ -65,54 +71,24 @@ async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> 
 // count is recorded in budgets.json's byProject, not hidden by forcing.
 
 test.describe("J2 — a company published a report", { tag: "@journey" }, () => {
-  test("open report → confirm KPI → workspace → resolve claim → note", async ({ page }) => {
+  test("open report → workspace → read facts → resolve claim → note", async ({ page }) => {
     const j = journey(page, "J2");
     await openApp(page);
     await j.markScreen("Today");
 
-    // Open the Inbox and select the CD PROJEKT report; its detail rail offers the
-    // KPI extractor.
+    // Open the Inbox and select the CD PROJEKT report.
     await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Inbox" }));
     await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
     await j.markScreen("Inbox");
     await j.click(page.getByLabel(/Select feed item: CD PROJEKT/).first());
-    const launcher = page.getByLabel("AI KPI extraction");
-    await expect(launcher).toBeVisible();
     await expectNoA11yViolations(page, "Inbox with report selected");
 
-    // ADR 0081 Q4: the launcher surface's explicit, single primary action —
-    // open the extractor — must be marked and reachable before any scroll.
-    const extractAction = launcher.getByRole("button", { name: "Extract KPIs" });
-    await expectPrimaryActionCount(launcher, { max: 1 });
-    await expectActionBeforeScroll(extractAction, launcher);
-
-    // The heavy extraction flow opens in a modal.
-    await j.click(extractAction);
-    const dialog = page.getByRole("dialog", { name: /KPI extraction/ });
-    await expect(dialog).toBeVisible();
-    await j.markModal("KPI extraction");
-    await expectNoHorizontalOverflow(dialog);
-    await expectNoA11yViolations(page, "KPI extraction dialog");
-
-    // Run the extraction; status and proposals appear inside the modal.
-    await j.click(dialog.getByRole("button", { name: /Extract from attachment/ }));
-    await expect(dialog.getByText("succeeded")).toBeVisible();
-    await expect(dialog.getByText("Revenue")).toBeVisible();
-    await j.expectFeedback(dialog.getByText("succeeded"));
-
-    // Declared Tab sequence across the review footer's bulk actions (ADR 0081
-    // Q4): known-confirm, then accept-suggestions, then refresh.
-    await expectFocusOrder(page, [
-      dialog.getByRole("button", { name: "Confirm all known" }),
-      dialog.getByRole("button", { name: "Accept all suggestions" }),
-      dialog.getByRole("button", { name: "Refresh" }),
-    ]);
-
-    // Confirm the first known KPI; it transitions to confirmed in place — the
-    // contracted next step must stay visible, not get hidden by success.
-    await j.click(dialog.getByRole("button", { name: "Confirm" }).first());
-    await expectNextStepVisible(dialog.getByText("confirmed").first());
-    await j.click(dialog.getByRole("button", { name: "Close dialog" }));
+    // ADR 0084 clean cut: no AI surface is reachable from the report's detail
+    // rail — neither a generation affordance nor a read-only viewer.
+    await expect(page.getByLabel("AI KPI extraction")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Extract KPIs" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "View analysis" })).toHaveCount(0);
+    await expectNoPageOverflow(page);
 
     // Open the company — the cockpit dashboard lands scoped to it (ADR 0057),
     // visible and in view without a manual scroll, and the app shell must not have
@@ -129,16 +105,16 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await j.markScreen("Company workspace");
     // The cockpit root's semantic company marker (ADR 0081 Q3 observation point)
     // is the context this journey must not silently lose across the Claims/
-    // Notebook tab switches below — it is the company the confirmed fact, the
-    // resolved claim, and the captured note must all end up attached to.
+    // Notebook tab switches below — it is the company the facts, the resolved
+    // claim, and the captured note must all end up attached to.
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const pageScroll = await page.evaluate(() => ({ y: window.scrollY, top: document.documentElement.scrollTop }));
     expect(pageScroll.y).toBe(0);
     expect(pageScroll.top).toBe(0);
     await expectNoPageOverflow(page);
 
-    // The confirmed fact is wired through the read model: the fundamentals matrix
-    // renders directly on the dashboard (no tab).
+    // The deterministically-extracted facts are wired through the read model: the
+    // fundamentals matrix renders directly on the dashboard (no tab).
     const fundamentals = page.getByLabel("Company fundamentals");
     await expect(fundamentals).toBeVisible();
     await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
@@ -157,7 +133,7 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
 
     // Resolve a due management claim from the workspace Claims tab, at the real
     // pane size the current project viewport gives it — no forced 900×700
-    // shortcut (Q3, ADR 0081).
+    // shortcut (Q3, ADR 0081). The manual claims path survives ADR 0084.
     await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first());
     const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });
     await expect(claimsPane).toBeVisible();
@@ -174,7 +150,9 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expect(reviewQueue).toBeVisible();
     await expect(reviewQueue.getByText(/Reported value/).first()).toBeVisible();
     await j.click(reviewQueue.getByRole("button", { name: "Delivered" }).first());
-    // The verdict is recorded: the claim's row verdict now reads delivered.
+    // The verdict is recorded: the claim's row verdict now reads delivered, and
+    // the contracted next step stays visible rather than being hidden by success.
+    await expectNextStepVisible(claimsPane.getByLabel("Claim verdict").first());
     await expect(claimsPane.getByLabel("Claim verdict").first()).toHaveValue("delivered");
     await expectNoPageOverflow(page);
 
@@ -185,30 +163,36 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expect(notebookPane).toBeVisible();
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const notebook = notebookPane.getByLabel("Company notebook");
-    await j.click(notebook.getByRole("button", { name: "New note" }));
-    await j.fill(notebook.getByLabel("Notebook note title"), "Q3 confirmed, guidance claim delivered");
+
+    // ADR 0081 Q4: this journey's explicit, single primary action — capture the
+    // note — must be marked and reachable before any scroll.
+    const captureAction = notebook.getByRole("button", { name: "New note" });
+    await expectPrimaryActionCount(notebook, { max: 1 });
+    await expectActionBeforeScroll(captureAction, notebook);
+
+    await j.click(captureAction);
+    await j.fill(notebook.getByLabel("Notebook note title"), "Q3 reviewed, guidance claim delivered");
     await j.fill(
       notebook.getByLabel("Notebook note body"),
-      "Revenue confirmed from the new report; the revenue claim came in delivered.",
+      "Revenue read from the new report; the revenue claim came in delivered.",
     );
     await j.click(notebook.getByRole("button", { name: "Save" }));
     await expect(
-      notebook.getByLabel("Select notebook entry: Q3 confirmed, guidance claim delivered"),
+      notebook.getByLabel("Select notebook entry: Q3 reviewed, guidance claim delivered"),
     ).toHaveCount(1);
     await expectNoPageOverflow(page);
 
     await j.assertBudget();
   });
 
-  // ADR 0081 Q9: hostile filenames/labels stay contained inside the extraction
-  // modal (no overlay wires directly into this modal's data, so `dense-history`
-  // only stresses the surrounding Inbox stream; the modal check targets the
-  // hostile company's long unbreakable attachment URL and its proposals).
-  test("hostile filenames/labels/citations stay contained", async ({ page }) => {
-    // The heaviest journey test: two full-page axe scans + whole-DOM overflow
-    // sweeps over the dense hostile scenario. It historically ran at ~22s of
-    // the default 30s budget and tipped over when WSL I/O slowed (sparse vhdx,
-    // 2026-07-14) — give it headroom; every assertion stays as-is.
+  // ADR 0081 Q9: hostile filenames/labels stay contained on the surfaces this
+  // journey still walks. The KPI-extraction modal that used to carry this check
+  // is gone (ADR 0084), so the hostile content is stressed where it now lands —
+  // the Inbox stream and the detail rail it opens.
+  test("hostile filenames/labels stay contained", async ({ page }) => {
+    // Two full-page axe scans + whole-DOM overflow sweeps over the dense hostile
+    // scenario. It historically ran close to the default 30s budget and tipped
+    // over when WSL I/O slowed (sparse vhdx, 2026-07-14) — give it headroom.
     test.setTimeout(90_000);
     await primeMockScenario(page, { base: "rich", overlays: ["hostile-content", "dense-history"] });
     await openApp(page);
@@ -220,116 +204,55 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     // its stable (non-repeated) title fragment rather than the full string.
     const hostileItem = page.getByLabel(/Select feed item: .*Zażółć gęślą jaźń, wyniki Q3 2026/);
     await hostileItem.first().click();
-    const launcher = page.getByLabel("AI KPI extraction");
-    await expect(launcher).toBeVisible();
-    await launcher.getByRole("button", { name: "Extract KPIs" }).click();
 
-    const dialog = page.getByRole("dialog", { name: /KPI extraction/ });
-    await expect(dialog).toBeVisible();
-    // The DOCUMENT itself does not overflow (the modal correctly clips at the
-    // viewport level) — a lighter, direct check than `expectNoPageOverflow`
-    // here, which also scans for ANY horizontally-scrollable container and
-    // would trip on the known internal-modal bug documented below before the
-    // rest of this test's coverage (extraction, a11y) gets to run.
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1))
-      .toBe(true);
-    await expectNoA11yViolations(page, "KPI extraction dialog (hostile content)");
-
-    // Run extraction so dense proposals/citations are also on-screen.
-    const hostileSource = dialog.getByRole("button", { name: /Extract from attachment/ });
-    await expect(hostileSource).toBeVisible();
-    await hostileSource.click();
-    await expect(dialog.getByText("succeeded")).toBeVisible();
-    await expectNoA11yViolations(page, "KPI extraction dialog (hostile content, proposals loaded)");
-
-    // Regression guard (ADR 0081 Q9): the hostile attachment URL — a single
-    // unbreakable token with no spaces — is the extraction source button's
-    // label (`.kpi-extraction-source-name`). Before the fix it blew out the
-    // modal's internal width (scrollWidth 1620 > clientWidth 526 at 1366×768)
-    // and made `.ui-modal-body` horizontally scrollable. The fix (`min-width:0`
-    // on that flex child so its `text-overflow: ellipsis` engages) truncates
-    // the URL instead; this assertion stays to keep the regression caught.
-    await expectNoHorizontalOverflow(dialog);
+    // The detail rail renders the hostile title, attachment labels and body
+    // without blowing out the layout — the containment guarantee that used to
+    // be asserted on the extraction modal's source-name flex child.
+    await expectNoA11yViolations(page, "Inbox detail rail (hostile content)");
     await expectNoPageOverflow(page);
   });
 
-  // ADR 0081 Q9: an extraction failure must be explicit, with a working retry
-  // — never a silent "succeeded" with zero proposals.
-  test("explicit extraction failure + retry, never success with zero effect", async ({ page }) => {
+  // ADR 0081 Q9: a doubled verdict on the same claim cannot duplicate or
+  // overwrite — the resolved claim ends in exactly one state and leaves the
+  // review queue rather than staying re-resolvable.
+  //
+  // NOTE (flagged gap, not weakened here): unlike the retired KPI-confirm button,
+  // `CompanyClaimsPanel.resolveVerdict` has NO busy-disabled guard, so a second
+  // click during an in-flight `set_claim_verdict` does reach the backend. The
+  // write is idempotent so the OUTCOME is safe, which is what this test asserts.
+  // Adding the busy guard is a behavior change to a surviving feature and is
+  // escalated rather than made silently inside the AI-retirement slice.
+  test("double verdict cannot duplicate or overwrite newer state", async ({ page }) => {
     await openApp(page);
-    await page.getByLabel(/Primary navigation/).getByRole("button", { name: "Inbox" }).click();
-    await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-    await page.getByLabel(/Select feed item: CD PROJEKT/).first().click();
-    const launcher = page.getByLabel("AI KPI extraction");
-    await launcher.getByRole("button", { name: "Extract KPIs" }).click();
-    const dialog = page.getByRole("dialog", { name: /KPI extraction/ });
-    await expect(dialog).toBeVisible();
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
+    await expect(page.getByLabel("Companies list")).toBeVisible();
+    await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
 
-    const extractionId = await holdInvocation(page, { command: "start_kpi_extraction", phase: "before-handler" });
-    const extractAction = dialog.getByRole("button", { name: /Extract from attachment/ });
-    await extractAction.click();
+    await page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first().click();
+    const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });
+    await expect(claimsPane).toBeVisible();
+    const shortToggle = claimsPane.getByRole("button", { name: "Show all claims" });
+    if (await shortToggle.isVisible()) {
+      await shortToggle.click();
+    }
+    const reviewQueue = claimsPane.getByLabel("Claims to verify");
+    await expect(reviewQueue).toBeVisible();
 
-    await rejectInvocation(page, extractionId, {
-      code: "provider",
-      message: "Sample extraction provider failure (Q9 controlled-async case)",
-    });
+    const deliver = reviewQueue.getByRole("button", { name: "Delivered" }).first();
+    // One verdict control per tracked claim — the count that must not grow.
+    const claimsBefore = await claimsPane.getByLabel("Claim verdict").count();
 
-    // Explicit, visible failure — never a silent success.
-    await expect(dialog.getByText(/Sample extraction provider failure/)).toBeVisible();
-    await expect(dialog.getByText("succeeded")).toHaveCount(0);
-    await expectNoA11yViolations(page, "KPI extraction dialog (extraction failed)");
+    // Hold the verdict command in flight, click a SECOND time while it is still
+    // pending, then release — the doubled submission must not produce a doubled
+    // or conflicting result.
+    const verdictId = await holdInvocation(page, { command: "set_claim_verdict", phase: "before-handler" });
+    await deliver.click();
+    await deliver.click({ force: true });
+    await releaseInvocation(page, verdictId);
 
-    // Retry: the same source action is still available and can now succeed —
-    // never a dead end.
-    await extractAction.click();
-    await expect(dialog.getByText("succeeded")).toBeVisible();
-    await expect(dialog.getByText("Revenue")).toBeVisible();
-  });
-
-  // ADR 0081 Q9: a doubled confirm on the same proposal cannot create a
-  // duplicate/overwrite — the primitive's own busy-disabled state prevents a
-  // second submission, then the confirmed proposal's action row disappears
-  // entirely (never re-confirmable).
-  test("double action / modal reopen / reversed completion cannot duplicate or overwrite newer state", async ({
-    page,
-  }) => {
-    await openApp(page);
-    await page.getByLabel(/Primary navigation/).getByRole("button", { name: "Inbox" }).click();
-    await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-    await page.getByLabel(/Select feed item: CD PROJEKT/).first().click();
-    const launcher = page.getByLabel("AI KPI extraction");
-    await launcher.getByRole("button", { name: "Extract KPIs" }).click();
-    const dialog = page.getByRole("dialog", { name: /KPI extraction/ });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: /Extract from attachment/ }).click();
-    await expect(dialog.getByText("succeeded")).toBeVisible();
-
-    const firstProposal = dialog.locator(".kpi-extraction-proposal").first();
-    const confirmButton = firstProposal.getByRole("button", { name: "Confirm" });
-
-    // Hold the confirm command in flight and prove the button is disabled —
-    // a doubled click cannot submit a second confirm for the same proposal.
-    const confirmId = await holdInvocation(page, { command: "confirm_kpi_proposal", phase: "before-handler" });
-    await confirmButton.click();
-    await expect(confirmButton).toBeDisabled();
-    await releaseInvocation(page, confirmId);
-
-    // Exactly one confirmation lands: the proposal is confirmed once, and its
-    // action row (including Confirm) is gone — never re-confirmable.
-    await expect(firstProposal.getByText("confirmed")).toBeVisible();
-    await expect(firstProposal.getByRole("button", { name: "Confirm" })).toHaveCount(0);
-
-    // Closing and reopening the modal does not unmount the extraction state
-    // (the launcher's `job` lives above the modal) — the confirmed state
-    // survives the round trip rather than reverting or duplicating.
-    await dialog.getByRole("button", { name: "Close dialog" }).click();
-    await expect(dialog).toBeHidden();
-    await launcher.getByRole("button", { name: "Review extracted KPIs" }).click();
-    await expect(dialog).toBeVisible();
-    await expect(dialog.locator(".kpi-extraction-proposal").first().getByText("confirmed")).toBeVisible();
-    await expect(dialog.locator(".kpi-extraction-proposal").first().getByRole("button", { name: "Confirm" })).toHaveCount(
-      0,
-    );
+    // Exactly one verdict lands: the claim reads delivered, and the doubled
+    // submission created no extra claim — no duplicate, no conflicting row.
+    await expect(claimsPane.getByLabel("Claim verdict").first()).toHaveValue("delivered");
+    await expect(claimsPane.getByLabel("Claim verdict")).toHaveCount(claimsBefore);
   });
 });

@@ -1,7 +1,6 @@
 # ADR 0060: Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider
 
-Status: Accepted (2026-07-02) — the document-KPI premise reframe is recorded in
-[Amendments (2026-07-02)](#amendments-2026-07-02) below.
+Status: Superseded (2026-07-20) by [ADR 0084](0084-retire-in-app-ai-layer.md) — the in-app AI analysis layer this ADR routes is removed in `v0.59.0`; per-capability routing, the provider pool, and the OpenAI-compatible adapter go with it. Historical: Accepted (2026-07-02); the document-KPI premise reframe is recorded in [Amendments (2026-07-02)](#amendments-2026-07-02) below.
 
 > **Note (2026-07-01):** [ADR 0061](0061-deterministic-fundamentals-data-gathering.md) supersedes this
 > ADR's premise that KPI/claim extraction should route documents to Gemini-Pro. KPI extraction becomes

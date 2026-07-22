@@ -26,10 +26,12 @@ const BASE_TICK: Duration = Duration::from_secs(10);
 /// start jitter); derived deterministically per adapter id.
 const MAX_START_JITTER_SECONDS: i64 = 30;
 
-/// Daily cadence for the morning-briefing auto-trigger (ADR 0068 §T5): while the
-/// app is open, enqueue at most one briefing compose per day. The handler is
-/// idempotent per day, so this only governs enqueue churn, not correctness.
-const BRIEFING_INTERVAL_MS: i64 = 86_400_000;
+/// Daily cadence for the app-open auto-triggers: the morning briefing (ADR 0068
+/// §T5) and the BiznesRadar-primary fundamentals pull (ADR 0086 dec. 2). While
+/// the app is open, each enqueues at most one job per day. Both handlers are
+/// idempotent per day (the pull's per-page cadence cache makes an extra run a
+/// no-op), so this only governs enqueue churn, not correctness.
+const DAILY_INTERVAL_MS: i64 = 86_400_000;
 
 /// Job kind: one scheduled source-adapter refresh. Payload `{adapterId}`.
 pub const SOURCE_REFRESH_KIND: &str = "scheduled_source_refresh";
@@ -52,6 +54,7 @@ pub fn spawn(state: AppState) {
         let mut source_due: HashMap<String, i64> = HashMap::new();
         let mut registry_due: Option<i64> = None;
         let mut briefing_due: Option<i64> = None;
+        let mut aggregator_pull_due: Option<i64> = None;
         loop {
             std::thread::sleep(BASE_TICK);
             let (next_source, next_registry) = run_tick(&state, source_due, registry_due);
@@ -63,11 +66,19 @@ pub fn spawn(state: AppState) {
             // per day so an app restart (which resets `briefing_due`) re-composes at
             // most once per day.
             if crate::commands::licensing::current_license_can_use_app(&state) {
-                let (fire, next) = compute_briefing_due(now_ms(), briefing_due);
-                if fire {
-                    crate::jobs::morning_briefing::enqueue_daily_briefing(&state);
-                }
-                briefing_due = Some(next);
+                // Each app-open daily job goes through the ONE helper — the due
+                // state is reassigned inside it, so a new daily job cannot forget
+                // the reassignment and fire on every 60s tick (review 2026-07-22).
+                fire_daily(&mut briefing_due, || {
+                    crate::jobs::morning_briefing::enqueue_daily_briefing(&state)
+                });
+                // Daily BiznesRadar-primary fundamentals pull (ADR 0086 dec. 2).
+                // The per-(company, page_kind) cadence cache inside the pull makes
+                // an app-restart re-fire a cheap no-op — no page is fetched twice
+                // inside its 24h window.
+                fire_daily(&mut aggregator_pull_due, || {
+                    crate::jobs::aggregator_fundamentals_pull::enqueue_daily_pull(&state)
+                });
             }
         }
     });
@@ -229,12 +240,23 @@ fn apply_tick(
 
 /// Pure daily-cadence decision for the morning briefing: fire when there is no
 /// prior due time (first tick after app open) or the prior due time has elapsed;
-/// the next due time is always `now + BRIEFING_INTERVAL_MS`. Testable offline.
-fn compute_briefing_due(now: i64, prior_due: Option<i64>) -> (bool, i64) {
+/// the next due time is always `now + DAILY_INTERVAL_MS`. Testable offline.
+fn compute_daily_due(now: i64, prior_due: Option<i64>) -> (bool, i64) {
     match prior_due {
         Some(due) if now < due => (false, due),
-        _ => (true, now + BRIEFING_INTERVAL_MS),
+        _ => (true, now + DAILY_INTERVAL_MS),
     }
+}
+
+/// Run one app-open daily job's tick: fire `enqueue` when due and ALWAYS
+/// reassign the due state — the triad lives here once so per-job copies cannot
+/// drop the stateful line.
+fn fire_daily(due: &mut Option<i64>, enqueue: impl FnOnce()) {
+    let (fire, next) = compute_daily_due(now_ms(), *due);
+    if fire {
+        enqueue();
+    }
+    *due = Some(next);
 }
 
 fn now_ms() -> i64 {
@@ -258,22 +280,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn compute_briefing_due_fires_on_first_tick_then_daily() {
+    fn compute_daily_due_fires_on_first_tick_then_daily() {
         // First tick after app open (no prior due) fires immediately and schedules
         // the next one a day out; a tick before the next due is a no-op; a tick at
         // or after it fires again. Idempotency of same-day composes is the handler's
         // job (this only governs enqueue cadence).
-        let (fire, next) = compute_briefing_due(NOW, None);
+        let (fire, next) = compute_daily_due(NOW, None);
         assert!(fire, "first tick fires");
-        assert_eq!(next, NOW + BRIEFING_INTERVAL_MS);
+        assert_eq!(next, NOW + DAILY_INTERVAL_MS);
 
-        let (fire, next_again) = compute_briefing_due(NOW + 1_000, Some(next));
+        let (fire, next_again) = compute_daily_due(NOW + 1_000, Some(next));
         assert!(!fire, "not due yet");
         assert_eq!(next_again, next, "keeps the pending due time");
 
-        let (fire, next_day) = compute_briefing_due(next, Some(next));
+        let (fire, next_day) = compute_daily_due(next, Some(next));
         assert!(fire, "fires again once the day elapsed");
-        assert_eq!(next_day, next + BRIEFING_INTERVAL_MS);
+        assert_eq!(next_day, next + DAILY_INTERVAL_MS);
     }
 
     #[test]

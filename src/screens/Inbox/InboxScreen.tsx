@@ -15,7 +15,6 @@ import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
 import { useLocale } from "../../shared/locale";
 import { formatListTimestamp } from "../../shared/format/datetime";
-import { useAiFallbackEnabled } from "../../app/state/SettingsContext";
 import {
   Button,
   DenseRow,
@@ -44,12 +43,8 @@ export function InboxScreen() {
     filteredFeedItems,
     signalsByFeedItemId,
     signalsError,
-    aiSignalClassificationState,
     selectedFeedItem,
     selectedFeedCompany,
-    aiAnalysisJobsByFeedItemId,
-    aiAnalysisErrorByFeedItemId,
-    aiAnalysisRequestInFlightByFeedItemId,
     inboxStatusFilter,
     searchQuery,
     inboxWatchlistFilter,
@@ -79,7 +74,6 @@ export function InboxScreen() {
     setInboxSourceFilter,
     confirmCompanySignal,
     rejectCompanySignal,
-    runAiSignalClassification,
     setSelectedFeedItemId,
     setActiveSection,
     markVisibleInboxAsRead,
@@ -92,8 +86,6 @@ export function InboxScreen() {
     updateSelectedFeedItem,
     openCompanyWorkspaceFromFeedItem,
     openFeedItemNoteDraft,
-    startFeedItemAiAnalysis,
-    retryFeedItemAiAnalysis,
     resizeDetailPaneWithKeyboard,
     startDetailPaneResize,
     resizeDetailPane,
@@ -102,7 +94,6 @@ export function InboxScreen() {
     formatTimestamp,
   } = useInboxViewModel();
   const { t, text, locale } = useLocale();
-  const aiSignalFallbackEnabled = useAiFallbackEnabled();
   // Bulk data clear (ADR 0076 D5): confirm the unsaved-feed purge in place.
   const [confirmDeleteUnsaved, setConfirmDeleteUnsaved] = useState(false);
   // Density contract (ADR 0076 D6): at the S width tier the detail is a full-pane
@@ -410,21 +401,6 @@ export function InboxScreen() {
               {deleteUnsavedFeedState === "refreshing" ? text("Deleting") : text("Delete unsaved")}
             </Button>
           )}
-          {aiSignalFallbackEnabled ? (
-            <Button
-              className="compact-button"
-              disabled={aiSignalClassificationState === "running"}
-              onClick={() => {
-                void runAiSignalClassification();
-              }}
-              title={text("Classify unknown official filings with the AI fallback")}
-            >
-              {aiSignalClassificationState === "done" ? <CheckCircle2 size={15} /> : <Activity size={15} />}
-              {aiSignalClassificationState === "running"
-                ? text("Classifying")
-                : text("Classify with AI")}
-            </Button>
-          ) : null}
         </div>
       </section>
 
@@ -452,16 +428,11 @@ export function InboxScreen() {
           onBack={() => setInboxDetailOpen(false)}
           confirmCompanySignal={confirmCompanySignal}
           rejectCompanySignal={rejectCompanySignal}
-          aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
-          aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
-          aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
           healthError={healthError}
           databaseError={databaseError}
           updateSelectedFeedItem={updateSelectedFeedItem}
           openCompanyWorkspaceFromFeedItem={openCompanyWorkspaceFromFeedItem}
           openFeedItemNoteDraft={openFeedItemNoteDraft}
-          startFeedItemAiAnalysis={startFeedItemAiAnalysis}
-          retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
           feedItemSummary={feedItemSummary}
           formatTimestamp={formatTimestamp}
         />

@@ -5,10 +5,9 @@
  */
 export type CoverageReviewCell = { 
 /**
- * Pending `kpi_extraction_proposals` whose job detected this period.
- */
-pendingProposals: number, 
-/**
  * Mirror of `facts.flagged` — flagged facts are a review surface too.
+ * The `pending_proposals` input is gone with the KPI staging ledger
+ * (ADR 0084 decision 5): flagged deterministic facts are the only review
+ * surface left, so coverage can no longer be inflated by a retired source.
  */
 flaggedFacts: number, };

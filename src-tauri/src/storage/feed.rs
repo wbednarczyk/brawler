@@ -255,28 +255,8 @@ pub(super) fn transaction_delete_feed_item(
     connection: &Connection,
     feed_item_id: &str,
 ) -> StorageResult<()> {
-    connection.execute(
-        "
-        DELETE FROM ai_analysis_source_references
-        WHERE ai_analysis_result_id IN (
-            SELECT id FROM ai_analysis_results WHERE feed_item_id = ?1
-        )
-        ",
-        [feed_item_id],
-    )?;
-    connection.execute(
-        "
-        DELETE FROM ai_analysis_tags
-        WHERE ai_analysis_result_id IN (
-            SELECT id FROM ai_analysis_results WHERE feed_item_id = ?1
-        )
-        ",
-        [feed_item_id],
-    )?;
-    connection.execute(
-        "DELETE FROM ai_analysis_results WHERE feed_item_id = ?1",
-        [feed_item_id],
-    )?;
+    // The `ai_analysis_*` cascade that used to run here is gone with those tables
+    // (ADR 0084 decision 5, migration 0102).
     connection.execute(
         "DELETE FROM feed_item_attachments WHERE feed_item_id = ?1",
         [feed_item_id],

@@ -7,8 +7,6 @@
 // runtime clones per test. IDs use a single `*_sample_*` scheme.
 
 import type {
-  AiAnalysisJob,
-  AiAnalysisResult,
   AiProviderCatalogEntry,
   BackfillProgress,
   Company,
@@ -39,9 +37,7 @@ import type { AlertRule } from "../../api/generated/AlertRule";
 import type { AttentionEvent } from "../../api/generated/AttentionEvent";
 import type { ReconciliationResult } from "../../api/generated/ReconciliationResult";
 import type { BackupStatus } from "../../api/backups";
-import type { ClaimExtractionJob } from "../../api/claimExtraction";
 import type { IrReportResolution } from "../../api/ir";
-import type { KpiExtractionJob } from "../../api/kpiExtraction";
 import type {
   ClaimsToVerify,
   ClaimToVerify,
@@ -65,8 +61,6 @@ import type {
 } from "../../api/reportSeason";
 import type {
   EvidenceLink,
-  ResearchBriefJob,
-  ResearchDigestJob,
   ResearchEvidenceItem,
   ResearchQuestion,
   ResearchReminder,
@@ -243,27 +237,11 @@ export function makeOwnershipOverview(spec: CompanySpec): OwnershipOverview {
       { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", points: founderPoints("15.9") },
     ],
     residuals: [
-      // Eligible for OCR (no marker) → the warnbox offers "Read with OCR".
+      // Unreadable residual → the warnbox reports it as a flagged gap.
       { reportDocumentId: `doc_${spec.key}_2023`, parseState: "glyph_encoded", detectedAsOf: "2023-12-31", matchedHeading: "Akcjonariat" },
-      // Already OCR'd → a pending proposal awaits review (v0.57 T8, ADR 0077).
-      { reportDocumentId: `doc_${spec.key}_2022`, parseState: "glyph_encoded", detectedAsOf: "2022-12-31", matchedHeading: "Akcjonariat", ocrState: "proposed" },
-    ],
-    pendingProposals: [
-      { id: `ownhtp_${spec.key}_itema`, holderKey: "ITEMA VENTURES UAB", proposedType: "other_institutional", confidence: 0.7, rationale: "foreign holding entity" },
-    ],
-    ocrProposals: [
-      {
-        reportDocumentId: `doc_${spec.key}_2022`,
-        // The xhtml residual was resolved via its fetched PDF sibling (T8).
-        sourceDocumentId: `doc_${spec.key}_2022_pdf`,
-        asOf: "2022-12-31",
-        matchedHeading: "Akcjonariat",
-        providerId: "mistral",
-        holders: [
-          { holderNameRaw: "Marek Zborowski", capitalPct: "18.20", votesPct: "18.20" },
-          { holderNameRaw: "Aviva OFE", capitalPct: "7.10", votesPct: "7.10" },
-        ],
-      },
+      // A second unreadable residual — after ADR 0084 both are honest flagged
+      // gaps with no OCR action (the retired tier-4 path used to offer one).
+      { reportDocumentId: `doc_${spec.key}_2022`, parseState: "glyph_encoded", detectedAsOf: "2022-12-31", matchedHeading: "Akcjonariat" },
     ],
   };
 }
@@ -612,45 +590,6 @@ export function makeTranscriptSegment(spec: CompanySpec, index: number): Transcr
   };
 }
 
-export function makeAiAnalysisResult(spec: CompanySpec): AiAnalysisResult {
-  return {
-    id: `ai_result_sample_${spec.key}`,
-    aiAnalysisJobId: `ai_job_sample_${spec.key}`,
-    feedItemId: `feed_sample_${spec.key}_0`,
-    providerId: "provider_gemini",
-    model: "gemini-2.5-flash",
-    promptVersion: "m13.source_grounded.v1",
-    summary: `AI summary for ${spec.name}.`,
-    significance: "medium",
-    reasoning: "Source-grounded reasoning over the official report.",
-    language: "en",
-    tags: ["earnings"],
-    sourceReferences: [
-      { id: `ai_ref_${spec.key}`, sourceUrl: `https://example.test/feed/${spec.key}/0`, label: "Report", createdAt: SAMPLE_NOW },
-    ],
-    createdAt: SAMPLE_NOW,
-  };
-}
-
-export function makeAiAnalysisJob(spec: CompanySpec): AiAnalysisJob {
-  return {
-    id: `ai_job_sample_${spec.key}`,
-    feedItemId: `feed_sample_${spec.key}_0`,
-    promptPresetId: "default_summary",
-    customQuestion: null,
-    providerId: "provider_gemini",
-    model: "gemini-2.5-flash",
-    promptVersion: "m13.source_grounded.v1",
-    status: "succeeded",
-    errorCode: null,
-    error: null,
-    createdAt: SAMPLE_NOW,
-    startedAt: SAMPLE_NOW,
-    finishedAt: SAMPLE_NOW,
-    result: makeAiAnalysisResult(spec),
-  };
-}
-
 export function makeWatchlist(id: string, name: string, companyCount: number): Watchlist {
   return { id, name, description: null, companyCount };
 }
@@ -764,104 +703,6 @@ export function makeResearchReminder(spec: CompanySpec): ResearchReminder {
   };
 }
 
-export function makeResearchBriefJob(spec: CompanySpec): ResearchBriefJob {
-  const briefId = `brief_sample_${spec.key}`;
-  return {
-    id: `brief_job_sample_${spec.key}`,
-    scopeType: "company",
-    scopeId: companyId(spec),
-    providerId: "provider_gemini",
-    model: "gemini-2.5-flash",
-    promptVersion: "research_brief.v1",
-    evidenceCollectorVersion: "collector.v1",
-    rendererVersion: "renderer.v1",
-    status: "succeeded",
-    errorCode: null,
-    error: null,
-    createdAt: SAMPLE_NOW,
-    startedAt: SAMPLE_NOW,
-    finishedAt: SAMPLE_NOW,
-    brief: {
-      id: briefId,
-      jobId: `brief_job_sample_${spec.key}`,
-      scopeType: "company",
-      scopeId: companyId(spec),
-      providerId: "provider_gemini",
-      model: "gemini-2.5-flash",
-      promptVersion: "research_brief.v1",
-      evidenceCollectorVersion: "collector.v1",
-      rendererVersion: "renderer.v1",
-      title: `${spec.name} research brief`,
-      summary: `Brief summary for ${spec.name}.`,
-      contentMarkdown: `# ${spec.name}\n\nGenerated brief content [^1].`,
-      language: "en",
-      generatedAt: SAMPLE_NOW,
-      createdAt: SAMPLE_NOW,
-      citations: [
-        {
-          id: `brief_cite_${spec.key}`,
-          briefId,
-          citationKey: "1",
-          evidenceType: "feed_item",
-          evidenceId: `feed_sample_${spec.key}_0`,
-          label: `${spec.name} official report`,
-          snippet: "Cited snippet.",
-          createdAt: SAMPLE_NOW,
-        },
-      ],
-    },
-  };
-}
-
-export function makeResearchDigestJob(spec: CompanySpec): ResearchDigestJob {
-  const digestId = `digest_sample_${spec.key}`;
-  return {
-    id: `digest_job_sample_${spec.key}`,
-    scopeType: "company",
-    scopeId: companyId(spec),
-    providerId: "provider_gemini",
-    model: "gemini-2.5-flash",
-    promptVersion: "research_digest.v1",
-    evidenceCollectorVersion: "collector.v1",
-    rendererVersion: "renderer.v1",
-    status: "succeeded",
-    errorCode: null,
-    error: null,
-    createdAt: SAMPLE_NOW,
-    startedAt: SAMPLE_NOW,
-    finishedAt: SAMPLE_NOW,
-    digest: {
-      id: digestId,
-      jobId: `digest_job_sample_${spec.key}`,
-      scopeType: "company",
-      scopeId: companyId(spec),
-      providerId: "provider_gemini",
-      model: "gemini-2.5-flash",
-      promptVersion: "research_digest.v1",
-      evidenceCollectorVersion: "collector.v1",
-      rendererVersion: "renderer.v1",
-      title: `${spec.name} weekly digest`,
-      summary: `Digest summary for ${spec.name}.`,
-      contentMarkdown: `# ${spec.name}\n\nGenerated digest content [^1].`,
-      language: "en",
-      generatedAt: SAMPLE_NOW,
-      createdAt: SAMPLE_NOW,
-      citations: [
-        {
-          id: `digest_cite_${spec.key}`,
-          digestId,
-          citationKey: "1",
-          evidenceType: "feed_item",
-          evidenceId: `feed_sample_${spec.key}_0`,
-          label: `${spec.name} official report`,
-          snippet: "Cited snippet.",
-          createdAt: SAMPLE_NOW,
-        },
-      ],
-    },
-  };
-}
-
 export function makeResearchReviewCheckpoint(spec: CompanySpec): ResearchReviewCheckpoint {
   return {
     id: `checkpoint_sample_${spec.key}`,
@@ -891,7 +732,6 @@ export function makeManagementClaim(spec: CompanySpec): ManagementClaim {
     status: "pending",
     sourceEvidenceType: "transcript_segment",
     sourceEvidenceId: `segment_sample_${spec.key}_0`,
-    extractionProposalId: null,
     targetMetricKey: "revenue",
     targetComparator: "gte",
     targetValueNumeric: "1000000000",
@@ -919,44 +759,6 @@ export function makeClaimsToVerify(specs: readonly CompanySpec[]): ClaimsToVerif
   };
 }
 
-export function makeClaimExtractionJob(spec: CompanySpec): ClaimExtractionJob {
-  return {
-    id: `claim_job_sample_${spec.key}`,
-    companyId: companyId(spec),
-    sourceType: "transcript",
-    sourceId: `transcript_sample_${spec.key}`,
-    providerId: "provider_gemini",
-    model: "gemini-2.5-flash",
-    promptVersion: "claim_extraction.v1",
-    status: "succeeded",
-    errorCode: null,
-    error: null,
-    createdAt: SAMPLE_NOW,
-    startedAt: SAMPLE_NOW,
-    finishedAt: SAMPLE_NOW,
-    proposals: [
-      {
-        id: `claim_proposal_sample_${spec.key}`,
-        jobId: `claim_job_sample_${spec.key}`,
-        statement: `${spec.name} expects EBITDA margin to expand`,
-        dueFiscalYear: 2026,
-        duePeriodType: "FY",
-        targetMetricKey: "ebitda_margin",
-        targetComparator: "gte",
-        targetValueNumeric: "0.18",
-        targetUnit: "ratio",
-        confidence: "0.72",
-        sourceSnippet: "We expect margins to expand next year.",
-        sourceEvidenceType: "transcript_segment",
-        sourceEvidenceId: `segment_sample_${spec.key}_0`,
-        status: "pending",
-        claimId: null,
-        createdAt: SAMPLE_NOW,
-        updatedAt: SAMPLE_NOW,
-      },
-    ],
-  };
-}
 
 // ============================================================================
 // Fundamentals (financials + KPIs + report documents)
@@ -992,7 +794,7 @@ export function makeFinancialFact(spec: CompanySpec, fiscalYear: number): Financ
     asReportedScale: "million",
     reportingStandard: "IFRS",
     extractionMethod: "ai_assisted",
-    confidence: "0.9",
+    confidence: "high",
     confirmationState: "confirmed",
     supersedesId: null,
     sourceDocumentRef: `report_doc_sample_${spec.key}`,
@@ -1031,51 +833,6 @@ export function makeKpiRelevance(spec: CompanySpec): KpiRelevance {
     lastSeenPeriod: `period_sample_${spec.key}_2026_FY`,
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
-  };
-}
-
-export function makeKpiExtractionJob(spec: CompanySpec): KpiExtractionJob {
-  return {
-    id: `kpi_job_sample_${spec.key}`,
-    companyId: companyId(spec),
-    reportDocumentId: `report_doc_sample_${spec.key}`,
-    providerId: "provider_gemini",
-    model: "gemini-2.5-flash",
-    promptVersion: "kpi_extraction.v1",
-    periodHint: "2026-FY",
-    status: "succeeded",
-    errorCode: null,
-    error: null,
-    detectedFiscalYear: 2026,
-    detectedPeriodType: "FY",
-    detectedPeriodEndDate: "2026-12-31",
-    detectedCurrency: "PLN",
-    detectedLanguage: "pl",
-    createdAt: SAMPLE_NOW,
-    startedAt: SAMPLE_NOW,
-    finishedAt: SAMPLE_NOW,
-    committedFactCount: 0,
-    proposals: [
-      {
-        id: `kpi_proposal_sample_${spec.key}`,
-        jobId: `kpi_job_sample_${spec.key}`,
-        metricKey: "revenue",
-        label: "Revenue",
-        valueNumeric: "1050000000",
-        unit: "PLN",
-        currency: "PLN",
-        asReportedValue: "1050.0",
-        asReportedScale: "million",
-        measureWindow: "FY",
-        confidence: "0.9",
-        sourceSnippet: "Revenue of PLN 1,050m.",
-        isProposedKpi: false,
-        status: "pending",
-        factId: null,
-        createdAt: SAMPLE_NOW,
-        updatedAt: SAMPLE_NOW,
-      },
-    ],
   };
 }
 
@@ -1309,13 +1066,10 @@ export function makeBackfillProgress(spec: CompanySpec): BackfillProgress {
 
 export function makeIrReportResolution(spec: CompanySpec): IrReportResolution {
   return {
-    document: makeReportDocument(spec),
     candidates: [
       { url: `https://example.test/ir/${spec.key}/annual-2026.pdf`, label: "Annual report 2026" },
       { url: `https://example.test/ir/${spec.key}/q1-2026.pdf`, label: "Q1 2026 report" },
     ],
-    pickedUrl: `https://example.test/ir/${spec.key}/annual-2026.pdf`,
-    confidence: "high",
   };
 }
 
@@ -1331,7 +1085,6 @@ export function makeUserSettings(): UserSettings {
     developerMode: false,
     pollIntervalSeconds: 900,
     backfillYears: 3,
-    historySweepAiCallLimit: 30,
     settingsSource: "sample",
     settingsImportExportFormat: "yaml",
     yamlImportExportStatus: "accepted_deferred",
@@ -1339,18 +1092,11 @@ export function makeUserSettings(): UserSettings {
       youtubeTranscriptionProvider: "provider_gemini",
       youtubeTranscriptionModel: "gemini-2.5-flash",
       youtubeTranscriptionTimeoutSeconds: 300,
-      generalAnalysisProvider: "provider_gemini",
-      generalAnalysisModel: "gemini-2.5-flash",
-      generalAnalysisTimeoutSeconds: 90,
-      openaiCompatibleBaseUrl: "",
     },
-    aiAnalysisMode: "source_grounded",
-    espiAiFallbackEnabled: false,
     logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
     shortcutBindings: {},
-    capabilityProviders: {},
     database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
-    queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
+    queue: { sourcesWorkers: 2, autopilotWorkers: 3 },
     pinnedCompanyIds: [],
     mcp: { enabled: false, port: 8317 },
   };

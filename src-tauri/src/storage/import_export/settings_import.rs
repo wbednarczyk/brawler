@@ -101,29 +101,6 @@ fn settings_to_update(settings: ExportSettings) -> StorageResult<SettingsUpdate>
             &[45, 90, 180, 300, 600],
         )?;
     }
-    if let Some(provider) = settings.general_analysis_provider.as_deref() {
-        let mut allowed_providers = vec![""];
-        allowed_providers
-            .extend(crate::providers::analysis::registry::selectable_analysis_provider_ids());
-        validate_allowed_import_setting("general_analysis_provider", provider, &allowed_providers)?;
-    }
-    if let Some(model) = settings.general_analysis_model.as_deref() {
-        validate_allowed_import_setting(
-            "general_analysis_model",
-            model,
-            &crate::providers::analysis::registry::analysis_model_ids(),
-        )?;
-    }
-    if let Some(value) = settings.general_analysis_timeout_seconds {
-        validate_allowed_import_setting_i64(
-            "general_analysis_timeout_seconds",
-            value,
-            &[45, 90, 180, 300, 600],
-        )?;
-    }
-    if let Some(mode) = settings.ai_analysis_mode.as_deref() {
-        validate_allowed_import_setting("ai_analysis_mode", mode, &["source_grounded"])?;
-    }
     if let Some(level) = settings.log_level.as_deref() {
         validate_allowed_import_setting(
             "log_level",
@@ -146,10 +123,6 @@ fn settings_to_update(settings: ExportSettings) -> StorageResult<SettingsUpdate>
         youtube_transcription_provider: settings.youtube_transcription_provider,
         youtube_transcription_model: settings.youtube_transcription_model,
         youtube_transcription_timeout_seconds: settings.youtube_transcription_timeout_seconds,
-        general_analysis_provider: settings.general_analysis_provider,
-        general_analysis_model: settings.general_analysis_model,
-        general_analysis_timeout_seconds: settings.general_analysis_timeout_seconds,
-        ai_analysis_mode: settings.ai_analysis_mode,
         log_level: settings.log_level,
         log_max_files: settings.log_max_files,
         log_max_file_bytes: settings.log_max_file_bytes,
@@ -180,18 +153,6 @@ fn settings_to_update_summary(settings: &ExportSettings) -> ImportApplySummary {
         updated += 1;
     }
     if settings.youtube_transcription_timeout_seconds.is_some() {
-        updated += 1;
-    }
-    if settings.general_analysis_provider.is_some() {
-        updated += 1;
-    }
-    if settings.general_analysis_model.is_some() {
-        updated += 1;
-    }
-    if settings.general_analysis_timeout_seconds.is_some() {
-        updated += 1;
-    }
-    if settings.ai_analysis_mode.is_some() {
         updated += 1;
     }
     if settings.log_level.is_some() {

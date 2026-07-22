@@ -408,3 +408,40 @@ fn empty_register_snapshot_is_rejected_not_treated_as_mass_exit() {
         "stored position must stay active"
     );
 }
+
+/// Guardrail (live regression 2026-07-21, owner's real app): the KNF register
+/// re-lists a holder under a different RAW spelling (case/punctuation) — the
+/// slugged `id` is identical, the raw `holder_name` is not. The upsert must
+/// resolve on the CANONICAL identity (the id) and update the stored spelling,
+/// never abort the whole refresh with `UNIQUE constraint failed:
+/// short_positions.id` (which is exactly what the owner saw in Sources).
+#[test]
+fn a_respelled_holder_updates_in_place_instead_of_aborting_the_refresh() {
+    let connection = open_in_memory_database().expect("database initializes");
+    let state = AppState::new(connection);
+    let _company = tracked_company(&state);
+    seed_adapter(&state);
+
+    let store = state.short_positions();
+    store
+        .ingest_knf_short_positions(&[entry("Marshall Wace LLP", CDR_ISIN, 0.61, "2026-07-14")])
+        .expect("first spelling ingests");
+
+    // Same institution, different raw spelling → same slug/id.
+    let outcome = store
+        .ingest_knf_short_positions(&[entry("MARSHALL WACE, LLP", CDR_ISIN, 0.71, "2026-07-15")])
+        .expect("a respelled holder must update in place, not abort the refresh");
+    assert_eq!(outcome.items_matched, 1);
+
+    let connection = state.checkout().expect("connection");
+    let (count, name, pct): (i64, String, f64) = connection
+        .query_row(
+            "SELECT COUNT(*), MAX(holder_name), MAX(net_position_pct) FROM short_positions",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("query");
+    assert_eq!(count, 1, "one canonical position, never a duplicate");
+    assert_eq!(name, "MARSHALL WACE, LLP", "the latest raw spelling wins");
+    assert!((pct - 0.71).abs() < 1e-9, "the position updated");
+}

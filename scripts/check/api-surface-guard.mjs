@@ -20,12 +20,9 @@ const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const API_DIR = join(ROOT, "src", "api");
 
 // Documented exemptions — each entry needs an ADR/owner-decision reference.
-const PARKED_ALLOWLIST = new Set([
-  // Parked, not removed (ADR 0080 decision 6, owner decision 2026-07-11): the
-  // AI claim-extraction pipeline awaits a future UI slice (revisit at NS1).
-  // Remove this entry when the UI lands or the pipeline is retired.
-  "src/api/claimExtraction.ts",
-]);
+// (Empty: the one historical entry, `src/api/claimExtraction.ts`, was retired
+// with the in-app AI analysis layer — ADR 0084, which reverses ADR 0080 §6.)
+const PARKED_ALLOWLIST = new Set([]);
 
 /** Recursively collect .ts/.tsx files under dir. */
 function walk(dir) {

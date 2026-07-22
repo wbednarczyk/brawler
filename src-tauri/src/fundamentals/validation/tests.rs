@@ -172,6 +172,91 @@ fn cross_check_flags_column_misalignment() {
 }
 
 #[test]
+fn uniform_scale_error_passes_balance_sheet_but_the_comparative_cross_check_catches_it() {
+    // Guard for the class the same-period identities are BLIND to (card 22ac70c
+    // item 4): a document read a uniform ×1000 too small (a dropped "w tys."
+    // multiplier) is INTERNALLY consistent — assets, liabilities and equity are
+    // all off by the same factor, so `total_assets = total_liabilities +
+    // total_equity` STILL HOLDS. The balance-sheet identity therefore passes and
+    // cannot flag it; only a check against an independently-read number can.
+    let unscaled = facts(&[
+        (TOTAL_ASSETS, d(1_000)),
+        (TOTAL_LIABILITIES, d(600)),
+        (TOTAL_EQUITY, d(400)),
+    ]);
+    assert_eq!(
+        balance_sheet(&unscaled, &Tolerance::default()).outcome,
+        Outcome::Pass,
+        "a uniformly-unscaled statement is internally consistent — the identity cannot see the error"
+    );
+
+    // The comparative cross-check IS the guard: the prior-period column read out
+    // of this unscaled report (×1 base units) disagrees ~1000× with the value
+    // already stored for that period (correct base units) → Fail.
+    let extracted_prior = facts(&[(TOTAL_ASSETS, d(950)), (TOTAL_EQUITY, d(380))]);
+    let stored_prior = facts(&[(TOTAL_ASSETS, d(950_000)), (TOTAL_EQUITY, d(380_000))]);
+    let checks = cross_check_prior(&extracted_prior, &stored_prior, &Tolerance::default());
+    assert!(
+        checks.iter().all(|c| c.outcome.is_fail()),
+        "every comparative metric must flag the ~1000× scale mismatch"
+    );
+}
+
+#[test]
+fn history_plausibility_flags_a_uniform_scale_outlier_but_spares_normal_moves() {
+    // Card 22ac70c item 4 / harvest: Atrem cash 19 000 against sibling periods
+    // of ~3.8 M / 2.3 M / 8.5 M — ~200× below the median, the footprint of a
+    // note ref read as the value with no comparative column to catch it.
+    let siblings = [d(3_841_000), d(2_315_000), d(8_529_000)];
+    assert!(implausible_against_history("cash", d(19_000), &siblings));
+    // A ~1000× over-scale (a dropped multiplier) is flagged the same way.
+    assert!(implausible_against_history(
+        "revenue",
+        d(207_763_000_000),
+        &[d(83_411_000), d(134_113_000), d(130_074_000),]
+    ));
+    // A normal period-over-period value is NOT flagged.
+    assert!(!implausible_against_history(
+        "cash",
+        d(3_500_000),
+        &siblings
+    ));
+    // Split-sensitive metrics are exempt (a split legitimately moves them >100×).
+    assert!(!implausible_against_history(
+        "eps_basic",
+        d(1),
+        &[d(200), d(210)]
+    ));
+    // Too little history to judge (< 2 values) abstains.
+    assert!(!implausible_against_history(
+        "cash",
+        d(19_000),
+        &[d(3_841_000)]
+    ));
+    // A zero on either side is left to the identities, never flagged as a scale error.
+    assert!(!implausible_against_history("cash", d(0), &siblings));
+}
+
+#[test]
+fn history_median_is_the_upper_middle_magnitude_and_needs_two_values() {
+    // The figure the quarantine outcome cites. Upper-middle element (index len/2),
+    // magnitudes only, zeros excluded, and `None` below two non-zero values so the
+    // gate has no median to judge against.
+    assert_eq!(history_median(&[d(1), d(3), d(2)]), Some(d(2)));
+    assert_eq!(
+        history_median(&[d(-8_529_000), d(3_841_000)]),
+        Some(d(8_529_000))
+    );
+    assert_eq!(
+        history_median(&[d(0), d(5)]),
+        None,
+        "a lone non-zero is not a median"
+    );
+    assert_eq!(history_median(&[d(5)]), None);
+    assert_eq!(history_median(&[]), None);
+}
+
+#[test]
 fn cross_check_only_compares_overlapping_metrics() {
     let extracted_prior = facts(&[(TOTAL_ASSETS, d(950))]);
     let stored_prior = facts(&[(TOTAL_EQUITY, d(400))]);

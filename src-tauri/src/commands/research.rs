@@ -1,11 +1,9 @@
-use crate::{
-    app_state, jobs,
-    providers::analysis::{
-        capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
-        TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
-    },
-    storage,
-};
+//! Research surface. Brief/digest **generation** is retired with the in-app AI
+//! analysis layer (ADR 0084 decision 1); the `list_research_briefs` /
+//! `list_research_digests` reads survive because already-stored briefs and
+//! digests are user data that stays readable (decision 5).
+
+use crate::{app_state, storage};
 
 #[tauri::command]
 pub fn list_research_evidence(
@@ -140,52 +138,6 @@ pub fn delete_evidence_link(
 }
 
 #[tauri::command]
-pub async fn start_research_brief(
-    input: storage::ResearchBriefScopeInput,
-    state: tauri::State<'_, app_state::AppState>,
-) -> Result<storage::ResearchBriefJob, String> {
-    // No explicit override input exists for this command: defer to capability
-    // routing at run time when anything is actually configured; otherwise keep
-    // the legacy test-sample default so brief generation still runs out of the
-    // box (ADR 0060 as amended — mirrors the KPI/claim enqueue pin).
-    let members = jobs::resolve_capability_members(&state, AiCapability::ResearchBrief)
-        .map_err(|error| error.to_string())?;
-    let (provider_id, model) = if members.is_empty() {
-        (
-            TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
-            TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
-        )
-    } else {
-        (
-            CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
-            CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
-        )
-    };
-    let job = state
-        .create_research_brief_job(storage::NewResearchBriefJob {
-            scope_type: input.scope_type,
-            scope_id: input.scope_id,
-            provider_id,
-            model,
-        })
-        .map_err(|error| error.to_string())?;
-
-    spawn_research_brief_job(state.inner().clone(), job.id.clone());
-
-    Ok(job)
-}
-
-#[tauri::command]
-pub fn list_research_briefs(
-    input: storage::ResearchBriefScopeInput,
-    state: tauri::State<'_, app_state::AppState>,
-) -> Result<Vec<storage::ResearchBriefJob>, String> {
-    state
-        .list_research_brief_jobs(input)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 pub fn list_research_reminders(
     input: storage::ResearchReminderListInput,
     state: tauri::State<'_, app_state::AppState>,
@@ -223,58 +175,4 @@ pub fn delete_research_reminder(
     state
         .delete_research_reminder(&id)
         .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub async fn start_research_digest(
-    input: storage::ResearchDigestScopeInput,
-    state: tauri::State<'_, app_state::AppState>,
-) -> Result<storage::ResearchDigestJob, String> {
-    // No explicit override input exists for this command: defer to capability
-    // routing at run time when anything is actually configured; otherwise keep
-    // the legacy test-sample default so digest generation still runs out of the
-    // box (ADR 0060 as amended — mirrors the KPI/claim enqueue pin).
-    let members = jobs::resolve_capability_members(&state, AiCapability::ResearchDigest)
-        .map_err(|error| error.to_string())?;
-    let (provider_id, model) = if members.is_empty() {
-        (
-            TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
-            TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
-        )
-    } else {
-        (
-            CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
-            CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
-        )
-    };
-    let job = state
-        .create_research_digest_job(storage::NewResearchDigestJob {
-            scope_type: input.scope_type,
-            scope_id: input.scope_id,
-            provider_id,
-            model,
-        })
-        .map_err(|error| error.to_string())?;
-
-    spawn_research_digest_job(state.inner().clone(), job.id.clone());
-
-    Ok(job)
-}
-
-#[tauri::command]
-pub fn list_research_digests(
-    input: storage::ResearchDigestScopeInput,
-    state: tauri::State<'_, app_state::AppState>,
-) -> Result<Vec<storage::ResearchDigestJob>, String> {
-    state
-        .list_research_digest_jobs(input)
-        .map_err(|error| error.to_string())
-}
-
-fn spawn_research_brief_job(state: app_state::AppState, job_id: String) {
-    jobs::handlers::enqueue_per_job(&state, jobs::handlers::RESEARCH_BRIEF_KIND, &job_id);
-}
-
-fn spawn_research_digest_job(state: app_state::AppState, job_id: String) {
-    jobs::handlers::enqueue_per_job(&state, jobs::handlers::RESEARCH_DIGEST_KIND, &job_id);
 }

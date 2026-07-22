@@ -16,10 +16,11 @@ Build an investor workspace for company news, official reports, and ticker-speci
 - pull GPW-focused official reports and selected public/RSS news sources
 - show a chronological feed with filters, unread state, source attribution, and company grouping
 - maintain a notebook for each ticker
-- create notes directly from feed items, transcripts, and selected AI-suggested excerpts
+- create notes directly from feed items and transcripts
 - track management claims or promises across future quarters
 - run local ingestion while the desktop app is open
-- use provider-neutral AI contracts for summaries, tags, significance labels, video transcription, and note extraction
+- gather fundamentals 100% deterministically (layered structured-first extraction, validated or flagged — [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md))
+- expose the whole research domain through a local MCP port so the user's own agent supplies intelligence (**BYOA — bring your own agent**; the in-app AI analysis layer is retired, [ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the only in-app AI is video transcription (data acquisition, provider-neutral trait)
 
 V1 is not a portfolio tracker, trading tool, or investment recommendation engine.
 

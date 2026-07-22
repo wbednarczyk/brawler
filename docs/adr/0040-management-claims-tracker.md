@@ -1,6 +1,6 @@
 # ADR 0040: Management Claims Tracker — First-Class Claims, AI Extraction, and Due-Period Resurfacing (Design)
 
-Status: Accepted
+Status: Accepted — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: AI claim extraction from report documents/transcripts is removed in `v0.59.0`; claims are created through the manual path (`create_management_claim`), with agent-proposed claims returning via MCP write-tools (`v0.61.0`). Claim entity, due-period derivation, verdicts, and KPI-backed verification are unchanged.
 
 This ADR captures the **design** for the management claims tracker (epic `cbf6999`, milestone `v0.42.0`): tracking management promises from reports and transcripts as first-class claims with a due period and a verdict, so a past statement resurfaces automatically when the due period's report arrives and can be resolved against evidence. It records the decisions made during milestone planning so contracts, data model, product spec, and UI flows are decision-complete before implementation.
 

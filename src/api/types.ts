@@ -73,9 +73,6 @@ export type { FeedItemAttachment } from "./generated/FeedItemAttachment";
 export type { FeedDeleteResult } from "./generated/FeedDeleteResult";
 export type { FeedPruneResult } from "./generated/FeedPruneResult";
 
-export type { AiAnalysisJob } from "./generated/AiAnalysisJob";
-export type { AiAnalysisResult } from "./generated/AiAnalysisResult";
-export type { AiAnalysisSourceReference } from "./generated/AiAnalysisSourceReference";
 
 export type { DiagnosticScope } from "./generated/DiagnosticScope";
 export type { DiagnosticEvent } from "./generated/DiagnosticEvent";

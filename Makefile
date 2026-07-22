@@ -25,7 +25,7 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: commit help install dev frontend-preview build check check-fast check-docs disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: commit help install dev frontend-preview build check check-fast check-docs disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -65,8 +65,6 @@ help:
 	@printf "                            Generate a friend-test license token under private/licenses\n"
 	@printf "  make smoke-gemini-transcript\n"
 	@printf "                            Opt-in live Gemini YouTube transcript smoke test\n"
-	@printf "  make smoke-gemini-analysis\n"
-	@printf "                            Opt-in live Gemini feed-item analysis smoke test\n"
 	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
 	@printf "  make live-up             Rebuild the portable exe, launch it on Windows with CDP open, wait until ready (ADR 0066)\n"
 	@printf "  make live-drive          Drive the real running Windows app via WebView2 CDP (ADR 0066), needs a live app\n"
@@ -444,25 +442,6 @@ smoke-gemini-transcript:
 		exit 1; \
 	fi
 	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_transcribes_youtube_url -- --ignored --nocapture
-
-smoke-gemini-analysis:
-	@if [ -z "$${GEMINI_API_KEY:-}" ]; then \
-		printf "GEMINI_API_KEY is required for the live Gemini analysis smoke test.\n"; \
-		exit 1; \
-	fi
-	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL:-}" ]; then \
-		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL is required for the live Gemini analysis smoke test.\n"; \
-		exit 1; \
-	fi
-	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE:-}" ]; then \
-		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE is required for the live Gemini analysis smoke test.\n"; \
-		exit 1; \
-	fi
-	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY:-}" ]; then \
-		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY is required for the live Gemini analysis smoke test.\n"; \
-		exit 1; \
-	fi
-	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_analyzes_feed_item -- --ignored --nocapture
 
 smoke-keyring:
 	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture

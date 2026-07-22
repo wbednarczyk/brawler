@@ -130,7 +130,6 @@ import type {
   Watchlist,
   WatchlistMembership,
 } from "../api/types";
-import { useAiAnalysisController } from "./useAiAnalysisController";
 import type { ResearchEvidenceItem } from "../api/researchTypes";
 import type { SearchMatch } from "../api/search";
 
@@ -196,7 +195,6 @@ export function AppStateRoot({
   const [feedError, setFeedError] = useState<string | null>(null);
   const [signals, setSignals] = useState<CompanySignal[]>([]);
   const [signalsError, setSignalsError] = useState<string | null>(null);
-  const [aiSignalClassificationState, setAiSignalClassificationState] = useState<string>("idle");
   const [companyEvents, setCompanyEvents] = useState<CompanyEvent[]>([]);
   const [companyEventsError, setCompanyEventsError] = useState<string | null>(null);
   const [transcriptJobs, setTranscriptJobs] = useState<TranscriptJob[]>([]);
@@ -413,7 +411,6 @@ export function AppStateRoot({
     membershipsByCompany,
     scheduledSourceAdapters,
     selectedCompany,
-    selectedCompanyFeedItem,
     selectedFeedCompany,
     selectedFeedItem,
     selectedNotebookEntry,
@@ -466,13 +463,6 @@ export function AppStateRoot({
     watchlistMemberships,
   });
 
-  const {
-    aiAnalysisJobsByFeedItemId,
-    aiAnalysisErrorByFeedItemId,
-    aiAnalysisRequestInFlightByFeedItemId,
-    startFeedItemAiAnalysis,
-    retryFeedItemAiAnalysis,
-  } = useAiAnalysisController({ selectedFeedItem, selectedCompanyFeedItem });
 
   // Memoized (not recreated every render): the persistent-overflow bridge
   // effect below depends on `text`'s identity to know when to rebind. An
@@ -535,15 +525,11 @@ export function AppStateRoot({
     researchQuestionTitle,
     researchQuestionBody,
     researchQuestionLinks,
-    researchBriefJobs,
-    researchDigestJobs,
     researchReminders,
     researchError,
     researchLoading,
     researchReviewInFlight,
     researchQuestionInFlight,
-    researchBriefInFlight,
-    researchDigestInFlight,
     researchReminderInFlight,
     setResearchMode,
     setSelectedResearchCompanyId,
@@ -563,8 +549,6 @@ export function AppStateRoot({
     deleteResearchQuestion,
     linkEvidenceToSelectedQuestion,
     unlinkEvidenceFromSelectedQuestion,
-    startResearchBrief,
-  startResearchDigest,
   createResearchReminder,
   completeResearchReminder,
   snoozeResearchReminder,
@@ -712,16 +696,9 @@ export function AppStateRoot({
     unlockDeveloperMode,
     updateAccentPalette,
     updateLocale,
-    updateGeneralAnalysisModel,
-    updateGeneralAnalysisProvider,
-    updateGeneralAnalysisTimeout,
-    updateEspiAiFallbackEnabled,
-    updateOpenAiCompatibleBaseUrl,
-    updateCapabilityProviders,
     updatePollInterval,
     updateBackfillYears,
     updateMcpPort,
-    updateHistorySweepAiCallLimit,
     updateLogLevel,
     updateLogMaxFileBytes,
     updateLogMaxFiles,
@@ -731,8 +708,6 @@ export function AppStateRoot({
     resetDatabaseSettings,
     updateSourcesWorkers,
     updateAutopilotWorkers,
-    updateAiWorkers,
-    updateAiProviderConcurrency,
     resetQueueSettings,
     updatePinnedCompanyIds,
     updateShortcutBindings,
@@ -992,22 +967,6 @@ export function AppStateRoot({
       setCompanyEventsError(null);
     } catch (error) {
       setCompanyEventsError(String(error));
-    }
-  }
-
-  async function runAiSignalClassification() {
-    setAiSignalClassificationState("running");
-    setSignalsError(null);
-    try {
-      await signalsApi.runAiSignalClassification();
-      await refreshSignals();
-      setAiSignalClassificationState("done");
-      window.setTimeout(() => {
-        setAiSignalClassificationState("idle");
-      }, 900);
-    } catch (error) {
-      setSignalsError(String(error));
-      setAiSignalClassificationState("idle");
     }
   }
 
@@ -1465,15 +1424,11 @@ export function AppStateRoot({
     questionTitle: researchQuestionTitle,
     questionBody: researchQuestionBody,
     questionLinks: researchQuestionLinks,
-    briefJobs: researchBriefJobs,
-    digestJobs: researchDigestJobs,
     reminders: researchReminders,
     error: researchError,
     loading: researchLoading,
     reviewInFlight: researchReviewInFlight,
     questionInFlight: researchQuestionInFlight,
-    briefInFlight: researchBriefInFlight,
-    digestInFlight: researchDigestInFlight,
     reminderInFlight: researchReminderInFlight,
     setMode: setResearchMode,
     setSelectedCompanyId: setSelectedResearchCompanyId,
@@ -1506,12 +1461,6 @@ export function AppStateRoot({
     },
     unlinkEvidence: (linkId) => {
       void unlinkEvidenceFromSelectedQuestion(linkId);
-    },
-    startBrief: () => {
-      void startResearchBrief();
-    },
-    startDigest: () => {
-      void startResearchDigest();
     },
     createReminder: (title, body, dueAt) => {
       void createResearchReminder(title, body, dueAt);
@@ -1746,12 +1695,8 @@ export function AppStateRoot({
                 filteredFeedItems,
                 signalsByFeedItemId,
                 signalsError,
-                aiSignalClassificationState,
                 selectedFeedItem,
                 selectedFeedCompany,
-                aiAnalysisJobsByFeedItemId,
-                aiAnalysisErrorByFeedItemId,
-                aiAnalysisRequestInFlightByFeedItemId,
                 inboxStatusFilter,
                 searchQuery,
                 inboxWatchlistFilter,
@@ -1781,7 +1726,6 @@ export function AppStateRoot({
                 setInboxSourceFilter,
                 confirmCompanySignal,
                 rejectCompanySignal,
-                runAiSignalClassification,
                 setSelectedFeedItemId,
                 setActiveSection,
                 markVisibleInboxAsRead,
@@ -1794,8 +1738,6 @@ export function AppStateRoot({
                 updateSelectedFeedItem,
                 openCompanyWorkspaceFromFeedItem,
                 openFeedItemNoteDraft,
-                startFeedItemAiAnalysis,
-                retryFeedItemAiAnalysis,
                 resizeDetailPaneWithKeyboard,
                 startDetailPaneResize,
                 resizeDetailPane,
@@ -2032,16 +1974,9 @@ export function AppStateRoot({
                 onPollIntervalChange: updatePollInterval,
                 onBackfillYearsChange: updateBackfillYears,
                 onMcpPortChange: updateMcpPort,
-                onHistorySweepAiCallLimitChange: updateHistorySweepAiCallLimit,
                 onShortcutBindingsChange: updateShortcutBindings,
                 onYoutubeTranscriptionModelChange: updateYoutubeTranscriptionModel,
                 onYoutubeTranscriptionTimeoutChange: updateYoutubeTranscriptionTimeout,
-                onGeneralAnalysisProviderChange: updateGeneralAnalysisProvider,
-                onGeneralAnalysisModelChange: updateGeneralAnalysisModel,
-                onGeneralAnalysisTimeoutChange: updateGeneralAnalysisTimeout,
-                onEspiAiFallbackChange: updateEspiAiFallbackEnabled,
-                onOpenAiCompatibleBaseUrlChange: updateOpenAiCompatibleBaseUrl,
-                onCapabilityProvidersChange: updateCapabilityProviders,
                 onLogLevelChange: updateLogLevel,
                 onLogMaxFilesChange: updateLogMaxFiles,
                 onLogMaxFileBytesChange: updateLogMaxFileBytes,
@@ -2051,8 +1986,6 @@ export function AppStateRoot({
                 onResetDatabaseSettings: resetDatabaseSettings,
                 onSourcesWorkersChange: updateSourcesWorkers,
                 onAutopilotWorkersChange: updateAutopilotWorkers,
-                onAiWorkersChange: updateAiWorkers,
-                onAiProviderConcurrencyChange: updateAiProviderConcurrency,
                 onResetQueueSettings: resetQueueSettings,
                 onClearLicenseKey: clearLicenseKey,
                 onLicenseKeyDraftChange: setLicenseKeyDraft,
@@ -2066,7 +1999,6 @@ export function AppStateRoot({
                 onImportApplied: refreshDatabaseBackedViews,
                 formatTimestamp,
                 formatPollInterval,
-                formatAiProvider,
                 formatGeminiModel,
                 formatCredentialConfigured,
                 formatCredentialKind,

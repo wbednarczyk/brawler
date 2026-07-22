@@ -1,20 +1,18 @@
-//! AI-assisted IR-page report resolution (v0.36.0, ADR 0029).
+//! IR-page report resolution (v0.36.0, ADR 0029; AI pick retired by ADR 0084).
 //!
 //! Source ladder fallback: when a filing carries no usable attachment, locate the
-//! specific report on a company's durable IR reports page. Generic link extraction
-//! (no per-company scrapers) plus an AI pick over the candidate links; a confident
-//! pick is captured into `report_documents`, otherwise the candidates are returned
-//! for the user to choose. Wiring this to fire automatically on detection is the
-//! v0.47.0 autonomous pipeline; here it is user-triggered.
+//! specific report on a company's durable IR reports page. Generic link
+//! extraction (no per-company scrapers) ranks the candidate links deterministically
+//! and **always returns them for the user to choose** — the in-app AI pick and its
+//! confidence-gated auto-capture are retired with the analysis layer (ADR 0084
+//! decision 1). Ranking a candidate list is deterministic; choosing from it is the
+//! user's (or their MCP agent's) call.
 
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{
-    app_state, document_fetcher::DocumentFetcher, providers::analysis, report_documents_capture,
-    storage,
-};
+use crate::{app_state, document_fetcher::DocumentFetcher};
 
 const MAX_CANDIDATES: usize = 40;
 
@@ -52,29 +50,15 @@ pub struct IrReportCandidate {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct IrReportResolution {
-    /// Set when a confident pick was captured into report_documents.
-    pub document: Option<storage::ReportDocument>,
-    /// The candidate links found on the IR page (always returned for user pick).
+    /// The candidate links found on the IR page, ranked most-report-like first
+    /// and always returned for the user to choose (ADR 0084: nothing is
+    /// auto-picked).
     pub candidates: Vec<IrReportCandidate>,
-    /// The URL the AI picked, when it matched a candidate.
-    pub picked_url: Option<String>,
-    /// low | medium | high, when the model reported one.
-    pub confidence: Option<String>,
 }
 
 pub fn resolve_ir_report(
     state: &app_state::AppState,
     fetcher: &dyn DocumentFetcher,
-    input: ResolveIrReportInput,
-) -> Result<IrReportResolution, String> {
-    let provider = build_provider(state)?;
-    resolve_with_provider(state, fetcher, provider.as_ref(), input)
-}
-
-fn resolve_with_provider(
-    state: &app_state::AppState,
-    fetcher: &dyn DocumentFetcher,
-    provider: &dyn analysis::AiAnalysisProvider,
     input: ResolveIrReportInput,
 ) -> Result<IrReportResolution, String> {
     let ir_url = state
@@ -88,64 +72,7 @@ fn resolve_with_provider(
     let html = String::from_utf8_lossy(&fetched.bytes);
     let candidates = extract_candidate_links(&html, &ir_url, MAX_CANDIDATES);
 
-    if candidates.is_empty() {
-        return Ok(IrReportResolution {
-            document: None,
-            candidates,
-            picked_url: None,
-            confidence: None,
-        });
-    }
-
-    let prompt = build_resolution_prompt(&input, &candidates);
-    let candidate_block = candidates
-        .iter()
-        .enumerate()
-        .map(|(index, candidate)| format!("{}. {} | {}", index + 1, candidate.url, candidate.label))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let text = tauri::async_runtime::block_on(provider.complete_document(
-        &prompt,
-        &analysis::AnalysisDocument::Text {
-            text: candidate_block,
-        },
-    ))
-    .map_err(|error| error.to_string())?;
-
-    let (best_url, confidence) = parse_resolution_output(&text);
-    // The model must pick from the candidates we provided; ignore anything else.
-    let picked_url =
-        best_url.filter(|url| candidates.iter().any(|candidate| &candidate.url == url));
-    let auto_capture = matches!(confidence.as_deref(), Some("high") | Some("medium"));
-
-    let document = match (&picked_url, auto_capture) {
-        (Some(url), true) => {
-            let result = report_documents_capture::capture_report_document(
-                state,
-                fetcher,
-                storage::CaptureReportDocumentInput {
-                    company_id: input.company_id.clone(),
-                    source_type: "ir_page".to_owned(),
-                    url: url.clone(),
-                    period_id: None,
-                    origin_ref: None,
-                    title: None,
-                    attribution: Some(ir_url.clone()),
-                },
-            )
-            .map_err(|error| error.to_string())?;
-            state.get_report_document(&result.document_id).ok()
-        }
-        _ => None,
-    };
-
-    Ok(IrReportResolution {
-        document,
-        candidates,
-        picked_url,
-        confidence,
-    })
+    Ok(IrReportResolution { candidates })
 }
 
 /// Generic anchor extraction: absolute-resolved, de-duplicated, lightly ranked so
@@ -263,92 +190,10 @@ fn looks_like_report(candidate: &IrReportCandidate) -> bool {
         .any(|needle| haystack.contains(needle))
 }
 
-fn build_resolution_prompt(
-    input: &ResolveIrReportInput,
-    candidates: &[IrReportCandidate],
-) -> String {
-    let period = input.period_hint.as_deref().unwrap_or("unknown");
-    let report_type = input.report_type.as_deref().unwrap_or("periodic report");
-    let published_at = input.published_at.as_deref().unwrap_or("unknown");
-    let candidate_block = candidates
-        .iter()
-        .map(|candidate| format!("- {} | {}", candidate.url, candidate.label))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!(
-        "You are given candidate report links scraped from a company's investor-relations \
-reports page. Pick the single link that is the official report document matching the target. \
-Return only JSON with this exact shape: {{\"bestUrl\":\"<one of the candidate URLs, or empty if none match>\",\"confidence\":\"low|medium|high\"}}. \
-Choose bestUrl strictly from the provided candidate URLs. If none clearly match, return an empty bestUrl with low confidence. Do not include commentary or markdown fences.\n\n\
-Target report:\n\
-- period: {period}\n\
-- type: {report_type}\n\
-- published: {published_at}\n\n\
-Candidate report links:\n{candidate_block}"
-    )
-}
-
-fn parse_resolution_output(text: &str) -> (Option<String>, Option<String>) {
-    let json_text = match crate::providers::common::extract_json_object(text, "IR resolution") {
-        Ok(json_text) => json_text,
-        Err(_) => return (None, None),
-    };
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Output {
-        best_url: Option<String>,
-        confidence: Option<String>,
-    }
-    let parsed: Output = match serde_json::from_str(json_text) {
-        Ok(parsed) => parsed,
-        Err(_) => return (None, None),
-    };
-    let best_url = parsed
-        .best_url
-        .map(|url| url.trim().to_owned())
-        .filter(|url| !url.is_empty());
-    let confidence = parsed
-        .confidence
-        .map(|value| value.trim().to_lowercase())
-        .filter(|value| ["low", "medium", "high"].contains(&value.as_str()));
-    (best_url, confidence)
-}
-
-fn build_provider(
-    state: &app_state::AppState,
-) -> Result<Box<dyn analysis::AiAnalysisProvider>, String> {
-    let settings = state.get_settings().map_err(|error| error.to_string())?;
-    let provider_id = settings
-        .ai_providers
-        .general_analysis_provider
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| analysis::TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned());
-    let model = if provider_id == analysis::TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
-        analysis::TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
-    } else {
-        settings.ai_providers.general_analysis_model.clone()
-    };
-    let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
-    let api_key = analysis::registry::read_analysis_provider_api_key(&provider_id);
-    // Only consulted for the OpenAI-compatible provider (ADR 0060); ignored otherwise.
-    let openai_compatible_base_url = Some(settings.ai_providers.openai_compatible_base_url.trim())
-        .filter(|value| !value.is_empty());
-    analysis::registry::build_analysis_provider(
-        &provider_id,
-        api_key,
-        &model,
-        timeout_seconds,
-        openai_compatible_base_url,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::document_fetcher::FakeDocumentFetcher;
-    use crate::providers::analysis::{TestSampleAnalysisProvider, TEST_SAMPLE_IR_PICK_URL};
     use crate::storage::{open_in_memory_database, AppState, NewCompany};
 
     const SAMPLE_HTML: &str = r##"
@@ -368,7 +213,9 @@ mod tests {
         assert!(candidates.iter().all(|c| !c.url.contains("mailto")));
         // Report-looking links rank ahead of the plain "About us" link.
         assert!(candidates[0].url.ends_with(".pdf"));
-        assert!(candidates.iter().any(|c| c.url == TEST_SAMPLE_IR_PICK_URL));
+        assert!(candidates
+            .iter()
+            .any(|c| c.url == "https://reports.example.com/q3-2025.pdf"));
     }
 
     #[test]
@@ -409,17 +256,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn parses_pick_and_ignores_garbage() {
-        let (url, confidence) =
-            parse_resolution_output(r#"{"bestUrl":"https://x/y.pdf","confidence":"HIGH"}"#);
-        assert_eq!(url.as_deref(), Some("https://x/y.pdf"));
-        assert_eq!(confidence.as_deref(), Some("high"));
-
-        let (none_url, none_conf) = parse_resolution_output("not json");
-        assert!(none_url.is_none() && none_conf.is_none());
-    }
-
     fn company_state() -> (AppState, String) {
         let dir = std::env::temp_dir().join(format!("brawler-ir-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
@@ -453,42 +289,5 @@ mod tests {
         )
         .expect_err("missing IR url errors");
         assert!(error.contains("investor-relations"));
-    }
-
-    #[test]
-    fn resolve_picks_and_captures_the_matching_report() {
-        let (state, company_id) = company_state();
-        state
-            .set_company_ir_reports_url(&company_id, Some("https://example.com/investors/"))
-            .expect("set ir url");
-        // First fetch returns the IR page HTML; capture re-fetches the chosen PDF.
-        // FakeDocumentFetcher returns the same bytes for any URL, which is fine here.
-        let fetcher = FakeDocumentFetcher::new_success(
-            SAMPLE_HTML.as_bytes().to_vec(),
-            Some("text/html".to_owned()),
-        );
-
-        let resolution = resolve_with_provider(
-            &state,
-            &fetcher,
-            &TestSampleAnalysisProvider,
-            ResolveIrReportInput {
-                company_id,
-                period_hint: Some("Q3 2025".to_owned()),
-                report_type: Some("periodic report".to_owned()),
-                published_at: None,
-            },
-        )
-        .expect("resolution succeeds");
-
-        assert!(!resolution.candidates.is_empty());
-        assert_eq!(
-            resolution.picked_url.as_deref(),
-            Some(TEST_SAMPLE_IR_PICK_URL)
-        );
-        assert_eq!(resolution.confidence.as_deref(), Some("high"));
-        let document = resolution.document.expect("confident pick is captured");
-        assert_eq!(document.source_type, "ir_page");
-        assert_eq!(document.url, TEST_SAMPLE_IR_PICK_URL);
     }
 }

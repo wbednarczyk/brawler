@@ -186,6 +186,108 @@ function GroupActions(props: IDockviewHeaderActionsProps) {
 const DOCK_COMPONENTS = { default: DockPanel };
 const TAB_COMPONENTS = { default: AccessibleTab };
 
+// --- Saved-geometry sanitization (ADR 0045 guardrail, ADR 0053 decision 3A) ---
+//
+// A saved layout's geometry names panels by id. When a pane KIND is removed from
+// the app (e.g. ADR 0084 retiring `review`), a user's stored geometry still
+// references it — and `DockPanel` renders `null` for an id with no registered
+// content, so the stale reference does not crash: it leaves a GHOST PANE, an
+// empty tile with a tab holding grid space. Found live in the owner's database
+// (`dashboard:company_gpw_acp` → `"views":["follow:review"]`).
+//
+// The fix is to sanitize before replay, never to bump DOCKVIEW_VERSION (which
+// would discard every user's saved geometry to solve one removed kind).
+// Behavioral contract lives in `savedLayoutGeometry.test.ts`.
+
+type GridNode =
+  | { type: "leaf"; size?: number; data: { id: string; views: string[]; activeView?: string } }
+  | { type: "branch"; size?: number; data: GridNode[] };
+
+/**
+ * Drop every view id that is no longer registered, then repair the tree:
+ * a leaf that loses all its views is removed, a branch that loses all children is
+ * removed, and a branch left with exactly one child collapses into it. Dropped
+ * siblings' sizes are redistributed so a branch's total size is preserved.
+ *
+ * Returns `null` when the geometry is unusable (malformed, or nothing survives),
+ * which tells the caller to fall back to the rebuilt default layout.
+ */
+export function sanitizeGeometry(
+  layout: SerializedDockview,
+  knownIds: Set<string>,
+): SerializedDockview | null {
+  const root = (layout as unknown as { grid?: { root?: GridNode } })?.grid?.root;
+  if (!root || (root.type !== "branch" && root.type !== "leaf")) return null;
+
+  // Total size of a node list, used to keep a branch's extent stable after drops.
+  const totalSize = (nodes: GridNode[]) => nodes.reduce((sum, node) => sum + (node.size ?? 0), 0);
+
+  function prune(node: GridNode): GridNode | null {
+    if (node.type === "leaf") {
+      const views = (node.data?.views ?? []).filter((id) => knownIds.has(id));
+      if (views.length === 0) return null;
+      const activeView = views.includes(node.data.activeView ?? "") ? node.data.activeView : views[0];
+      return { ...node, data: { ...node.data, views, activeView } };
+    }
+    if (node.type !== "branch" || !Array.isArray(node.data)) return null;
+
+    const before = totalSize(node.data);
+    const kept = node.data.map(prune).filter((child): child is GridNode => child !== null);
+    if (kept.length === 0) return null;
+
+    // Redistribute the dropped siblings' size proportionally so the branch keeps
+    // its extent — otherwise the surviving panes silently shrink on restore.
+    const after = totalSize(kept);
+    const resized =
+      before > 0 && after > 0 && after !== before
+        ? kept.map((child) => ({ ...child, size: ((child.size ?? 0) * before) / after }))
+        : kept;
+
+    // A one-child branch is malformed for dockview; collapse it into the child,
+    // handing the child the branch's own slot size.
+    if (resized.length === 1) return { ...resized[0], size: node.size ?? resized[0].size };
+    return { ...node, data: resized };
+  }
+
+  const prunedRoot = prune(root);
+  if (!prunedRoot) return null;
+
+  // The root must stay a branch; a collapsed single leaf is re-wrapped.
+  const nextRoot: GridNode =
+    prunedRoot.type === "branch" ? prunedRoot : { type: "branch", size: root.size, data: [prunedRoot] };
+
+  const source = layout as unknown as {
+    grid: Record<string, unknown>;
+    panels?: Record<string, unknown>;
+    activeGroup?: string;
+  };
+
+  // Drop the removed panels from the id→panel map too, or dockview re-creates
+  // them as orphans outside the grid.
+  const panels = Object.fromEntries(
+    Object.entries(source.panels ?? {}).filter(([id]) => knownIds.has(id)),
+  );
+
+  // `activeGroup` may name a group that no longer exists — repoint it at a
+  // surviving one rather than leaving a dangling reference.
+  const surviving = new Set<string>();
+  (function collect(node: GridNode) {
+    if (node.type === "leaf") surviving.add(node.data.id);
+    else node.data.forEach(collect);
+  })(nextRoot);
+  const activeGroup =
+    source.activeGroup && surviving.has(source.activeGroup)
+      ? source.activeGroup
+      : [...surviving][0];
+
+  return {
+    ...source,
+    grid: { ...source.grid, root: nextRoot },
+    panels,
+    activeGroup,
+  } as unknown as SerializedDockview;
+}
+
 type DockLayoutProps = {
   panels: DockPanelSpec[];
   /** localStorage key for the serialized geometry (spike-grade persistence). */
@@ -442,9 +544,15 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
     restore: (layout) => {
       const api = apiRef.current;
       if (!api) return;
+      // Sanitize before replay: a saved layout may name pane kinds this build no
+      // longer registers (ADR 0084 removed `review`). Replaying them verbatim
+      // leaves ghost panes — empty tiles with tabs — because `DockPanel` renders
+      // null for an unregistered id. Nothing survives ⇒ rebuild the default.
+      const sanitized = sanitizeGeometry(layout, new Set(panelsRef.current.map((p) => p.id)));
       rebuildingRef.current = true;
       try {
-        api.fromJSON(layout);
+        if (sanitized) api.fromJSON(sanitized);
+        else buildDefault(api);
       } catch {
         /* incompatible snapshot — leave the current layout intact */
       } finally {

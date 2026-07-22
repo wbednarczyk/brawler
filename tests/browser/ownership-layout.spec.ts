@@ -98,7 +98,7 @@ test("insider block renders below the ownership section without breaking the nar
   ).toBeLessThanOrEqual(overflow.clientWidth + 1);
 });
 
-test("OCR shareholders-table proposal reviews in place and the residual offers Read with OCR (v0.57 T8, ADR 0077)", async ({
+test("an unreadable shareholder table is flagged as an honest gap with no OCR action (ADR 0084 §4)", async ({
   page,
 }) => {
   await openApp(page);
@@ -106,23 +106,24 @@ test("OCR shareholders-table proposal reviews in place and the residual offers R
   const section = pane.locator(".ownership-section");
   await expect(section).toBeVisible();
 
-  // The seeded tier-4 OCR proposal renders as a confirm-before-apply card with
-  // per-holder rows — never auto-applied.
-  const proposal = section.locator(".ownership-ocr-proposal");
-  await expect(proposal).toBeVisible();
-  await expect(proposal.getByText("Marek Zborowski")).toBeVisible();
-  await expect(proposal.getByText("Aviva OFE")).toBeVisible();
+  // The tier-4 OCR pass is retired (ADR 0084 decision 4). A document the
+  // deterministic parser cannot read is stated honestly as a flagged gap — never
+  // guessed, never re-run — so the warnbox renders with a residual count and
+  // carries no action to trigger extraction.
+  const warnbox = section.locator(".ownership-warnbox");
+  await expect(warnbox).toBeVisible();
+  await expect(warnbox).toContainText(/could not be read|flagged/i);
 
-  // The other residual (no marker) offers the explicit Read-with-OCR action.
+  // Two seeded residuals → the count reports them (the retired path is gone).
+  await expect(warnbox.locator(".ownership-warnbox-count")).toContainText("2");
+
+  // No run affordance survives the retirement: no Read-with-OCR button and no
+  // confirm-before-apply proposal card anywhere in the section.
   await expect(
     section.getByRole("button", { name: /Read with OCR|Odczytaj przez OCR/ }),
-  ).toBeVisible();
-
-  // No overflow in a narrow pane even with the proposal card + warnbox.
-  await expectNoPageOverflow(page);
-
-  // Reject removes the proposal in place (the mock returns the updated overview).
-  await proposal.getByRole("button", { name: /^Reject$|^Odrzuć$/ }).click();
+  ).toHaveCount(0);
   await expect(section.locator(".ownership-ocr-proposal")).toHaveCount(0);
-  await expect(section.getByText(/rejected — not re-proposed|odrzucony/i)).toBeVisible();
+
+  // No overflow in a narrow pane even with the warnbox present.
+  await expectNoPageOverflow(page);
 });

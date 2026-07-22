@@ -5,7 +5,7 @@
 //! the substrate the F2 Coverage panel (T2.2) renders. This is a **computed**
 //! read model (ADR 0044 pattern): every call assembles the answer from the live
 //! tables (`report_documents`, `financial_facts`/`financial_periods`/
-//! `financial_fact_provenance`, `kpi_extraction_jobs`/`_proposals`). There is NO
+//! `financial_fact_provenance`). There is NO
 //! stored projection and NO table — cardinality is small (a handful of periods
 //! per company) and staleness is impossible when nothing is cached.
 //!
@@ -116,9 +116,10 @@ pub struct CoverageFactsCell {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct CoverageReviewCell {
-    /// Pending `kpi_extraction_proposals` whose job detected this period.
-    pub pending_proposals: i64,
     /// Mirror of `facts.flagged` — flagged facts are a review surface too.
+    /// The `pending_proposals` input is gone with the KPI staging ledger
+    /// (ADR 0084 decision 5): flagged deterministic facts are the only review
+    /// surface left, so coverage can no longer be inflated by a retired source.
     pub flagged_facts: i64,
 }
 
@@ -275,18 +276,6 @@ pub fn compute_fundamentals_coverage(
         cell.flagged += row.flagged;
     }
 
-    // (d) Pending proposals per detected (fiscal_year, period_type).
-    let mut pending_cells: BTreeMap<(i64, String), i64> = BTreeMap::new();
-    for row in state
-        .kpi_extraction()
-        .pending_proposals_by_period(company_id)
-        .map_err(|e| e.to_string())?
-    {
-        *pending_cells
-            .entry((row.fiscal_year, canonical_period_label(&row.period_type)))
-            .or_insert(0) += row.pending;
-    }
-
     // (e') Document ids whose latest history-sweep run was budget-denied. Lights
     // a period's `skipped_budget` when its canonical report is one of them
     // (ADR 0077 §6). Computed read model — no stored projection.
@@ -303,9 +292,6 @@ pub fn compute_fundamentals_coverage(
     for key in fact_cells.keys() {
         keys.insert(key.clone(), ());
     }
-    for key in pending_cells.keys() {
-        keys.insert(key.clone(), ());
-    }
 
     let mut periods: Vec<CoveragePeriodRow> = keys
         .into_keys()
@@ -319,10 +305,6 @@ pub fn compute_fundamentals_coverage(
                     unvalidated: 0,
                     flagged: 0,
                 });
-            let pending_proposals = pending_cells
-                .get(&(fiscal_year, period_type.clone()))
-                .copied()
-                .unwrap_or(0);
             let report = report_cells
                 .get(&(fiscal_year, period_type.clone()))
                 .cloned();
@@ -337,7 +319,6 @@ pub fn compute_fundamentals_coverage(
             CoveragePeriodRow {
                 report,
                 review: CoverageReviewCell {
-                    pending_proposals,
                     flagged_facts: facts.flagged,
                 },
                 facts,
@@ -380,8 +361,8 @@ pub async fn get_fundamentals_coverage(
 mod tests {
     use super::*;
     use crate::storage::{
-        open_in_memory_database, AppState, CaptureReportDocumentInput, CompletedKpiExtraction,
-        NewCompany, NewFinancialFact, NewFinancialPeriod, NewKpiExtractionJob, NewKpiProposal,
+        open_in_memory_database, AppState, CaptureReportDocumentInput, NewCompany,
+        NewFinancialFact, NewFinancialPeriod,
     };
 
     const NET_PROFIT: &str = "kpidef_net_profit";
@@ -520,51 +501,6 @@ mod tests {
 
     /// Seed a succeeded extraction job with one pending proposal detected at
     /// `(fiscal_year, period_type)`.
-    fn pending_proposal(
-        state: &AppState,
-        company_id: &str,
-        report_document_id: &str,
-        fiscal_year: i64,
-        period_type: &str,
-    ) {
-        let job = state
-            .kpi_extraction()
-            .create_kpi_extraction_job(NewKpiExtractionJob {
-                company_id: company_id.to_owned(),
-                report_document_id: report_document_id.to_owned(),
-                provider_id: "provider".to_owned(),
-                model: "model".to_owned(),
-                prompt_version: "v1".to_owned(),
-                period_hint: None,
-            })
-            .expect("job");
-        state
-            .kpi_extraction()
-            .complete_kpi_extraction_job(CompletedKpiExtraction {
-                job_id: job.id,
-                detected_fiscal_year: Some(fiscal_year),
-                detected_period_type: Some(period_type.to_owned()),
-                detected_period_end_date: None,
-                detected_currency: None,
-                detected_language: None,
-                committed_fact_count: 0,
-                proposals: vec![NewKpiProposal {
-                    metric_key: "net_profit".to_owned(),
-                    label: "Net profit".to_owned(),
-                    value_numeric: "1000".to_owned(),
-                    unit: None,
-                    currency: None,
-                    as_reported_value: None,
-                    as_reported_scale: None,
-                    measure_window: None,
-                    confidence: None,
-                    source_snippet: None,
-                    is_proposed_kpi: false,
-                }],
-            })
-            .expect("complete job");
-    }
-
     fn row<'a>(
         coverage: &'a FundamentalsCoverage,
         fiscal_year: i64,
@@ -619,7 +555,6 @@ mod tests {
         let r = row(&coverage, 2025, "FY");
         assert!(r.report.is_some());
         assert_eq!(r.facts.total, 0);
-        assert_eq!(r.review.pending_proposals, 0);
     }
 
     /// Live-DB harvest 2026-07-09: the owner's database carries a legacy
@@ -693,24 +628,6 @@ mod tests {
         assert_eq!(r.facts.validated, 0);
         assert_eq!(r.facts.unvalidated, 0);
         assert_eq!(r.review.flagged_facts, 1);
-    }
-
-    #[test]
-    fn pending_proposals_appear_in_review() {
-        let s = state();
-        let c = company(&s);
-        let doc = report(
-            &s,
-            &c,
-            "Skonsolidowany raport roczny 2025 SSF",
-            "x/ssf-2025.pdf",
-            true,
-        );
-        pending_proposal(&s, &c, &doc, 2025, "FY");
-
-        let coverage = compute_fundamentals_coverage(&s, &c).expect("coverage");
-        let r = row(&coverage, 2025, "FY");
-        assert_eq!(r.review.pending_proposals, 1);
     }
 
     #[test]
@@ -944,6 +861,124 @@ mod tests {
         assert!(
             !r.skipped_budget,
             "garbled kpi_delta_json is tolerated as not-skipped"
+        );
+    }
+
+    /// A minimal text-bearing PDF (mirrors the structured-extraction test helper)
+    /// whose cover page states the reporting period — the only path where the
+    /// coverage read model must extract a PDF to place a document.
+    fn cover_page_pdf(lines: &[&str]) -> Vec<u8> {
+        let filler = "Nota objasniajaca do sprawozdania finansowego za okres sprawozdawczy.";
+        let mut all: Vec<&str> = lines.to_vec();
+        while all.iter().map(|l| l.len() + 1).sum::<usize>() < 220 {
+            all.push(filler);
+        }
+        let mut content = String::from("BT /F1 12 Tf 40 750 Td 16 TL\n");
+        for (i, line) in all.iter().enumerate() {
+            if i > 0 {
+                content.push_str("T*\n");
+            }
+            let escaped = line
+                .replace('\\', "\\\\")
+                .replace('(', "\\(")
+                .replace(')', "\\)");
+            content.push_str(&format!("({escaped}) Tj\n"));
+        }
+        content.push_str("ET");
+        let objects = [
+            "<</Type/Catalog/Pages 2 0 R>>".to_owned(),
+            "<</Type/Pages/Kids[3 0 R]/Count 1>>".to_owned(),
+            "<</Type/Page/Parent 2 0 R/Resources<</Font<</F1 4 0 R>>>>/MediaBox[0 0 612 792]/Contents 5 0 R>>".to_owned(),
+            "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>".to_owned(),
+            format!("<</Length {}>>\nstream\n{}\nendstream", content.len(), content),
+        ];
+        let mut buf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::with_capacity(objects.len());
+        for (i, obj) in objects.iter().enumerate() {
+            offsets.push(buf.len());
+            buf.extend_from_slice(format!("{} 0 obj\n{obj}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref_offset = buf.len();
+        buf.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+        buf.extend_from_slice(b"0000000000 65535 f \n");
+        for offset in &offsets {
+            buf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        buf.extend_from_slice(
+            format!(
+                "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{}\n%%EOF",
+                objects.len() + 1,
+                xref_offset
+            )
+            .as_bytes(),
+        );
+        buf
+    }
+
+    #[test]
+    fn coverage_derives_the_period_once_then_reads_the_cache() {
+        // C4: the Coverage panel derived every document's period on EVERY load,
+        // and for a bare-`SSF.pdf` filing that meant a full PDF extraction per load
+        // (violating "read persisted derived indexes, don't recompute the corpus").
+        // The derivation now persists (migration 0109). Proven by DELETING the
+        // file after the first computation: without the cache the document would
+        // lose its period and drop from the map; with it, the map is identical.
+        let dir = std::env::temp_dir().join(format!(
+            "brawler-coverage-c4-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let s = AppState::with_data_dir(
+            open_in_memory_database().expect("in-memory db"),
+            dir.clone(),
+        );
+        let c = company(&s);
+
+        // A bare-titled SSF (classify => periodic_ssf) whose ONLY period signal is
+        // its cover page.
+        let doc = s
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: c.clone(),
+                source_type: "espi_attachment".to_owned(),
+                url: "https://example.com/SSF.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("SSF.pdf".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        let bytes = cover_page_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ TST",
+            "za okres 6 miesiecy zakonczony 30.06.2025",
+        ]);
+        std::fs::write(dir.join("ssf.pdf"), &bytes).expect("write pdf");
+        s.mark_report_document_fetched(
+            &doc.id,
+            Some("ssf.pdf"),
+            Some("application/pdf"),
+            None,
+            Some(bytes.len() as i64),
+        )
+        .expect("mark fetched");
+
+        let first = compute_fundamentals_coverage(&s, &c).expect("coverage");
+        assert!(
+            row(&first, 2025, "H1").report.is_some(),
+            "the cover-page period places the report"
+        );
+
+        // Remove the file: a second computation that re-derived would fail to read
+        // it and drop the document, changing the map. The cache keeps it identical.
+        std::fs::remove_file(dir.join("ssf.pdf")).expect("remove pdf");
+        let second = compute_fundamentals_coverage(&s, &c).expect("coverage");
+        assert_eq!(
+            serde_json::to_value(&second).expect("serialize"),
+            serde_json::to_value(&first).expect("serialize"),
+            "second coverage computation must read the cached period, not re-extract"
         );
     }
 }

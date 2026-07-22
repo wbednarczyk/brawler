@@ -442,64 +442,16 @@ Local commands:
 
 Error codes: `claim_not_found`, `company_not_found`, `invalid_due_period`, `invalid_verdict`, `fact_not_found` (when linking `verifyingFactId`), `invalid_comparator`.
 
-## Claim Extraction
+## Claim Extraction — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-AI claim extraction with mandatory user confirmation ([ADR 0040](adr/0040-management-claims-tracker.md)), mirroring KPI extraction. Sources are report documents and transcripts.
-
-```json
-{
-  "id": "claim_job_01",
-  "companyId": "company_gpw_cdr",
-  "sourceType": "transcript",
-  "sourceId": "transcript_77",
-  "providerId": "gemini",
-  "model": "gemini-2.5-flash",
-  "promptVersion": "claims-v1",
-  "status": "succeeded",
-  "errorCode": null,
-  "error": null,
-  "createdAt": "2026-05-28T13:00:00Z",
-  "startedAt": "2026-05-28T13:00:02Z",
-  "finishedAt": "2026-05-28T13:00:20Z",
-  "proposals": [
-    {
-      "id": "claim_prop_07",
-      "jobId": "claim_job_01",
-      "statement": "Management expects the next major release in the next two quarters.",
-      "dueFiscalYear": 2026,
-      "duePeriodType": "Q4",
-      "targetMetricKey": null,
-      "targetComparator": null,
-      "targetValueNumeric": null,
-      "targetUnit": null,
-      "confidence": "high",
-      "sourceSnippet": "...we expect to ship the next major release within two quarters...",
-      "sourceEvidenceType": "transcript_segment",
-      "sourceEvidenceId": "seg_42",
-      "status": "pending",
-      "claimId": null
-    }
-  ]
-}
-```
-
-Allowed `sourceType`: `report_document`, `transcript`. Allowed proposal `status`: `pending`, `confirmed`, `rejected`.
-
-Local commands:
-
-- `start_claim_extraction(input)`: creates a job over a report document or transcript and spawns the async runner. Idempotent per `(sourceType, sourceId, promptVersion)`.
-- `list_claim_extraction(input)`: returns jobs + proposals for a source (`sourceType` + `sourceId`) or company.
-- `confirm_claim_proposal(input)`: materializes a `management_claims` row from a proposal, applying optional user overrides; marks the proposal `confirmed` with the new `claimId`.
-- `reject_claim_proposal(proposalId)`: marks a proposal `rejected` (retained; suppresses re-proposal).
-- `retry_claim_extraction(jobId)`: re-runs a failed job.
-
-Rules:
-
-- Only a confirmed proposal creates a claim; no claim is created automatically.
-- The runner uses the provider-neutral AI settings and credential boundary; provider/model/prompt provenance is recorded.
-- Extraction never blocks ingestion and is always user-initiated.
-
-Error codes: `extraction_job_not_found`, `proposal_not_found`, `source_not_found`, `proposal_already_resolved`, `provider_unavailable`, `extraction_failed`.
+In-app AI claim extraction is removed with the analysis layer: the start / retry
+/ list / confirm-proposal / reject-proposal claim-extraction commands and the
+claim-extraction job no longer exist. The **manual claims path stays** — creating
+a management claim (see [Management Claims](#management-claims)) is how a claim is
+recorded now, and claim proposals a previous version stored remain in the
+claim-extraction jobs and proposals tables as readable user data (no table drop,
+no row deletion — ADR 0084 decision 5). Agent-proposed claims with mandatory
+provenance return via MCP write-tools (v0.61.0).
 
 ## Claims Review Queue
 
@@ -802,9 +754,9 @@ The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-auton
 
 `get_company_autopilot(input)` returns a company's mode. `input` is `{ companyId: string }`; returns `{ companyId, mode }` where `mode` is `off` | `assist` | `autopilot` (a company with no setting reads `off`).
 
-`set_company_autopilot(input)` sets the mode. `input` is `{ companyId, mode }`. `off`: nothing automatic. `assist`: auto-fetch + auto-extract on detection, but facts land `pending` for user confirmation. `autopilot`: full loop; facts auto-committed as `auto_unreviewed` (cited, flagged, reversible). Changing the mode never alters already-produced facts or runs. Error codes: `company_not_found`, `invalid_autopilot_mode`.
+`set_company_autopilot(input)` sets the mode. `input` is `{ companyId, mode }`. `off`: nothing automatic. `assist`: auto-fetch + auto-extract on detection. `autopilot`: full loop. Facts are **review-free** ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5): in **both** `assist` and `autopilot` every extracted fact lands `confirmed` (cited, reversible) — there is no pending-confirmation queue and no per-fact review to-do. `confirmationState` is a frozen compatibility column; origin lives in the provenance labels. Changing the mode never alters already-produced facts or runs. Error codes: `company_not_found`, `invalid_autopilot_mode`.
 
-**Structured-first extract stage ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) dec. 3/8/9).** The extract stage runs the deterministic structured pipeline (ESEF/iXBRL or a PDF whose reporting period is derivable from its title/URL) **before AI, in both `assist` and `autopilot` modes** — not autopilot-only. Its outcome sets the per-fact `confirmationState` directly, superseding the flat mode-based default above for structured facts specifically: a validation-clean set (`accepted` / `accepted_via_witness`) auto-confirms outright (`confirmed`) in **both** modes; an uncontradicted-but-unproven set (`accepted_unreviewed`) still follows the mode ladder (`auto_unreviewed` in autopilot, `pending` in assist). A `flagged` outcome (a layout drift or contradiction) emits no structured facts and falls through to the AI proposal path — the AI facts keep the pre-existing mode-based confirmation rule — but the run's `kpiDeltaJson` still carries `structureChanged: true` and `driftJson` (the serialized layout diff) whichever branch's delta ends up composed, so a drifted profile is never silently dropped just because AI ultimately produced the facts.
+**Structured-first extract stage ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) dec. 3/8/9).** The extract stage runs the deterministic structured pipeline (ESEF/iXBRL, or bare markup routed to the positional parser) **before AI, in both `assist` and `autopilot` modes** — not autopilot-only. A stored **PDF** document is no longer a deterministic-tier candidate at all ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 — the PDF fact-extraction arm is retired): it returns a benign empty result with **no** `fundamentals_extraction_outcomes` row, so a PDF-only company's core KPIs arrive instead from the BiznesRadar-primary daily pull. Every emitted fact lands `confirmationState = confirmed` in **both** modes ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5, amending ADR 0061's mode ladder): facts are review-free, so acceptance strength (`accepted` / `accepted_via_witness` proved a value vs `accepted_unreviewed` merely uncontradicted) is recorded as provenance (`validationStatus` + `sourceTier` + citation), not as a `pending`/`auto_unreviewed` confirmation state. A `flagged` outcome (a contradiction) emits no structured facts. (The PDF profile-drift arm is retired — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 — so no producer sets `structureChanged`/`driftJson` on `kpiDeltaJson` anymore; the `fundamentals_extraction_outcomes` `driftJson`/`structureChanged` **columns** remain, tolerantly read on legacy rows.)
 
 `list_company_autopilot_modes()` returns every company with an explicit (non-`off`) autopilot mode set — `CompanyAutopilot[]`, each `{ companyId, mode }`. Companies with no row default to `off` and are omitted.
 
@@ -814,15 +766,15 @@ The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-auton
 
 `list_autopilot_runs(input)` returns recent runs for the attention home / review queue. `input` is `{ companyId?: string, notificationState?: "unread" | "read" | "dismissed", limit?: number }`. Each run carries `{ id, companyId, reportDocumentId, trigger, mode, status, stage, summaryText, kpiDeltaJson, reportDiffRef, crossRefsJson, producedFactIds, notificationState, lastError, createdAt }`. `status` is `pending` | `running` | `succeeded` | `failed` | `partial`; `stage` is the current/last stage reached. A `failed`/`partial` run still appears with a summary of how far it got.
 
-`kpiDeltaJson` (extract stage) and `crossRefsJson` (cross-reference stage) are opaque JSON envelopes, not typed fields — each stage owns its own shape (e.g. `{ extractionAvailable, structured?, tier?, factsProposed, factsAutoConfirmed, structureChanged?, driftJson? }` and `{ claimsOverdue, claimsDue, openQuestions }` respectively). `factsProposed`/`factsAutoConfirmed` are honest counts of facts the run actually produced (both tiers write them, bug e77a1a2): `factsProposed` is every fact the run emitted this run (structured or AI), `factsAutoConfirmed` is the subset already `confirmed`/`auto_unreviewed` (no review needed) — never inferred from a raw `produced`/`proposed` count that only one tier happened to populate.
+`kpiDeltaJson` (extract stage) and `crossRefsJson` (cross-reference stage) are opaque JSON envelopes, not typed fields — each stage owns its own shape (e.g. `{ extractionAvailable, structured?, tier?, factsProposed, factsAutoConfirmed }` and `{ claimsOverdue, claimsDue, openQuestions }` respectively — the retired PDF profile-drift arm no longer writes `structureChanged`/`driftJson` here, [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1). `factsProposed`/`factsAutoConfirmed` are honest counts of facts the run actually produced (bug e77a1a2): `factsProposed` is every fact the run emitted this run, `factsAutoConfirmed` is the subset `confirmed` — which, facts being review-free ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5), equals `factsProposed` for every emitting run — never inferred from a raw `produced`/`proposed` count that only one tier happened to populate.
 
-`summaryText` is a Rust-composed, **English-only** notification line — **legacy/fallback only**, kept for backward compatibility and diagnostics. The Today/Pulse run card never renders it directly: it composes its own localized sentence from `kpiDeltaJson`/`reportDiffRef`/`crossRefsJson` via `text()`/`pluralNoun` (`src/screens/Today/autopilotRunSummary.ts`), per the i18n rule (every user-visible string routes through `text()`, [ui-authoring.md](ui-authoring.md)).
+`summaryText` is a Rust-composed **typed-token stream** — every fragment is a machine token, never user-visible English prose ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 6). Tokens: `report_processed` (nothing notable), `kpi_confirmed:<confirmed>:<proposed>` (emitted in **both** modes now that facts are review-free, [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5; renders as "{confirmed} of {proposed} KPI recorded"), `kpi_pending:<proposed>` (**legacy only** — no longer emitted; the renderer still reads existing-DB rows tolerantly as the same recorded phrasing), `kpi_extraction_unavailable:<code>` (code ∈ `quota_exhausted` | `provider_not_configured` | `provider_error` | `no_deterministic_tier` | `pdf_document` — the BY-DESIGN raw-PDF gap, ADR 0086 dec. 1: rendered as "core figures arrive from the aggregator source", never a failure framing, never re-armed | `witness_fallback` — the last is **legacy only**, no longer emitted since the ADR 0086 seam retirement; stored rows still render), `report_diff_available`, `claims_to_verify:<n>`, `research_questions:<n>`, `expectations_to_review`; joined with `"; "`. Counts never bake in pluralization — the frontend declines them. `renderAutopilotSummaryTokens` (`src/screens/Today/autopilotRunSummary.ts`) translates each token via `text()`/`pluralNoun` per the i18n rule ([ui-authoring.md](ui-authoring.md)); a stored summary that is not a clean token stream (legacy English-prose rows in an existing DB) passes through **verbatim** (tolerant read), and the Today card falls back to recomposing a localized sentence from `kpiDeltaJson`/`reportDiffRef`/`crossRefsJson` (`composeAutopilotRunSummary`) so pre-token rows still localize.
 
 `get_autopilot_run(input)` returns one run's full composed result. `input` is `{ runId: string }`.
 
 `set_autopilot_run_notification_state(input)` marks a run's notification `read` or `dismissed` (drives the Today/Pulse "what changed" surface, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)). `input` is `{ runId, notificationState }`.
 
-`undo_autopilot_run(input)` reverts exactly the facts a run produced (recorded in `producedFactIds`), reusing the existing fact supersede/reject mechanics. `input` is `{ runId: string }`; returns `{ runId, revertedFactIds }`. Idempotent — undoing an already-undone run is a no-op. Reachable from the Today/Pulse Autopilot run card's **Undo** action (two-step confirm), shown when `mode === "autopilot"` and `producedFactIds` is non-empty (an `assist`-mode run's `pending` facts go through the existing confirm/reject review instead).
+`undo_autopilot_run(input)` reverts exactly the facts a run produced (recorded in `producedFactIds`), reusing the existing fact supersede/reject mechanics. `input` is `{ runId: string }`; returns `{ runId, revertedFactIds }`. Idempotent — undoing an already-undone run is a no-op. Reachable from the Today/Pulse Autopilot run card's **Undo** action (two-step confirm), shown whenever `producedFactIds` is non-empty — facts are review-free ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5), so both `assist` and `autopilot` runs commit their facts and Undo is the reversal path for either.
 
 `trigger_autopilot_run(input)` manually starts a run for an already-detected report (re-run / explicit kick), enqueuing the first stage. `input` is `{ companyId, reportDocumentId }`. Subject to the same `(companyId, reportDocumentId)` dedup as automatic detection. Error codes: `company_not_found`, `report_document_not_found`, `autopilot_run_in_progress`.
 
@@ -933,13 +885,13 @@ List rules:
 
 ### Investor Week Calendar
 
-Status: planned (v0.66.0, ADR 0058)
+Status: planned (v0.68.0, ADR 0058)
 
-The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.66.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.68.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
 
 `list_investor_week(input)` returns the week read model. `input` is `{ weekAnchor: "YYYY-MM-DD", scope: "watchlist" | "market", watchlistId?: string, layers: { macro: boolean, holidays: boolean } }`. It returns working-day columns (Mon–Fri; a weekend column only when populated); each column groups items by layer (`company`, `macro`, `holiday`) with per-layer freshness so a stale layer is visible rather than silently empty. The `company` layer unions tracked `company_events` with, when `scope = "market"`, untracked `market_calendar_events`, deduped by ticker.
 
-Macro (`macro_events`) read/write — manual entry ships in `v0.59.0`; a live macro source is deferred to a follow-up ADR:
+Macro (`macro_events`) read/write — manual entry ships in `v0.68.0`; a live macro source is deferred to a follow-up ADR:
 
 - `list_macro_events(input)`: `{ from: "YYYY-MM-DD", to: "YYYY-MM-DD" }` → macro releases in range.
 - `create_macro_event` / `update_macro_event` / `delete_macro_event`: user-entered releases (`manual = 1`), with `indicatorKey`, `title`, `country`, `eventDate`, optional `eventTime`/`importance`/`actual`/`forecast`/`previous`.
@@ -1016,17 +968,19 @@ Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownershi
 Mutations return the **freshly recomputed** `OwnershipOverview` so the UI updates in one round-trip:
 
 - `set_ownership_holder_type(companyId, holderKey, holderType)` — manual re-type across the holder's rows (`holderType` `null` clears it; a manual label is authoritative, never overwritten by automation).
-- `confirm_ownership_holder_type_proposal(companyId, proposalId)` — applies a pending AI proposal across the holder's rows.
-- `reject_ownership_holder_type_proposal(companyId, proposalId)` — leaves the holder unclassified.
-- `run_company_ownership_ocr(companyId)` — runs the tier-4 OCR pass over this company's residual documents (the residual-warnbox action, re-arming its `no_table` markers) and returns the freshly recomputed overview so any new proposal renders in one round-trip.
-- `confirm_ownership_ocr_proposal(companyId, reportDocumentId)` — writes the proposed OCR shareholder rows as `report_document` stakes at the proposal's `as_of`, stamps deterministic holder types, and clears the residual.
-- `reject_ownership_ocr_proposal(companyId, reportDocumentId)` — discards the OCR proposal and parks the residual (`ocr_state='rejected'`) so it is not re-proposed.
 
-The overview also carries `ocrProposals` (v0.57 T8, [ADR 0077](adr/0077-trusted-extraction-foundations.md)): pending tier-4 OCR shareholders-table proposals — `{ reportDocumentId, sourceDocumentId, asOf, matchedHeading?, providerId?, holders: [{ holderNameRaw, capitalPct?, votesPct? }] }` — a whole table read from a residual document's OCR, **never auto-applied**; the residual warnbox renders these with per-holder rows and confirm/reject. `sourceDocumentId` is the document actually OCR'd (equals `reportDocumentId` for a PDF residual, or the fetched PDF **sibling** when the residual is an unreadable xhtml pdf2htmlEX container). Each `residuals[]` entry carries `ocrState?` (`proposed | rejected | no_table`; absent = eligible) so the warnbox picks the right action/state.
+The AI holder-type and OCR shareholder-table **proposal surfaces are gone
+entirely** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5, clean
+cut): migration 0102 drops the holder-type-proposal and OCR-proposal tables, so
+the confirm/reject pairs and the overview's `pendingProposals` / `ocrProposals`
+fields go with them.
+Holder types stay **user-editable** through `set_ownership_holder_type`, and a
+document no deterministic parser can read stays an honest residual — flagged,
+never OCR-guessed.
 
-`backfill_ownership_extraction(companyId)` force-enqueues deterministic extraction across the company's fetched periodic reports (the "Wydobądź z raportów" CTA) and returns the number of documents queued (extraction drains on the autopilot lane). `run_ownership_classification()` runs the AI holder-type classify-with-confirm job over every company's residual holders, returning `{ examined, proposed, skipped, errors }`. `run_ownership_ocr_extraction()` runs the tier-4 OCR pass over **every** company's eligible residuals — `parse_state ∈ {table_unparsable, glyph_encoded}` (the card's population; `section_missing` is excluded from bulk to avoid burning provider calls) with `ocr_state IS NULL` — returning `{ examined, proposed, noTable, skipped, errors }`; a no-vision-provider state is a clean no-op (residuals counted as `skipped`), never an error ([ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md) capability routing — `VisionExtraction`, no general-analysis fallback). It is a **headless/programmatic** entry (epic backfill / future global action) — the per-company `run_company_ownership_ocr` is the UI trigger, so there is no TS wrapper for the bulk command yet. `run_company_ownership_ocr` is broader (an explicit user retry): it re-arms the company's `no_table` residuals **and** includes `section_missing`. An xhtml residual (pdf2htmlEX container) is OCR'd via its fetched **PDF sibling** of the same period; no sibling → `no_table`.
+`backfill_ownership_extraction(companyId)` force-enqueues deterministic extraction across the company's fetched periodic reports (the "Wydobądź z raportów" CTA) and returns the number of documents queued (extraction drains on the autopilot lane). AI holder-type classification and the tier-4 OCR **generation** passes (`run_ownership_classification`, `run_ownership_ocr_extraction`, `run_company_ownership_ocr`) are retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decisions 1/4): residuals a deterministic tier cannot read are flagged, never OCR-guessed. Holder types stay user-editable.
 
-Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_ownership_overview`, `backfill_ownership_extraction`, `set_ownership_holder_type`, `confirm_ownership_holder_type_proposal`, `reject_ownership_holder_type_proposal`, `run_ownership_classification`, `run_ownership_ocr_extraction`, `run_company_ownership_ocr`, `confirm_ownership_ocr_proposal`, `reject_ownership_ocr_proposal`. Surfaced by the Ownership section of the Basic Info panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_ownership_overview`, `backfill_ownership_extraction`, `set_ownership_holder_type`. Surfaced by the Ownership section of the Basic Info panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
 
 ## Company Health
 
@@ -1115,10 +1069,8 @@ Initial local commands:
 - `confirm_company_signal(input)`: confirms a `proposed` (AI) signal, transitioning it to `confirmed`. For `dividend` and `general_meeting` signals this also derives a `proposed` calendar event when a future date can be extracted from the filing body (`v0.41.0`, see below and [ADR 0036](adr/0036-report-document-storage-and-backfill.md)); other categories transition status and persist provenance only.
 - `reject_company_signal(input)`: discards a `proposed` signal without creating a signal/event.
 - `confirm_derived_event(input)`: confirms a `proposed` derived calendar event (from a dividend/general-meeting signal) onto the calendar, or rejects it; takes `{ eventId, action: "confirm" | "reject" }`. A guessed-date event is never auto-confirmed (`v0.41.0`, [ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
-- `run_ai_signal_classification()`: runs the opt-in AI classification fallback over official filings the rule classifier left unknown, creating `proposed` signals. A no-op returning `{ enabled: false, examined: 0, proposed: 0, skipped: 0 }` unless the user enables the `espiAiFallbackEnabled` setting; uses the configured general analysis provider/model (ADR 0028). Never auto-commits — results require confirmation.
-- `run_ai_event_derivation()`: runs the opt-in AI date-extraction fallback over confirmed dividend/general-meeting signals the deterministic parser could not date, deriving `proposed` calendar events (`v0.41.0`, [ADR 0036](adr/0036-report-document-storage-and-backfill.md)). A no-op returning `{ enabled: false, examined: 0, derived: 0, skipped: 0 }` unless `espiAiFallbackEnabled` is set; uses the same provider/model and never auto-commits — derived events require `confirm_derived_event`.
 
-The opt-in toggle is the `espiAiFallbackEnabled` boolean in user settings (default `false`); no provider call happens until it is enabled. It gates both the classification fallback and the event-date fallback.
+The opt-in **AI fallbacks** — `run_ai_signal_classification` (classify filings the rule classifier left unknown) and `run_ai_event_derivation` (date signals the deterministic parser could not) — are retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2). The deterministic ESPI rule classifier and `signal_dates` date parsing stay; filings they cannot classify land in an explicit **unclassified** bucket (a future MCP triage tool, `v0.61.0`), never guessed. The `espiAiFallbackEnabled` toggle is removed.
 
 Confirm/reject input:
 
@@ -1285,13 +1237,12 @@ Rules:
 
 Rules:
 
-- General AI analysis jobs are local async state for user-triggered feed-item analysis.
+- **Generation retired** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decisions 1/2): `start_ai_analysis` / `retry_ai_analysis` and the `ai_analysis` job are removed — no new feed-item analysis is produced in-app (intelligence arrives through the MCP port, BYOA). `list_ai_analysis(feedItemId)` **survives read-only**: analysis a previous version stored stays listable (decision 5 — no table drop, no row deletion).
 - `promptPresetId` is stable and may represent a built-in prompt preset.
 - `customQuestion` is optional and stores the user's local question text for the selected feed item.
-- Allowed statuses begin with `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
+- Persisted statuses are `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
 - `errorCode` and `error` are recoverable local diagnostics and must not contain provider secrets or full source text.
-- Successful jobs may include the current `AI Analysis Result` read model.
-- UI panels showing a selected feed item's latest `queued` or `running` job should poll `list_ai_analysis` until the job reaches a terminal state or the panel is no longer relevant.
+- Stored jobs may include the `AI Analysis Result` read model.
 
 ## Video Transcript Job
 
@@ -1967,42 +1918,15 @@ Rules:
   - `clear_provider_api_key({ providerId })` removes only that provider's OS-keychain key and must not mutate `.env` or process environment values.
 - Legacy purpose-scoped Gemini credential commands were removed with no backward compatibility; legacy keychain entries are best-effort cleared on startup.
 
-## AI Provider Catalog
+## AI Provider Catalog — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-`list_ai_provider_catalog()` returns the selectable analysis providers and their curated models (ADR 0028), the single source of truth for the settings provider/model selection UI:
-
-```json
-[
-  {
-    "providerId": "provider_anthropic",
-    "label": "Claude (Anthropic)",
-    "models": ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
-    "defaultModel": "claude-sonnet-4-6",
-    "requiresCredential": true
-  },
-  {
-    "providerId": "provider_openai_compatible",
-    "label": "OpenAI-compatible (custom)",
-    "models": [],
-    "defaultModel": "",
-    "requiresCredential": true
-  },
-  {
-    "providerId": "provider_mistral",
-    "label": "Mistral",
-    "models": ["mistral-small-latest"],
-    "defaultModel": "mistral-small-latest",
-    "requiresCredential": true
-  }
-]
-```
-
-Rules:
-
-- The active analysis provider and model are the `generalAnalysisProvider` / `generalAnalysisModel` settings (or, per capability, a `capabilityProviders` entry); the selected model must belong to the selected provider's catalog entry.
-- Exact model ids are curated server-side; the UI must not hardcode model lists.
-- `provider_openai_compatible` (ADR 0060) has an empty curated `models` list and `defaultModel`: its model is a freeform, user-supplied id (any non-empty string), since concrete hosts (Groq, OpenRouter, Ollama, Together, Cerebras, …) each publish their own model names. It speaks the OpenAI chat-completions wire format against a user-configured `openaiCompatibleBaseUrl` and requires a credential like every other selectable provider.
-- `provider_mistral` ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §4) is the tier-4 OCR substrate: only its chat model (`mistral-small-latest`) is user-selectable; the OCR model (`mistral-ocr-latest`) is provider-internal (used by `ocr_document`, not exposed as an analysis model) and so is absent from `models`.
+The selectable analysis-provider catalog and `list_ai_provider_catalog()` are
+removed with the in-app AI analysis layer (decision 1): there is no in-app
+provider/model selection UI any more, and the Claude / OpenAI / OpenAI-compatible
+/ Mistral adapters, credentials, and `capabilityProviders` routing are gone
+(decision 7). The **only** remaining AI dependency is the Gemini transcript
+provider (see [Credentials](#credentials) and the transcript settings) — data
+acquisition, not analysis. The app runs fully featured with zero API keys.
 
 ## Research Evidence Boundary
 
@@ -2368,10 +2292,11 @@ Initial research command candidates:
 - `create_research_reminder(input)`
 - `update_research_reminder(input)`
 - `delete_research_reminder(id)`
-- `start_research_brief(input)`: `{ scopeType, scopeId }` → enqueues an AI research brief job (see the brief job shape above).
-- `list_research_briefs(input)`: `{ scopeType, scopeId }` → returns brief jobs for that scope, newest first.
-- `start_research_digest(input)`
-- `list_research_digests(input)`
+Research briefs and digests are **gone entirely** — generation and read alike
+([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5, clean cut): the
+`ai_research_brief*` / `ai_research_digest*` tables are dropped by migration
+0102, so there is nothing left to list. Their replacement arrives as MCP
+read/write tools (`v0.61.0`).
 
 These command names may be refined during implementation, but the ownership boundary should remain stable.
 
@@ -2560,11 +2485,11 @@ Allowed `extractionMethod` values:
 - `api`
 - `derived`
 
-Allowed `confirmationState` values:
+Allowed `confirmationState` values (the column is **frozen** — every new write is `confirmed`; facts are review-free, [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5. `pending`/`auto_unreviewed` remain in the CHECK set only for historical rows and are never written by current code):
 
 - `confirmed`
-- `pending`
-- `auto_unreviewed`
+- `pending` (legacy)
+- `auto_unreviewed` (legacy)
 
 Field/storage rules (uniqueness, value encoding, supersession, derived-metric availability) are canonical in [Data Model § Company Fundamentals](data-model.md#company-fundamentals).
 
@@ -2623,13 +2548,14 @@ Rules:
 
 - `backfill_company_history(input)`: explicit, user-triggered action (`{ companyId }`) that paginates the active official-report listing back over the configurable `backfillYears` depth (default 3, range 1–10; ADR 0077 §3) and ingests periodic reports + ESPI/EBI filings through the normal ingestion path, preserving original publication dates. Calendar entries are **not** backfilled (the forward-looking calendar adapters own upcoming events). Runs as an async, cancellable job; returns a job handle. On successful completion it **chains a history sweep** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3) — best-effort (a chaining failure is logged, never fails the backfill) — so the fetched periods are automatically extracted without a second user action, and the returned `BackfillProgress.chainedSweepId` names that sweep (the row is created eagerly at enqueue time, so the id is known before the command returns; `null` when nothing was chained). The coverage panel polls THIS sweep by id, never "the latest sweep", so its status/AI-budget footer settle on the sweep the backfill started. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
 - `get_backfill_progress(input)`: returns progress/diagnostics for a running or completed backfill (`{ companyId }` or job id): pages fetched, items ingested, documents stored, errors, status, `chainedSweepId` (the auto-chained sweep's id, or `null`), and `truncated` — `true` when the page cap ended the fetch before the `backfillYears` cutoff was reached (older filings may be missing; surfaced as an explicit coverage-panel warning, never silent).
+- **Typed failure diagnosis** (card bfc4c98): a failed backfill sets `status: "failed"` with `error` as `"<code>: <detail>"` — the distinct causes never collapse into one message. Codes: `unsupported_market` (the company's market has no history-capable adapter — NewConnect today, since the Bankier company path serves GPW only; ADR 0036), `not_tracked` (no Bankier backfill target for the id), `no_bankier_page` (the company's Bankier page/slug could not be resolved), `http_error` (the Bankier request itself failed), `parse_error` (a page was fetched but was unparseable), `internal` (a storage/internal fault unrelated to the source). The UI maps each prefix to a cause-specific localized message (`CompanyCoveragePanel`). A page fetched with **zero komunikaty** is not a failure — it completes with `itemsIngested: 0`. Every failure emits a `module=backfill … status=failed code=<code>` warn line; the three genuine adapter-interaction faults (`http_error`, `no_bankier_page`, `parse_error`) additionally record a typed source outcome on the `bankier-company-komunikaty` adapter (`last_error`), while pre-fetch eligibility failures (`unsupported_market`, `not_tracked`) do not — they are not adapter faults and must not flag the shared adapter's health.
 - Backfill is **idempotent** — it reuses feed-item `(sourceAdapterId, sourceEventKey)`, report-document `(companyId, url)`, and signal `(feedItemId, category)` dedup, so re-runs and resumed partial runs never duplicate. Throttling obeys the existing Bankier rate policy (serialized, waits between pages/companies). Backfill is never automatic.
 
 ### Fundamentals Commands
 
 Initial local commands:
 
-- `list_kpi_definitions(input)`: returns KPI definitions, optionally filtered by scope, sector, or company.
+- `list_kpi_definitions(input)`: returns KPI definitions, optionally filtered by scope, sector, or company. `companyId` WITHOUT a scope means "the catalog this company can see": shared rows (canonical/sector/user, `companyId` NULL) PLUS that company's own company-scoped rows — never another company's customs (owner-dogfooding fix 2026-07-22; a bare company filter used to hide the whole canonical catalog and the fact matrix synthesized placeholder definitions). With an explicit `scope` the exact filter applies unchanged.
 - `create_kpi_definition(input)`: creates one KPI definition at any scope level.
 - `list_financial_periods(input)`: returns financial periods for one company, optionally filtered by fiscal year.
 - `create_financial_period(input)`: creates one financial period record.
@@ -2653,13 +2579,17 @@ Initial local commands:
 
 Input shapes follow the corresponding domain types above. Return shapes include all domain fields plus timestamps. Company fundamentals data must be treated as owner-durable state in import/export and backup workflows.
 
-Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md); generated DTOs `RunStructuredExtractionInput` / `StructuredExtractionSummary` / `FactProvenance`):
+Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md); generated DTOs `RunStructuredExtractionInput` / `RerunExtractionOutcomeInput` / `StructuredExtractionSummary` / `FactProvenance` / `ExtractionOutcome`):
 
-- `run_structured_extraction(input)`: `{ companyId, reportDocumentId, fiscalYear, periodType, periodEnd, mode? }` → runs the deterministic tiered pipeline (ESEF → PDF+profile → HTML witness) over one stored report document and persists accepted facts with provenance; returns `{ acceptance, tier, emitted, producedFactIds, skippedFactIds, divergentCount, driftJson, tier4, tier4Proposals }`. **Tier-4 OCR fallback** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §4): when determinism ends `flagged`/`empty` and the caller gate allows it (manual/detection triggers always; a history-sweep run when a unit of its sweep's AI budget is granted — F3b, ADR 0077 §6), the Mistral-OCR `vision_extraction` path runs — a confirmed per-company OCR profile parses the document to VALIDATED facts (`source_tier='ai'`, folded into `producedFactIds`, `tier` reported as `ai_text`), or (never-bootstrapped company / a validation-failing parse) lands proposals for the confirm flow (`tier4Proposals`). `tier4` is the honest outcome string (`facts_emitted` · `bootstrap_proposals` · `proposals_flagged` · `no_vision_provider` · `not_pdf` · `provider_error:<code>` · `empty`), `null` when tier-4 did not run. A transient OCR provider failure propagates as an error (queue backoff retry); a terminal one degrades with its reason. Tier-4 is PDF-only (an ESEF/structured document degrades `not_pdf`). Re-extraction is **idempotent** (T7-F): a fact whose uniqueness slot already holds the same value is a re-observation — counted in `skippedFactIds`, never re-inserted; a slot holding a **different** value is never silently overwritten — the stored fact wins, the divergence is counted in `divergentCount` and recorded as a `diagnostic_events` entry for review. Offloaded (`spawn_blocking`). `mode` is the trust-ladder mode (`autopilot` | `assist`, default `autopilot`; any other value is rejected); the per-fact `confirmationState` is derived from the validation outcome (`accepted`/`accepted_via_witness` → `confirmed` in both modes; `accepted_unreviewed` → `auto_unreviewed`/`pending` by mode) — never from a caller-chosen literal (ADR 0061 dec. 3/8/9). Period supplied by the caller (the KPI-extraction flow, which knows the detected period).
+- `run_structured_extraction(input)`: `{ companyId, reportDocumentId, fiscalYear, periodType, periodEnd, mode? }` → runs the deterministic tiered pipeline (ESEF → structured xHTML/positional → EspiCoverNote → `html_aggregator`; the PDF fact-extraction arm is retired — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1/3 — so a routed-PDF document takes no rung and emits no outcome) over one stored report document and persists accepted facts with provenance; returns `{ acceptance, tier, emitted, producedFactIds, skippedFactIds, divergentCount }` (the retired PDF profile-drift arm no longer returns a `driftJson` — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1). The pipeline is deterministic end to end — the tier-4 OCR fallback is retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 4), so a document no tier can read is an explicit flagged gap, never guessed. **Every run — emitting or not — records a `fundamentals_extraction_outcomes` row** with its typed `reasonCode` and any drift payload (ADR 0061 decision 2's guardrail; see `list_flagged_extraction_outcomes` below and [data-model](data-model.md)). Re-extraction is **idempotent** (T7-F): a fact whose uniqueness slot already holds the same value is a re-observation — counted in `skippedFactIds`, never re-inserted; a slot holding a **different** value is never silently overwritten — the stored fact wins, the divergence is counted in `divergentCount` and recorded as a `diagnostic_events` entry for review. Offloaded (`spawn_blocking`). `mode` is the trust-ladder mode (`autopilot` | `assist`, default `autopilot`; any other value is rejected); every emitted fact lands `confirmationState = confirmed` in both modes — facts are review-free ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5), and acceptance strength (`accepted`/`accepted_via_witness` vs `accepted_unreviewed`) is provenance (`validationStatus`), never a confirmation state. Period supplied by the caller (the KPI-extraction flow, which knows the detected period).
 - `extract_report_document_data(input)`: `{ companyId, reportDocumentId, mode? }` → **the reachable one-click "Extract data" action** on a report-document row (the company workspace's Report documents panel) — closes the ADR 0061 S5 live-path gap where the deterministic pipeline had no UI caller outside autopilot. Derives the reporting period **server-side** (the same `derive_report_period` the autopilot stage uses: ESEF self-derived `FY`; PDF from title/URL period classification), so the UI never invents `fiscalYear`/`periodType`/`periodEnd`, then runs `run_structured_extraction` and returns the same `StructuredExtractionSummary`. Offloaded (`spawn_blocking`). Same `mode`/confirmation semantics as `run_structured_extraction` (facts land unchanged — pending vs auto-committed by `mode` + validation outcome). Errors when the period can't be derived (no stored file, unparsable ESEF, or a PDF with no classifiable period). **UI entry point**: `CompanyReportDocumentsPanel` extract action.
 - `list_fact_provenance(factIds)`: returns the `FactProvenance` rows (`factId`, `sourceTier`, `validationStatus`, `driftJson`, `citation`) for the requested facts; facts predating the pipeline have no row (render as unvalidated).
-- `list_flagged_fact_provenance()`: returns every provenance row with `validationStatus = "flagged"` (the drift/notification read model).
-- `get_fundamentals_coverage(companyId)`: returns `FundamentalsCoverage { companyId, periods: CoveragePeriodRow[] }`, the per-company **coverage map** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §2). An **assembled read model** (the ADR 0044 pattern — computed on demand from the live tables, **no stored projection and no table**; cardinality is a handful of periods per company); offloaded (`spawn_blocking`, since ESEF period derivation reads the stored file). Each `CoveragePeriodRow` is one `{ fiscalYear, periodType }` period:
+- `list_flagged_fact_provenance()`: returns every provenance row with `validationStatus = "flagged"` (the drift/notification read model). Lists flagged **facts**, which by construction exist only where something *was* emitted — for the periods where nothing was, use `list_flagged_extraction_outcomes`.
+- `list_flagged_extraction_outcomes(input)`: `{ companyId }` → `ExtractionOutcome[]` — the company's **non-emitting** extraction outcomes, newest attempt first: the periods where the deterministic pipeline ran and refused to emit (ADR 0061 decision 2 "flagged, never silently stored"; [ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 4/6). Each row: `{ id, companyId, reportDocumentId, fiscalYear, periodType, periodEnd, tier, acceptance, reasonCode, detailJson, driftJson, structureChanged, factCount, attemptCount, firstAttemptedAt, lastAttemptedAt }`. `tier` is `null` when no deterministic tier could read the document. `reasonCode` is a **typed** code the frontend renders through the translation layer, never backend prose (`validation_failed` · `structure_drift` · `witness_disagreement` · `witness_fallback` · `no_deterministic_tier` · `no_period_derived` · `document_unreadable`; the emitting value `emitted` never appears in this read). `no_deterministic_tier` and `structure_drift` remain valid CHECK values (legacy rows keep them, and `no_deterministic_tier` still emits for markup/ESEF gaps a tier declines to read) but a **PDF** document no longer produces either: since [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 retired the PDF fact-extraction arm, a routed-PDF document generates no extraction attempt and thus no outcome row at all — `structure_drift` is retired outright (never newly produced by any route). **`witness_fallback`** is **legacy only** ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decisions 2–4 retired the ADR 0085 aggregator gap-fill seam): no run produces it anymore — BiznesRadar sources core KPIs through its own primary pull, under the tier precedence, never through an extraction run. Stored rows (with their `witnessFallback` detail payloads) remain readable and re-armable. `witness_disagreement` is likewise no longer produced by extraction runs — it is recorded by the reversed-witnessing paths (the BR-primary pull and the WDF ingest seam) against a held slot that is an issuer tier (`esef`/`structured_xhtml`/`espi_cover_note`/the positional `pdf` — every `SourceTier::is_issuer` tier) OR, for the BR pull, a `manual` slot ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision-4 amendment, 2026-07-22 — the user's own entry is untouched but the conflict is logged, tier `manual`). `detailJson` carries the failing identities/cross-checks with expected/actual/residual where the gate produced them — the reversed-witnessing paths use the **same canonical gate shape** (`{ failedIdentities, failedCrossChecks, witnessDisagreements }`), so the Coverage panel renders it as investor language, never raw JSON keys. Clean periods are excluded, and **absence of a row means "never attempted"** — a flagged period is never indistinguishable from an untouched one. Persistence rules: [data-model](data-model.md). **UI entry point**: the Coverage panel's **Flagged periods** section (`src/shared/components/CoverageFlaggedPeriods.tsx`), fetched via the `listFlaggedExtractionOutcomes(companyId)` wrapper (`src/api/fundamentalsExtraction.ts`) — it renders each row's period, attempting tier, and the typed `reasonCode` **translated to plain language** (a raw code never reaches the user), expands onto the failing-check detail, and marks structure drift with a chip. The `no_period_derived` **sentinel period** (`fiscalYear 0`, empty `periodType`/`periodEnd`) renders as "Period unknown", never as a real period. Loading, the good "nothing flagged" empty state, and a failed read (explicit + retryable) are three distinct states — a failed read must never look like "nothing flagged". See [ui-information-architecture](ui-information-architecture.md) § Flagged periods.
+- `rerun_extraction_outcome(input)`: `{ outcomeId, mode? }` → `StructuredExtractionSummary` — the **"try again" action on a flagged period**. Takes the company/document/period from the stored outcome row rather than asking the caller to re-derive them, so the retry can never target a different slot than the one displayed. The re-run **updates that same row in place** (`attemptCount` increments): a period whose cause has been fixed leaves the flagged list instead of leaving a stale flag beside a fresh success. Offloaded (`spawn_blocking`). Same `mode`/confirmation semantics as `run_structured_extraction`. Errors when no outcome with that id exists. **UI entry point**: the per-row **"Try again"** action in the Coverage panel's Flagged periods section, via the `rerunExtractionOutcome(input)` wrapper (`src/api/fundamentalsExtraction.ts`). Every re-run action disables while one is in flight (no double dispatch), and the list refetches on completion so a fixed period leaves it.
+- `run_aggregator_fundamentals_pull()`: no input → `AggregatorPullSummary { companies, pagesResolved, pagesUnavailable, factsWritten, factsUpdated, factsReobserved, slotsSkippedHigherTier, witnessDisagreements, zeroCellsSkipped, noDefinition, mappingSuspects }` (the last: metrics whose aggregator value contradicted issuer/manual-held slots at ≥5 distinct companies this run — a dictionary-mapping suspect, testing.md § Mapping guardrails) — runs the **BiznesRadar-primary core-KPI pull** ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 2) over every tracked company: resolves the three robots-allowed report pages per company (income / balance / cash flow; per-(company, page kind) daily cadence cache — a re-run inside the window fetches nothing), parses **every** period column each page carries, and writes facts under the tier precedence (`manual` > `esef` > `espi_cover_note` > positional `pdf` > `html_aggregator`; the aggregator only ever overwrites its own slot; a divergence against a held slot — any issuer tier including positional `pdf`, or a `manual` slot — records an informational `witness_disagreement` in the canonical gate-detail shape, ADR 0086 decision-4 amendment; an empty/zero cell is never written). Idempotent; offloaded. **Headless-only for now**: consumed by the daily scheduler auto-trigger (`jobs/scheduler.rs` → durable-queue job `aggregator_fundamentals_pull`, `sources` lane) and the upcoming rebuild flow (ADR 0086 decision 6) — no direct UI entry point yet; the rebuild slice (plan TOR C C4) surfaces it.
+- `rebuild_fundamentals()`: no input → `RebuildFundamentalsSummary { aggregator: AggregatorPullSummary, esefDocumentsProcessed, esefFactsEmitted, esefFactsReobserved, esefDivergences, esefErrors, wdfCarriersScanned, wdfFactsWritten, wdfSkippedNoBody, factsByTier: FactTierBreakdown { byTier: TierFactCount[] { sourceTier, facts }, manualOrUnprovenanced }, errors: string[] }` — the **one-off fundamentals repopulation driver** ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 6, plan TOR C slice C4). After the owner-approved **manual** wipe of `financial_facts` on the live DB (a deliberate one-time SQL cleanup — NOT a migration; migrations stay schema-only and never delete user data), it runs three sequential passes, each tolerant of per-item failure (errors collected into `errors`, never aborting the rebuild): (1) the BiznesRadar-primary pull (`run_aggregator_fundamentals_pull` core — cached pages parsed without refetch); (2) ESEF re-extraction, force-re-running the deterministic structured extraction over every stored ESEF-route document of every company (PDFs spawn no attempt, post-C3 semantics); (3) WDF re-scan of every stored feed item whose "WYBRANE DANE FINANSOWE" cover-note body survives (pruned bodies are lost by design, counted in `wdfSkippedNoBody`). Facts land review-free (`confirmed`) under the same tier precedence; idempotent (a re-run writes zero new facts). `esefFactsEmitted` counts ESEF facts written **or tier-upgraded** this pass — an ESEF fact may take over a slot pass 1's aggregator pull wrote (issuer tier outranks `html_aggregator`), so it is not "genuinely new"; `factsByTier` is the deduplicated verdict. `factsByTier` is the **before/after verdict** — post-rebuild fact totals grouped by `source_tier` plus the manual / no-provenance bucket. Offloaded. **Headless-only** (rebuild driver — invoked once via live-drive after the manual wipe; no UI entry point).
+- `get_fundamentals_coverage(companyId)`: returns `FundamentalsCoverage { companyId, periods: CoveragePeriodRow[] }`, the per-company **coverage map** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §2). An **assembled read model** (the ADR 0044 pattern — the map itself is computed on demand from the live tables, **no stored projection**; cardinality is a handful of periods per company); offloaded (`spawn_blocking`, since a first-time period derivation reads the stored file). The **per-document period derivation** (`derive_report_period`) is served from a persisted cache (`document_derived_periods`, migration 0109), so repeat panel loads read the index instead of re-extracting bare-titled PDFs' cover pages (data-model). Each `CoveragePeriodRow` is one `{ fiscalYear, periodType }` period:
   - Cell `report` (`CoverageReportCell | null`) — the single **canonical periodic report** for the period (ssf-over-jsf, newest revision; ADR 0077 §1 selection over the **stored `doc_kind` column** + `derive_report_period` — the kind is never re-derived on the fly, so coverage cannot disagree with the documents panel; a `NULL` (unclassified) document is excluded until set-on-write / "Refresh classification" converges it). `{ documentId, docKind (periodic_ssf | periodic_jsf), title, structured, fetched }`; `fetched = fetch_status == "fetched"`, so a link-only (metadata-only) periodic report still yields a cell with `fetched: false` via the title/URL period fallback. `null` when no periodic report names the period.
   - Cell `facts` (`CoverageFactsCell`) — `{ total, validated, unvalidated, flagged }` over the period's `financial_facts` joined to `financial_fact_provenance`: `validated` = provenance `passed`/`witness_confirmed`, `flagged` = provenance `flagged`, `unvalidated` = everything else (no provenance row, `unreviewed`, `none`). `total = validated + unvalidated + flagged`.
   - Cell `review` (`CoverageReviewCell`) — `{ pendingProposals, flaggedFacts }`: `pendingProposals` = `pending` `kpi_extraction_proposals` whose job detected this `(fiscalYear, periodType)`; `flaggedFacts` mirrors `facts.flagged`.
@@ -2710,14 +2640,12 @@ Qualitative assessment ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md
 Two read surfaces with a fixed boundary (a snapshot may be quant-only, qual-only, or combined, so "the latest snapshot" is **not** a reliable source of qualitative rows):
 
 - `get_framework_evaluation` / `list_framework_evaluations` return the qualitative fields **as snapshotted in that specific run** — the audit/history view of one evaluation, unchanged and immutable.
-- `get_qualitative_assessment` is the Quality panel's **current-state** read: per qualitative criterion, the most recent agent-assessed row (`source = "agent"`) for the company × framework **across all snapshots**, so a later quant-only run never blanks an existing assessment.
-
-Commands:
-
-- `run_qualitative_assessment(input)`: `{ companyId, frameworkId }` → enqueues the durable `qualitative_assessment` job over the framework's qualitative criteria for the company; asynchronous, surfaced via the jobs read model. Fails with a clear error when no text-capable provider is configured (matches feed-analysis behavior).
-- `rerun_qualitative_criterion(input)`: `{ companyId, frameworkId, criterionId }` → re-enqueues assessment for a single qualitative criterion (the panel's re-run action).
-- `get_qualitative_assessment(input)`: `{ companyId, frameworkId }` → returns, **per qualitative criterion, the most recent agent-assessed result** (`source = "agent"`, latest by run) across the framework's evaluation snapshots for the company, with resolved citations (opening the cited evidence), confidence, prompt version, and `source`, for the Quality panel. A criterion with no assessment yet is omitted (empty state), distinct from an `insufficient_evidence` verdict.
-- `get_qualitative_assessment_status(input)`: `{ companyId, frameworkId }` → `{ status: "idle" | "queued" | "running" | "failed" | "succeeded", attempts, lastError }` — the lifecycle of the durable `qualitative_assessment:<company>:<framework>` job row, so the panel can stop its bounded poll and surface a terminal failure (the backend `lastError`, e.g. no configured provider) instead of silently clearing the "queued" hint. Maps the queue row honestly (`pending → queued`); a missing row is `succeeded` when an assessment is already stored, else `idle`. `lastError` is only meaningful on `failed`.
+Qualitative assessment is **removed entirely** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)
+decision 5, clean cut): the run/re-run generation commands, the durable
+assessment job, and the current-state read are all gone. Criterion
+verdicts are manual now — `criterion_results` keeps only its deterministic
+`source='engine'` DSL rows, which the cut does not touch — and agent-written
+verdicts return via MCP write-tools with mandatory provenance (`v0.61.0`).
 
 Citations are rejected when they do not reference an evidence id supplied to the request (the research-brief `rejects_unknown_citation_keys` precedent): uncited reasoning is never stored.
 
@@ -2729,14 +2657,16 @@ AI KPI extraction ([ADR 0028](adr/0028-multi-provider-ai-boundary.md), [ADR 0029
 
 An extraction job carries the detected primary period (`detectedFiscalYear`, `detectedPeriodType`, `detectedPeriodEndDate`), default currency/language, and its proposals. Each proposal carries `metricKey`, `label`, `valueNumeric` (decimal base-units text), `asReportedValue`/`asReportedScale`, `confidence` (`low|medium|high`), `sourceSnippet`, `isProposedKpi` (true for metrics beyond the supplied taxonomy), `status` (`pending|confirmed|rejected`), and `factId` once confirmed. Only the primary period is extracted; prior-year comparative columns are ignored.
 
-Commands:
-
-- `start_kpi_extraction(input)`: queues an async extraction over a report document (`reportDocumentId`, optional `periodHint`, optional `providerMode`); returns the queued job. **Rewired to the tier-4 OCR path** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §4 / T4.5) — one implementation with autopilot's fallback: the LLM never reads numbers. The reporting period is derived deterministically (title/URL/ESEF, not the model); a company with a confirmed OCR profile parses to VALIDATED facts committed directly (the job completes with zero proposals and an honest `committedFactCount`), while a never-bootstrapped company bootstraps the profile (labels only, via `vision_extraction`) and lands proposals for confirmation. A non-PDF document, a missing vision provider, or a bootstrap that returns no usable layout fails the job with an actionable error (`non_pdf_document` / `provider_error` / `parse_error`). Transient provider failures engage the queue's capped-backoff retry (ADR 0077 pacing fix).
-- `retry_kpi_extraction(jobId)`: re-queues an existing job.
-- `list_kpi_extraction(input)`: returns extraction jobs (with proposals) for one report document.
-- `list_pending_kpi_proposals(companyId)`: the **F5 review-queue** read model ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §4/§5, T5.3b). Returns `PendingKpiProposal[]` — every `pending` proposal for the company (confirmed/rejected excluded) joined to its job's detected period (`fiscalYear`/`periodType`, the grouping axis) and its source document (`documentId`/`documentTitle`/`documentUrl`), plus the `sourceSnippet` whose `ocr_bootstrap` / `ocr_pending_profile` / `ocr_flagged` prefix the UI derives the source chip from. Offloaded off the UI thread (three-table join). Confirm/reject reuse `confirm_kpi_proposal` / `reject_kpi_proposal`.
-- `confirm_kpi_proposal(input)`: commits one proposal as a `financial_fact` (`proposalId`, optional `valueNumeric`/`currency` edit, optional `fiscalYear`/`periodType`/`periodEndDate` period override, `acceptAsNewKpi` for out-of-taxonomy suggestions). Returns `ConfirmedKpiFact { fact, validationStatus }`: the confirm now **validates** the value over the period's fact set like every other fact source ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §4), recording a real `validationStatus` (`passed` | `flagged` | `unreviewed`; the retired `none` is never written) on the provenance row and surfacing it so the UI can flag a contradicted total. The confirmed fact always persists — the status records what validation saw, it does not block the confirm.
-- `reject_kpi_proposal(proposalId)`: marks a proposal rejected; never writes a fact.
+KPI extraction is **removed entirely** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)
+decision 5, clean cut): generation, the staging ledger, and the review surface
+all go. Migration 0102 drops `kpi_extraction_jobs` and `kpi_extraction_proposals`
+— confirmed proposals had already been materialised into `financial_facts`, so
+only the staging rows and unreviewed OCR/AI-origin proposals are lost. The
+deterministic fundamentals pipeline (ESEF → structured xHTML/positional →
+EspiCoverNote → `html_aggregator`, BiznesRadar-primary) is the only extractor
+now; the PDF fact-extraction arm is retired ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md)
+decision 1), so a stored PDF takes no rung at all, and a document no surviving
+tier parses is flagged rather than guessed.
 
 ### IR-Page Report Resolution
 
@@ -2779,11 +2709,6 @@ Initial Tauri command groups:
 - `create_research_reminder`
 - `update_research_reminder`
 - `delete_research_reminder`
-- `start_research_digest`
-- `list_research_digests`
-- `start_ai_analysis`
-- `list_ai_analysis`
-- `retry_ai_analysis`
 - `refresh_sources`
 - `refresh_source`
 - `refresh_gpw_company_registry`
@@ -2813,7 +2738,6 @@ Initial Tauri command groups:
 - `backfill_company_history`
 - `get_backfill_progress`
 - `confirm_derived_event`
-- `run_ai_event_derivation`
 - `create_video_transcript_job`
 - `list_video_transcript_jobs`
 - `delete_video_transcript_job`
@@ -2827,7 +2751,6 @@ Initial Tauri command groups:
 - `clear_provider_api_key`
 - `get_settings`
 - `update_settings`
-- `list_ai_provider_catalog`
 - `export_research_data`
 - `preview_research_import`
 - `apply_research_import`

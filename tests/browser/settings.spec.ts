@@ -49,39 +49,35 @@ test.describe("settings", { tag: "@clickable" }, () => {
     }
   });
 
-  test("routes an AI capability to an ordered provider pool and persists across tab navigation", async ({
+  // Post-ADR 0084: the in-app analysis layer and its per-capability routing are
+  // retired — the only model-backed capability left is the transcript provider
+  // (transcription is data acquisition, not interpretation). Its settings live
+  // under the "Transcripts" tab; the user-visible outcome is that a chosen model
+  // and timeout persist through update_settings across tab navigation.
+  test("persists the transcript provider model and timeout across tab navigation", async ({
     page,
   }) => {
     await openApp(page);
     await navTo(page, "Settings").click();
 
     const settingsRegion = page.getByLabel("Application settings");
-    await settingsRegion.getByRole("button", { name: "AI", exact: true }).click();
+    await settingsRegion.getByRole("button", { name: "Transcripts" }).click();
 
-    const kpiRow = settingsRegion
-      .locator(".capability-routing-row")
-      .filter({ has: page.getByRole("heading", { name: "Claim extraction", level: 3 }) });
+    const model = page.getByLabel("Gemini transcription model");
+    const timeout = page.getByLabel("Gemini transcription timeout");
 
-    // Two-member failover pool: the catalog default (Gemini), then a
-    // OpenAI-compatible provider with a typed custom model.
-    await kpiRow.getByRole("button", { name: "Add provider" }).click();
-    await expect(page.getByLabel("Provider Claim extraction 1")).toHaveValue("provider_gemini");
+    // Seed is gemini-2.5-flash / 300s; change both to non-default values.
+    await expect(model).toHaveValue("gemini-2.5-flash");
+    await model.selectOption("gemini-3.5-flash");
+    await timeout.selectOption("600");
 
-    await kpiRow.getByRole("button", { name: "Add provider" }).click();
-    await page.getByLabel("Provider Claim extraction 2").selectOption("provider_openai_compatible");
-    await page.getByLabel("Model Claim extraction 2").fill("custom-model-x");
-
-    await page.getByLabel("OpenAI-compatible base URL").fill("https://compat.example.com/v1");
-
-    // Navigate away and back — the stateful mock runtime (ADR 0048) persists
-    // the saved settings, so the routing pool and base URL re-render as saved.
+    // Navigate away and back — the stateful mock runtime (ADR 0048) persists the
+    // saved settings, so the model + timeout re-render as saved, not reset.
     await settingsRegion.getByRole("button", { name: "Credentials" }).click();
-    await settingsRegion.getByRole("button", { name: "AI", exact: true }).click();
+    await settingsRegion.getByRole("button", { name: "Transcripts" }).click();
 
-    await expect(page.getByLabel("Provider Claim extraction 1")).toHaveValue("provider_gemini");
-    await expect(page.getByLabel("Provider Claim extraction 2")).toHaveValue("provider_openai_compatible");
-    await expect(page.getByLabel("Model Claim extraction 2")).toHaveValue("custom-model-x");
-    await expect(page.getByLabel("OpenAI-compatible base URL")).toHaveValue("https://compat.example.com/v1");
+    await expect(page.getByLabel("Gemini transcription model")).toHaveValue("gemini-3.5-flash");
+    await expect(page.getByLabel("Gemini transcription timeout")).toHaveValue("600");
   });
 
   // M4 (ADR 0078): the MCP section's connection snippet is unbreakable command

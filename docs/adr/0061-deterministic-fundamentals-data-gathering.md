@@ -1,6 +1,8 @@
 # ADR 0061: 100%-Deterministic Fundamentals Data Gathering — Structured-First Pipeline + Validation + Company Profiles
 
-Status: Accepted (2026-07-01)
+Status: Accepted (2026-07-01); decisions 1/3 (tier ladder, deterministic PDF parser) superseded by
+[ADR 0086](0086-aggregator-primary-fundamentals.md) (2026-07-21): the PDF fact arm is retired,
+BiznesRadar is aggregator-primary for core KPIs, facts are review-free. ESEF/WDF decisions stand.
 
 Supersedes the "Gemini-Pro-for-documents" premise of [ADR 0060](0060-ai-capability-routing-and-openai-compatible-provider.md)
 for the KPI-extraction path (ADR 0060's per-capability routing + OpenAI-compatible provider survive for
@@ -10,7 +12,7 @@ Relates to [ADR 0028](0028-multi-provider-ai-boundary.md), [ADR 0052](0052-repor
 (pure-Rust extraction is reliable), [ADR 0027](0027-company-fundamentals-scope.md), and
 [ADR 0049](0049-test-architecture-v2-data-transform-correctness.md).
 
-Cross-cutting fundamentals-reliability epic — **no `milestone:` label**.
+Cross-cutting fundamentals-reliability epic — carried **no `milestone:` label** until 2026-07-19, when the owner slotted the remaining slices into **`v0.59.0`** (alongside the Today-view reinvention; [roadmap](../roadmap.md)).
 
 ## Context
 
@@ -47,8 +49,8 @@ fact is either validated or flagged — **never silently wrong**.
    already-discovered structured packages (today it fetches PDFs and skips them).
 2. **Structured xHTML "wybrane dane finansowe"** (some interims) — deterministic HTML-table parse via the
    existing xHTML seam.
-   - **2a. ESPI cover-note "WYBRANE DANE FINANSOWE" (`EspiCoverNote`)** — *Status: planned (spike-adopted
-     2026-07-19, card `76a4636`)*. The same mandated table, taken not from a fetched attachment but from
+   - **2a. ESPI cover-note "WYBRANE DANE FINANSOWE" (`EspiCoverNote`)** — *Status: implemented (spike-adopted
+     2026-07-19, shipped 2026-07-20, card `76a4636`)*. The same mandated table, taken not from a fetched attachment but from
      the plain-text body of the periodic-report komunikat **already ingested** by the Bankier primary —
      zero-fetch, available the day of publication, instant breadth for companies with no fetched
      documents. Slots **below** `StructuredXhtml` (issuer cover-note figures are untagged, so they never
@@ -61,11 +63,68 @@ fact is either validated or flagged — **never silently wrong**.
      lines only (no health-score depth — ESEF/PDF stay necessary); `Liczba akcji` scale depends on a
      per-row `(w tys.)` annotation and is treated conservatively. Spike evidence: 15-doc hand-labeled
      corpus, 347/347 recall and precision, 0 false values (`private/realdata/spikes/espi-wdf/RESULTS.md`).
+     **As shipped** (2026-07-20): the ingest hook is a post-commit step of `ingest_bankier_company_items`
+     (feed ingestion is the stronger guarantee — an extraction failure never rolls it back); only
+     `is_periodic_report_item` komunikaty are parsed; the period comes from the shared
+     `period_from_title_url` derivation and an underivable period **abstains**; facts run the same
+     `validate_parsed_set` gate as every tier and land `auto_unreviewed`; on an occupied slot an
+     `esef`/`structured_xhtml` (or provenance-less/manual) fact is left untouched while a `pdf`/
+     `html_aggregator` fact is upgraded in place. **Owner decisions at review (2026-07-21):** (a) the
+     in-place **upgrade stands** rather than routing the disagreement to the flagged-review queue —
+     the higher tier carries the issuer's own figure, and holding a correct number back for manual
+     clicking would contradict the epic's "100% automatic" requirement; the upgrade is therefore
+     **recorded in full** (metric, previous value, previous tier, new value) as a `tier_upgrade`
+     diagnostic, because a lower tier disagreeing with the issuer is the primary drift signal for
+     decision 3's learning loop — a bare counter would discard that evidence; (b) `auto_unreviewed`
+     **stays for this milestone** despite the 347/347 corpus result, and is revisited once the
+     real-data recall/precision harness supplies measured numbers rather than a judgment call.
+     Persistence/observability contract: [data-model.md](../data-model.md).
 3. **Deterministic PDF parser** (interim full statements) — a curated **Polish label → `metric_key`**
    dictionary + a value parser (current-period column selection, unit multiplier tys/mln, sign =
    parentheses, note-ref/dot-leader stripping).
-4. **AI over extracted text** (never native PDF) — last resort for the residual tail only, through the
-   provider pool (decision 5).
+   **Retired 2026-07-21 ([ADR 0086](0086-aggregator-primary-fundamentals.md) dec. 1):** no production
+   path parses financial FACTS out of PDFs anymore (`parse_pdf_text*` deleted). The ladder now ends at
+   BiznesRadar-primary — ESEF → structured xHTML/positional → EspiCoverNote (WDF) → `html_aggregator`.
+   PDF text survives only for document period derivation and insider/ownership parsing.
+4. ~~**AI over extracted text** (never native PDF) — last resort for the residual tail only, through the
+   provider pool (decision 5).~~ **Struck 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md):** the AI
+   residual tier and the tier-4 OCR realization ([ADR 0077](0077-trusted-extraction-foundations.md)) are
+   removed. The pipeline ends at the **HTML aggregator witness** (decision 4); a document no deterministic
+   tier parses is **flagged with a notification**, never guessed and never silently absent. Decision 5 (AI
+   provider pool) is likewise removed. Honest-100% scope now reads: automatic on the deterministically
+   covered set, gaps explicit and measured (the `v0.59.0` real-data recall/precision harness).
+
+**Period derivation is upstream of every tier** (amendment 2026-07-21, card `fc692da`). A document whose
+reporting period cannot be derived never reaches *any* tier — no parser, no new tier and no OCR can help
+it — and the `v0.59.0` A4 sweep measured that as the single largest gap: **1 144 of 1 544** eligible stored
+documents, **83 of them (31.7% of the kind) `periodic_ssf`** — real financial statements invisible purely
+for want of a period parse. The derivation (`report_diff::classify`) therefore has **one grammar over two
+carriers**:
+
+1. **title/URL** — patterns derived from the maintainer's real issuer forms, not from imagination: calendar
+   period-end dates (`30.06.2025`, `2025_09_30`), `QSr/PSr N`, glued `1Q2026`/`Q125`/`2023q3`/`1HY2025`,
+   roman and word quarters across any separator (`III_kwartal`, `IIIQ`, `pierwszy kwartał`), `HY`/`H1`,
+   month counts (`3M`/`6M`/`9M`/`12M`), `PSSF`/`PSF`, `SA-Q`/`SA-P`/`SA-R`, `rok obrotowy`, `za <rok> r.`,
+   and Polish/English month-end phrases (`30 czerwca 2025`, `30 June 2025`).
+2. **the document's own cover page** — when the title/URL name nothing and the document is a periodic
+   statement (a bare `SSF.pdf` is a real, recurring attachment shape), the first ~1 500 characters of the
+   extracted text are run through the **same** grammar. Restricted to periodic statements on purpose: the
+   documents that legitimately have no period are ~3 000 of the 3 790 stored files, and a text extraction
+   each to confirm an expected `None` would make every sweep an overnight run.
+
+Both carriers keep decision 1's abstention contract, and the widening **adds** one abstention: a stated
+reporting window that does not open on 1 January (a non-December fiscal year — Synektik reports 1 Oct –
+30 Sep) abstains outright, because the calendar mapping this derivation assumes would be wrong there.
+Genuine ambiguity — two glued readings, or two calendar period ends the text does not order as a
+current-vs-prior pair (separated by "oraz", or listed ascending) — abstains as well. The **one**
+comparative shape that is NOT ambiguous is resolved rather than abstained: a balance-sheet header pairing
+the current period end with the prior one, both calendar boundaries, current listed first and therefore
+later (`31.03.2025 31.12.2024` → Q1 2025; annual `31.12.2024 31.12.2023` → FY 2024) — the document names
+the period explicitly there, and abstaining lost real statements. A **feed-title** carrier adds two
+title-only rules: the Polish `z dnia <date>` publication idiom is stripped (it is never the reporting
+period), and an explicit period marker wins over a lone bare date (a bare feed-title date is usually the
+publication date). An undecidable period stays `no_period_derived`: nothing is persisted, and "I don't
+know" is never widened into a guess.
 
 ### 2. The "good" gate — objective validation (no human, no guessing)
 A parsed value is auto-accepted only if it passes **all**: (a) **accounting identities** (Assets =
@@ -76,6 +135,11 @@ the HTML witness (decision 4), then a user notification — never a silent emit.
 **source tier + validation status + primary-source citation**.
 
 ### 3. Per-company extraction profile + drift → learning loop
+**Retired 2026-07-21 ([ADR 0086](0086-aggregator-primary-fundamentals.md) dec. 1):** the per-company
+`ExtractionProfile` (bootstrap/merge/drift) is deleted with the PDF fact arm — no profile machinery
+ships. Provenance is now durable labels (`source_tier` + `extraction_method` + citation), not a learned
+per-company profile; structure-drift survives only as a flagged `reason_code` for the structured tiers.
+
 A **versioned per-company/template profile** records which labels → which KPIs, sections, unit convention,
 column layout (+ a template hash). On each new report, drift vs the profile (a) signals distrust → runs
 the HTML witness, and (b) fires a **"structure changed" notification with a clean label diff** (no
@@ -84,6 +148,13 @@ is automatically "good" again. A company/template is **bootstrapped once** (the 
 glances at start); thereafter it is zero-touch and self-validating; drift → re-bootstrap.
 
 ### 4. HTML aggregator as second witness + fallback
+**Amended — BiznesRadar promoted witness → PRIMARY 2026-07-21 ([ADR 0086](0086-aggregator-primary-fundamentals.md)
+dec. 2/4, building on [ADR 0085](0085-biznesradar-fundamentals-witness.md)):** the aggregator is now the
+**primary** source for core KPIs (daily pull of three raporty-finansowe pages per company, every period
+column, `source_tier='html_aggregator'`), sitting **below** issuer tiers per slot. Where an issuer tier
+(ESEF/WDF) holds a slot, a divergent aggregator value records an informational `witness_disagreement` and
+never overwrites it; an empty/zero aggregator cell is never written.
+
 Where an aggregator (**BiznesRadar / Bankier "wyniki finansowe" / StockWatch** — **not Stooq**, which is
 price data) covers a company, cross-check its structured tables **routinely** (not only on failure):
 agreement PDF↔aggregator ⇒ ~100% confidence. The primary filing is the source of truth, the aggregator a
@@ -156,7 +227,13 @@ current figure) as additional facts stamped with the prior period end — distin
 period end, so they never pollute the emitted current-period set. Completeness is report-only
 (`ValidationReport.completeness`, never flips `Status`); the pipeline downgrades an otherwise-`Accepted`
 set to `AcceptedUnreviewed` only when it hits **zero** of the expected primary KPIs (never blocks
-emission).
+emission). **The check was inert in production until `v0.59.0`** (card `fb93944`): its denominator comes
+from `kpi_relevance`, and that table held **zero rows**, so `expected_primary_metric_keys` returned `None`
+for every company and completeness had nothing to measure. Owner decision 2026-07-21: seed a common IFRS
+**core set** — revenue, operating profit, net profit, total assets, total equity — as a starting
+denominator (migration `0106`, contract in [data-model.md](../data-model.md)), while the durable
+per-sector/per-company selection is studied separately (card `3569d99`). The seed never touches a curated
+row.
 
 Decision 1b (the fetch path retrieving already-discovered structured packages) landed 2026-07-02 for
 **direct `.xhtml` links** discovered on the Bankier komunikaty attachment path: a structured attachment is
@@ -177,3 +254,57 @@ PLN↔EUR rate, which becomes the emit gate (abstain over guess). Implementation
 ingest-time hook in the Bankier adapter, provenance citation of the feed item. The ingest-time
 requirement is load-bearing: the same session measured the app's (since-disabled) automatic feed prune
 deleting 448 of 451 WDF carrier bodies — lazily reading old feed text is not a viable route.
+
+**Amendment (2026-07-21) — unit scale is READ, never guessed** (owner rule, dogfooding on the real DB).
+The binding rule, in the owner's words: *"in every report, for every company, somewhere it is written what
+unit the report is in; if nothing is written, assume no multiplier; needing to check/guess a multiplier
+means the reader did not read the report/PDF accurately enough."* This makes the **document's own unit
+declaration the only source of scale**, and reshapes `detect_unit_scale` (PDF tier) and the WDF header scan
+(tier 2a) accordingly:
+
+- **English declarations are first-class DECLARATION-tier votes**, alongside the Polish forms — at least
+  `in thousands` / `thousands of` / `PLN '000` / `PLN thousand(s)`, and the millions counterparts
+  (`in millions` / `millions of` / `PLN million`). *Real failure:* Benefit Systems H1 2025 filed an English
+  translation SSF declaring "All amounts are expressed in thousands of Polish złoty"; the Polish-only
+  detector saw no declaration, fell to the bare-caption tie, and a stray narrative "95 mln zł" flipped the
+  whole filing to Millions → **every value stored ×1000 too big**. English declarations must win the same
+  way a Polish declaration does. Precedence structure is unchanged: **declaration > bare caption**.
+- **Silent default = no multiplier (raw złoty), NOT thousands.** With no declaration and no scale caption
+  anywhere, the scale is `Ones` (×1). This flips the historical silent default (`Thousands`). *Real failure:*
+  Digital Network Q1 2025 (`WYBRANE SKONSOLIDOWANE DANE FINANSOWE`, bare `PLN PLN EUR EUR` header, no unit
+  declared) had its raw-złoty figures scaled up (revenue 15 395 950,73 PLN stored orders of magnitude too
+  big). The cost of this rule: a genuinely-in-thousands document that declares nothing is now read raw — but
+  per the rule such a document does not exist (the declaration is always written), and reading it raw is the
+  honest failure mode versus a silent ×1000 guess.
+- **Groszy corroboration.** An aggregate financial-statement line whose values carry a 2-digit comma decimal
+  (groszy) is evidence of raw-złoty denomination — thousands/millions figures are whole. It **only breaks
+  the silent case** (toward `Ones`, which is already the default); a **declaration always wins** over a groszy
+  signal (a declared-thousands document showing groszy on aggregate lines is treated as thousands, the
+  contradiction noted but not acted on). Groszy is therefore a documented corroborating invariant, not a
+  production control-flow branch — encoding it as a branch that changes nothing would be misleading.
+- **Quarantine stays a safety net, not a scale source.** The history-plausibility quarantine still catches a
+  mis-scaled magnitude downstream, but scale itself is now resolved by *reading the declaration*, never by
+  plausibility-guessing a multiplier — the two roles are kept distinct.
+- **Profile scale demoted to informational** (after the live bypass incident, 2026-07-21 22:15). The
+  per-company `ExtractionProfile.unit_scale` (§3) previously *overrode* the document's declaration at parse
+  time — so a profile bootstrapped in the broken-detector era (Millions for thousands-declared filers: DVL,
+  NWG, BFT…) silently bypassed the whole "read the declaration" rule at runtime. *Real failure:* a live
+  re-extraction of Develia's Q1 2026 QSr (declares `w tys.` ×10, zero `w mln`) re-created revenue at
+  892 109 000 000 (×1000 too big), while the same reader with `profile = None` produced the correct
+  892 109 000. Resolution: **scale is now always `detect_unit_scale(document)`; the profile's `unit_scale`
+  has no scaling authority** — it is retained only for serialization compat, drift reporting, and merge
+  refresh (kept authoritative for the **label map**). A detected-scale ≠ profile-scale difference is **not**
+  distrust-worthy: it no longer trips the drift gate (`Drift::is_drift()` is `false` for a scale-only diff),
+  is recorded in the `DriftReport` as informational, and `merge_confirmed` refreshes the stale profile scale
+  from the document on the next confirmed merge — so the facts EMIT at the correct scale and the profile
+  self-heals. **Label-set drift semantics are unchanged** (a renamed/added/removed line still distrusts the
+  parse, flags, and surfaces "structure changed").
+
+**Candidate cross-check invariant (not yet an engine):** for a cover table carrying EPS, share count and
+parent net profit, `EPS × shares ≈ net profit attributable to the parent` holds only at the correct scale
+(Digital Network Q1 2025: 1,12 × 4 165 685 ≈ 4 665 567 ≈ 4 682 950,64 — the identity holds *only* raw,
+proving no multiplier). Recorded here as a future plausibility/validation check, not built in this change.
+
+Regression guards pinned: the KRUK/CDR/car declaration-counting tests, the A6 bare-caption tie-break
+(caption `(tys. zł)` + narrative `mln zł` → Thousands), and the WDF 347/347 corpus (all 15 docs declare
+their unit, so the silent-default flip does not touch them).

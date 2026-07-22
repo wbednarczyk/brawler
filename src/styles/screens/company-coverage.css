@@ -213,3 +213,116 @@
 .coverage-ai-budget {
   margin-left: var(--space-2);
 }
+
+/* Flagged periods (ADR 0061 decision 2, ADR 0084 decision 4/6): the periods the
+   deterministic pipeline refused to record. A section of the Coverage panel —
+   coverage is the company's "what do we have / what needs review" surface, and
+   the Review queue panel that used to host human review was retired with the
+   in-app AI layer. */
+.coverage-flagged {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.coverage-flagged-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+/* Row body: TWO LINES — an identity line of fixed slots, then the reason as
+   full-width prose. A four-column grid was tried first and failed on the real
+   (narrow) Coverage pane: the fixed slots ate the width, the `1fr` reason column
+   collapsed, and the explanation wrapped ONE CHARACTER PER LINE. Prose does not
+   go in a squeezable slot (ui-authoring § panel-internal scrollbars: row slots
+   are single-line; prose belongs in a wrapping block). */
+.coverage-flagged-row .expandable-row-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* FIXED SLOTS (ui-authoring styling rules): period · reader chip · drift chip
+   land at the same x on every row, so a row without a drift chip never lets its
+   neighbours slide left. `justify-content: start` keeps the track widths fixed
+   instead of stretching them across the row. */
+.coverage-flagged-head {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5rem) minmax(0, 7rem) minmax(0, 7rem);
+  justify-content: start;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The period is an IDENTITY field: it never truncates (ADR 0076 global density
+   rule). It WRAPS instead — the sentinel's "Period unknown" is wider than any
+   real `2025 H1` label, and `nowrap` made it overflow its track and collide with
+   the reader chip in the next slot (caught by looking at the rendered pane). */
+.coverage-flagged-period {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.coverage-flagged-tier,
+.coverage-flagged-drift {
+  display: flex;
+  min-width: 0;
+}
+
+/* Prose line: wraps at word boundaries across the full row width. */
+.coverage-flagged-reason {
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.coverage-flagged-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.coverage-flagged-rerun {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.coverage-flagged-failed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+}
+
+/* Narrow (S) pane: the identity line's three fixed slots stack rather than
+   forcing the panel to scroll horizontally (ADR 0076 density contract;
+   ui-authoring § panel-internal scrollbars). Each row stacks identically, so the
+   chips still align down the list. */
+@container pane (max-width: 419px) {
+  .coverage-flagged-head {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-1);
+  }
+
+  .coverage-flagged-rerun {
+    width: 100%;
+    justify-content: center;
+  }
+}

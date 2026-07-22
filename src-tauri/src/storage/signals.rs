@@ -659,62 +659,6 @@ fn get_company_signal(connection: &Connection, signal_id: &str) -> StorageResult
     Ok(signal)
 }
 
-/// List the seeded categories (key + display name) for the AI fallback prompt,
-/// excluding `other` (a real disclosure type is always preferred; `other` is the
-/// model's implicit fallback expressed as the unknown outcome).
-pub(super) fn list_categories_for_ai(
-    connection: &Connection,
-) -> StorageResult<Vec<SignalCategorySummary>> {
-    let mut statement = connection.prepare(
-        "SELECT key, display_name FROM signal_categories WHERE key != 'other' ORDER BY key",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(SignalCategorySummary {
-            key: row.get(0)?,
-            display_name: row.get(1)?,
-        })
-    })?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
-/// Official-report filings matched to a company that have no signal yet — the
-/// candidates for the opt-in AI fallback. Bounded by `limit`.
-pub(super) fn list_unclassified_official_filings(
-    connection: &Connection,
-    source_adapter_id: &str,
-    limit: i64,
-) -> StorageResult<Vec<UnclassifiedFiling>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT
-            feed_items.id,
-            feed_item_companies.company_id,
-            feed_items.title,
-            COALESCE(feed_items.body_text, ''),
-            feed_items.published_at
-        FROM feed_items
-        JOIN feed_item_companies ON feed_item_companies.feed_item_id = feed_items.id
-        WHERE feed_items.source_adapter_id = ?1
-          AND NOT EXISTS (
-              SELECT 1 FROM company_signals
-              WHERE company_signals.feed_item_id = feed_items.id
-          )
-        ORDER BY feed_items.published_at DESC
-        LIMIT ?2
-        ",
-    )?;
-    let rows = statement.query_map(params![source_adapter_id, limit], |row| {
-        Ok(UnclassifiedFiling {
-            feed_item_id: row.get(0)?,
-            company_id: row.get(1)?,
-            title: row.get(2)?,
-            body_text: row.get(3)?,
-            signal_date: row.get(4)?,
-        })
-    })?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
 pub(super) fn list_company_signals(
     connection: &Connection,
     input: CompanySignalListInput,
@@ -833,22 +777,6 @@ impl SignalStore {
         let connection = self.db.checkout()?;
 
         create_proposed_signal(&connection, &input)
-    }
-
-    pub fn list_signal_categories_for_ai(&self) -> StorageResult<Vec<SignalCategorySummary>> {
-        let connection = self.db.checkout()?;
-
-        list_categories_for_ai(&connection)
-    }
-
-    pub fn list_unclassified_official_filings(
-        &self,
-        source_adapter_id: &str,
-        limit: i64,
-    ) -> StorageResult<Vec<UnclassifiedFiling>> {
-        let connection = self.db.checkout()?;
-
-        list_unclassified_official_filings(&connection, source_adapter_id, limit)
     }
 
     pub fn confirm_company_signal(&self, signal_id: &str) -> StorageResult<CompanySignal> {

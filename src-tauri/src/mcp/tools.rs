@@ -143,7 +143,7 @@ pub fn descriptors() -> Value {
         }),
         serde_json::json!({
             "name": "get_quality_assessment",
-            "description": "Quality-framework state for one company: the latest scorecard evaluation per framework plus current agent-assessed qualitative criteria with reasoning and citations. Decision support only — never an investment recommendation.",
+            "description": "Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus previously-stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — qualitative criteria are recorded manually now, and this tool reads only stored verdicts (new criteria stay empty until the planned MCP write-tools). Decision support only — never an investment recommendation.",
             "inputSchema": schema(GET_QUALITY_ASSESSMENT_SCHEMA),
         }),
     ])

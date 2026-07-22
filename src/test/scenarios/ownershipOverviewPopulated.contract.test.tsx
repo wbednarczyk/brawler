@@ -19,12 +19,6 @@ describe("populated OwnershipOverview wire contract (v0.56 T6)", () => {
   const noops = {
     onBackfill: vi.fn(),
     onSetHolderType: vi.fn(),
-    onConfirmProposal: vi.fn(),
-    onRejectProposal: vi.fn(),
-    onRunClassification: vi.fn(),
-    onRunOcr: vi.fn(),
-    onConfirmOcrProposal: vi.fn(),
-    onRejectOcrProposal: vi.fn(),
   };
 
   it("the real Rust wire JSON renders through OwnershipSection", () => {
@@ -38,8 +32,12 @@ describe("populated OwnershipOverview wire contract (v0.56 T6)", () => {
     expect(screen.getAllByText("Jacek Duch").length).toBeGreaterThan(0);
     expect(screen.getByText("NN PTE")).toBeInTheDocument();
     expect(screen.getByText("Itema Ventures UAB")).toBeInTheDocument();
-    // The unclassified holder surfaces its pending AI proposal, not a stake row.
-    expect(screen.getByText("type? to confirm")).toBeInTheDocument();
+    // ADR 0084 clean cut: the holder-type proposal review is gone. An
+    // unclassified holder renders as a normal stake row the user can re-type.
+    expect(screen.queryByText("type? to confirm")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Change type: Itema Ventures UAB" }),
+    ).toBeInTheDocument();
   });
 
   it("the wire fixture carries the pinned decimal-exact conventions", () => {

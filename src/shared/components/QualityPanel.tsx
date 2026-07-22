@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Copy,
   Plus,
   RotateCcw,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -19,14 +17,10 @@ import {
   deleteFrameworkEvaluation,
   deleteQualityFramework,
   evaluateFramework,
-  getQualitativeAssessment,
-  getQualitativeAssessmentStatus,
   listAvailableMetricKeys,
   listFrameworkEvaluations,
   listQualityFrameworks,
-  rerunQualitativeCriterion,
   resetFrameworkToTemplate,
-  runQualitativeAssessment,
   validateCriterionExpression,
 } from "../../api/qualityFrameworks";
 import type {
@@ -79,31 +73,6 @@ function verdictTone(verdict: CriterionVerdict): ChipTone {
   }
 }
 
-/** A typed evidence reference stored on an agent result (ADR 0075). */
-type ParsedCitation = {
-  citationKey: string;
-  evidenceType: string;
-  evidenceId: string;
-  label?: string | null;
-  snippet?: string | null;
-};
-
-// A queued assessment has no completion event here, so poll the current-state
-// read this many times at this interval before clearing the "queued" hint.
-const ASSESSMENT_POLL_TICKS = 8;
-const ASSESSMENT_POLL_INTERVAL_MS = 3000;
-
-/** Parse a `criterion_results.citations` JSON blob into typed refs (safe on null/garbage). */
-function parseCitations(json: string | null): ParsedCitation[] {
-  if (!json) return [];
-  try {
-    const parsed: unknown = JSON.parse(json);
-    return Array.isArray(parsed) ? (parsed as ParsedCitation[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 /**
  * A criterion result's measured value + unit, or null when there is no measure.
  * Rendered through the format layer (owner T7 round-2: the raw decimal-exact
@@ -142,10 +111,11 @@ function formatThreshold(
 /// assessment runs (ADR 0075) write qualitative-only snapshots into the same
 /// evaluation history (`source: "agent"` rows, `periodId` null); those must
 /// never become the panel's quantitative "latest" — the summary chips and
-/// per-criterion verdicts would silently show agent tallies instead of the
-/// engine scorecard. ADR 0075 Decision 5: the quant current-state read is the
-/// newest snapshot with engine results; the qual current-state read is
-/// `getQualitativeAssessment`.
+/// per-criterion verdicts would silently show non-engine tallies instead of the
+/// engine scorecard. The quant current-state read is the newest snapshot that
+/// carries engine results. The AI assessor is retired (ADR 0084) and its rows
+/// were dropped, but the guard stays: MCP-written verdicts (v0.61.0) will land
+/// in the same history with a non-`engine` source.
 function latestQuantitativeEvaluation(
   rows: FrameworkEvaluation[],
 ): FrameworkEvaluation | null {
@@ -198,23 +168,12 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   const [exprMetrics, setExprMetrics] = useState<string[]>([]);
   const [metricKeys, setMetricKeys] = useState<MetricKeyInfo[]>([]);
 
-  // Current-state agent assessments (most-recent per qualitative criterion,
-  // ADR 0075 Decision 5) — NOT the latest snapshot, which may be quant-only.
-  const [qualResults, setQualResults] = useState<CriterionResult[]>([]);
-  const [assessmentQueued, setAssessmentQueued] = useState(false);
-  const [qualRefreshToken, setQualRefreshToken] = useState(0);
-
   // Name-a-framework modal (shared by New and Clone).
   const [nameModal, setNameModal] = useState<null | { mode: "new" | "clone"; value: string }>(null);
 
   const selected = useMemo(
     () => frameworks.find((framework) => framework.id === selectedId) ?? null,
     [frameworks, selectedId],
-  );
-
-  const hasQualitative = useMemo(
-    () => (selected?.criteria ?? []).some((criterion) => criterion.kind === "qualitative"),
-    [selected],
   );
 
   const verdictLabel = useCallback(
@@ -230,22 +189,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
           return text("Insufficient evidence");
         default:
           return text("No data");
-      }
-    },
-    [text],
-  );
-
-  const confidenceLabel = useCallback(
-    (confidence: string) => {
-      switch (confidence) {
-        case "high":
-          return text("High");
-        case "medium":
-          return text("Medium");
-        case "low":
-          return text("Low");
-        default:
-          return confidence;
       }
     },
     [text],
@@ -319,86 +262,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
     return map;
   }, [latest]);
 
-  // Map criterionId → its most-recent agent assessment (current-state read).
-  const qualResultByCriterion = useMemo(() => {
-    const map = new Map<string, CriterionResult>();
-    for (const result of qualResults) {
-      if (result.criterionId) map.set(result.criterionId, result);
-    }
-    return map;
-  }, [qualResults]);
-
-  // Single fetch path for the current-state agent assessments (framework/company
-  // change, or a bumped refresh token after enqueue polling). One effect owns the
-  // read so the auto-load and the post-Assess refresh never diverge.
-  useEffect(() => {
-    let cancelled = false;
-    if (!selectedId) {
-      setQualResults([]);
-      return;
-    }
-    getQualitativeAssessment({ frameworkId: selectedId, companyId })
-      .then((rows) => {
-        if (!cancelled) setQualResults(rows);
-      })
-      .catch((reason) => {
-        if (!cancelled) fail(reason);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId, companyId, qualRefreshToken, fail]);
-
-  // A queued assessment is async (durable job); there is no completion event
-  // here, so poll its lifecycle status a bounded number of times. On `failed`
-  // (P1: the async job erred — no provider, uncited response — and the hint used
-  // to clear silently) stop and surface the backend error; on `succeeded` refresh
-  // the current-state read; otherwise keep polling while queued/running.
-  useEffect(() => {
-    if (!assessmentQueued || !selectedId) return;
-    let ticks = 0;
-    let cancelled = false;
-    const frameworkId = selectedId;
-    const timer = setInterval(() => {
-      ticks += 1;
-      getQualitativeAssessmentStatus({ frameworkId, companyId })
-        .then((status) => {
-          if (cancelled) return;
-          if (status.status === "failed") {
-            clearInterval(timer);
-            setAssessmentQueued(false);
-            setError(`${text("Qualitative assessment failed")}: ${status.lastError ?? ""}`);
-            return;
-          }
-          if (status.status === "succeeded") {
-            clearInterval(timer);
-            setAssessmentQueued(false);
-            setQualRefreshToken((token) => token + 1);
-            return;
-          }
-          // queued / running / idle → keep polling; refresh so a completed run
-          // that raced ahead of the status read still appears.
-          setQualRefreshToken((token) => token + 1);
-        })
-        .catch(() => {
-          // A transient poll error is not fatal; the tick budget still bounds this.
-        });
-      if (ticks >= ASSESSMENT_POLL_TICKS) {
-        clearInterval(timer);
-        setAssessmentQueued(false);
-      }
-    }, ASSESSMENT_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [assessmentQueued, selectedId, companyId, text]);
-
-  // Switching framework/company clears a stale "queued" hint from another context.
-  useEffect(() => {
-    setAssessmentQueued(false);
-  }, [selectedId, companyId]);
-
   async function runGuarded(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -460,27 +323,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
       setGuidance("");
       setExprMetrics([]);
       await reloadFrameworks(selectedId);
-    });
-  }
-
-  // Enqueue the agent assessment over the framework's qualitative criteria. The
-  // job is async (surfaced via the jobs read model); we show a queued hint and
-  // refresh the current-state read so a completed run appears on the next load.
-  function handleRunAssessment() {
-    if (!selectedId) return;
-    void runGuarded(async () => {
-      await runQualitativeAssessment({ frameworkId: selectedId, companyId });
-      // Don't refresh now — the job has only been queued; the poll effect picks
-      // up the completed results and clears the hint.
-      setAssessmentQueued(true);
-    });
-  }
-
-  function handleRerunCriterion(criterionId: string) {
-    if (!selectedId) return;
-    void runGuarded(async () => {
-      await rerunQualitativeCriterion({ frameworkId: selectedId, companyId, criterionId });
-      setAssessmentQueued(true);
     });
   }
 
@@ -598,120 +440,35 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
     );
   }
 
-  // A qualitative criterion (ADR 0075): the agent's current-state assessment,
-  // visually distinct from measured quantitative rows — labelled "agent-assessed",
-  // regeneratable (re-run), never mutating quantitative data. Expands to reveal
-  // the reasoning and its evidence citations.
+  // A qualitative criterion (ADR 0075, amended by ADR 0084): a user-authored
+  // check with written guidance and NO in-app verdict. The AI assessor and every
+  // verdict it stored were removed in the clean cut (ADR 0084 decision 5), so the
+  // row shows the criterion and its guidance; verdicts return as agent writes
+  // over MCP with provenance (v0.61.0).
   function renderQualitativeCriterion(criterion: QualityFramework["criteria"][number]) {
-    const result = qualResultByCriterion.get(criterion.id);
     const expanded = expandedCriterionId === criterion.id;
-    // Parse citations only when the row is expanded (collapsed rows never show
-    // them), so a re-render of N criteria doesn't JSON.parse N blobs each time.
-    const citations = expanded ? parseCitations(result?.citations ?? null) : [];
-    // Non-interactive trailing chips stay in the row's clickable body; the
-    // interactive controls (re-run / delete) move to the ExpandableRow `actions`
-    // slot so they are never nested inside the row's `role="button"` article
-    // (axe nested-interactive, WCAG 4.1.2).
-    const trailing = (
-      <span className="quality-criterion-trailing">
-        {/* "Agent-assessed" is a STATE, not a kind label — showing it on a
-            never-assessed criterion reads as a finished assessment. */}
-        {result ? (
-          <>
-            <StatusChip tone="accent">{text("Agent-assessed")}</StatusChip>
-            <StatusChip tone={verdictTone(result.verdict)}>{verdictLabel(result.verdict)}</StatusChip>
-          </>
-        ) : (
-          <StatusChip tone="neutral">{text("Not assessed yet")}</StatusChip>
-        )}
-        {result?.confidence ? (
-          <StatusChip tone="neutral">{`${text("Confidence")}: ${confidenceLabel(result.confidence)}`}</StatusChip>
-        ) : null}
-      </span>
-    );
-    const rowActions = (
-      <>
-        <Button
-          icon={<RotateCcw size={12} />}
-          variant="icon"
-          disabled={busy}
-          onClick={() => handleRerunCriterion(criterion.id)}
-          // A never-assessed criterion's action is its first assessment, not a re-run.
-          aria-label={result ? text("Re-run assessment") : text("Assess this criterion")}
-        />
-        {deleteCriterionButton(criterion.id)}
-      </>
-    );
-
-    // Not assessed yet → no verdict chip (distinct from an
-    // `insufficient_evidence` verdict). The owner-authored guidance is prose —
-    // it wraps in the expandable detail block, never in a single-line row slot
-    // (panel-overflow guardrail, ADR 0045).
-    if (!result) {
-      return (
-        <li key={criterion.id} className="quality-qualitative-row">
-          <ExpandableRow
-            label={`${criterion.label} — ${text("Not assessed yet")}`}
-            isExpanded={expanded}
-            onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
-            actions={rowActions}
-            detail={
-              <div className="quality-qualitative-detail">
-                <p className="quality-reasoning">
-                  {criterion.assessmentGuidance ??
-                    text("Not assessed yet. Click Assess to evaluate this criterion.")}
-                </p>
-              </div>
-            }
-          >
-            <span className="quality-history-header">
-              <span className="quality-history-when">{criterion.label}</span>
-              {trailing}
-            </span>
-          </ExpandableRow>
-        </li>
-      );
-    }
-
     return (
       <li key={criterion.id} className="quality-qualitative-row">
-      <ExpandableRow
-        label={`${criterion.label} — ${verdictLabel(result.verdict)}`}
-        isExpanded={expanded}
-        onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
-        actions={rowActions}
-        detail={
-          <div className="quality-qualitative-detail">
-            {result.reasoning ? <p className="quality-reasoning">{result.reasoning}</p> : null}
-            {citations.length > 0 ? (
-              <div className="quality-citations">
-                <SectionHeader level="h4" title={text("Citations")} meta={citations.length} />
-                <ul className="ui-list-rows">
-                  {citations.map((citation, index) => (
-                    <ListRow
-                      key={`${citation.evidenceType}:${citation.evidenceId}:${index}`}
-                      icon={<Bot size={14} />}
-                      title={citation.label ?? citation.evidenceId}
-                      titleAttr={citation.label ?? citation.evidenceId}
-                      meta={citation.snippet ?? citation.evidenceType}
-                    />
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <Hint>{text("No citations for this assessment.")}</Hint>
-            )}
-            {result.promptVersion ? (
-              <Hint>{`${text("Prompt")}: ${result.promptVersion}`}</Hint>
-            ) : null}
-          </div>
-        }
-      >
-        <span className="quality-history-header">
-          <span className="quality-history-when">{criterion.label}</span>
-          {trailing}
-        </span>
-      </ExpandableRow>
+        <ExpandableRow
+          label={`${criterion.label} — ${text("Not assessed yet")}`}
+          isExpanded={expanded}
+          onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
+          actions={deleteCriterionButton(criterion.id)}
+          detail={
+            <div className="quality-qualitative-detail">
+              <p className="quality-reasoning">
+                {criterion.assessmentGuidance ?? text("Not assessed yet.")}
+              </p>
+            </div>
+          }
+        >
+          <span className="quality-history-header">
+            <span className="quality-history-when">{criterion.label}</span>
+            <span className="quality-criterion-trailing">
+              <StatusChip tone="neutral">{text("Not assessed yet")}</StatusChip>
+            </span>
+          </span>
+        </ExpandableRow>
       </li>
     );
   }
@@ -781,22 +538,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
             >
               {text("Evaluate")}
             </Button>
-            {hasQualitative ? (
-              <Button
-                icon={<Sparkles size={14} />}
-                disabled={busy || !selected}
-                onClick={handleRunAssessment}
-              >
-                {text("Assess")}
-              </Button>
-            ) : null}
           </ActionRow>
-
-          {assessmentQueued ? (
-            <Hint>
-              {text("Assessment queued. Agent results appear here when the job completes.")}
-            </Hint>
-          ) : null}
 
           {latest ? (
             <ActionRow ariaLabel={text("Scorecard summary")} className="quality-scorecard-summary">

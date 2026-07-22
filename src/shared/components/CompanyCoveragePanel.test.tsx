@@ -10,6 +10,11 @@ import { getHistorySweepProgress, runHistorySweep } from "../../api/historySweep
 import type { HistorySweep, HistorySweepProgress } from "../../api/historySweep";
 import type { BackfillProgress } from "../../api/types";
 import { getCompanyAutopilot } from "../../api/autopilot";
+import {
+  listFlaggedExtractionOutcomes,
+  rerunExtractionOutcome,
+} from "../../api/fundamentalsExtraction";
+import type { ExtractionOutcome } from "../../api/fundamentalsExtraction";
 
 vi.mock("../../api/fundamentalsCoverage", () => ({
   getFundamentalsCoverage: vi.fn(),
@@ -25,6 +30,11 @@ vi.mock("../../api/historySweep", () => ({
 vi.mock("../../api/autopilot", () => ({
   getCompanyAutopilot: vi.fn(),
 }));
+// The flagged-periods section (ADR 0061 decision 2) is part of this panel.
+vi.mock("../../api/fundamentalsExtraction", () => ({
+  listFlaggedExtractionOutcomes: vi.fn(),
+  rerunExtractionOutcome: vi.fn(),
+}));
 
 const getFundamentalsCoverageMock = vi.mocked(getFundamentalsCoverage);
 const backfillCompanyHistoryMock = vi.mocked(backfillCompanyHistory);
@@ -32,6 +42,30 @@ const getBackfillProgressMock = vi.mocked(getBackfillProgress);
 const getHistorySweepProgressMock = vi.mocked(getHistorySweepProgress);
 const runHistorySweepMock = vi.mocked(runHistorySweep);
 const getCompanyAutopilotMock = vi.mocked(getCompanyAutopilot);
+const listFlaggedExtractionOutcomesMock = vi.mocked(listFlaggedExtractionOutcomes);
+const rerunExtractionOutcomeMock = vi.mocked(rerunExtractionOutcome);
+
+function flaggedOutcome(overrides: Partial<ExtractionOutcome> = {}): ExtractionOutcome {
+  return {
+    id: "outcome_1",
+    companyId: "company_gpw_cdr",
+    reportDocumentId: "doc_1",
+    fiscalYear: 2025,
+    periodType: "Q3",
+    periodEnd: "2025-09-30",
+    tier: null,
+    acceptance: "flagged",
+    reasonCode: "no_deterministic_tier",
+    detailJson: null,
+    driftJson: null,
+    structureChanged: false,
+    factCount: 0,
+    attemptCount: 1,
+    firstAttemptedAt: "2026-07-01T10:00:00Z",
+    lastAttemptedAt: "2026-07-01T10:00:00Z",
+    ...overrides,
+  };
+}
 
 function sweep(overrides: Partial<HistorySweep> = {}): HistorySweep {
   return {
@@ -45,8 +79,6 @@ function sweep(overrides: Partial<HistorySweep> = {}): HistorySweep {
     runsFailed: 0,
     skippedReason: null,
     enqueuedRunIds: [],
-    aiCallsUsed: 0,
-    aiCallLimit: 30,
     error: null,
     createdAt: "2026-06-15T10:00:00Z",
     updatedAt: "2026-06-15T10:01:00Z",
@@ -58,6 +90,9 @@ function progress(s: HistorySweep | null): HistorySweepProgress {
   return { sweep: s, runsTotal: 0, runsDone: 0, runsFailed: 0 };
 }
 
+// `pendingProposals` is dropped from the DTO by the ADR 0084 clean cut but still
+// present on the not-yet-regenerated binding. Spread it so these samples satisfy
+// both shapes — the panel reads only `flaggedFacts`.
 // A fully-defaulted coverage row; each test overrides only the axis it exercises.
 function coverageRow(overrides: Partial<CoveragePeriodRow> = {}): CoveragePeriodRow {
   return {
@@ -65,7 +100,7 @@ function coverageRow(overrides: Partial<CoveragePeriodRow> = {}): CoveragePeriod
     periodType: "Q1",
     report: null,
     facts: { total: 0, validated: 0, unvalidated: 0, flagged: 0 },
-    review: { pendingProposals: 0, flaggedFacts: 0 },
+    review: { flaggedFacts: 0 },
     skippedBudget: false,
     ...overrides,
   };
@@ -97,6 +132,15 @@ describe("CompanyCoveragePanel", () => {
       updatedAt: "2026-06-15T10:01:00Z",
     });
     runHistorySweepMock.mockResolvedValue(sweep({ status: "queued" }));
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([]);
+    rerunExtractionOutcomeMock.mockResolvedValue({
+      acceptance: "accepted",
+      tier: "pdf",
+      emitted: true,
+      producedFactIds: [],
+      skippedFactIds: [],
+      divergentCount: 0,
+    });
   });
 
   it("renders one row per coverage period with a formatted period label", async () => {
@@ -184,7 +228,9 @@ describe("CompanyCoveragePanel", () => {
     expect(screen.getByText("click → Extract")).toBeInTheDocument();
   });
 
-  it("renders the AI-budget-skipped state behind the skippedBudget flag", async () => {
+  // ADR 0084: the tier-4 AI budget is retired with the analysis layer, so the
+  // coverage matrix no longer renders an AI-budget skip cell or legend entry.
+  it("renders no AI-budget skip state (ADR 0084)", async () => {
     getFundamentalsCoverageMock.mockResolvedValue(
       coverage([
         coverageRow({
@@ -201,19 +247,8 @@ describe("CompanyCoveragePanel", () => {
     );
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
-    // "Skipped — AI budget" is also a legend entry, so scope to the table cell.
-    const table = within(await screen.findByRole("table"));
-    expect(table.getByText("Skipped — AI budget")).toBeInTheDocument();
-  });
-
-  it("renders pending proposals with a review-queue sub-line", async () => {
-    getFundamentalsCoverageMock.mockResolvedValue(
-      coverage([coverageRow({ review: { pendingProposals: 2, flaggedFacts: 0 } })]),
-    );
-    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
-
-    expect(await screen.findByText("2 proposals")).toBeInTheDocument();
-    expect(screen.getByText("→ review queue")).toBeInTheDocument();
+    await screen.findByRole("table");
+    expect(screen.queryByText("Skipped — AI budget")).not.toBeInTheDocument();
   });
 
   it("fires onOpenDocuments when a period row is clicked", async () => {
@@ -228,50 +263,20 @@ describe("CompanyCoveragePanel", () => {
     expect(onOpenDocuments).toHaveBeenCalledTimes(1);
   });
 
-  it("fires onOpenReview (not onOpenDocuments) when the pending-proposals review cell is clicked", async () => {
+  // ADR 0084 clean cut: `kpi_extraction_proposals` is dropped, so the review cell
+  // no longer shows proposal counts. Flagged facts survive and become the only —
+  // and after the cut, the most important — review surface in this column.
+  it("shows flagged facts in the review cell, never proposal counts (ADR 0084)", async () => {
     getFundamentalsCoverageMock.mockResolvedValue(
       coverage([
-        coverageRow({ fiscalYear: 2025, periodType: "Q3", review: { pendingProposals: 2, flaggedFacts: 0 } }),
+        coverageRow({ fiscalYear: 2025, periodType: "Q3", review: { flaggedFacts: 2 } }),
       ]),
     );
-    const onOpenDocuments = vi.fn();
-    const onOpenReview = vi.fn();
-    render(
-      <CompanyCoveragePanel
-        companyId="company_gpw_cdr"
-        onOpenDocuments={onOpenDocuments}
-        onOpenReview={onOpenReview}
-      />,
-    );
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
-    const reviewButton = await screen.findByRole("button", { name: /Review queue — 2 proposals/ });
-    await userEvent.click(reviewButton);
-    expect(onOpenReview).toHaveBeenCalledTimes(1);
-    // stopPropagation keeps the row's documents handler off the review click.
-    expect(onOpenDocuments).not.toHaveBeenCalled();
-  });
-
-  it("opens the review queue (not documents) via keyboard on the review cell", async () => {
-    getFundamentalsCoverageMock.mockResolvedValue(
-      coverage([
-        coverageRow({ fiscalYear: 2025, periodType: "Q3", review: { pendingProposals: 1, flaggedFacts: 0 } }),
-      ]),
-    );
-    const onOpenDocuments = vi.fn();
-    const onOpenReview = vi.fn();
-    render(
-      <CompanyCoveragePanel
-        companyId="company_gpw_cdr"
-        onOpenDocuments={onOpenDocuments}
-        onOpenReview={onOpenReview}
-      />,
-    );
-
-    const reviewButton = await screen.findByRole("button", { name: /Review queue — 1 proposal/ });
-    reviewButton.focus();
-    await userEvent.keyboard("{Enter}");
-    expect(onOpenReview).toHaveBeenCalledTimes(1);
-    expect(onOpenDocuments).not.toHaveBeenCalled();
+    expect(await screen.findByText("2 flagged facts")).toBeInTheDocument();
+    expect(screen.queryByText(/proposals?/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Review queue/ })).not.toBeInTheDocument();
   });
 
   it("shows the empty state when no periods are covered", async () => {
@@ -289,6 +294,54 @@ describe("CompanyCoveragePanel", () => {
 
     rerender(<CompanyCoveragePanel companyId="company_b" />);
     await waitFor(() => expect(getFundamentalsCoverageMock).toHaveBeenCalledWith("company_b"));
+  });
+
+  // --- Flagged periods (ADR 0061 decision 2, ADR 0084 decision 4/6) ---
+
+  // Reachability: the flagged-extraction read model has no other UI entry point,
+  // so a user reaches it here or not at all ("a capability is not done until a
+  // user can reach it"). Reddens if the section is dropped from the panel.
+  it("hosts the flagged-periods section, scoped to this company", async () => {
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([
+      flaggedOutcome({ fiscalYear: 2025, periodType: "Q3" }),
+    ]);
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByRole("heading", { name: "Flagged periods" })).toBeInTheDocument();
+    expect(listFlaggedExtractionOutcomesMock).toHaveBeenCalledWith("company_gpw_cdr");
+    expect(await screen.findByText("No reader could handle this document")).toBeInTheDocument();
+  });
+
+  // A `no_period_derived` failure carries the SENTINEL period, so it can never
+  // appear as a coverage-table row — the period-union rule cannot name a period
+  // the pipeline failed to derive. Gating the section on a non-empty table would
+  // hide exactly the gap it exists to surface.
+  it("still shows flagged periods when the coverage table itself is empty", async () => {
+    getFundamentalsCoverageMock.mockResolvedValue(coverage([]));
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([
+      flaggedOutcome({ fiscalYear: 0, periodType: "", periodEnd: "", reasonCode: "no_period_derived" }),
+    ]);
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
+
+    // The coverage-map empty state and the flagged section coexist.
+    expect(await screen.findByText("No coverage data yet.")).toBeInTheDocument();
+    expect(screen.getByText("Period unknown")).toBeInTheDocument();
+    expect(screen.getByText("The reporting period could not be determined")).toBeInTheDocument();
+  });
+
+  // A re-run that now emits writes facts the coverage table must pick up —
+  // otherwise the map keeps showing "not processed" beside a fresh success.
+  it("reloads the coverage map after a flagged period is successfully re-run", async () => {
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([flaggedOutcome({ id: "outcome_42" })]);
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
+
+    await waitFor(() => expect(getFundamentalsCoverageMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(await screen.findByRole("button", { name: /Try again/ }));
+
+    await waitFor(() =>
+      expect(rerunExtractionOutcomeMock).toHaveBeenCalledWith({ outcomeId: "outcome_42" }),
+    );
+    await waitFor(() => expect(getFundamentalsCoverageMock).toHaveBeenCalledTimes(2));
   });
 
   // --- History actions footer (ADR 0077 §3, T3.2) ---
@@ -422,7 +475,7 @@ describe("CompanyCoveragePanel", () => {
   // give-up) and settle ONLY when our sweep appears terminal+drained — and the
   // AI-budget footer then reflects that settled sweep. Reddens on the old code,
   // which gave up after 4 ticks without a sweep row and false-settled.
-  it("keeps polling while the expected sweep is absent, then settles and shows its budget when it appears", async () => {
+  it("keeps polling while the expected sweep is absent, then settles when it appears", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -441,8 +494,6 @@ describe("CompanyCoveragePanel", () => {
               status: "completed",
               runsEnqueued: 2,
               skippedExisting: 1,
-              aiCallsUsed: 2,
-              aiCallLimit: 2,
             }),
           ),
           runsTotal: 2,
@@ -465,14 +516,12 @@ describe("CompanyCoveragePanel", () => {
       }
       expect(onHistoryRefreshed).not.toHaveBeenCalled();
       expect(screen.getByRole("status")).toHaveTextContent("Extracting…");
-      expect(screen.queryByText(/^AI:/)).not.toBeInTheDocument();
 
-      // Our sweep surfaces terminal+drained → settle, reload, budget reflects it.
+      // Our sweep surfaces terminal+drained → settle and reload.
       sweepVisible = true;
       await vi.advanceTimersByTimeAsync(1500);
       await waitFor(() => expect(onHistoryRefreshed).toHaveBeenCalledTimes(1));
       expect(screen.getByRole("status")).toHaveTextContent("Extracted 2 · skipped 1");
-      expect(screen.getByText("AI: 2/2")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -498,8 +547,6 @@ describe("CompanyCoveragePanel", () => {
               id: "history_sweep:company_gpw_cdr:OLD",
               status: "completed",
               runsEnqueued: 5,
-              aiCallsUsed: 0,
-              aiCallLimit: 2,
             }),
           ),
           runsTotal: 0,
@@ -550,6 +597,34 @@ describe("CompanyCoveragePanel", () => {
         "Backfill isn't available for this company's market (NewConnect) yet",
       ),
     );
+    expect(screen.queryByText("Backfill failed")).not.toBeInTheDocument();
+  });
+
+  // The five other typed causes (card bfc4c98, B5) must each surface their own
+  // message — never collapse into the generic "Backfill failed". One branch per
+  // code; parameterized so a new code without a mapping reddens the class here.
+  it.each([
+    ["no_bankier_page: slug unresolvable", "No Bankier page was found for this company"],
+    ["http_error: 503 from bankier.pl", "Couldn't reach Bankier — try again later"],
+    ["parse_error: missing listing table", "The page was fetched but couldn't be read"],
+    ["not_tracked: unknown company id", "This company isn't tracked by this source"],
+  ])("maps a %s backfill failure to its own message", async (error, message) => {
+    getBackfillProgressMock.mockResolvedValue({
+      companyId: "company_gpw_cdr",
+      status: "failed",
+      pagesFetched: 0,
+      itemsIngested: 0,
+      documentsStored: 0,
+      detailErrors: 0,
+      truncated: false,
+      chainedSweepId: null,
+      error,
+      startedAt: "2026-06-15T10:00:00Z",
+      updatedAt: "2026-06-15T10:01:00Z",
+    });
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(message));
     expect(screen.queryByText("Backfill failed")).not.toBeInTheDocument();
   });
 
@@ -624,27 +699,12 @@ describe("CompanyCoveragePanel", () => {
     expect(screen.queryByText("click → Extract")).not.toBeInTheDocument();
   });
 
-  // T5.3 (ADR 0077 §6): the footer status line additionally shows the latest
-  // sweep's tier-4 AI-call spend, whenever a sweep row exists.
-  it("shows the AI call budget for the latest sweep", async () => {
+  // ADR 0084: the sweep footer no longer reports tier-4 AI spend — there is no
+  // AI lane left to budget.
+  it("shows no AI call-budget footer for a sweep (ADR 0084)", async () => {
     getHistorySweepProgressMock.mockResolvedValue(
-      progress(sweep({ status: "completed", aiCallsUsed: 3, aiCallLimit: 30 })),
+      progress(sweep({ status: "completed" })),
     );
-    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
-
-    await waitFor(() => expect(screen.getByText("AI: 3/30")).toBeInTheDocument());
-  });
-
-  it("renders the no-limit variant when the sweep's AI budget is unlimited", async () => {
-    getHistorySweepProgressMock.mockResolvedValue(
-      progress(sweep({ status: "completed", aiCallsUsed: 5, aiCallLimit: 0 })),
-    );
-    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
-
-    await waitFor(() => expect(screen.getByText("AI: 5 (no limit)")).toBeInTheDocument());
-  });
-
-  it("shows no AI budget text when there is no sweep row yet", async () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
     await screen.findByRole("button", { name: /Backfill history/ });

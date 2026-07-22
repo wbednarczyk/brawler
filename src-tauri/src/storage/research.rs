@@ -7,7 +7,6 @@ pub(crate) const EVIDENCE_TYPES: &[&str] = &[
     "claim",
     "transcript_segment",
     "company_event",
-    "ai_analysis",
     "research_question",
     "company_signal",
     "decision_entry",
@@ -182,24 +181,6 @@ pub(super) fn list_research_evidence(
             JOIN transcript_jobs ON transcript_jobs.id = transcript_segments.transcript_job_id
             JOIN scope_companies ON scope_companies.company_id = transcript_segments.company_id
 
-            UNION ALL
-
-            SELECT
-                'evidence_ai_analysis_' || ai_analysis_results.id AS id,
-                'ai_analysis' AS evidence_type,
-                'ai_analysis' AS source_domain,
-                ai_analysis_results.id AS source_id,
-                feed_item_companies.company_id AS company_id,
-                ai_analysis_results.created_at AS occurred_at,
-                'AI analysis' AS title,
-                ai_analysis_results.summary AS summary,
-                feed_items.source_url AS source_url,
-                ai_analysis_results.provider_id AS attribution,
-                'ai_generated' AS trust_category
-            FROM ai_analysis_results
-            JOIN feed_items ON feed_items.id = ai_analysis_results.feed_item_id
-            JOIN feed_item_companies ON feed_item_companies.feed_item_id = feed_items.id
-            JOIN scope_companies ON scope_companies.company_id = feed_item_companies.company_id
 
             UNION ALL
 
@@ -866,7 +847,6 @@ fn validate_evidence_reference(
             validate_reference_exists(connection, "transcript_segments", evidence_id)
         }
         "company_event" => validate_reference_exists(connection, "company_events", evidence_id),
-        "ai_analysis" => validate_reference_exists(connection, "ai_analysis_results", evidence_id),
         "research_question" => {
             validate_reference_exists(connection, "research_questions", evidence_id)
         }

@@ -90,9 +90,9 @@ Flow:
 2. Feed shows newest items first, with a typed-signal badge on classified official filings (e.g. insider transaction, dividend, profit warning).
 3. User filters by watchlist, company, item type, signal type, unread, saved, and significance when available.
 4. User opens an item in the detail pane.
-5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, the typed signal(s), and AI analysis if available.
+5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) (a stored pre-retirement AI analysis remains readable as legacy data — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 6. User marks item read, saves it, opens the original source, or creates a note from it.
-7. For a filing typed only by the optional AI fallback, the signal shows as a proposal the user can confirm or reject before it is applied.
+7. Signals are typed by the deterministic rule classifier only — the AI fallback is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); an unclassifiable filing simply carries no typed signal.
 
 Acceptance criteria:
 
@@ -145,26 +145,23 @@ Acceptance criteria:
 
 ## Journey: Track Company Fundamentals From A Report
 
-Intent: turn a periodic report's reported numbers into a structured, source-linked fundamentals view.
+Intent: turn a periodic report's reported numbers into a structured, source-linked fundamentals view — automatically, with no per-report chore.
 
 Flow:
 
-1. User opens a report feed item (e.g. an ESPI/EBI periodic report) in the detail rail.
-2. The rail shows a compact AI KPI extraction launcher; the user opens it, which presents a centered modal.
-3. In the modal the user picks a report source: an attached PDF, the company's IR reports page, or a pasted PDF URL.
-4. The app extracts reported KPIs for the primary period; the modal shows the job status and proposed values with as-reported figures, confidence, and source snippets.
-5. The user reviews each proposal — confirm, edit, or reject — or bulk-confirms known KPIs and accepts out-of-taxonomy suggestions as new company KPIs. No value is committed without confirmation.
-6. The user opens the company's Fundamentals tab and sees the confirmed values in the KPI-per-period matrix, with trend charts and click-through provenance. Manual entry and custom per-company KPIs cover anything extraction missed.
+1. The user tracks a company; from that point core KPIs arrive **automatically** — no modal, no AI, no per-report action ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md)). The BiznesRadar aggregator is pulled daily (primary source, every period column its statement pages carry), and issuer filings corroborate as they are ingested: ESEF/iXBRL (annual), structured xHTML and the positional parser (visual-only interims), and the ESPI cover-note "wybrane dane finansowe" (WDF) table lifted from the periodic-report komunikat at ingest.
+2. The user opens the company's **Fundamentals** tab and sees the values in the KPI-per-period matrix, with trend charts and click-through provenance. **Facts are review-free**: each lands already confirmed and honestly labeled by origin (source tier + citation) — nothing waits for ratification.
+3. A fact's detail shows its **provenance labels** (source tier, extraction method, citation) and validation state; the user can **edit or remove** any value inline, and **add** a fact manually (inline KPI search, reporting-period selector, value, currency) to cover anything the automatic tiers left absent.
+4. Custom per-company KPIs cover metrics outside the seeded taxonomy. Manual values are **untouchable** by every automatic path (a later divergence is logged, never applied).
 
 Acceptance criteria:
 
-- No AI-proposed number becomes a stored fact without explicit confirmation.
-- Heavy extraction interaction happens in the modal, not crammed into the fixed-width detail rail.
-- Confirmed facts appear in the Fundamentals matrix through the same read model as manually entered facts.
+- Core KPIs populate without any per-report user action; the automatic tiers write facts labeled by origin, and gaps are shown, never silently absent.
+- Facts are review-free: no value ever waits `pending` or needs confirmation; manual add/edit/delete stays an option, never a duty ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md)).
+- Facts appear in the Fundamentals matrix through the same read model whether automatically extracted or manually entered.
 - Values display in their original as-reported scale with localized KPI names, never raw integers or internal ids.
-- A document that is a web page rather than a report PDF is rejected with an actionable message, not a misleading partial extraction.
-- A fact's detail shows its source-tier and validation badges (ADR 0061); a fact whose layout drifted from the confirmed company profile additionally shows a "Structure changed" label diff (new/missing report lines, reporting-unit change). When the autonomous pipeline (autopilot/assist) carries the same drift signal on a run, the run's notification card on Today shows the identical "Structure changed" block, so drift is visible without opening the company.
-- For a company in `autopilot` mode, step 5's confirm/edit/reject modal is bypassed: extraction runs automatically and produced facts land already committed as `auto_unreviewed`. The review point moves to Today/Pulse's Autopilot run card, which offers **Undo** (two-step confirm) instead of confirm/reject — it reverts exactly the facts that run produced, reusing the same supersede/reject mechanics, and the card then shows a "Reverted N facts" state ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md) §4). A company in `assist` mode still lands its proposals `pending` and goes through this journey's step 5 as normal.
+- A fact's detail shows its source-tier and validation labels; where a higher issuer tier and the aggregator disagree, the disagreement is recorded informationally and never overwrites the issuer figure, and a strictly higher tier upgrades a lower tier's slot ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md)).
+- For a company in `autopilot` mode, a run's facts land already committed; the review point is Today/Pulse's Autopilot run card, which offers **Undo** (two-step confirm) reverting exactly the facts that run produced, then shows a "Reverted N facts" state ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md) §4).
 - A stored periodic financial statement can be diffed section-by-section against the previous same-type filing, from the company workspace and on new-report arrival ([ADR 0052](adr/0052-report-over-report-diff.md)).
 
 ## Journey: Review Company Ownership Structure
@@ -176,17 +173,17 @@ Flow:
 1. The user opens a company's cockpit dashboard; the **Ownership ("Akcjonariat") section** sits under the Basic info identity facts — no navigation, it is just there. Once the company's periodic reports are fetched, deterministic extraction has already populated it (zero interaction).
 2. The populated section shows a donut by holder type with the derived free-float slice, a stakes-over-time chart, and holder rows with type chips; the derived free float also appears as a Basic-info rowline.
 3. If nothing is disclosed yet, the section shows an empty state with a **"Wydobądź z raportów"** CTA that force-enqueues deterministic extraction across the company's reports (`backfill_ownership_extraction`), with per-document progress; normally the automatic post-backfill run makes this unnecessary.
-4. When an AI holder-type classification is proposed, its holder row carries a "type? to confirm" chip; the user confirms or rejects it — no type is applied automatically (`confirm`/`reject_ownership_holder_type_proposal`).
-5. The user can manually re-type any holder (its current type shows its source — dictionary / AI / manual); a manual label is authoritative and offers an immediate Undo (`set_ownership_holder_type`). Stake history is untouched — only the type label changes.
-6. A report the deterministic parser can't read (glyph-encoded font / image table) surfaces as a residual warnbox explaining why; its OCR/AI result lands in the company **Review queue** for confirmation, never auto-saved.
+4. Holder types are assigned deterministically from a dictionary; the AI holder-type classification path is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)), so no type-confirmation chip appears — types come from the dictionary or the user's own edit.
+5. The user can manually re-type any holder (its current type shows its source — dictionary / AI (legacy) / manual); a manual label is authoritative and offers an immediate Undo (`set_ownership_holder_type`). Stake history is untouched — only the type label changes.
+6. A report the deterministic parser can't read (glyph-encoded font / image table) is reported as an **honest flagged gap** with no run-action — the OCR/AI rescue path is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the document is named, never guessed, and partial ESPI data stays visible.
 
 Acceptance criteria:
 
 - The section populates automatically from fetched reports with zero user interaction; the backfill CTA only force-kicks the same deterministic job.
 - Free float is always derived (`100 − Σ disclosed capital`), rendered as a neutral hatched "uncertain" donut slice and a "Free float (derived)" rowline with an uncertainty hint (the 5% disclosure threshold hides smaller stakes).
 - Holder-type colors are fixed per holder TYPE, never cycled; more than four types fold into "Other".
-- No AI holder-type classification is applied without explicit confirmation; a manual re-type is authoritative and never overwritten by automation.
-- A residual (unreadable) document is never fabricated into data — it is disclosed and routed to the Review queue; partial ESPI data stays visible and an AI-unavailable state leaves the section unchanged.
+- Holder types are deterministic (dictionary) or the user's own edit — a manual re-type is authoritative and never overwritten by automation ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) retired the AI classification path).
+- A residual (unreadable) document is never fabricated into data — it is disclosed as an honest flagged gap (the Review queue is retired); partial ESPI data stays visible.
 - The section stays usable in a ~340px narrow pane (donut over legend, full-width chart, rows wrap without horizontal scroll).
 
 ## Journey: Review Company Health
@@ -215,15 +212,15 @@ Intent: capture a management promise, then resolve whether it was delivered when
 
 Flow:
 
-1. From a report document or a transcript, the user opens the AI claim-extraction launcher (a modal, like KPI extraction). The app proposes candidate claims with the statement, a suggested due period, an optional quantitative target, confidence, and the verbatim source snippet.
-2. The user reviews each proposal — confirm (with optional edits), or reject. No claim is created without confirmation. The user can also add a claim manually from the Claims tab.
+1. Reading a report document or a transcript, the user adds a claim manually from the company workspace **Claims** tab: the statement, a due period, an optional quantitative target, and the source reference. (The in-app AI claim-extraction launcher is retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md); agent-assisted claim proposals return later through the MCP write path with mandatory provenance.)
+2. The claim is the user's own record — nothing is created automatically.
 3. The confirmed claim appears in the company workspace **Claims** tab with verdict `pending` and its due period, source-linked back to the report/transcript.
 4. Later, when the due period's report arrives, the claim resurfaces in the **claims to verify** review queue (bucketed due / overdue / upcoming). For a quantitative claim, the matching confirmed financial fact is shown beside the claim.
 5. The user sets the verdict (delivered / partially delivered / missed / revised), optionally linking the verifying fact as supporting or contradicting evidence.
 
 Acceptance criteria:
 
-- No AI-proposed claim becomes a tracked claim without explicit confirmation.
+- Claims are user-created (manual now; MCP write-tools with provenance later) — nothing lands automatically.
 - A claim with a due period resurfaces in the review queue when the due-period report arrives, and can be resolved with a verdict linked to evidence (the milestone exit criterion).
 - Verdicts are always user-set; the app never assigns a verdict automatically.
 - Claims appear in the company research timeline and feed reminders/digests; they are exported with research data.
@@ -260,7 +257,7 @@ Flow:
 2. Each upcoming report shows a pre-report card composed from the company's open research questions, unresolved claims (due / overdue / upcoming), last-period confirmed KPIs, and recent evidence.
 3. From the card the user can **write expectations** for the occurrence (ADR 0071): a free-text stance plus optional per-metric expectations (a metric picked from the card's last-period KPIs, a comparator, and an expected value); the user picks the fiscal period the report covers. Expectations stay editable — and re-openable via **Edit expectations** — until the period's facts land, when they freeze.
 4. The user reviews a card and marks the company **prepared**; from the card they can drill into the company workspace, its research questions, or its claims-review queue.
-5. When the report arrives, the user marks it **processed**; the card links to the arrived filing and to KPI extraction for the new report, and the resurfaced claims appear in the claims-review queue. Autopilot's single "what changed" summary nudges the user to review recorded expectations vs actuals.
+5. When the report arrives, the user marks it **processed**; the card links to the arrived filing (facts arrive automatically — BR-primary pull + deterministic extraction, [ADR 0086](adr/0086-aggregator-primary-fundamentals.md)), and the resurfaced claims appear in the claims-review queue. Autopilot's single "what changed" summary nudges the user to review recorded expectations vs actuals.
 6. Once facts land, the frozen expectation flips to an **expectation-vs-actual** review: each metric shows expected / actual / a factual outcome (Met / Missed / No data), and the user records their own **verdict**. The app never scores the user's judgment — it mirrors the comparison and stores the user's note ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md) posture).
 
 Acceptance criteria:
@@ -325,27 +322,13 @@ Acceptance criteria:
 - Locale handling is extensible so future supported languages can be added through locale resources/configuration instead of per-screen rewrites.
 - Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
 
-## Journey: AI Capability Routing
+## Journey: AI Capability Routing — retired
 
-Intent: let the user mix AI providers per capability — e.g. a document-capable provider for KPI extraction and a free open-model host for text analysis — instead of one global provider for everything.
-
-Flow:
-
-1. User opens Settings → AI.
-2. User sets the general AI provider/model (the fallback every capability uses unless overridden) and, if using a free/self-hosted open-model host, the OpenAI-compatible base URL.
-3. User opens Settings → Credentials and saves the API key for each provider they intend to use (including the OpenAI-compatible provider — see `wiki/ai-provider-presets.md` for host presets and what value to use when a host itself needs no key).
-4. In the AI capability routing section, user picks a capability (e.g. KPI extraction) and adds one or more provider/model rows — an ordered list, first row tried first.
-5. For an OpenAI-compatible row, user types the model id (freeform, host-specific) instead of picking from a curated list.
-6. User reorders rows (move up/down) to set failover priority, or removes a row.
-7. App saves the capability's pool immediately with the rest of settings; an empty list falls back to the general AI provider.
-
-Acceptance criteria:
-
-- A capability with no configured rows behaves exactly as before (single global provider) — the feature is opt-in per capability.
-- Reordering changes the failover order in the saved pool.
-- The model field is a picklist for curated providers and a free-text field for the OpenAI-compatible provider.
-- Saving an OpenAI-compatible base URL that is non-empty and not `http://`/`https://` is rejected with a clear error.
-- The Credentials tab lists the OpenAI-compatible provider alongside Gemini/Claude/OpenAI, using the same generic save/replace/clear form.
+The per-capability AI provider routing journey (mix providers per capability, ordered failover
+rows) is **retired with the in-app AI analysis layer** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md),
+superseding [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)): the only
+AI setting left is the transcript provider (Settings → AI, Gemini key for YouTube transcription).
+Intelligence arrives through the user's own agent over the MCP port (BYOA).
 
 ## Journey: Connect An AI Assistant (MCP Server)
 

@@ -28,7 +28,6 @@ const evidenceTypeOptions: Array<{ value: ResearchEvidenceType; label: string }>
   { value: "claim", label: "Claims" },
   { value: "company_event", label: "Events" },
   { value: "transcript_segment", label: "Transcripts" },
-  { value: "ai_analysis", label: "AI analysis" },
   { value: "company_signal", label: "Signals" },
 ];
 

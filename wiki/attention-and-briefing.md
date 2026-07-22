@@ -22,11 +22,7 @@ your tracked companies:
 Each line links straight to its evidence — click it to jump to the signal, the
 run, or the price context behind it.
 
-**It always works, with or without AI.** If you have an AI provider configured,
-the briefing is phrased as a short **narrative with citation links**. If you
-don't — or if the AI can't back a sentence with a real item — you still get the
-**plain structured list**. The briefing is never blocked and never shows an
-error in place of your summary.
+**The briefing is deterministic** — a structured list composed from your data (new reports, signals, due claims), no AI involved and no keys needed.
 
 **Refreshing it.** Brawler composes one **automatically once a day** while the
 app is open. You can also press **Generate briefing** any time to recompose it

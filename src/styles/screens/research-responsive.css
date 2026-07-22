@@ -20,11 +20,6 @@
     grid-template-columns: minmax(0, 1fr) 8px minmax(320px, 0.9fr);
     gap: var(--space-2);
   }
-
-  .research-aside {
-    grid-template-rows: minmax(0, 1fr);
-  }
-
   .research-active-question {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -75,12 +70,6 @@
   .research-main-layout > .research-resizer {
     display: none;
   }
-
-  .research-aside {
-    grid-template-rows: minmax(360px, auto);
-    min-height: 360px;
-  }
-
   .research-reminder-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -178,25 +167,17 @@
   .research-review-layout > .research-resizer {
     display: none;
   }
-
-  .research-aside {
-    grid-template-rows: minmax(200px, auto);
-    min-height: 200px;
-  }
-
   .research-company-queue {
     max-height: 200px;
   }
 }
 
 /* S width: tabs + timeline only — the evidence-type filter chips and toggles fold
-   away (keeping the mode tabs + scope select), and the AI-brief aside and
-   watchlist queue fold away too (reachable by widening the pane). Folds stay chips
-   (mobile-first default). */
+   away (keeping the mode tabs + scope select), and the watchlist queue folds away
+   too (reachable by widening the pane). Folds stay chips (mobile-first default). */
 @container pane (max-width: 419px) {
   .research-filter-group,
   .research-toggle,
-  .research-aside,
   .research-company-queue {
     display: none;
   }
@@ -233,14 +214,6 @@
   .research-timeline-shell {
     min-height: 180px;
   }
-
-  .research-filter-group,
-  .research-toggle,
-  .research-aside,
-  .research-company-queue {
-    display: none;
-  }
-
   .research-fold:not([data-expanded]) > .research-fold-chip {
     display: inline-flex;
   }

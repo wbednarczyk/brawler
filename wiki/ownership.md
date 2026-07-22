@@ -32,7 +32,7 @@ local, all decision support only.
 2. **Periodic reports** (already stored): the mandatory "shareholders holding
    ≥5% of votes" table, parsed deterministically — adds document provenance,
    the capital-vs-votes gap, and history where reports exist. Reports whose
-   table is an image or an unreadable font are queued for OCR/AI — those
+   table is an image or an unreadable font surface as residuals — those
    results always wait for your confirmation.
 3. **ESPI threshold notifications** (art. 69): formulaic filings update stakes
    between full pictures — only when the numbers parse unambiguously; anything
@@ -81,17 +81,13 @@ What you see:
 
 Counts, volumes, and names only — never a verdict.
 
-## Reading tables Brawler can't parse (OCR review)
+## Tables Brawler can't parse
 
 Some reports publish the shareholders table as an **image** or with a broken
-text layer (a non-standard font). Those land as a **residual** with a clear
-warning instead of a silent gap, and a **Read with OCR** action. Running it
-sends just that one table to your configured vision provider; the result comes
-back as a **proposal** — a full table you review row by row and **confirm before
-anything is saved** (or reject, which parks the residual so it isn't proposed
-again). Nothing from OCR is ever written automatically. Confirm a proposal and
-its stakes appear in the structure and the residual clears. Without a vision
-provider configured, the action is simply a no-op — no error, nothing sent.
+text layer. Since v0.59 those land as a **residual with a clear warning** — an
+honest gap, never a silent one and never a guess (the in-app OCR/AI reading is
+retired). Enter the stakes manually from the filing, or leave the residual as
+the marker of what the automaton could not read.
 
 ## Getting started
 

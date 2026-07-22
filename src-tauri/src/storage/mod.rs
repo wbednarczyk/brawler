@@ -30,23 +30,24 @@ use serde::{Deserialize, Serialize};
 
 use self::database::{Database, DbGuard};
 
-mod ai_analysis;
 mod analyst_recommendations;
 mod attention;
 mod autopilot;
 mod backup;
-mod claim_extraction;
 mod cockpit_layouts;
 mod companies;
 mod database;
 mod decision_journal;
 mod diagnostics;
 mod error;
+mod espi_cover_note_facts;
+pub use espi_cover_note_facts::CoverNoteRescanSummary;
 mod events;
 mod feed;
 mod feed_matching;
 mod financials;
 mod fundamentals_provenance;
+mod fundamentals_witness;
 mod history_sweeps;
 mod import_export;
 mod ingestion;
@@ -73,8 +74,6 @@ mod report_expectations;
 mod report_season;
 mod report_sections;
 mod research;
-mod research_briefs;
-mod research_digests;
 mod research_reminders;
 mod search;
 mod settings;
@@ -85,10 +84,6 @@ mod transcripts;
 mod types;
 mod watchlists;
 
-pub use ai_analysis::{
-    AiAnalysisJob, AiAnalysisResult, AiAnalysisSourceReference, CompletedAiAnalysis,
-    NewAiAnalysisJob, NewAiAnalysisSourceReference,
-};
 pub use analyst_recommendations::{
     AnalystRecommendationEntry, AnalystRecommendationRow, AnalystRecommendationStore,
     AnalystRecommendationTarget,
@@ -102,21 +97,13 @@ pub use autopilot::{
     ListAutopilotRunsInput, MODE_ASSIST, MODE_AUTOPILOT, MODE_OFF,
 };
 pub use backup::{BackupEntry, BackupStatus};
-pub use claim_extraction::{
-    ClaimExtractionJob, ClaimExtractionProposal, CompletedClaimExtraction,
-    ConfirmClaimProposalInput, NewClaimExtractionJob, NewClaimProposal,
-};
-pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
-pub use reconciliation::{ReconciliationResult, ReconciliationStore};
-// `AppState` is defined in this module.
-pub use ai_analysis::AiAnalysisStore;
-pub use claim_extraction::ClaimExtractionStore;
 pub use cockpit_layouts::{CockpitLayout, CockpitLayoutStore, NewCockpitLayout};
 pub use decision_journal::{
     DecisionEntry, DecisionEntryListInput, DecisionJournalStore, NewDecisionEntry,
     DECISION_ENTRY_KINDS,
 };
 pub use diagnostics::DiagnosticsStore;
+pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
 pub use events::EventStore;
 pub use feed::FeedStore;
@@ -127,7 +114,17 @@ pub use financials::{
     NewKpiDefinition, NewKpiRelevance, PeriodFactCoverage, UpdateFinancialFact,
     UpdateFinancialPeriod, UpdateKpiRelevance,
 };
-pub use fundamentals_provenance::{FactProvenance, FundamentalsProvenanceStore, NewFactProvenance};
+pub use fundamentals_provenance::{
+    ExtractionOutcome, FactProvenance, FactTierBreakdown, FundamentalsProvenanceStore,
+    NewExtractionOutcome, NewFactProvenance, TierFactCount,
+};
+// Connection-level free functions — internal reuse only (the ingest-time
+// cover-note witness path holds a raw `&Connection` post-commit, no pool handle).
+pub(crate) use fundamentals_provenance::record_extraction_outcome;
+pub(crate) use fundamentals_witness::get_fresh_witness_page;
+pub use fundamentals_witness::{
+    AggregatorPageKind, CachedWitnessPage, FundamentalsWitnessStore, WitnessPageStatus,
+};
 pub use history_sweeps::{HistorySweep, HistorySweepOutcome, HistorySweepStore};
 pub use import_export::ImportExportStore;
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
@@ -138,9 +135,9 @@ pub use insider::{
 pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore, JobStatusRow};
 pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
-    CompletedKpiExtraction, ConfirmKpiProposalInput, ConfirmedKpiFact, KpiExtractionJob,
-    KpiExtractionProposal, NewKpiExtractionJob, NewKpiProposal, PendingKpiProposal,
-    PeriodPendingProposals, StructuredFactCommit, StructuredFactInput,
+    AggregatorFactCommit, CompletedKpiExtraction, ConfirmKpiProposalInput, ConfirmedKpiFact,
+    KpiExtractionJob, KpiExtractionProposal, NewKpiExtractionJob, NewKpiProposal,
+    StructuredFactCommit, StructuredFactInput,
 };
 pub use licensing::LicensingStore;
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
@@ -158,8 +155,7 @@ pub use metrics::{
 };
 pub use migrations::{open_database, open_in_memory_database};
 pub use morning_briefings::{
-    briefing_evidence_items, build_briefing_narrative, compose_briefing, BriefingSources,
-    CompletedNarrative, ComposedBriefing, ComposedBriefingItem, MorningBriefing,
+    compose_briefing, BriefingSources, ComposedBriefing, ComposedBriefingItem, MorningBriefing,
     MorningBriefingItem, MorningBriefingStore,
 };
 pub use notebooks::NotebookStore;
@@ -181,6 +177,7 @@ pub use quality_frameworks::{
     UpdateFrameworkCriterion, UpdateQualityFramework, ValidateCriterionResult,
 };
 pub use queue_config::QueueConfig;
+pub use reconciliation::{ReconciliationResult, ReconciliationStore};
 pub use red_flags::{AcknowledgeRedFlagInput, RedFlag, RedFlagStore, RedFlagsInput, RedFlagsView};
 pub use registry::SourceRegistryStore;
 pub use report_documents::ReportDocumentStore;
@@ -202,20 +199,6 @@ pub use report_season::{
 pub use report_sections::{ReportSectionStore, StoredExtraction, StoredSection};
 pub use research::ResearchStore;
 pub use research::{citation_resolves, supplied_evidence_refs};
-pub use research_briefs::ResearchBriefStore;
-pub use research_briefs::{
-    CompletedResearchBrief, NewResearchBriefCitation, NewResearchBriefJob, ResearchBrief,
-    ResearchBriefCitation, ResearchBriefEvidenceContext, ResearchBriefJob, ResearchBriefScopeInput,
-    RESEARCH_BRIEF_COLLECTOR_VERSION, RESEARCH_BRIEF_PROMPT_VERSION,
-    RESEARCH_BRIEF_RENDERER_VERSION,
-};
-pub use research_digests::ResearchDigestStore;
-pub use research_digests::{
-    completed_digest_from_provider_output, CompletedResearchDigest, NewResearchDigestJob,
-    ResearchDigest, ResearchDigestCitation, ResearchDigestEvidenceContext, ResearchDigestJob,
-    ResearchDigestScopeInput, RESEARCH_DIGEST_COLLECTOR_VERSION, RESEARCH_DIGEST_PROMPT_VERSION,
-    RESEARCH_DIGEST_RENDERER_VERSION,
-};
 pub use research_reminders::ResearchReminderStore;
 pub use research_reminders::{
     NewResearchReminder, ResearchReminder, ResearchReminderListInput, ResearchReminderUpdate,
@@ -224,8 +207,7 @@ pub use search::SearchMatch;
 pub use settings::SettingsStore;
 pub(crate) use settings::MCP_PORT_DEFAULT;
 pub use settings::{
-    AiProviderSettings, CapabilityProviderEntry, LogSettings, SettingsUpdate,
-    ShortcutBindingSetting, UserSettings,
+    AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
 };
 pub use short_positions::{
     ShortPositionEventRow, ShortPositionExit, ShortPositionRow, ShortPositionsInput,
@@ -330,14 +312,22 @@ pub struct AppState {
     /// concurrently while guaranteeing at most one touches the *same* source —
     /// politeness (no parallel hammering) with no duplicate work.
     sources_in_flight: Arc<Mutex<HashSet<String>>>,
-    /// One concurrency semaphore per AI provider id (ADR 0059). Shared across the
-    /// `autopilot` and `ai` lanes so the limit bounds total concurrent calls to a
-    /// provider (its cost/rate ceiling), not per-lane. Created lazily on first use.
-    provider_semaphores: Arc<Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
-    /// Cross-call failover-cooldown state for capability pools (ADR 0061 decision
-    /// 5), shared across the `autopilot` and `ai` lanes so a provider that just
-    /// failed stays deprioritized everywhere until its cooldown window elapses.
-    provider_cooldowns: crate::providers::analysis::pool::ProviderCooldowns,
+    /// The outbound page fetcher for the BiznesRadar fundamentals **witness**
+    /// (ADR 0085). Injected rather than constructed inline so the only code that
+    /// can reach the network is the code the real app bootstrap installs:
+    /// [`AppState::with_pool`] (reached solely from `storage::open_pool`, itself
+    /// reached solely from the Tauri `setup`) installs the HTTP fetcher; every
+    /// other constructor leaves it `None`, which the witness seam reads as
+    /// "witness unavailable" — the same normal degraded state as no coverage.
+    ///
+    /// This is the structural reason the test suite cannot make a live request:
+    /// no test builds an `AppState` through `with_pool`, so no test has a fetcher
+    /// unless it installs a stub via
+    /// [`AppState::with_fundamentals_witness_fetcher`]. The guard that the real
+    /// app DOES install one lives in `storage::pool`'s tests.
+    fundamentals_witness_fetcher: Option<
+        Arc<dyn crate::source_adapters::biznesradar_fundamentals::FundamentalsWitnessFetcher>,
+    >,
 }
 
 impl AppState {
@@ -353,8 +343,7 @@ impl AppState {
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
             sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
-            provider_semaphores: Arc::new(Mutex::new(HashMap::new())),
-            provider_cooldowns: Default::default(),
+            fundamentals_witness_fetcher: None,
         };
         state.seed_app_data();
         state
@@ -368,11 +357,35 @@ impl AppState {
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
             sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
-            provider_semaphores: Arc::new(Mutex::new(HashMap::new())),
-            provider_cooldowns: Default::default(),
+            // The one place the live witness fetch is wired: the real app.
+            fundamentals_witness_fetcher: Some(Arc::new(
+                crate::source_adapters::biznesradar_fundamentals::HttpFundamentalsWitnessFetcher,
+            )),
         };
         state.seed_app_data();
         state
+    }
+
+    /// Install a witness page fetcher, replacing any current one. Returns a new
+    /// handle (the state is a cheap `Clone` facade); the receiver is untouched.
+    pub fn with_fundamentals_witness_fetcher(
+        &self,
+        fetcher: Arc<
+            dyn crate::source_adapters::biznesradar_fundamentals::FundamentalsWitnessFetcher,
+        >,
+    ) -> Self {
+        let mut next = self.clone();
+        next.fundamentals_witness_fetcher = Some(fetcher);
+        next
+    }
+
+    /// The installed witness page fetcher, if any. `None` means "no witness
+    /// available" — never an error (ADR 0085 decision 5).
+    pub fn fundamentals_witness_fetcher(
+        &self,
+    ) -> Option<&dyn crate::source_adapters::biznesradar_fundamentals::FundamentalsWitnessFetcher>
+    {
+        self.fundamentals_witness_fetcher.as_deref()
     }
 
     /// Try to claim the per-source refresh lock for `adapter_id` (ADR 0059).
@@ -399,32 +412,6 @@ impl AppState {
             Ok(connection) => queue_config::read_queue_config(&connection),
             Err(_) => QueueConfig::default(),
         }
-    }
-
-    /// The shared concurrency semaphore for one AI provider (ADR 0059), created
-    /// lazily with `limit` permits the first time the provider is seen. Shared
-    /// across the autopilot + ai lanes, so `limit` bounds total concurrent calls to
-    /// that provider — the real AI cost/rate ceiling, independent of thread count.
-    /// The limit is fixed at creation (like `db_max_connections`, applied at start);
-    /// a later change takes effect on restart.
-    pub fn provider_semaphore(
-        &self,
-        provider_id: &str,
-        limit: usize,
-    ) -> Arc<tokio::sync::Semaphore> {
-        let mut map = self
-            .provider_semaphores
-            .lock()
-            .expect("provider semaphore map poisoned");
-        map.entry(provider_id.to_owned())
-            .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(limit.max(1))))
-            .clone()
-    }
-
-    /// The shared cross-call cooldown state for capability failover pools (ADR
-    /// 0061 decision 5). Cheap to clone (an `Arc` around the shared map).
-    pub fn provider_cooldowns(&self) -> crate::providers::analysis::pool::ProviderCooldowns {
-        self.provider_cooldowns.clone()
     }
 
     /// Idempotent startup seeding that cannot be expressed as a pure SQL migration
@@ -507,16 +494,6 @@ impl AppState {
         jobs::JobQueueStore::new(self.db.clone())
     }
 
-    /// ai_analysis domain store (Architecture v2 / ADR 0050).
-    pub fn ai_analysis(&self) -> ai_analysis::AiAnalysisStore {
-        ai_analysis::AiAnalysisStore::new(self.db.clone())
-    }
-
-    /// claim_extraction domain store (Architecture v2 / ADR 0050).
-    pub fn claim_extraction(&self) -> claim_extraction::ClaimExtractionStore {
-        claim_extraction::ClaimExtractionStore::new(self.db.clone())
-    }
-
     /// Autonomous report pipeline domain store (North Star, v0.49.0 / ADR 0055):
     /// per-company trust-ladder mode + autopilot run records.
     pub fn autopilot(&self) -> autopilot::AutopilotStore {
@@ -547,6 +524,29 @@ impl AppState {
     /// Structured-first extraction provenance + per-company profiles (ADR 0061).
     pub fn fundamentals_provenance(&self) -> fundamentals_provenance::FundamentalsProvenanceStore {
         fundamentals_provenance::FundamentalsProvenanceStore::new(self.db.clone())
+    }
+
+    /// Re-run the ESPI cover-note (WDF) tier over every STORED Bankier komunikat
+    /// whose body survives — the one-off WDF repopulation pass of `rebuild
+    /// fundamentals` (ADR 0086 dec. 6). Reuses the ingest-time extraction entry,
+    /// so it is tier-precedence aware and idempotent; pruned bodies are counted,
+    /// never guessed.
+    pub fn rescan_stored_cover_note_facts(&self) -> StorageResult<CoverNoteRescanSummary> {
+        let mut connection = self.checkout()?;
+        espi_cover_note_facts::rescan_stored_cover_note_facts(&mut connection)
+    }
+
+    /// Fact counts by `source_tier` (from `financial_fact_provenance`) plus the
+    /// manual / no-provenance bucket — the before/after verdict `rebuild
+    /// fundamentals` reports (ADR 0086 dec. 6).
+    pub fn count_facts_by_tier(&self) -> StorageResult<FactTierBreakdown> {
+        self.fundamentals_provenance().count_facts_by_tier()
+    }
+
+    /// Fundamentals-witness page cache (ADR 0085 decision 3): the durable
+    /// "already asked today" record enforcing one fetch per company per day.
+    pub fn fundamentals_witness_cache(&self) -> fundamentals_witness::FundamentalsWitnessStore {
+        fundamentals_witness::FundamentalsWitnessStore::new(self.db.clone())
     }
 
     /// History sweep records (ADR 0077 §3): the durable backfill/manual
@@ -613,16 +613,6 @@ impl AppState {
     /// research domain store (Architecture v2 / ADR 0050).
     pub fn research(&self) -> research::ResearchStore {
         research::ResearchStore::new(self.db.clone())
-    }
-
-    /// research_briefs domain store (Architecture v2 / ADR 0050).
-    pub fn research_briefs(&self) -> research_briefs::ResearchBriefStore {
-        research_briefs::ResearchBriefStore::new(self.db.clone())
-    }
-
-    /// research_digests domain store (Architecture v2 / ADR 0050).
-    pub fn research_digests(&self) -> research_digests::ResearchDigestStore {
-        research_digests::ResearchDigestStore::new(self.db.clone())
     }
 
     /// research_reminders domain store (Architecture v2 / ADR 0050).
@@ -1011,105 +1001,6 @@ impl AppState {
         self.research_reminders().delete_research_reminder(id)
     }
 
-    pub fn create_research_brief_job(
-        &self,
-        input: NewResearchBriefJob,
-    ) -> StorageResult<ResearchBriefJob> {
-        self.research_briefs().create_research_brief_job(input)
-    }
-
-    pub fn list_research_brief_jobs(
-        &self,
-        input: ResearchBriefScopeInput,
-    ) -> StorageResult<Vec<ResearchBriefJob>> {
-        self.research_briefs().list_research_brief_jobs(input)
-    }
-
-    pub fn get_research_brief_job(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
-        self.research_briefs().get_research_brief_job(job_id)
-    }
-
-    pub fn collect_research_brief_evidence(
-        &self,
-        job_id: &str,
-    ) -> StorageResult<ResearchBriefEvidenceContext> {
-        self.research_briefs()
-            .collect_research_brief_evidence(job_id)
-    }
-
-    pub fn mark_research_brief_job_running(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
-        self.research_briefs()
-            .mark_research_brief_job_running(job_id)
-    }
-
-    pub fn complete_research_brief_job(
-        &self,
-        input: CompletedResearchBrief,
-    ) -> StorageResult<ResearchBriefJob> {
-        self.research_briefs().complete_research_brief_job(input)
-    }
-
-    pub fn mark_research_brief_job_failed(
-        &self,
-        job_id: &str,
-        error_code: &str,
-        error: &str,
-    ) -> StorageResult<ResearchBriefJob> {
-        self.research_briefs()
-            .mark_research_brief_job_failed(job_id, error_code, error)
-    }
-
-    pub fn create_research_digest_job(
-        &self,
-        input: NewResearchDigestJob,
-    ) -> StorageResult<ResearchDigestJob> {
-        self.research_digests().create_research_digest_job(input)
-    }
-
-    pub fn list_research_digest_jobs(
-        &self,
-        input: ResearchDigestScopeInput,
-    ) -> StorageResult<Vec<ResearchDigestJob>> {
-        self.research_digests().list_research_digest_jobs(input)
-    }
-
-    pub fn get_research_digest_job(&self, job_id: &str) -> StorageResult<ResearchDigestJob> {
-        self.research_digests().get_research_digest_job(job_id)
-    }
-
-    pub fn collect_research_digest_evidence(
-        &self,
-        job_id: &str,
-    ) -> StorageResult<ResearchDigestEvidenceContext> {
-        self.research_digests()
-            .collect_research_digest_evidence(job_id)
-    }
-
-    pub fn mark_research_digest_job_running(
-        &self,
-        job_id: &str,
-    ) -> StorageResult<ResearchDigestJob> {
-        self.research_digests()
-            .mark_research_digest_job_running(job_id)
-    }
-
-    pub fn complete_research_digest_job(
-        &self,
-        input: CompletedResearchDigest,
-    ) -> StorageResult<ResearchDigestJob> {
-        self.research_digests().complete_research_digest_job(input)
-    }
-
-    pub fn mark_research_digest_job_failed(
-        &self,
-        job_id: &str,
-        error_code: &str,
-        error: &str,
-    ) -> StorageResult<ResearchDigestJob> {
-        self.research_digests()
-            .mark_research_digest_job_failed(job_id, error_code, error)
-    }
-
     pub fn ingest_gpw_report_listings(
         &self,
         listings: &[GpwReportListing],
@@ -1402,62 +1293,6 @@ impl AppState {
         self.report_season().mark_report_processed(input)
     }
 
-    pub fn create_claim_extraction_job(
-        &self,
-        input: NewClaimExtractionJob,
-    ) -> StorageResult<ClaimExtractionJob> {
-        self.claim_extraction().create_claim_extraction_job(input)
-    }
-
-    pub fn get_claim_extraction_job(&self, job_id: &str) -> StorageResult<ClaimExtractionJob> {
-        self.claim_extraction().get_claim_extraction_job(job_id)
-    }
-
-    pub fn list_claim_extraction_jobs_by_source(
-        &self,
-        source_type: &str,
-        source_id: &str,
-    ) -> StorageResult<Vec<ClaimExtractionJob>> {
-        self.claim_extraction()
-            .list_claim_extraction_jobs_by_source(source_type, source_id)
-    }
-
-    pub fn mark_claim_extraction_job_running(
-        &self,
-        job_id: &str,
-    ) -> StorageResult<ClaimExtractionJob> {
-        self.claim_extraction()
-            .mark_claim_extraction_job_running(job_id)
-    }
-
-    pub fn mark_claim_extraction_job_failed(
-        &self,
-        job_id: &str,
-        error_code: &str,
-        error: &str,
-    ) -> StorageResult<ClaimExtractionJob> {
-        self.claim_extraction()
-            .mark_claim_extraction_job_failed(job_id, error_code, error)
-    }
-
-    pub fn complete_claim_extraction_job(
-        &self,
-        input: CompletedClaimExtraction,
-    ) -> StorageResult<ClaimExtractionJob> {
-        self.claim_extraction().complete_claim_extraction_job(input)
-    }
-
-    pub fn confirm_claim_proposal(
-        &self,
-        input: ConfirmClaimProposalInput,
-    ) -> StorageResult<ManagementClaim> {
-        self.claim_extraction().confirm_claim_proposal(input)
-    }
-
-    pub fn reject_claim_proposal(&self, proposal_id: &str) -> StorageResult<ClaimExtractionJob> {
-        self.claim_extraction().reject_claim_proposal(proposal_id)
-    }
-
     pub fn list_company_events(
         &self,
         input: CompanyEventListInput,
@@ -1478,19 +1313,6 @@ impl AppState {
 
     pub fn propose_company_signal(&self, input: ProposedSignalInput) -> StorageResult<bool> {
         self.signals().propose_company_signal(input)
-    }
-
-    pub fn list_signal_categories_for_ai(&self) -> StorageResult<Vec<SignalCategorySummary>> {
-        self.signals().list_signal_categories_for_ai()
-    }
-
-    pub fn list_unclassified_official_filings(
-        &self,
-        source_adapter_id: &str,
-        limit: i64,
-    ) -> StorageResult<Vec<UnclassifiedFiling>> {
-        self.signals()
-            .list_unclassified_official_filings(source_adapter_id, limit)
     }
 
     pub fn confirm_company_signal(&self, signal_id: &str) -> StorageResult<CompanySignal> {
@@ -1634,6 +1456,33 @@ impl AppState {
             .record_source_adapter_attempt(adapter_id, trigger)
     }
 
+    /// Mark an adapter's refresh successful: `last_success_at` + the per-run item
+    /// counters the Sources screen reads back (DoD §C). The public counterpart of
+    /// the in-crate `ingestion::record_source_outcome`, for source paths that live
+    /// outside an ingest store — today the fundamentals witness (ADR 0085 dec. 6),
+    /// whose fetch happens inside the extraction pipeline rather than a feed
+    /// adapter, and would otherwise show as "never refreshed" forever.
+    pub fn record_source_outcome_for_adapter(
+        &self,
+        adapter_id: &str,
+        fetched_at: &str,
+        items_fetched: usize,
+        items_created: usize,
+        items_matched: usize,
+        items_unmatched: usize,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        ingestion::record_source_outcome(
+            &connection,
+            adapter_id,
+            fetched_at,
+            items_fetched,
+            items_created,
+            items_matched,
+            items_unmatched,
+        )
+    }
+
     pub fn record_source_adapter_state(
         &self,
         adapter_id: &str,
@@ -1702,39 +1551,6 @@ impl AppState {
         self.diagnostics().clear_diagnostic_events()
     }
 
-    pub fn create_ai_analysis_job(&self, input: NewAiAnalysisJob) -> StorageResult<AiAnalysisJob> {
-        self.ai_analysis().create_ai_analysis_job(input)
-    }
-
-    pub fn list_ai_analysis_jobs(&self, feed_item_id: &str) -> StorageResult<Vec<AiAnalysisJob>> {
-        self.ai_analysis().list_ai_analysis_jobs(feed_item_id)
-    }
-
-    pub fn get_ai_analysis_job(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
-        self.ai_analysis().get_ai_analysis_job(job_id)
-    }
-
-    pub fn mark_ai_analysis_job_running(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
-        self.ai_analysis().mark_ai_analysis_job_running(job_id)
-    }
-
-    pub fn complete_ai_analysis_job(
-        &self,
-        input: CompletedAiAnalysis,
-    ) -> StorageResult<AiAnalysisJob> {
-        self.ai_analysis().complete_ai_analysis_job(input)
-    }
-
-    pub fn mark_ai_analysis_job_failed(
-        &self,
-        job_id: &str,
-        error_code: &str,
-        error: &str,
-    ) -> StorageResult<AiAnalysisJob> {
-        self.ai_analysis()
-            .mark_ai_analysis_job_failed(job_id, error_code, error)
-    }
-
     pub fn list_kpi_definitions(
         &self,
         input: ListKpiDefinitionsInput,
@@ -1796,67 +1612,6 @@ impl AppState {
 
     pub fn create_financial_fact(&self, input: NewFinancialFact) -> StorageResult<FinancialFact> {
         self.financials().create_financial_fact(input)
-    }
-
-    pub fn create_kpi_extraction_job(
-        &self,
-        input: NewKpiExtractionJob,
-    ) -> StorageResult<KpiExtractionJob> {
-        self.kpi_extraction().create_kpi_extraction_job(input)
-    }
-
-    pub fn get_kpi_extraction_job(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        self.kpi_extraction().get_kpi_extraction_job(job_id)
-    }
-
-    pub fn list_kpi_extraction_jobs_by_document(
-        &self,
-        report_document_id: &str,
-    ) -> StorageResult<Vec<KpiExtractionJob>> {
-        self.kpi_extraction()
-            .list_kpi_extraction_jobs_by_document(report_document_id)
-    }
-
-    pub fn mark_kpi_extraction_job_running(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        self.kpi_extraction()
-            .mark_kpi_extraction_job_running(job_id)
-    }
-
-    pub fn mark_kpi_extraction_job_failed(
-        &self,
-        job_id: &str,
-        error_code: &str,
-        error: &str,
-    ) -> StorageResult<KpiExtractionJob> {
-        self.kpi_extraction()
-            .mark_kpi_extraction_job_failed(job_id, error_code, error)
-    }
-
-    pub fn complete_kpi_extraction_job(
-        &self,
-        input: CompletedKpiExtraction,
-    ) -> StorageResult<KpiExtractionJob> {
-        self.kpi_extraction().complete_kpi_extraction_job(input)
-    }
-
-    pub fn confirm_kpi_proposal(
-        &self,
-        input: ConfirmKpiProposalInput,
-    ) -> StorageResult<ConfirmedKpiFact> {
-        self.kpi_extraction().confirm_kpi_proposal(input)
-    }
-
-    pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {
-        self.kpi_extraction().reject_kpi_proposal(proposal_id)
-    }
-
-    /// Auto-confirm a KPI proposal as an `auto_unreviewed` fact (autopilot path,
-    /// ADR 0055). Used by the extract stage of an autopilot run.
-    pub fn autopilot_auto_confirm_proposal(
-        &self,
-        proposal_id: &str,
-    ) -> StorageResult<FinancialFact> {
-        self.kpi_extraction().auto_confirm_kpi_proposal(proposal_id)
     }
 
     pub fn update_financial_fact(

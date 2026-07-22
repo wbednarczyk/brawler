@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Bot,
+  Captions,
   Database,
   Download,
   FileKey2,
@@ -12,8 +12,6 @@ import {
   RadioTower,
   type LucideIcon,
 } from "lucide-react";
-import { AiSettings } from "./AiSettings";
-import { CapabilityRoutingSettings } from "./CapabilityRoutingSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
 import { DatabaseSettings } from "./DatabaseSettings";
@@ -24,6 +22,7 @@ import { LogSettings } from "./LogSettings";
 import { McpSettings } from "./McpSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
+import { TranscriptSettings } from "./TranscriptSettings";
 import { makeTextTranslator, makeTranslator, type LocaleKey } from "../../shared/locale";
 import { useSettingsScreenViewModel } from "../../app/state/screenViewModels";
 import { ErrorText, Panel, PanelHeader, SelectField, Subnav } from "../../ui";
@@ -31,7 +30,7 @@ import { ErrorText, Panel, PanelHeader, SelectField, Subnav } from "../../ui";
 type SettingsTab =
   | "appearance"
   | "sources"
-  | "ai"
+  | "transcripts"
   | "credentials"
   | "importExport"
   | "shortcuts"
@@ -43,7 +42,7 @@ type SettingsTab =
 const settingsTabs = [
   { id: "appearance", icon: Palette, labelKey: "settings.appearance.title" },
   { id: "sources", icon: RadioTower, labelKey: "settings.sources.title" },
-  { id: "ai", icon: Bot, labelKey: "settings.ai.title" },
+  { id: "transcripts", icon: Captions, labelText: "Transcripts" },
   { id: "credentials", icon: KeyRound, labelKey: "settings.credentials.title" },
   { id: "importExport", icon: Download, labelKey: "settings.importExport.title" },
   { id: "shortcuts", icon: Keyboard, labelText: "Keyboard shortcuts" },
@@ -79,16 +78,9 @@ export function SettingsScreen() {
   onPollIntervalChange,
   onBackfillYearsChange,
   onMcpPortChange,
-  onHistorySweepAiCallLimitChange,
   onShortcutBindingsChange,
   onYoutubeTranscriptionModelChange,
   onYoutubeTranscriptionTimeoutChange,
-  onGeneralAnalysisProviderChange,
-  onGeneralAnalysisModelChange,
-  onGeneralAnalysisTimeoutChange,
-  onEspiAiFallbackChange,
-  onOpenAiCompatibleBaseUrlChange,
-  onCapabilityProvidersChange,
   onLogLevelChange,
   onLogMaxFilesChange,
   onLogMaxFileBytesChange,
@@ -98,8 +90,6 @@ export function SettingsScreen() {
   onResetDatabaseSettings,
   onSourcesWorkersChange,
   onAutopilotWorkersChange,
-  onAiWorkersChange,
-  onAiProviderConcurrencyChange,
   onResetQueueSettings,
   onClearLicenseKey,
   onLicenseKeyDraftChange,
@@ -184,24 +174,12 @@ export function SettingsScreen() {
               formatTimestamp={formatTimestamp}
             />
           ) : null}
-          {activeSettingsTab === "ai" ? (
-            <>
-              <AiSettings
-                settings={settings}
-                onYoutubeTranscriptionModelChange={onYoutubeTranscriptionModelChange}
-                onYoutubeTranscriptionTimeoutChange={onYoutubeTranscriptionTimeoutChange}
-                onGeneralAnalysisProviderChange={onGeneralAnalysisProviderChange}
-                onGeneralAnalysisModelChange={onGeneralAnalysisModelChange}
-                onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
-                onEspiAiFallbackChange={onEspiAiFallbackChange}
-                onOpenAiCompatibleBaseUrlChange={onOpenAiCompatibleBaseUrlChange}
-                onHistorySweepAiCallLimitChange={onHistorySweepAiCallLimitChange}
-              />
-              <CapabilityRoutingSettings
-                capabilityProviders={settings?.capabilityProviders ?? {}}
-                onCapabilityProvidersChange={onCapabilityProvidersChange}
-              />
-            </>
+          {activeSettingsTab === "transcripts" ? (
+            <TranscriptSettings
+              settings={settings}
+              onYoutubeTranscriptionModelChange={onYoutubeTranscriptionModelChange}
+              onYoutubeTranscriptionTimeoutChange={onYoutubeTranscriptionTimeoutChange}
+            />
           ) : null}
           {activeSettingsTab === "credentials" ? (
             <CredentialSettings
@@ -249,8 +227,6 @@ export function SettingsScreen() {
                 settings={settings}
                 onSourcesWorkersChange={onSourcesWorkersChange}
                 onAutopilotWorkersChange={onAutopilotWorkersChange}
-                onAiWorkersChange={onAiWorkersChange}
-                onAiProviderConcurrencyChange={onAiProviderConcurrencyChange}
                 onResetQueueSettings={onResetQueueSettings}
               />
             </>

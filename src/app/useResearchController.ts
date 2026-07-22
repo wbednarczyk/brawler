@@ -3,8 +3,6 @@ import * as researchApi from "../api/research";
 import type { Company, Watchlist, WatchlistMembership } from "../api/types";
 import type {
   EvidenceLink,
-  ResearchBriefJob,
-  ResearchDigestJob,
   ResearchEvidenceItem,
   ResearchEvidenceType,
   ResearchReminderUpdate,
@@ -67,15 +65,11 @@ export function useResearchController({
   const [researchQuestionTitle, setResearchQuestionTitle] = useState("");
   const [researchQuestionBody, setResearchQuestionBody] = useState("");
   const [researchQuestionLinks, setResearchQuestionLinks] = useState<EvidenceLink[]>([]);
-  const [researchBriefJobs, setResearchBriefJobs] = useState<ResearchBriefJob[]>([]);
-  const [researchDigestJobs, setResearchDigestJobs] = useState<ResearchDigestJob[]>([]);
   const [researchReminders, setResearchReminders] = useState<ResearchReminder[]>([]);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchReviewInFlight, setResearchReviewInFlight] = useState(false);
   const [researchQuestionInFlight, setResearchQuestionInFlight] = useState(false);
-  const [researchBriefInFlight, setResearchBriefInFlight] = useState(false);
-  const [researchDigestInFlight, setResearchDigestInFlight] = useState(false);
   const [researchReminderInFlight, setResearchReminderInFlight] = useState(false);
 
   useEffect(() => {
@@ -240,24 +234,6 @@ export function useResearchController({
     };
   }, [selectedResearchQuestionId]);
 
-  const refreshResearchBriefs = useCallback(async () => {
-    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
-    if (!scopeId) {
-      setResearchBriefJobs([]);
-      return;
-    }
-
-    try {
-      const jobs = await researchApi.listResearchBriefs({
-        scopeType: researchMode,
-        scopeId,
-      });
-      setResearchBriefJobs(jobs);
-    } catch (error) {
-      setResearchError(error instanceof Error ? error.message : textRef.current("Research briefs failed"));
-    }
-  }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
-
   const refreshResearchReminders = useCallback(async () => {
     const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
     if (!scopeId) {
@@ -277,24 +253,6 @@ export function useResearchController({
     }
   }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
 
-  const refreshResearchDigests = useCallback(async () => {
-    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
-    if (!scopeId) {
-      setResearchDigestJobs([]);
-      return;
-    }
-
-    try {
-      const jobs = await researchApi.listResearchDigests({
-        scopeType: researchMode,
-        scopeId,
-      });
-      setResearchDigestJobs(jobs);
-    } catch (error) {
-      setResearchError(error instanceof Error ? error.message : textRef.current("Research digest failed"));
-    }
-  }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
-
   useEffect(() => {
     if (activeSection !== "Research" && activeSection !== "Cockpit") {
       return;
@@ -308,29 +266,8 @@ export function useResearchController({
       return;
     }
 
-    void refreshResearchBriefs();
     void refreshResearchReminders();
-    void refreshResearchDigests();
-  }, [activeSection, refreshResearchBriefs, refreshResearchDigests, refreshResearchReminders]);
-
-  useEffect(() => {
-    if (activeSection !== "Research" && activeSection !== "Cockpit") {
-      return;
-    }
-    if (
-      !researchBriefJobs.some((job) => job.status === "queued" || job.status === "running") &&
-      !researchDigestJobs.some((job) => job.status === "queued" || job.status === "running")
-    ) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      void refreshResearchBriefs();
-      void refreshResearchDigests();
-    }, 1500);
-
-    return () => window.clearInterval(intervalId);
-  }, [activeSection, refreshResearchBriefs, refreshResearchDigests, researchBriefJobs, researchDigestJobs]);
+  }, [activeSection, refreshResearchReminders]);
 
   function toggleResearchEvidenceType(evidenceType: ResearchEvidenceType) {
     setResearchEvidenceTypes((current) =>
@@ -500,51 +437,6 @@ export function useResearchController({
     }
   }
 
-  async function startResearchBrief() {
-    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
-    if (!scopeId || researchBriefInFlight) {
-      return;
-    }
-
-    setResearchBriefInFlight(true);
-    setResearchError(null);
-
-    try {
-      await researchApi.startResearchBrief({
-        scopeType: researchMode,
-        scopeId,
-      });
-      await refreshResearchBriefs();
-    } catch (error) {
-      setResearchError(error instanceof Error ? error.message : textRef.current("Research brief failed"));
-    } finally {
-      setResearchBriefInFlight(false);
-    }
-  }
-
-  async function startResearchDigest() {
-    const scope = activeResearchScope();
-    const scopeId = scope?.scopeId;
-    if (!scopeId || researchDigestInFlight) {
-      return;
-    }
-
-    setResearchDigestInFlight(true);
-    setResearchError(null);
-
-    try {
-      await researchApi.startResearchDigest({
-        scopeType: scope.scopeType,
-        scopeId,
-      });
-      await refreshResearchDigests();
-    } catch (error) {
-      setResearchError(error instanceof Error ? error.message : textRef.current("Research digest failed"));
-    } finally {
-      setResearchDigestInFlight(false);
-    }
-  }
-
   function activeResearchScope() {
     const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
     if (!scopeId) {
@@ -674,15 +566,11 @@ export function useResearchController({
     researchQuestionTitle,
     researchQuestionBody,
     researchQuestionLinks,
-    researchBriefJobs,
-    researchDigestJobs,
     researchReminders,
     researchError,
     researchLoading,
     researchReviewInFlight,
     researchQuestionInFlight,
-    researchBriefInFlight,
-    researchDigestInFlight,
     researchReminderInFlight,
     setResearchMode: setResearchModeAndReset,
     setSelectedResearchCompanyId,
@@ -697,17 +585,13 @@ export function useResearchController({
     clearResearchEvidenceTypes,
     refreshResearchTimeline,
     refreshResearchQuestions,
-    refreshResearchBriefs,
     refreshResearchReminders,
-    refreshResearchDigests,
     markResearchReviewed,
     createResearchQuestion,
     updateResearchQuestionStatus,
     deleteResearchQuestion,
     linkEvidenceToSelectedQuestion,
     unlinkEvidenceFromSelectedQuestion,
-    startResearchBrief,
-    startResearchDigest,
     createResearchReminder,
     completeResearchReminder,
     snoozeResearchReminder,

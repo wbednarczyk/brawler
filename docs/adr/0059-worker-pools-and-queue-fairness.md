@@ -1,6 +1,6 @@
 # ADR 0059: Worker Pools, Per-Source Serialization, Per-Provider Concurrency, Chunked Refresh, Dead-Letter
 
-Status: Accepted (2026-07-01)
+Status: Accepted (2026-07-01) — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the AI lanes and per-AI-provider concurrency semaphores are removed with the analysis layer (`v0.59.0`); lane separation and fairness rules for the remaining (non-AI) kinds are unchanged.
 
 Amends [ADR 0050](0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md) (durable job queue),
 [ADR 0055](0055-autonomous-report-pipeline-trust-ladder.md) (autopilot pipeline), and

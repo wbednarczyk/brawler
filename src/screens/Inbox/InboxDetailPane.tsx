@@ -11,11 +11,8 @@ import {
   X,
 } from "lucide-react";
 import { ActionRow, Button, ErrorText, InfoGrid, StatusChip } from "../../ui";
-import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
-import { FeedKpiExtractionPanel } from "../../shared/components/FeedKpiExtractionPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { useAiAnalysisProviderConfigured } from "../../app/state/SettingsContext";
 import type { CompanySignal } from "../../api/types";
 import type { InboxScreenProps } from "./inboxTypes";
 
@@ -23,16 +20,11 @@ type InboxDetailPaneProps = Pick<
   InboxScreenProps,
   | "selectedFeedItem"
   | "selectedFeedCompany"
-  | "aiAnalysisJobsByFeedItemId"
-  | "aiAnalysisErrorByFeedItemId"
-  | "aiAnalysisRequestInFlightByFeedItemId"
   | "healthError"
   | "databaseError"
   | "updateSelectedFeedItem"
   | "openCompanyWorkspaceFromFeedItem"
   | "openFeedItemNoteDraft"
-  | "startFeedItemAiAnalysis"
-  | "retryFeedItemAiAnalysis"
   | "confirmCompanySignal"
   | "rejectCompanySignal"
   | "feedItemSummary"
@@ -64,16 +56,11 @@ export function InboxDetailPane({
   selectedFeedItem,
   selectedFeedCompany,
   selectedFeedSignals,
-  aiAnalysisJobsByFeedItemId,
-  aiAnalysisErrorByFeedItemId,
-  aiAnalysisRequestInFlightByFeedItemId,
   healthError,
   databaseError,
   updateSelectedFeedItem,
   openCompanyWorkspaceFromFeedItem,
   openFeedItemNoteDraft,
-  startFeedItemAiAnalysis,
-  retryFeedItemAiAnalysis,
   confirmCompanySignal,
   rejectCompanySignal,
   feedItemSummary,
@@ -82,7 +69,6 @@ export function InboxDetailPane({
   onBack,
 }: InboxDetailPaneProps) {
   const { text } = useLocale();
-  const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
   const pdfAttachments = selectedFeedItem?.attachments.filter(isPdfAttachment) ?? [];
   const signals = selectedFeedSignals ?? [];
 
@@ -251,22 +237,6 @@ export function InboxDetailPane({
                 </a>
               ))}
             </div>
-          ) : null}
-          <FeedAiAnalysisPanel
-            feedItem={selectedFeedItem}
-            jobs={aiAnalysisJobsByFeedItemId[selectedFeedItem.id] ?? []}
-            error={aiAnalysisErrorByFeedItemId[selectedFeedItem.id] ?? null}
-            providerConfigured={aiAnalysisProviderConfigured}
-            requestInFlight={aiAnalysisRequestInFlightByFeedItemId[selectedFeedItem.id] ?? false}
-            onStart={startFeedItemAiAnalysis}
-            onRetry={retryFeedItemAiAnalysis}
-          />
-          {pdfAttachments.length > 0 || /report|raport/i.test(selectedFeedItem.type) ? (
-            <FeedKpiExtractionPanel
-              key={selectedFeedItem.id}
-              feedItem={selectedFeedItem}
-              providerConfigured={aiAnalysisProviderConfigured}
-            />
           ) : null}
           <InfoGrid
             ariaLabel={text("Feed item timestamps")}

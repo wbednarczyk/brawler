@@ -19,7 +19,11 @@ import { FACT_FORMS, pluralNoun } from "../../shared/locale/plural";
 import { formatListTimestamp } from "../../shared/format/datetime";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { DriftDiff, parseDrift, type ParsedDrift } from "../../shared/components/DriftDiff";
-import { composeAutopilotRunSummary } from "./autopilotRunSummary";
+import {
+  composeAutopilotRunSummary,
+  isTokenizedSummary,
+  renderAutopilotSummaryTokens,
+} from "./autopilotRunSummary";
 import { attentionEventBadgeText, attentionEventTitleText } from "./attentionEventLabels";
 import {
   Button,
@@ -369,15 +373,20 @@ export function TodayScreen({
     const failed = run.status === "failed" || run.status === "partial";
     const drift = autopilotRunDrift(run.kpiDeltaJson);
     // Undo reverts exactly `producedFactIds` (contracts.md § Autonomous Report
-    // Pipeline) — reserved for `autopilot` mode, where facts land auto-committed;
-    // `assist` proposals land `pending` for the confirm/reject review instead.
-    const undoEligible = run.mode === "autopilot" && run.producedFactIds.length > 0;
+    // Pipeline). Facts are review-free (ADR 0086 dec. 5): BOTH `assist` and
+    // `autopilot` commit their facts, so Undo is the reversal path for either —
+    // eligibility is simply "this run produced facts", not a mode gate.
+    const undoEligible = run.producedFactIds.length > 0;
     const revertedCount = undoneAutopilotRuns[run.id];
     const confirmingUndo = confirmingUndoRunId === run.id;
     const expanded = expandedRunIds.has(run.id);
-    // The backend `summaryText` is English-only (legacy/fallback); the Today row
-    // always composes its own localized sentence from the run's DATA fields.
-    const summary = composeAutopilotRunSummary(run, text, locale);
+    // ADR 0084 decision 6: new runs store a typed-token `summaryText` we translate
+    // through the locale layer; legacy runs (English-prose summaries) fall back to
+    // recomposing a localized sentence from the run's structured DATA fields — so
+    // even pre-token rows still localize instead of leaking English.
+    const summary = isTokenizedSummary(run.summaryText)
+      ? renderAutopilotSummaryTokens(run.summaryText, text, locale)
+      : composeAutopilotRunSummary(run, text, locale);
 
     function toggleDetail() {
       setExpandedRunIds((prior) => {

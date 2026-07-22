@@ -1,112 +1,73 @@
-# Fundamentals coverage and history backfill
+# Fundamentals: how figures arrive, and the Coverage panel
 
-When you track a company, you want its reported numbers — revenue, profit, the
-figures behind your analysis — actually *in* Brawler, period by period, without
-hunting through PDFs and clicking "extract" on each one. This page covers the
-tools that get you there: the **Coverage map**, one-click **history backfill**,
-automatic extraction, the **Review queue** for anything that needs your eye, and
-the **AI spend budget** that keeps it all under control.
+Since v0.59 Brawler is a **full automaton** for core financial figures: numbers
+simply arrive, honestly labeled with where they came from. There is no review
+queue and nothing to confirm — reviewing every figure by hand kills the app's
+usability, so the app never asks you to.
 
 It is all **local** and **decision support only** — Brawler reads what a company
 reported; it never tells you to buy, sell, or hold.
 
-## The Coverage map
+## Where the numbers come from
 
-Open a company's dashboard → the **Coverage** panel. It's a table with one row
-per reporting period (newest first), and four columns:
+Four readers, highest trust first. When two cover the same figure, the more
+trusted one owns the slot:
 
-- **Period** — the fiscal year and period (FY, H1, Q1, Q3…).
-- **Report** — the canonical report for that period, with a chip for its kind
-  (and an ESEF chip when it's a structured filing). If no report was found for
-  the period, it says so plainly.
-- **Data** — how many figures are recorded, split into **validated** and
-  **still-to-review**. If a report is fetched but not yet read, this cell reads
-  **"not processed → Extract"**. If the only filing is a link (metadata, no
-  stored file), it reads **"link-only — no stored file"**.
-- **To review** — a count of figures awaiting your confirmation. When it's
-  above zero, click it to jump straight to the **Review queue** (below).
+1. **Your own edits** — untouchable. No automatic path ever overwrites a value
+   you typed in. If a source later disagrees with you, Brawler records an
+   informational note (see *Flagged periods*), never a change.
+2. **ESEF annual reports** — the issuer's own iXBRL-tagged filing. The only
+   source for figures the aggregator doesn't publish (cash, EPS, long-term
+   debt, total liabilities, group equity).
+3. **Structured/positional xHTML** filings and the **ESPI "Wybrane dane
+   finansowe" cover table** from interim komunikaty (parsed the moment the
+   feed item arrives, before retention can prune it).
+4. **BiznesRadar — the primary source for core KPIs.** Once a day Brawler
+   politely reads three public report pages per tracked company (income
+   statement, balance sheet, cash flow) and ingests **every period column**
+   they carry — a newly tracked company gets its whole reported history on day
+   one. Values are attributed to the page; empty or zero cells are never
+   treated as data.
 
-A period shows up if *any* of these name it — a report, a recorded figure, or a
-pending proposal — so a gap is never silently missing. Clicking a row (anywhere
-outside the *To review* cell) opens the company's **Report documents**.
+**PDFs are for you, not for the machine.** Brawler no longer parses financial
+figures out of PDF statements (every issuer's layout was a new fight and a new
+source of silent errors). A PDF report's Today card says plainly: *"PDF report
+— core figures arrive from the aggregator source"*. Reading the filing yourself
+and adding a figure by hand (or via an MCP agent, later) covers the long tail.
 
-## One-click backfill and extraction
+## Every value carries its origin
 
-At the bottom of the Coverage panel are two actions:
+Click any figure in **Fundamentals → Financial facts** to see its provenance:
+the source tier (issuer filing / cover note / aggregator page), the extraction
+method, and a citation naming the exact row and page or document it was read
+from. Origin is a **label, never a to-do**.
 
-- **Backfill history** — fetches the company's **past** reports and filings
-  (back as far as your configured depth, see Settings below), then
-  **automatically extracts** the figures from them. One click: add a company,
-  hit Backfill, and its fundamentals fill in — no per-document clicking.
-- **Extract missing periods** — runs the extraction step **only**, over reports
-  Brawler already has stored. Use this when the documents are already there and
-  you just want the numbers read out.
+## Cross-checking (who watches whom)
 
-A status line tracks the work as it runs — *backfilling → extracting N/M →
-done* — and settles on the result. A company with **automation off** disables
-both actions with an "automation off" hint rather than doing nothing silently
-(turn automation on in the Fundamentals panel; see [Autopilot](autopilot.md)).
-If a backfill reaches its page limit before your full depth, it warns you that
-older filings may be missing rather than pretending it got everything.
+- Where the issuer's filing holds a figure and BiznesRadar disagrees, the
+  disagreement is recorded as an informational entry — the filing always wins.
+- The same for your manual entries: the aggregator's dissent is noted so you
+  learn of it, and your value stays.
+- If one metric starts disagreeing across many companies at once, Brawler
+  raises a *mapping suspect* warning — that pattern means a source row is
+  being misread, not that ten companies restated at once.
 
-## How figures get read
+## The Coverage panel
 
-Most reports are read **deterministically** — straight out of the filing, with
-no AI and no guessing. This now includes interim (quarterly and half-year)
-reports that ship as web-page renderings, including ones whose layout only makes
-sense read by column position. A clean deterministic read is the most reliable
-path and needs no confirmation.
+**Coverage** (company workspace) shows, per reporting period: the canonical
+report document, how many facts landed and how many were cross-validated, and
+**Flagged periods** — an informational list of periods where a reader ran and
+refused to emit (a failed consistency check, a source disagreement), each with
+a plain-language reason and a **Try again** action. Flagged entries are
+information, not homework: nothing waits for your click.
 
-When a report **can't** be read that way, an optional **OCR** step (Mistral,
-free tier) reads it instead. The **first** OCR read for a company lands as
-**proposals** you confirm — and confirming the first one teaches Brawler that
-company's report layout, so its later reports read straight through without
-asking again. (For what "structured" vs. "AI" provenance means on a saved
-figure, see [Autopilot → provenance](autopilot.md).)
+Some cells are honestly empty: BiznesRadar's pages simply don't publish every
+line (no cash, no total liabilities, equity only for parent shareholders), so
+those figures exist only for periods with an ESEF filing.
 
-## The Review queue
+## Fixing and adding figures
 
-Anything that isn't a clean, validated read lands in the **Review queue** panel
-instead of failing quietly. Reach it from the Coverage map's *To review* cell,
-or add the **Review queue** panel from the panel picker.
-
-It lists every pending figure, grouped by period, each row showing the proposed
-metric and value, its source snippet and document, and a tag for where it came
-from:
-
-- **OCR bootstrap** — read from a not-yet-confirmed OCR layout. Confirming it
-  also confirms the layout.
-- **OCR · flagged** — a deterministic read that Brawler's accounting-identity
-  check flagged for a second look (a caution, never a block).
-- **AI** — an older text-AI proposal.
-
-**Confirm** records the value as a fact (a flagged read is confirmed with a
-caution, not blocked); **Reject** discards it. If you confirm a value that
-conflicts with one already recorded, Brawler tells you both values and records
-nothing rather than overwriting. An empty queue means the deterministic pipeline
-is writing figures directly, with nothing left for you to check.
-
-## Settings
-
-- **Backfill history depth** (Settings → Sources) — how many years back a
-  backfill reaches. Clickable presets plus a slider; default **3**, up to
-  **10**.
-- **History-sweep AI budget** (Settings → AI) — caps how many OCR/AI calls a
-  single history sweep may spend, so a big backfill can't run up your free-tier
-  usage. Presets **0 / 10 / 30 / 100** (or type your own), default **30**, and
-  **0 means no limit**. The Coverage footer shows the latest sweep's spend
-  (e.g. *"AI: 2/30"*). The budget is snapshotted when a sweep starts, so
-  changing it only affects future sweeps; a sweep that hits its cap marks the
-  remaining periods **"Skipped — AI budget"** rather than dropping them
-  silently — run another sweep (or raise the budget) to finish them.
-
-## When something can't be read
-
-Brawler tells you plainly instead of pretending:
-
-- A backfill on an **unsupported market** stops immediately with a clear
-  message rather than doing nothing.
-- OCR/AI reads that **degrade** (a provider error, a report that isn't a PDF,
-  an unconfirmed layout) leave a trail under **Diagnostics → Logs**.
-- A report that genuinely can't be extracted is reported as such — never as an
-  empty "success".
+- **Edit or add a KPI value manually** in Fundamentals — your value takes the
+  top of the trust ladder.
+- **Undo an autopilot run** from its Today card (two-step confirm) to revert
+  exactly the facts that run produced.

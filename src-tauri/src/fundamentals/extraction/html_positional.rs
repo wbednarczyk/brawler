@@ -37,7 +37,7 @@
 //!   and the scale marker is English ("(all amounts in PLN thousand …)"). The
 //!   shared dictionary is Polish-only, so this module adds a **module-local**
 //!   English map ([`english_metric`]) tried *before* the shared
-//!   [`super::pdf::match_dictionary_label`] fallback — no other tier is touched.
+//!   [`super::text_numbers::match_dictionary_label`] fallback — no other tier is touched.
 //! - **Current-period column selection is automatic** ([`select_current_value`]),
 //!   applying the owner's YTD-cumulative convention (ADR 0077 T-B2) without needing
 //!   to know which statement produced a row. Measured on the 3 real CDR interims,
@@ -66,7 +66,9 @@ use std::sync::OnceLock;
 use regex::Regex;
 use rust_decimal::Decimal;
 
-use super::pdf::{is_per_share, match_dictionary_label, normalize_label, parse_amount, UnitScale};
+use super::text_numbers::{
+    is_per_share, match_dictionary_label, normalize_label, parse_amount, UnitScale,
+};
 use super::{ExtractedFact, FactPeriod, SourceTier};
 
 /// The reporting date to stamp on emitted facts. The current-period **column** is
@@ -409,7 +411,7 @@ fn english_dictionary() -> &'static [(&'static str, &'static str)] {
 
 /// Maps a statement label to a catalog metric key: the module-local English map
 /// first (longest-first), then the shared Polish dictionary
-/// ([`super::pdf::match_dictionary_label`]) as a fallback — so Polish notes in an
+/// ([`super::text_numbers::match_dictionary_label`]) as a fallback — so Polish notes in an
 /// English filing still resolve and no other tier's dictionary is touched. The
 /// ambiguous "TOTAL EQUITY AND LIABILITIES" (which is *total assets*, not
 /// equity) does not start with any equity/asset pattern and returns `None`.
@@ -429,21 +431,22 @@ pub fn english_metric(label: &str) -> Option<&'static str> {
     match_dictionary_label(&n)
 }
 
-/// English-aware unit-scale detection: recognizes "PLN million" / "in million(s)"
-/// as [`UnitScale::Millions`], otherwise delegates to the shared
-/// [`super::pdf::detect_unit_scale`] (Polish markers + thousands default, which
-/// is also correct for the English "PLN thousand" marker).
+/// English-aware unit-scale detection: forces [`UnitScale::Millions`] on any
+/// "PLN million" / "in million(s)" marker, otherwise delegates to the shared
+/// [`super::text_numbers::detect_unit_scale`] (Polish + English declarations, bare
+/// captions, and the owner-rule silent default of [`UnitScale::Ones`] — no
+/// multiplier when nothing is declared; ADR 0061).
 pub fn detect_scale(text: &str) -> UnitScale {
     let t = text.to_lowercase();
     if t.contains("pln million") || t.contains("in million") || t.contains("in millions") {
         UnitScale::Millions
     } else {
-        super::pdf::detect_unit_scale(text)
+        super::text_numbers::detect_unit_scale(text)
     }
 }
 
 /// Parses one cell into a magnitude, tolerating the English decimal **dot**
-/// (the shared [`super::pdf::parse_amount`] expects a Polish comma; thousands are
+/// (the shared [`super::text_numbers::parse_amount`] expects a Polish comma; thousands are
 /// spaces in these renders, so a lone dot is always the decimal).
 fn parse_cell_amount(cell: &str) -> Option<Decimal> {
     parse_amount(&cell.replace('.', ","))

@@ -12,9 +12,48 @@ use time::{format_description::well_known::Rfc3339, macros::format_description, 
 
 use crate::document_fetcher::{DocumentFetcher, HttpDocumentFetcher};
 use crate::source_adapters::bankier_company::{
-    self, BankierCompanyFetcher, BankierCompanyTarget, HttpBankierCompanyFetcher,
+    self, BankierCompanyError, BankierCompanyFetcher, BankierCompanyParseError,
+    BankierCompanyTarget, HttpBankierCompanyFetcher,
 };
 use crate::storage::{AppState, BackfillProgress};
+
+/// Machine-readable backfill failure reason codes (card bfc4c98). Every failed
+/// backfill records `BackfillProgress.error` as `"<code>: <human detail>"`, so
+/// the four distinct causes stay distinguishable and the UI maps each prefix to a
+/// cause-specific localized message — never one collapsed "backfill failed".
+pub mod reason {
+    /// The company's market has no history-capable source adapter (e.g.
+    /// NewConnect today — the Bankier company path serves GPW only). Surfaced
+    /// before any fetch; not an adapter fault.
+    pub const UNSUPPORTED_MARKET: &str = "unsupported_market";
+    /// No Bankier-company backfill target for the id (unknown / untracked
+    /// company). Not an adapter fault.
+    pub const NOT_TRACKED: &str = "not_tracked";
+    /// The company's Bankier page could not be resolved — a missing or renamed
+    /// slug / tag id (no page found for this company).
+    pub const NO_BANKIER_PAGE: &str = "no_bankier_page";
+    /// The Bankier request itself failed (HTTP status / transport / timeout).
+    pub const HTTP_ERROR: &str = "http_error";
+    /// A Bankier page was fetched but could not be parsed (malformed listing).
+    pub const PARSE_ERROR: &str = "parse_error";
+    /// An internal/storage error unrelated to the Bankier source.
+    pub const INTERNAL: &str = "internal";
+}
+
+/// Map a Bankier fetch error to its typed backfill reason code and human detail.
+/// A transport failure, a missing company page, and a malformed page stay three
+/// distinct causes (card bfc4c98) — never one opaque string.
+fn classify_fetch_error(error: &BankierCompanyError) -> (&'static str, String) {
+    let code = match error {
+        BankierCompanyError::Request(_) => reason::HTTP_ERROR,
+        BankierCompanyError::Parse(
+            BankierCompanyParseError::MissingTagId | BankierCompanyParseError::MissingSlug,
+        ) => reason::NO_BANKIER_PAGE,
+        BankierCompanyError::Parse(BankierCompanyParseError::Json(_)) => reason::PARSE_ERROR,
+        BankierCompanyError::TimestampFormat(_) | BankierCompanyError::Url(_) => reason::INTERNAL,
+    };
+    (code, error.to_string())
+}
 
 /// Fallback backfill depth in years, used only when the persisted
 /// `backfill_years` setting cannot be read (ADR 0077 §3). The live depth is the
@@ -84,17 +123,35 @@ pub fn run_backfill(
             return fail(
                 state,
                 &mut progress,
-                &format!("unsupported_market: {exchange} has no history-capable source adapter"),
+                reason::UNSUPPORTED_MARKET,
+                &format!("{exchange} has no history-capable source adapter"),
+                false,
             );
         }
         Ok(_) => {}
-        Err(error) => return fail(state, &mut progress, &error.to_string()),
+        Err(error) => {
+            return fail(
+                state,
+                &mut progress,
+                reason::INTERNAL,
+                &error.to_string(),
+                false,
+            )
+        }
     }
 
     let target = match find_target(state, company_id) {
         Ok(Some(target)) => target,
-        Ok(None) => return fail(state, &mut progress, "company is not a tracked company"),
-        Err(error) => return fail(state, &mut progress, &error),
+        Ok(None) => {
+            return fail(
+                state,
+                &mut progress,
+                reason::NOT_TRACKED,
+                "company is not a tracked company",
+                false,
+            )
+        }
+        Err(error) => return fail(state, &mut progress, reason::INTERNAL, &error, false),
     };
 
     // Backfill depth is user-configurable (ADR 0077 §3); fall back to the const
@@ -131,7 +188,13 @@ pub fn run_backfill(
         },
     ) {
         Ok(result) => result,
-        Err(error) => return fail(state, &mut progress, &error.to_string()),
+        Err(error) => {
+            // A genuine adapter-interaction fault (transport / missing page /
+            // unparseable listing): record a durable, typed source outcome so the
+            // failure is queryable, not only in the transient progress row.
+            let (code, detail) = classify_fetch_error(&error);
+            return fail(state, &mut progress, code, &detail, true);
+        }
     };
 
     progress.pages_fetched = stats.pages_fetched;
@@ -146,7 +209,15 @@ pub fn run_backfill(
         Ok(result) => {
             progress.items_ingested = result.items_created;
         }
-        Err(error) => return fail(state, &mut progress, &error.to_string()),
+        Err(error) => {
+            return fail(
+                state,
+                &mut progress,
+                reason::INTERNAL,
+                &error.to_string(),
+                false,
+            )
+        }
     }
 
     // Fetch files for periodic-report attachments registered during ingestion.
@@ -155,7 +226,15 @@ pub fn run_backfill(
             progress.documents_stored = summary.stored;
             progress.detail_errors += summary.failed;
         }
-        Err(error) => return fail(state, &mut progress, &error.to_string()),
+        Err(error) => {
+            return fail(
+                state,
+                &mut progress,
+                reason::INTERNAL,
+                &error.to_string(),
+                false,
+            )
+        }
     }
 
     progress.status = "completed".to_owned();
@@ -264,20 +343,40 @@ fn find_target(state: &AppState, company_id: &str) -> Result<Option<BankierCompa
         .find(|target| target.company_id == company_id))
 }
 
-fn fail(state: &AppState, progress: &mut BackfillProgress, message: &str) -> BackfillProgress {
-    // Every failed backfill leaves a production-visible trail (T-A4, card
-    // bfc4c98): the progress row alone was silent, so a failure could not be
-    // diagnosed from the logs.
-    // Every failed backfill leaves a production-visible trail (T-A4, card
-    // bfc4c98): the progress row alone was silent, so a failure could not be
-    // diagnosed from the logs.
+/// Terminate a backfill with a **typed** diagnosis (card bfc4c98). Every failure
+/// leaves a production-visible trail — a warn line carrying the machine-readable
+/// `code` and the progress row's `error` (`"code: detail"`) the UI maps to a
+/// cause-specific message. `record_source_outcome` marks a genuine
+/// adapter-interaction fault on the shared Bankier-company adapter so the failure
+/// is queryable beyond the transient progress row; it stays `false` for a
+/// pre-fetch eligibility failure (unsupported market / untracked company), which
+/// is not an adapter fault and must not falsely flag the adapter that serves every
+/// GPW company.
+fn fail(
+    state: &AppState,
+    progress: &mut BackfillProgress,
+    code: &str,
+    detail: &str,
+    record_source_outcome: bool,
+) -> BackfillProgress {
+    let message = format!("{code}: {detail}");
     log::warn!(
-        "module=backfill company={} status=failed error={}",
+        "module=backfill company={} status=failed code={} error={}",
         progress.company_id,
-        message
+        code,
+        detail
     );
+    if record_source_outcome {
+        if let Err(error) = state.record_source_adapter_error(bankier_company::ADAPTER_ID, &message)
+        {
+            log::warn!(
+                "module=backfill company={} failed to record source outcome: {error}",
+                progress.company_id
+            );
+        }
+    }
     progress.status = "failed".to_owned();
-    progress.error = Some(message.to_owned());
+    progress.error = Some(message);
     progress.updated_at = now_rfc3339();
     state.set_backfill_progress(progress.clone());
     progress.clone()
@@ -387,6 +486,106 @@ mod tests {
             )
             .expect("identifiers should upsert");
         company.id
+    }
+
+    /// A tracked GPW company with pre-seeded Bankier identifiers under a caller-chosen
+    /// ticker (so several can coexist in one test without a `qualified_ticker` clash).
+    fn tracked_company_with_ticker(state: &AppState, ticker: &str) -> String {
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: ticker.to_owned(),
+                display_name: format!("{ticker} S.A."),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+        state
+            .upsert_bankier_company_identifiers(
+                &company.id,
+                &BankierCompanyIdentifiers {
+                    slug: ticker.to_owned(),
+                    tag_id: "999".to_owned(),
+                },
+            )
+            .expect("identifiers should upsert");
+        company.id
+    }
+
+    /// A GPW company with NO Bankier identifiers: it is a backfill target (its
+    /// exchange is history-capable) but the walk must resolve its Bankier page
+    /// first — the rung where a missing/renamed slug surfaces.
+    fn gpw_company_without_identifiers(state: &AppState, ticker: &str) -> String {
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: ticker.to_owned(),
+                display_name: format!("{ticker} S.A."),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create")
+            .id
+    }
+
+    /// Machine-readable reason code carried by a failed backfill, i.e. the prefix
+    /// of `error` before the human detail (`"code: detail"`). `None` for a
+    /// non-failed or code-less progress.
+    fn failure_code(progress: &BackfillProgress) -> Option<String> {
+        progress
+            .error
+            .as_deref()
+            .map(|error| error.split(':').next().unwrap_or(error).trim().to_owned())
+    }
+
+    /// Company page returns HTML with no Bankier identifiers — the "no Bankier
+    /// page found for this company/slug" cause (parse `MissingTagId`).
+    struct FakeBankierNoIdentifiers;
+    impl BankierCompanyFetcher for FakeBankierNoIdentifiers {
+        fn fetch_text(&self, _url: &str) -> Result<String, BankierCompanyError> {
+            Ok("<html><body>brak identyfikatorow spolki</body></html>".to_owned())
+        }
+    }
+
+    /// Listing endpoint returns malformed JSON — the "page fetched but
+    /// unparseable" cause (parse `Json`). Company is pre-identified so the walk
+    /// goes straight to the listing.
+    struct FakeBankierBadJson;
+    impl BankierCompanyFetcher for FakeBankierBadJson {
+        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
+            if url.contains("/articles/listing/") {
+                return Ok("{ not valid json ".to_owned());
+            }
+            Ok("<html></html>".to_owned())
+        }
+    }
+
+    /// Listing endpoint returns an empty article set — the "page fetched but zero
+    /// komunikaty" cause. This is an honest empty result, not a failure.
+    struct FakeBankierEmpty;
+    impl BankierCompanyFetcher for FakeBankierEmpty {
+        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
+            if url.contains("/articles/listing/") {
+                return Ok(r#"{ "articles": [] }"#.to_owned());
+            }
+            Ok("<html></html>".to_owned())
+        }
+    }
+
+    fn new_connect_company(state: &AppState, ticker: &str) -> String {
+        state
+            .create_company(NewCompany {
+                exchange: "NC".to_owned(),
+                ticker: ticker.to_owned(),
+                display_name: format!("{ticker} NewConnect S.A."),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create")
+            .id
     }
 
     #[test]
@@ -783,6 +982,216 @@ mod tests {
             "a company with a fetched periodic report is not re-backfilled"
         );
         assert!(!backfill_job_is_pending(&state, &company_id));
+    }
+
+    /// Card bfc4c98 (a): a NewConnect company's backfill surfaces the typed
+    /// `unsupported_market` cause AND leaves a durable, machine-readable trail in
+    /// the app log (`code=unsupported_market`) — never the silent generic failure
+    /// the card reported. The eligibility check runs before any fetch, so it must
+    /// NOT flag the shared Bankier-company adapter as unhealthy (that would falsely
+    /// red the source that serves every GPW company).
+    #[test]
+    fn newconnect_backfill_records_typed_cause_and_durable_trail() {
+        crate::test_support::install_capture_logger();
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company_id = new_connect_company(&state, "EXC");
+
+        let bankier = FakeBankier {
+            page_requests: RefCell::new(0),
+        };
+        let progress = run_backfill(&state, &company_id, &bankier, &FakeDocs, Duration::ZERO);
+
+        assert_eq!(progress.status, "failed");
+        assert_eq!(
+            failure_code(&progress).as_deref(),
+            Some("unsupported_market"),
+            "NewConnect must carry the machine-readable unsupported_market code, got: {:?}",
+            progress.error
+        );
+
+        // Durable trail: the warn line names the company AND the typed code.
+        let logs = crate::test_support::captured_logs()
+            .lock()
+            .expect("capture buffer");
+        assert!(
+            logs.iter()
+                .any(|line| line.contains(&company_id) && line.contains("code=unsupported_market")),
+            "a failed backfill must log its typed code; buffer: {logs:?}"
+        );
+        drop(logs);
+
+        // Pre-fetch eligibility failure must not touch the shared adapter's health.
+        let adapters = state
+            .list_source_adapters_with_developer(true)
+            .expect("adapters list");
+        let bankier_company = adapters
+            .iter()
+            .find(|adapter| adapter.id == crate::source_adapters::bankier_company::ADAPTER_ID)
+            .expect("bankier-company adapter exists");
+        assert!(
+            bankier_company
+                .last_error
+                .as_deref()
+                .unwrap_or("")
+                .is_empty(),
+            "an ineligible-market backfill must not flag the shared adapter, got: {:?}",
+            bankier_company.last_error
+        );
+    }
+
+    /// Card bfc4c98 (a): a genuine adapter-interaction failure (the Bankier page
+    /// could not be resolved) records a durable **source outcome** on the adapter —
+    /// its `last_error` carries the typed code, so the failure is queryable, not
+    /// only in the transient progress row.
+    #[test]
+    fn adapter_fault_backfill_records_source_outcome() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company_id = gpw_company_without_identifiers(&state, "NOID");
+
+        let progress = run_backfill(
+            &state,
+            &company_id,
+            &FakeBankierNoIdentifiers,
+            &FakeDocs,
+            Duration::ZERO,
+        );
+
+        assert_eq!(progress.status, "failed");
+        assert_eq!(
+            failure_code(&progress).as_deref(),
+            Some("no_bankier_page"),
+            "a missing Bankier page must carry the no_bankier_page code, got: {:?}",
+            progress.error
+        );
+
+        let adapters = state
+            .list_source_adapters_with_developer(true)
+            .expect("adapters list");
+        let bankier_company = adapters
+            .iter()
+            .find(|adapter| adapter.id == crate::source_adapters::bankier_company::ADAPTER_ID)
+            .expect("bankier-company adapter exists");
+        assert!(
+            bankier_company
+                .last_error
+                .as_deref()
+                .is_some_and(|error| error.starts_with("no_bankier_page")),
+            "an adapter-fault backfill must record a typed source outcome, got: {:?}",
+            bankier_company.last_error
+        );
+        assert!(
+            bankier_company.last_error_at.is_some(),
+            "the recorded source outcome must be timestamped"
+        );
+    }
+
+    /// Card bfc4c98 (b): the four distinct backfill failure causes stay
+    /// distinguishable — each carries its own machine-readable code, never
+    /// collapsed into one generic "failed".
+    #[test]
+    fn distinct_backfill_failure_causes_stay_distinguishable() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        // (1) unsupported market — NewConnect, rejected before any fetch.
+        let nc = new_connect_company(&state, "NCX");
+        let unsupported = run_backfill(
+            &state,
+            &nc,
+            &FakeBankier {
+                page_requests: RefCell::new(0),
+            },
+            &FakeDocs,
+            Duration::ZERO,
+        );
+
+        // (2) not tracked — no company row for the id.
+        let not_tracked = run_backfill(
+            &state,
+            "company_missing",
+            &FakeBankier {
+                page_requests: RefCell::new(0),
+            },
+            &FakeDocs,
+            Duration::ZERO,
+        );
+
+        // (3) no Bankier page — identifier-less company page.
+        let no_id = gpw_company_without_identifiers(&state, "NOPG");
+        let no_page = run_backfill(
+            &state,
+            &no_id,
+            &FakeBankierNoIdentifiers,
+            &FakeDocs,
+            Duration::ZERO,
+        );
+
+        // (4) parse error — malformed listing JSON.
+        let badjson = tracked_company_with_ticker(&state, "BADJ");
+        let parse_err = run_backfill(
+            &state,
+            &badjson,
+            &FakeBankierBadJson,
+            &FakeDocs,
+            Duration::ZERO,
+        );
+
+        for progress in [&unsupported, &not_tracked, &no_page, &parse_err] {
+            assert_eq!(progress.status, "failed", "each cause is a failure");
+        }
+
+        let codes: Vec<Option<String>> = [&unsupported, &not_tracked, &no_page, &parse_err]
+            .iter()
+            .map(|progress| failure_code(progress))
+            .collect();
+        assert_eq!(
+            codes,
+            vec![
+                Some("unsupported_market".to_owned()),
+                Some("not_tracked".to_owned()),
+                Some("no_bankier_page".to_owned()),
+                Some("parse_error".to_owned()),
+            ],
+            "each distinct cause must carry its own machine-readable code"
+        );
+
+        let unique: std::collections::HashSet<_> = codes.iter().collect();
+        assert_eq!(
+            unique.len(),
+            4,
+            "distinct causes must never collapse into one message: {codes:?}"
+        );
+    }
+
+    /// Card bfc4c98 (b, cause 4): a page fetched with zero komunikaty is an honest
+    /// empty result — it completes with zero items, never masquerading as a
+    /// failure and never as a silent success with a hidden error.
+    #[test]
+    fn empty_listing_completes_without_collapsing_into_failure() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company_id = tracked_company_with_ticker(&state, "EMPT");
+
+        let progress = run_backfill(
+            &state,
+            &company_id,
+            &FakeBankierEmpty,
+            &FakeDocs,
+            Duration::ZERO,
+        );
+
+        assert_eq!(
+            progress.status, "completed",
+            "an empty listing completes honestly, error: {:?}",
+            progress.error
+        );
+        assert_eq!(progress.items_ingested, 0);
+        assert!(
+            progress.error.is_none(),
+            "a completed empty backfill carries no error"
+        );
     }
 
     #[test]

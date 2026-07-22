@@ -45,7 +45,7 @@ expression: rows
             "ssf",
         ),
         Some(
-            "2026",
+            "2026 Q1",
         ),
     ),
     (
@@ -72,7 +72,7 @@ expression: rows
             "jsf",
         ),
         Some(
-            "2025",
+            "2025 Q4/FY",
         ),
     ),
     (
@@ -103,14 +103,14 @@ expression: rows
         "JSF_CBF-2025-12-31-1-pl.xhtml.xades",
         None,
         Some(
-            "2025",
+            "2025 Q4/FY",
         ),
     ),
     (
         "CBF-2025-12-31-1-pl.xbri",
         None,
         Some(
-            "2025",
+            "2025 Q4/FY",
         ),
     ),
     (

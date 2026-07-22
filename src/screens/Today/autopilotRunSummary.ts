@@ -27,6 +27,122 @@ const OPEN_RESEARCH_QUESTION_FORMS: PluralForms = {
   pl: ["otwarte pytanie badawcze", "otwarte pytania badawcze", "otwartych pytań badawczych"],
 };
 
+// ADR 0084 decision 6 (completion): the backend `compose_summary` emits TYPED
+// reason CODES for an unavailable run (jobs/autopilot.rs `KpiUnavailableReason`).
+// These map each code to a short, product-facing sentence (free of implementation
+// vocabulary — dev-speak locale guard). `witness_fallback` is not a failure: the
+// aggregator sourced the figures because no reader could read the filing.
+const KPI_UNAVAILABLE_BY_CODE: Record<string, string> = {
+  quota_exhausted: "KPI extraction unavailable (a third-party quota was exhausted)",
+  provider_not_configured: "KPI extraction unavailable (no AI provider configured)",
+  provider_error: "KPI extraction unavailable (the AI provider returned an error)",
+  no_deterministic_tier: "KPI extraction unavailable (no reader could read this report)",
+  witness_fallback: "Figures taken from a third-party source (no reader could read the filing)",
+  pdf_document: "PDF report \u2014 core figures arrive from the aggregator source",
+};
+
+// The localized line for an `kpi_extraction_unavailable:<code>` token. A known
+// typed code gets its sentence; an unknown/newer code surfaces its RAW code so it
+// is never silently swallowed (mirrors the data-path `extractionUnavailableText`).
+function kpiUnavailableTextByCode(code: string, text: TextFn): string {
+  const known = KPI_UNAVAILABLE_BY_CODE[code];
+  if (known) return text(known);
+  return text("KPI extraction unavailable ({reason})").replace("{reason}", code);
+}
+
+function isCount(value: string): boolean {
+  return /^\d+$/.test(value);
+}
+
+/**
+ * Render a single stored summary token to its localized fragment, or `null` when
+ * the string is not a recognized token (the signal that a stored summary is
+ * legacy English prose rather than a token stream). The base `report_processed`
+ * token contributes nothing (empty string) — the caller supplies the sentence.
+ */
+function renderSummaryToken(token: string, text: TextFn, locale: LocaleCode): string | null {
+  if (token === "report_processed") return "";
+  if (token === "report_diff_available") {
+    return text("report diff vs the previous statement available");
+  }
+  if (token === "expectations_to_review") {
+    return text("expectations recorded — review vs actuals");
+  }
+
+  const colon = token.indexOf(":");
+  const name = colon === -1 ? token : token.slice(0, colon);
+  const rest = colon === -1 ? "" : token.slice(colon + 1);
+
+  switch (name) {
+    case "kpi_extraction_unavailable":
+      return rest === "" ? null : kpiUnavailableTextByCode(rest, text);
+    case "kpi_confirmed": {
+      const [confirmed, proposed] = rest.split(":");
+      if (!isCount(confirmed) || !isCount(proposed)) return null;
+      return text("{confirmed} of {proposed} KPI recorded")
+        .replace("{confirmed}", confirmed)
+        .replace("{proposed}", proposed);
+    }
+    // Legacy tokens only (ADR 0086 dec. 5): the backend no longer emits
+    // `kpi_pending` — facts are review-free — but an existing DB may still hold
+    // one, so read it tolerantly as the same review-free "recorded" phrasing.
+    case "kpi_pending": {
+      if (!isCount(rest)) return null;
+      return text("{proposed} KPI recorded").replace("{proposed}", rest);
+    }
+    case "claims_to_verify": {
+      if (!isCount(rest)) return null;
+      const n = Number(rest);
+      return `${n} ${pluralNoun(locale, n, CLAIM_FORMS)} ${text("to verify")}`;
+    }
+    case "research_questions": {
+      if (!isCount(rest)) return null;
+      const n = Number(rest);
+      return `${n} ${pluralNoun(locale, n, OPEN_RESEARCH_QUESTION_FORMS)}`;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * True when the whole stored summary parses as a clean typed-token stream — the
+ * router at the call site (TodayScreen) uses this to send new runs to the token
+ * renderer and legacy-prose runs to the data-recompose fallback.
+ */
+export function isTokenizedSummary(summaryText: string | null): boolean {
+  if (!summaryText || summaryText.trim() === "") return false;
+  const identity: TextFn = (value) => value;
+  return summaryText.split("; ").every((token) => renderSummaryToken(token, identity, "en") !== null);
+}
+
+/**
+ * ADR 0084 decision 6 seam: turn the backend's typed-token `summaryText` into a
+ * localized sentence. Every fragment the backend emits is a machine token
+ * (`kpi_confirmed:c:p`, `kpi_extraction_unavailable:<code>`, `claims_to_verify:n`,
+ * `research_questions:n`, `report_diff_available`, `expectations_to_review`,
+ * `report_processed`), translated here through `text()`/`pluralNoun`.
+ *
+ * BACKWARD COMPATIBILITY (hard requirement): the owner's live DB holds already-
+ * stored summaries as English prose. Any string that is not a clean token stream
+ * passes through VERBATIM (tolerant read) — never mangled, never double-wrapped.
+ */
+export function renderAutopilotSummaryTokens(
+  summaryText: string | null,
+  text: TextFn,
+  locale: LocaleCode,
+): string {
+  if (!summaryText || summaryText.trim() === "") return text("New report processed.");
+  const parts: string[] = [];
+  for (const token of summaryText.split("; ")) {
+    const rendered = renderSummaryToken(token, text, locale);
+    if (rendered === null) return summaryText; // legacy/unknown → verbatim
+    if (rendered !== "") parts.push(rendered);
+  }
+  if (parts.length === 0) return text("New report processed.");
+  return `${text("New report processed")} — ${parts.join("; ")}.`;
+}
+
 function parseJsonObject(json: string | null): Record<string, unknown> | null {
   if (!json) return null;
   try {
@@ -107,21 +223,19 @@ export function composeAutopilotRunSummary(
     if (delta.extractionAvailable === false) {
       parts.push(extractionUnavailableText(delta, text));
     } else {
+      // Review-free (ADR 0086 dec. 5): facts land recorded in BOTH modes — the
+      // count reads as recorded, never "pending your confirmation". Show both
+      // counts when present, else the bare proposed count.
       const proposed = numberField(delta, "factsProposed");
       const confirmed = numberField(delta, "factsAutoConfirmed");
-      if (run.mode === "autopilot" && proposed !== null && confirmed !== null) {
+      if (proposed !== null && confirmed !== null) {
         parts.push(
-          text("{confirmed} KPI auto-confirmed (unreviewed) of {proposed} extracted")
+          text("{confirmed} of {proposed} KPI recorded")
             .replace("{confirmed}", String(confirmed))
             .replace("{proposed}", String(proposed)),
         );
-      } else if (run.mode !== "autopilot" && proposed !== null) {
-        parts.push(
-          text("{proposed} KPI extracted, pending your confirmation").replace(
-            "{proposed}",
-            String(proposed),
-          ),
-        );
+      } else if (proposed !== null) {
+        parts.push(text("{proposed} KPI recorded").replace("{proposed}", String(proposed)));
       }
     }
   }

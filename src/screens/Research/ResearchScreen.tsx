@@ -6,8 +6,6 @@ import {
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import type {
   EvidenceLink,
-  ResearchBriefJob,
-  ResearchDigestJob,
   ResearchEvidenceItem,
   ResearchEvidenceType,
   ResearchQuestion,
@@ -19,7 +17,6 @@ import type { ResearchMode } from "../../app/useResearchController";
 import { useLocale } from "../../shared/locale";
 import { useResearchViewModel } from "../../app/state/screenViewModels";
 import { ActionRow, Button, ErrorText, PanelHeader } from "../../ui";
-import { ResearchAiPanel } from "./ResearchAiPanel";
 import { AddQuestionDialog, AddReminderDialog } from "./ResearchDialogs";
 import { ResearchEvidencePanel } from "./ResearchEvidencePanel";
 import { ResearchFoldSection } from "./ResearchFoldSection";
@@ -45,15 +42,11 @@ export type ResearchScreenProps = {
   questionTitle: string;
   questionBody: string;
   questionLinks: EvidenceLink[];
-  briefJobs: ResearchBriefJob[];
-  digestJobs: ResearchDigestJob[];
   reminders: ResearchReminder[];
   error: string | null;
   loading: boolean;
   reviewInFlight: boolean;
   questionInFlight: boolean;
-  briefInFlight: boolean;
-  digestInFlight: boolean;
   reminderInFlight: boolean;
   setMode: (mode: ResearchMode) => void;
   setSelectedCompanyId: (companyId: string | null) => void;
@@ -73,8 +66,6 @@ export type ResearchScreenProps = {
   deleteQuestion: (questionId: string) => void;
   linkEvidence: (item: ResearchEvidenceItem) => void;
   unlinkEvidence: (linkId: string) => void;
-  startBrief: () => void;
-  startDigest: () => void;
   createReminder: (title: string, body: string, dueAt: string | null) => void;
   completeReminder: (reminderId: string) => void;
   snoozeReminder: (reminderId: string) => void;
@@ -103,15 +94,11 @@ export function ResearchScreen() {
   questionTitle,
   questionBody,
   questionLinks,
-  briefJobs,
-  digestJobs,
   reminders,
   error,
   loading,
   reviewInFlight,
   questionInFlight,
-  briefInFlight,
-  digestInFlight,
   reminderInFlight,
   setMode,
   setSelectedCompanyId,
@@ -131,8 +118,6 @@ export function ResearchScreen() {
   deleteQuestion,
   linkEvidence,
   unlinkEvidence,
-  startBrief,
-  startDigest,
   createReminder,
   completeReminder,
   snoozeReminder,
@@ -145,13 +130,11 @@ export function ResearchScreen() {
   const { text } = useLocale();
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{
-    handle: "watchlistQueue" | "brief";
+    handle: "watchlistQueue";
     clientX: number;
     watchlistQueueWidth: number;
-    briefPanelWidth: number;
   } | null>(null);
   const [watchlistQueueWidth, setWatchlistQueueWidth] = useState(220);
-  const [briefPanelWidth, setBriefPanelWidth] = useState<number | null>(null);
   const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
   const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
   // U7-D density (ADR 0076 D6): expand/collapse state for the count-chip folds;
@@ -192,7 +175,6 @@ export function ResearchScreen() {
       : items;
   const researchLayoutStyle = {
     "--research-watchlist-queue-width": `${watchlistQueueWidth}px`,
-    ...(briefPanelWidth === null ? {} : { "--research-brief-panel-width": `${briefPanelWidth}px` }),
   } as CSSProperties;
 
   function clampPanelWidth(width: number, minWidth: number, maxShare: number) {
@@ -202,12 +184,11 @@ export function ResearchScreen() {
     return Math.round(Math.min(Math.max(width, minWidth), maxWidth));
   }
 
-  function startResearchResize(handle: "watchlistQueue" | "brief", event: PointerEvent<HTMLDivElement>) {
+  function startResearchResize(handle: "watchlistQueue", event: PointerEvent<HTMLDivElement>) {
     resizeStartRef.current = {
       handle,
       clientX: event.clientX,
       watchlistQueueWidth,
-      briefPanelWidth: briefPanelWidth ?? 520,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -221,12 +202,7 @@ export function ResearchScreen() {
 
     const delta = event.clientX - resizeStart.clientX;
 
-    if (resizeStart.handle === "watchlistQueue") {
-      setWatchlistQueueWidth(clampPanelWidth(resizeStart.watchlistQueueWidth + delta, 180, 0.28));
-      return;
-    }
-
-    setBriefPanelWidth(clampPanelWidth(resizeStart.briefPanelWidth - delta, 420, 0.5));
+    setWatchlistQueueWidth(clampPanelWidth(resizeStart.watchlistQueueWidth + delta, 180, 0.28));
   }
 
   function stopResearchResize(event: PointerEvent<HTMLDivElement>) {
@@ -238,7 +214,7 @@ export function ResearchScreen() {
   }
 
   function resizeResearchPanelWithKeyboard(
-    handle: "watchlistQueue" | "brief",
+    handle: "watchlistQueue",
     event: KeyboardEvent<HTMLDivElement>,
   ) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
@@ -247,13 +223,9 @@ export function ResearchScreen() {
 
     event.preventDefault();
     const delta = event.key === "ArrowRight" ? 24 : -24;
-
     if (handle === "watchlistQueue") {
       setWatchlistQueueWidth((current) => clampPanelWidth(current + delta, 180, 0.28));
-      return;
     }
-
-    setBriefPanelWidth((current) => clampPanelWidth((current ?? 520) - delta, 420, 0.5));
   }
 
   function openQuestionDialog() {
@@ -413,38 +385,6 @@ export function ResearchScreen() {
             />
           </div>
 
-          <div
-            aria-label={text("Resize AI research brief panel")}
-            aria-orientation="vertical"
-            aria-valuemax={720}
-            aria-valuemin={420}
-            aria-valuenow={briefPanelWidth ?? 520}
-            className="research-resizer"
-            onKeyDown={(event) => resizeResearchPanelWithKeyboard("brief", event)}
-            onPointerDown={(event) => startResearchResize("brief", event)}
-            onPointerMove={resizeResearchPanels}
-            onPointerUp={stopResearchResize}
-            role="separator"
-            tabIndex={0}
-            title={text("Drag to resize AI research brief panel")}
-          />
-          <aside className="research-aside">
-            <ResearchAiPanel
-              briefInFlight={briefInFlight}
-              briefJobs={briefJobs}
-              digestInFlight={digestInFlight}
-              digestJobs={digestJobs}
-              formatTimestamp={formatTimestamp}
-              items={items}
-              mode={mode}
-              openEvidence={openEvidence}
-              selectedCompany={selectedCompany}
-              selectedWatchlist={selectedWatchlist}
-              startBrief={startBrief}
-              startDigest={startDigest}
-              text={text}
-            />
-          </aside>
         </div>
         {questionDialogOpen ? (
           <AddQuestionDialog

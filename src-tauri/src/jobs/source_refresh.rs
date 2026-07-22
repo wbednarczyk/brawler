@@ -377,22 +377,55 @@ fn refresh_sources_for_trigger_inner(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::SourceIngestionResult, String> {
-    let mut total = empty_source_result("all");
+    let adapters = runtime_adapters();
+    sweep_adapters(state, &adapters, trigger)
+}
 
-    for adapter in runtime_adapters().iter().filter(|a| a.in_full_refresh()) {
-        let result = refresh_optional_source(state, adapter, trigger)?;
-        total.items_fetched += result.items_fetched;
-        total.items_created += result.items_created;
-        total.items_matched += result.items_matched;
-        total.items_unmatched += result.items_unmatched;
-        total.detail_items_attempted += result.detail_items_attempted;
-        total.detail_items_stored += result.detail_items_stored;
-        total.detail_items_failed += result.detail_items_failed;
-        if total.fetched_at.is_none() {
-            total.fetched_at = result.fetched_at;
+/// The full-refresh sweep over the given adapters. Extracted so tests can drive
+/// it with scripted adapters (the runtime registry is static).
+fn sweep_adapters(
+    state: &app_state::AppState,
+    adapters: &[RuntimeAdapter],
+    trigger: &str,
+) -> Result<storage::SourceIngestionResult, String> {
+    let mut total = empty_source_result("all");
+    // Owner rule (2026-07-21, live KNF UNIQUE-constraint abort): one source must
+    // NEVER block the refresh of the others. A failure is recorded on the failing
+    // source's own row (the Sources screen renders per-row errors) and the sweep
+    // continues. The sweep as a whole errors only when EVERY attempted source
+    // failed — "nothing refreshed" is not a success, but a partial sweep is.
+    let mut attempted = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+
+    for adapter in adapters.iter().filter(|a| a.in_full_refresh()) {
+        attempted += 1;
+        match refresh_optional_source(state, adapter, trigger) {
+            Ok(result) => {
+                total.items_fetched += result.items_fetched;
+                total.items_created += result.items_created;
+                total.items_matched += result.items_matched;
+                total.items_unmatched += result.items_unmatched;
+                total.detail_items_attempted += result.detail_items_attempted;
+                total.detail_items_stored += result.detail_items_stored;
+                total.detail_items_failed += result.detail_items_failed;
+                if total.fetched_at.is_none() {
+                    total.fetched_at = result.fetched_at;
+                }
+            }
+            Err(error) => {
+                log::warn!(
+                    "module=source_refresh stage=sweep adapter={} status=failed error={error}",
+                    adapter.id
+                );
+                let _ = state.record_source_adapter_error(adapter.id, &error);
+                failures.push(format!("{}: {error}", adapter.id));
+            }
         }
     }
 
+    if attempted > 0 && failures.len() == attempted {
+        return Err(failures.join(" | "));
+    }
     Ok(total)
 }
 
@@ -990,5 +1023,148 @@ mod tests {
         .expect("bootstrap decision should succeed");
 
         assert!(!should_bootstrap);
+    }
+    /// Owner rule (2026-07-21, after the live KNF UNIQUE-constraint abort): one
+    /// source must NEVER block the refresh of the others. A failing adapter is
+    /// recorded on ITS OWN row and the sweep continues; the sweep as a whole
+    /// errors only when EVERY enabled source failed.
+    #[test]
+    fn a_failing_source_does_not_block_the_rest_of_the_sweep() {
+        use super::{
+            empty_source_result, sweep_adapters, Fetcher, RefreshBehavior, RefreshContext,
+            RefreshOutcome, RuntimeAdapter,
+        };
+        use crate::app_state::AppState;
+        use crate::storage::open_in_memory_database;
+
+        struct FailingFetcher;
+        impl Fetcher for FailingFetcher {
+            fn refresh(
+                &self,
+                _state: &AppState,
+                _ctx: &RefreshContext,
+            ) -> Result<RefreshOutcome, String> {
+                Err("sqlite error: UNIQUE constraint failed: short_positions.id".to_owned())
+            }
+        }
+        struct HealthyFetcher;
+        impl Fetcher for HealthyFetcher {
+            fn refresh(
+                &self,
+                _state: &AppState,
+                _ctx: &RefreshContext,
+            ) -> Result<RefreshOutcome, String> {
+                let mut result = empty_source_result("healthy");
+                result.items_fetched = 7;
+                Ok(RefreshOutcome::Ingestion(result))
+            }
+        }
+
+        let failing: &'static FailingFetcher = Box::leak(Box::new(FailingFetcher));
+        let healthy: &'static HealthyFetcher = Box::leak(Box::new(HealthyFetcher));
+        // The failing adapter comes FIRST — the pre-fix sweep aborts here and the
+        // healthy source never runs, which is exactly the live regression.
+        let adapters = vec![
+            RuntimeAdapter {
+                id: "knf-short-selling",
+                behavior: RefreshBehavior::Fetcher(failing),
+            },
+            RuntimeAdapter {
+                id: "biznesradar-rekomendacje",
+                behavior: RefreshBehavior::Fetcher(healthy),
+            },
+        ];
+        let state = AppState::new(open_in_memory_database().expect("db"));
+
+        let result = sweep_adapters(&state, &adapters, "manual")
+            .expect("a single failing source must not fail the whole sweep");
+        assert_eq!(
+            result.items_fetched, 7,
+            "the healthy source behind the failing one must still refresh"
+        );
+
+        let row = state
+            .list_source_adapters()
+            .expect("adapter list query")
+            .into_iter()
+            .find(|a| a.id == "knf-short-selling")
+            .expect("knf row exists");
+        assert!(
+            row.last_error
+                .as_deref()
+                .is_some_and(|e| e.contains("UNIQUE constraint failed")),
+            "the failure lands on the FAILING source's own row, got: {:?}",
+            row.last_error
+        );
+
+        // All-failed is still a sweep-level error (nothing refreshed is not a success).
+        let all_failing = vec![RuntimeAdapter {
+            id: "knf-short-selling",
+            behavior: RefreshBehavior::Fetcher(failing),
+        }];
+        assert!(
+            sweep_adapters(&state, &all_failing, "manual").is_err(),
+            "a sweep where EVERY enabled source failed must still report an error"
+        );
+    }
+
+    /// C5 guard — the sweep is the single `last_error` writer for a failing
+    /// adapter, and it must preserve the adapter's CURATED context, never clobber
+    /// it with a rawer message. An adapter path that records a curated error on
+    /// its own row and then propagates that SAME curated context in its `Err`
+    /// (the shape every inner adapter path follows, incl. the bankier per-company
+    /// paths at ~567/583/610) must leave the curated text on the row after the
+    /// sweep. If a future refactor makes the sweep record a generic/raw message
+    /// instead of the adapter's `Err`, or an inner path stops carrying its curated
+    /// context in the `Err`, this reddens. The sweep write STAYS (the KNF
+    /// ingest-failure path relies on it); this pins "final == curated context".
+    #[test]
+    fn sweep_records_the_curated_adapter_error_not_a_rawer_message() {
+        use super::{
+            sweep_adapters, Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome,
+            RuntimeAdapter,
+        };
+        use crate::app_state::AppState;
+        use crate::storage::open_in_memory_database;
+
+        const CURATED: &str = "CDR: komunikaty fetch failed (HTTP 503)";
+
+        struct CuratedFetcher;
+        impl Fetcher for CuratedFetcher {
+            fn refresh(
+                &self,
+                state: &AppState,
+                _ctx: &RefreshContext,
+            ) -> Result<RefreshOutcome, String> {
+                // Mirror an inner adapter path: record the curated context on the
+                // row, then propagate the SAME curated context in the Err so the
+                // sweep (the single writer) records the curated message verbatim.
+                let _ = state.record_source_adapter_error("knf-short-selling", CURATED);
+                Err(CURATED.to_owned())
+            }
+        }
+
+        let curated: &'static CuratedFetcher = Box::leak(Box::new(CuratedFetcher));
+        let adapters = vec![RuntimeAdapter {
+            id: "knf-short-selling",
+            behavior: RefreshBehavior::Fetcher(curated),
+        }];
+        let state = AppState::new(open_in_memory_database().expect("db"));
+
+        // Every enabled source failed, so the sweep itself errors — but the row
+        // must still carry the curated context (that is the whole point).
+        assert!(sweep_adapters(&state, &adapters, "manual").is_err());
+
+        let row = state
+            .list_source_adapters()
+            .expect("adapter list query")
+            .into_iter()
+            .find(|a| a.id == "knf-short-selling")
+            .expect("knf row exists");
+        assert_eq!(
+            row.last_error.as_deref(),
+            Some(CURATED),
+            "the sweep must leave the adapter's curated context on the row, not a rawer message"
+        );
     }
 }

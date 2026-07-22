@@ -6,12 +6,10 @@ import {
   MailOpen,
   Save,
 } from "lucide-react";
-import type { AiAnalysisJob, Company, FeedItem } from "../../api/types";
-import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
+import type { Company, FeedItem } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { formatListTimestamp } from "../../shared/format/datetime";
-import { useAiAnalysisProviderConfigured } from "../../app/state/SettingsContext";
 import { ActionRow, Button, DenseRow, EmptyState, InfoGrid, StatusChip } from "../../ui";
 
 // The company-scoped feed list + selected-item detail (read/save, inspect,
@@ -23,14 +21,9 @@ export type CompanyFeedSectionProps = {
   company: Company;
   feedItems: FeedItem[];
   selectedFeedItem: FeedItem | null;
-  aiAnalysisJobsByFeedItemId: Record<string, AiAnalysisJob[]>;
-  aiAnalysisErrorByFeedItemId: Record<string, string | null>;
-  aiAnalysisRequestInFlightByFeedItemId: Record<string, boolean>;
   toggleFeedItem: (item: FeedItem) => void;
   selectFeedItemFromKeyboard: (event: React.KeyboardEvent<HTMLElement>, item: FeedItem) => void;
   updateFeedItemState: (item: FeedItem, update: (item: FeedItem) => FeedItem) => void;
-  startFeedItemAiAnalysis: (item: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
-  retryFeedItemAiAnalysis: (jobId: string, itemId: string) => Promise<void>;
   formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   feedItemSummary: (item: FeedItem) => string;
   // Cross-screen actions are optional: the tabbed workspace wires them to the
@@ -45,22 +38,16 @@ export function CompanyFeedSection({
   company,
   feedItems,
   selectedFeedItem,
-  aiAnalysisJobsByFeedItemId,
-  aiAnalysisErrorByFeedItemId,
-  aiAnalysisRequestInFlightByFeedItemId,
   toggleFeedItem,
   selectFeedItemFromKeyboard,
   updateFeedItemState,
   inspectFeedItem,
   openFeedItemNoteDraft,
-  startFeedItemAiAnalysis,
-  retryFeedItemAiAnalysis,
   openInboxFilter,
   formatTimestamp,
   feedItemSummary,
 }: CompanyFeedSectionProps) {
   const { text, locale } = useLocale();
-  const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
 
   return (
     <div
@@ -215,15 +202,6 @@ export function CompanyFeedSection({
                   ))}
                 </div>
               ) : null}
-              <FeedAiAnalysisPanel
-                feedItem={selectedFeedItem}
-                jobs={aiAnalysisJobsByFeedItemId[selectedFeedItem.id] ?? []}
-                error={aiAnalysisErrorByFeedItemId[selectedFeedItem.id] ?? null}
-                providerConfigured={aiAnalysisProviderConfigured}
-                requestInFlight={aiAnalysisRequestInFlightByFeedItemId[selectedFeedItem.id] ?? false}
-                onStart={startFeedItemAiAnalysis}
-                onRetry={retryFeedItemAiAnalysis}
-              />
             </aside>
           ) : null}
         </div>

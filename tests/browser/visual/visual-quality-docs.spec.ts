@@ -43,16 +43,6 @@ async function openCoverage(page: Page): Promise<Locator> {
   return pane;
 }
 
-async function openReviewQueue(page: Page): Promise<Locator> {
-  await openDashboard(page);
-  await page.getByRole("button", { name: "Review queue" }).first().click();
-  const pane = page.locator(".cockpit-pane", {
-    has: page.locator('.company-review-queue[aria-label="Review queue"]'),
-  });
-  await expect(pane).toBeVisible();
-  return pane;
-}
-
 test.describe("visual — quality + report documents", () => {
   test("Quality across pane tiers", async ({ page }) => {
     await openApp(page);
@@ -73,12 +63,5 @@ test.describe("visual — quality + report documents", () => {
     const pane = await openCoverage(page);
     await expect(pane.locator("table.coverage-table")).toBeVisible();
     await shootPanel(page, pane, "coverage");
-  });
-
-  test("Review queue across pane tiers", async ({ page }) => {
-    await openApp(page);
-    const pane = await openReviewQueue(page);
-    await expect(pane.locator(".review-row").first()).toBeVisible();
-    await shootPanel(page, pane, "review-queue");
   });
 });

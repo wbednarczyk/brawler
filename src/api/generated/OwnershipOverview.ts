@@ -2,8 +2,6 @@
 import type { OwnershipFreeFloatPoint } from "./OwnershipFreeFloatPoint";
 import type { OwnershipHolder } from "./OwnershipHolder";
 import type { OwnershipHolderSeries } from "./OwnershipHolderSeries";
-import type { OwnershipOcrProposal } from "./OwnershipOcrProposal";
-import type { OwnershipProposal } from "./OwnershipProposal";
 import type { OwnershipResidual } from "./OwnershipResidual";
 
 /**
@@ -46,14 +44,4 @@ freeFloatHistory: Array<OwnershipFreeFloatPoint>,
  * Documents whose shareholders table the deterministic parser could not read
  * (glyph-mangled / image table / missing section) — awaiting OCR/AI.
  */
-residuals: Array<OwnershipResidual>, 
-/**
- * Pending AI holder-type proposals awaiting user confirmation.
- */
-pendingProposals: Array<OwnershipProposal>, 
-/**
- * Pending tier-4 OCR shareholders-table proposals awaiting confirmation
- * (v0.57 T8, ADR 0077): a whole table read from a residual document's OCR,
- * never auto-applied — the review surface renders these with per-holder rows.
- */
-ocrProposals: Array<OwnershipOcrProposal>, };
+residuals: Array<OwnershipResidual>, };

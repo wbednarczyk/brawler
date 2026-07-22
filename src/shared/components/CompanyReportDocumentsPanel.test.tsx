@@ -98,9 +98,6 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: ["fact_1"],
       skippedFactIds: [],
       divergentCount: 0,
-      driftJson: null,
-      tier4: null,
-      tier4Proposals: 0,
     });
   });
 
@@ -312,9 +309,6 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: ["fact_1", "fact_2", "fact_3"],
       skippedFactIds: [],
       divergentCount: 0,
-      driftJson: null,
-      tier4: null,
-      tier4Proposals: 0,
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -335,26 +329,6 @@ describe("CompanyReportDocumentsPanel", () => {
 
   // Tier-4 bootstrap/pending runs emit PROPOSALS, not facts (ADR 0077 §4) — the
   // toast must say so instead of the misleading "no new values".
-  it("reports tier-4 proposals honestly instead of 'no new values'", async () => {
-    extractReportDocumentDataMock.mockResolvedValue({
-      acceptance: "empty",
-      tier: "pdf",
-      emitted: false,
-      producedFactIds: [],
-      skippedFactIds: [],
-      divergentCount: 0,
-      driftJson: null,
-      tier4: "bootstrap_proposals",
-      tier4Proposals: 5,
-    });
-    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
-
-    const button = await screen.findByRole("button", { name: "Extract data" });
-    await userEvent.click(button);
-
-    expect(await screen.findByText("OCR proposals to review: 5")).toBeInTheDocument();
-  });
-
   it("reports a no-new-values result honestly (0 produced facts is not a success)", async () => {
     extractReportDocumentDataMock.mockResolvedValue({
       acceptance: "empty",
@@ -363,9 +337,6 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: [],
       divergentCount: 0,
-      driftJson: null,
-      tier4: null,
-      tier4Proposals: 0,
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -389,9 +360,6 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: [],
       divergentCount: 0,
-      driftJson: null,
-      tier4: null,
-      tier4Proposals: 0,
     });
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 
@@ -411,9 +379,6 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: ["fact_1", "fact_2"],
       divergentCount: 0,
-      driftJson: null,
-      tier4: null,
-      tier4Proposals: 0,
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -437,9 +402,6 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: ["fact_1"],
       divergentCount: 1,
-      driftJson: null,
-      tier4: null,
-      tier4Proposals: 0,
     });
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 

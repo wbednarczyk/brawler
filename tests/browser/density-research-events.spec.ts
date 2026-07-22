@@ -71,8 +71,9 @@ const PANEL_CONTRACTS: PanelContract[] = [
     panel: "Research",
     open: openResearch,
     tiers: {
-      // S: tabs + timeline only; review-queue/questions fold to count chips; the
-      // AI-brief aside folds away. Summary counts stay.
+      // S: tabs + timeline only; review-queue/questions fold to count chips.
+      // (The AI-brief aside was retired with the in-app AI layer, ADR 0084 — the
+      // panel no longer renders a `.research-aside` at any tier.) Summary stays.
       S: async (page, pane) => {
         await expect(pane.getByRole("button", { name: /Review queue/ })).toBeVisible();
         await expect(pane.getByRole("button", { name: /Research questions/ })).toBeVisible();
@@ -80,7 +81,6 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.locator(".research-summary")).toBeVisible();
         await expect(pane.locator(".research-reminders")).toBeHidden();
         await expect(pane.locator(".research-questions")).toBeHidden();
-        await expect(pane.locator(".research-aside")).toBeHidden();
       },
       // M: + review-queue strip (reminders body reveals); questions stay a chip.
       M: async (page, pane) => {
@@ -89,20 +89,18 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.locator(".research-questions")).toBeHidden();
         await expect(pane.locator(".research-timeline")).toBeVisible();
       },
-      // L: + questions/reminders columns; both chips gone, aside back as a column.
+      // L: + questions/reminders columns; both fold chips gone.
       L: async (page, pane) => {
         await expect(pane.locator(".research-reminders")).toBeVisible();
         await expect(pane.locator(".research-questions")).toBeVisible();
         await expect(pane.getByRole("button", { name: /Review queue/ })).toBeHidden();
         await expect(pane.getByRole("button", { name: /Research questions/ })).toBeHidden();
-        await expect(pane.locator(".research-aside")).toBeVisible();
       },
       // short: summary counts + timeline; everything else re-folds behind chips.
       short: async (page, pane) => {
         await expect(pane.locator(".research-summary")).toBeVisible();
         await expect(pane.locator(".research-timeline")).toBeVisible();
         await expect(pane.locator(".research-reminders")).toBeHidden();
-        await expect(pane.locator(".research-aside")).toBeHidden();
       },
     },
   },

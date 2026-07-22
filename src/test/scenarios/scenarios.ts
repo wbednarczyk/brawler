@@ -17,6 +17,7 @@
 import { applyScenarioOverlays, type ScenarioOverlayName } from "./overlays";
 import type { Company } from "../../api/types";
 import type { CockpitLayout } from "../../api/generated/CockpitLayout";
+import type { ExtractionOutcome } from "../../api/generated/ExtractionOutcome";
 import type { FactProvenance } from "../../api/generated/FactProvenance";
 import type { AlertRule } from "../../api/generated/AlertRule";
 import type { AttentionEvent } from "../../api/generated/AttentionEvent";
@@ -47,12 +48,10 @@ import {
   AVAILABLE_METRIC_KEYS,
   COMPANY_SPECS,
   type CompanySpec,
-  makeAiAnalysisJob,
   makeBackfillProgress,
   makeAlertRule,
   makeAttentionEvent,
   makeBackupStatus,
-  makeClaimExtractionJob,
   makeClaimsToVerify,
   makeCompany,
   makeCredentialStatuses,
@@ -68,7 +67,6 @@ import {
   makeFinancialPeriod,
   makeIrReportResolution,
   makeKpiDefinition,
-  makeKpiExtractionJob,
   makeKpiRelevance,
   makeLicenseStatus,
   makeLocalMetricsSnapshot,
@@ -89,8 +87,6 @@ import {
   makeReportDocument,
   makeReportPreparation,
   makeReportSeasonEntry,
-  makeResearchBriefJob,
-  makeResearchDigestJob,
   makeResearchEvidenceItem,
   makeResearchQuestion,
   makeResearchReminder,
@@ -105,7 +101,6 @@ import {
   makeWatchlist,
 } from "./entities";
 import type {
-  AiAnalysisJob,
   CompanyEvent,
   CompanyRegistryEntry,
   CompanySignal,
@@ -126,9 +121,7 @@ import type {
   WatchlistMembership,
 } from "../../api/types";
 import type { BackupStatus } from "../../api/backups";
-import type { ClaimExtractionJob } from "../../api/claimExtraction";
 import type { IrReportResolution } from "../../api/ir";
-import type { KpiExtractionJob } from "../../api/kpiExtraction";
 import type {
   ClaimsToVerify,
   ManagementClaim,
@@ -152,8 +145,6 @@ import type {
 } from "../../api/reportSeason";
 import type {
   EvidenceLink,
-  ResearchBriefJob,
-  ResearchDigestJob,
   ResearchEvidenceItem,
   ResearchQuestion,
   ResearchReminder,
@@ -192,7 +183,6 @@ export interface ScenarioData {
   notebookEntries: NotebookEntry[];
   transcriptJobs: TranscriptJob[];
   transcriptSegments: TranscriptSegment[];
-  aiAnalysisJobs: AiAnalysisJob[];
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
   cockpitLayouts: CockpitLayout[];
@@ -204,19 +194,15 @@ export interface ScenarioData {
   researchQuestions: ResearchQuestion[];
   evidenceLinks: EvidenceLink[];
   researchReminders: ResearchReminder[];
-  researchBriefJobs: ResearchBriefJob[];
-  researchDigestJobs: ResearchDigestJob[];
   researchReviewCheckpoints: ResearchReviewCheckpoint[];
   // Management claims
   managementClaims: ManagementClaim[];
   claimsToVerify: ClaimsToVerify;
-  claimExtractionJobs: ClaimExtractionJob[];
   // Fundamentals
   financialPeriods: FinancialPeriod[];
   financialFacts: FinancialFact[];
   kpiDefinitions: KpiDefinition[];
   kpiRelevance: KpiRelevance[];
-  kpiExtractionJobs: KpiExtractionJob[];
   reportDocuments: ReportDocument[];
   // Ownership overviews per company (ADR 0072, v0.56 T6). Optional seed: a company
   // with no entry reads back the empty overview (freeFloatPct "100").
@@ -242,6 +228,13 @@ export interface ScenarioData {
   // render. A provenance-seeded scenario exercises that UI (badges + the
   // "structure changed" diff).
   factProvenance?: FactProvenance[];
+  // Non-emitting extraction outcomes (ADR 0061 decision 2, ADR 0084 decision
+  // 4/6) — the periods the deterministic pipeline ran on and refused to record.
+  // Optional seed: a company with no rows reads back `[]`, which is the GOOD
+  // "nothing flagged" state, not a failure. `rerun_extraction_outcome` drops the
+  // re-run row (the real backend updates it in place; a re-run that now emits
+  // leaves the flagged list).
+  flaggedExtractionOutcomes?: ExtractionOutcome[];
   reportPreparations: ReportPreparation[];
   // KNF short-selling register (v0.55 T4b). Raw seed rows; `list_short_positions`
   // derives the per-company view (aggregate/delta/history) from these.
@@ -344,7 +337,6 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
   const events: CompanyEvent[] = [];
   const transcriptJobs: TranscriptJob[] = [];
   const transcriptSegments: TranscriptSegment[] = [];
-  const aiAnalysisJobs: AiAnalysisJob[] = [];
 
   for (const spec of specs) {
     for (let i = 0; i < density.feedPerCompany; i += 1) feedItems.push(makeFeedItem(spec, i));
@@ -353,7 +345,6 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     events.push(makeEvent(spec));
     transcriptJobs.push(makeTranscriptJob(spec));
     for (let i = 0; i < density.segmentsPerTranscript; i += 1) transcriptSegments.push(makeTranscriptSegment(spec, i));
-    aiAnalysisJobs.push(makeAiAnalysisJob(spec));
   }
 
   const watchlists: Watchlist[] = [makeWatchlist("watchlist_sample_core", "Core holdings", specs.length)];
@@ -381,7 +372,6 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     notebookEntries,
     transcriptJobs,
     transcriptSegments,
-    aiAnalysisJobs,
     watchlists,
     watchlistMemberships,
     cockpitLayouts: [],
@@ -392,19 +382,15 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     researchQuestions: deep.map(makeResearchQuestion),
     evidenceLinks: deep.map(makeEvidenceLink),
     researchReminders: deep.map(makeResearchReminder),
-    researchBriefJobs: deep.map(makeResearchBriefJob),
-    researchDigestJobs: deep.map(makeResearchDigestJob),
     researchReviewCheckpoints: deep.map(makeResearchReviewCheckpoint),
     // Claims
     managementClaims: deep.map(makeManagementClaim),
     claimsToVerify: makeClaimsToVerify(deep.length >= 3 ? deep : specs.slice(0, 3)),
-    claimExtractionJobs: deep.map(makeClaimExtractionJob),
     // Fundamentals
     financialPeriods: deep.flatMap((spec) => [makeFinancialPeriod(spec, 2025), makeFinancialPeriod(spec, 2026)]),
     financialFacts: deep.map((spec) => makeFinancialFact(spec, 2026)),
     kpiDefinitions: [makeKpiDefinition()],
     kpiRelevance: deep.map(makeKpiRelevance),
-    kpiExtractionJobs: deep.map(makeKpiExtractionJob),
     reportDocuments: deep.map(makeReportDocument),
     ownershipOverviews: deep.map(makeOwnershipOverview),
     companyHealthReports: deep.map(makeCompanyHealth),
@@ -479,7 +465,6 @@ function buildEmpty(): ScenarioData {
     notebookEntries: [],
     transcriptJobs: [],
     transcriptSegments: [],
-    aiAnalysisJobs: [],
     watchlists: [],
     watchlistMemberships: [],
     cockpitLayouts: [],
@@ -489,17 +474,13 @@ function buildEmpty(): ScenarioData {
     researchQuestions: [],
     evidenceLinks: [],
     researchReminders: [],
-    researchBriefJobs: [],
-    researchDigestJobs: [],
     researchReviewCheckpoints: [],
     managementClaims: [],
     claimsToVerify: { due: [], overdue: [], upcoming: [] },
-    claimExtractionJobs: [],
     financialPeriods: [],
     financialFacts: [],
     kpiDefinitions: [],
     kpiRelevance: [],
-    kpiExtractionJobs: [],
     reportDocuments: [],
     reportPreparations: [],
     shortPositions: [],

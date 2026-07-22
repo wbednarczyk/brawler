@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 import {
   expect,
   invoke,
+  vi,
   renderApp,
   screen,
   userEvent,
@@ -274,32 +275,36 @@ describe("Research screen workflows", () => {
     });
   });
 
-  it("generates and displays a cited AI research brief", async () => {
-    const user = userEvent.setup();
-
+  // ADR 0084 decision 5 (clean cut): the research-brief/digest tables are
+  // DROPPED, so the read-only archive the earlier slice kept has nothing to show
+  // and is gone with them. Research keeps its deterministic surfaces.
+  it("renders no saved-AI-research surface at all (ADR 0084 clean cut)", async () => {
     renderApp({ section: "Research" });
 
-    expect(screen.getByText("No research brief generated yet.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "AI research" })).toBeInTheDocument();
-    expect(screen.getAllByText("What needs attention").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Research summary").length).toBeGreaterThan(0);
+    // The deterministic research workspace still loads.
+    await screen.findByLabelText("Evidence timeline");
+    expect(screen.getByRole("heading", { name: "Research" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Generate brief" }));
+    // Every AI-research surface — archive included — is gone.
+    expect(
+      screen.queryByRole("heading", { name: "Saved AI research" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("No saved research brief.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No saved research digest.")).not.toBeInTheDocument();
+    for (const name of ["Generate brief", "Generate digest"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
 
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("start_research_brief", {
-        input: {
-          scopeType: "company",
-          scopeId: "company_gpw_cdr",
-        },
-      });
-    });
-
-    expect(await screen.findByText("Investor research brief: CD PROJEKT S.A.")).toBeInTheDocument();
-    expect(screen.queryByText(/company_gpw_cdr/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Source-grounded brief summary.")).toBeInTheDocument();
-    expect(screen.getByText("Citations (1)")).toBeInTheDocument();
-    expect(screen.getAllByText("Current report placeholder for watchlist company").length).toBeGreaterThan(0);
+    // Nothing reached a retired research-AI command.
+    const commands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    for (const retired of [
+      "list_research_briefs",
+      "list_research_digests",
+      "start_research_brief",
+      "start_research_digest",
+    ]) {
+      expect(commands).not.toContain(retired);
+    }
   });
 
   it("shows open research reminders and completes one", async () => {
@@ -371,47 +376,6 @@ describe("Research screen workflows", () => {
     });
   });
 
-  it("generates and displays an event-aware research digest", async () => {
-    const user = userEvent.setup();
-
-    renderApp({ section: "Research" });
-
-    expect(screen.getByText("No research digest generated yet.")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Generate digest" }));
-
-    // v0.54 T6: kicking off a digest raises a transient start toast — the result
-    // lands in the output section below, which can be scrolled out of view.
-    expect(await screen.findByText("Generating digest…")).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("start_research_digest", {
-        input: {
-          scopeType: "company",
-          scopeId: "company_gpw_cdr",
-        },
-      });
-    });
-
-    expect(await screen.findByText("Open reminders and changed evidence to review.")).toBeInTheDocument();
-    expect(screen.getAllByText("What needs attention").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Citations (1)").length).toBeGreaterThan(0);
-  });
-
-  it("opens cited evidence from an AI research brief", async () => {
-    const user = userEvent.setup();
-
-    renderApp({ section: "Research" });
-
-    await user.click(screen.getByRole("button", { name: "Generate brief" }));
-
-    await user.click(await screen.findByText("Citations (1)"));
-    await user.click(screen.getByRole("button", { name: /E1 Current report placeholder/ }));
-
-    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Inbox company")).toHaveValue("GPW:CDR");
-  });
-
   it("folds the review queue and questions behind count chips that expand in place (density)", async () => {
     const user = userEvent.setup();
 
@@ -433,17 +397,16 @@ describe("Research screen workflows", () => {
     expect(questionsChip).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("resizes research split panels with keyboard controls", async () => {
+  it("resizes the watchlist queue with keyboard controls", async () => {
     const user = userEvent.setup();
 
     renderApp({ section: "Research" });
 
-    const briefResizer = screen.getByRole("separator", { name: "Resize AI research brief panel" });
-    expect(briefResizer).toHaveAttribute("aria-valuenow", "520");
-
-    briefResizer.focus();
-    await user.keyboard("{ArrowLeft}");
-    expect(briefResizer).toHaveAttribute("aria-valuenow", "544");
+    // The saved-AI-research panel and its resizer are gone (ADR 0084 clean cut);
+    // the watchlist-queue resizer is the surviving split control.
+    expect(
+      screen.queryByRole("separator", { name: "Resize saved AI research panel" }),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Watchlist" }));
     const queueResizer = screen.getByRole("separator", { name: "Resize watchlist company list" });

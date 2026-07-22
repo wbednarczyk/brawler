@@ -11,10 +11,6 @@ pub(super) const SETTINGS_KEYS: &[&str] = &[
     "youtube_transcription_provider",
     "youtube_transcription_model",
     "youtube_transcription_timeout_seconds",
-    "general_analysis_provider",
-    "general_analysis_model",
-    "general_analysis_timeout_seconds",
-    "ai_analysis_mode",
     "log_level",
     "log_max_files",
     "log_max_file_bytes",
@@ -50,11 +46,7 @@ pub struct ImportExportSummary {
     pub management_claims: usize,
     pub research_questions: usize,
     pub evidence_links: usize,
-    pub ai_research_briefs: usize,
-    pub ai_research_brief_citations: usize,
     pub research_reminders: usize,
-    pub ai_research_digests: usize,
-    pub ai_research_digest_citations: usize,
     pub quality_frameworks: usize,
     pub user_metrics: usize,
     pub ownership_stakes: usize,
@@ -96,16 +88,8 @@ pub struct ImportApplySummary {
     pub research_questions_merged: usize,
     pub evidence_links_created: usize,
     pub evidence_links_skipped: usize,
-    pub ai_research_briefs_created: usize,
-    pub ai_research_briefs_skipped: usize,
-    pub ai_research_brief_citations_created: usize,
-    pub ai_research_brief_citations_skipped: usize,
     pub research_reminders_created: usize,
     pub research_reminders_skipped: usize,
-    pub ai_research_digests_created: usize,
-    pub ai_research_digests_skipped: usize,
-    pub ai_research_digest_citations_created: usize,
-    pub ai_research_digest_citations_skipped: usize,
     pub quality_frameworks_created: usize,
     pub quality_frameworks_skipped: usize,
     pub user_metrics_created: usize,
@@ -145,15 +129,7 @@ pub(super) struct ResearchExportDocument {
     #[serde(default)]
     pub(super) evidence_links: Vec<ExportEvidenceLink>,
     #[serde(default)]
-    pub(super) ai_research_briefs: Vec<ExportAiResearchBrief>,
-    #[serde(default)]
-    pub(super) ai_research_brief_citations: Vec<ExportAiResearchBriefCitation>,
-    #[serde(default)]
     pub(super) research_reminders: Vec<ExportResearchReminder>,
-    #[serde(default)]
-    pub(super) ai_research_digests: Vec<ExportAiResearchDigest>,
-    #[serde(default)]
-    pub(super) ai_research_digest_citations: Vec<ExportAiResearchDigestCitation>,
     #[serde(default)]
     pub(super) quality_frameworks: Vec<ExportQualityFramework>,
     #[serde(default)]
@@ -337,40 +313,6 @@ pub(super) struct ExportEvidenceLink {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct ExportAiResearchBrief {
-    pub(super) id: String,
-    pub(super) job_id: String,
-    pub(super) scope_type: String,
-    pub(super) scope_id: String,
-    pub(super) scope_company_qualified_ticker: Option<String>,
-    pub(super) provider_id: String,
-    pub(super) model: String,
-    pub(super) prompt_version: String,
-    pub(super) evidence_collector_version: String,
-    pub(super) renderer_version: String,
-    pub(super) title: String,
-    pub(super) summary: String,
-    pub(super) content_markdown: String,
-    pub(super) language: Option<String>,
-    pub(super) generated_at: String,
-    pub(super) created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct ExportAiResearchBriefCitation {
-    pub(super) id: String,
-    pub(super) brief_id: String,
-    pub(super) citation_key: String,
-    pub(super) evidence_type: String,
-    pub(super) evidence_id: String,
-    pub(super) label: String,
-    pub(super) snippet: Option<String>,
-    pub(super) created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(super) struct ExportResearchReminder {
     pub(super) id: String,
     pub(super) scope_type: String,
@@ -389,40 +331,6 @@ pub(super) struct ExportResearchReminder {
     pub(super) dismissed_at: Option<String>,
     pub(super) created_at: String,
     pub(super) updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct ExportAiResearchDigest {
-    pub(super) id: String,
-    pub(super) job_id: String,
-    pub(super) scope_type: String,
-    pub(super) scope_id: String,
-    pub(super) scope_company_qualified_ticker: Option<String>,
-    pub(super) provider_id: String,
-    pub(super) model: String,
-    pub(super) prompt_version: String,
-    pub(super) evidence_collector_version: String,
-    pub(super) renderer_version: String,
-    pub(super) title: String,
-    pub(super) summary: String,
-    pub(super) content_markdown: String,
-    pub(super) language: Option<String>,
-    pub(super) generated_at: String,
-    pub(super) created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct ExportAiResearchDigestCitation {
-    pub(super) id: String,
-    pub(super) digest_id: String,
-    pub(super) citation_key: String,
-    pub(super) evidence_type: String,
-    pub(super) evidence_id: String,
-    pub(super) label: String,
-    pub(super) snippet: Option<String>,
-    pub(super) created_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -444,10 +352,6 @@ pub(super) struct ExportSettings {
     pub(super) youtube_transcription_provider: Option<String>,
     pub(super) youtube_transcription_model: Option<String>,
     pub(super) youtube_transcription_timeout_seconds: Option<i64>,
-    pub(super) general_analysis_provider: Option<String>,
-    pub(super) general_analysis_model: Option<String>,
-    pub(super) general_analysis_timeout_seconds: Option<i64>,
-    pub(super) ai_analysis_mode: Option<String>,
     pub(super) log_level: Option<String>,
     pub(super) log_max_files: Option<i64>,
     pub(super) log_max_file_bytes: Option<i64>,

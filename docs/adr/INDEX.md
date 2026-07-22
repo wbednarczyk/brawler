@@ -60,8 +60,8 @@
 - [0057](0057-composable-views-and-curated-dashboard.md) — Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard — Accepted (2026-06-25)
 - [0058](0058-investor-week-calendar.md) — Investor Week Calendar — Event Layers, Whole-Market Scope, Macro & Holiday Domains — Accepted (2026-06-30)
 - [0059](0059-worker-pools-and-queue-fairness.md) — Worker Pools, Per-Source Serialization, Per-Provider Concurrency, Chunked Refresh, Dead-Letter — Accepted (2026-07-01)
-- [0060](0060-ai-capability-routing-and-openai-compatible-provider.md) — Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider — Accepted (2026-07-02)
-- [0061](0061-deterministic-fundamentals-data-gathering.md) — 100%-Deterministic Fundamentals Data Gathering — Structured-First Pipeline + Validation + Company Profiles — Accepted (2026-07-01)
+- [0060](0060-ai-capability-routing-and-openai-compatible-provider.md) — Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider — Superseded (2026-07-20) by [ADR 0084](0084-retire-in-app-ai-layer.md)
+- [0061](0061-deterministic-fundamentals-data-gathering.md) — 100%-Deterministic Fundamentals Data Gathering — Structured-First Pipeline + Validation + Company Profiles — Accepted (2026-07-01); decisions 1/3 (tier ladder, deterministic PDF parser) sup
 - [0062](0062-mandatory-test-gate-and-test-driven-loop.md) — Single Mandatory Test Gate (Pre-Commit) and Test-Driven Development Loop — Accepted
 - [0063](0063-claude-native-context-architecture.md) — Claude-Native Context Architecture and Lean-Docs Layering — Accepted
 - [0064](0064-resolved-v1-ux-decisions.md) — Resolved V1 UX Decisions (Consolidated Record) — Accepted
@@ -77,9 +77,12 @@
 - [0074](0074-ux-journeys-and-anti-rot.md) — UX Journeys as Spec — Journey Tests, Step Budgets, and Anti-Rot Guardrails — Accepted
 - [0075](0075-qualitative-assessment-frameworks.md) — Qualitative Assessment Frameworks — Agent-Assessed Criteria with Citations — Accepted (v0.50.0)
 - [0076](0076-ui-design-system-and-density-contracts.md) — UI Design System — Scales, Semantic Tokens, Format Rules, Density Contracts — Accepted (v0.50.0 phase 2
-- [0077](0077-trusted-extraction-foundations.md) — Trusted Extraction Foundations — Document Taxonomy, Coverage Map, History Sweep, Free-Tier Vision Fallback — Accepted (2026-07-08)
+- [0077](0077-trusted-extraction-foundations.md) — Trusted Extraction Foundations — Document Taxonomy, Coverage Map, History Sweep, Free-Tier Vision Fallback — Superseded (2026-07-20) by [ADR 0084](0084-retire-in-app-ai-layer.md)
 - [0078](0078-mcp-external-surface.md) — External Surface — Read-Only MCP Server MVP (NS1 Slice 1) — Accepted (2026-07-11, owner sign-off)
 - [0080](0080-retire-embedding-model.md) — Retire the Local Embedding Model and Dead Subsystems — Accepted (2026-07-11, owner sign-off)
 - [0081](0081-ux-quality-loop-v2.md) — UX Quality Loop v2 — Experience Contracts, Adversarial Validation, Continuous Dogfooding — Accepted (owner sign-off 2026-07-12)
 - [0082](0082-market-data-source-selection.md) — Market-Data Source Selection — Yahoo primary, robots-allowed witnesses (Twelve Data secondary removed by amendment) — Accepted
 - [0083](0083-company-health-scores-and-red-flags.md) — 0083-company-health-scores-and-red-flags.md — Accepted (2026-07-17, owner decisions at milestone planning)
+- [0084](0084-retire-in-app-ai-layer.md) — Retire the In-App AI Analysis Layer — Intelligence via MCP — Accepted (2026-07-20, owner sign-off)
+- [0085](0085-biznesradar-fundamentals-witness.md) — BiznesRadar Fundamentals Page as the Aggregator Witness — Accepted (2026-07-21, owner sign-off)
+- [0086](0086-aggregator-primary-fundamentals.md) — Aggregator-primary fundamentals, PDF-fact retirement, review-free facts — Accepted (2026-07-21, owner decisions at Track C planning)

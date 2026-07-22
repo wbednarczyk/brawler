@@ -176,8 +176,8 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await sizeTo(page, "S", pane);
     await expect(subnav).toBeHidden();
     await expect(sectionSelect).toBeVisible();
-    await sectionSelect.selectOption("ai");
-    await expect(page.getByRole("heading", { name: "AI", exact: true })).toBeVisible();
+    await sectionSelect.selectOption("transcripts");
+    await expect(page.getByRole("heading", { name: "Transcripts", exact: true })).toBeVisible();
     await expectNoPageOverflow(page);
   });
 });

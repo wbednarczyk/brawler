@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Pencil, X } from "lucide-react";
+import { Pencil } from "lucide-react";
 
 import { useLocale, type LocaleCode } from "../locale";
 import { pluralNoun, type PluralForms } from "../locale/plural";
@@ -35,17 +35,8 @@ export type OwnershipSectionProps = {
   /** A backfill/mutation is in flight (disables actions, shows progress). */
   busy?: boolean;
   onBackfill: () => void;
-  /** Run the AI classify-with-confirm pass over still-unclassified holders. */
-  onRunClassification: () => void;
+  /** Manually (re)classify a holder — the only classification path (ADR 0084). */
   onSetHolderType: (holderKey: string, holderType: string | null) => void;
-  onConfirmProposal: (proposalId: string) => void;
-  onRejectProposal: (proposalId: string) => void;
-  /** Run the tier-4 OCR pass over this company's residual documents (T8). */
-  onRunOcr: () => void;
-  /** Confirm an OCR shareholders-table proposal (writes stakes, clears residual). */
-  onConfirmOcrProposal: (reportDocumentId: string) => void;
-  /** Reject an OCR shareholders-table proposal (parks the residual). */
-  onRejectOcrProposal: (reportDocumentId: string) => void;
   className?: string;
 };
 
@@ -93,13 +84,7 @@ export function OwnershipSection({
   error,
   busy = false,
   onBackfill,
-  onRunClassification,
   onSetHolderType,
-  onConfirmProposal,
-  onRejectProposal,
-  onRunOcr,
-  onConfirmOcrProposal,
-  onRejectOcrProposal,
   className,
 }: OwnershipSectionProps) {
   const { text, locale } = useLocale();
@@ -320,8 +305,6 @@ export function OwnershipSection({
     );
   };
 
-  const proposalByHolder = new Map(data.pendingProposals.map((p) => [p.holderKey, p]));
-
   return wrap(
     <>
       <div className="ownership-overview-row">
@@ -364,80 +347,33 @@ export function OwnershipSection({
           </div>
         ) : null}
       </div>
-      {sortedHolders.some(
-        (holder) => !holder.holderType && !proposalByHolder.has(holder.holderKey),
-      ) ? (
-        // ADR 0072 §3 residual: unknown holders go to AI only as proposals the
-        // user confirms — this is the explicit, budget-friendly trigger.
-        <div className="ownership-classify-cta">
-          <Button
-            className="compact-button"
-            disabled={busy}
-            onClick={onRunClassification}
-          >
-            {text("Classify unknown holders (AI)")}
-          </Button>
-        </div>
-      ) : null}
-
       <ul className="ownership-holders">
         {sortedHolders.map((holder) => {
-          const proposal = proposalByHolder.get(holder.holderKey);
           const isEditing = editingHolder === holder.holderKey;
           return (
             <li key={holder.holderKey} className="ownership-holder-row">
               <div className="ownership-holder-main">
                 <span className="ownership-holder-name">{holder.name}</span>
-                {proposal ? (
-                  <StatusChip tone="warn">{text("type? to confirm")}</StatusChip>
-                ) : (
-                  renderTypeChip(holder)
-                )}
+                {renderTypeChip(holder)}
                 {renderSkinBadge(holder)}
               </div>
               <div className="ownership-holder-meta">
-                {proposal ? (
-                  <span className="ownership-proposal-actions">
-                    {text("AI")}: „{typeLabel(proposal.proposedType)}"
-                    <Button
-                      className="compact-button"
-                      variant="minimal"
-                      aria-label={text("Confirm classification")}
-                      disabled={busy}
-                      onClick={() => onConfirmProposal(proposal.id)}
-                    >
-                      <Check size={14} />
-                    </Button>
-                    <Button
-                      className="compact-button"
-                      variant="minimal"
-                      aria-label={text("Reject classification")}
-                      disabled={busy}
-                      onClick={() => onRejectProposal(proposal.id)}
-                    >
-                      <X size={14} />
-                    </Button>
-                  </span>
-                ) : (
-                  <>
-                    <span className="num-tabular">
-                      {formatPct(holder.capitalPct, locale)} {text("cap.")} ·{" "}
-                      {formatPct(holder.votesPct, locale)} {text("votes")}
-                    </span>
-                    <Button
-                      className="compact-button"
-                      variant="minimal"
-                      aria-label={`${text("Change type")}: ${holder.name}`}
-                      disabled={busy}
-                      onClick={() => {
-                        setEditingHolder(holder.holderKey);
-                        setDraftType(holder.holderType ?? "other_institutional");
-                      }}
-                    >
-                      <Pencil size={13} />
-                    </Button>
-                  </>
-                )}
+                <span className="num-tabular">
+                  {formatPct(holder.capitalPct, locale)} {text("cap.")} ·{" "}
+                  {formatPct(holder.votesPct, locale)} {text("votes")}
+                </span>
+                <Button
+                  className="compact-button"
+                  variant="minimal"
+                  aria-label={`${text("Change type")}: ${holder.name}`}
+                  disabled={busy}
+                  onClick={() => {
+                    setEditingHolder(holder.holderKey);
+                    setDraftType(holder.holderType ?? "other_institutional");
+                  }}
+                >
+                  <Pencil size={13} />
+                </Button>
               </div>
               {isEditing ? (
                 <div className="ownership-retype">
@@ -497,109 +433,24 @@ export function OwnershipSection({
         </div>
       ) : null}
 
-      {/* Tier-4 OCR shareholder-table proposals awaiting review (ADR 0077 over
-          ADR 0072 decision 2a): a whole table read from a residual document's
-          OCR, ALWAYS confirm-before-apply — never auto-saved. */}
-      {data.ocrProposals.map((proposal) => (
-        <div
-          key={proposal.reportDocumentId}
-          className="ownership-ocr-proposal"
-          role="group"
-          aria-label={text("OCR shareholder table to review")}
-        >
-          <div className="ownership-ocr-proposal-head">
-            <StatusChip tone="warn">{text("OCR — confirm to save")}</StatusChip>
-            <span className="ownership-as-of">
-              {text("as of")} {proposal.asOf}
-              {proposal.sourceDocumentId !== proposal.reportDocumentId
-                ? ` · ${text("read from a companion PDF")}`
-                : ""}
+      {/* Residual warnbox: documents the deterministic parser could not read.
+          The tier-4 OCR pass is retired (ADR 0084 decision 4), so there is no
+          action to offer and no OCR lifecycle to report — the gap is stated
+          honestly and stays flagged until a deterministic tier can read it. */}
+      {data.residuals.length > 0 ? (
+        <div className="ownership-warnbox" role="status">
+          <p>
+            {text(
+              "Some report has an unreadable text layer (non-standard font), so its shareholder table could not be read. The gap is flagged here rather than guessed.",
+            )}
+          </p>
+          <div className="ownership-warnbox-action">
+            <span className="ownership-warnbox-count num-tabular">
+              {data.residuals.length} {pluralNoun(locale, data.residuals.length, REPORT_FORMS)}
             </span>
           </div>
-          <ul className="ownership-ocr-rows">
-            {proposal.holders.map((holder, index) => (
-              <li key={`${proposal.reportDocumentId}-${index}`} className="ownership-ocr-row">
-                <span className="ownership-holder-name">{holder.holderNameRaw}</span>
-                <span className="num-tabular">
-                  {formatPct(holder.capitalPct, locale)} {text("cap.")} ·{" "}
-                  {formatPct(holder.votesPct, locale)} {text("votes")}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="ownership-ocr-actions">
-            <Button
-              className="compact-button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => onConfirmOcrProposal(proposal.reportDocumentId)}
-            >
-              {text("Confirm and save")}
-            </Button>
-            <Button
-              className="compact-button"
-              variant="minimal"
-              disabled={busy}
-              onClick={() => onRejectOcrProposal(proposal.reportDocumentId)}
-            >
-              {text("Reject")}
-            </Button>
-          </div>
         </div>
-      ))}
-
-      {/* Residual warnbox: documents the deterministic parser could not read.
-          Its OCR result lands in the review surface above, never auto-saved. A
-          residual awaiting a run (or that OCR found no table for) offers the Run
-          OCR action; a rejected one is noted; while running, the state shows. */}
-      {(() => {
-        const runnable = data.residuals.filter(
-          (r) => r.ocrState !== "proposed" && r.ocrState !== "rejected",
-        );
-        const rejected = data.residuals.filter((r) => r.ocrState === "rejected");
-        const proposedCount = data.ocrProposals.length;
-        if (runnable.length === 0 && rejected.length === 0 && proposedCount === 0) return null;
-        const noTable = runnable.some((r) => r.ocrState === "no_table");
-        return (
-          <div className="ownership-warnbox" role="status">
-            <p>
-              {text(
-                "Some report has an unreadable text layer (non-standard font). Its shareholder table goes through OCR — the result lands here for review and is never saved automatically.",
-              )}
-            </p>
-            {runnable.length > 0 ? (
-              <div className="ownership-warnbox-action">
-                <Button
-                  className="compact-button"
-                  data-ux-primary-action="true"
-                  disabled={busy}
-                  onClick={onRunOcr}
-                >
-                  {busy
-                    ? text("Reading with OCR…")
-                    : noTable
-                      ? text("Retry OCR")
-                      : text("Read with OCR")}
-                </Button>
-                <span className="ownership-warnbox-count num-tabular">
-                  {runnable.length} {pluralNoun(locale, runnable.length, REPORT_FORMS)}
-                </span>
-              </div>
-            ) : null}
-            {noTable && !busy ? (
-              <span className="ownership-warnbox-note">
-                {text("OCR could not find a shareholder table in the last run.")}
-              </span>
-            ) : null}
-            {rejected.length > 0 ? (
-              <span className="ownership-warnbox-note">
-                {rejected.length} {pluralNoun(locale, rejected.length, REPORT_FORMS)}:{" "}
-                {text("OCR result rejected — not re-proposed.")}
-              </span>
-            ) : null}
-          </div>
-        );
-      })()}
+      ) : null}
 
       <Hint>{text("A manual type always wins — automation never overwrites it.")}</Hint>
     </>,

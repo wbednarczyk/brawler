@@ -58,7 +58,6 @@ pub struct ManagementClaim {
     )]
     pub source_evidence_type: String,
     pub source_evidence_id: Option<String>,
-    pub extraction_proposal_id: Option<String>,
     pub target_metric_key: Option<String>,
     #[cfg_attr(
         feature = "ts-export",
@@ -112,8 +111,6 @@ pub struct NewManagementClaim {
     pub source_evidence_type: Option<String>,
     #[serde(default)]
     pub source_evidence_id: Option<String>,
-    #[serde(default)]
-    pub extraction_proposal_id: Option<String>,
     #[serde(default)]
     pub target_metric_key: Option<String>,
     #[serde(default)]
@@ -294,9 +291,9 @@ pub(super) fn create_management_claim(
         INSERT INTO management_claims (
             id, company_id, statement, body, made_at, source_period_id,
             due_fiscal_year, due_period_type, status, source_evidence_type,
-            source_evidence_id, extraction_proposal_id, target_metric_key,
+            source_evidence_id, target_metric_key,
             target_comparator, target_value_numeric, target_unit
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
         ",
         params![
             id,
@@ -310,7 +307,6 @@ pub(super) fn create_management_claim(
             status,
             source_evidence_type,
             trimmed_option(input.source_evidence_id),
-            trimmed_option(input.extraction_proposal_id),
             trimmed_option(input.target_metric_key),
             target_comparator,
             trimmed_option(input.target_value_numeric),
@@ -449,7 +445,7 @@ pub(super) fn list_claims_to_verify(
         "
         SELECT id, company_id, statement, body, body_format, made_at, source_period_id,
                due_fiscal_year, due_period_type, status, source_evidence_type, source_evidence_id,
-               extraction_proposal_id, target_metric_key, target_comparator, target_value_numeric,
+               target_metric_key, target_comparator, target_value_numeric,
                target_unit, verifying_fact_id, revises_claim_id, created_at, updated_at
         FROM management_claims
         WHERE company_id = ?1
@@ -538,7 +534,7 @@ pub(super) fn delete_management_claim(
 const CLAIM_SELECT_BY_COMPANY: &str = "
     SELECT id, company_id, statement, body, body_format, made_at, source_period_id,
            due_fiscal_year, due_period_type, status, source_evidence_type, source_evidence_id,
-           extraction_proposal_id, target_metric_key, target_comparator, target_value_numeric,
+           target_metric_key, target_comparator, target_value_numeric,
            target_unit, verifying_fact_id, revises_claim_id, created_at, updated_at
     FROM management_claims
     WHERE company_id = ?1
@@ -548,7 +544,7 @@ const CLAIM_SELECT_BY_COMPANY: &str = "
 const CLAIM_SELECT_BY_ID: &str = "
     SELECT id, company_id, statement, body, body_format, made_at, source_period_id,
            due_fiscal_year, due_period_type, status, source_evidence_type, source_evidence_id,
-           extraction_proposal_id, target_metric_key, target_comparator, target_value_numeric,
+           target_metric_key, target_comparator, target_value_numeric,
            target_unit, verifying_fact_id, revises_claim_id, created_at, updated_at
     FROM management_claims
     WHERE id = ?1
@@ -568,15 +564,14 @@ fn claim_from_row(row: &Row<'_>) -> rusqlite::Result<ManagementClaim> {
         status: row.get(9)?,
         source_evidence_type: row.get(10)?,
         source_evidence_id: row.get(11)?,
-        extraction_proposal_id: row.get(12)?,
-        target_metric_key: row.get(13)?,
-        target_comparator: row.get(14)?,
-        target_value_numeric: row.get(15)?,
-        target_unit: row.get(16)?,
-        verifying_fact_id: row.get(17)?,
-        revises_claim_id: row.get(18)?,
-        created_at: row.get(19)?,
-        updated_at: row.get(20)?,
+        target_metric_key: row.get(12)?,
+        target_comparator: row.get(13)?,
+        target_value_numeric: row.get(14)?,
+        target_unit: row.get(15)?,
+        verifying_fact_id: row.get(16)?,
+        revises_claim_id: row.get(17)?,
+        created_at: row.get(18)?,
+        updated_at: row.get(19)?,
     })
 }
 

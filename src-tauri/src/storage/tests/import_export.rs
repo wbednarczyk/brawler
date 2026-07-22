@@ -73,7 +73,7 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
             body: Some("Use future reports to answer this.".to_owned()),
         })
         .expect("research question should create");
-    let link_target_note_id = note.id.clone();
+    let _link_target_note_id = note.id.clone();
     source
         .create_evidence_link(NewEvidenceLink {
             from_type: "research_question".to_owned(),
@@ -83,67 +83,21 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
             relation_type: "related".to_owned(),
         })
         .expect("question link should create");
-    let brief_job = source
-        .create_research_brief_job(NewResearchBriefJob {
-            scope_type: "company".to_owned(),
-            scope_id: cdr.id.clone(),
-            provider_id: "test_sample".to_owned(),
-            model: "test-sample-analysis-v1".to_owned(),
-        })
-        .expect("brief job should create");
-    source
-        .complete_research_brief_job(CompletedResearchBrief {
-            job_id: brief_job.id,
-            title: "CDR research brief".to_owned(),
-            summary: "Brief summary.".to_owned(),
-            content_markdown: "## What changed\n\nNotebook evidence changed. [E1]".to_owned(),
-            language: Some("en".to_owned()),
-            citations: vec![NewResearchBriefCitation {
-                citation_key: "E1".to_owned(),
-                evidence_type: "notebook_entry".to_owned(),
-                evidence_id: link_target_note_id,
-                label: "Management claim".to_owned(),
-                snippet: Some("Company expects release progress.".to_owned()),
-            }],
-        })
-        .expect("brief should complete");
+    // A deterministic research reminder (the reminder that used to ride the
+    // retired digest seed) so the round-trip still covers `research_reminders`.
     source
         .create_research_reminder(NewResearchReminder {
             scope_type: "company".to_owned(),
             scope_id: cdr.id.clone(),
             company_id: Some(cdr.id.clone()),
-            reminder_kind: "manual_research".to_owned(),
+            reminder_kind: "question_review".to_owned(),
             source_type: Some("research_question".to_owned()),
             source_id: Some(question.id.clone()),
             title: "Review research question".to_owned(),
-            body: Some("Use new evidence to answer the question.".to_owned()),
-            due_at: Some("2026-06-15T08:00:00Z".to_owned()),
+            body: None,
+            due_at: None,
         })
-        .expect("reminder should create");
-    let digest_job = source
-        .create_research_digest_job(NewResearchDigestJob {
-            scope_type: "company".to_owned(),
-            scope_id: cdr.id.clone(),
-            provider_id: "test_sample".to_owned(),
-            model: "test-sample-analysis-v1".to_owned(),
-        })
-        .expect("digest job should create");
-    source
-        .complete_research_digest_job(CompletedResearchDigest {
-            job_id: digest_job.id,
-            title: "CDR research digest".to_owned(),
-            summary: "Digest summary.".to_owned(),
-            content_markdown: "## Review\n\nQuestion needs follow-up. [E1]".to_owned(),
-            language: Some("en".to_owned()),
-            citations: vec![NewResearchBriefCitation {
-                citation_key: "E1".to_owned(),
-                evidence_type: "research_question".to_owned(),
-                evidence_id: question.id,
-                label: "Research question".to_owned(),
-                snippet: Some("Use future reports to answer this.".to_owned()),
-            }],
-        })
-        .expect("digest should complete");
+        .expect("research reminder should create");
 
     let export = source
         .export_research_data()
@@ -154,11 +108,7 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
     assert_eq!(export.summary.notebook_entries, 1);
     assert_eq!(export.summary.research_questions, 1);
     assert_eq!(export.summary.evidence_links, 1);
-    assert_eq!(export.summary.ai_research_briefs, 1);
-    assert_eq!(export.summary.ai_research_brief_citations, 1);
     assert_eq!(export.summary.research_reminders, 1);
-    assert_eq!(export.summary.ai_research_digests, 1);
-    assert_eq!(export.summary.ai_research_digest_citations, 1);
 
     let target = AppState::new(open_in_memory_database().expect("database should open"));
     let preview = target
@@ -171,11 +121,7 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
     assert_eq!(preview.summary.notebook_entries_created, 1);
     assert_eq!(preview.summary.research_questions_created, 1);
     assert_eq!(preview.summary.evidence_links_created, 1);
-    assert_eq!(preview.summary.ai_research_briefs_created, 1);
-    assert_eq!(preview.summary.ai_research_brief_citations_created, 1);
     assert_eq!(preview.summary.research_reminders_created, 1);
-    assert_eq!(preview.summary.ai_research_digests_created, 1);
-    assert_eq!(preview.summary.ai_research_digest_citations_created, 1);
 
     target
         .apply_research_import(&export.contents)
@@ -209,22 +155,6 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
         .expect("evidence links should list");
     assert_eq!(imported_links.len(), 1);
     assert_eq!(imported_links[0].relation_type, "related");
-    let imported_briefs = target
-        .list_research_brief_jobs(ResearchBriefScopeInput {
-            scope_type: "company".to_owned(),
-            scope_id: imported_companies[0].id.clone(),
-        })
-        .expect("research briefs should list");
-    assert_eq!(imported_briefs.len(), 1);
-    assert_eq!(
-        imported_briefs[0]
-            .brief
-            .as_ref()
-            .expect("brief should restore")
-            .citations
-            .len(),
-        1
-    );
     let imported_reminders = target
         .list_research_reminders(ResearchReminderListInput {
             scope_type: "company".to_owned(),
@@ -235,22 +165,6 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
     assert!(imported_reminders
         .iter()
         .any(|reminder| reminder.title == "Review research question"));
-    let imported_digests = target
-        .list_research_digest_jobs(ResearchDigestScopeInput {
-            scope_type: "company".to_owned(),
-            scope_id: imported_companies[0].id.clone(),
-        })
-        .expect("research digests should list");
-    assert_eq!(imported_digests.len(), 1);
-    assert_eq!(
-        imported_digests[0]
-            .digest
-            .as_ref()
-            .expect("digest should restore")
-            .citations
-            .len(),
-        1
-    );
 }
 
 #[test]

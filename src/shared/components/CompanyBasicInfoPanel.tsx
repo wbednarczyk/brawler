@@ -4,13 +4,7 @@ import { Pencil, X } from "lucide-react";
 import { getCompanyBasicInfo, type CompanyBasicInfo } from "../../api/companyBasicInfo";
 import {
   backfillOwnershipExtraction,
-  confirmOwnershipHolderTypeProposal,
-  confirmOwnershipOcrProposal,
   getOwnershipOverview,
-  rejectOwnershipHolderTypeProposal,
-  rejectOwnershipOcrProposal,
-  runCompanyOwnershipOcr,
-  runOwnershipClassification,
   setOwnershipHolderType,
   type OwnershipOverview,
 } from "../../api/ownership";
@@ -134,62 +128,6 @@ export function CompanyBasicInfoPanel({ companyId }: CompanyBasicInfoPanelProps)
     [companyId, runMutation],
   );
 
-  // ADR 0072 §3: the AI pass only ever produces proposals (confirm-before-apply);
-  // this explicit trigger keeps AI spend user-initiated.
-  const handleRunClassification = useCallback(() => {
-    setOwnershipBusy(true);
-    runOwnershipClassification()
-      .then((result) => {
-        toast.show({
-          message: `${text("Classification proposals ready:")} ${result.proposed}`,
-          tone: "positive",
-        });
-        return getOwnershipOverview(companyId);
-      })
-      .then(setOwnership)
-      .catch((cause) => setOwnershipError(String(cause)))
-      .finally(() => setOwnershipBusy(false));
-  }, [companyId, text, toast]);
-  const handleConfirmProposal = useCallback(
-    (proposalId: string) =>
-      runMutation(confirmOwnershipHolderTypeProposal(companyId, proposalId)),
-    [companyId, runMutation],
-  );
-  const handleRejectProposal = useCallback(
-    (proposalId: string) => runMutation(rejectOwnershipHolderTypeProposal(companyId, proposalId)),
-    [companyId, runMutation],
-  );
-
-  // Tier-4 OCR over the residual documents (T8, ADR 0077). The per-company run
-  // returns the refreshed overview so any new proposal renders in one round-trip;
-  // a no-vision-provider state comes back as a clean no-op (no new proposal), so
-  // surface that honestly rather than as an error.
-  const handleRunOcr = useCallback(() => {
-    setOwnershipBusy(true);
-    runCompanyOwnershipOcr(companyId)
-      .then((overview) => {
-        setOwnership(overview);
-        if (overview.ocrProposals.length === 0) {
-          toast.show({
-            message: text("No OCR provider configured, or OCR found no shareholder table."),
-            tone: "neutral",
-          });
-        }
-      })
-      .catch((cause) => setOwnershipError(String(cause)))
-      .finally(() => setOwnershipBusy(false));
-  }, [companyId, text, toast]);
-  const handleConfirmOcrProposal = useCallback(
-    (reportDocumentId: string) =>
-      runMutation(confirmOwnershipOcrProposal(companyId, reportDocumentId)),
-    [companyId, runMutation],
-  );
-  const handleRejectOcrProposal = useCallback(
-    (reportDocumentId: string) =>
-      runMutation(rejectOwnershipOcrProposal(companyId, reportDocumentId)),
-    [companyId, runMutation],
-  );
-
   const sectorSourceLabel =
     info?.sectorSource === "manual"
       ? text("manual override")
@@ -286,13 +224,7 @@ export function CompanyBasicInfoPanel({ companyId }: CompanyBasicInfoPanelProps)
         error={ownershipError}
         busy={ownershipBusy}
         onBackfill={handleBackfill}
-        onRunClassification={handleRunClassification}
         onSetHolderType={handleSetHolderType}
-        onConfirmProposal={handleConfirmProposal}
-        onRejectProposal={handleRejectProposal}
-        onRunOcr={handleRunOcr}
-        onConfirmOcrProposal={handleConfirmOcrProposal}
-        onRejectOcrProposal={handleRejectOcrProposal}
       />
       <InsiderBlock data={insider} error={insiderError} />
     </div>

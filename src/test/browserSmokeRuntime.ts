@@ -20,7 +20,6 @@ import type {
   KpiDefinition,
   KpiRelevance,
 } from "../api/financialsTypes";
-import type { KpiExtractionJob, KpiExtractionProposal } from "../api/kpiExtraction";
 import type { FactProvenance } from "../api/generated/FactProvenance";
 import type { ReportDocument } from "../api/reportDocumentsTypes";
 import type { AutopilotRun } from "../api/autopilot";
@@ -409,7 +408,6 @@ const settings: UserSettings = {
   developerMode: false,
   pollIntervalSeconds: 900,
   backfillYears: 3,
-  historySweepAiCallLimit: 30,
   settingsSource: "browser-smoke",
   settingsImportExportFormat: "yaml",
   yamlImportExportStatus: "accepted_deferred",
@@ -417,18 +415,11 @@ const settings: UserSettings = {
     youtubeTranscriptionProvider: "provider_gemini",
     youtubeTranscriptionModel: "gemini-2.5-flash",
     youtubeTranscriptionTimeoutSeconds: 300,
-    generalAnalysisProvider: "provider_gemini",
-    generalAnalysisModel: "gemini-2.5-flash",
-    generalAnalysisTimeoutSeconds: 90,
-    openaiCompatibleBaseUrl: "",
   },
-  aiAnalysisMode: "source_grounded",
-  espiAiFallbackEnabled: false,
   logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
   shortcutBindings: {},
-  capabilityProviders: {},
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
-  queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
+  queue: { sourcesWorkers: 2, autopilotWorkers: 3 },
   pinnedCompanyIds: [],
   mcp: { enabled: false, port: 8317 },
 };
@@ -536,6 +527,79 @@ const factProvenance: FactProvenance[] = [
   },
 ];
 
+// Flagged extraction outcomes (ADR 0061 decision 2, ADR 0084 decision 4/6) — the
+// Coverage panel's "Flagged periods" section. Three shapes on purpose, so the
+// browser preview + narrow-pane overflow assertion see every visual variant:
+// a validation failure WITH failing-check detail, a drift-flagged period (the
+// "Layout changed" chip), and the SENTINEL period of a `no_period_derived`
+// failure (fiscalYear 0 / empty periodType — renders as "Period unknown", never
+// as a real period). ORLEN has none, covering the reassuring empty state.
+const flaggedExtractionOutcomes: NonNullable<ScenarioData["flaggedExtractionOutcomes"]> = [
+  {
+    id: "outcome_cdr_2025_h1",
+    companyId: FUNDAMENTALS_COMPANY_ID,
+    reportDocumentId: "doc_cdr_h1_2025",
+    fiscalYear: 2025,
+    periodType: "H1",
+    periodEnd: "2025-06-30",
+    tier: "pdf",
+    acceptance: "flagged",
+    reasonCode: "validation_failed",
+    detailJson: JSON.stringify({
+      check: "aktywa = zobowiązania + kapitał własny",
+      expected: "12 480 100",
+      actual: "12 468 900",
+      residual: "11 200",
+    }),
+    driftJson: null,
+    structureChanged: false,
+    factCount: 0,
+    attemptCount: 2,
+    firstAttemptedAt: "2026-07-02T08:15:00Z",
+    lastAttemptedAt: "2026-07-14T09:30:00Z",
+  },
+  {
+    id: "outcome_cdr_2024_annual",
+    companyId: FUNDAMENTALS_COMPANY_ID,
+    reportDocumentId: "doc_cdr_annual_2024",
+    fiscalYear: 2024,
+    periodType: "annual",
+    periodEnd: "2024-12-31",
+    tier: "esef",
+    acceptance: "flagged",
+    reasonCode: "structure_drift",
+    detailJson: JSON.stringify({
+      added_labels: ["Zysk netto z działalności kontynuowanej"],
+      removed_labels: ["Zysk netto"],
+    }),
+    driftJson: JSON.stringify({ unit_changed: null }),
+    structureChanged: true,
+    factCount: 0,
+    attemptCount: 1,
+    firstAttemptedAt: "2026-07-10T11:00:00Z",
+    lastAttemptedAt: "2026-07-10T11:00:00Z",
+  },
+  {
+    id: "outcome_cdr_no_period",
+    companyId: FUNDAMENTALS_COMPANY_ID,
+    reportDocumentId: "doc_cdr_unclassified",
+    // SENTINEL period: a period-less failure has no slot key.
+    fiscalYear: 0,
+    periodType: "",
+    periodEnd: "",
+    tier: null,
+    acceptance: "flagged",
+    reasonCode: "no_period_derived",
+    detailJson: null,
+    driftJson: null,
+    structureChanged: false,
+    factCount: 0,
+    attemptCount: 1,
+    firstAttemptedAt: "2026-07-08T07:45:00Z",
+    lastAttemptedAt: "2026-07-08T07:45:00Z",
+  },
+];
+
 const kpiRelevance: KpiRelevance[] = [
   kpiRelevanceEntry("rel_revenue", "def_revenue", "primary"),
   kpiRelevanceEntry("rel_net_profit", "def_net_profit", "primary"),
@@ -597,47 +661,6 @@ const reportDocuments: ReportDocument[] = [
 const irReportsUrls: Record<string, string> = {
   [FUNDAMENTALS_COMPANY_ID]: "https://www.cdprojekt.com/en/investors/financial-reports/",
 };
-
-// Extraction jobs keyed by report-document id.
-const extractionJobs: Record<string, KpiExtractionJob[]> = {};
-
-function seedExtractionJob(reportDocumentId: string): KpiExtractionJob {
-  const jobId = `job_${reportDocumentId}`;
-  const job: KpiExtractionJob = {
-    id: jobId,
-    companyId: FUNDAMENTALS_COMPANY_ID,
-    reportDocumentId,
-    providerId: "provider_gemini",
-    model: "gemini-2.5-flash",
-    promptVersion: "kpi-extraction.v1",
-    periodHint: null,
-    status: "succeeded",
-    errorCode: null,
-    error: null,
-    detectedFiscalYear: 2025,
-    detectedPeriodType: "Q3",
-    detectedPeriodEndDate: "2025-09-30",
-    detectedCurrency: "PLN",
-    detectedLanguage: "pl",
-    createdAt: NOW,
-    startedAt: NOW,
-    finishedAt: NOW,
-    committedFactCount: 0,
-    proposals: [
-      proposal(jobId, "p_revenue", "revenue", "Revenue", "319700000", "319,7", "mln", "high", false,
-        "Przychody ze sprzedaży wyniosły 319,7 mln zł w III kwartale 2025 r."),
-      proposal(jobId, "p_net_profit", "net_profit", "Net profit", "112400000", "112,4", "mln", "high", false,
-        "Zysk netto grupy kapitałowej wyniósł 112,4 mln zł."),
-      proposal(jobId, "p_ebitda", "ebitda", "EBITDA", "168200000", "168,2", "mln", "medium", false,
-        "EBITDA na poziomie 168,2 mln zł."),
-      proposal(jobId, "p_backlog", "backlog", "Wishlist additions", "2400000", "2,4", "mln", "medium", true,
-        "Liczba dodań do listy życzeń wyniosła 2,4 mln."),
-    ],
-  };
-  extractionJobs[reportDocumentId] = [job];
-  return job;
-}
-
 
 function company(id: string, exchange: string, ticker: string, displayName: string, isin: string): Company {
   return {
@@ -836,38 +859,6 @@ function reportDocument(
   };
 }
 
-function proposal(
-  jobId: string,
-  id: string,
-  metricKey: string,
-  label: string,
-  valueNumeric: string,
-  asReportedValue: string,
-  asReportedScale: string,
-  confidence: string,
-  isProposedKpi: boolean,
-  sourceSnippet: string,
-): KpiExtractionProposal {
-  return {
-    id,
-    jobId,
-    metricKey,
-    label,
-    valueNumeric,
-    unit: metricKey === "eps" ? "PLN" : null,
-    currency: "PLN",
-    asReportedValue,
-    asReportedScale,
-    measureWindow: "period",
-    confidence,
-    sourceSnippet,
-    isProposedKpi,
-    status: "pending",
-    factId: null,
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Adapter onto the canonical mock runtime (ADR 0048 Keystone B/C, Radicle 749a5a8)
@@ -907,23 +898,20 @@ function seedBrowserStore(data: ScenarioData) {
   data.financialPeriods = structuredClone(financialPeriods);
   data.financialFacts = structuredClone(financialFacts);
   data.factProvenance = structuredClone(factProvenance);
+  data.flaggedExtractionOutcomes = structuredClone(flaggedExtractionOutcomes);
   data.kpiRelevance = structuredClone(kpiRelevance);
   data.reportDocuments = structuredClone(reportDocuments);
   data.autopilotRuns = structuredClone(autopilotRuns);
-  data.kpiExtractionJobs = [structuredClone(seedExtractionJob("doc_cdr_q3_2025"))];
   data.shortPositions = structuredClone(shortPositions);
   data.shortPositionEvents = structuredClone(shortPositionEvents);
   data.redFlagsByCompany = structuredClone(redFlagsByCompany);
   data.analystRecommendationsByCompany = structuredClone(analystRecommendationsByCompany);
   data.irResolutions = [
     {
-      document: null,
       candidates: [
         { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_Q3_2025.pdf", label: "Q3 2025 consolidated report" },
         { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_H1_2025.pdf", label: "H1 2025 report" },
       ],
-      pickedUrl: null,
-      confidence: "low",
     },
   ];
   data.transcriptJobs = [];
