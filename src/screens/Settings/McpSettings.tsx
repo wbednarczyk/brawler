@@ -10,12 +10,21 @@ import {
   type McpStatus,
 } from "../../api/mcp";
 import type { CredentialStatus, UserSettings } from "../../api/types";
-import { ActionRow, Button, ErrorText, Hint, InlineConfirm, StatusPill, TextField } from "../../ui";
+import {
+  ActionRow,
+  Button,
+  ErrorText,
+  Hint,
+  InlineConfirm,
+  StatusPill,
+  TextField,
+} from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 export type McpSettingsProps = {
   settings: UserSettings | null;
   onMcpPortChange: (port: number) => void;
+  onMcpWritesEnabledChange: (enabled: boolean) => void;
 };
 
 const MIN_PORT = 1024;
@@ -36,9 +45,14 @@ function clampPort(value: number): number {
  * in transient component state (`revealedToken`); leaving the section unmounts
  * the component and drops it (ADR 0078 G-3 — never persisted beyond the reveal).
  */
-export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
+export function McpSettings({
+  settings,
+  onMcpPortChange,
+  onMcpWritesEnabledChange,
+}: McpSettingsProps) {
   const { text } = useLocale();
   const configuredPort = settings?.mcp.port ?? DEFAULT_PORT;
+  const writesEnabled = settings?.mcp.writesEnabled ?? false;
 
   const [tokenStatus, setTokenStatus] = useState<CredentialStatus | null>(null);
   const [serverStatus, setServerStatus] = useState<McpStatus | null>(null);
@@ -87,7 +101,8 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
 
   function commitPort() {
     const parsed = Number.parseInt(portDraft, 10);
-    const outOfRange = !Number.isInteger(parsed) || parsed < MIN_PORT || parsed > MAX_PORT;
+    const outOfRange =
+      !Number.isInteger(parsed) || parsed < MIN_PORT || parsed > MAX_PORT;
     setPortHint(outOfRange);
     const clamped = clampPort(parsed);
     setPortDraft(String(clamped));
@@ -156,7 +171,9 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
           <span aria-hidden="true" className="settings-toggle-track">
             <span />
           </span>
-          <span className="settings-toggle-label">{text("Enable the server")}</span>
+          <span className="settings-toggle-label">
+            {text("Enable the server")}
+          </span>
         </label>
         <span className="mcp-status" aria-label={text("Server status")}>
           <StatusPill tone={running ? "ok" : "neutral"}>
@@ -165,6 +182,37 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
         </span>
       </div>
       {serverStatus?.error ? <ErrorText>{serverStatus.error}</ErrorText> : null}
+
+      {/* Write tier — off by default; the only path to enable agent writes.
+          `update_settings` is MCP-excluded, so an assistant can never flip this
+          itself (ADR 0088 M3). */}
+      <div className="mcp-enable-row">
+        <label className="settings-toggle">
+          <input
+            aria-label={text("Allow write tools")}
+            checked={writesEnabled}
+            onChange={(event) => onMcpWritesEnabledChange(event.target.checked)}
+            role="switch"
+            type="checkbox"
+          />
+          <span aria-hidden="true" className="settings-toggle-track">
+            <span />
+          </span>
+          <span className="settings-toggle-label">
+            {text("Allow write tools")}
+          </span>
+        </label>
+        <span className="mcp-status">
+          <StatusPill tone={writesEnabled ? "warn" : "neutral"}>
+            {writesEnabled ? text("Writes on") : text("Read-only")}
+          </StatusPill>
+        </span>
+      </div>
+      <Hint>
+        {text(
+          "Write tools require citations; deletes and settings stay UI-only. Off by default — an assistant can never turn this on itself.",
+        )}
+      </Hint>
 
       {/* Listen port — committed on blur, clamped to [1024, 65535] */}
       <div className="mcp-port-field">
@@ -188,8 +236,14 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
           {text("Reset to default port")}
         </Button>
       </div>
-      {portHint ? <Hint>{text("Port must be a whole number between 1024 and 65535.")}</Hint> : null}
-      <Hint>{text("The new port applies the next time the server starts.")}</Hint>
+      {portHint ? (
+        <Hint>
+          {text("Port must be a whole number between 1024 and 65535.")}
+        </Hint>
+      ) : null}
+      <Hint>
+        {text("The new port applies the next time the server starts.")}
+      </Hint>
 
       {/* Access token */}
       <h3>{text("Access token")}</h3>
@@ -207,7 +261,11 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
             readOnly
             value={revealedToken}
           />
-          <Button aria-label={text("Copy token")} onClick={() => copy(revealedToken)} variant="action">
+          <Button
+            aria-label={text("Copy token")}
+            onClick={() => copy(revealedToken)}
+            variant="action"
+          >
             <Copy size={14} />
             {copied ? text("Copied") : text("Copy token")}
           </Button>
@@ -225,7 +283,11 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
           {configured ? text("Regenerate token") : text("Generate token")}
         </Button>
         {configured && !confirmingRevoke ? (
-          <Button disabled={busy} onClick={() => setConfirmingRevoke(true)} variant="ghost">
+          <Button
+            disabled={busy}
+            onClick={() => setConfirmingRevoke(true)}
+            variant="ghost"
+          >
             <Trash2 size={14} />
             {text("Revoke token")}
           </Button>
@@ -238,13 +300,17 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
           onCancel={() => setConfirmingRevoke(false)}
           onConfirm={revoke}
         >
-          {text("Revoke this token? Any assistant using it stops working until you generate a new one.")}
+          {text(
+            "Revoke this token? Any assistant using it stops working until you generate a new one.",
+          )}
         </InlineConfirm>
       ) : null}
 
       {tokenStatus?.devFallbackAvailable ? (
         <p className="settings-note">
-          {text("Development fallback is active through environment configuration.")}
+          {text(
+            "Development fallback is active through environment configuration.",
+          )}
         </p>
       ) : null}
 
@@ -255,12 +321,20 @@ export function McpSettings({ settings, onMcpPortChange }: McpSettingsProps) {
           "Add the server in Claude running on the same machine as this app (Windows). From WSL it works only with mirrored networking.",
         )}
       </Hint>
-      <Hint>{text("Example — check the exact command for your assistant's version.")}</Hint>
-      {!revealedToken ? <Hint>{text("Paste the token where <token> appears.")}</Hint> : null}
+      <Hint>
+        {text(
+          "Example — check the exact command for your assistant's version.",
+        )}
+      </Hint>
+      {!revealedToken ? (
+        <Hint>{text("Paste the token where <token> appears.")}</Hint>
+      ) : null}
 
       <div className="mcp-snippet-block">
         <div className="mcp-snippet-head">
-          <span className="mcp-snippet-label">{text("Claude Code (HTTP)")}</span>
+          <span className="mcp-snippet-label">
+            {text("Claude Code (HTTP)")}
+          </span>
           <Button
             aria-label={`${text("Copy")} — ${text("Claude Code (HTTP)")}`}
             className="compact-button"

@@ -256,7 +256,9 @@ fn doc_ref(
 
 /// Group a company's financial statements by type, order each group
 /// chronologically, and pair each statement with its immediate predecessor.
-fn build_candidates(
+/// `pub(crate)` so the MCP read-wave binds to this pure helper rather than the
+/// Tauri command wrapper (ADR 0088 dec. 2, ADR 0039).
+pub(crate) fn build_candidates(
     state: &app_state::AppState,
     documents: Vec<ReportDocument>,
 ) -> Result<Vec<ReportDiffCandidate>, String> {
@@ -360,7 +362,8 @@ fn load_sections(state: &app_state::AppState, document_id: &str) -> Result<Vec<S
         .collect())
 }
 
-fn build_diff(
+/// `pub(crate)` so the MCP read-wave binds to this pure helper (ADR 0088 dec. 2).
+pub(crate) fn build_diff(
     state: &app_state::AppState,
     input: &GetReportDiffInput,
 ) -> Result<ReportDiffResult, String> {

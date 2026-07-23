@@ -19,7 +19,10 @@
 //! pieces. **Read-only guarantee:** tools call read paths only; adding any
 //! mutating tool requires a new ADR (ADR 0078 G-2 tripwire).
 
+pub mod acts;
 pub mod lifecycle;
 pub mod protocol;
+pub mod reads;
+pub mod registry;
 pub mod server;
 pub mod tools;

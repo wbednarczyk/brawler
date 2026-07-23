@@ -32,7 +32,7 @@ pub struct Company {
     pub lei: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -79,7 +79,7 @@ pub struct WatchlistMembership {
     pub company_id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -112,7 +112,7 @@ pub struct WatchlistUpdate {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -168,7 +168,7 @@ pub struct FeedItemAttachment {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -359,7 +359,7 @@ pub struct ResearchEvidenceReviewState {
     pub changed_since_watchlist_review: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -401,7 +401,7 @@ pub struct ResearchReviewCheckpoint {
     pub updated_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -482,7 +482,7 @@ pub struct ResearchQuestionListInput {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -504,7 +504,7 @@ pub struct NewResearchQuestion {
     pub body: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -609,7 +609,7 @@ pub struct NotebookOrigin {
     pub created_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -635,7 +635,7 @@ pub struct NewNotebookEntry {
     pub origins: Vec<NewNotebookOrigin>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -658,7 +658,7 @@ pub struct NotebookEntryUpdate {
     pub follow_up_date: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -862,7 +862,7 @@ pub struct CompanySignal {
     pub category: String,
     pub category_display_name: String,
     pub confidence: f64,
-    #[cfg_attr(feature = "ts-export", ts(type = "\"rule\" | \"ai\""))]
+    #[cfg_attr(feature = "ts-export", ts(type = "\"rule\" | \"ai\" | \"agent\""))]
     pub classified_by: String,
     #[cfg_attr(feature = "ts-export", ts(type = "\"confirmed\" | \"proposed\""))]
     pub status: String,
@@ -894,7 +894,7 @@ pub struct CompanySignalListInput {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanySignalActionInput {
     pub id: String,
@@ -907,9 +907,12 @@ pub struct SignalCategorySummary {
     pub display_name: String,
 }
 
-/// An official-report filing that has no signal yet — a candidate for the AI
-/// fallback. `body_text` may be empty when only the title is available.
-#[derive(Debug, Clone)]
+/// An official-report filing that has no `company_signals` row — the explicit
+/// unclassified bucket surfaced by the MCP triage tool (ADR 0088 dec. 4). The
+/// deterministic ESPI rule classifier could not place it; it is never guessed
+/// at. `body_text` may be empty when only the title is available.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UnclassifiedFiling {
     pub feed_item_id: String,
     pub company_id: String,
@@ -931,7 +934,7 @@ pub struct ProposedSignalInput {
     pub model_id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",

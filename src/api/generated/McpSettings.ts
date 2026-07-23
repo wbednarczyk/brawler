@@ -10,4 +10,13 @@ export type McpSettings = { enabled: boolean,
 /**
  * Listen port; clamped to `[1024, 65535]`, default `8317`.
  */
-port: number, };
+port: number, 
+/**
+ * Whether the MCP `act` (write) tier is enabled (ADR 0088 M3). Default
+ * `false`: the read wave is always available when the server is on, but
+ * write tools stay gated behind this toggle and reject calls with a typed
+ * `writes_disabled` error until the user opts in. Deliberately absent from
+ * the MCP surface (`update_settings` is `Excluded`), so a connected agent
+ * can never enable its own writes.
+ */
+writesEnabled: boolean, };

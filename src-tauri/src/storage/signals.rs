@@ -751,6 +751,214 @@ fn company_signal_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CompanyS
     })
 }
 
+// ============================================================================
+// Unclassified-filings triage (ADR 0088 dec. 4)
+// ============================================================================
+
+/// The `feed_items.type` value the ESPI/EBI adapters stamp on official reports —
+/// the real predicate the classifier consumes (mirrored by the short-position
+/// and analyst-recommendation signal writers, `FEED_ITEM_TYPE`). The unclassified
+/// bucket is official filings only; media items never appear.
+const OFFICIAL_REPORT_FEED_TYPE: &str = "Official report";
+
+/// Max page size for the unclassified-filings triage read (the default is
+/// applied at the command boundary).
+const MAX_UNCLASSIFIED_LIMIT: i64 = 200;
+
+/// List official-report feed items matched to a company that have NO
+/// `company_signals` row — the explicit unclassified bucket (ADR 0088 dec. 4).
+/// Absence of a signal is the definition (`classify_and_store_signal` inserts
+/// nothing on an unknown filing); media items are excluded by the official-report
+/// predicate. Newest first; `limit` is clamped to `1..=200`.
+pub(super) fn list_unclassified_filings(
+    connection: &Connection,
+    company_id: Option<&str>,
+    limit: i64,
+) -> StorageResult<Vec<UnclassifiedFiling>> {
+    let bounded = limit.clamp(1, MAX_UNCLASSIFIED_LIMIT);
+    let mut sql = String::from(
+        "
+        SELECT
+            feed_items.id,
+            feed_item_companies.company_id,
+            feed_items.title,
+            COALESCE(feed_items.body_text, ''),
+            feed_items.published_at
+        FROM feed_items
+        JOIN feed_item_companies ON feed_item_companies.feed_item_id = feed_items.id
+        WHERE feed_items.type = ?1
+          AND NOT EXISTS (
+              SELECT 1 FROM company_signals
+              WHERE company_signals.feed_item_id = feed_items.id
+          )
+        ",
+    );
+    if company_id.is_some() {
+        sql.push_str("  AND feed_item_companies.company_id = ?3\n");
+    }
+    sql.push_str(
+        "        ORDER BY COALESCE(feed_items.published_at, feed_items.fetched_at) DESC,\n\
+         \x20                feed_items.id DESC\n        LIMIT ?2",
+    );
+
+    let map_row = |row: &rusqlite::Row<'_>| {
+        Ok(UnclassifiedFiling {
+            feed_item_id: row.get(0)?,
+            company_id: row.get(1)?,
+            title: row.get(2)?,
+            body_text: row.get(3)?,
+            signal_date: row.get(4)?,
+        })
+    };
+    let mut statement = connection.prepare(&sql)?;
+    let rows = match company_id {
+        Some(company) => statement.query_map(
+            params![OFFICIAL_REPORT_FEED_TYPE, bounded, company],
+            map_row,
+        )?,
+        None => statement.query_map(params![OFFICIAL_REPORT_FEED_TYPE, bounded], map_row)?,
+    };
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+/// Outcome of an agent-driven [`classify_filing`] (ADR 0088 dec. 4). Every reject
+/// is an explicit variant the command layer maps to a typed error; the filing is
+/// classified only when all preconditions hold — it is never guessed at.
+#[derive(Debug)]
+pub enum ClassifyFilingOutcome {
+    /// A `confirmed` signal was created; carries the stored row (boxed — it
+    /// dwarfs the unit reject variants).
+    Created(Box<CompanySignal>),
+    /// The category is not part of the seeded `signal_categories` taxonomy.
+    UnknownCategory,
+    /// No feed item with that id exists.
+    FeedItemNotFound,
+    /// The feed item exists but is not an official filing (e.g. media).
+    NotAnOfficialFiling,
+    /// The official filing is matched to no company (a signal needs a company).
+    NotMatchedToCompany,
+    /// A signal already exists for this filing — it is not in the bucket.
+    AlreadyClassified,
+}
+
+/// Agent-driven classification of one unclassified official filing (ADR 0088
+/// dec. 4). Validates the category against the seeded taxonomy, that the filing
+/// is an official report matched to a company, and that no signal exists for it
+/// yet; then writes a `confirmed` signal anchored to the feed item as evidence.
+/// Provenance is honest (ADR 0088 dec. 4): `classified_by = 'agent'` — an
+/// agent-authored classification is never labelled `rule` (the deterministic
+/// classifier). `status = 'confirmed'` and `confidence = 1.0` (the agent asserts
+/// the category). A failed precondition returns the matching
+/// [`ClassifyFilingOutcome`] and writes nothing.
+pub(super) fn classify_filing(
+    connection: &Connection,
+    feed_item_id: &str,
+    category: &str,
+) -> StorageResult<ClassifyFilingOutcome> {
+    // 1. The category must be part of the seeded taxonomy.
+    let known_category = connection
+        .query_row(
+            "SELECT 1 FROM signal_categories WHERE key = ?1",
+            [category],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !known_category {
+        return Ok(ClassifyFilingOutcome::UnknownCategory);
+    }
+
+    // 2. The feed item must exist and be an official filing.
+    let item_type: Option<String> = connection
+        .query_row(
+            "SELECT type FROM feed_items WHERE id = ?1",
+            [feed_item_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(item_type) = item_type else {
+        return Ok(ClassifyFilingOutcome::FeedItemNotFound);
+    };
+    if item_type != OFFICIAL_REPORT_FEED_TYPE {
+        return Ok(ClassifyFilingOutcome::NotAnOfficialFiling);
+    }
+
+    // 3. No signal may already exist for this filing (the bucket is absence).
+    let already_classified = connection
+        .query_row(
+            "SELECT 1 FROM company_signals WHERE feed_item_id = ?1 LIMIT 1",
+            [feed_item_id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if already_classified {
+        return Ok(ClassifyFilingOutcome::AlreadyClassified);
+    }
+
+    // 4. The filing must be matched to a company to anchor the signal.
+    let matched: Option<(String, Option<String>)> = connection
+        .query_row(
+            "
+            SELECT feed_item_companies.company_id, feed_items.published_at
+            FROM feed_items
+            JOIN feed_item_companies ON feed_item_companies.feed_item_id = feed_items.id
+            WHERE feed_items.id = ?1
+            LIMIT 1
+            ",
+            [feed_item_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((company_id, published_at)) = matched else {
+        return Ok(ClassifyFilingOutcome::NotMatchedToCompany);
+    };
+
+    // 5. Write the confirmed signal (the feed item is the evidence anchor).
+    let id = signal_id(feed_item_id, category);
+    let normalized_date = published_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(10).collect::<String>());
+    connection.execute(
+        "
+        INSERT INTO company_signals (
+            id, company_id, feed_item_id, category, confidence,
+            classified_by, status, signal_date
+        )
+        VALUES (?1, ?2, ?3, ?4, 1.0, 'agent', 'confirmed', ?5)
+        ",
+        params![id, company_id, feed_item_id, category, normalized_date],
+    )?;
+
+    // Post-insert hooks mirror the deterministic classifier: fire matching alert
+    // rules (freshness-gated) and refresh derived reminders/events. Best-effort —
+    // a hook failure never rolls back the stored signal.
+    if !super::attention::signal_is_stale(normalized_date.as_deref()) {
+        if let Err(error) = super::attention::evaluate_signal_rules(
+            connection,
+            &company_id,
+            category,
+            &id,
+            normalized_date.as_deref(),
+        ) {
+            log::warn!("module=signals stage=classify_filing_eval signalId={id} error={error}");
+        }
+    }
+    if let Err(error) = ensure_high_signal_reminders(connection) {
+        log::warn!("module=signals stage=classify_filing_reminders error={error}");
+    }
+    if let Err(error) = ensure_derived_events(connection) {
+        log::warn!("module=signals stage=classify_filing_derive error={error}");
+    }
+
+    Ok(ClassifyFilingOutcome::Created(Box::new(
+        get_company_signal(connection, &id)?,
+    )))
+}
+
 use super::database::Database;
 /// signals domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
 /// exposes only this domain's operations. Reach it via `AppState::signals()`.
@@ -814,5 +1022,28 @@ impl SignalStore {
         let connection = self.db.checkout()?;
 
         derive_event_from_extracted_date(&connection, signal_id, event_date)
+    }
+
+    /// The unclassified-filings triage bucket (ADR 0088 dec. 4).
+    pub fn list_unclassified_filings(
+        &self,
+        company_id: Option<&str>,
+        limit: i64,
+    ) -> StorageResult<Vec<UnclassifiedFiling>> {
+        let connection = self.db.checkout()?;
+
+        list_unclassified_filings(&connection, company_id, limit)
+    }
+
+    /// Agent-driven classification of one unclassified official filing (ADR 0088
+    /// dec. 4). Returns the precondition outcome; only `Created` wrote a signal.
+    pub fn classify_filing(
+        &self,
+        feed_item_id: &str,
+        category: &str,
+    ) -> StorageResult<ClassifyFilingOutcome> {
+        let connection = self.db.checkout()?;
+
+        classify_filing(&connection, feed_item_id, category)
     }
 }

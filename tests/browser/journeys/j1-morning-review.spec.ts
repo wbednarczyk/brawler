@@ -41,20 +41,27 @@ async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> 
   }, spec);
 }
 
-// J1 — Morning review (docs/ux-journeys.md, ADR 0074). Trigger: opening the app
-// at the start of the day. The cross-screen path: land on Today/Pulse → read the
-// morning briefing (v0.54) → triage the attention stream (filter by a counter
-// tile) → open the 1–2 items that matter into their company workspace → back to
-// Today. Interactions are driven through the journey() wrapper so the step count
-// is measured against the budget.
+// J1 — Morning review (docs/ux-journeys.md, ADR 0074/0087). Trigger: opening the
+// app at the start of the day with ~10 overnight items. The redesigned Today
+// (ADR 0087) leads with a grouped, severity-ranked stream: `urgent` rows first,
+// same-company repeats collapse into ×N groups, and >3 same-category routine rows
+// fold into one cross-company aggregate. The full review — scan the briefing,
+// open both urgent items into their workspace, review one member of a group — must
+// fit the ≤15-interaction J1 budget (experience contract §8, budgets.json ratchet).
 //
 // The morning-briefing read (v0.54, ADR 0068 T5) is a PASSIVE scan at the top of
-// Today — the card renders unconditionally, so it is asserted as a screen fixture
-// (visible, above the attention stream) rather than a counted interaction; the
-// interactions floor is unchanged by it.
+// Today — the strip renders unconditionally, so it is asserted as a screen fixture
+// (visible, above the attention stream) rather than a counted interaction.
+//
+// The seed is the `morning-review` overlay (src/test/scenarios/overlays.ts): 10
+// new items — 2 urgent (an insider transaction + a missed-report reconciliation),
+// a 2-member notable group (same company, repeats that collapse), and 6 routine
+// autopilot runs across distinct companies (the aggregate).
 
 test.describe("J1 — morning review", { tag: "@journey" }, () => {
-  test("triage the attention stream and open what matters", async ({ page }) => {
+  test("urgent leads, repeats group, and the full review fits the budget", async ({ page }) => {
+    await primeMockScenario(page, { base: "rich", overlays: ["morning-review"] });
+
     const j = journey(page, "J1");
     await openApp(page);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
@@ -65,69 +72,66 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await expectNoA11yViolations(page, "Today (morning review)");
     await expectNoPageOverflow(page);
 
-    // Step 1 (v0.54): read the morning briefing at the TOP of Today, before
-    // triaging. It is the entry summary of "what changed" — asserted as a
-    // fixture (renders unconditionally, positioned above the attention stream),
-    // never a counted interaction.
-    const briefingHeading = page.getByRole("heading", { name: "Morning briefing" });
-    const streamRegion = page.getByLabel("Attention stream");
-    await expect(briefingHeading).toBeVisible();
-    const briefingBox = await briefingHeading.boundingBox();
-    const streamBox = await streamRegion.boundingBox();
+    // Scan the morning-briefing strip at the TOP of Today, before triaging. It is
+    // the entry summary of "what changed" — asserted as a fixture (renders
+    // unconditionally as a labelled region, above the stream), never a counted
+    // interaction (ADR 0087 dec. 5 mockup amendment: the strip replaced the card).
+    const briefingStrip = page.getByRole("region", { name: "Morning briefing" });
+    const stream = page.getByLabel("Attention stream");
+    await expect(briefingStrip).toBeVisible();
+    const briefingBox = await briefingStrip.boundingBox();
+    const streamBox = await stream.boundingBox();
     expect(briefingBox).not.toBeNull();
     expect(streamBox).not.toBeNull();
-    // The briefing sits above the stream — the read precedes the triage.
     expect(briefingBox!.y).toBeLessThan(streamBox!.y);
 
-    const autopilotRows = page.locator('li[data-category="autopilot"]');
-    const changedRows = page.locator('li[data-category="changed"]');
-    await expect(autopilotRows.first()).toBeVisible();
-    expect(await changedRows.count()).toBeGreaterThan(0);
+    // (a) Urgent rows lead: the two overnight urgent alerts (insider + missed-
+    // report reconciliation) sit at the very top of the stream, above every
+    // notable/routine row. Wait for both to land first.
+    const insiderRow = stream.locator('li[data-category="attention"]').filter({ hasText: "GPW:PKN" });
+    const reconRow = stream.locator('li[data-category="attention"]').filter({ hasText: "GPW:KGH" });
+    await expect(insiderRow).toBeVisible();
+    await expect(reconRow).toBeVisible();
+    const severities = await stream.locator("li[data-category]").evaluateAll((rows) =>
+      rows.map((row) => (row as HTMLElement).dataset.severity ?? "routine"),
+    );
+    const rank = { urgent: 0, notable: 1, routine: 2 } as const;
+    const ranks = severities.map((s) => rank[s as keyof typeof rank]);
+    // Severity is monotonic non-decreasing down the stream, and the top rows are urgent.
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    expect(ranks[0]).toBe(0);
+    expect(severities.filter((s) => s === "urgent").length).toBeGreaterThanOrEqual(2);
 
-    // Triage: the Autopilot counter filters the stream to just those items.
-    const autopilotTile = page
-      .getByRole("group", { name: "Filter the stream" })
-      .getByRole("button", { name: /Autopilot/ });
-    await j.click(autopilotTile);
-    await expect(autopilotTile).toHaveAttribute("aria-pressed", "true");
-    await expect(changedRows).toHaveCount(0);
+    // (b) Grouped + aggregate rows render with ×N: a same-company notable group
+    // (×2) and a cross-company routine aggregate ("×N companies").
+    const groupChips = stream.locator(".today-group-chip");
+    const groupChipTexts = await groupChips.allInnerTexts();
+    // The 2-member group chip leads with "×2" (D7 appends the pluralized unit,
+    // "×2 events" in en); the cross-company aggregate chip is "×N companies".
+    expect(groupChipTexts.some((t) => t.trim().startsWith("×2"))).toBe(true);
+    expect(groupChipTexts.some((t) => /^×\d+\s+\S+/.test(t.trim()))).toBe(true);
 
-    // Restore the full stream to scan everything that arrived. The filter is
-    // reset (not preserved) here on purpose — the interesting context to
-    // protect is that it stays unfiltered across the round trips below.
-    await j.click(autopilotTile);
-    await expect(autopilotTile).toHaveAttribute("aria-pressed", "false");
-    expect(await changedRows.count()).toBeGreaterThan(0);
-    await j.preserveContext("today-filter:none");
-
-    // Open the first item that matters (an autopilot run) into its workspace —
-    // the experience contract's single primary action for this decision
-    // surface, driven through clickPrimary so a future regression that
-    // requires scrolling before it's reachable shows up in the review.
-    // ADR 0081 Q4: each row is its own scoped decision surface — it must
-    // carry exactly one explicit primary action, reachable before any scroll.
-    const stream = page.getByLabel("Attention stream");
-    const firstAutopilotAction = autopilotRows.first().getByRole("button", { name: "Review" });
-    await expectPrimaryActionCount(autopilotRows.first(), { max: 1 });
-    await expectActionBeforeScroll(firstAutopilotAction, stream);
-    await j.clickPrimary(stream, firstAutopilotAction);
+    // (c) Open the first urgent item (insider transaction) into its workspace —
+    // the experience contract's single primary action per row, reachable before
+    // any scroll (ADR 0081 Q4).
+    const insiderAction = insiderRow.getByRole("button", { name: "Review" });
+    await expectPrimaryActionCount(insiderRow, { max: 1 });
+    await expectActionBeforeScroll(insiderAction, stream);
+    await j.clickPrimary(stream, insiderAction);
     await expect(page.getByLabel("Research cockpit")).toBeVisible();
     await j.markScreen("Company workspace");
     await expectNoPageOverflow(page);
 
-    // Back to Today — the filter context (still unfiltered) must have
-    // survived the round trip, not silently reset.
+    // Back to Today.
     await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await j.markScreen("Today");
-    await expect(autopilotTile).toHaveAttribute("aria-pressed", "false");
-    await j.preserveContext("today-filter:none");
 
-    // Open the second item that matters (a "what changed" report) then return.
-    const changedAction = changedRows.first().getByRole("button", { name: "Review" });
-    await expectPrimaryActionCount(changedRows.first(), { max: 1 });
-    await expectActionBeforeScroll(changedAction, stream);
-    await j.clickPrimary(stream, changedAction);
+    // Open the second urgent item (the missed-report reconciliation), then return.
+    const reconAction = reconRow.getByRole("button", { name: "Review" });
+    await expectPrimaryActionCount(reconRow, { max: 1 });
+    await expectActionBeforeScroll(reconAction, stream);
+    await j.clickPrimary(stream, reconAction);
     await expect(page.getByLabel("Research cockpit")).toBeVisible();
     await j.markScreen("Company workspace");
     await expectNoPageOverflow(page);
@@ -135,8 +139,18 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await j.markScreen("Today");
-    await expect(autopilotTile).toHaveAttribute("aria-pressed", "false");
-    await j.preserveContext("today-filter:none");
+
+    // Review one member of the grouped (×2) row: expand it in place, then open a
+    // member into its workspace. The group is PZU's 2 same-category notable rows.
+    const groupRow = stream.locator('li[data-category="attention"]').filter({ hasText: "GPW:PZU" });
+    await expect(groupRow).toBeVisible();
+    await j.click(groupRow.getByRole("button", { name: "Details" }));
+    const memberAction = groupRow.locator('[data-member-category="attention"]').first().getByRole("button", { name: "Review" });
+    await expect(memberAction).toBeVisible();
+    await j.clickPrimary(stream, memberAction);
+    await expect(page.getByLabel("Research cockpit")).toBeVisible();
+    await j.markScreen("Company workspace");
+    await expectNoPageOverflow(page);
 
     await j.assertBudget();
   });
@@ -153,21 +167,37 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await expectNoPageOverflow(page);
 
-    // The hostile company (ZZZH) surfaces as a "what changed" row (its feed
-    // item is an "Official report" kind) — the fixed overlay entity, never a
-    // brittle text match on the full mixed-script title.
-    const hostileRow = page
+    // The hostile company (ZZZH) surfaces as a "what changed" row (its feed item
+    // is an "Official report" kind). Under the redesign (ADR 0087) the routine
+    // "changed" rows across the rich base collapse into a cross-company
+    // aggregate, and ZZZH — sharing the sample timestamp, so it sorts last by
+    // company id — lands as a COLLAPSED MEMBER. Expand the aggregate to reveal it
+    // (or fall back to a top-level changed row when nothing aggregated).
+    const stream = page.getByLabel("Attention stream");
+    const changedAggregate = stream
       .locator('li[data-category="changed"]')
-      .filter({ hasText: "ZZZH" });
+      .filter({ hasText: /×\d+\s+compan/ });
+    const aggregated = (await changedAggregate.count()) > 0;
+    if (aggregated) {
+      await changedAggregate.first().getByRole("button", { name: "Details" }).first().click();
+    }
+    // The hostile row is the fixed overlay entity (ZZZH), never a brittle match on
+    // the mixed-script title — a compact aggregate member when aggregated, else a
+    // top-level changed row.
+    const hostileRow = aggregated
+      ? stream.locator('[data-member-category="changed"]').filter({ hasText: "ZZZH" })
+      : stream.locator('li[data-category="changed"]').filter({ hasText: "ZZZH" });
     await expect(hostileRow.first()).toBeVisible();
+    // The long unbreakable title/URL never blows out the layout, even in the
+    // tall-narrow band.
     await expectNoPageOverflow(page);
 
-    // ADR 0081 Q4: still exactly one explicit primary action, reachable
-    // before scroll, even under hostile content.
+    // ADR 0081 Q4: the hostile row still carries exactly one explicit primary
+    // action (a group/aggregate member keeps its own single Review, so `j`/`k`
+    // can traverse it). The "reachable before scroll" contract applies to the
+    // aggregate's own top-level Review, not to a member the user expanded to.
     await expectPrimaryActionCount(hostileRow.first(), { max: 1 });
-    const reviewAction = hostileRow.first().getByRole("button", { name: "Review" });
-    const stream = page.getByLabel("Attention stream");
-    await expectActionBeforeScroll(reviewAction, stream);
+    await expect(hostileRow.first().getByRole("button", { name: "Review" })).toBeVisible();
     await expectNoA11yViolations(page, "Today (hostile stream)");
   });
 
@@ -214,10 +244,13 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await expect(page.locator(".today-stream-quiet")).toHaveCount(0);
 
     // The failed "Upcoming reports" read is EXPLICIT (ADR 0081 Q9 fix): Today
-    // renders `season.error` as a visible failed-category message, and the
-    // false-quiet state is suppressed while any category errored — a failure
-    // can never masquerade as "nothing needs attention".
-    await expect(page.getByText(seasonFailure.message)).toBeVisible();
+    // renders a typed, translated failed-category error strip — NEVER the raw
+    // backend `.message` (ADR 0087 consequence: raw error strings on Today are
+    // replaced by translated copy) — and the false-quiet state is suppressed
+    // while any category errored, so a failure can never masquerade as "nothing
+    // needs attention".
+    await expect(page.getByText("Couldn't load upcoming reports.")).toBeVisible();
+    await expect(page.getByText(seasonFailure.message)).toHaveCount(0);
     await expect(page.locator(".today-stream-quiet")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await expectNoPageOverflow(page);

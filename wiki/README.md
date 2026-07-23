@@ -76,9 +76,13 @@ per feature.
   primary source missed a disclosure; the KNF short-selling register as a
   signal + dashboard panel; and the auditor-opinion red-flag signal.
 - **[The MCP server](mcp-server.md)** — let an AI assistant (Claude Code,
-  Claude Desktop, …) read your research through a small, read-only, localhost-
-  only connector: enable it, generate a token, and connect over HTTP or the
-  stdio adapter.
+  Claude Desktop, …) work with your research through a localhost-only connector:
+  read the whole workspace, and — when you allow writes — record notes, claims,
+  facts, and verdicts, always with a source. Reference: enabling, security, and
+  troubleshooting.
+- **[Connecting an AI agent to Brawler](mcp-agent-guide.md)** — the hands-on
+  how-to: connect Claude Code/Desktop step by step, turn on write tools, the
+  per-write citation rules, the full tool catalog, and example workflows.
 
 ## A note on what Brawler is — and isn't
 

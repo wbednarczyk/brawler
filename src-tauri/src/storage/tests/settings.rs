@@ -172,6 +172,7 @@ fn updates_settings_through_storage_api() {
             pinned_company_ids: None,
             mcp_enabled: None,
             mcp_port: None,
+            mcp_writes_enabled: None,
         })
         .expect("settings should update");
 
@@ -253,6 +254,7 @@ fn updates_shortcut_bindings_through_storage_api() {
             pinned_company_ids: None,
             mcp_enabled: None,
             mcp_port: None,
+            mcp_writes_enabled: None,
         })
         .expect("settings should update");
 
@@ -301,6 +303,7 @@ fn rejects_invalid_poll_interval_setting() {
         pinned_company_ids: None,
         mcp_enabled: None,
         mcp_port: None,
+        mcp_writes_enabled: None,
     });
 
     assert!(result.is_err());
@@ -332,6 +335,7 @@ fn rejects_invalid_theme_setting() {
         pinned_company_ids: None,
         mcp_enabled: None,
         mcp_port: None,
+        mcp_writes_enabled: None,
     });
 
     assert!(result.is_err());
@@ -376,6 +380,7 @@ fn rejects_invalid_locale_setting() {
         pinned_company_ids: None,
         mcp_enabled: None,
         mcp_port: None,
+        mcp_writes_enabled: None,
     });
 
     assert!(result.is_err());
@@ -523,6 +528,38 @@ fn mcp_settings_default_tolerantly_when_rows_absent() {
         .expect("settings should load without the mcp rows");
     assert!(!settings.mcp.enabled, "MCP server defaults to off");
     assert_eq!(settings.mcp.port, 8317, "MCP port defaults to 8317");
+    assert!(
+        !settings.mcp.writes_enabled,
+        "MCP write tier defaults to off (ADR 0088 M3)"
+    );
+}
+
+#[test]
+fn mcp_writes_enabled_upsert_and_round_trip() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    // Absent row reads the safe default.
+    assert!(!state.get_settings().expect("settings").mcp.writes_enabled);
+
+    let enabled = state
+        .update_settings(SettingsUpdate {
+            mcp_writes_enabled: Some(true),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert!(enabled.mcp.writes_enabled);
+    // Durable across a fresh read.
+    assert!(state.get_settings().expect("settings").mcp.writes_enabled);
+
+    // Toggling back off upserts over the existing row (never dropped).
+    let disabled = state
+        .update_settings(SettingsUpdate {
+            mcp_writes_enabled: Some(false),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert!(!disabled.mcp.writes_enabled);
 }
 
 #[test]

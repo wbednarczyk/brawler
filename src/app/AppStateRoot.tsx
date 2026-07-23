@@ -19,12 +19,13 @@ import {
   emptyCompanyEventForm,
 } from "./eventForms";
 import { useFeedController } from "./useFeedController";
-import { detailPaneDefaultFraction, detailPaneMaxFraction, detailPaneMinFraction } from "./layout";
-import { type Section } from "./navigation";
 import {
-  emptyNotebookForm,
-  manualNotebookOrigins,
-} from "./notebookForms";
+  detailPaneDefaultFraction,
+  detailPaneMaxFraction,
+  detailPaneMinFraction,
+} from "./layout";
+import { type Section } from "./navigation";
+import { emptyNotebookForm, manualNotebookOrigins } from "./notebookForms";
 import { feedPruneRetentionDays } from "./sourceScheduler";
 import * as sourcesApi from "../api/sources";
 import * as eventsApi from "../api/events";
@@ -40,11 +41,22 @@ import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
 import { useTranscriptController } from "./useTranscriptController";
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
-import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
+import {
+  resolveAppShortcutReferenceItems,
+  type AppShortcutActionMap,
+} from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
-import { CreateViewModal, type CreateViewSpec } from "../screens/Cockpit/CreateViewModal";
-import { deleteCockpitLayout, listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../api/cockpit";
+import {
+  CreateViewModal,
+  type CreateViewSpec,
+} from "../screens/Cockpit/CreateViewModal";
+import {
+  deleteCockpitLayout,
+  listCockpitLayouts,
+  saveCockpitLayout,
+  type CockpitLayout,
+} from "../api/cockpit";
 import { useToast, useUndoableDelete } from "../ui";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { CompareScreen } from "../screens/Compare/CompareScreen";
@@ -60,7 +72,10 @@ import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import { AlertsScreen } from "../screens/Alerts/AlertsScreen";
 import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
 import type { NotebooksScreenProps } from "../screens/Notebooks/notebookTypes";
-import { ResearchScreen, type ResearchScreenProps } from "../screens/Research/ResearchScreen";
+import {
+  ResearchScreen,
+  type ResearchScreenProps,
+} from "../screens/Research/ResearchScreen";
 import { SettingsScreen } from "../screens/Settings/SettingsScreen";
 import { SourcesScreen } from "../screens/Sources/SourcesScreen";
 import { TranscriptsScreen } from "../screens/Transcripts/TranscriptsScreen";
@@ -89,7 +104,11 @@ import {
   formatEnumLabel,
   formatGeminiModel,
 } from "../shared/formatting/labels";
-import { LocaleContext, makeTextTranslator, makeTranslator } from "../shared/locale";
+import {
+  LocaleContext,
+  makeTextTranslator,
+  makeTranslator,
+} from "../shared/locale";
 import { SettingsProvider } from "./state/SettingsContext";
 import { SourcesProvider } from "./state/SourcesContext";
 import {
@@ -103,7 +122,11 @@ import {
   TranscriptsProvider,
   WatchlistsProvider,
 } from "./state/screenViewModels";
-import type { CompanyEventForm, CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
+import type {
+  CompanyEventForm,
+  CompanyEventMode,
+  CompanyEventViewMode,
+} from "../shared/types/events";
 import type { NotebookForm } from "../shared/types/notebook";
 import type {
   Company,
@@ -156,7 +179,9 @@ export function AppStateRoot({
   const eventWeekFetchAttemptedRef = useRef<Set<string>>(new Set());
   const companyLookupVersionRef = useRef(0);
   const skipNextCompanyLookupRef = useRef(false);
-  const companyFieldRefs = useRef<Record<keyof CompanyForm, HTMLInputElement | null>>({
+  const companyFieldRefs = useRef<
+    Record<keyof CompanyForm, HTMLInputElement | null>
+  >({
     exchange: null,
     ticker: null,
     displayName: null,
@@ -167,12 +192,17 @@ export function AppStateRoot({
   const [activeSection, setActiveSection] = useState<Section>(initialSection);
   // The company a workspace "Advanced layout" toggle scopes the dockview cockpit
   // to (ADR 0054); null = the cockpit opened directly, unscoped.
-  const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<string | null>(null);
+  const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<
+    string | null
+  >(null);
   // The built-in preset the Dashboard opens on (epic c793ca1); null = its default
   // (company overview). The retired Research screen redirects here with "evidence".
-  const [cockpitInitialPresetId, setCockpitInitialPresetId] = useState<string | null>(null);
+  const [cockpitInitialPresetId, setCockpitInitialPresetId] = useState<
+    string | null
+  >(null);
   const [theme, setTheme] = useState<Theme>("dark");
-  const [accentPalette, setAccentPalette] = useState<UserSettings["accentPalette"]>("night-neon");
+  const [accentPalette, setAccentPalette] =
+    useState<UserSettings["accentPalette"]>("night-neon");
   const [locale, setLocale] = useState<UserSettings["locale"]>("en");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -181,7 +211,9 @@ export function AppStateRoot({
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companiesError, setCompaniesError] = useState<string | null>(null);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  const [watchlistMemberships, setWatchlistMemberships] = useState<WatchlistMembership[]>([]);
+  const [watchlistMemberships, setWatchlistMemberships] = useState<
+    WatchlistMembership[]
+  >([]);
   const [watchlistsError, setWatchlistsError] = useState<string | null>(null);
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [notebookError, setNotebookError] = useState<string | null>(null);
@@ -190,94 +222,194 @@ export function AppStateRoot({
   const [inboxTypeFilter, setInboxTypeFilter] = useState("all");
   const [inboxSignalFilter, setInboxSignalFilter] = useState("all");
   const [inboxSourceFilter, setInboxSourceFilter] = useState("all");
-  const [inboxStatusFilter, setInboxStatusFilter] = useState<InboxStatusFilter>("all");
+  const [inboxStatusFilter, setInboxStatusFilter] =
+    useState<InboxStatusFilter>("all");
   const [feedState, setFeedState] = useState<FeedItem[]>([]);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [signals, setSignals] = useState<CompanySignal[]>([]);
   const [signalsError, setSignalsError] = useState<string | null>(null);
   const [companyEvents, setCompanyEvents] = useState<CompanyEvent[]>([]);
-  const [companyEventsError, setCompanyEventsError] = useState<string | null>(null);
-  const [transcriptJobs, setTranscriptJobs] = useState<TranscriptJob[]>([]);
-  const [transcriptJobsError, setTranscriptJobsError] = useState<string | null>(null);
-  const [transcriptJobForm, setTranscriptJobForm] = useState<TranscriptJobForm>(emptyTranscriptJobForm);
-  const [transcriptJobCreateError, setTranscriptJobCreateError] = useState<string | null>(null);
-  const [transcriptJobCreateState, setTranscriptJobCreateState] = useState<DbRefreshState>("idle");
-  const [transcriptJobRunInFlight, setTranscriptJobRunInFlight] = useState<string | null>(null);
-  const [selectedTranscriptJobId, setSelectedTranscriptJobId] = useState<string | null>(null);
-  const [transcriptSegmentsByJobId, setTranscriptSegmentsByJobId] = useState<Record<string, TranscriptSegment[]>>({});
-  const [transcriptSegmentsErrorByJobId, setTranscriptSegmentsErrorByJobId] = useState<Record<string, string | null>>({});
-  const [transcriptSegmentSearchByJobId, setTranscriptSegmentSearchByJobId] = useState<Record<string, string>>({});
-  const [selectedTranscriptSegmentIdsByJobId, setSelectedTranscriptSegmentIdsByJobId] = useState<Record<string, string[]>>({});
-  const [transcriptNoteDraftJobId, setTranscriptNoteDraftJobId] = useState<string | null>(null);
-  const [transcriptNoteForm, setTranscriptNoteForm] = useState<NotebookForm>(emptyNotebookForm);
-  const [transcriptNoteErrorByJobId, setTranscriptNoteErrorByJobId] = useState<Record<string, string | null>>({});
-  const [transcriptNoteSaveInFlight, setTranscriptNoteSaveInFlight] = useState<string | null>(null);
-  const [transcriptLinkQueryByJobId, setTranscriptLinkQueryByJobId] = useState<Record<string, string>>({});
-  const [transcriptLinkErrorByJobId, setTranscriptLinkErrorByJobId] = useState<Record<string, string | null>>({});
-  const [transcriptLinkInFlight, setTranscriptLinkInFlight] = useState<string | null>(null);
-  const [transcriptDeleteInFlight, setTranscriptDeleteInFlight] = useState<string | null>(null);
-  const [transcriptDescriptionDraftByJobId, setTranscriptDescriptionDraftByJobId] = useState<Record<string, string>>({});
-  const [transcriptDescriptionErrorByJobId, setTranscriptDescriptionErrorByJobId] = useState<Record<string, string | null>>({});
-  const [transcriptDescriptionSaveInFlight, setTranscriptDescriptionSaveInFlight] = useState<string | null>(null);
-  const [companyEventViewMode, setCompanyEventViewMode] = useState<CompanyEventViewMode>("week");
-  const [companyEventMode, setCompanyEventMode] = useState<CompanyEventMode>("upcoming");
-  const [companyEventWeekAnchorDate, setCompanyEventWeekAnchorDate] = useState(() =>
-    formatLocalDate(new Date()),
+  const [companyEventsError, setCompanyEventsError] = useState<string | null>(
+    null,
   );
-  const [companyEventWatchlistFilter, setCompanyEventWatchlistFilter] = useState("all");
-  const [companyEventCompanyFilter, setCompanyEventCompanyFilter] = useState("all");
+  const [transcriptJobs, setTranscriptJobs] = useState<TranscriptJob[]>([]);
+  const [transcriptJobsError, setTranscriptJobsError] = useState<string | null>(
+    null,
+  );
+  const [transcriptJobForm, setTranscriptJobForm] = useState<TranscriptJobForm>(
+    emptyTranscriptJobForm,
+  );
+  const [transcriptJobCreateError, setTranscriptJobCreateError] = useState<
+    string | null
+  >(null);
+  const [transcriptJobCreateState, setTranscriptJobCreateState] =
+    useState<DbRefreshState>("idle");
+  const [transcriptJobRunInFlight, setTranscriptJobRunInFlight] = useState<
+    string | null
+  >(null);
+  const [selectedTranscriptJobId, setSelectedTranscriptJobId] = useState<
+    string | null
+  >(null);
+  const [transcriptSegmentsByJobId, setTranscriptSegmentsByJobId] = useState<
+    Record<string, TranscriptSegment[]>
+  >({});
+  const [transcriptSegmentsErrorByJobId, setTranscriptSegmentsErrorByJobId] =
+    useState<Record<string, string | null>>({});
+  const [transcriptSegmentSearchByJobId, setTranscriptSegmentSearchByJobId] =
+    useState<Record<string, string>>({});
+  const [
+    selectedTranscriptSegmentIdsByJobId,
+    setSelectedTranscriptSegmentIdsByJobId,
+  ] = useState<Record<string, string[]>>({});
+  const [transcriptNoteDraftJobId, setTranscriptNoteDraftJobId] = useState<
+    string | null
+  >(null);
+  const [transcriptNoteForm, setTranscriptNoteForm] =
+    useState<NotebookForm>(emptyNotebookForm);
+  const [transcriptNoteErrorByJobId, setTranscriptNoteErrorByJobId] = useState<
+    Record<string, string | null>
+  >({});
+  const [transcriptNoteSaveInFlight, setTranscriptNoteSaveInFlight] = useState<
+    string | null
+  >(null);
+  const [transcriptLinkQueryByJobId, setTranscriptLinkQueryByJobId] = useState<
+    Record<string, string>
+  >({});
+  const [transcriptLinkErrorByJobId, setTranscriptLinkErrorByJobId] = useState<
+    Record<string, string | null>
+  >({});
+  const [transcriptLinkInFlight, setTranscriptLinkInFlight] = useState<
+    string | null
+  >(null);
+  const [transcriptDeleteInFlight, setTranscriptDeleteInFlight] = useState<
+    string | null
+  >(null);
+  const [
+    transcriptDescriptionDraftByJobId,
+    setTranscriptDescriptionDraftByJobId,
+  ] = useState<Record<string, string>>({});
+  const [
+    transcriptDescriptionErrorByJobId,
+    setTranscriptDescriptionErrorByJobId,
+  ] = useState<Record<string, string | null>>({});
+  const [
+    transcriptDescriptionSaveInFlight,
+    setTranscriptDescriptionSaveInFlight,
+  ] = useState<string | null>(null);
+  const [companyEventViewMode, setCompanyEventViewMode] =
+    useState<CompanyEventViewMode>("week");
+  const [companyEventMode, setCompanyEventMode] =
+    useState<CompanyEventMode>("upcoming");
+  const [companyEventWeekAnchorDate, setCompanyEventWeekAnchorDate] = useState(
+    () => formatLocalDate(new Date()),
+  );
+  const [companyEventWatchlistFilter, setCompanyEventWatchlistFilter] =
+    useState("all");
+  const [companyEventCompanyFilter, setCompanyEventCompanyFilter] =
+    useState("all");
   const [companyEventTypeFilter, setCompanyEventTypeFilter] = useState("all");
-  const [companyEventStatusFilter, setCompanyEventStatusFilter] = useState("all");
+  const [companyEventStatusFilter, setCompanyEventStatusFilter] =
+    useState("all");
   const [companyEventDateFrom, setCompanyEventDateFrom] = useState("");
   const [companyEventDateTo, setCompanyEventDateTo] = useState("");
-  const [selectedCompanyEventId, setSelectedCompanyEventId] = useState<string | null>(null);
-  const [isCompanyEventComposerOpen, setCompanyEventComposerOpen] = useState(false);
-  const [companyEventForm, setCompanyEventForm] = useState<CompanyEventForm>(emptyCompanyEventForm);
-  const [companyEventCreateError, setCompanyEventCreateError] = useState<string | null>(null);
+  const [selectedCompanyEventId, setSelectedCompanyEventId] = useState<
+    string | null
+  >(null);
+  const [isCompanyEventComposerOpen, setCompanyEventComposerOpen] =
+    useState(false);
+  const [companyEventForm, setCompanyEventForm] = useState<CompanyEventForm>(
+    emptyCompanyEventForm,
+  );
+  const [companyEventCreateError, setCompanyEventCreateError] = useState<
+    string | null
+  >(null);
   const [sourceAdapters, setSourceAdapters] = useState<SourceAdapter[]>([]);
-  const [sourceAdaptersError, setSourceAdaptersError] = useState<string | null>(null);
-  const [selectedSourceAdapterId, setSelectedSourceAdapterId] = useState<string | null>(null);
+  const [sourceAdaptersError, setSourceAdaptersError] = useState<string | null>(
+    null,
+  );
+  const [selectedSourceAdapterId, setSelectedSourceAdapterId] = useState<
+    string | null
+  >(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(initialLicenseStatus);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(
+    initialLicenseStatus,
+  );
   const [licenseError, setLicenseError] = useState<string | null>(null);
   const [licenseKeyDraft, setLicenseKeyDraft] = useState("");
   const [licenseInFlight, setLicenseInFlight] = useState(false);
-  const [geminiCredentialStatus, setGeminiCredentialStatus] = useState<CredentialStatus | null>(null);
-  const [geminiCredentialError, setGeminiCredentialError] = useState<string | null>(null);
+  const [geminiCredentialStatus, setGeminiCredentialStatus] =
+    useState<CredentialStatus | null>(null);
+  const [geminiCredentialError, setGeminiCredentialError] = useState<
+    string | null
+  >(null);
   const [geminiApiKeyDraft, setGeminiApiKeyDraft] = useState("");
-  const [geminiCredentialInFlight, setGeminiCredentialInFlight] = useState(false);
-  const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(null);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const [searchFocusSelector, setSearchFocusSelector] = useState<string | null>(null);
-  const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<string | null>(null);
-  const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<string | null>(null);
+  const [geminiCredentialInFlight, setGeminiCredentialInFlight] =
+    useState(false);
+  const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(
+    null,
+  );
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(
+    null,
+  );
+  const [searchFocusSelector, setSearchFocusSelector] = useState<string | null>(
+    null,
+  );
+  const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<
+    string | null
+  >(null);
+  const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<
+    string | null
+  >(null);
   const [isNotebookComposerOpen, setNotebookComposerOpen] = useState(false);
   const [isNotebookEditMode, setNotebookEditMode] = useState(false);
-  const [selectedNotebookCompanyId, setSelectedNotebookCompanyId] = useState<string | null>(null);
-  const [selectedNotebookScreenEntryId, setSelectedNotebookScreenEntryId] = useState<string | null>(null);
-  const [isNotebookScreenComposerOpen, setNotebookScreenComposerOpen] = useState(false);
+  const [selectedNotebookCompanyId, setSelectedNotebookCompanyId] = useState<
+    string | null
+  >(null);
+  const [selectedNotebookScreenEntryId, setSelectedNotebookScreenEntryId] =
+    useState<string | null>(null);
+  const [isNotebookScreenComposerOpen, setNotebookScreenComposerOpen] =
+    useState(false);
   const [isNotebookScreenEditMode, setNotebookScreenEditMode] = useState(false);
-  const [notebookScreenKindFilter, setNotebookScreenKindFilter] = useState("all");
-  const [notebookScreenWatchlistFilter, setNotebookScreenWatchlistFilter] = useState("all");
-  const [notebookScreenClaimStatusFilter, setNotebookScreenClaimStatusFilter] = useState("all");
-  const [notebookScreenFollowUpFilter, setNotebookScreenFollowUpFilter] = useState("all");
+  const [notebookScreenKindFilter, setNotebookScreenKindFilter] =
+    useState("all");
+  const [notebookScreenWatchlistFilter, setNotebookScreenWatchlistFilter] =
+    useState("all");
+  const [notebookScreenClaimStatusFilter, setNotebookScreenClaimStatusFilter] =
+    useState("all");
+  const [notebookScreenFollowUpFilter, setNotebookScreenFollowUpFilter] =
+    useState("all");
   const [notebookScreenTagFilter, setNotebookScreenTagFilter] = useState("");
-  const [notebookScreenForm, setNotebookScreenForm] = useState<NotebookForm>(emptyNotebookForm);
-  const [notebookScreenDraftOrigins, setNotebookScreenDraftOrigins] =
-    useState<NotebookDraftOrigin[]>(manualNotebookOrigins);
-  const [notebookScreenEditForm, setNotebookScreenEditForm] = useState<NotebookForm>(emptyNotebookForm);
-  const [detailPaneFraction, setDetailPaneFraction] = useState(detailPaneDefaultFraction);
+  const [notebookScreenForm, setNotebookScreenForm] =
+    useState<NotebookForm>(emptyNotebookForm);
+  const [notebookScreenDraftOrigins, setNotebookScreenDraftOrigins] = useState<
+    NotebookDraftOrigin[]
+  >(manualNotebookOrigins);
+  const [notebookScreenEditForm, setNotebookScreenEditForm] =
+    useState<NotebookForm>(emptyNotebookForm);
+  const [detailPaneFraction, setDetailPaneFraction] = useState(
+    detailPaneDefaultFraction,
+  );
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
-  const [deleteUnsavedFeedState, setDeleteUnsavedFeedState] = useState<DbRefreshState>("idle");
-  const [deleteUnsavedFeedError, setDeleteUnsavedFeedError] = useState<string | null>(null);
-  const [feedPruneResult, setFeedPruneResult] = useState<FeedPruneResult | null>(null);
-  const [sourceRefreshState, setSourceRefreshState] = useState<SourceRefreshState>("idle");
-  const [sourceRefreshResult, setSourceRefreshResult] = useState<SourceIngestionResult | null>(null);
-  const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(null);
+  const [deleteUnsavedFeedState, setDeleteUnsavedFeedState] =
+    useState<DbRefreshState>("idle");
+  const [deleteUnsavedFeedError, setDeleteUnsavedFeedError] = useState<
+    string | null
+  >(null);
+  const [feedPruneResult, setFeedPruneResult] =
+    useState<FeedPruneResult | null>(null);
+  const [sourceRefreshState, setSourceRefreshState] =
+    useState<SourceRefreshState>("idle");
+  const [sourceRefreshResult, setSourceRefreshResult] =
+    useState<SourceIngestionResult | null>(null);
+  const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(
+    null,
+  );
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
   const [createViewOpen, setCreateViewOpen] = useState(false);
-  const [activeCockpitLayoutId, setActiveCockpitLayoutId] = useState<string | null>(null);
+  const [activeCockpitLayoutId, setActiveCockpitLayoutId] = useState<
+    string | null
+  >(null);
   // Saved named views shown as nav destinations in the Modes group (ADR 0057
   // decision 5). Dashboard layouts (reserved `dashboard:` names) are excluded —
   // they are reached by opening a company, not from the views list.
@@ -345,7 +477,12 @@ export function AppStateRoot({
       // A fresh view has no view company yet (U-Ra); follow cells prompt to choose.
       viewCompanyId: null,
     });
-    void saveCockpitLayout({ name: spec.name, panelsJson, layoutJson: null, dockviewVersion: null })
+    void saveCockpitLayout({
+      name: spec.name,
+      panelsJson,
+      layoutJson: null,
+      dockviewVersion: null,
+    })
       .then((layout) => {
         setCreateViewOpen(false);
         setCockpitInitialCompanyId(null);
@@ -356,24 +493,47 @@ export function AppStateRoot({
       })
       .catch(() => setCreateViewOpen(false));
   }
-  const [sourceAdapterRefreshInFlight, setSourceAdapterRefreshInFlight] = useState<string | null>(null);
-  const [registryRefreshState, setRegistryRefreshState] = useState<SourceRefreshState>("idle");
-  const [registryRefreshResult, setRegistryRefreshResult] = useState<CompanyRegistryRefreshResult | null>(null);
-  const [registryRefreshError, setRegistryRefreshError] = useState<string | null>(null);
-  const [nextSourceRefreshAtByAdapterId, setNextSourceRefreshAtByAdapterId] = useState<Record<string, number>>({});
-  const [nextRegistryRefreshAt, setNextRegistryRefreshAt] = useState<number | null>(null);
-  const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<Record<string, UnmatchedSourceItem[]>>({});
-  const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<string | null>(null);
-  const [expandedUnmatchedAdapters, setExpandedUnmatchedAdapters] = useState<Record<string, boolean>>({});
-  const [companyRegistryEntries, setCompanyRegistryEntries] = useState<CompanyRegistryEntry[]>([]);
-  const [companyRegistryEntriesError, setCompanyRegistryEntriesError] = useState<string | null>(null);
-  const [isCompanyRegistryListExpanded, setCompanyRegistryListExpanded] = useState(false);
+  const [sourceAdapterRefreshInFlight, setSourceAdapterRefreshInFlight] =
+    useState<string | null>(null);
+  const [registryRefreshState, setRegistryRefreshState] =
+    useState<SourceRefreshState>("idle");
+  const [registryRefreshResult, setRegistryRefreshResult] =
+    useState<CompanyRegistryRefreshResult | null>(null);
+  const [registryRefreshError, setRegistryRefreshError] = useState<
+    string | null
+  >(null);
+  const [nextSourceRefreshAtByAdapterId, setNextSourceRefreshAtByAdapterId] =
+    useState<Record<string, number>>({});
+  const [nextRegistryRefreshAt, setNextRegistryRefreshAt] = useState<
+    number | null
+  >(null);
+  const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<
+    Record<string, UnmatchedSourceItem[]>
+  >({});
+  const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<
+    string | null
+  >(null);
+  const [expandedUnmatchedAdapters, setExpandedUnmatchedAdapters] = useState<
+    Record<string, boolean>
+  >({});
+  const [companyRegistryEntries, setCompanyRegistryEntries] = useState<
+    CompanyRegistryEntry[]
+  >([]);
+  const [companyRegistryEntriesError, setCompanyRegistryEntriesError] =
+    useState<string | null>(null);
+  const [isCompanyRegistryListExpanded, setCompanyRegistryListExpanded] =
+    useState(false);
   const [companyRegistrySearch, setCompanyRegistrySearch] = useState("");
-  const [selectedCompanyRegistryTicker, setSelectedCompanyRegistryTicker] = useState<string | null>(null);
-  const [addingRegistryTicker, setAddingRegistryTicker] = useState<string | null>(null);
+  const [selectedCompanyRegistryTicker, setSelectedCompanyRegistryTicker] =
+    useState<string | null>(null);
+  const [addingRegistryTicker, setAddingRegistryTicker] = useState<
+    string | null
+  >(null);
   const [companyListSearch, setCompanyListSearch] = useState("");
   const [companyWatchlistFilter, setCompanyWatchlistFilter] = useState("all");
-  const [selectedManagedWatchlistId, setSelectedManagedWatchlistId] = useState<string | null>(null);
+  const [selectedManagedWatchlistId, setSelectedManagedWatchlistId] = useState<
+    string | null
+  >(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [lookupStatus, setLookupStatus] = useState<string | null>(null);
   const [companyForm, setCompanyForm] = useState<CompanyForm>({
@@ -382,8 +542,10 @@ export function AppStateRoot({
     displayName: "",
     isin: "",
   });
-  const [notebookForm, setNotebookForm] = useState<NotebookForm>(emptyNotebookForm);
-  const [notebookEditForm, setNotebookEditForm] = useState<NotebookForm>(emptyNotebookForm);
+  const [notebookForm, setNotebookForm] =
+    useState<NotebookForm>(emptyNotebookForm);
+  const [notebookEditForm, setNotebookEditForm] =
+    useState<NotebookForm>(emptyNotebookForm);
 
   const {
     companiesById,
@@ -462,7 +624,6 @@ export function AppStateRoot({
     transcriptJobForm,
     watchlistMemberships,
   });
-
 
   // Memoized (not recreated every render): the persistent-overflow bridge
   // effect below depends on `text`'s identity to know when to rebind. An
@@ -549,11 +710,11 @@ export function AppStateRoot({
     deleteResearchQuestion,
     linkEvidenceToSelectedQuestion,
     unlinkEvidenceFromSelectedQuestion,
-  createResearchReminder,
-  completeResearchReminder,
-  snoozeResearchReminder,
-  reopenResearchReminder,
-  deleteResearchReminder,
+    createResearchReminder,
+    completeResearchReminder,
+    snoozeResearchReminder,
+    reopenResearchReminder,
+    deleteResearchReminder,
   } = useResearchController({
     activeSection,
     companies,
@@ -647,17 +808,14 @@ export function AppStateRoot({
     setWatchlistsError,
   });
 
-  const {
-    clearLicenseKey,
-    refreshLicenseStatus,
-    submitLicenseKey,
-  } = useLicenseController({
-    licenseKeyDraft,
-    setLicenseError,
-    setLicenseInFlight,
-    setLicenseKeyDraft,
-    setLicenseStatus,
-  });
+  const { clearLicenseKey, refreshLicenseStatus, submitLicenseKey } =
+    useLicenseController({
+      licenseKeyDraft,
+      setLicenseError,
+      setLicenseInFlight,
+      setLicenseKeyDraft,
+      setLicenseStatus,
+    });
 
   const {
     refreshBankierCalendarWeek,
@@ -672,7 +830,8 @@ export function AppStateRoot({
     refreshSignals,
     refreshSourceAdapters,
     refreshUnmatchedSourceItems,
-    onManualRefreshSuccess: () => toast.show({ message: text("Sources refreshed"), tone: "positive" }),
+    onManualRefreshSuccess: () =>
+      toast.show({ message: text("Sources refreshed"), tone: "positive" }),
     scheduledSourceAdapters,
     settings,
     sourceAdapterRefreshInFlight,
@@ -699,6 +858,7 @@ export function AppStateRoot({
     updatePollInterval,
     updateBackfillYears,
     updateMcpPort,
+    updateMcpWritesEnabled,
     updateLogLevel,
     updateLogMaxFileBytes,
     updateLogMaxFiles,
@@ -734,7 +894,12 @@ export function AppStateRoot({
     }
 
     function unlockFromHiddenChord(event: globalThis.KeyboardEvent) {
-      if (!event.ctrlKey || !event.altKey || !event.shiftKey || event.key.toLowerCase() !== "d") {
+      if (
+        !event.ctrlKey ||
+        !event.altKey ||
+        !event.shiftKey ||
+        event.key.toLowerCase() !== "d"
+      ) {
         return;
       }
 
@@ -761,11 +926,21 @@ export function AppStateRoot({
   }, [activeSection, settings?.developerMode]);
 
   function resetDeletedWatchlistFilters(watchlistId: string) {
-    setInboxWatchlistFilter((current) => (current === watchlistId ? "all" : current));
-    setCompanyEventWatchlistFilter((current) => (current === watchlistId ? "all" : current));
-    setCompanyWatchlistFilter((current) => (current === watchlistId ? "all" : current));
-    setNotebookScreenWatchlistFilter((current) => (current === watchlistId ? "all" : current));
-    setSelectedManagedWatchlistId((current) => (current === watchlistId ? null : current));
+    setInboxWatchlistFilter((current) =>
+      current === watchlistId ? "all" : current,
+    );
+    setCompanyEventWatchlistFilter((current) =>
+      current === watchlistId ? "all" : current,
+    );
+    setCompanyWatchlistFilter((current) =>
+      current === watchlistId ? "all" : current,
+    );
+    setNotebookScreenWatchlistFilter((current) =>
+      current === watchlistId ? "all" : current,
+    );
+    setSelectedManagedWatchlistId((current) =>
+      current === watchlistId ? null : current,
+    );
   }
 
   function openWatchlistFromCompanyRow(watchlistId: string) {
@@ -960,7 +1135,10 @@ export function AppStateRoot({
     }
   }
 
-  async function confirmDerivedEvent(eventId: string, action: "confirm" | "reject") {
+  async function confirmDerivedEvent(
+    eventId: string,
+    action: "confirm" | "reject",
+  ) {
     try {
       await signalsApi.confirmDerivedEvent(eventId, action);
       await refreshCompanyEvents();
@@ -1044,11 +1222,14 @@ export function AppStateRoot({
       return;
     }
 
-    sourcesApi.setSourceAdapterEnabled({ adapterId: adapter.id, enabled })
+    sourcesApi
+      .setSourceAdapterEnabled({ adapterId: adapter.id, enabled })
       .then((updatedAdapter) => {
         setSourceAdapters((current) =>
           current.map((sourceAdapter) =>
-            sourceAdapter.id === updatedAdapter.id ? updatedAdapter : sourceAdapter,
+            sourceAdapter.id === updatedAdapter.id
+              ? updatedAdapter
+              : sourceAdapter,
           ),
         );
         setSourceAdaptersError(null);
@@ -1127,7 +1308,8 @@ export function AppStateRoot({
   }
 
   function openResearchEvidence(item: ResearchEvidenceItem) {
-    const itemCompanyTicker = companiesById[item.companyId]?.qualifiedTicker ?? "all";
+    const itemCompanyTicker =
+      companiesById[item.companyId]?.qualifiedTicker ?? "all";
 
     switch (item.sourceDomain) {
       case "feed":
@@ -1241,7 +1423,9 @@ export function AppStateRoot({
       case "transcript_segment":
         if (match.parentId) {
           setSelectedTranscriptJobId(match.parentId);
-          setSearchFocusSelector(`[data-transcript-job-id="${match.parentId}"]`);
+          setSearchFocusSelector(
+            `[data-transcript-job-id="${match.parentId}"]`,
+          );
         }
         setActiveSection("Transcripts");
         break;
@@ -1256,9 +1440,13 @@ export function AppStateRoot({
     const currentIndex = selectedFeedItem
       ? filteredFeedItems.findIndex((item) => item.id === selectedFeedItem.id)
       : -1;
-    const nextIndex = currentIndex === -1
-      ? 0
-      : Math.min(Math.max(currentIndex + direction, 0), filteredFeedItems.length - 1);
+    const nextIndex =
+      currentIndex === -1
+        ? 0
+        : Math.min(
+            Math.max(currentIndex + direction, 0),
+            filteredFeedItems.length - 1,
+          );
 
     setSelectedFeedItemId(filteredFeedItems[nextIndex]?.id ?? null);
     return true;
@@ -1270,11 +1458,17 @@ export function AppStateRoot({
     }
 
     const currentIndex = selectedCompany
-      ? filteredCompanies.findIndex((company) => company.id === selectedCompany.id)
+      ? filteredCompanies.findIndex(
+          (company) => company.id === selectedCompany.id,
+        )
       : -1;
-    const nextIndex = currentIndex === -1
-      ? 0
-      : Math.min(Math.max(currentIndex + direction, 0), filteredCompanies.length - 1);
+    const nextIndex =
+      currentIndex === -1
+        ? 0
+        : Math.min(
+            Math.max(currentIndex + direction, 0),
+            filteredCompanies.length - 1,
+          );
     const nextCompany = filteredCompanies[nextIndex];
 
     if (!nextCompany) {
@@ -1285,105 +1479,107 @@ export function AppStateRoot({
     return true;
   }
 
+  const shortcutActions = useMemo<AppShortcutActionMap>(
+    () => ({
+      "app.openInbox": () => undefined,
+      "app.openCompanies": () => undefined,
+      "app.openWatchlists": () => undefined,
+      "app.openNotebooks": () => undefined,
+      "app.openEvents": () => undefined,
+      "app.openTranscripts": () => undefined,
+      "app.openSources": () => undefined,
+      "app.openSettings": () => undefined,
+      "app.openAlerts": () => undefined,
+      "app.commandPalette": () => undefined,
+      "app.focusSearch": () => undefined,
+      "app.refreshSources": () => undefined,
+      "app.refreshDatabase": () => undefined,
+      "inbox.nextItem": () => selectAdjacentInboxItem(1),
+      "inbox.previousItem": () => selectAdjacentInboxItem(-1),
+      "inbox.toggleRead": () => {
+        if (activeSection !== "Inbox" || !selectedFeedItem) {
+          return false;
+        }
 
-  const shortcutActions = useMemo<AppShortcutActionMap>(() => ({
-    "app.openInbox": () => undefined,
-    "app.openCompanies": () => undefined,
-    "app.openWatchlists": () => undefined,
-    "app.openNotebooks": () => undefined,
-    "app.openEvents": () => undefined,
-    "app.openTranscripts": () => undefined,
-    "app.openSources": () => undefined,
-    "app.openSettings": () => undefined,
-    "app.openAlerts": () => undefined,
-    "app.commandPalette": () => undefined,
-    "app.focusSearch": () => undefined,
-    "app.refreshSources": () => undefined,
-    "app.refreshDatabase": () => undefined,
-    "inbox.nextItem": () => selectAdjacentInboxItem(1),
-    "inbox.previousItem": () => selectAdjacentInboxItem(-1),
-    "inbox.toggleRead": () => {
-      if (activeSection !== "Inbox" || !selectedFeedItem) {
-        return false;
-      }
-
-      updateSelectedFeedItem((item) => ({ ...item, unread: !item.unread }));
-      return true;
-    },
-    "inbox.toggleSaved": () => {
-      if (activeSection !== "Inbox" || !selectedFeedItem) {
-        return false;
-      }
-
-      updateSelectedFeedItem((item) => ({ ...item, saved: !item.saved }));
-      return true;
-    },
-    "inbox.openSource": () => {
-      if (activeSection !== "Inbox" || !selectedFeedItem) {
-        return false;
-      }
-
-      openExternalUrl(selectedFeedItem.sourceUrl);
-      return true;
-    },
-    "inbox.createNote": () => {
-      if (activeSection !== "Inbox" || !selectedFeedItem) {
-        return false;
-      }
-
-      openFeedItemNoteDraft(selectedFeedItem);
-      return true;
-    },
-    "company.nextCompany": () => selectAdjacentCompany(1),
-    "company.previousCompany": () => selectAdjacentCompany(-1),
-    // The company deep-dive is the cockpit dashboard now (ADR 0057); there is no
-    // tabbed workspace to cycle. The shortcuts are kept as no-ops so existing
-    // bindings/config stay valid.
-    "company.nextTab": () => false,
-    "company.previousTab": () => false,
-    "notebook.editSelected": () => {
-      if (activeSection === "Notebooks" && selectedNotebookScreenEntry) {
-        setNotebookScreenEditMode(true);
+        updateSelectedFeedItem((item) => ({ ...item, unread: !item.unread }));
         return true;
-      }
+      },
+      "inbox.toggleSaved": () => {
+        if (activeSection !== "Inbox" || !selectedFeedItem) {
+          return false;
+        }
 
-      return false;
-    },
-    "notebook.saveCurrent": () => {
-      if (activeSection === "Notebooks") {
-        if (isNotebookScreenComposerOpen && selectedNotebookScreenCompany) {
-          createNotebookScreenEntry();
+        updateSelectedFeedItem((item) => ({ ...item, saved: !item.saved }));
+        return true;
+      },
+      "inbox.openSource": () => {
+        if (activeSection !== "Inbox" || !selectedFeedItem) {
+          return false;
+        }
+
+        openExternalUrl(selectedFeedItem.sourceUrl);
+        return true;
+      },
+      "inbox.createNote": () => {
+        if (activeSection !== "Inbox" || !selectedFeedItem) {
+          return false;
+        }
+
+        openFeedItemNoteDraft(selectedFeedItem);
+        return true;
+      },
+      "company.nextCompany": () => selectAdjacentCompany(1),
+      "company.previousCompany": () => selectAdjacentCompany(-1),
+      // The company deep-dive is the cockpit dashboard now (ADR 0057); there is no
+      // tabbed workspace to cycle. The shortcuts are kept as no-ops so existing
+      // bindings/config stay valid.
+      "company.nextTab": () => false,
+      "company.previousTab": () => false,
+      "notebook.editSelected": () => {
+        if (activeSection === "Notebooks" && selectedNotebookScreenEntry) {
+          setNotebookScreenEditMode(true);
           return true;
         }
 
-        if (isNotebookScreenEditMode && selectedNotebookScreenEntry) {
-          saveNotebookScreenEntry();
-          return true;
-        }
-      }
+        return false;
+      },
+      "notebook.saveCurrent": () => {
+        if (activeSection === "Notebooks") {
+          if (isNotebookScreenComposerOpen && selectedNotebookScreenCompany) {
+            createNotebookScreenEntry();
+            return true;
+          }
 
-      return false;
-    },
+          if (isNotebookScreenEditMode && selectedNotebookScreenEntry) {
+            saveNotebookScreenEntry();
+            return true;
+          }
+        }
+
+        return false;
+      },
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- view-model memo keyed on the listed UI state; the plain keyboard-navigation helpers (selectAdjacentCompany/selectAdjacentInboxItem/switchCompanyWorkspaceTab) are excluded to keep it from recomputing every render — they read the same state already in the dep list
-  }), [
-    activeSection,
-    createNotebookScreenEntry,
-    filteredCompanies,
-    filteredFeedItems,
-    isNotebookComposerOpen,
-    isNotebookEditMode,
-    isNotebookScreenComposerOpen,
-    isNotebookScreenEditMode,
-    openFeedItemNoteDraft,
-    saveNotebookEntry,
-    saveNotebookScreenEntry,
-    selectedCompany,
-    selectedFeedItem,
-    selectedNotebookEntry,
-    selectedNotebookScreenCompany,
-    selectedNotebookScreenEntry,
-    updateSelectedFeedItem,
-  ]);
+    [
+      activeSection,
+      createNotebookScreenEntry,
+      filteredCompanies,
+      filteredFeedItems,
+      isNotebookComposerOpen,
+      isNotebookEditMode,
+      isNotebookScreenComposerOpen,
+      isNotebookScreenEditMode,
+      openFeedItemNoteDraft,
+      saveNotebookEntry,
+      saveNotebookScreenEntry,
+      selectedCompany,
+      selectedFeedItem,
+      selectedNotebookEntry,
+      selectedNotebookScreenCompany,
+      selectedNotebookScreenEntry,
+      updateSelectedFeedItem,
+    ],
+  );
 
   // Global-screen view-models, extracted so both the top-nav section blocks and
   // the Research cockpit (which hosts these screens as panels, ADR 0053 phase 4c)
@@ -1591,7 +1787,11 @@ export function AppStateRoot({
   const pinnedCompanies: PinnedCompany[] = pinnedCompanyIds
     .map((id) => companies.find((company) => company.id === id))
     .filter((company): company is Company => Boolean(company))
-    .map((company) => ({ id: company.id, name: company.displayName, ticker: company.ticker }));
+    .map((company) => ({
+      id: company.id,
+      name: company.displayName,
+      ticker: company.ticker,
+    }));
 
   function openPinnedCompany(companyId: string) {
     const company = companies.find((candidate) => candidate.id === companyId);
@@ -1607,13 +1807,19 @@ export function AppStateRoot({
   // Opening a company (from Today, Report Season, a feed item, …) lands the
   // curated cockpit dashboard scoped to it (ADR 0057). The legacy `tab` argument
   // is ignored — the dashboard shows every surface at once, not one tab.
-  function openCompanyWorkspaceById(companyId: string, _tab?: CompanyWorkspaceTab) {
+  function openCompanyWorkspaceById(
+    companyId: string,
+    _tab?: CompanyWorkspaceTab,
+  ) {
     openAdvancedLayout(companyId);
   }
 
   // Open the cockpit dashboard scoped to a company. Kept named `openAdvancedLayout`
   // for its existing callers; it is now the single company deep-dive entry point.
-  function openAdvancedLayout(companyId: string, presetId: string | null = null) {
+  function openAdvancedLayout(
+    companyId: string,
+    presetId: string | null = null,
+  ) {
     setSelectedCompanyId(companyId);
     setActiveCockpitLayoutId(null);
     setCockpitInitialCompanyId(companyId);
@@ -1626,7 +1832,11 @@ export function AppStateRoot({
   // else a pinned company, else the first tracked company. With no companies at
   // all, fall back to the (empty-state) cockpit so the entry still resolves.
   function openDashboard() {
-    const target = cockpitInitialCompanyId ?? pinnedCompanyIds[0] ?? companies[0]?.id ?? null;
+    const target =
+      cockpitInitialCompanyId ??
+      pinnedCompanyIds[0] ??
+      companies[0]?.id ??
+      null;
     if (target) {
       openAdvancedLayout(target);
     } else {
@@ -1640,382 +1850,399 @@ export function AppStateRoot({
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
       <SettingsProvider value={settings ?? null}>
-      <AppShell
-        activeSection={activeSection}
-        dbRefreshState={dbRefreshState}
-        effectiveTheme={effectiveTheme}
-        health={health}
-        openSourceStatus={openSourceStatus}
-        refreshDatabaseBackedViews={refreshDatabaseBackedViews}
-        refreshSources={refreshSources}
-        setActiveSection={setActiveSection}
-        onOpenDashboard={openDashboard}
-        onCreateView={() => setCreateViewOpen(true)}
-        cockpitViews={cockpitViews}
-        activeCockpitViewId={cockpitInitialCompanyId ? null : activeCockpitLayoutId}
-        onOpenCockpitView={openCockpitView}
-        onDeleteCockpitView={deleteCockpitView}
-        onNavigateToSearchResult={navigateToSearchResult}
-        pinnedCompanies={pinnedCompanies}
-        selectedCompanyId={selectedCompanyId}
-        onOpenCompany={openPinnedCompany}
-        onUnpinCompany={unpinCompany}
-        sourceRefreshError={sourceRefreshError}
-        sourceRefreshResult={sourceRefreshResult}
-        sourceRefreshState={sourceRefreshState}
-        sourceStatusSummary={sourceStatusSummary}
-        theme={theme}
-        locale={locale}
-        shortcutBindings={shortcutBindings}
-        shortcutActions={shortcutActions}
-        totalUnreadFeedItems={totalUnreadFeedItems}
-        updateTheme={updateTheme}
-      >
-        <section
-          className={activeSection === "Inbox" ? "content-grid" : "content-grid content-grid-single"}
-          ref={contentGridRef}
-          style={
-            activeSection === "Inbox"
-              ? ({ "--detail-pane-width": `${Math.round(detailPaneFraction * 100)}%` } as CSSProperties)
-              : undefined
+        <AppShell
+          activeSection={activeSection}
+          dbRefreshState={dbRefreshState}
+          effectiveTheme={effectiveTheme}
+          health={health}
+          openSourceStatus={openSourceStatus}
+          refreshDatabaseBackedViews={refreshDatabaseBackedViews}
+          refreshSources={refreshSources}
+          setActiveSection={setActiveSection}
+          onOpenDashboard={openDashboard}
+          onCreateView={() => setCreateViewOpen(true)}
+          cockpitViews={cockpitViews}
+          activeCockpitViewId={
+            cockpitInitialCompanyId ? null : activeCockpitLayoutId
           }
+          onOpenCockpitView={openCockpitView}
+          onDeleteCockpitView={deleteCockpitView}
+          onNavigateToSearchResult={navigateToSearchResult}
+          pinnedCompanies={pinnedCompanies}
+          selectedCompanyId={selectedCompanyId}
+          onOpenCompany={openPinnedCompany}
+          onUnpinCompany={unpinCompany}
+          sourceRefreshError={sourceRefreshError}
+          sourceRefreshResult={sourceRefreshResult}
+          sourceRefreshState={sourceRefreshState}
+          sourceStatusSummary={sourceStatusSummary}
+          theme={theme}
+          locale={locale}
+          shortcutBindings={shortcutBindings}
+          shortcutActions={shortcutActions}
+          totalUnreadFeedItems={totalUnreadFeedItems}
+          updateTheme={updateTheme}
         >
-          <ErrorBoundary
-            resetKey={activeSection}
-            fallback={(error, reset) => <AppContentErrorFallback error={error} reset={reset} />}
+          <section
+            className={
+              activeSection === "Inbox"
+                ? "content-grid"
+                : "content-grid content-grid-single"
+            }
+            ref={contentGridRef}
+            style={
+              activeSection === "Inbox"
+                ? ({
+                    "--detail-pane-width": `${Math.round(detailPaneFraction * 100)}%`,
+                  } as CSSProperties)
+                : undefined
+            }
           >
-          {activeSection === "Inbox" ? (
-            <InboxProvider
-              value={{
-                watchlists,
-                companies,
-                feedTypes,
-                feedSources,
-                feedSignalCategories,
-                filteredFeedItems,
-                signalsByFeedItemId,
-                signalsError,
-                selectedFeedItem,
-                selectedFeedCompany,
-                inboxStatusFilter,
-                searchQuery,
-                inboxWatchlistFilter,
-                inboxCompanyFilter,
-                inboxTypeFilter,
-                inboxSignalFilter,
-                inboxSourceFilter,
-                inboxReviewStats,
-                inboxEmptyState,
-                hasActiveInboxFilters,
-                deleteUnsavedFeedState,
-                sourceRefreshState,
-                detailPaneFraction,
-                detailPaneMinFraction,
-                detailPaneMaxFraction,
-                feedError,
-                deleteUnsavedFeedError,
-                sourceRefreshError,
-                healthError,
-                databaseError,
-                setInboxStatusFilter,
-                setSearchQuery,
-                setInboxWatchlistFilter,
-                setInboxCompanyFilter,
-                setInboxTypeFilter,
-                setInboxSignalFilter,
-                setInboxSourceFilter,
-                confirmCompanySignal,
-                rejectCompanySignal,
-                setSelectedFeedItemId,
-                setActiveSection,
-                markVisibleInboxAsRead,
-                deleteUnsavedFeedItems,
-                clearInboxFilters,
-                refreshSources,
-                openSourceStatus,
-                toggleFeedItemReadState,
-                selectFeedItemFromKeyboard,
-                updateSelectedFeedItem,
-                openCompanyWorkspaceFromFeedItem,
-                openFeedItemNoteDraft,
-                resizeDetailPaneWithKeyboard,
-                startDetailPaneResize,
-                resizeDetailPane,
-                stopDetailPaneResize,
-                feedItemSummary,
-                formatTimestamp,
-              }}
+            <ErrorBoundary
+              resetKey={activeSection}
+              fallback={(error, reset) => (
+                <AppContentErrorFallback error={error} reset={reset} />
+              )}
             >
-              <InboxScreen />
-            </InboxProvider>
-          ) : null}
-          {activeSection === "Cockpit" ? (
-            // The cockpit hosts the global app screens as panels (ADR 0053 phase
-            // 4c), so it shares their view-model providers with the top-nav.
-            <WatchlistsProvider value={watchlistsViewModel}>
-              <ResearchProvider value={researchViewModel}>
-                <NotebooksProvider value={notebooksViewModel}>
-                  <ReportSeasonProvider value={reportSeasonViewModel}>
-                    <EventsProvider value={eventsViewModel}>
-                      <CockpitScreen
-                        companies={companies}
-                        feedItems={feedState}
-                        initialCompanyId={cockpitInitialCompanyId}
-                        initialLayoutId={activeCockpitLayoutId}
-                        initialPresetId={cockpitInitialPresetId}
-                        onLayoutsChanged={refreshCockpitLayouts}
-                      />
-                    </EventsProvider>
-                  </ReportSeasonProvider>
-                </NotebooksProvider>
-              </ResearchProvider>
-            </WatchlistsProvider>
-          ) : null}
-          {activeSection === "Today" ? (
-            <TodayScreen
-              companies={companies}
-              pinnedCompanyIds={pinnedCompanyIds}
-              recentFeedItems={feedState}
-              openCompanyWorkspace={openCompanyWorkspaceById}
-              openInbox={() => setActiveSection("Inbox")}
-            />
-          ) : null}
-          {activeSection === "Compare" ? <CompareScreen /> : null}
-          {activeSection === "Companies" ? (
-            <CompaniesProvider
-              value={{
-                watchlists,
-                companyFieldRefs,
-                companyForm,
-                companyFormRegistryMatches,
-                companyListSearch,
-                companyWatchlistFilter,
-                filteredCompanies,
-                companies,
-                selectedCompany,
-                membershipsByCompany,
-                companiesError,
-                lookupStatus,
-                createCompany,
-                updateCompanyForm,
-                clearCompanyFormField,
-                lookupCompanyIfUseful,
-                lookupCompany,
-                applyRegistryEntryToCompanyForm,
-                setCompanyListSearch,
-                setCompanyWatchlistFilter,
-                openWatchlistFromCompanyRow,
-                openCompanyWorkspace,
-                openCompanyWorkspaceFromKeyboard,
-                deleteCompany,
-              }}
-            >
-              <CompaniesScreen />
-            </CompaniesProvider>
-          ) : null}
-          {activeSection === "Watchlists" ? (
-            <WatchlistsProvider value={watchlistsViewModel}>
-              <WatchlistsScreen />
-            </WatchlistsProvider>
-          ) : null}
-          {activeSection === "Alerts" ? <AlertsScreen /> : null}
-          {/* The standalone Research screen is retired as a *nav destination*
+              {activeSection === "Inbox" ? (
+                <InboxProvider
+                  value={{
+                    watchlists,
+                    companies,
+                    feedTypes,
+                    feedSources,
+                    feedSignalCategories,
+                    filteredFeedItems,
+                    signalsByFeedItemId,
+                    signalsError,
+                    selectedFeedItem,
+                    selectedFeedCompany,
+                    inboxStatusFilter,
+                    searchQuery,
+                    inboxWatchlistFilter,
+                    inboxCompanyFilter,
+                    inboxTypeFilter,
+                    inboxSignalFilter,
+                    inboxSourceFilter,
+                    inboxReviewStats,
+                    inboxEmptyState,
+                    hasActiveInboxFilters,
+                    deleteUnsavedFeedState,
+                    sourceRefreshState,
+                    detailPaneFraction,
+                    detailPaneMinFraction,
+                    detailPaneMaxFraction,
+                    feedError,
+                    deleteUnsavedFeedError,
+                    sourceRefreshError,
+                    healthError,
+                    databaseError,
+                    setInboxStatusFilter,
+                    setSearchQuery,
+                    setInboxWatchlistFilter,
+                    setInboxCompanyFilter,
+                    setInboxTypeFilter,
+                    setInboxSignalFilter,
+                    setInboxSourceFilter,
+                    confirmCompanySignal,
+                    rejectCompanySignal,
+                    setSelectedFeedItemId,
+                    setActiveSection,
+                    markVisibleInboxAsRead,
+                    deleteUnsavedFeedItems,
+                    clearInboxFilters,
+                    refreshSources,
+                    openSourceStatus,
+                    toggleFeedItemReadState,
+                    selectFeedItemFromKeyboard,
+                    updateSelectedFeedItem,
+                    openCompanyWorkspaceFromFeedItem,
+                    openFeedItemNoteDraft,
+                    resizeDetailPaneWithKeyboard,
+                    startDetailPaneResize,
+                    resizeDetailPane,
+                    stopDetailPaneResize,
+                    feedItemSummary,
+                    formatTimestamp,
+                  }}
+                >
+                  <InboxScreen />
+                </InboxProvider>
+              ) : null}
+              {activeSection === "Cockpit" ? (
+                // The cockpit hosts the global app screens as panels (ADR 0053 phase
+                // 4c), so it shares their view-model providers with the top-nav.
+                <WatchlistsProvider value={watchlistsViewModel}>
+                  <ResearchProvider value={researchViewModel}>
+                    <NotebooksProvider value={notebooksViewModel}>
+                      <ReportSeasonProvider value={reportSeasonViewModel}>
+                        <EventsProvider value={eventsViewModel}>
+                          <CockpitScreen
+                            companies={companies}
+                            feedItems={feedState}
+                            initialCompanyId={cockpitInitialCompanyId}
+                            initialLayoutId={activeCockpitLayoutId}
+                            initialPresetId={cockpitInitialPresetId}
+                            onLayoutsChanged={refreshCockpitLayouts}
+                          />
+                        </EventsProvider>
+                      </ReportSeasonProvider>
+                    </NotebooksProvider>
+                  </ResearchProvider>
+                </WatchlistsProvider>
+              ) : null}
+              {activeSection === "Today" ? (
+                <TodayScreen
+                  companies={companies}
+                  pinnedCompanyIds={pinnedCompanyIds}
+                  recentFeedItems={feedState}
+                  openCompanyWorkspace={openCompanyWorkspaceById}
+                  openInbox={() => setActiveSection("Inbox")}
+                  openReportSeason={() => setActiveSection("ReportSeason")}
+                  sourceAdapters={sourceAdapters}
+                  openSources={() => setActiveSection("Sources")}
+                />
+              ) : null}
+              {activeSection === "Compare" ? <CompareScreen /> : null}
+              {activeSection === "Companies" ? (
+                <CompaniesProvider
+                  value={{
+                    watchlists,
+                    companyFieldRefs,
+                    companyForm,
+                    companyFormRegistryMatches,
+                    companyListSearch,
+                    companyWatchlistFilter,
+                    filteredCompanies,
+                    companies,
+                    selectedCompany,
+                    membershipsByCompany,
+                    companiesError,
+                    lookupStatus,
+                    createCompany,
+                    updateCompanyForm,
+                    clearCompanyFormField,
+                    lookupCompanyIfUseful,
+                    lookupCompany,
+                    applyRegistryEntryToCompanyForm,
+                    setCompanyListSearch,
+                    setCompanyWatchlistFilter,
+                    openWatchlistFromCompanyRow,
+                    openCompanyWorkspace,
+                    openCompanyWorkspaceFromKeyboard,
+                    deleteCompany,
+                  }}
+                >
+                  <CompaniesScreen />
+                </CompaniesProvider>
+              ) : null}
+              {activeSection === "Watchlists" ? (
+                <WatchlistsProvider value={watchlistsViewModel}>
+                  <WatchlistsScreen />
+                </WatchlistsProvider>
+              ) : null}
+              {activeSection === "Alerts" ? <AlertsScreen /> : null}
+              {/* The standalone Research screen is retired as a *nav destination*
               (epic c793ca1): no sidebar entry, and user-facing callers
               (openResearchEvidence, brief/digest search) redirect into the
               Dashboard "evidence" preset. The `activeSection === "Research"`
               render is kept for programmatic/deep-link navigation, consistent
               with the sibling panel-hosted sections (Notebooks/Events/ReportSeason). */}
-          {activeSection === "Research" ? (
-            <ResearchProvider value={researchViewModel}>
-              <ResearchScreen />
-            </ResearchProvider>
-          ) : null}
-          {activeSection === "Notebooks" ? (
-            <NotebooksProvider value={notebooksViewModel}>
-              <NotebooksScreen />
-            </NotebooksProvider>
-          ) : null}
-          {activeSection === "ReportSeason" ? (
-            <ReportSeasonProvider value={reportSeasonViewModel}>
-              <ReportSeasonScreen />
-            </ReportSeasonProvider>
-          ) : null}
-          {activeSection === "Events" ? (
-            <EventsProvider value={eventsViewModel}>
-              <EventsScreen />
-            </EventsProvider>
-          ) : null}
-          {activeSection === "Transcripts" ? (
-            <TranscriptsProvider
-              value={{
-                companies,
-                settings,
-                geminiCredentialStatus,
-                transcriptJobs,
-                transcriptJobsError,
-                transcriptJobForm,
-                transcriptJobCreateError,
-                transcriptJobCreateState,
-                transcriptJobRunInFlight,
-                selectedTranscriptJobId,
-                transcriptSegmentsByJobId,
-                transcriptSegmentsErrorByJobId,
-                transcriptSegmentSearchByJobId,
-                selectedTranscriptSegmentIdsByJobId,
-                transcriptNoteDraftJobId,
-                transcriptNoteForm,
-                transcriptNoteErrorByJobId,
-                transcriptNoteSaveInFlight,
-                transcriptLinkQueryByJobId,
-                transcriptLinkErrorByJobId,
-                transcriptLinkInFlight,
-                transcriptDeleteInFlight,
-                transcriptDescriptionDraftByJobId,
-                transcriptDescriptionErrorByJobId,
-                transcriptDescriptionSaveInFlight,
-                transcriptCompanySuggestions,
-                NotebookDateField,
-                NotebookQuarterField,
-                setTranscriptJobForm,
-                setTranscriptJobCreateError,
-                setTranscriptSegmentSearchByJobId,
-                setTranscriptDescriptionDraftByJobId,
-                refreshTranscriptJobs,
-                createTranscriptJob,
-                toggleTranscriptJob,
-                toggleTranscriptJobFromKeyboard,
-                runTranscriptJob,
-                deleteTranscriptJob,
-                updateTranscriptJobDescription,
-                updateTranscriptLinkQuery,
-                linkTranscriptJobCompany,
-                toggleTranscriptSegment,
-                openTranscriptNoteDraft,
-                createTranscriptNotebookEntry,
-                discardTranscriptNoteDraft,
-                updateTranscriptNoteForm,
-                selectTranscriptCompany,
-                formatAiProvider,
-                formatGeminiModel,
-                formatCredentialConfigured,
-                formatEnumLabel,
-              }}
-            >
-              <TranscriptsScreen />
-            </TranscriptsProvider>
-          ) : null}
-          {activeSection === "Sources" ? (
-            <SourcesProvider
-              value={{
-                sourceAdapters,
-                sourceAdaptersError,
-                selectedSourceAdapterId,
-                sourceRefreshState,
-                sourceRefreshResult,
-                sourceRefreshError,
-                sourceAdapterRefreshInFlight,
-                registryRefreshState,
-                registryRefreshResult,
-                registryRefreshError,
-                companyRegistryEntries,
-                filteredCompanyRegistryEntries,
-                companyRegistryEntriesError,
-                isCompanyRegistryListExpanded,
-                companyRegistrySearch,
-                addingRegistryTicker,
-                unmatchedSourceItems,
-                unmatchedSourceItemsError,
-                expandedUnmatchedAdapters,
-                refreshSources,
-                refreshCompanyRegistry,
-                setSourceEnabled,
-                toggleSourceAdapter,
-                toggleSourceAdapterFromKeyboard,
-                toggleCompanyRegistryList,
-                toggleUnmatchedSourceItems,
-                setCompanyRegistrySearch,
-                addCompanyFromRegistry,
-                openExternalUrl,
-                formatSourceScheduler,
-                formatNextRefresh,
-                formatTimestamp,
-              }}
-            >
-              <SourcesScreen />
-            </SourcesProvider>
-          ) : null}
-          {activeSection === "Diagnostics" && settings?.developerMode ? (
-            <DiagnosticsScreen onDisableDeveloperMode={disableDeveloperMode} />
-          ) : null}
-          {activeSection === "Settings" ? (
-            <SettingsScreenProvider
-              value={{
-                theme,
-                accentPalette,
-                locale,
-                settings,
-                settingsError,
-                licenseError,
-                licenseInFlight,
-                licenseKeyDraft,
-                licenseStatus,
-                feedPruneRetentionDays,
-                feedPruneResult,
-                onPruneFeedItems: pruneOldFeedItems,
-                geminiCredentialStatus,
-                geminiCredentialError,
-                geminiCredentialInFlight,
-                geminiApiKeyDraft,
-                shortcutBindings,
-                shortcutReferences,
-                onThemeChange: updateTheme,
-                onAccentPaletteChange: updateAccentPalette,
-                onLocaleChange: updateLocale,
-                onPollIntervalChange: updatePollInterval,
-                onBackfillYearsChange: updateBackfillYears,
-                onMcpPortChange: updateMcpPort,
-                onShortcutBindingsChange: updateShortcutBindings,
-                onYoutubeTranscriptionModelChange: updateYoutubeTranscriptionModel,
-                onYoutubeTranscriptionTimeoutChange: updateYoutubeTranscriptionTimeout,
-                onLogLevelChange: updateLogLevel,
-                onLogMaxFilesChange: updateLogMaxFiles,
-                onLogMaxFileBytesChange: updateLogMaxFileBytes,
-                onDbMaxConnectionsChange: updateDbMaxConnections,
-                onDbBusyTimeoutMsChange: updateDbBusyTimeoutMs,
-                onDbAcquireTimeoutMsChange: updateDbAcquireTimeoutMs,
-                onResetDatabaseSettings: resetDatabaseSettings,
-                onSourcesWorkersChange: updateSourcesWorkers,
-                onAutopilotWorkersChange: updateAutopilotWorkers,
-                onResetQueueSettings: resetQueueSettings,
-                onClearLicenseKey: clearLicenseKey,
-                onLicenseKeyDraftChange: setLicenseKeyDraft,
-                onSubmitLicenseKey: submitLicenseKey,
-                onGeminiApiKeyDraftChange: setGeminiApiKeyDraft,
-                onSaveGeminiApiKey: saveGeminiApiKey,
-                onClearGeminiApiKey: clearGeminiApiKey,
-                onOpenGeminiApiKeyPage: () => {
-                  void openUrl("https://aistudio.google.com/app/apikey");
-                },
-                onImportApplied: refreshDatabaseBackedViews,
-                formatTimestamp,
-                formatPollInterval,
-                formatGeminiModel,
-                formatCredentialConfigured,
-                formatCredentialKind,
-              }}
-            >
-              <SettingsScreen />
-            </SettingsScreenProvider>
-          ) : null}
-          </ErrorBoundary>
-
-        </section>
-      </AppShell>
-      <CreateViewModal
-        open={createViewOpen}
-        onClose={() => setCreateViewOpen(false)}
-        onCreate={handleCreateView}
-      />
+              {activeSection === "Research" ? (
+                <ResearchProvider value={researchViewModel}>
+                  <ResearchScreen />
+                </ResearchProvider>
+              ) : null}
+              {activeSection === "Notebooks" ? (
+                <NotebooksProvider value={notebooksViewModel}>
+                  <NotebooksScreen />
+                </NotebooksProvider>
+              ) : null}
+              {activeSection === "ReportSeason" ? (
+                <ReportSeasonProvider value={reportSeasonViewModel}>
+                  <ReportSeasonScreen />
+                </ReportSeasonProvider>
+              ) : null}
+              {activeSection === "Events" ? (
+                <EventsProvider value={eventsViewModel}>
+                  <EventsScreen />
+                </EventsProvider>
+              ) : null}
+              {activeSection === "Transcripts" ? (
+                <TranscriptsProvider
+                  value={{
+                    companies,
+                    settings,
+                    geminiCredentialStatus,
+                    transcriptJobs,
+                    transcriptJobsError,
+                    transcriptJobForm,
+                    transcriptJobCreateError,
+                    transcriptJobCreateState,
+                    transcriptJobRunInFlight,
+                    selectedTranscriptJobId,
+                    transcriptSegmentsByJobId,
+                    transcriptSegmentsErrorByJobId,
+                    transcriptSegmentSearchByJobId,
+                    selectedTranscriptSegmentIdsByJobId,
+                    transcriptNoteDraftJobId,
+                    transcriptNoteForm,
+                    transcriptNoteErrorByJobId,
+                    transcriptNoteSaveInFlight,
+                    transcriptLinkQueryByJobId,
+                    transcriptLinkErrorByJobId,
+                    transcriptLinkInFlight,
+                    transcriptDeleteInFlight,
+                    transcriptDescriptionDraftByJobId,
+                    transcriptDescriptionErrorByJobId,
+                    transcriptDescriptionSaveInFlight,
+                    transcriptCompanySuggestions,
+                    NotebookDateField,
+                    NotebookQuarterField,
+                    setTranscriptJobForm,
+                    setTranscriptJobCreateError,
+                    setTranscriptSegmentSearchByJobId,
+                    setTranscriptDescriptionDraftByJobId,
+                    refreshTranscriptJobs,
+                    createTranscriptJob,
+                    toggleTranscriptJob,
+                    toggleTranscriptJobFromKeyboard,
+                    runTranscriptJob,
+                    deleteTranscriptJob,
+                    updateTranscriptJobDescription,
+                    updateTranscriptLinkQuery,
+                    linkTranscriptJobCompany,
+                    toggleTranscriptSegment,
+                    openTranscriptNoteDraft,
+                    createTranscriptNotebookEntry,
+                    discardTranscriptNoteDraft,
+                    updateTranscriptNoteForm,
+                    selectTranscriptCompany,
+                    formatAiProvider,
+                    formatGeminiModel,
+                    formatCredentialConfigured,
+                    formatEnumLabel,
+                  }}
+                >
+                  <TranscriptsScreen />
+                </TranscriptsProvider>
+              ) : null}
+              {activeSection === "Sources" ? (
+                <SourcesProvider
+                  value={{
+                    sourceAdapters,
+                    sourceAdaptersError,
+                    selectedSourceAdapterId,
+                    sourceRefreshState,
+                    sourceRefreshResult,
+                    sourceRefreshError,
+                    sourceAdapterRefreshInFlight,
+                    registryRefreshState,
+                    registryRefreshResult,
+                    registryRefreshError,
+                    companyRegistryEntries,
+                    filteredCompanyRegistryEntries,
+                    companyRegistryEntriesError,
+                    isCompanyRegistryListExpanded,
+                    companyRegistrySearch,
+                    addingRegistryTicker,
+                    unmatchedSourceItems,
+                    unmatchedSourceItemsError,
+                    expandedUnmatchedAdapters,
+                    refreshSources,
+                    refreshCompanyRegistry,
+                    setSourceEnabled,
+                    toggleSourceAdapter,
+                    toggleSourceAdapterFromKeyboard,
+                    toggleCompanyRegistryList,
+                    toggleUnmatchedSourceItems,
+                    setCompanyRegistrySearch,
+                    addCompanyFromRegistry,
+                    openExternalUrl,
+                    formatSourceScheduler,
+                    formatNextRefresh,
+                    formatTimestamp,
+                  }}
+                >
+                  <SourcesScreen />
+                </SourcesProvider>
+              ) : null}
+              {activeSection === "Diagnostics" && settings?.developerMode ? (
+                <DiagnosticsScreen
+                  onDisableDeveloperMode={disableDeveloperMode}
+                />
+              ) : null}
+              {activeSection === "Settings" ? (
+                <SettingsScreenProvider
+                  value={{
+                    theme,
+                    accentPalette,
+                    locale,
+                    settings,
+                    settingsError,
+                    licenseError,
+                    licenseInFlight,
+                    licenseKeyDraft,
+                    licenseStatus,
+                    feedPruneRetentionDays,
+                    feedPruneResult,
+                    onPruneFeedItems: pruneOldFeedItems,
+                    geminiCredentialStatus,
+                    geminiCredentialError,
+                    geminiCredentialInFlight,
+                    geminiApiKeyDraft,
+                    shortcutBindings,
+                    shortcutReferences,
+                    onThemeChange: updateTheme,
+                    onAccentPaletteChange: updateAccentPalette,
+                    onLocaleChange: updateLocale,
+                    onPollIntervalChange: updatePollInterval,
+                    onBackfillYearsChange: updateBackfillYears,
+                    onMcpPortChange: updateMcpPort,
+                    onMcpWritesEnabledChange: updateMcpWritesEnabled,
+                    onShortcutBindingsChange: updateShortcutBindings,
+                    onYoutubeTranscriptionModelChange:
+                      updateYoutubeTranscriptionModel,
+                    onYoutubeTranscriptionTimeoutChange:
+                      updateYoutubeTranscriptionTimeout,
+                    onLogLevelChange: updateLogLevel,
+                    onLogMaxFilesChange: updateLogMaxFiles,
+                    onLogMaxFileBytesChange: updateLogMaxFileBytes,
+                    onDbMaxConnectionsChange: updateDbMaxConnections,
+                    onDbBusyTimeoutMsChange: updateDbBusyTimeoutMs,
+                    onDbAcquireTimeoutMsChange: updateDbAcquireTimeoutMs,
+                    onResetDatabaseSettings: resetDatabaseSettings,
+                    onSourcesWorkersChange: updateSourcesWorkers,
+                    onAutopilotWorkersChange: updateAutopilotWorkers,
+                    onResetQueueSettings: resetQueueSettings,
+                    onClearLicenseKey: clearLicenseKey,
+                    onLicenseKeyDraftChange: setLicenseKeyDraft,
+                    onSubmitLicenseKey: submitLicenseKey,
+                    onGeminiApiKeyDraftChange: setGeminiApiKeyDraft,
+                    onSaveGeminiApiKey: saveGeminiApiKey,
+                    onClearGeminiApiKey: clearGeminiApiKey,
+                    onOpenGeminiApiKeyPage: () => {
+                      void openUrl("https://aistudio.google.com/app/apikey");
+                    },
+                    onImportApplied: refreshDatabaseBackedViews,
+                    formatTimestamp,
+                    formatPollInterval,
+                    formatGeminiModel,
+                    formatCredentialConfigured,
+                    formatCredentialKind,
+                  }}
+                >
+                  <SettingsScreen />
+                </SettingsScreenProvider>
+              ) : null}
+            </ErrorBoundary>
+          </section>
+        </AppShell>
+        <CreateViewModal
+          open={createViewOpen}
+          onClose={() => setCreateViewOpen(false)}
+          onCreate={handleCreateView}
+        />
       </SettingsProvider>
     </LocaleContext.Provider>
   );

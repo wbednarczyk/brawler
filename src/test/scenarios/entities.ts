@@ -35,6 +35,7 @@ import type {
 } from "../../api/types";
 import type { AlertRule } from "../../api/generated/AlertRule";
 import type { AttentionEvent } from "../../api/generated/AttentionEvent";
+import type { AttentionSeverity } from "../../api/generated/AttentionSeverity";
 import type { ReconciliationResult } from "../../api/generated/ReconciliationResult";
 import type { BackupStatus } from "../../api/backups";
 import type { IrReportResolution } from "../../api/ir";
@@ -91,27 +92,62 @@ export const COMPANY_SPECS: readonly CompanySpec[] = [
   { key: "pzu", ticker: "PZU", name: "PZU Group", sector: "Financials" },
   { key: "peo", ticker: "PEO", name: "Bank Pekao", sector: "Financials" },
   { key: "pko", ticker: "PKO", name: "PKO Bank Polski", sector: "Financials" },
-  { key: "dnp", ticker: "DNP", name: "Dino Polska", sector: "Consumer Staples" },
+  {
+    key: "dnp",
+    ticker: "DNP",
+    name: "Dino Polska",
+    sector: "Consumer Staples",
+  },
   { key: "lpp", ticker: "LPP", name: "LPP", sector: "Consumer Discretionary" },
-  { key: "cps", ticker: "CPS", name: "Cyfrowy Polsat", sector: "Communication" },
+  {
+    key: "cps",
+    ticker: "CPS",
+    name: "Cyfrowy Polsat",
+    sector: "Communication",
+  },
   { key: "ccc", ticker: "CCC", name: "CCC", sector: "Consumer Discretionary" },
   { key: "alr", ticker: "ALR", name: "Alior Bank", sector: "Financials" },
   { key: "opl", ticker: "OPL", name: "Orange Polska", sector: "Communication" },
-  { key: "spl", ticker: "SPL", name: "Santander Bank Polska", sector: "Financials" },
+  {
+    key: "spl",
+    ticker: "SPL",
+    name: "Santander Bank Polska",
+    sector: "Financials",
+  },
   { key: "mbk", ticker: "MBK", name: "mBank", sector: "Financials" },
   { key: "kru", ticker: "KRU", name: "Kruk", sector: "Financials" },
   { key: "tpe", ticker: "TPE", name: "Tauron", sector: "Energy" },
   { key: "ena", ticker: "ENA", name: "Enea", sector: "Energy" },
-  { key: "jsw", ticker: "JSW", name: "Jastrzebska Spolka Weglowa", sector: "Materials" },
+  {
+    key: "jsw",
+    ticker: "JSW",
+    name: "Jastrzebska Spolka Weglowa",
+    sector: "Materials",
+  },
   { key: "gpw", ticker: "GPW", name: "GPW Exchange", sector: "Financials" },
-  { key: "ale", ticker: "ALE", name: "Allegro", sector: "Consumer Discretionary" },
+  {
+    key: "ale",
+    ticker: "ALE",
+    name: "Allegro",
+    sector: "Consumer Discretionary",
+  },
   { key: "atc", ticker: "ATC", name: "Arctic Paper", sector: "Materials" },
   { key: "bdx", ticker: "BDX", name: "Budimex", sector: "Industrials" },
   { key: "cbf", ticker: "CBF", name: "Cuprum Bank Fund", sector: "Financials" },
-  { key: "ats", ticker: "ATS", name: "Amica", sector: "Consumer Discretionary" },
+  {
+    key: "ats",
+    ticker: "ATS",
+    name: "Amica",
+    sector: "Consumer Discretionary",
+  },
   { key: "kty", ticker: "KTY", name: "Grupa Kety", sector: "Materials" },
   { key: "mil", ticker: "MIL", name: "Bank Millennium", sector: "Financials" },
-  { key: "pge", ticker: "PGE", name: "PGE Polska Grupa Energetyczna", sector: "Energy" },
+  {
+    key: "pge",
+    ticker: "PGE",
+    name: "PGE Polska Grupa Energetyczna",
+    sector: "Energy",
+  },
   { key: "txt", ticker: "TXT", name: "Text", sector: "Technology" },
 ] as const;
 
@@ -135,7 +171,10 @@ export function makeCompany(spec: CompanySpec): Company {
   };
 }
 
-export function makeRegistryEntry(spec: CompanySpec, tracked: boolean): CompanyRegistryEntry {
+export function makeRegistryEntry(
+  spec: CompanySpec,
+  tracked: boolean,
+): CompanyRegistryEntry {
   return {
     sourceAdapterId: "gpw-company-registry",
     exchange: "GPW",
@@ -151,9 +190,24 @@ export function makeRegistryEntry(spec: CompanySpec, tracked: boolean): CompanyR
 
 export function makeFeedItem(spec: CompanySpec, index: number): FeedItem {
   const kinds = [
-    { type: "Official report", source: "GPW ESPI/EBI", attribution: "GPW", language: "pl" },
-    { type: "News", source: "Bankier RSS", attribution: "Bankier", language: "pl" },
-    { type: "Transcript", source: "Sample transcript", attribution: "Sample", language: "en" },
+    {
+      type: "Official report",
+      source: "GPW ESPI/EBI",
+      attribution: "GPW",
+      language: "pl",
+    },
+    {
+      type: "News",
+      source: "Bankier RSS",
+      attribution: "Bankier",
+      language: "pl",
+    },
+    {
+      type: "Transcript",
+      source: "Sample transcript",
+      attribution: "Sample",
+      language: "en",
+    },
   ];
   const kind = kinds[index % kinds.length];
   return {
@@ -174,12 +228,21 @@ export function makeFeedItem(spec: CompanySpec, index: number): FeedItem {
     bodyText: `Body text for ${spec.name} sample item ${index}.`,
     attachments:
       index % 3 === 0
-        ? [{ id: `attach_${spec.key}_${index}`, label: "Attachment", url: `https://example.test/doc/${spec.key}.pdf` }]
+        ? [
+            {
+              id: `attach_${spec.key}_${index}`,
+              label: "Attachment",
+              url: `https://example.test/doc/${spec.key}.pdf`,
+            },
+          ]
         : [],
   };
 }
 
-export function makeSignal(spec: CompanySpec, confirmed: boolean): CompanySignal {
+export function makeSignal(
+  spec: CompanySpec,
+  confirmed: boolean,
+): CompanySignal {
   return {
     id: `signal_sample_${spec.key}_${confirmed ? "dividend" : "guidance"}`,
     companyId: companyId(spec),
@@ -225,23 +288,93 @@ export function makeOwnershipOverview(spec: CompanySpec): OwnershipOverview {
       { asOf: "2025-12-31", pct: "46.8" },
     ],
     holders: [
-      { holderKey: "JACEK DUCH", name: "Jacek Duch", holderType: "founder_insider", capitalPct: "25.5", votesPct: "25.5", asOf: "2025-12-31", source: "report_document", skinInTheGame: { person: "Jacek Duch" } },
-      { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", capitalPct: "15.9", votesPct: "15.9", asOf: "2025-12-31", source: "report_document", skinInTheGame: { person: "Jakub Dwernicki", via: "Dwernicki Fundacja Rodzinna" } },
-      { holderKey: "NN PTE", name: "NN PTE", holderType: "ofe_pension", capitalPct: "6.0", votesPct: "6.0", asOf: "2025-12-31", source: "report_document" },
-      { holderKey: "PTE ALLIANZ POLSKA", name: "PTE Allianz Polska", holderType: "ofe_pension", capitalPct: "5.3", votesPct: "5.3", asOf: "2025-12-31", source: "report_document" },
-      { holderKey: "CYBER_FOLKS S.A.", name: "cyber_Folks S.A.", holderType: "treasury_shares", capitalPct: "0.5", votesPct: "0.5", asOf: "2025-12-31", source: "report_document" },
-      { holderKey: "ITEMA VENTURES UAB", name: "Itema Ventures UAB", asOf: "2025-12-31", source: "report_document" },
+      {
+        holderKey: "JACEK DUCH",
+        name: "Jacek Duch",
+        holderType: "founder_insider",
+        capitalPct: "25.5",
+        votesPct: "25.5",
+        asOf: "2025-12-31",
+        source: "report_document",
+        skinInTheGame: { person: "Jacek Duch" },
+      },
+      {
+        holderKey: "JAKUB DWERNICKI",
+        name: "Jakub Dwernicki",
+        holderType: "founder_insider",
+        capitalPct: "15.9",
+        votesPct: "15.9",
+        asOf: "2025-12-31",
+        source: "report_document",
+        skinInTheGame: {
+          person: "Jakub Dwernicki",
+          via: "Dwernicki Fundacja Rodzinna",
+        },
+      },
+      {
+        holderKey: "NN PTE",
+        name: "NN PTE",
+        holderType: "ofe_pension",
+        capitalPct: "6.0",
+        votesPct: "6.0",
+        asOf: "2025-12-31",
+        source: "report_document",
+      },
+      {
+        holderKey: "PTE ALLIANZ POLSKA",
+        name: "PTE Allianz Polska",
+        holderType: "ofe_pension",
+        capitalPct: "5.3",
+        votesPct: "5.3",
+        asOf: "2025-12-31",
+        source: "report_document",
+      },
+      {
+        holderKey: "CYBER_FOLKS S.A.",
+        name: "cyber_Folks S.A.",
+        holderType: "treasury_shares",
+        capitalPct: "0.5",
+        votesPct: "0.5",
+        asOf: "2025-12-31",
+        source: "report_document",
+      },
+      {
+        holderKey: "ITEMA VENTURES UAB",
+        name: "Itema Ventures UAB",
+        asOf: "2025-12-31",
+        source: "report_document",
+      },
     ],
     history: [
-      { holderKey: "JACEK DUCH", name: "Jacek Duch", holderType: "founder_insider", points: founderPoints("25.5") },
-      { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", points: founderPoints("15.9") },
+      {
+        holderKey: "JACEK DUCH",
+        name: "Jacek Duch",
+        holderType: "founder_insider",
+        points: founderPoints("25.5"),
+      },
+      {
+        holderKey: "JAKUB DWERNICKI",
+        name: "Jakub Dwernicki",
+        holderType: "founder_insider",
+        points: founderPoints("15.9"),
+      },
     ],
     residuals: [
       // Unreadable residual → the warnbox reports it as a flagged gap.
-      { reportDocumentId: `doc_${spec.key}_2023`, parseState: "glyph_encoded", detectedAsOf: "2023-12-31", matchedHeading: "Akcjonariat" },
+      {
+        reportDocumentId: `doc_${spec.key}_2023`,
+        parseState: "glyph_encoded",
+        detectedAsOf: "2023-12-31",
+        matchedHeading: "Akcjonariat",
+      },
       // A second unreadable residual — after ADR 0084 both are honest flagged
       // gaps with no OCR action (the retired tier-4 path used to offer one).
-      { reportDocumentId: `doc_${spec.key}_2022`, parseState: "glyph_encoded", detectedAsOf: "2022-12-31", matchedHeading: "Akcjonariat" },
+      {
+        reportDocumentId: `doc_${spec.key}_2022`,
+        parseState: "glyph_encoded",
+        detectedAsOf: "2022-12-31",
+        matchedHeading: "Akcjonariat",
+      },
     ],
   };
 }
@@ -429,7 +562,9 @@ export function makeInsiderOverview(spec: CompanySpec): InsiderOverview {
 // a target, and a partial entry with neither target nor broker PDF. The newest
 // target-carrying entry drives the "vs target" readout; `lastRefreshedAt` feeds
 // the footer's honest refresh line. Third-party opinions — never advice.
-export function makeAnalystRecommendationsView(spec: CompanySpec): AnalystRecommendationsView {
+export function makeAnalystRecommendationsView(
+  spec: CompanySpec,
+): AnalystRecommendationsView {
   const source = `https://www.biznesradar.pl/rekomendacje-spolki/${spec.ticker}`;
   return {
     companyId: companyId(spec),
@@ -536,7 +671,10 @@ export function makeEvent(spec: CompanySpec): CompanyEvent {
   };
 }
 
-export function makeNotebookEntry(spec: CompanySpec, index: number): NotebookEntry {
+export function makeNotebookEntry(
+  spec: CompanySpec,
+  index: number,
+): NotebookEntry {
   return {
     id: `note_sample_${spec.key}_${index}`,
     companyId: companyId(spec),
@@ -576,7 +714,10 @@ export function makeTranscriptJob(spec: CompanySpec): TranscriptJob {
   };
 }
 
-export function makeTranscriptSegment(spec: CompanySpec, index: number): TranscriptSegment {
+export function makeTranscriptSegment(
+  spec: CompanySpec,
+  index: number,
+): TranscriptSegment {
   return {
     id: `segment_sample_${spec.key}_${index}`,
     transcriptJobId: `transcript_sample_${spec.key}`,
@@ -590,11 +731,19 @@ export function makeTranscriptSegment(spec: CompanySpec, index: number): Transcr
   };
 }
 
-export function makeWatchlist(id: string, name: string, companyCount: number): Watchlist {
+export function makeWatchlist(
+  id: string,
+  name: string,
+  companyCount: number,
+): Watchlist {
   return { id, name, description: null, companyCount };
 }
 
-export function makeMembership(watchlistId: string, watchlistName: string, spec: CompanySpec): WatchlistMembership {
+export function makeMembership(
+  watchlistId: string,
+  watchlistName: string,
+  spec: CompanySpec,
+): WatchlistMembership {
   return { watchlistId, watchlistName, companyId: companyId(spec) };
 }
 
@@ -621,7 +770,15 @@ export function makeAlertRule(
   };
 }
 
-export function makeAttentionEvent(id: string, ruleId: string, companyId: string): AttentionEvent {
+export function makeAttentionEvent(
+  id: string,
+  ruleId: string,
+  companyId: string,
+  // Mirrors the backend mapping (product-spec §Attention Routing / `storage::severity`):
+  // the paired sample rule is `signal_category` + `profit_warning`, which maps to
+  // `urgent`. Callers override for other trigger types.
+  severity: AttentionSeverity = "urgent",
+): AttentionEvent {
   return {
     id,
     ruleId,
@@ -632,6 +789,10 @@ export function makeAttentionEvent(id: string, ruleId: string, companyId: string
     firedAt: SAMPLE_NOW,
     seen: false,
     dismissed: false,
+    severity,
+    // The filing's own title — the concrete statement a stream row shows (v0.60 D6).
+    evidenceTitle: "Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR",
+    evidenceDetail: null,
   };
 }
 
@@ -639,7 +800,9 @@ export function makeAttentionEvent(id: string, ruleId: string, companyId: string
 // Research workspace
 // ============================================================================
 
-export function makeResearchEvidenceItem(spec: CompanySpec): ResearchEvidenceItem {
+export function makeResearchEvidenceItem(
+  spec: CompanySpec,
+): ResearchEvidenceItem {
   return {
     id: `evidence_sample_${spec.key}`,
     evidenceType: "feed_item",
@@ -652,7 +815,10 @@ export function makeResearchEvidenceItem(spec: CompanySpec): ResearchEvidenceIte
     sourceUrl: `https://example.test/feed/${spec.key}/0`,
     attribution: "GPW",
     trustCategory: "official_report",
-    reviewState: { changedSinceCompanyReview: true, changedSinceWatchlistReview: true },
+    reviewState: {
+      changedSinceCompanyReview: true,
+      changedSinceWatchlistReview: true,
+    },
   };
 }
 
@@ -703,7 +869,9 @@ export function makeResearchReminder(spec: CompanySpec): ResearchReminder {
   };
 }
 
-export function makeResearchReviewCheckpoint(spec: CompanySpec): ResearchReviewCheckpoint {
+export function makeResearchReviewCheckpoint(
+  spec: CompanySpec,
+): ResearchReviewCheckpoint {
   return {
     id: `checkpoint_sample_${spec.key}`,
     scopeType: "company",
@@ -747,11 +915,16 @@ export function makeClaimToVerify(spec: CompanySpec): ClaimToVerify {
   return {
     claim: makeManagementClaim(spec),
     arrivedPeriodId: `period_sample_${spec.key}_2026_FY`,
-    verifyingFactCandidate: { factId: `fact_sample_${spec.key}_revenue`, valueNumeric: "1050000000" },
+    verifyingFactCandidate: {
+      factId: `fact_sample_${spec.key}_revenue`,
+      valueNumeric: "1050000000",
+    },
   };
 }
 
-export function makeClaimsToVerify(specs: readonly CompanySpec[]): ClaimsToVerify {
+export function makeClaimsToVerify(
+  specs: readonly CompanySpec[],
+): ClaimsToVerify {
   return {
     due: specs.slice(0, 1).map(makeClaimToVerify),
     overdue: specs.slice(1, 2).map(makeClaimToVerify),
@@ -759,12 +932,14 @@ export function makeClaimsToVerify(specs: readonly CompanySpec[]): ClaimsToVerif
   };
 }
 
-
 // ============================================================================
 // Fundamentals (financials + KPIs + report documents)
 // ============================================================================
 
-export function makeFinancialPeriod(spec: CompanySpec, fiscalYear: number): FinancialPeriod {
+export function makeFinancialPeriod(
+  spec: CompanySpec,
+  fiscalYear: number,
+): FinancialPeriod {
   return {
     id: `period_sample_${spec.key}_${fiscalYear}_FY`,
     companyId: companyId(spec),
@@ -777,7 +952,10 @@ export function makeFinancialPeriod(spec: CompanySpec, fiscalYear: number): Fina
   };
 }
 
-export function makeFinancialFact(spec: CompanySpec, fiscalYear: number): FinancialFact {
+export function makeFinancialFact(
+  spec: CompanySpec,
+  fiscalYear: number,
+): FinancialFact {
   return {
     id: `fact_sample_${spec.key}_revenue`,
     companyId: companyId(spec),
@@ -870,7 +1048,10 @@ export function makeReportPreparation(spec: CompanySpec): ReportPreparation {
   };
 }
 
-export function makeReportSeasonEntry(spec: CompanySpec, upcoming: boolean): ReportSeasonEntry {
+export function makeReportSeasonEntry(
+  spec: CompanySpec,
+  upcoming: boolean,
+): ReportSeasonEntry {
   return {
     companyId: companyId(spec),
     qualifiedTicker: qualifiedTicker(spec),
@@ -944,7 +1125,8 @@ const SOURCE_ADAPTER_SPECS: readonly SourceAdapterSpec[] = [
     userConfigurable: true,
     healthStatus: "healthy",
     enabled: true,
-    sourceUrl: "https://www.bankier.pl/gielda/notowania/akcje/{TICKER}/komunikaty",
+    sourceUrl:
+      "https://www.bankier.pl/gielda/notowania/akcje/{TICKER}/komunikaty",
     markets: ["GPW"],
   },
   {
@@ -1005,7 +1187,8 @@ export function makeSourceAdapter(spec: SourceAdapterSpec): SourceAdapter {
     lastTrigger: spec.enabled ? "scheduler" : null,
     lastSuccessAt: healthy ? SAMPLE_NOW : null,
     lastErrorAt: spec.healthStatus === "attention" ? SAMPLE_NOW : null,
-    lastError: spec.healthStatus === "attention" ? "Sample fetch warning" : null,
+    lastError:
+      spec.healthStatus === "attention" ? "Sample fetch warning" : null,
     lastItemsFetched: healthy ? 12 : null,
     lastItemsCreated: healthy ? 4 : null,
     lastItemsMatched: healthy ? 3 : null,
@@ -1022,7 +1205,9 @@ export function makeSourceAdapters(): SourceAdapter[] {
   return SOURCE_ADAPTER_SPECS.map(makeSourceAdapter);
 }
 
-export function makeUnmatchedSourceItem(spec: CompanySpec): UnmatchedSourceItem {
+export function makeUnmatchedSourceItem(
+  spec: CompanySpec,
+): UnmatchedSourceItem {
   return {
     id: `unmatched_sample_${spec.key}`,
     adapterId: "bankier-market-rss",
@@ -1034,7 +1219,9 @@ export function makeUnmatchedSourceItem(spec: CompanySpec): UnmatchedSourceItem 
   };
 }
 
-export function makeSourceIngestionResult(adapterId: string): SourceIngestionResult {
+export function makeSourceIngestionResult(
+  adapterId: string,
+): SourceIngestionResult {
   return {
     adapterId,
     itemsFetched: 12,
@@ -1067,8 +1254,14 @@ export function makeBackfillProgress(spec: CompanySpec): BackfillProgress {
 export function makeIrReportResolution(spec: CompanySpec): IrReportResolution {
   return {
     candidates: [
-      { url: `https://example.test/ir/${spec.key}/annual-2026.pdf`, label: "Annual report 2026" },
-      { url: `https://example.test/ir/${spec.key}/q1-2026.pdf`, label: "Q1 2026 report" },
+      {
+        url: `https://example.test/ir/${spec.key}/annual-2026.pdf`,
+        label: "Annual report 2026",
+      },
+      {
+        url: `https://example.test/ir/${spec.key}/q1-2026.pdf`,
+        label: "Q1 2026 report",
+      },
     ],
   };
 }
@@ -1095,10 +1288,14 @@ export function makeUserSettings(): UserSettings {
     },
     logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
     shortcutBindings: {},
-    database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
+    database: {
+      maxConnections: 4,
+      busyTimeoutMs: 5000,
+      acquireTimeoutMs: 10000,
+    },
     queue: { sourcesWorkers: 2, autopilotWorkers: 3 },
     pinnedCompanyIds: [],
-    mcp: { enabled: false, port: 8317 },
+    mcp: { enabled: false, port: 8317, writesEnabled: false },
   };
 }
 
@@ -1129,14 +1326,23 @@ export const AI_PROVIDER_CATALOG: readonly AiProviderCatalogEntry[] = [
   {
     providerId: "provider_gemini",
     label: "Gemini",
-    models: ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+    models: [
+      "gemini-3.5-flash",
+      "gemini-3.1-pro-preview",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+    ],
     defaultModel: "gemini-3.5-flash",
     requiresCredential: true,
   },
   {
     providerId: "provider_anthropic",
     label: "Claude (Anthropic)",
-    models: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
+    models: [
+      "claude-sonnet-4-6",
+      "claude-opus-4-8",
+      "claude-haiku-4-5-20251001",
+    ],
     defaultModel: "claude-sonnet-4-6",
     requiresCredential: true,
   },
@@ -1240,7 +1446,10 @@ export function makeLogStatus(): LogStatus {
   };
 }
 
-export function makeDatabaseStatus(companies: number, sourceAdapters: number): DatabaseStatus {
+export function makeDatabaseStatus(
+  companies: number,
+  sourceAdapters: number,
+): DatabaseStatus {
   return { appliedMigrations: 60, companies, sourceAdapters, settings: 1 };
 }
 
@@ -1249,8 +1458,18 @@ export function makeBackupStatus(): BackupStatus {
     lastBackupAt: SAMPLE_NOW,
     backupCount: 2,
     backups: [
-      { fileName: "brawler-2026-06-08.snapshot.sqlite", createdAt: SAMPLE_NOW, kind: "snapshot", sizeBytes: 2_097_152 },
-      { fileName: "brawler-rotating-01.sqlite", createdAt: SAMPLE_NOW, kind: "rotating", sizeBytes: 1_048_576 },
+      {
+        fileName: "brawler-2026-06-08.snapshot.sqlite",
+        createdAt: SAMPLE_NOW,
+        kind: "snapshot",
+        sizeBytes: 2_097_152,
+      },
+      {
+        fileName: "brawler-rotating-01.sqlite",
+        createdAt: SAMPLE_NOW,
+        kind: "rotating",
+        sizeBytes: 1_048_576,
+      },
     ],
   };
 }
@@ -1320,7 +1539,9 @@ export function makeQualityFramework(): QualityFramework {
   };
 }
 
-export function makeFrameworkEvaluation(spec: CompanySpec): FrameworkEvaluation {
+export function makeFrameworkEvaluation(
+  spec: CompanySpec,
+): FrameworkEvaluation {
   const id = `evaluation_sample_${spec.key}`;
   return {
     id,
@@ -1378,8 +1599,36 @@ export function makeFrameworkEvaluation(spec: CompanySpec): FrameworkEvaluation 
 }
 
 export const AVAILABLE_METRIC_KEYS: readonly MetricKeyInfo[] = [
-  { key: "revenue", label: "Revenue", unit: "PLN", valueKind: "currency", computation: "reported", scope: "global" },
-  { key: "ebitda_margin", label: "EBITDA margin", unit: "ratio", valueKind: "ratio", computation: "derived", scope: "global" },
-  { key: "roic", label: "ROIC", unit: "ratio", valueKind: "ratio", computation: "derived", scope: "global" },
-  { key: "operating_margin", label: "Operating margin", unit: "ratio", valueKind: "ratio", computation: "derived", scope: "global" },
+  {
+    key: "revenue",
+    label: "Revenue",
+    unit: "PLN",
+    valueKind: "currency",
+    computation: "reported",
+    scope: "global",
+  },
+  {
+    key: "ebitda_margin",
+    label: "EBITDA margin",
+    unit: "ratio",
+    valueKind: "ratio",
+    computation: "derived",
+    scope: "global",
+  },
+  {
+    key: "roic",
+    label: "ROIC",
+    unit: "ratio",
+    valueKind: "ratio",
+    computation: "derived",
+    scope: "global",
+  },
+  {
+    key: "operating_margin",
+    label: "Operating margin",
+    unit: "ratio",
+    valueKind: "ratio",
+    computation: "derived",
+    scope: "global",
+  },
 ] as const;

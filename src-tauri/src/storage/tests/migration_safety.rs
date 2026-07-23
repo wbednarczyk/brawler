@@ -70,6 +70,49 @@ fn older_database_upgrades_to_latest_without_losing_data() {
 }
 
 #[test]
+fn migration_0114_adds_evidence_title_column_tolerant_of_legacy_rows() {
+    // v0.60 D7: 0114 appends `attention_events.evidence_title`. Append-only +
+    // tolerant-read guard — a row that predates the column must upgrade cleanly and
+    // read back with a NULL snapshot (the read model then falls back to live joins).
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 113).expect("apply schema up to pre-0114");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('legacy_evt', NULL, 'source_reconciliation', 'c1',
+                     'source_reconciliation', 'recon_x', '2026-07-14T00:00:00Z')",
+            [],
+        )
+        .expect("seed a legacy attention event on the pre-0114 schema");
+
+    apply_migrations(&mut connection).expect("upgrade to latest");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "upgrade should reach the latest migration",
+    );
+    let snapshot: Option<String> = connection
+        .query_row(
+            "SELECT evidence_title FROM attention_events WHERE id = 'legacy_evt'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the new column is present and readable on the legacy row");
+    assert_eq!(
+        snapshot, None,
+        "a legacy row's snapshot is NULL (join fallback)"
+    );
+}
+
+#[test]
 fn upgrades_committed_v1_snapshot_to_latest() {
     // A REAL historical-schema snapshot captured at migration v1 (see
     // corpus/legacy_v1.sqlite, generated with sqlite3 from 0001_initial.sql +

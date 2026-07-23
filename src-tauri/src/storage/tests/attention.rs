@@ -94,6 +94,14 @@ fn bar(date: &str, close: f64) -> DailyQuote {
     }
 }
 
+/// Wall-clock now as RFC3339 — a fresh `fired_at` for events seeded via raw SQL,
+/// so the severity aging demotion never fires during a title assertion.
+fn fresh_fired_at() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .expect("format rfc3339")
+}
+
 // --- signal-category trigger -------------------------------------------------
 
 #[test]
@@ -497,6 +505,7 @@ fn attention_event_writer_stamps_trigger_type_on_the_row() {
         "c1",
         crate::storage::attention::EVIDENCE_COMPANY_SIGNAL,
         "sig1",
+        None,
     )
     .expect("insert event");
     assert!(created, "a new event row is created");
@@ -614,4 +623,313 @@ fn creating_an_identical_rule_is_a_typed_duplicate_error() {
 
     let rules = state.attention().list_alert_rules().expect("list");
     assert_eq!(rules.len(), 1, "no twin row was inserted");
+}
+
+// --- evidence specifics (v0.60 D6: every row states WHAT happened) ------------
+
+#[test]
+fn list_attention_events_carries_the_signal_filing_title_as_evidence_title() {
+    // A signal-category event must state its own filing title (the specific
+    // statement), not just its category — owner dogfooding 2026-07-23.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .attention()
+        .create_alert_rule(new_signal_rule(&company.id))
+        .expect("rule");
+    state
+        .ingest_bankier_company_items(&[insider_item(&company, "9300080")])
+        .expect("ingestion classifies and fires");
+
+    let events = events(&state);
+    assert_eq!(events.len(), 1, "one insider event fired");
+    assert_eq!(
+        events[0].evidence_title.as_deref(),
+        Some("Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR"),
+        "a signal event carries its filing title as the concrete statement"
+    );
+    assert_eq!(
+        events[0].evidence_detail, None,
+        "a signal event has no secondary detail datum"
+    );
+}
+
+#[test]
+fn list_attention_events_carries_reconciliation_title_and_source_name() {
+    // A missed-report reconciliation event must state the missed report's title
+    // and the source that missed it (owner: "jaki dokładniej raport? które źródło?").
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO source_reconciliation_results
+                (id, witness_adapter_id, company_id, disclosure_date, witness_title, status)
+             VALUES ('recon1', 'gpw-espi-ebi', 'c1', '2026-07-14',
+                     'Raport bieżący 15/2026 — zawarcie znaczącej umowy', 'espi_only')",
+            [],
+        )
+        .expect("seed reconciliation result");
+    let fired_at = fresh_fired_at();
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('attn1', NULL, 'source_reconciliation', 'c1',
+                     'source_reconciliation', 'recon1', ?1)",
+            [&fired_at],
+        )
+        .expect("seed reconciliation event");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].evidence_title.as_deref(),
+        Some("Raport bieżący 15/2026 — zawarcie znaczącej umowy"),
+        "a reconciliation event carries the missed report's witness title"
+    );
+    assert_eq!(
+        events[0].evidence_detail.as_deref(),
+        Some("GPW ESPI/EBI"),
+        "a reconciliation event carries the missed source's display name (adapter id resolved)"
+    );
+}
+
+#[test]
+fn list_attention_events_reconciliation_title_falls_back_to_report_type_and_number() {
+    // Live gap (owner ledger 2026-07-23): the GPW registry parser leaves
+    // `witness_title` empty on fresh rows, but `report_type` + `report_number`
+    // ARE parsed — and they answer "jaki raport?". The read model falls back to
+    // their concatenation (two raw registry strings, no invented words).
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    // Empty witness_title, but report_type + report_number present.
+    connection
+        .execute(
+            "INSERT INTO source_reconciliation_results
+                (id, witness_adapter_id, company_id, disclosure_date,
+                 witness_title, report_type, report_number, status)
+             VALUES ('recon1', 'gpw-espi-ebi', 'c1', '2026-07-14',
+                     '', 'Raport bieżący', '15/2026', 'espi_only')",
+            [],
+        )
+        .expect("seed titleless reconciliation");
+    let fired_at = fresh_fired_at();
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('attn1', NULL, 'source_reconciliation', 'c1',
+                     'source_reconciliation', 'recon1', ?1)",
+            [&fired_at],
+        )
+        .expect("seed event");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].evidence_title.as_deref(),
+        Some("Raport bieżący 15/2026"),
+        "an empty witness_title falls back to report_type + report_number"
+    );
+    assert_eq!(events[0].evidence_detail.as_deref(), Some("GPW ESPI/EBI"));
+}
+
+#[test]
+fn list_attention_events_reconciliation_title_none_when_no_title_source_at_all() {
+    // Neither a witness_title nor report_type/number → NULL, so the frontend keeps
+    // its generic reconciliation copy (tolerant fallback, never blank/crash).
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO source_reconciliation_results
+                (id, witness_adapter_id, company_id, disclosure_date, witness_title, status)
+             VALUES ('recon1', 'gpw-espi-ebi', 'c1', '2026-07-14', '', 'espi_only')",
+            [],
+        )
+        .expect("seed empty reconciliation");
+    let fired_at = fresh_fired_at();
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('attn1', NULL, 'source_reconciliation', 'c1',
+                     'source_reconciliation', 'recon1', ?1)",
+            [&fired_at],
+        )
+        .expect("seed event");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].evidence_title, None,
+        "no title source → NULL → generic FE fallback"
+    );
+}
+
+#[test]
+fn list_attention_events_carries_autopilot_run_document_title_and_status() {
+    // An autopilot-completion event must name the report the run processed and
+    // how it ended (owner: "Autopilot zakończony → co to oznacza?").
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, title)
+             VALUES ('doc1', 'c1', 'user_url', 'https://example.test/doc1',
+                     'Skonsolidowany raport kwartalny Q2 2026')",
+            [],
+        )
+        .expect("seed report document");
+    connection
+        .execute(
+            "INSERT INTO autopilot_run (id, company_id, report_document_id, trigger, mode, status)
+             VALUES ('run1', 'c1', 'doc1', 'manual', 'assist', 'succeeded')",
+            [],
+        )
+        .expect("seed run");
+    let fired_at = fresh_fired_at();
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('attn1', NULL, 'autopilot_run_completed', 'c1',
+                     'autopilot_run', 'run1', ?1)",
+            [&fired_at],
+        )
+        .expect("seed autopilot event");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].evidence_title.as_deref(),
+        Some("Skonsolidowany raport kwartalny Q2 2026"),
+        "an autopilot event names the processed report document"
+    );
+    assert_eq!(
+        events[0].evidence_detail.as_deref(),
+        Some("succeeded"),
+        "an autopilot event carries the run's raw status for the frontend to translate"
+    );
+}
+
+#[test]
+fn list_attention_events_leaves_evidence_title_none_for_pruned_evidence() {
+    // Tolerant fallback: an event whose evidence row is gone (legacy/pruned)
+    // never crashes and never blanks — it simply has no title.
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    let fired_at = fresh_fired_at();
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('attn1', NULL, 'source_reconciliation', 'c1',
+                     'source_reconciliation', 'gone', ?1)",
+            [&fired_at],
+        )
+        .expect("seed event with missing evidence");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].evidence_title, None);
+    assert_eq!(events[0].evidence_detail, None);
+}
+
+#[test]
+fn signal_event_title_survives_feed_item_prune_via_durable_snapshot() {
+    // Owner dogfooding 2026-07-23: GPW:XTB profit-warning events rendered a bare
+    // category because their feed items were pruned. `company_signals.feed_item_id`
+    // is ON DELETE CASCADE, so pruning the feed item cascade-deletes the SIGNAL row
+    // too — the attention event survives (its evidence_ref is plain TEXT), but the
+    // read-time join to `feed_items.title` finds nothing. The fix snapshots the
+    // title onto the event at fire time (v0.60 D7): after the feed item (and its
+    // cascaded signal) are gone, the event still states WHAT happened.
+    const INSIDER_TITLE: &str = "Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR";
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .attention()
+        .create_alert_rule(new_signal_rule(&company.id))
+        .expect("rule");
+    state
+        .ingest_bankier_company_items(&[insider_item(&company, "9300082")])
+        .expect("ingestion classifies and fires");
+
+    // Sanity: the fresh event carries its filing title (snapshot == live join).
+    let before = events(&state);
+    assert_eq!(before.len(), 1, "one insider event fired");
+    assert_eq!(before[0].evidence_title.as_deref(), Some(INSIDER_TITLE));
+
+    // Prune the unsaved feed item → ON DELETE CASCADE removes the company_signal.
+    state
+        .feed()
+        .delete_unsaved_feed_items()
+        .expect("prune unsaved feed items");
+
+    let after = events(&state);
+    assert_eq!(
+        after.len(),
+        1,
+        "the attention event itself survives the prune"
+    );
+    assert_eq!(
+        after[0].evidence_title.as_deref(),
+        Some(INSIDER_TITLE),
+        "the durable fire-time snapshot survives the feed prune that killed the signal"
+    );
 }

@@ -1,18 +1,27 @@
-# The MCP server — let an AI assistant read your research
+# The MCP server — let an AI assistant work with your research
 
-Brawler can expose a small, **read-only** connector that an AI assistant (Claude
-Code, Claude Desktop, or any other MCP client) can call to answer questions
-about **your own research** — the companies you track, the facts you've
-confirmed, the management claims you're watching, and your quality assessments.
+Brawler can expose a connector that an AI assistant (Claude Code, Claude
+Desktop, or any other MCP client) calls to work with **your own research** — the
+companies you track, the facts you've confirmed, the management claims you're
+watching, your quality assessments, and more. It can **read everything** and,
+when you allow it, **write research back** (notes, claims, facts, verdicts) —
+always with a source.
 
 It uses **MCP** (the Model Context Protocol), the standard way local AI
-assistants plug into tools. Turn it on and your assistant can pull from Brawler
+assistants plug into tools. Turn it on and your assistant pulls from Brawler
 directly — no copy-paste, no bespoke integration.
 
-Two things to be clear about up front:
+This page is the **reference** (enabling, security, troubleshooting). For the
+step-by-step *connect an agent and let it write* walk-through, see
+**[Connecting an AI agent to Brawler](mcp-agent-guide.md)**.
 
-- It is **read-only**. The assistant can *look up* your research; it cannot
-  change anything, add companies, or run jobs.
+Two tiers, and one thing to be clear about up front:
+
+- **Read tools** are live whenever the server is on. The assistant can look up
+  anything you can see in the app.
+- **Act tools** (write, mark, trigger jobs) are **off by default** and only work
+  after you turn on **Allow write tools**. Deletes, undo, and
+  settings/credentials are **never** exposed — those stay UI-only.
 - It is **local and off by default**. The server only ever listens on your own
   machine (`127.0.0.1`), only while Brawler is open, only when you enable it,
   and only for a caller holding your token.
@@ -94,22 +103,39 @@ omit the flags. Point the client's stdio-server command at this executable
 thinking of its own — it just pipes your assistant's requests to the same local
 server, so Brawler must be **open with the server enabled** for it to work.
 
-## What the assistant can ask for
+## What the assistant can do
 
-Four read-only tools, each backed by the same data you see in the app:
+The surface mirrors the app: **read tools** cover the whole workspace
+(companies, watchlists, feed, financial facts with their provenance, ownership
+and insiders, health and red flags, reports and diffs, transcripts, notes,
+claims, expectations, the journal, quality frameworks, the calendar, autopilot
+runs, attention events, and the morning briefing); **act tools** let the
+assistant record research and run jobs once you allow writes. The complete,
+always-current tool list lives in the
+[agent guide's catalog](mcp-agent-guide.md#the-full-tool-catalog).
 
-- **`get_company_dossier`** — a company's identity, fundamentals coverage, a
-  slice of confirmed facts, and its scorecard summary.
-- **`search_research`** — full-text search across your research (optionally
-  scoped to one company).
-- **`list_claims_due`** — the management claims that are due or overdue to
-  verify.
-- **`get_quality_assessment`** — your qualitative assessment and quality-
-  framework evaluations for a company.
-
-All four are **decision support**, never advice: they return your sourced facts
-and computed analysis, and — like the rest of Brawler — they never tell the
+Everything is **decision support**, never advice: tools return your sourced
+facts and computed analysis, and — like the rest of Brawler — never tell the
 assistant to buy, sell, or hold.
+
+## Letting the assistant write (Allow write tools)
+
+Write tools are off until you turn on **Settings → MCP server → Allow write
+tools**. Once on, the assistant can create and update notes, claims, facts,
+verdicts, expectations, journal entries, and more, plus manage watchlists and
+trigger jobs. Two guardrails always hold:
+
+- **Every write must cite a source.** If the assistant tries to save a note,
+  claim, fact, or verdict without saying where it came from, **Brawler refuses
+  the write** and tells the assistant which source field is missing — nothing is
+  stored. (The typed refusals are `provenance_required` for a missing source and
+  `writes_disabled` when the toggle is off.)
+- **The assistant can't switch its own writes on.** The setting is UI-only —
+  only you can flip it, here. Turn it off any time and writes stop immediately.
+
+What stays **UI-only, always**: deleting anything, undoing a run, and changing
+settings, tokens, or credentials. Per-write citation rules and worked examples
+are in the [agent guide](mcp-agent-guide.md#step-3--enabling-writes-optional).
 
 ## Security posture
 
@@ -120,7 +146,8 @@ assistant to buy, sell, or hold.
   is refused. The token lives in your OS keychain and is shown only once.
 - **Off by default, app-open-only.** It runs only when you enable it and only
   while Brawler is open. Closing Brawler stops it.
-- **Read-only.** There is no tool that writes, deletes, or triggers work.
+- **Writes off by default.** No tool writes, marks, or triggers work until you
+  turn on *Allow write tools*; deletes/undo/settings are never exposed at all.
 
 ## Troubleshooting
 

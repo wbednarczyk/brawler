@@ -1,7 +1,14 @@
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import * as credentialsApi from "../api/credentials";
 import * as settingsApi from "../api/settings";
-import type { AccentPalette, AppLocale, CredentialStatus, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
+import type {
+  AccentPalette,
+  AppLocale,
+  CredentialStatus,
+  ShortcutBindingSetting,
+  Theme,
+  UserSettings,
+} from "../api/types";
 
 type SettingsControllerInput = {
   geminiApiKeyDraft: string;
@@ -39,7 +46,8 @@ export function useSettingsController({
   }
 
   function updateSettings(input: settingsApi.UpdateSettingsInput) {
-    settingsApi.updateSettings(input)
+    settingsApi
+      .updateSettings(input)
       .then(applySettingsResponse)
       .catch((error) => {
         setSettingsError(String(error));
@@ -78,6 +86,14 @@ export function useSettingsController({
     updateSettings({ mcpPort: nextPort });
   }
 
+  // MCP write tier (ADR 0088 M3). Off by default; when on, write tools require
+  // citations and deletes/settings stay UI-only. This is the only toggle —
+  // `update_settings` is itself MCP-excluded, so an agent can never enable its
+  // own writes.
+  function updateMcpWritesEnabled(nextEnabled: boolean) {
+    updateSettings({ mcpWritesEnabled: nextEnabled });
+  }
+
   function updateYoutubeTranscriptionModel(nextModel: string) {
     updateSettings({ youtubeTranscriptionModel: nextModel });
   }
@@ -86,7 +102,9 @@ export function useSettingsController({
     updateSettings({ youtubeTranscriptionTimeoutSeconds: nextTimeoutSeconds });
   }
 
-  function updateShortcutBindings(nextShortcutBindings: Record<string, ShortcutBindingSetting>) {
+  function updateShortcutBindings(
+    nextShortcutBindings: Record<string, ShortcutBindingSetting>,
+  ) {
     updateSettings({ shortcutBindings: nextShortcutBindings });
   }
 
@@ -121,7 +139,11 @@ export function useSettingsController({
   }
 
   function resetDatabaseSettings() {
-    updateSettings({ dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 });
+    updateSettings({
+      dbMaxConnections: 4,
+      dbBusyTimeoutMs: 5000,
+      dbAcquireTimeoutMs: 10000,
+    });
   }
 
   function updateSourcesWorkers(nextWorkers: number) {
@@ -140,7 +162,8 @@ export function useSettingsController({
   }
 
   function disableDeveloperMode() {
-    settingsApi.disableDeveloperMode()
+    settingsApi
+      .disableDeveloperMode()
       .then(applySettingsResponse)
       .catch((error) => {
         setSettingsError(String(error));
@@ -148,7 +171,8 @@ export function useSettingsController({
   }
 
   function unlockDeveloperMode(passphrase: string) {
-    settingsApi.unlockDeveloperMode(passphrase)
+    settingsApi
+      .unlockDeveloperMode(passphrase)
       .then(applySettingsResponse)
       .catch((error) => {
         setSettingsError(String(error));
@@ -164,7 +188,8 @@ export function useSettingsController({
     }
 
     setGeminiCredentialInFlight(true);
-    credentialsApi.setGeminiTranscriptionApiKey(apiKey)
+    credentialsApi
+      .setGeminiTranscriptionApiKey(apiKey)
       .then((response) => {
         setGeminiCredentialStatus(response);
         setGeminiCredentialError(null);
@@ -180,7 +205,8 @@ export function useSettingsController({
 
   function clearGeminiApiKey() {
     setGeminiCredentialInFlight(true);
-    credentialsApi.clearGeminiTranscriptionApiKey()
+    credentialsApi
+      .clearGeminiTranscriptionApiKey()
       .then((response) => {
         setGeminiCredentialStatus(response);
         setGeminiCredentialError(null);
@@ -213,6 +239,7 @@ export function useSettingsController({
     updateLogMaxFiles,
     updateBackfillYears,
     updateMcpPort,
+    updateMcpWritesEnabled,
     updatePinnedCompanyIds,
     updatePollInterval,
     updateShortcutBindings,

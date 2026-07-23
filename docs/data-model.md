@@ -257,7 +257,7 @@ Rules:
 
 ### Investor Calendar Layers
 
-The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.68.0`) is a backend-owned **read model** (`list_investor_week`) that unions company events with market-wide layers that have no canonical company. It adds three small domains; `company_events` and its one-canonical-company invariant are unchanged.
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.67.0`) is a backend-owned **read model** (`list_investor_week`) that unions company events with market-wide layers that have no canonical company. It adds three small domains; `company_events` and its one-canonical-company invariant are unchanged.
 
 `market_calendar_events` — the opt-in **whole-market** layer: GPW calendar events for **untracked** tickers (no `company_id`). Populated by a relaxed whole-page Bankier kalendarium ingest fetched only when the user enables the market scope.
 
@@ -265,7 +265,7 @@ The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.
 - No `company_id`; `ticker` is the only company key. The week read model unions `company_events` (tracked) ∪ `market_calendar_events` (untracked) **deduped by ticker**, so a tracked company never appears twice; a market row whose ticker matches a tracked company links into its workspace.
 - `(source_adapter_id, source_event_key)` deduplicates rows; cache-first week navigation reuses the Bankier dated-week pattern.
 
-`macro_events` — the **macro** layer (no company). The model + manual add + a sample seed ship in `v0.68.0`; a policy-clean **live source is deferred to a follow-up ADR** (ADR 0058 §4).
+`macro_events` — the **macro** layer (no company). The model + manual add + a sample seed ship in `v0.67.0`; a policy-clean **live source is deferred to a follow-up ADR** (ADR 0058 §4).
 
 - Fields: `id`, `indicator_key`, `title`, `country`, `event_date`, `event_time`, `importance`, `actual`, `forecast`, `previous`, `source_type`, `source_url`, `attribution`, `fetched_at`, `manual`, `created_at`, `updated_at`.
 - `actual`/`forecast`/`previous` are optional text. `manual = 1` for user-entered releases. Reads tolerate an empty table (safe default = no macro lane).
@@ -305,8 +305,8 @@ Rules:
 
 - Signals belong to exactly one canonical company and reference the originating `feed_item` as origin.
 - `category` references a row in the seeded, extensible `signal_categories` registry; it is not a hard-coded enum.
-- `classified_by` is `rule` or `ai`.
-- `status` is `confirmed` or `proposed`. Rule-classified signals are `confirmed` on creation; AI-classified signals are `proposed` and require user confirmation before becoming `confirmed`.
+- `classified_by` is `rule`, `ai`, or `agent` — honest provenance of who classified the filing: the deterministic rule classifier, the (retired) in-app AI fallback, or a connected agent via the MCP triage tool `classify_filing` (`agent`, added by migration `0113`, ADR 0088 dec. 4). The CHECK constraint enforces this set; an agent classification is never mislabelled `rule`.
+- `status` is `confirmed` or `proposed`. Rule- and agent-classified signals are `confirmed` on creation; AI-classified signals are `proposed` and require user confirmation before becoming `confirmed`.
 - `signal_date` is the filing publication date and is stored as `YYYY-MM-DD`.
 - `provider_id` and `model_id` are populated only for `ai` classifications and record provider provenance for audit and reversibility.
 - A `company_events` row is derived (`derived_event_id`) **only** for forward-looking categories carrying a genuine future date (e.g. dividend record/payment date, general-meeting date). Past-disclosure signals do not derive calendar events.
@@ -953,7 +953,7 @@ User-owned alert rules and the attention events their evaluation emits ([ADR 006
 - `enabled = 0` rules never fire.
 - **Rule ids are content-derived** (`alert_<trigger>_<scope>…`, count-suffixed on base collision — the repo's collision-safe id convention), never row-count-based (a deleted rule must not free an id a survivor still holds — live regression 2026-07-15). Creating a rule identical to an existing one (same trigger + scope + prices) is rejected with the typed `DuplicateAlertRule` error, never inserted as a twin.
 
-`attention_events` — `(id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at, seen, dismissed, created_at)`, `UNIQUE(rule_id, evidence_type, evidence_ref)`. Migration `0081_espi_witness_reconciliation.sql` made `rule_id` **nullable** and added `trigger_type` to support **system** events (no owning rule).
+`attention_events` — `(id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at, seen, dismissed, created_at, evidence_title)`, `UNIQUE(rule_id, evidence_type, evidence_ref)`. Migration `0081_espi_witness_reconciliation.sql` made `rule_id` **nullable** and added `trigger_type` to support **system** events (no owning rule); migration `0114_attention_events_evidence_title.sql` appended `evidence_title`.
 
 - `rule_id` is `NULL` for a **system** event; then `trigger_type` on the row carries the trigger directly. The writer **stamps `trigger_type` on every event** (rule-backed too — v0.57 fix wave 2 / W4; migration `0097_backfill_attention_trigger_type.sql` backfills legacy NULL rows from the owning rule) so a direct read / grouping does not depend on a join; the read model still `COALESCE`s over the rule for defense in depth. System trigger: `source_reconciliation` (an `espi_only` reconciliation result — [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) D2, not user-creatable).
 - `evidence_type` is `company_signal` (ref = signal id) | `autopilot_run` (ref = run id) | `daily_quote` (ref = quote `date`) | `source_reconciliation` (ref = `source_reconciliation_results.id`). Every event links back to the evidence that raised it.
@@ -962,6 +962,8 @@ User-owned alert rules and the attention events their evaluation emits ([ADR 006
 - **Per-rule daily throttle**: at most **1 event per rule per WALL-CLOCK day**. `fired_at` is the **wall-clock firing time** (v0.57 fix wave 2 — previously the evidence's domain date, which let distinct historical dates each "count as a different day" and bypass the throttle during a backfill; the evidence's own date lives on the linked signal/quote/run). Migration `0096_dismiss_stale_attention_events.sql` dismisses the pre-existing unseen backlog (`fired_at` > 30 days old).
 - Evaluation is **inline** in the evidence-producing job stages (signal classification, autopilot `finalize_notify`, post-daily-pull price check) — no new worker lane; a handful of indexed reads. `price_week52_low` fires only on a **strict new low** vs the trailing 52-week window (by `date`); `enters_range` fires when the latest close is inside `[min, max]`.
 - Rows CASCADE-delete with their rule and company; reads of an absent event tolerate it (nothing to show).
+- **`evidence_title` — durable fire-time title snapshot** (`v0.60` D7, migration `0114`): the event's concrete "what happened" title, **snapshotted when the event fires** and preferred over the read-time evidence join. It exists because a `company_signal` title is otherwise fatal to feed pruning — `company_signals.feed_item_id` is `ON DELETE CASCADE`, so pruning a feed item cascade-deletes the signal row and the read-time join to `feed_items.title` returns nothing (the row degrades to a bare category). The write path snapshots the title for `company_signal` (its feed_item title, in scope at fire) and `source_reconciliation` (the witness title, in scope at the insert site); `autopilot_run` keeps the join (its `report_documents` row outlives feed pruning) and price events have no title. The read prefers `NULLIF(evidence_title,'')`, else the live join — so legacy rows still resolve. **Never backfilled**: rows orphaned before the column existed (their source data already pruned) keep rendering the generic fallback until aged/dismissed — an accepted, irrecoverable limitation, not a bug.
+- **Severity is derived, never a column** ([ADR 0087](adr/0087-today-attention-home-v2.md) decision 2, `v0.60`): the `AttentionEvent`/`AutopilotRun` read models carry a typed `severity` (`urgent` | `notable` | `routine`) **computed at read** by the single backend mapping (`storage::severity`) from `trigger_type` + the signal category (joined from the event's `company_signal` evidence) or the run `status`. There is no `severity` column and none should be added — it is a projection, and the authoritative level → trigger/category table lives in [Product Spec § Attention Routing](product-spec.md#severity-taxonomy).
 
 ### Morning Briefing
 
@@ -975,6 +977,7 @@ A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-br
 `morning_briefing_items` — `(id, briefing_id, position, item_type, company_id, domain_date, citation_key, evidence_type, evidence_ref, title, detail, created_at)`, `UNIQUE(briefing_id, citation_key)`. This table is BOTH the structured list the Today card renders AND the citeable evidence set the narrative resolves against (mirrors `ai_research_digest_citations`).
 
 - `item_type` ∈ `signal` | `autopilot_run` | `claim_due` | `report_date` | `attention_event`. `evidence_ref` is the source id (signal id | run id | claim id | attention-event id | `company:event_key`); a narrative citation resolves against `(evidence_type, evidence_ref)` via `research::supplied_evidence_refs` — an unresolved citation rejects the whole narrative (never store an uncited narrative).
+- **`title`/`detail` carry typed payloads (since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) dec. 4; columns unchanged).** The composer writes only verbatim source data or typed codes/tokens (category code, `trigger_type`/`evidence_type` codes, a `report_processed`/token summary, `status`, `due:<period>:<year>`, qualified ticker) — never composed prose. The Today card translates via `briefingItemText.ts`. Legacy rows composed before `v0.60` keep prose (no migration); the read path is unchanged and tolerant. Composition also **dedups** to at most one item per `(company_id, item_type, evidence_ref)`, keeping the newest by `domain_date` (dec. 1).
 - **Composition** is a pure, deterministic function over gathered reads (`storage::compose_briefing`), so it is snapshot-stable. Inputs: new **confirmed** signals (domain date = `signal_date`), completed autopilot runs (`succeeded`/`partial`, domain date = `updated_at`), and fired non-dismissed attention events (domain date = `fired_at`) whose date is **strictly after** `since`; plus the current claims-due (due + overdue) and upcoming-report snapshot (not `since`-bounded). Items are ordered by `domain_date`, then a stable (type, company, evidence-ref) tiebreak — **never `created_at`**; `citation_key` = `b{position+1}`.
 - `company_id` is denormalized TEXT (not an FK): a briefing is a historical snapshot, so deleting a company must not rewrite past briefings. Items CASCADE-delete with their briefing.
 - The compose runs as the `morning_briefing` durable-queue job (**autopilot** lane since the AI lane was retired, [ADR 0084](adr/0084-retire-in-app-ai-layer.md); the briefing is a purely deterministic composition — the AI narrative half is gone). On-demand (`generate_morning_briefing`, `force`) recomposes even if today's briefing exists; the daily auto-trigger (Rust scheduler, app-open only) is idempotent per day (`briefing_exists_on`).
@@ -1396,6 +1399,7 @@ Initial keys:
 - `pinned_company_ids`
 - `mcp_enabled`
 - `mcp_port`
+- `mcp_writes_enabled`
 - `log_level`
 - `log_max_files`
 - `log_max_file_bytes`
@@ -1407,6 +1411,7 @@ Rules:
 - Default poll interval is `900`.
 - `backfill_years` (ADR 0077 §3) is the years of company history the on-track backfill covers. No seed row: tolerant read defaults to `3`, clamped to `[1, 10]` on both read and write (never rejected, like the pool settings). The backfill job reads it live; the const in `jobs/backfill.rs` is only the last-resort fallback if the settings read fails.
 - `mcp_enabled` / `mcp_port` (ADR 0078 decision 4): the MCP server toggle (default `false`) and port (default `8317`, clamped `[1024, 65535]` on read and write). No seed rows: tolerant reads fall back to the defaults; the bearer token itself lives in the OS keychain, never in settings.
+- `mcp_writes_enabled` ([ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) M3): the MCP `act` (write) tier gate. Default `false` (stored as a `"true"`/`"false"` string row, like `mcp_enabled`); no seed row, tolerant read. It is the ONLY toggle for agent writes, and `update_settings` is itself excluded from the MCP registry — so a connected agent can never enable its own writes.
 - **Retired settings keys** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)): the in-app AI analysis layer's keys — `general_analysis_provider`, `general_analysis_model`, `general_analysis_timeout_seconds`, `ai_analysis_mode`, `espi_ai_fallback_enabled`, `capability_providers`, `openai_compatible_base_url`, `history_sweep_ai_call_limit`, plus the queue tuning `ai_workers` / `ai_provider_concurrency` — are no longer read or written. Rows a previous version stored are harmless orphans (append-only KV table, never migrated destructively); reads of any removed key are simply gone. Only the Gemini **transcription** provider/model/timeout keys remain.
 - Default YouTube transcription provider is `provider_gemini` — the only remaining AI provider setting (transcription is data acquisition, not analysis; ADR 0084 decision 3).
 - Default shortcut bindings are defined in code. `shortcut_bindings` stores only user overrides, disabled states, and resettable action-ID keyed changes as JSON.

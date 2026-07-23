@@ -163,6 +163,8 @@ Every user-visible string is `text("English text")` from `useLocale()`. The loca
 
 **Use product language, not implementation terms.** Normal user-facing copy must avoid `SQLite`, `Tauri`, `adapter`, `schema`, `database`, `module`, `collector`, and `local`/`Local` — say what the user gets, not how it's built. Developer-only Diagnostics may use implementation terms (it's gated on Developer mode). Source-provided content/URLs may contain anything, but test samples in normal UI tests should not accidentally include the forbidden terms.
 
+**Backend-composed user-visible strings are forbidden — the backend writes typed codes, the frontend translates.** A persisted or wire-carried field the UI renders (a briefing item's `title`/`detail`, an attention label, a run summary) must hold verbatim source data or a typed code/token, never an English sentence the Rust side composed. The frontend maps the code to localized copy through `text()`, tolerating legacy prose rows verbatim. Precedent: the morning-briefing seam (`briefingItemText.ts` over `compose_briefing`, [ADR 0087](adr/0087-today-attention-home-v2.md) dec. 4). Any new backend-composed user-visible string is a defect of this class.
+
 ## Panel density contracts (ADR 0076 Decision 6)
 
 Normative per-panel behavior at pane tiers — width **S** <420px · **M** 420–760px · **L** >760px,

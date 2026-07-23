@@ -66,8 +66,11 @@ function startOfDayMs(date: Date): number {
 
 /**
  * List-context timestamp (feed rows, "what changed" stream) per ADR 0076 D4:
- * relative for recent times, calendar for older, seconds never shown. Non-ISO
- * inputs (already-friendly sample labels) render verbatim — never string-surgery.
+ * relative for recent times, calendar for older, seconds never shown. A
+ * domain-date-only value (bare `YYYY-MM-DD`, or an explicit `00:00`) renders as
+ * the date alone — never a misleading "… 00:00" (ADR 0087 amendment, 2026-07-23
+ * live-checkpoint). Non-ISO inputs (already-friendly sample labels) render
+ * verbatim — never string-surgery.
  */
 export function formatListTimestamp(
   value: string | null | undefined,
@@ -84,17 +87,21 @@ export function formatListTimestamp(
   const dayDiff = Math.round((startOfDayMs(now) - startOfDayMs(date)) / MS_PER_DAY);
   const rel = relativeWords(locale);
 
-  if (dayDiff === 0) return `${rel.today} ${hhmm(date)}`;
-  if (dayDiff === 1) return `${rel.yesterday} ${hhmm(date)}`;
-  if (dayDiff >= 2 && dayDiff < 7) return `${weekdays(locale)[date.getDay()]} ${hhmm(date)}`;
+  // A domain-date-only event (a bare YYYY-MM-DD, or an explicit 00:00) carries no
+  // meaningful time: render the date alone rather than a misleading "… 00:00".
+  const atMidnight = date.getHours() === 0 && date.getMinutes() === 0;
+  const withTime = (label: string) => (atMidnight ? label : `${label} ${hhmm(date)}`);
+
+  if (dayDiff === 0) return withTime(rel.today);
+  if (dayDiff === 1) return withTime(rel.yesterday);
+  if (dayDiff >= 2 && dayDiff < 7) return withTime(weekdays(locale)[date.getDay()]);
 
   const month = months(locale)[date.getMonth()];
   const day = date.getDate();
 
   if (date.getFullYear() === now.getFullYear()) {
-    return locale === "pl"
-      ? `${day} ${month}, ${hhmm(date)}`
-      : `${month} ${day}, ${hhmm(date)}`;
+    const base = locale === "pl" ? `${day} ${month}` : `${month} ${day}`;
+    return atMidnight ? base : `${base}, ${hhmm(date)}`;
   }
   return locale === "pl"
     ? `${day} ${month} ${date.getFullYear()}`

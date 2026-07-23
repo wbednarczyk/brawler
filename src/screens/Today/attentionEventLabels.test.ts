@@ -17,16 +17,33 @@ function event(overrides: Partial<AttentionEvent>): AttentionEvent {
     firedAt: "2026-07-14T00:00:00Z",
     seen: false,
     dismissed: false,
+    // Typed severity now on the payload (ADR 0087 dec. 2); inert for label tests.
+    severity: "notable",
+    // Evidence specifics from the backend join (v0.60 D6); overridden per case.
+    evidenceTitle: null,
+    evidenceDetail: null,
     ...overrides,
   };
 }
 
 describe("attentionEventLabels — source_reconciliation (ADR 0069 D2)", () => {
-  it("labels the reconciliation badge and title without a rule", () => {
-    const reconciliation = event({});
-    // A system event carries no owning rule; the labels must still resolve.
-    expect(attentionEventBadgeText(reconciliation, text)).toBe("Reconciliation");
+  it("labels the reconciliation badge", () => {
+    // A system event carries no owning rule; the badge must still resolve.
+    expect(attentionEventBadgeText(event({}), text)).toBe("Reconciliation");
+  });
+
+  it("states the missed report title + the registry that caught it (v0.60 D6)", () => {
+    const reconciliation = event({
+      evidenceTitle: "Raport bieżący 15/2026 — zawarcie znaczącej umowy",
+      evidenceDetail: "GPW ESPI/EBI",
+    });
     expect(attentionEventTitleText(reconciliation, undefined, text)).toBe(
+      "Raport bieżący 15/2026 — zawarcie znaczącej umowy — missed by the primary source, backfilled from GPW ESPI/EBI",
+    );
+  });
+
+  it("falls back to the generic reconciliation copy when no title is present", () => {
+    expect(attentionEventTitleText(event({}), undefined, text)).toBe(
       "Official report missed by the primary source",
     );
   });
@@ -34,6 +51,41 @@ describe("attentionEventLabels — source_reconciliation (ADR 0069 D2)", () => {
   it("still labels rule-backed triggers", () => {
     const signal = event({ triggerType: "signal_category", ruleId: "rule_1", evidenceType: "company_signal" });
     expect(attentionEventBadgeText(signal, text)).toBe("Signal");
+  });
+});
+
+describe("attentionEventLabels — concrete statements (v0.60 D6)", () => {
+  it("a signal event states its own filing title, not the category", () => {
+    const signal = event({
+      triggerType: "signal_category",
+      ruleId: "rule_1",
+      evidenceType: "company_signal",
+      evidenceTitle: "Wstępne wyniki produkcyjne i sprzedażowe za czerwiec 2026",
+    });
+    // Even with a rule/category available, the specific filing title wins.
+    expect(
+      attentionEventTitleText(signal, rule({ signalCategory: "profit_warning" }), text),
+    ).toBe("Wstępne wyniki produkcyjne i sprzedażowe za czerwiec 2026");
+  });
+
+  it("an autopilot-completion event names the processed report and its status", () => {
+    const autopilot = event({
+      triggerType: "autopilot_run_completed",
+      evidenceType: "autopilot_run",
+      evidenceTitle: "Skonsolidowany raport kwartalny Q2 2026",
+      evidenceDetail: "succeeded",
+    });
+    expect(attentionEventTitleText(autopilot, undefined, text)).toBe(
+      "Skonsolidowany raport kwartalny Q2 2026 — Succeeded",
+    );
+  });
+
+  it("an autopilot-completion event falls back to generic copy without a title", () => {
+    const autopilot = event({
+      triggerType: "autopilot_run_completed",
+      evidenceType: "autopilot_run",
+    });
+    expect(attentionEventTitleText(autopilot, undefined, text)).toBe("Autopilot finished");
   });
 });
 

@@ -1,0 +1,16 @@
+-- Durable evidence title on attention events (v0.60 D7, owner dogfooding 2026-07-23).
+--
+-- An attention event's concrete "what happened" title was resolved purely by
+-- read-time LEFT JOINs to the live evidence row (feed_items via company_signals,
+-- report_documents, source_reconciliation_results). For `company_signal`
+-- evidence that title is fatal to feed pruning: `company_signals.feed_item_id`
+-- is `ON DELETE CASCADE`, so pruning a feed item cascade-deletes the signal row
+-- too — the event survives (its `evidence_ref` is plain TEXT, no cascade) but its
+-- title source is gone, and the row degrades to a bare category (owner: GPW:XTB
+-- ×N profit-warning events with no statement).
+--
+-- Fix: snapshot the evidence title onto the event at fire time. The read model
+-- prefers this durable snapshot and falls back to the live join, so pre-existing
+-- rows keep working while newly fired events survive pruning. Nullable, no
+-- backfill (source data for already-orphaned rows is gone by design).
+ALTER TABLE attention_events ADD COLUMN evidence_title TEXT;

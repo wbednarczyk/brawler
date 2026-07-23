@@ -1,5 +1,29 @@
 import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
-import { resetMockScenario } from "./helpers/mockRuntime";
+import { resetMockScenario, type ScenarioSpec } from "./helpers/mockRuntime";
+import type { Page } from "@playwright/test";
+
+// Seeds a scenario BEFORE the app boots (attention reads happen once at
+// bootstrap, so the very first mount already carries the seeded events and the
+// toast effect fires against them) by trapping the `window.__brawlerMock`
+// assignment — the same technique the J1 journey spec uses. Preferred over
+// `openApp` + `resetMockScenario` when the assertion is about which toasts the
+// FIRST mount raises: the latter would first boot the base scenario (whose own
+// unseen urgent event raises a persistent toast) before the reset lands.
+async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> {
+  await page.addInitScript((s) => {
+    let installed: unknown;
+    Object.defineProperty(window, "__brawlerMock", {
+      configurable: true,
+      get() {
+        return installed;
+      },
+      set(bridge) {
+        (bridge as { reset: (spec: unknown) => void }).reset(s);
+        installed = bridge;
+      },
+    });
+  }, spec);
+}
 
 // Regression coverage for the live-defect fix (v0.57 fix wave 2, W3): unbounded
 // persistent (attention-event) toasts piled up in the bottom-left viewport and
@@ -67,6 +91,60 @@ test.describe("Attention-toast persistent-overflow cap", { tag: "@clickable" }, 
     await expect(viewport.getByRole("alert")).toHaveCount(3);
     await nav.getByRole("button", { name: "Sources" }).click();
     await expect(page.getByRole("heading", { name: "Sources", exact: true })).toBeVisible();
+  });
+
+  // Toast policy v2 (ADR 0087 dec. 3): a persistent toast is reserved for
+  // `urgent` events. When the overnight batch is MIXED, only the urgent events
+  // may persist — the cap (and its "+N more" overflow) counts persistent toasts
+  // only, never the notable events (which raise transient toasts at most).
+  test("mixed severity: only urgent events raise persistent toasts; the cap counts only them", async ({ page }) => {
+    // 5 urgent + 15 notable (~20 unseen events), seeded BEFORE boot so the first
+    // mount's toast effect runs against exactly this mix (no base urgent leaks in).
+    await primeMockScenario(page, { base: "rich", overlays: ["attention-mixed-severity"] });
+    await openApp(page);
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+
+    const viewport = page.locator(".ui-toast-viewport");
+    // Persistent toasts (role="alert") cap at 3 — for the 5 URGENT events only.
+    await expect(viewport.getByRole("alert")).toHaveCount(3);
+    // The overflow summary counts ONLY the persistent overflow (5 urgent − 3
+    // visible = 2), never the 15 notable events (which raise transient toasts).
+    const summary = viewport.getByRole("button", { name: /^\+\d+ more$/ });
+    await expect(summary).toBeVisible();
+    await expect(summary).toHaveText("+2 more");
+
+    // The stack still never blocks the sidebar (the original regression guard).
+    const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
+    await nav.getByRole("button", { name: "Watchlists" }).click();
+    await expect(page.getByRole("heading", { name: "Watchlists", exact: true })).toBeVisible();
+    await expectNoPageOverflow(page);
+  });
+
+  // The other side of the same policy: with ZERO urgent events, a persistent
+  // toast must never appear — no matter how many notable/routine items landed.
+  // The stream is the system of record; only urgent may interrupt.
+  test("zero urgent events: many notable events raise NO persistent toast at all", async ({ page }) => {
+    // 12 notable events, ZERO urgent — seeded before boot so no base urgent event
+    // can raise a persistent toast on the first mount.
+    await primeMockScenario(page, { base: "rich", overlays: ["attention-notable-only"] });
+    await openApp(page);
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+
+    // The Today stream itself is populated (the notable events land as rows), so
+    // this is genuinely "many items, none urgent" — not an empty screen.
+    await expect(page.locator('li[data-category="attention"]').first()).toBeVisible();
+
+    // NO persistent toast (role="alert") exists, and no "+N more" overflow summary.
+    await expect(page.locator(".ui-toast-viewport").getByRole("alert")).toHaveCount(0);
+    await expect(
+      page.locator(".ui-toast-viewport").getByRole("button", { name: /^\+\d+ more$/ }),
+    ).toHaveCount(0);
+
+    // Sidebar stays clickable regardless.
+    const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
+    await nav.getByRole("button", { name: "Sources" }).click();
+    await expect(page.getByRole("heading", { name: "Sources", exact: true })).toBeVisible();
+    await expectNoPageOverflow(page);
   });
 
   test("the overflow summary survives a section change and navigates back to Today", async ({ page }) => {

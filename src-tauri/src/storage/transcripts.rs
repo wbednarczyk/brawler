@@ -6,7 +6,7 @@ use super::{
     NewNotebookOrigin, NotebookEntry, StorageError, StorageResult,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -19,7 +19,7 @@ pub struct CreateNoteFromTranscriptSelectionInput {
     pub note_draft: TranscriptNoteDraft,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",

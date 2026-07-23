@@ -4,6 +4,7 @@
 
 use serde::Deserialize;
 
+use crate::commands::error::{CommandError, CommandErrorCode};
 use crate::{app_state, storage};
 
 #[tauri::command]
@@ -182,4 +183,130 @@ pub fn list_available_metric_keys(
 pub struct GetQualitativeAssessmentInput {
     pub company_id: String,
     pub framework_id: String,
+}
+
+// ---- set_qualitative_verdicts (MCP-first write, ADR 0088 M3 / ADR 0084 dec. 5)
+//
+// The qualitative-verdict WRITE path. The in-app agent writer was retired with
+// the AI layer (ADR 0084); verdicts now arrive through the provenance-gated MCP
+// `act` tier — every criterion result must carry a non-empty `citationsJson`
+// evidence array (the registry classifies this command Act + `CitationsJson`).
+// Headless / MCP-only: no UI entry point (verdicts are authored by a connected
+// agent, not in-app). The MCP act handler and this typed command share
+// [`build_persist_qualitative_input`] so their behavior can never diverge.
+
+/// One agent-authored qualitative criterion verdict. `ordinal` and `label` are
+/// resolved from the framework's criteria (not supplied by the caller);
+/// `citationsJson` is the serialized typed-evidence array (provenance).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct QualitativeVerdictInput {
+    pub criterion_id: String,
+    /// `pass` | `partial` | `fail` | `insufficient_evidence`.
+    pub verdict: String,
+    pub reasoning: String,
+    /// Serialized, non-empty typed-evidence array — the write's provenance.
+    pub citations_json: String,
+    /// `low` | `medium` | `high`.
+    pub confidence: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SetQualitativeVerdictsInput {
+    pub framework_id: String,
+    pub company_id: String,
+    pub results: Vec<QualitativeVerdictInput>,
+}
+
+/// Provenance marker written to each criterion result's `prompt_version` for
+/// verdicts authored over the MCP act tier (vs. the retired in-app agent).
+pub const MCP_VERDICT_PROMPT_VERSION: &str = "mcp";
+
+/// Map a [`SetQualitativeVerdictsInput`] onto the storage
+/// [`storage::PersistQualitativeAssessmentInput`], resolving each result's
+/// `ordinal`/`label` from the framework criteria. Shared by the typed command
+/// and the MCP act handler (single source of truth). An unknown `criterionId`
+/// or an empty `results` list is `invalid_input`.
+pub fn build_persist_qualitative_input(
+    state: &app_state::AppState,
+    input: SetQualitativeVerdictsInput,
+) -> Result<storage::PersistQualitativeAssessmentInput, CommandError> {
+    if input.results.is_empty() {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "results must contain at least one criterion verdict",
+        ));
+    }
+    let framework = state
+        .get_quality_framework(&input.framework_id)
+        .map_err(CommandError::from)?;
+    let by_id: std::collections::HashMap<&str, (i64, &str)> = framework
+        .criteria
+        .iter()
+        .map(|criterion| {
+            (
+                criterion.id.as_str(),
+                (criterion.ordinal, criterion.label.as_str()),
+            )
+        })
+        .collect();
+
+    let mut results = Vec::with_capacity(input.results.len());
+    for result in input.results {
+        let (ordinal, label) = by_id.get(result.criterion_id.as_str()).ok_or_else(|| {
+            CommandError::new(
+                CommandErrorCode::InvalidInput,
+                format!(
+                    "criterion {} is not part of framework {}",
+                    result.criterion_id, framework.id
+                ),
+            )
+        })?;
+        results.push(storage::QualitativeCriterionResult {
+            criterion_id: result.criterion_id,
+            ordinal: *ordinal,
+            label: (*label).to_owned(),
+            verdict: result.verdict,
+            reasoning: result.reasoning,
+            citations_json: result.citations_json,
+            confidence: result.confidence,
+            prompt_version: MCP_VERDICT_PROMPT_VERSION.to_owned(),
+        });
+    }
+    Ok(storage::PersistQualitativeAssessmentInput {
+        framework_id: input.framework_id,
+        company_id: input.company_id,
+        results,
+    })
+}
+
+/// Persist a batch of agent-authored qualitative verdicts as one immutable
+/// snapshot (ADR 0075). Async + `spawn_blocking` (DoD §C).
+#[tauri::command]
+pub async fn set_qualitative_verdicts(
+    input: SetQualitativeVerdictsInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::FrameworkEvaluation, CommandError> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let persist = build_persist_qualitative_input(&state, input)?;
+        state
+            .persist_qualitative_assessment(persist)
+            .map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| {
+        CommandError::new(CommandErrorCode::Internal, format!("task failed: {error}"))
+    })?
 }

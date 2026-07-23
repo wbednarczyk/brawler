@@ -1,52 +1,39 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import {
-  BellRing,
-  CalendarClock,
-  CheckCircle2,
-  ChevronRight,
-  FileText,
-  Inbox,
-  Sparkles,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Inbox, RefreshCw } from "lucide-react";
 
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
-import type { Company, FeedItem } from "../../api/types";
-import type { ReportSeasonEntry } from "../../api/generated/ReportSeasonEntry";
+import type { Company, FeedItem, SourceAdapter } from "../../api/types";
 import type { AttentionEvent } from "../../api/attention";
 import type { MorningBriefingItem } from "../../api/generated/MorningBriefingItem";
 import { useLocale } from "../../shared/locale";
-import { FACT_FORMS, pluralNoun } from "../../shared/locale/plural";
-import { formatListTimestamp } from "../../shared/format/datetime";
-import { TickerLabel } from "../../shared/components/TickerLabel";
-import { DriftDiff, parseDrift, type ParsedDrift } from "../../shared/components/DriftDiff";
-import {
-  composeAutopilotRunSummary,
-  isTokenizedSummary,
-  renderAutopilotSummaryTokens,
-} from "./autopilotRunSummary";
-import { attentionEventBadgeText, attentionEventTitleText } from "./attentionEventLabels";
 import {
   Button,
-  ClearButton,
   EmptyState,
-  ErrorText,
-  InlineConfirm,
   PanelHeader,
+  SegmentedControl,
+  SegmentedControlOption,
   Skeleton,
-  StatusChip,
-  useToast,
 } from "../../ui";
-import { useTodayPulse, type PulseClaim } from "./useTodayPulse";
+import { useTodayPulse } from "./useTodayPulse";
 import { useMorningBriefing } from "./useMorningBriefing";
-import { MorningBriefingCard } from "./MorningBriefingCard";
-import type { AutopilotRun } from "../../api/autopilot";
-
-// Fired-alert ids already raised as a persistent toast this app session
-// (ADR 0068 T4). Module scope, not component state: Today unmounts whenever
-// the user leaves the section (`activeSection === "Today" ? <TodayScreen /> :
-// null` in AppStateRoot), so a per-render Set would re-toast every re-entry.
-// Resets only on a full app reload — "session" per the T4 contract.
-const toastedAttentionEventIds = new Set<string>();
+import { useAttentionToasts } from "./useAttentionToasts";
+import { MorningBriefingStrip } from "./MorningBriefingStrip";
+import { SeverityLegend } from "./SeverityLegend";
+import { ConfigBanner, type ConfigCondition } from "./ConfigBanner";
+import {
+  buildStream,
+  collapseCauseAggregates,
+  collapseRoutineAggregates,
+  verifyClaimSeverity,
+  type StreamCategory,
+  type StreamItem,
+} from "./streamModel";
+import type { RowContext, StreamPayload } from "./rows/rowContext";
+import { StreamRowView } from "./rows/StreamRowView";
+import { GroupRow } from "./rows/GroupRow";
+import { AggregateRow } from "./rows/AggregateRow";
+import { onStreamRowKeyDown } from "./rows/streamRowKit";
+import { ArchivedAttentionRow, openAttentionEvidence } from "./rows/AttentionRow";
 
 export type TodayScreenProps = {
   companies: Company[];
@@ -54,47 +41,39 @@ export type TodayScreenProps = {
   recentFeedItems: FeedItem[];
   openCompanyWorkspace: (companyId: string, tab: CompanyWorkspaceTab) => void;
   openInbox: () => void;
+  /** Navigate to the Report-season surface (the upcoming-reports "Show all" target). */
+  openReportSeason: () => void;
+  /** The loaded source adapters (already fetched app-wide), for the config banner's
+   * source-health condition (ADR 0087 dec. 5). */
+  sourceAdapters: SourceAdapter[];
+  /** Navigate to the Sources/Diagnostics surface (the config banner's action target). */
+  openSources: () => void;
 };
 
 // J1 caps (ADR 0076 U-Rb D2): the two unbounded attention queues cap at 8 rows,
-// upcoming reports at 6; a capped queue ends with a "Show all" link into its
-// full surface so nothing is silently hidden.
+// upcoming reports at 6; a capped queue ends with a "Show all" link into its full
+// surface so nothing is silently hidden. Caps apply to raw items pre-grouping.
 const VERIFY_CAP = 8;
 const CHANGED_CAP = 8;
 const UPCOMING_CAP = 6;
 
-type StreamCategory = "autopilot" | "verify" | "changed" | "upcoming";
+/** A counter-tile selection: a category filter, or the cross-category `urgent` filter. */
+type StreamFilter = StreamCategory | "urgent";
 
-/**
- * Parses an autopilot run's opaque `kpiDeltaJson` envelope defensively for the
- * "structure changed" drift a structured-extraction attempt may have carried
- * (ADR 0061 wave 2 — `{ structureChanged: true, driftJson: "<DriftReport>" }`
- * merged into the composed delta). A legacy run (no such fields), a run whose
- * delta never drifted, or malformed JSON all yield `null` — no crash, no card.
- */
-function autopilotRunDrift(kpiDeltaJson: string | null): ParsedDrift | null {
-  if (!kpiDeltaJson) return null;
-  try {
-    const parsed = JSON.parse(kpiDeltaJson) as { structureChanged?: unknown; driftJson?: unknown };
-    if (parsed.structureChanged !== true) return null;
-    return parseDrift(typeof parsed.driftJson === "string" ? parsed.driftJson : null);
-  } catch {
-    return null;
-  }
-}
-
-// Today/Pulse — the mode-based shell home (ADR 0054), redesigned to journey J1
-// (ADR 0076 U-Rb): a single prioritized "what changed" stream (autopilot →
-// to-verify → what-changed → upcoming, one action per row, j/k navigation) plus
-// a narrow counters column that doubles as a category filter. The quiet state is
-// the goal. Composes existing app-wide read models (report season + claims for
-// the pinned spine + unread autopilot runs).
+// Today/Pulse — the attention home (ADR 0054), redesigned to journey J1 under
+// ADR 0087: a grouped, severity-ranked "what changed" stream (dedup → group →
+// rank, `streamModel`) with a config banner, a compact briefing strip, four
+// counter tiles ("Pilne" first), and per-category error strips. Composes existing
+// app-wide read models; severity arrives typed (placeholder adapter until D3a).
 export function TodayScreen({
   companies,
   pinnedCompanyIds,
   recentFeedItems,
   openCompanyWorkspace,
   openInbox,
+  openReportSeason,
+  sourceAdapters,
+  openSources,
 }: TodayScreenProps) {
   const { t, text, locale } = useLocale();
   const {
@@ -112,16 +91,21 @@ export function TodayScreen({
     attentionRulesById,
     dismissAttentionEventRow,
     markAttentionEventSeenRow,
+    retryClaims,
+    archivedAttentionEvents,
+    archiveLoading,
+    loadArchive,
   } = useTodayPulse(pinnedCompanyIds, companies);
   const morningBriefing = useMorningBriefing();
-  const toast = useToast();
-  // The Undo two-step (ADR 0055 §4): which run, if any, is mid-confirm.
-  const [confirmingUndoRunId, setConfirmingUndoRunId] = useState<string | null>(null);
-  // Autopilot rows whose in-place detail (undo/dismiss/drift) is expanded.
-  const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(() => new Set());
   // The active counter filter, or null for the full stream.
-  const [filter, setFilter] = useState<StreamCategory | null>(null);
-  const streamRef = useRef<HTMLUListElement>(null);
+  const [filter, setFilter] = useState<StreamFilter | null>(null);
+  // Two views (owner 2026-07-23): the live "Aktywne" stream and a read-only
+  // "Archiwum" of DISMISSED attention events (dismiss is an ack, never a delete).
+  const [view, setView] = useState<"active" | "archive">("active");
+  // Fetch the archive lazily the first time (and each time) the user opens it.
+  useEffect(() => {
+    if (view === "archive") loadArchive();
+  }, [view, loadArchive]);
 
   const companyById = useMemo(
     () => new Map(companies.map((company) => [company.id, company])),
@@ -150,10 +134,8 @@ export function TodayScreen({
   );
   const upcomingAll = season.season?.upcoming ?? [];
 
-  // Fired alerts (ADR 0068 T4): grouped by company (contiguous by ticker, like
-  // every other category's data-category grouping), newest fired first within
-  // a company. Uncapped, like the autopilot queue it sits beside — both are
-  // "already happened" notifications, not an unbounded feed.
+  // Fired alerts (ADR 0068 T4): grouped by company (contiguous by ticker),
+  // newest-fired first within a company — the same order the toast effect walks.
   const attentionRows = useMemo(() => {
     const tickerOf = (companyId: string) => companyById.get(companyId)?.qualifiedTicker ?? companyId;
     return [...attentionEvents].sort((a, b) => {
@@ -162,59 +144,116 @@ export function TodayScreen({
     });
   }, [attentionEvents, companyById]);
 
-  const autopilotRows = autopilotRuns;
   const verifyRows = verifyClaims.slice(0, VERIFY_CAP);
   const changedRows = whatChanged.slice(0, CHANGED_CAP);
   const upcomingRows = upcomingAll.slice(0, UPCOMING_CAP);
 
-  // Evidence click-through (ADR 0068 T4): the row's/toast's one Review action
-  // marks the event seen, then jumps to its evidence — reusing the same
-  // company-workspace tabs the other Today rows already navigate to. No
-  // dedicated "signal" or "quote" view exists yet, so a signal opens the
-  // company's Feed (where its source disclosure lives) and both an
-  // autopilot-run and a daily-quote event open Fundamentals (the run's drift
-  // and the price-context section both live there). Falls back to Inbox for
-  // an evidence company outside the registry, mirroring `changedRow`/`autopilotRow`.
-  function openAttentionEvidence(event: AttentionEvent) {
-    markAttentionEventSeenRow(event.id);
-    const company = companyById.get(event.companyId);
-    if (!company) {
-      openInbox();
-      return;
-    }
-    switch (event.evidenceType) {
-      case "company_signal":
-        openCompanyWorkspace(company.id, "Feed");
-        return;
-      case "source_reconciliation":
-        // The primary channel missed an official report the witness saw — land on
-        // the company's report Feed where the reconciliation ledger points (the
-        // full witness title + GPW URL live in Diagnostics). ADR 0069 D2.
-        openCompanyWorkspace(company.id, "Feed");
-        return;
-      case "autopilot_run":
-      case "daily_quote":
-        openCompanyWorkspace(company.id, "Fundamentals");
-        return;
-      default:
-        openInbox();
-    }
-  }
+  // Everything a category row/member needs to render and act, built once.
+  const ctx: RowContext = {
+    text,
+    locale,
+    companyById,
+    companyByTicker,
+    openCompanyWorkspace,
+    openInbox,
+    autopilot: { dismissAutopilotRun, undoAutopilotRun, undoneAutopilotRuns },
+    attention: { attentionRulesById, dismissAttentionEventRow, markAttentionEventSeenRow },
+  };
 
-  // Briefing-item evidence click-through (ADR 0068 T5). An `attention_event`
-  // item's `evidenceRef` is the fired event's own id, so it resolves through
-  // the exact same `openAttentionEvidence` this section already uses for the
-  // attention stream rows/toasts. Every other item type has no dedicated
-  // evidence view yet, so it mirrors `openAttentionEvidence`'s per-type
-  // fallback mapping: a signal opens Feed, an autopilot run opens
-  // Fundamentals, a due claim opens Claims, an upcoming report date opens Feed
-  // (matching `changedRow`'s report items) — an evidence company outside the
-  // registry falls back to Inbox, same as every other Today row.
+  // The typed stream inputs. Severity is EXPLICIT (ADR 0087 dec. 2), read straight
+  // off the backend payloads: attention rows carry `event.severity`, autopilot rows
+  // `run.severity` (both computed once in `storage::severity`, never re-inferred
+  // here). Changed/upcoming carry NO backend severity — they are category-level
+  // `routine`. Verify claims are the ONE frontend-side severity entry
+  // (`verifyClaimSeverity`, product-spec §Attention Routing severity table row):
+  // an OVERDUE claim escalates to `notable`, a due-not-yet-overdue claim stays
+  // `routine`. Claims raise no toast (they are not attention events).
+  const streamItems: StreamItem<StreamPayload>[] = [
+    ...autopilotRuns.map<StreamItem<StreamPayload>>((run) => ({
+      id: run.id,
+      category: "autopilot",
+      companyId: run.companyId,
+      severity: run.severity,
+      timestamp: run.createdAt,
+      evidenceKey: run.id,
+      payload: { kind: "autopilot", run },
+    })),
+    ...attentionRows.map<StreamItem<StreamPayload>>((event) => ({
+      id: event.id,
+      category: "attention",
+      companyId: event.companyId,
+      severity: event.severity,
+      // The systemic-cause key for the urgent cross-company aggregate (ADR 0087
+      // amendment 2026-07-23): the trigger, refined to the signal category for a
+      // signal event so, e.g., insider and profit-warning walls never merge.
+      subCategory:
+        event.triggerType === "signal_category"
+          ? (event.ruleId ? attentionRulesById.get(event.ruleId)?.signalCategory : undefined) ??
+            "signal_category"
+          : event.triggerType,
+      timestamp: event.firedAt,
+      evidenceKey: event.id,
+      payload: { kind: "attention", event },
+    })),
+    ...verifyRows.map<StreamItem<StreamPayload>>((claim) => ({
+      id: claim.claim.id,
+      category: "verify",
+      companyId: claim.companyId,
+      severity: verifyClaimSeverity(claim.bucket),
+      timestamp: claim.claim.madeAt ?? claim.claim.createdAt,
+      evidenceKey: claim.claim.id,
+      payload: { kind: "verify", claim },
+    })),
+    ...changedRows.map<StreamItem<StreamPayload>>((item) => ({
+      id: item.id,
+      category: "changed",
+      companyId: companyByTicker.get(item.company)?.id ?? item.company,
+      severity: "routine",
+      timestamp: item.publishedAt || item.time,
+      evidenceKey: item.id,
+      payload: { kind: "changed", item },
+    })),
+    ...upcomingRows.map<StreamItem<StreamPayload>>((entry) => ({
+      id: `${entry.companyId}::${entry.eventKey}`,
+      category: "upcoming",
+      companyId: entry.companyId,
+      severity: "routine",
+      timestamp: entry.eventDate,
+      evidenceKey: entry.eventKey,
+      payload: { kind: "upcoming", entry },
+    })),
+  ];
+
+  const groups = buildStream(streamItems);
+  // Second stage: collapse the walls. Routine same-category rows fold into a
+  // "×K spółek" aggregate (ADR 0087 dec. 1); THEN urgent/notable same-cause rows
+  // fold into their own aggregates (ADR 0087 amendment 2026-07-23, live-checkpoint
+  // P1 + the notable-wall follow-up) — severity partitions first, so an aged
+  // (notable) wall no longer merely changes color.
+  const renderRows = collapseCauseAggregates(collapseRoutineAggregates(groups));
+  const visibleRows = renderRows.filter((row) => {
+    if (filter === null) return true;
+    if (filter === "urgent") return row.severity === "urgent";
+    return row.category === filter;
+  });
+
+  const isArchive = view === "archive";
+  // The archive is a flat, read-only list of dismissed events, newest-first — not
+  // grouped/aggregated (it is a history, not a triage queue).
+  const archiveRows = useMemo(
+    () => [...archivedAttentionEvents].sort((a, b) => b.firedAt.localeCompare(a.firedAt)),
+    [archivedAttentionEvents],
+  );
+
+  // Briefing-item evidence click-through (ADR 0068 T5): an attention item resolves
+  // through the same `openAttentionEvidence` the stream uses; every other type
+  // mirrors its per-type fallback (signal→Feed, autopilot→Fundamentals, claim→
+  // Claims, report date→Feed) — an out-of-registry evidence company → Inbox.
   function openBriefingItemEvidence(item: MorningBriefingItem) {
     if (item.itemType === "attention_event") {
       const event = attentionEvents.find((candidate) => candidate.id === item.evidenceRef);
       if (event) {
-        openAttentionEvidence(event);
+        openAttentionEvidence(event, ctx);
         return;
       }
       openInbox();
@@ -243,328 +282,93 @@ export function TodayScreen({
     }
   }
 
-  // Persistent-toast wiring (ADR 0068 T4). Least-invasive refresh point: this
-  // reuses `useTodayPulse`'s own attention-events fetch (the effect that
-  // already loads the list this section needs) rather than adding a new
-  // background poller — Today has no interval refresh anywhere today, so the
-  // only "observation" of fresh data is a mount/remount of this screen. A
-  // module-level id set (not component state) keeps a fired event from
-  // re-toasting on every re-render or re-entry into Today within the session.
-  useEffect(() => {
-    // D2 fix (v0.57 fix wave 2, owner screenshot 27-toast-stack.png): the
-    // attention-events/alert-rules fetch (`useTodayPulse`) and the company
-    // list (`AppStateRoot`) are two fully independent round trips. If the
-    // former settles first, `companyById` is still built off an empty
-    // `companies` array, and the toast below would permanently bake the raw
-    // company id into its message — the dedup Set above means it is never
-    // retried once the real company list arrives. Wait for at least one
-    // company to be loaded before composing/firing anything; `attentionRows`
-    // (built from `companyById`) changes reference once `companies` resolves,
-    // so this effect re-runs and fires the toast then, with the real ticker.
-    if (companies.length === 0) return;
-    for (const event of attentionRows) {
-      if (event.seen || event.dismissed) continue;
-      if (toastedAttentionEventIds.has(event.id)) continue;
-      toastedAttentionEventIds.add(event.id);
-      const rule = event.ruleId ? attentionRulesById.get(event.ruleId) : undefined;
-      const ticker = companyById.get(event.companyId)?.qualifiedTicker ?? event.companyId;
-      const detail = attentionEventTitleText(event, rule, text);
-      toast.show({
-        message: `${ticker} — ${detail}`,
-        tone: "caution",
-        persistent: true,
-        dismissLabel: text("Dismiss"),
-        actionLabel: text("Review"),
-        onAction: () => openAttentionEvidence(event),
-        onDismiss: () => dismissAttentionEventRow(event.id),
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attentionRows, companies.length]);
+  // Persistent-toast wiring (unchanged behavior, ADR 0068 T4; severity-driven with
+  // D3a). Reuses the pulse attention-events fetch — no new poller.
+  useAttentionToasts({
+    companies,
+    events: attentionRows,
+    companyById,
+    attentionRulesById,
+    onReview: (event: AttentionEvent) => openAttentionEvidence(event, ctx),
+    onDismiss: dismissAttentionEventRow,
+  });
 
-  // Counter tiles show the full live counts (pre-cap), ADR 0076 U-Rb D5.
+  // Counter tiles: "Pilne" (urgent rows) first, then the live pre-cap category
+  // counts (ADR 0076 U-Rb D5 + the mockup's fourth-tile amendment).
+  const urgentCount = groups.filter((group) => group.severity === "urgent").length;
   const counts = {
     autopilot: autopilotRuns.length,
     verify: verifyClaims.length,
     upcoming: upcomingAll.length,
   };
 
-  const showAutopilot = filter === null || filter === "autopilot";
-  // No dedicated counter/filter tile for fired alerts (unlike autopilot/verify/
-  // upcoming) — like "changed", it shows only in the unfiltered full stream.
-  const showAttention = filter === null;
-  const showVerify = filter === null || filter === "verify";
-  const showChanged = filter === null;
-  const showUpcoming = filter === null || filter === "upcoming";
+  const hasAttention =
+    autopilotRuns.length > 0 ||
+    attentionRows.length > 0 ||
+    verifyRows.length > 0 ||
+    changedRows.length > 0;
+  const anyLoading = autopilotLoading || attentionLoading || claimsLoading || season.loading;
+  // A failed category is explicit, never false quiet (J1 contract, ADR 0081 Q9):
+  // an errored read must not let the stream read as "nothing needs attention".
+  const anyCategoryError = Boolean(claimsError || season.error);
+  const showQuietState = filter === null && !hasAttention && !anyCategoryError;
 
-  // Roving focus across the stream's primary action buttons (ADR 0076 U-Rb D4):
-  // ArrowUp/ArrowDown and j/k move; Enter/Space trigger the focused button
-  // natively. Mirrors the Inbox feed-row idiom, scoped to the Today stream.
-  function onRowKeyDown(event: KeyboardEvent<HTMLElement>) {
-    const isDown = event.key === "ArrowDown" || event.key === "j";
-    const isUp = event.key === "ArrowUp" || event.key === "k";
-    if (!isDown && !isUp) return;
-    event.preventDefault();
-    const buttons = Array.from(
-      streamRef.current?.querySelectorAll<HTMLElement>('[data-today-row="true"]') ?? [],
-    );
-    const currentIndex = buttons.indexOf(event.currentTarget);
-    const nextIndex = Math.min(Math.max(currentIndex + (isDown ? 1 : -1), 0), buttons.length - 1);
-    buttons[nextIndex]?.focus();
-  }
+  // Config-state banner conditions (ADR 0087 dec. 5): a property of the app itself,
+  // stated ONCE above the stream. Wired to source health — an ENABLED adapter in the
+  // `attention` state (its last refresh errored) means its signals may be stale. The
+  // copy is translated here (typed, product-facing), and Diagnostyka jumps to Sources.
+  const configConditions: ConfigCondition[] = useMemo(
+    () =>
+      sourceAdapters
+        .filter((adapter) => adapter.enabled && adapter.healthStatus === "attention")
+        .map((adapter) => ({
+          id: `source_attention_${adapter.id}`,
+          // Name sits mid-sentence (both locales), so the copy is two translated
+          // clauses around the adapter's own display name.
+          message: `${text("Source")} ${adapter.displayName} ${text("isn't responding — signals may be delayed")}`,
+          action: { label: text("Diagnostics"), onClick: openSources },
+        })),
+    [sourceAdapters, text, openSources],
+  );
 
-  function RowAction({ onClick }: { onClick: () => void }) {
+  const showVerifyShowAll =
+    (filter === null || filter === "verify") && verifyClaims.length > VERIFY_CAP;
+  const showChangedShowAll = filter === null && whatChanged.length > CHANGED_CAP;
+  const showUpcomingShowAll =
+    (filter === null || filter === "upcoming") && upcomingAll.length > UPCOMING_CAP;
+
+  function counterTile(kind: StreamFilter, label: string, count: number, hot = false) {
+    const active = filter === kind;
     return (
-      <Button
-        className="today-row-review"
-        data-today-row="true"
-        // ADR 0081 Q4: the explicit experience-contract primary action for
-        // this row's decision surface (open the item that matters).
-        data-ux-primary-action="true"
-        onClick={onClick}
-        onKeyDown={onRowKeyDown}
+      <button
         type="button"
-        variant="ghost"
+        className={[
+          "today-counter",
+          hot ? "today-counter-hot" : "",
+          count === 0 ? "today-counter-empty" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-pressed={active}
+        aria-label={`${label}: ${count}`}
+        onClick={() => setFilter(active ? null : kind)}
+        data-counter={kind}
       >
-        {text("Review")}
-      </Button>
+        <span className="today-counter-count num-tabular">{count}</span>
+        <span className="today-counter-label">{label}</span>
+      </button>
     );
   }
 
-  // The shared row anatomy (ADR 0076 U-Rb D3): leading icon · full ticker
-  // (never truncated) · type badge · full date · title wrapping to 2 lines · the
-  // one primary action. Autopilot rows pass extra chips + a trailing disclosure.
-  function rowLine(args: {
-    icon: ReactNode;
-    ticker: string;
-    badge: ReactNode;
-    extraChips?: ReactNode;
-    date: string | null;
-    title: string;
-    action: ReactNode;
-    disclosure?: ReactNode;
-  }) {
+  function errorStrip(message: string, onRetry: () => void) {
     return (
-      <div className="today-row-line">
-        <span className="today-row-icon">{args.icon}</span>
-        <div className="today-row-body">
-          <div className="today-row-head">
-            <TickerLabel value={args.ticker} />
-            {args.badge}
-            {args.extraChips}
-            <span className="today-row-date num-tabular">
-              {formatListTimestamp(args.date, locale)}
-            </span>
-          </div>
-          <p className="today-row-title" title={args.title}>
-            {args.title}
-          </p>
-        </div>
-        <div className="today-row-actions">
-          {args.action}
-          {args.disclosure}
-        </div>
+      <div className="today-error-strip" role="alert">
+        <span className="today-error-strip-message">{message}</span>
+        <Button onClick={onRetry} type="button" variant="ghost">
+          <RefreshCw aria-hidden="true" size={13} />
+          {text("Try again")}
+        </Button>
       </div>
-    );
-  }
-
-  function autopilotRow(run: AutopilotRun) {
-    const company = companyById.get(run.companyId);
-    const failed = run.status === "failed" || run.status === "partial";
-    const drift = autopilotRunDrift(run.kpiDeltaJson);
-    // Undo reverts exactly `producedFactIds` (contracts.md § Autonomous Report
-    // Pipeline). Facts are review-free (ADR 0086 dec. 5): BOTH `assist` and
-    // `autopilot` commit their facts, so Undo is the reversal path for either —
-    // eligibility is simply "this run produced facts", not a mode gate.
-    const undoEligible = run.producedFactIds.length > 0;
-    const revertedCount = undoneAutopilotRuns[run.id];
-    const confirmingUndo = confirmingUndoRunId === run.id;
-    const expanded = expandedRunIds.has(run.id);
-    // ADR 0084 decision 6: new runs store a typed-token `summaryText` we translate
-    // through the locale layer; legacy runs (English-prose summaries) fall back to
-    // recomposing a localized sentence from the run's structured DATA fields — so
-    // even pre-token rows still localize instead of leaking English.
-    const summary = isTokenizedSummary(run.summaryText)
-      ? renderAutopilotSummaryTokens(run.summaryText, text, locale)
-      : composeAutopilotRunSummary(run, text, locale);
-
-    function toggleDetail() {
-      setExpandedRunIds((prior) => {
-        const next = new Set(prior);
-        if (next.has(run.id)) next.delete(run.id);
-        else next.add(run.id);
-        return next;
-      });
-    }
-
-    const extraChips = (
-      <>
-        {failed ? (
-          <StatusChip tone="danger">
-            {run.status === "partial" ? text("Partial") : text("Failed")}
-          </StatusChip>
-        ) : null}
-        {revertedCount !== undefined ? (
-          <StatusChip tone="ok">
-            {text("Reverted")} {revertedCount} {pluralNoun(locale, revertedCount, FACT_FORMS)}
-          </StatusChip>
-        ) : null}
-      </>
-    );
-
-    return (
-      <li key={run.id} className="today-stream-row" data-category="autopilot">
-        {rowLine({
-          icon: <Sparkles size={15} aria-hidden="true" />,
-          ticker: company?.qualifiedTicker ?? "",
-          badge: <StatusChip tone="accent">{text("Autopilot")}</StatusChip>,
-          extraChips,
-          date: run.createdAt,
-          title: summary,
-          action: (
-            <RowAction
-              onClick={() =>
-                company ? openCompanyWorkspace(company.id, "Fundamentals") : openInbox()
-              }
-            />
-          ),
-          disclosure: (
-            <button
-              type="button"
-              className={["today-row-disclosure", expanded ? "today-row-disclosure-open" : ""]
-                .filter(Boolean)
-                .join(" ")}
-              aria-expanded={expanded}
-              aria-label={text("Details")}
-              onClick={toggleDetail}
-            >
-              <ChevronRight size={15} aria-hidden="true" />
-            </button>
-          ),
-        })}
-        {expanded ? (
-          <div className="today-run-detail">
-            <div className="today-run-detail-actions">
-              {undoEligible && !confirmingUndo ? (
-                <Button
-                  onClick={() => setConfirmingUndoRunId(run.id)}
-                  type="button"
-                  variant="ghost"
-                >
-                  {text("Undo")}
-                </Button>
-              ) : null}
-              <Button
-                onClick={() => dismissAutopilotRun(run.id)}
-                type="button"
-                variant="ghost"
-              >
-                {text("Dismiss")}
-              </Button>
-            </div>
-            {confirmingUndo ? (
-              <InlineConfirm
-                cancelLabel={text("Cancel")}
-                confirmLabel={text("Undo")}
-                onCancel={() => setConfirmingUndoRunId(null)}
-                onConfirm={() => {
-                  setConfirmingUndoRunId(null);
-                  void undoAutopilotRun(run.id);
-                }}
-              >
-                {text("Undo this run and revert its facts?")}
-              </InlineConfirm>
-            ) : null}
-            {drift ? (
-              <section className="today-run-drift" aria-label={text("Structure changed")}>
-                <span className="eyebrow">{text("Structure changed")}</span>
-                <DriftDiff drift={drift} />
-              </section>
-            ) : null}
-          </div>
-        ) : null}
-      </li>
-    );
-  }
-
-  function verifyRow(item: PulseClaim) {
-    return (
-      <li key={item.claim.id} className="today-stream-row" data-category="verify">
-        {rowLine({
-          icon: <CheckCircle2 size={15} aria-hidden="true" />,
-          ticker: item.qualifiedTicker,
-          badge: (
-            <StatusChip tone={item.bucket === "overdue" ? "danger" : "warn"}>
-              {item.bucket === "overdue" ? text("Overdue") : text("Due")}
-            </StatusChip>
-          ),
-          date: item.claim.madeAt ?? item.claim.createdAt,
-          title: item.claim.statement,
-          action: <RowAction onClick={() => openCompanyWorkspace(item.companyId, "Claims")} />,
-        })}
-      </li>
-    );
-  }
-
-  function changedRow(item: FeedItem) {
-    const company = companyByTicker.get(item.company);
-    return (
-      <li key={item.id} className="today-stream-row" data-category="changed">
-        {rowLine({
-          icon: <FileText size={15} aria-hidden="true" />,
-          ticker: item.company,
-          badge: <StatusChip tone="official">{text("Report")}</StatusChip>,
-          date: item.publishedAt || item.time,
-          title: item.title,
-          action: (
-            <RowAction
-              onClick={() => (company ? openCompanyWorkspace(company.id, "Feed") : openInbox())}
-            />
-          ),
-        })}
-      </li>
-    );
-  }
-
-  // Fired alert row (ADR 0068 T4): "what fired" (the rule's category/price
-  // context via `attentionEventLabels`) · when it fired · Review (mark seen +
-  // click-through to evidence) · an explicit Dismiss (no expandable detail —
-  // an event carries no further state to disclose, unlike an autopilot run).
-  function attentionRow(event: AttentionEvent) {
-    const rule = event.ruleId ? attentionRulesById.get(event.ruleId) : undefined;
-    const company = companyById.get(event.companyId);
-    return (
-      <li key={event.id} className="today-stream-row" data-category="attention">
-        {rowLine({
-          icon: <BellRing size={15} aria-hidden="true" />,
-          ticker: company?.qualifiedTicker ?? event.companyId,
-          badge: <StatusChip tone="warn">{attentionEventBadgeText(event, text)}</StatusChip>,
-          date: event.firedAt,
-          title: attentionEventTitleText(event, rule, text),
-          action: <RowAction onClick={() => openAttentionEvidence(event)} />,
-          disclosure: (
-            <ClearButton
-              label={text("Dismiss")}
-              onClick={() => dismissAttentionEventRow(event.id)}
-            />
-          ),
-        })}
-      </li>
-    );
-  }
-
-  function upcomingRow(entry: ReportSeasonEntry) {
-    return (
-      <li key={`${entry.companyId}::${entry.eventKey}`} className="today-stream-row" data-category="upcoming">
-        {rowLine({
-          icon: <CalendarClock size={15} aria-hidden="true" />,
-          ticker: entry.qualifiedTicker,
-          badge: <StatusChip tone="neutral">{text("Upcoming")}</StatusChip>,
-          date: entry.eventDate,
-          title: entry.displayName,
-          action: <RowAction onClick={() => openCompanyWorkspace(entry.companyId, "Feed")} />,
-        })}
-      </li>
     );
   }
 
@@ -575,43 +379,13 @@ export function TodayScreen({
           className="today-row-review"
           data-today-row="true"
           onClick={onClick}
-          onKeyDown={onRowKeyDown}
+          onKeyDown={onStreamRowKeyDown}
           type="button"
           variant="ghost"
         >
           {label}
         </Button>
       </li>
-    );
-  }
-
-  const hasAttention =
-    autopilotRows.length > 0 ||
-    attentionRows.length > 0 ||
-    verifyRows.length > 0 ||
-    changedRows.length > 0;
-  const anyLoading = autopilotLoading || attentionLoading || claimsLoading || season.loading;
-  // A failed category is explicit, never false quiet (J1 contract, ADR 0081 Q9):
-  // an errored read must not let the stream read as "nothing needs attention".
-  const anyCategoryError = Boolean(claimsError || season.error);
-  const showQuietState = filter === null && !hasAttention && !anyCategoryError;
-
-  function counterTile(category: StreamCategory, label: string, count: number) {
-    const active = filter === category;
-    return (
-      <button
-        type="button"
-        className={["today-counter", count === 0 ? "today-counter-empty" : ""]
-          .filter(Boolean)
-          .join(" ")}
-        aria-pressed={active}
-        aria-label={`${label}: ${count}`}
-        onClick={() => setFilter(active ? null : category)}
-        data-counter={category}
-      >
-        <span className="today-counter-count num-tabular">{count}</span>
-        <span className="today-counter-label">{label}</span>
-      </button>
     );
   }
 
@@ -622,62 +396,118 @@ export function TodayScreen({
         description={t("today.description")}
         titleId="today-title"
         actions={
-          <Button onClick={openInbox} type="button" variant="ghost">
-            <Inbox size={14} aria-hidden="true" />
-            {text("Open Inbox")}
-          </Button>
+          <>
+            <SegmentedControl ariaLabel={t("today.view.label")} className="today-view-switch">
+              <SegmentedControlOption active={!isArchive} onClick={() => setView("active")}>
+                {t("today.view.active")}
+              </SegmentedControlOption>
+              <SegmentedControlOption active={isArchive} onClick={() => setView("archive")}>
+                {t("today.view.archive")}
+              </SegmentedControlOption>
+            </SegmentedControl>
+            <Button onClick={openInbox} type="button" variant="ghost">
+              <Inbox aria-hidden="true" size={14} />
+              {text("Open Inbox")}
+            </Button>
+          </>
         }
       />
 
-      <MorningBriefingCard
-        briefing={morningBriefing.briefing}
-        companyById={companyById}
-        generating={morningBriefing.generating}
-        loading={morningBriefing.loading}
-        onGenerate={morningBriefing.generate}
-        onOpenItem={openBriefingItemEvidence}
-      />
+      {/* The config banner + morning briefing are active-stream concerns; the
+          Archive is only the dismissed-event history. */}
+      {!isArchive ? (
+        <>
+          <ConfigBanner conditions={configConditions} />
 
-      <div className="today-body">
+          <MorningBriefingStrip
+            briefing={morningBriefing.briefing}
+            companyById={companyById}
+            generating={morningBriefing.generating}
+            loading={morningBriefing.loading}
+            onGenerate={morningBriefing.generate}
+            onOpenItem={openBriefingItemEvidence}
+          />
+        </>
+      ) : null}
+
+      <div className={isArchive ? "today-body today-body-archive" : "today-body"}>
+        {isArchive ? (
+          <section className="today-stream-region" aria-label={text("Attention stream")}>
+            <p className="today-archive-subtitle">{t("today.archive.subtitle")}</p>
+            {archiveLoading && archiveRows.length === 0 ? (
+              <Skeleton variant="list-row" count={3} label={t("today.archive.subtitle")} />
+            ) : (
+              <ul className="today-stream ui-list-rows">
+                {archiveRows.length === 0 ? (
+                  <li className="today-stream-quiet">
+                    <EmptyState>{t("today.archive.empty")}</EmptyState>
+                  </li>
+                ) : (
+                  archiveRows.map((event) => (
+                    <ArchivedAttentionRow key={event.id} event={event} ctx={ctx} />
+                  ))
+                )}
+              </ul>
+            )}
+          </section>
+        ) : (
+          <>
         <div className="today-counters" role="group" aria-label={text("Filter the stream")}>
+          {counterTile("urgent", text("Urgent"), urgentCount, true)}
+          <SeverityLegend />
           {counterTile("autopilot", text("Autopilot"), counts.autopilot)}
           {counterTile("verify", text("To verify"), counts.verify)}
           {counterTile("upcoming", text("Upcoming reports"), counts.upcoming)}
         </div>
 
         <section className="today-stream-region" aria-label={text("Attention stream")}>
-          {claimsError ? <ErrorText>{claimsError}</ErrorText> : null}
-          {season.error ? <ErrorText>{season.error}</ErrorText> : null}
+          {claimsError ? errorStrip(text("Couldn't load claims to verify."), retryClaims) : null}
+          {season.error ? errorStrip(text("Couldn't load upcoming reports."), season.reload) : null}
+
           {showQuietState && anyLoading ? (
-            <Skeleton variant="list-row" count={3} label={text("Checking what needs your attention…")} />
+            <Skeleton
+              variant="list-row"
+              count={3}
+              label={text("Checking what needs your attention…")}
+            />
           ) : (
-            <ul className="today-stream ui-list-rows" ref={streamRef}>
+            <ul className="today-stream ui-list-rows">
               {showQuietState ? (
                 <li className="today-stream-quiet">
                   <EmptyState>{text("Nothing needs your attention.")}</EmptyState>
                 </li>
               ) : null}
 
-              {showAutopilot ? autopilotRows.map((run) => autopilotRow(run)) : null}
+              {visibleRows.map((row) =>
+                row.kind === "aggregate" ? (
+                  <AggregateRow key={row.key} aggregate={row} ctx={ctx} />
+                ) : row.count === 1 ? (
+                  <StreamRowView key={row.key} item={row.members[0]} ctx={ctx} />
+                ) : (
+                  <GroupRow key={row.key} group={row} ctx={ctx} />
+                ),
+              )}
 
-              {showAttention ? attentionRows.map((event) => attentionRow(event)) : null}
-
-              {showVerify ? verifyRows.map((item) => verifyRow(item)) : null}
-              {showVerify && verifyClaims.length > VERIFY_CAP
+              {showVerifyShowAll
                 ? showAllRow("verify-showall", text("Show all in Claims"), () =>
                     openCompanyWorkspace(verifyClaims[0].companyId, "Claims"),
                   )
                 : null}
-
-              {showChanged ? changedRows.map((item) => changedRow(item)) : null}
-              {showChanged && whatChanged.length > CHANGED_CAP
+              {showChangedShowAll
                 ? showAllRow("changed-showall", text("Show all in Inbox"), openInbox)
                 : null}
-
-              {showUpcoming ? upcomingRows.map((entry) => upcomingRow(entry)) : null}
+              {showUpcomingShowAll
+                ? showAllRow(
+                    "upcoming-showall",
+                    `${text("Show all upcoming reports")} (${upcomingAll.length})`,
+                    openReportSeason,
+                  )
+                : null}
             </ul>
           )}
         </section>
+          </>
+        )}
       </div>
     </section>
   );

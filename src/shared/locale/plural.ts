@@ -30,3 +30,27 @@ export function pluralNoun(locale: LocaleCode, n: number, forms: PluralForms): s
 // Shared across screens (Today's autopilot run card, Companies' fundamentals
 // header) that report a raw `financial_facts`/produced-fact count.
 export const FACT_FORMS: PluralForms = { en: ["fact", "facts"], pl: ["fakt", "fakty", "faktów"] };
+
+// Today's cross-company routine aggregate chip ("×K spółek", ADR 0087).
+export const COMPANY_FORMS: PluralForms = {
+  en: ["company", "companies"],
+  pl: ["spółka", "spółki", "spółek"],
+};
+
+// Today's per-company group count chips carry their unit so "×4" is not opaque
+// (owner dogfooding 2026-07-23): attention groups count fired events, autopilot
+// groups count runs; any other category falls back to a generic item noun.
+export const EVENT_FORMS: PluralForms = {
+  en: ["event", "events"],
+  pl: ["zdarzenie", "zdarzenia", "zdarzeń"],
+};
+
+export const RUN_FORMS: PluralForms = {
+  en: ["run", "runs"],
+  pl: ["run", "runy", "runów"],
+};
+
+export const ITEM_FORMS: PluralForms = {
+  en: ["item", "items"],
+  pl: ["pozycja", "pozycje", "pozycji"],
+};

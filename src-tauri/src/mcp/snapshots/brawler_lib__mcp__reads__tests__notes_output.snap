@@ -1,0 +1,22 @@
+---
+source: src/mcp/reads.rs
+expression: redact(&payload)
+---
+[
+  {
+    "body": "Net profit up.",
+    "bodyFormat": "markdown",
+    "claimStatus": null,
+    "companyId": "company_gpw_tst",
+    "createdAt": "[timestamp]",
+    "eventDate": null,
+    "followUpAfter": null,
+    "followUpDate": null,
+    "id": "note_company_gpw_tst_q4read",
+    "kind": "observation",
+    "origins": [],
+    "tags": [],
+    "title": "Q4 read",
+    "updatedAt": "[timestamp]"
+  }
+]

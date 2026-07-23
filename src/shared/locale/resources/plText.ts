@@ -135,6 +135,16 @@ export const plText: Record<string, string> = {
   "Filter the stream": "Filtruj strumień",
   "Nothing needs your attention.": "Nic nie wymaga Twojej uwagi.",
   "Checking what needs your attention…": "Sprawdzanie, co wymaga uwagi…",
+  // Today attention-home v2 (ADR 0087): typed severity cues, per-category error
+  // strips, briefing strip. "Urgent"/"Notable" are the severity chip + "Pilne" tile.
+  "Urgent": "Pilne",
+  "Notable": "Uwaga",
+  "Couldn't load claims to verify.": "Nie udało się pobrać obietnic do weryfikacji.",
+  "Couldn't load upcoming reports.": "Nie udało się pobrać nadchodzących raportów.",
+  "Composing the review…": "Składam przegląd…",
+  "Expand": "Rozwiń",
+  "Generate": "Wygeneruj",
+  "Show all upcoming reports": "Pokaż wszystkie nadchodzące raporty",
   // Persistent-toast overflow summary (bug: unbounded attention toasts
   // covered the sidebar nav) — "+{n} " is composed outside text(), matching
   // the codebase's other count-prefixed strings.
@@ -147,6 +157,7 @@ export const plText: Record<string, string> = {
   "No briefing yet. Generate one to see what's changed.": "Brak jeszcze przeglądu. Wygeneruj go, aby zobaczyć, co się zmieniło.",
   "Nothing to report since your last briefing.": "Brak nowości od ostatniego przeglądu.",
   "Briefing narrative": "Treść przeglądu",
+  "Due {period} {year}": "Termin: {period} {year}",
   "Report": "Raport",
   "Show all in Inbox": "Pokaż wszystko w Inbox",
   "Show all in Claims": "Pokaż wszystko w Obietnicach",
@@ -242,9 +253,23 @@ export const plText: Record<string, string> = {
   "to verify": "do weryfikacji",
   "Failed": "Niepowodzenie",
   "Dismiss": "Odrzuć",
+  "Dismiss all": "Odrzuć wszystkie",
+  "Dismiss all alerts in this group?": "Odrzucić wszystkie alerty w tej grupie?",
   "Undo": "Cofnij",
   "Undo this run and revert its facts?": "Cofnąć ten przebieg i przywrócić jego dane?",
   "Reverted": "Cofnięto",
+  "Open document": "Otwórz dokument",
+  "From your alert rule": "Z reguły alertu",
+  "Routine": "Rutynowe",
+  "What do the severity levels mean?": "Co oznaczają poziomy ważności?",
+  "Severity levels": "Poziomy ważności",
+  "Leads the stream — the only level that can raise a lasting notification.":
+    "Prowadzi strumień — jedyny poziom, który może wywołać trwałe powiadomienie.",
+  "Shown in the stream, with at most a passing notification.":
+    "Widoczne w strumieniu, najwyżej z przelotnym powiadomieniem.",
+  "Shown in the stream only, dimmed.": "Tylko w strumieniu, przyciemnione.",
+  "An urgent event left unattended for more than 3 days steps down to Notable.":
+    "Pilne zdarzenie bez reakcji przez ponad 3 dni schodzi do poziomu Uwaga.",
   "Recent activity": "Ostatnia aktywność",
   "Conviction": "Przekonanie",
   "No new reports have arrived.": "Nie pojawiły się nowe raporty.",
@@ -426,6 +451,9 @@ export const plText: Record<string, string> = {
   "Inbox type": "Typ inboxu",
   "All types": "Wszystkie typy",
   "Source": "Źródło",
+  "isn't responding — signals may be delayed":
+    "nie odpowiada — sygnały mogą być opóźnione",
+  "Diagnostics": "Diagnostyka",
   "Validation": "Walidacja",
   "Validated": "Zwalidowane",
   "Witness-confirmed": "Potwierdzone świadkiem",
@@ -966,6 +994,15 @@ export const plText: Record<string, string> = {
   "Witness": "Świadek",
   "Reconciliation": "Uzgadnianie",
   "Official report missed by the primary source": "Raport oficjalny pominięty przez źródło główne",
+  // v0.60 D6 — every Today row states WHAT concretely happened (owner dogfooding
+  // 2026-07-23). The reconciliation statement names the missed report and the
+  // registry that caught it; the autopilot event statement carries the run status.
+  "{title} — missed by the primary source, backfilled from {source}":
+    "{title} — pominięty przez źródło główne, dociągnięty z {source}",
+  "the official registry": "oficjalnego rejestru",
+  "Succeeded": "Powodzenie",
+  "Pending": "Oczekuje",
+  "Finished": "Zakończony",
   "Source reconciliation": "Uzgadnianie źródeł",
   "GPW ESPI/EBI witness vs Bankier — official reports the primary source may have missed.":
     "Świadek GPW ESPI/EBI kontra Bankier — raporty oficjalne, które źródło główne mogło pominąć.",
@@ -1273,6 +1310,7 @@ export const plText: Record<string, string> = {
   "Signal classification failed": "Klasyfikacja sygnałów nie powiodła się",
   "AI proposal — confirm to apply": "Propozycja AI — potwierdź, aby zastosować",
   "Rule-classified": "Sklasyfikowano regułą",
+  "Agent-classified": "Sklasyfikowano przez agenta",
   "Signal review": "Przegląd sygnału",
   "Signal proposal actions": "Działania dla propozycji sygnału",
   "ESPI AI classification fallback": "Klasyfikacja ESPI przez AI (zapasowa)",
@@ -1644,6 +1682,11 @@ export const plText: Record<string, string> = {
   "Server status": "Stan serwera",
   "Active": "Aktywny",
   "Stopped": "Zatrzymany",
+  "Allow write tools": "Zezwól na narzędzia zapisu",
+  "Writes on": "Zapis włączony",
+  "Read-only": "Tylko odczyt",
+  "Write tools require citations; deletes and settings stay UI-only. Off by default — an assistant can never turn this on itself.":
+    "Narzędzia zapisu wymagają cytowań; usuwanie i ustawienia pozostają wyłącznie w interfejsie. Domyślnie wyłączone — asystent nigdy nie włączy tego samodzielnie.",
   "Listen port": "Port nasłuchu",
   "Port must be a whole number between 1024 and 65535.":
     "Port musi być liczbą całkowitą od 1024 do 65535.",

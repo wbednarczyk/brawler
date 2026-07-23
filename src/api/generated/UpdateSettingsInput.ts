@@ -36,4 +36,10 @@ mcpEnabled?: boolean,
  * Requested MCP listen port (ADR 0078); clamped to `[1024, 65535]` on
  * write rather than rejected.
  */
-mcpPort?: number, };
+mcpPort?: number, 
+/**
+ * Enable/disable the MCP `act` (write) tier (ADR 0088 M3). Default `false`.
+ * This is the ONLY path to toggle write access — and `update_settings` is
+ * `Excluded` from the MCP registry, so an agent can never flip it itself.
+ */
+mcpWritesEnabled?: boolean, };

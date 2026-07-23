@@ -134,7 +134,9 @@ export function InboxDetailPane({
                       <span className="feed-signal-source">
                         {signal.classifiedBy === "ai"
                           ? text("AI proposal — confirm to apply")
-                          : text("Rule-classified")}
+                          : signal.classifiedBy === "agent"
+                            ? text("Agent-classified")
+                            : text("Rule-classified")}
                       </span>
                     </div>
                     {signal.status === "proposed" ? (

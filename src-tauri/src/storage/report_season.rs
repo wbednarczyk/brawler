@@ -120,14 +120,14 @@ pub struct PreReportCard {
     pub recent_evidence: Vec<ResearchEvidenceItem>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkReportPreparedInput {
     pub company_id: String,
     pub event_key: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkReportProcessedInput {
     pub company_id: String,

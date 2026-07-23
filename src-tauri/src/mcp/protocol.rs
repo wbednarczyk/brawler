@@ -10,7 +10,8 @@
 
 use serde_json::{json, Map, Value};
 
-use super::tools::{self, ToolCallError, ToolOutcome};
+use super::registry;
+use super::tools::{ToolCallError, ToolOutcome};
 use crate::app_state::AppState;
 
 /// The pinned MCP protocol revision this server implements (ADR 0078
@@ -78,7 +79,7 @@ pub fn dispatch(state: &AppState, raw: &str) -> Option<String> {
     Some(match method {
         "initialize" => handle_initialize(id, &params),
         "ping" => success_response(id, json!({})),
-        "tools/list" => success_response(id, json!({ "tools": tools::descriptors() })),
+        "tools/list" => success_response(id, json!({ "tools": registry::descriptors() })),
         "tools/call" => handle_tools_call(state, id, &params),
         other => error_response(id, -32601, &format!("method not found: {other}")),
     })
@@ -122,7 +123,7 @@ fn handle_tools_call(state: &AppState, id: Value, params: &Value) -> String {
         Some(arguments @ Value::Object(_)) => arguments.clone(),
         Some(_) => return error_response(id, -32602, "params.arguments must be an object"),
     };
-    match tools::call(state, name, &arguments) {
+    match registry::call(state, name, &arguments) {
         Ok(ToolOutcome::Success(payload)) => success_response(
             id,
             json!({

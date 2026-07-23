@@ -1,16 +1,21 @@
-//! The four read-only MCP tools (ADR 0078 decision 5).
+//! The four read MCP tools' domain logic, strict input types, and
+//! schemars-generated JSON Schemas (ADR 0078 decision 5, ADR 0088 decision 1).
 //!
 //! Every tool binds directly to existing `AppState` read models / extracted
 //! pure command helpers — never SQL, files, or Tauri internals (ADR 0039).
 //! Inputs are strict `#[serde(deny_unknown_fields)]` structs; the JSON Schemas
-//! returned by `tools/list` are hand-written constants, and the insta snapshot
-//! of that response is the **frozen tool contract** (ADR 0078 G-1). Tool
-//! failures map onto the ADR 0070 `CommandError` code set. Outputs are sourced
-//! facts, coverage, scorecards, and the user's own research — decision support
-//! only; no buy/sell/hold phrasing (ADR 0042).
+//! returned by `tools/list` are **generated from these serde types** by
+//! `schemars` ([`tool_schema`]) — never hand-written (ADR 0088 dec. 1) — and the
+//! insta snapshot of that response is the **frozen tool contract** (ADR 0078
+//! G-1). The registry ([`super::registry`]) owns tool naming, tier, and
+//! dispatch; this module owns the schemas, inputs, and handlers. Tool failures
+//! map onto the ADR 0070 `CommandError` code set. Outputs are sourced facts,
+//! coverage, scorecards, and the user's own research — decision support only;
+//! no buy/sell/hold phrasing (ADR 0042).
 
 use std::collections::BTreeMap;
 
+use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,129 +29,90 @@ use crate::storage::{
 };
 
 // ============================================================================
-// Tool inputs (strict: unknown fields are rejected)
+// Tool inputs (strict: unknown fields are rejected; camelCase on the wire)
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GetCompanyDossierInput {
-    /// Qualified ticker, e.g. `GPW:CDR` (a bare ticker is accepted when unambiguous).
+    /// Qualified ticker, e.g. "GPW:CDR". A bare ticker is accepted when unambiguous.
     pub company: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SearchResearchInput {
+    /// Full-text query over the user's research: notes, reports, transcripts, claims, and facts.
     pub query: String,
+    /// Optional qualified ticker to scope the search to one company.
     #[serde(default)]
     pub company: Option<String>,
+    /// Maximum number of matches to return (default 50).
     #[serde(default)]
+    #[schemars(range(min = 1, max = 200))]
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ListClaimsDueInput {
+    /// Optional qualified ticker; when omitted, every tracked company with open claims is included.
     #[serde(default)]
     pub company: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GetQualityAssessmentInput {
+    /// Qualified ticker, e.g. "GPW:CDR". A bare ticker is accepted when unambiguous.
     pub company: String,
 }
 
 // ============================================================================
-// Hand-written JSON Schemas (the tools/list contract, ADR 0078 G-1)
+// Generated JSON Schemas (the tools/list contract, ADR 0088 dec. 1 / 0078 G-1)
 // ============================================================================
 
-const GET_COMPANY_DOSSIER_SCHEMA: &str = r#"{
-  "type": "object",
-  "properties": {
-    "company": {
-      "type": "string",
-      "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous."
+/// Generate a tool's `inputSchema` from its serde type via `schemars`. The
+/// draft-07 root schema is trimmed of its `$schema`/`title` meta keys (the MCP
+/// `inputSchema` slot wants a bare object schema), and `Option<T>` fields keep
+/// `T`'s schema (optional-by-absence) rather than gaining a `null` type —
+/// `#[serde(deny_unknown_fields)]` still yields `additionalProperties: false`.
+/// The insta snapshot of `tools/list` freezes whatever this produces (ADR 0078
+/// G-1): regeneration is a reviewed spec change.
+pub fn tool_schema<T: JsonSchema>() -> Value {
+    let mut settings = schemars::gen::SchemaSettings::draft07();
+    settings.option_add_null_type = false;
+    let root = settings.into_generator().into_root_schema_for::<T>();
+    let mut value = serde_json::to_value(root).expect("schema serializes to JSON");
+    if let Some(object) = value.as_object_mut() {
+        object.remove("$schema");
+        object.remove("title");
+        // A struct-level doc comment lands as a root `description`; the tool
+        // already carries a top-level description in `tools/list`, so drop the
+        // duplicate at the schema root (nested field descriptions are kept).
+        object.remove("description");
     }
-  },
-  "required": ["company"],
-  "additionalProperties": false
-}"#;
+    // `#[serde(default)]` on an `Option` field makes schemars advertise
+    // `"default": null` — pure noise on the external contract; drop it.
+    strip_null_defaults(&mut value);
+    value
+}
 
-const SEARCH_RESEARCH_SCHEMA: &str = r#"{
-  "type": "object",
-  "properties": {
-    "query": {
-      "type": "string",
-      "description": "Full-text query over the user's research: notes, reports, transcripts, claims, and facts."
-    },
-    "company": {
-      "type": "string",
-      "description": "Optional qualified ticker to scope the search to one company."
-    },
-    "limit": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 200,
-      "description": "Maximum number of matches to return (default 50)."
+/// Recursively remove `"default": null` keys left by schemars for
+/// optional-by-`serde(default)` fields.
+fn strip_null_defaults(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if map.get("default") == Some(&Value::Null) {
+                map.remove("default");
+            }
+            for child in map.values_mut() {
+                strip_null_defaults(child);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_null_defaults),
+        _ => {}
     }
-  },
-  "required": ["query"],
-  "additionalProperties": false
-}"#;
-
-const LIST_CLAIMS_DUE_SCHEMA: &str = r#"{
-  "type": "object",
-  "properties": {
-    "company": {
-      "type": "string",
-      "description": "Optional qualified ticker; when omitted, every tracked company with open claims is included."
-    }
-  },
-  "additionalProperties": false
-}"#;
-
-const GET_QUALITY_ASSESSMENT_SCHEMA: &str = r#"{
-  "type": "object",
-  "properties": {
-    "company": {
-      "type": "string",
-      "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous."
-    }
-  },
-  "required": ["company"],
-  "additionalProperties": false
-}"#;
-
-/// The `tools` array of the `tools/list` response (hand-written schemas). The
-/// insta snapshot of the full response freezes this contract — changing the
-/// tool set or any shape is a reviewed spec change (ADR 0078 G-1).
-pub fn descriptors() -> Value {
-    let schema = |raw: &str| -> Value {
-        serde_json::from_str(raw).expect("hand-written tool schema is valid JSON")
-    };
-    Value::Array(vec![
-        serde_json::json!({
-            "name": "get_company_dossier",
-            "description": "One company's research dossier: identity, fundamentals coverage per fiscal period, confirmed financial facts, and quality-scorecard summaries. Sourced from the user's own research; decision support only.",
-            "inputSchema": schema(GET_COMPANY_DOSSIER_SCHEMA),
-        }),
-        serde_json::json!({
-            "name": "search_research",
-            "description": "Full-text search across the user's research workspace (notes, report documents, transcripts, claims, facts). Returns ranked matches with snippets.",
-            "inputSchema": schema(SEARCH_RESEARCH_SCHEMA),
-        }),
-        serde_json::json!({
-            "name": "list_claims_due",
-            "description": "Management claims whose verification period has arrived (due), passed (overdue), or is approaching (upcoming), per company.",
-            "inputSchema": schema(LIST_CLAIMS_DUE_SCHEMA),
-        }),
-        serde_json::json!({
-            "name": "get_quality_assessment",
-            "description": "Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus previously-stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — qualitative criteria are recorded manually now, and this tool reads only stored verdicts (new criteria stay empty until the planned MCP write-tools). Decision support only — never an investment recommendation.",
-            "inputSchema": schema(GET_QUALITY_ASSESSMENT_SCHEMA),
-        }),
-    ])
 }
 
 // ============================================================================
@@ -168,20 +134,45 @@ pub enum ToolOutcome {
     Failure(CommandError),
 }
 
-/// Run one tool by name over the domain state (read paths only — ADR 0078 G-2).
-pub fn call(state: &AppState, name: &str, arguments: &Value) -> Result<ToolOutcome, ToolCallError> {
-    match name {
-        "get_company_dossier" => run(arguments, |input| get_company_dossier(state, input)),
-        "search_research" => run(arguments, |input| search_research(state, input)),
-        "list_claims_due" => run(arguments, |input| list_claims_due(state, input)),
-        "get_quality_assessment" => run(arguments, |input| get_quality_assessment(state, input)),
-        other => Err(ToolCallError::UnknownTool(other.to_owned())),
-    }
+// ---- Per-tool handlers (wired into the registry, ADR 0088 dec. 1) ----------
+//
+// Each handler deserializes the strict input, runs the read tool, and serializes
+// the payload. The registry ([`super::registry`]) maps a tool name to one of
+// these; `protocol.rs` never matches on tool names directly. Read paths only —
+// a mutating tool requires the `act` tier + provenance enforcement (ADR 0088).
+
+pub fn get_company_dossier_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input| get_company_dossier(state, input))
+}
+
+pub fn search_research_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input| search_research(state, input))
+}
+
+pub fn list_claims_due_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input| list_claims_due(state, input))
+}
+
+pub fn get_quality_assessment_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input| get_quality_assessment(state, input))
 }
 
 /// Deserialize the strict input (unknown fields ⇒ −32602 via
-/// `InvalidArguments`), run the tool, serialize the payload.
-fn run<I, T>(
+/// `InvalidArguments`), run the tool, serialize the payload. Shared with the
+/// broad read-wave handlers in [`super::reads`] (ADR 0088 dec. 2).
+pub(super) fn run<I, T>(
     arguments: &Value,
     tool: impl FnOnce(I) -> Result<T, CommandError>,
 ) -> Result<ToolOutcome, ToolCallError>
@@ -209,7 +200,8 @@ where
 
 /// Resolve a qualified ticker (`GPW:CDR`) — or a bare ticker when unambiguous —
 /// to a tracked company. Unknown ⇒ `not_found`; ambiguous ⇒ `invalid_input`.
-fn resolve_company(state: &AppState, reference: &str) -> Result<Company, CommandError> {
+/// Shared with the broad read-wave handlers in [`super::reads`].
+pub(super) fn resolve_company(state: &AppState, reference: &str) -> Result<Company, CommandError> {
     let trimmed = reference.trim();
     if trimmed.is_empty() {
         return Err(CommandError::new(
@@ -617,7 +609,7 @@ mod tests {
         use crate::storage::open_in_memory_database;
 
         let state = crate::storage::AppState::new(open_in_memory_database().expect("db"));
-        let outcome = call(
+        let outcome = super::super::registry::call(
             &state,
             "get_company_dossier",
             &json!({"company": "GPW:NOPE"}),

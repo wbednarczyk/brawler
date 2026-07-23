@@ -45,6 +45,24 @@ describe("formatListTimestamp — ADR 0076 D4 relative table", () => {
   it("renders no seconds in list contexts", () => {
     expect(formatListTimestamp("2026-07-05T09:12:47", "en", "", NOW)).toBe("today 09:12");
   });
+
+  // A domain-date-only event (bare YYYY-MM-DD, or an explicit 00:00) carries no
+  // meaningful time — render the date alone, never a misleading "… 00:00".
+  it("drops a midnight/bare-date time in the same-year branch", () => {
+    expect(formatListTimestamp("2026-03-02", "pl", "", NOW)).toBe("2 mar");
+    expect(formatListTimestamp("2026-03-02T00:00:00", "en", "", NOW)).toBe("Mar 2");
+  });
+
+  it("drops the time for a midnight today / yesterday / weekday", () => {
+    expect(formatListTimestamp("2026-07-05T00:00:00", "pl", "", NOW)).toBe("dziś");
+    expect(formatListTimestamp("2026-07-04", "en", "", NOW)).toBe("yesterday");
+    expect(formatListTimestamp("2026-06-30", "en", "", NOW)).toBe("Tue");
+  });
+
+  it("still shows a meaningful (non-midnight) time", () => {
+    expect(formatListTimestamp("2026-03-02T09:12:00", "en", "", NOW)).toBe("Mar 2, 09:12");
+    expect(formatListTimestamp("2026-07-05T00:01:00", "en", "", NOW)).toBe("today 00:01");
+  });
 });
 
 describe("formatDetailTimestamp — full YYYY-MM-DD HH:MM, no seconds", () => {

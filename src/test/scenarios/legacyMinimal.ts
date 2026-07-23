@@ -7,8 +7,28 @@
 // frameworks, …) come from the generic builders so `minimal` still contains one
 // of every object. IDs follow the established semantic `*_sample_*` style.
 
-import type { Company, CompanyEvent, CompanyRegistryEntry, CredentialStatus, FeedItem, LicenseStatus, LocalMetricsSnapshot, NotebookEntry, SourceAdapter, TranscriptJob, TranscriptSegment, UnmatchedSourceItem, UserSettings, Watchlist, WatchlistMembership } from "../../api/types";
-import type { ResearchEvidenceItem, ResearchQuestion, ResearchReminder } from "../../api/researchTypes";
+import type {
+  Company,
+  CompanyEvent,
+  CompanyRegistryEntry,
+  CredentialStatus,
+  FeedItem,
+  LicenseStatus,
+  LocalMetricsSnapshot,
+  NotebookEntry,
+  SourceAdapter,
+  TranscriptJob,
+  TranscriptSegment,
+  UnmatchedSourceItem,
+  UserSettings,
+  Watchlist,
+  WatchlistMembership,
+} from "../../api/types";
+import type {
+  ResearchEvidenceItem,
+  ResearchQuestion,
+  ResearchReminder,
+} from "../../api/researchTypes";
 
 function formatTestDate(date: Date) {
   const year = date.getFullYear();
@@ -44,7 +64,8 @@ export const legacyFeedItems: FeedItem[] = [
     publishedAt: "Today 09:12",
     fetchedAt: "Today 09:15",
     attribution: "GPW",
-    summary: "Sample official report used to validate feed filtering and detail rendering.",
+    summary:
+      "Sample official report used to validate feed filtering and detail rendering.",
     bodyText: "",
     attachments: noFeedAttachments,
   },
@@ -62,7 +83,8 @@ export const legacyFeedItems: FeedItem[] = [
     publishedAt: "Yesterday",
     fetchedAt: "Yesterday",
     attribution: "Sample",
-    summary: "Saved sample item used to validate the saved filter before real ingestion exists.",
+    summary:
+      "Saved sample item used to validate the saved filter before real ingestion exists.",
     bodyText: "",
     attachments: noFeedAttachments,
   },
@@ -98,7 +120,8 @@ export const legacyFeedItems: FeedItem[] = [
     publishedAt: "Fri",
     fetchedAt: "Fri",
     attribution: "GPW",
-    summary: "Fourth sample item keeps the sample feed aligned with tracked GPW lookup companies.",
+    summary:
+      "Fourth sample item keeps the sample feed aligned with tracked GPW lookup companies.",
     bodyText: "",
     attachments: noFeedAttachments,
   },
@@ -113,11 +136,15 @@ export const legacyResearchEvidence: ResearchEvidenceItem[] = [
     companyId: "company_gpw_cdr",
     occurredAt: "2026-06-05T09:12:00Z",
     title: "Current report placeholder for watchlist company",
-    summary: "Sample official report used to validate research timeline rendering.",
+    summary:
+      "Sample official report used to validate research timeline rendering.",
     sourceUrl: "https://www.gpw.pl/komunikaty",
     attribution: "GPW",
     trustCategory: "official_report",
-    reviewState: { changedSinceCompanyReview: true, changedSinceWatchlistReview: true },
+    reviewState: {
+      changedSinceCompanyReview: true,
+      changedSinceWatchlistReview: true,
+    },
   },
   {
     id: "research_note_cdr_claim",
@@ -131,7 +158,10 @@ export const legacyResearchEvidence: ResearchEvidenceItem[] = [
     sourceUrl: null,
     attribution: "Manual note",
     trustCategory: "user_note",
-    reviewState: { changedSinceCompanyReview: false, changedSinceWatchlistReview: false },
+    reviewState: {
+      changedSinceCompanyReview: false,
+      changedSinceWatchlistReview: false,
+    },
   },
   {
     id: "research_event_cdr_meeting",
@@ -145,7 +175,10 @@ export const legacyResearchEvidence: ResearchEvidenceItem[] = [
     sourceUrl: "https://example.test/events/cdr-meeting",
     attribution: "GPW calendar",
     trustCategory: "market_calendar",
-    reviewState: { changedSinceCompanyReview: false, changedSinceWatchlistReview: false },
+    reviewState: {
+      changedSinceCompanyReview: false,
+      changedSinceWatchlistReview: false,
+    },
   },
   {
     id: "research_ai_cdr_summary",
@@ -159,7 +192,10 @@ export const legacyResearchEvidence: ResearchEvidenceItem[] = [
     sourceUrl: "https://example.test/sample/cdr-report",
     attribution: "provider_gemini",
     trustCategory: "ai_generated",
-    reviewState: { changedSinceCompanyReview: false, changedSinceWatchlistReview: false },
+    reviewState: {
+      changedSinceCompanyReview: false,
+      changedSinceWatchlistReview: false,
+    },
   },
 ];
 
@@ -199,39 +235,298 @@ export const legacyResearchReminders: ResearchReminder[] = [
 ];
 
 const rawSourceAdapters = [
-  { id: "gpw-espi-ebi", displayName: "GPW ESPI/EBI", sourceType: "official_report", fetchMode: "public_page", enabled: false, defaultPollIntervalSeconds: 0, sourceUrl: "https://www.gpw.pl/komunikaty", rateLimitPolicy: "Disabled while Bankier Company Komunikaty is the active official-report source", policyNote: "Registered for later revisit, but disabled because the global GPW listing slice missed tracked-company reports found by Bankier per-company komunikaty pages.", lastItemsFetched: 2, lastItemsCreated: 1, lastItemsMatched: 1, lastItemsUnmatched: 1, lastDetailItemsAttempted: 1, lastDetailItemsStored: 1, lastDetailItemsFailed: 0, lastTrigger: "manual" as string | null, markets: ["GPW"] },
-  { id: "gpw-company-registry", displayName: "GPW Company Directory", sourceType: "company_registry", fetchMode: "public_page", enabled: true, defaultPollIntervalSeconds: 86400, sourceUrl: "https://www.gpw.pl/spolki?offset=0&limit=500", rateLimitPolicy: "Manual refresh plus daily stale-cache scheduled refresh", policyNote: "Fetches the complete public GPW company list and caches ticker and ISIN metadata locally for lookup, autocomplete, and ticker-first matching.", lastItemsFetched: 400, lastItemsCreated: 400, lastItemsMatched: null, lastItemsUnmatched: null, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "newconnect-company-directory", displayName: "NewConnect Company Directory", sourceType: "company_registry", fetchMode: "public_page", enabled: true, defaultPollIntervalSeconds: 86400, sourceUrl: "https://newconnect.pl/spolki?offset=0&limit=500", rateLimitPolicy: "Manual refresh plus daily stale-cache scheduled refresh", policyNote: "Fetches the complete public NewConnect company list and caches ticker and ISIN metadata for lookup, autocomplete, and ticker-first matching.", lastItemsFetched: 350, lastItemsCreated: 350, lastItemsMatched: null, lastItemsUnmatched: null, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["NEWCONNECT"] },
-  { id: "bankier-market-rss", displayName: "Bankier Giełda RSS", sourceType: "public_media", fetchMode: "rss", enabled: true, defaultPollIntervalSeconds: 900, sourceUrl: "https://www.bankier.pl/rss/gielda.xml", rateLimitPolicy: "Manual refresh plus normal in-app source scheduler; RSS feed only, no article crawling", policyNote: "Fetches Bankier.pl public Giełda RSS headlines as public media items; linked article pages are not crawled in this slice.", lastItemsFetched: 2, lastItemsCreated: 1, lastItemsMatched: 1, lastItemsUnmatched: 1, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "bankier-company-komunikaty", displayName: "Bankier Company Komunikaty", sourceType: "official_report", fetchMode: "public_json", enabled: true, defaultPollIntervalSeconds: 900, sourceUrl: "https://www.bankier.pl/gielda/notowania/akcje/{TICKER}/komunikaty", rateLimitPolicy: "Manual refresh plus normal in-app source scheduler; tracked GPW companies only; cached Bankier tag ids; one listing page plus matched article pages per company", policyNote: "Fetches Bankier.pl per-company public komunikaty JSON and article pages for tracked GPW companies only. Bankier is the active v1 official-report source while GPW ESPI/EBI is disabled.", lastItemsFetched: 2, lastItemsCreated: 1, lastItemsMatched: 1, lastItemsUnmatched: 0, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "bankier-firma-rss", displayName: "Bankier Firma RSS", sourceType: "public_media", fetchMode: "rss", enabled: false, defaultPollIntervalSeconds: 0, sourceUrl: "https://www.bankier.pl/rss/firma.xml", rateLimitPolicy: "Reviewed public RSS candidate; disabled until matching quality is proven against tracked GPW companies", policyNote: "Reviewed M8 follow-up candidate. Public and RSS-native, but broader business coverage needs matching-quality tests before runtime enablement.", lastItemsFetched: null, lastItemsCreated: null, lastItemsMatched: null, lastItemsUnmatched: null, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "bankier-wiadomosci-rss", displayName: "Bankier Wiadomosci RSS", sourceType: "public_media", fetchMode: "rss", enabled: false, defaultPollIntervalSeconds: 0, sourceUrl: "https://www.bankier.pl/rss/wiadomosci.xml", rateLimitPolicy: "Reviewed public RSS candidate; disabled because expected listed-company signal is broad and noisy", policyNote: "Reviewed M8 follow-up candidate. Public and RSS-native, but broad news coverage and stale backfill risk make it unsuitable for default v1 ingestion.", lastItemsFetched: null, lastItemsCreated: null, lastItemsMatched: null, lastItemsUnmatched: null, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "portal-analiz", displayName: "Portal Analiz", sourceType: "authenticated_research", fetchMode: "authenticated", enabled: false, defaultPollIntervalSeconds: 0, sourceUrl: "https://portalanaliz.pl/", rateLimitPolicy: "Late-v1 disabled placeholder; no automated access until the authenticated-source implementation is explicitly built", policyNote: "Late-v1 planned authenticated private research adapter governed by ADR 0014. Credentials must use the OS keychain and no generic login or scraping subsystem is approved.", lastItemsFetched: null, lastItemsCreated: null, lastItemsMatched: null, lastItemsUnmatched: null, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "gpw-market-events-rss", displayName: "GPW Market Events RSS", sourceType: "official_calendar", fetchMode: "rss", enabled: true, defaultPollIntervalSeconds: 900, sourceUrl: "https://www.gpw.pl/rss-calendar-of-market-events", rateLimitPolicy: "Manual refresh plus normal in-app source scheduler", policyNote: "Fetches GPW official market-events RSS for tracked companies matched by exact ticker.", lastItemsFetched: 2, lastItemsCreated: 2, lastItemsMatched: 2, lastItemsUnmatched: 0, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "bankier-kalendarium-html", displayName: "Bankier Kalendarium", sourceType: "public_calendar", fetchMode: "public_page", enabled: true, defaultPollIntervalSeconds: 900, sourceUrl: "https://www.bankier.pl/gielda/kalendarium", rateLimitPolicy: "Manual refresh plus normal in-app source scheduler", policyNote: "Fetches Bankier public calendar pages for tracked companies matched by exact ticker.", lastItemsFetched: 2, lastItemsCreated: 2, lastItemsMatched: 2, lastItemsUnmatched: 0, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "strefa-report-calendar", displayName: "Strefa Report Calendar", sourceType: "public_calendar", fetchMode: "public_page", enabled: false, defaultPollIntervalSeconds: 0, sourceUrl: "https://strefainwestorow.pl/", rateLimitPolicy: "Developer-only candidate pending source review", policyNote: "Fallback candidate for periodic-report publication dates.", lastItemsFetched: null, lastItemsCreated: null, lastItemsMatched: null, lastItemsUnmatched: null, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
-  { id: "money-calendar", displayName: "Money Calendar", sourceType: "public_calendar", fetchMode: "public_page", enabled: false, defaultPollIntervalSeconds: 0, sourceUrl: "https://www.money.pl/", rateLimitPolicy: "Developer-only candidate pending source review", policyNote: "Fallback candidate for calendar and report-date coverage.", lastItemsFetched: null, lastItemsCreated: null, lastItemsMatched: null, lastItemsUnmatched: null, lastDetailItemsAttempted: null, lastDetailItemsStored: null, lastDetailItemsFailed: null, lastTrigger: null, markets: ["GPW"] },
+  {
+    id: "gpw-espi-ebi",
+    displayName: "GPW ESPI/EBI",
+    sourceType: "official_report",
+    fetchMode: "public_page",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://www.gpw.pl/komunikaty",
+    rateLimitPolicy:
+      "Disabled while Bankier Company Komunikaty is the active official-report source",
+    policyNote:
+      "Registered for later revisit, but disabled because the global GPW listing slice missed tracked-company reports found by Bankier per-company komunikaty pages.",
+    lastItemsFetched: 2,
+    lastItemsCreated: 1,
+    lastItemsMatched: 1,
+    lastItemsUnmatched: 1,
+    lastDetailItemsAttempted: 1,
+    lastDetailItemsStored: 1,
+    lastDetailItemsFailed: 0,
+    lastTrigger: "manual" as string | null,
+    markets: ["GPW"],
+  },
+  {
+    id: "gpw-company-registry",
+    displayName: "GPW Company Directory",
+    sourceType: "company_registry",
+    fetchMode: "public_page",
+    enabled: true,
+    defaultPollIntervalSeconds: 86400,
+    sourceUrl: "https://www.gpw.pl/spolki?offset=0&limit=500",
+    rateLimitPolicy: "Manual refresh plus daily stale-cache scheduled refresh",
+    policyNote:
+      "Fetches the complete public GPW company list and caches ticker and ISIN metadata locally for lookup, autocomplete, and ticker-first matching.",
+    lastItemsFetched: 400,
+    lastItemsCreated: 400,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "newconnect-company-directory",
+    displayName: "NewConnect Company Directory",
+    sourceType: "company_registry",
+    fetchMode: "public_page",
+    enabled: true,
+    defaultPollIntervalSeconds: 86400,
+    sourceUrl: "https://newconnect.pl/spolki?offset=0&limit=500",
+    rateLimitPolicy: "Manual refresh plus daily stale-cache scheduled refresh",
+    policyNote:
+      "Fetches the complete public NewConnect company list and caches ticker and ISIN metadata for lookup, autocomplete, and ticker-first matching.",
+    lastItemsFetched: 350,
+    lastItemsCreated: 350,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["NEWCONNECT"],
+  },
+  {
+    id: "bankier-market-rss",
+    displayName: "Bankier Giełda RSS",
+    sourceType: "public_media",
+    fetchMode: "rss",
+    enabled: true,
+    defaultPollIntervalSeconds: 900,
+    sourceUrl: "https://www.bankier.pl/rss/gielda.xml",
+    rateLimitPolicy:
+      "Manual refresh plus normal in-app source scheduler; RSS feed only, no article crawling",
+    policyNote:
+      "Fetches Bankier.pl public Giełda RSS headlines as public media items; linked article pages are not crawled in this slice.",
+    lastItemsFetched: 2,
+    lastItemsCreated: 1,
+    lastItemsMatched: 1,
+    lastItemsUnmatched: 1,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-company-komunikaty",
+    displayName: "Bankier Company Komunikaty",
+    sourceType: "official_report",
+    fetchMode: "public_json",
+    enabled: true,
+    defaultPollIntervalSeconds: 900,
+    sourceUrl:
+      "https://www.bankier.pl/gielda/notowania/akcje/{TICKER}/komunikaty",
+    rateLimitPolicy:
+      "Manual refresh plus normal in-app source scheduler; tracked GPW companies only; cached Bankier tag ids; one listing page plus matched article pages per company",
+    policyNote:
+      "Fetches Bankier.pl per-company public komunikaty JSON and article pages for tracked GPW companies only. Bankier is the active v1 official-report source while GPW ESPI/EBI is disabled.",
+    lastItemsFetched: 2,
+    lastItemsCreated: 1,
+    lastItemsMatched: 1,
+    lastItemsUnmatched: 0,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-firma-rss",
+    displayName: "Bankier Firma RSS",
+    sourceType: "public_media",
+    fetchMode: "rss",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://www.bankier.pl/rss/firma.xml",
+    rateLimitPolicy:
+      "Reviewed public RSS candidate; disabled until matching quality is proven against tracked GPW companies",
+    policyNote:
+      "Reviewed M8 follow-up candidate. Public and RSS-native, but broader business coverage needs matching-quality tests before runtime enablement.",
+    lastItemsFetched: null,
+    lastItemsCreated: null,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-wiadomosci-rss",
+    displayName: "Bankier Wiadomosci RSS",
+    sourceType: "public_media",
+    fetchMode: "rss",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://www.bankier.pl/rss/wiadomosci.xml",
+    rateLimitPolicy:
+      "Reviewed public RSS candidate; disabled because expected listed-company signal is broad and noisy",
+    policyNote:
+      "Reviewed M8 follow-up candidate. Public and RSS-native, but broad news coverage and stale backfill risk make it unsuitable for default v1 ingestion.",
+    lastItemsFetched: null,
+    lastItemsCreated: null,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "portal-analiz",
+    displayName: "Portal Analiz",
+    sourceType: "authenticated_research",
+    fetchMode: "authenticated",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://portalanaliz.pl/",
+    rateLimitPolicy:
+      "Late-v1 disabled placeholder; no automated access until the authenticated-source implementation is explicitly built",
+    policyNote:
+      "Late-v1 planned authenticated private research adapter governed by ADR 0014. Credentials must use the OS keychain and no generic login or scraping subsystem is approved.",
+    lastItemsFetched: null,
+    lastItemsCreated: null,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "gpw-market-events-rss",
+    displayName: "GPW Market Events RSS",
+    sourceType: "official_calendar",
+    fetchMode: "rss",
+    enabled: true,
+    defaultPollIntervalSeconds: 900,
+    sourceUrl: "https://www.gpw.pl/rss-calendar-of-market-events",
+    rateLimitPolicy: "Manual refresh plus normal in-app source scheduler",
+    policyNote:
+      "Fetches GPW official market-events RSS for tracked companies matched by exact ticker.",
+    lastItemsFetched: 2,
+    lastItemsCreated: 2,
+    lastItemsMatched: 2,
+    lastItemsUnmatched: 0,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-kalendarium-html",
+    displayName: "Bankier Kalendarium",
+    sourceType: "public_calendar",
+    fetchMode: "public_page",
+    enabled: true,
+    defaultPollIntervalSeconds: 900,
+    sourceUrl: "https://www.bankier.pl/gielda/kalendarium",
+    rateLimitPolicy: "Manual refresh plus normal in-app source scheduler",
+    policyNote:
+      "Fetches Bankier public calendar pages for tracked companies matched by exact ticker.",
+    lastItemsFetched: 2,
+    lastItemsCreated: 2,
+    lastItemsMatched: 2,
+    lastItemsUnmatched: 0,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "strefa-report-calendar",
+    displayName: "Strefa Report Calendar",
+    sourceType: "public_calendar",
+    fetchMode: "public_page",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://strefainwestorow.pl/",
+    rateLimitPolicy: "Developer-only candidate pending source review",
+    policyNote: "Fallback candidate for periodic-report publication dates.",
+    lastItemsFetched: null,
+    lastItemsCreated: null,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "money-calendar",
+    displayName: "Money Calendar",
+    sourceType: "public_calendar",
+    fetchMode: "public_page",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://www.money.pl/",
+    rateLimitPolicy: "Developer-only candidate pending source review",
+    policyNote: "Fallback candidate for calendar and report-date coverage.",
+    lastItemsFetched: null,
+    lastItemsCreated: null,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastTrigger: null,
+    markets: ["GPW"],
+  },
 ];
 
-const requiredSourceIds = new Set(["gpw-company-registry", "newconnect-company-directory"]);
-const optionalSourceIds = new Set(["bankier-company-komunikaty", "bankier-market-rss", "gpw-market-events-rss", "bankier-kalendarium-html"]);
+const requiredSourceIds = new Set([
+  "gpw-company-registry",
+  "newconnect-company-directory",
+]);
+const optionalSourceIds = new Set([
+  "bankier-company-komunikaty",
+  "bankier-market-rss",
+  "gpw-market-events-rss",
+  "bankier-kalendarium-html",
+]);
 
-export const legacySourceAdapters: SourceAdapter[] = rawSourceAdapters.map((adapter) => {
-  const visibility = requiredSourceIds.has(adapter.id) ? "required" : optionalSourceIds.has(adapter.id) ? "optional" : "developer";
-  return {
-    ...adapter,
-    visibility,
-    role: "primary" as const,
-    userConfigurable: visibility === "optional",
-    healthStatus: adapter.enabled ? "notRefreshed" : "off",
-    lastAttemptAt: null,
-    lastSuccessAt: null,
-    lastErrorAt: null,
-    lastError: null,
-    lastDetailWarning: null,
-    markets: [...adapter.markets],
-  };
-});
+export const legacySourceAdapters: SourceAdapter[] = rawSourceAdapters.map(
+  (adapter) => {
+    const visibility = requiredSourceIds.has(adapter.id)
+      ? "required"
+      : optionalSourceIds.has(adapter.id)
+        ? "optional"
+        : "developer";
+    return {
+      ...adapter,
+      visibility,
+      role: "primary" as const,
+      userConfigurable: visibility === "optional",
+      healthStatus: adapter.enabled ? "notRefreshed" : "off",
+      lastAttemptAt: null,
+      lastSuccessAt: null,
+      lastErrorAt: null,
+      lastError: null,
+      lastDetailWarning: null,
+      markets: [...adapter.markets],
+    };
+  },
+);
 
 export const legacyUnmatchedSourceItems: UnmatchedSourceItem[] = [
   {
@@ -246,17 +541,93 @@ export const legacyUnmatchedSourceItems: UnmatchedSourceItem[] = [
 ];
 
 export const legacyRegistry: CompanyRegistryEntry[] = [
-  { sourceAdapterId: "gpw-company-registry", exchange: "GPW", ticker: "CDR", qualifiedTicker: "GPW:CDR", displayName: "CD PROJEKT S.A.", isin: "PLOPTTC00011", sourceUrl: "https://www.gpw.pl/spolka?isin=PLOPTTC00011", fetchedAt: "2026-05-31T12:00:00Z", tracked: true },
-  { sourceAdapterId: "gpw-company-registry", exchange: "GPW", ticker: "DNP", qualifiedTicker: "GPW:DNP", displayName: "DINO POLSKA S.A.", isin: "PLDINPL00011", sourceUrl: "https://www.gpw.pl/spolka?isin=PLDINPL00011", fetchedAt: "2026-05-31T12:00:00Z", tracked: false },
-  { sourceAdapterId: "newconnect-company-directory", exchange: "NC", ticker: "4MB", qualifiedTicker: "NC:4MB", displayName: "4MOBILITY SPÓŁKA AKCYJNA", isin: "PLESLTN00010", sourceUrl: "https://newconnect.pl/spolka?isin=PLESLTN00010", fetchedAt: "2026-05-31T12:00:00Z", tracked: false },
-  { sourceAdapterId: "future-company-directory", exchange: "XETRA", ticker: "SAP", qualifiedTicker: "XETRA:SAP", displayName: "SAP SE", isin: "DE0007164600", sourceUrl: "https://example.test/xetra/sap", fetchedAt: "2026-05-31T12:00:00Z", tracked: false },
+  {
+    sourceAdapterId: "gpw-company-registry",
+    exchange: "GPW",
+    ticker: "CDR",
+    qualifiedTicker: "GPW:CDR",
+    displayName: "CD PROJEKT S.A.",
+    isin: "PLOPTTC00011",
+    sourceUrl: "https://www.gpw.pl/spolka?isin=PLOPTTC00011",
+    fetchedAt: "2026-05-31T12:00:00Z",
+    tracked: true,
+  },
+  {
+    sourceAdapterId: "gpw-company-registry",
+    exchange: "GPW",
+    ticker: "DNP",
+    qualifiedTicker: "GPW:DNP",
+    displayName: "DINO POLSKA S.A.",
+    isin: "PLDINPL00011",
+    sourceUrl: "https://www.gpw.pl/spolka?isin=PLDINPL00011",
+    fetchedAt: "2026-05-31T12:00:00Z",
+    tracked: false,
+  },
+  {
+    sourceAdapterId: "newconnect-company-directory",
+    exchange: "NC",
+    ticker: "4MB",
+    qualifiedTicker: "NC:4MB",
+    displayName: "4MOBILITY SPÓŁKA AKCYJNA",
+    isin: "PLESLTN00010",
+    sourceUrl: "https://newconnect.pl/spolka?isin=PLESLTN00010",
+    fetchedAt: "2026-05-31T12:00:00Z",
+    tracked: false,
+  },
+  {
+    sourceAdapterId: "future-company-directory",
+    exchange: "XETRA",
+    ticker: "SAP",
+    qualifiedTicker: "XETRA:SAP",
+    displayName: "SAP SE",
+    isin: "DE0007164600",
+    sourceUrl: "https://example.test/xetra/sap",
+    fetchedAt: "2026-05-31T12:00:00Z",
+    tracked: false,
+  },
 ];
 
 export const legacyCompanies: Company[] = [
-  { id: "company_gpw_cdr", exchange: "GPW", ticker: "CDR", qualifiedTicker: "GPW:CDR", displayName: "CD PROJEKT S.A.", isin: "PLOPTTC00011", cik: null, lei: null },
-  { id: "company_gpw_pkn", exchange: "GPW", ticker: "PKN", qualifiedTicker: "GPW:PKN", displayName: "ORLEN S.A.", isin: "PLPKN0000018", cik: null, lei: null },
-  { id: "company_gpw_kgh", exchange: "GPW", ticker: "KGH", qualifiedTicker: "GPW:KGH", displayName: "KGHM POLSKA MIEDZ S.A.", isin: "PLKGHM000017", cik: null, lei: null },
-  { id: "company_gpw_pzu", exchange: "GPW", ticker: "PZU", qualifiedTicker: "GPW:PZU", displayName: "PZU S.A.", isin: "PLPZU0000011", cik: null, lei: null },
+  {
+    id: "company_gpw_cdr",
+    exchange: "GPW",
+    ticker: "CDR",
+    qualifiedTicker: "GPW:CDR",
+    displayName: "CD PROJEKT S.A.",
+    isin: "PLOPTTC00011",
+    cik: null,
+    lei: null,
+  },
+  {
+    id: "company_gpw_pkn",
+    exchange: "GPW",
+    ticker: "PKN",
+    qualifiedTicker: "GPW:PKN",
+    displayName: "ORLEN S.A.",
+    isin: "PLPKN0000018",
+    cik: null,
+    lei: null,
+  },
+  {
+    id: "company_gpw_kgh",
+    exchange: "GPW",
+    ticker: "KGH",
+    qualifiedTicker: "GPW:KGH",
+    displayName: "KGHM POLSKA MIEDZ S.A.",
+    isin: "PLKGHM000017",
+    cik: null,
+    lei: null,
+  },
+  {
+    id: "company_gpw_pzu",
+    exchange: "GPW",
+    ticker: "PZU",
+    qualifiedTicker: "GPW:PZU",
+    displayName: "PZU S.A.",
+    isin: "PLPZU0000011",
+    cik: null,
+    lei: null,
+  },
 ];
 
 export const legacySettings: UserSettings = {
@@ -279,7 +650,7 @@ export const legacySettings: UserSettings = {
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
   queue: { sourcesWorkers: 2, autopilotWorkers: 3 },
   pinnedCompanyIds: [],
-  mcp: { enabled: false, port: 8317 },
+  mcp: { enabled: false, port: 8317, writesEnabled: false },
 };
 
 export const legacyGeminiCredential: CredentialStatus = {
@@ -295,8 +666,28 @@ export const legacyGeminiCredential: CredentialStatus = {
 export const legacyMetricsSnapshot: LocalMetricsSnapshot = {
   collectedAt: "2026-06-04T10:00:00.000Z",
   samples: [
-    { name: "brawler_source_refresh_total", description: "Process-lifetime source refresh attempts by adapter and status.", kind: "counter", unit: "count", value: 2, labels: [{ key: "adapter_id", value: "bankier-company-komunikaty" }, { key: "status", value: "succeeded" }], collectedAt: "2026-06-04T10:00:00.000Z" },
-    { name: "brawler_sqlite_database_bytes", description: "Current SQLite database size.", kind: "gauge", unit: "bytes", value: 524288, labels: [{ key: "collector", value: "sqlite" }], collectedAt: "2026-06-04T10:00:00.000Z" },
+    {
+      name: "brawler_source_refresh_total",
+      description:
+        "Process-lifetime source refresh attempts by adapter and status.",
+      kind: "counter",
+      unit: "count",
+      value: 2,
+      labels: [
+        { key: "adapter_id", value: "bankier-company-komunikaty" },
+        { key: "status", value: "succeeded" },
+      ],
+      collectedAt: "2026-06-04T10:00:00.000Z",
+    },
+    {
+      name: "brawler_sqlite_database_bytes",
+      description: "Current SQLite database size.",
+      kind: "gauge",
+      unit: "bytes",
+      value: 524288,
+      labels: [{ key: "collector", value: "sqlite" }],
+      collectedAt: "2026-06-04T10:00:00.000Z",
+    },
   ],
 };
 
@@ -321,7 +712,8 @@ export const legacyLicenseStatus: LicenseStatus = {
 export const legacyMissingLicenseStatus: LicenseStatus = {
   status: "missing",
   canUseApp: true,
-  reason: "Core features are available without a license. Add a license only for gated entitlements.",
+  reason:
+    "Core features are available without a license. Add a license only for gated entitlements.",
   license: null,
   checkedAt: "2026-06-04T10:00:00Z",
 };
@@ -347,7 +739,8 @@ export const legacyCompanyEvents: CompanyEvent[] = [
     status: "scheduled",
     sourceType: "official_calendar",
     sourceAdapterId: "gpw-market-events-rss",
-    sourceEventKey: "gpw-market-events-rss:2099-06-01:corporate-actions:equity:cdr",
+    sourceEventKey:
+      "gpw-market-events-rss:2099-06-01:corporate-actions:equity:cdr",
     sourceUrl: "https://www.gpw.pl/market-events-calendar?date=2099-06-01",
     attribution: "GPW",
     fetchedAt: "2026-06-01T08:00:00Z",
@@ -367,7 +760,8 @@ export const legacyCompanyEvents: CompanyEvent[] = [
     status: "confirmed",
     sourceType: "official_calendar",
     sourceAdapterId: "gpw-market-events-rss",
-    sourceEventKey: "gpw-market-events-rss:2099-06-03:end-of-market-making:equity:pzu",
+    sourceEventKey:
+      "gpw-market-events-rss:2099-06-03:end-of-market-making:equity:pzu",
     sourceUrl: "https://www.gpw.pl/market-events-calendar?date=2099-06-03",
     attribution: "GPW",
     fetchedAt: "2026-06-01T08:00:00Z",
@@ -399,8 +793,28 @@ export const legacyTranscriptJobs: TranscriptJob[] = [
 ];
 
 export const legacyTranscriptSegments: TranscriptSegment[] = [
-  { id: "transcript_segment_opening", transcriptJobId: "transcript_job_unresolved_conference", companyId: null, startSeconds: 0, endSeconds: 42, speaker: "CEO", text: "We expect the second half to be stronger after the release window stabilizes.", language: "en", createdAt: "2026-06-01T10:07:00Z" },
-  { id: "transcript_segment_margin", transcriptJobId: "transcript_job_unresolved_conference", companyId: null, startSeconds: 43, endSeconds: 96, speaker: "CFO", text: "Gross margin should normalize over the next two quarters.", language: "en", createdAt: "2026-06-01T10:07:00Z" },
+  {
+    id: "transcript_segment_opening",
+    transcriptJobId: "transcript_job_unresolved_conference",
+    companyId: null,
+    startSeconds: 0,
+    endSeconds: 42,
+    speaker: "CEO",
+    text: "We expect the second half to be stronger after the release window stabilizes.",
+    language: "en",
+    createdAt: "2026-06-01T10:07:00Z",
+  },
+  {
+    id: "transcript_segment_margin",
+    transcriptJobId: "transcript_job_unresolved_conference",
+    companyId: null,
+    startSeconds: 43,
+    endSeconds: 96,
+    speaker: "CFO",
+    text: "Gross margin should normalize over the next two quarters.",
+    language: "en",
+    createdAt: "2026-06-01T10:07:00Z",
+  },
 ];
 
 export const legacyNotebookEntry: NotebookEntry = {
@@ -418,9 +832,29 @@ export const legacyNotebookEntry: NotebookEntry = {
   createdAt: "2026-05-29T10:00:00Z",
   updatedAt: "2026-05-29T10:00:00Z",
   origins: [
-    { id: "note_origin_release_schedule_manual_1", sourceType: "manual", sourceId: null, sourceUrl: null, label: "Manual note", createdAt: "2026-05-29T10:00:00Z" },
+    {
+      id: "note_origin_release_schedule_manual_1",
+      sourceType: "manual",
+      sourceId: null,
+      sourceUrl: null,
+      label: "Manual note",
+      createdAt: "2026-05-29T10:00:00Z",
+    },
   ],
 };
 
-export const legacyWatchlists: Watchlist[] = [{ id: "watchlist_main_gpw", name: "Main GPW", description: null, companyCount: 1 }];
-export const legacyWatchlistMemberships: WatchlistMembership[] = [{ watchlistId: "watchlist_main_gpw", watchlistName: "Main GPW", companyId: "company_gpw_cdr" }];
+export const legacyWatchlists: Watchlist[] = [
+  {
+    id: "watchlist_main_gpw",
+    name: "Main GPW",
+    description: null,
+    companyCount: 1,
+  },
+];
+export const legacyWatchlistMemberships: WatchlistMembership[] = [
+  {
+    watchlistId: "watchlist_main_gpw",
+    watchlistName: "Main GPW",
+    companyId: "company_gpw_cdr",
+  },
+];

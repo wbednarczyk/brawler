@@ -22,6 +22,13 @@
 //      first 5 non-empty lines; docs/adr/INDEX.md stays in sync with a
 //      generated index (regenerate: `node scripts/check/docs-drift.mjs
 //      --write-adr-index`).
+//   6. MCP catalog drift (ADR 0088 dec. 5): the generated tool-catalog sections
+//      in wiki/mcp-agent-guide.md and .claude/skills/brawler-mcp/SKILL.md must
+//      list EXACTLY the tool set in the frozen tools/list insta snapshot —
+//      missing or extra tools fail, naming them. The sections are machine-
+//      generated (name + description from the snapshot, split read vs act by
+//      name prefix) and must never be hand-edited; regenerate with
+//      `node scripts/check/docs-drift.mjs --write-mcp-catalog`.
 //
 // Extraction heuristics (contracts.md documents commands two ways — both are
 // captured):
@@ -419,15 +426,145 @@ function checkAdrHygiene(writeIndex) {
 }
 
 // ---------------------------------------------------------------------------
+// 6. MCP catalog: generated tool tables vs the tools/list snapshot (ADR 0088).
+// ---------------------------------------------------------------------------
+
+const MCP_SNAPSHOT_REL =
+  "src-tauri/src/mcp/snapshots/brawler_lib__mcp__protocol__tests__tools_list_schema.snap";
+const MCP_CATALOG_BEGIN = "<!-- BEGIN GENERATED MCP CATALOG";
+const MCP_CATALOG_END = "<!-- END GENERATED MCP CATALOG -->";
+// Every file that must carry an in-sync generated catalog section.
+const MCP_CATALOG_TARGETS = ["wiki/mcp-agent-guide.md", ".claude/skills/brawler-mcp/SKILL.md"];
+
+function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const MCP_CATALOG_SPAN_RE = new RegExp(
+  `${escapeRe(MCP_CATALOG_BEGIN)}[\\s\\S]*?${escapeRe(MCP_CATALOG_END)}`,
+);
+
+// The snapshot file is an insta snapshot: a `---`-delimited YAML header followed
+// by the pretty-printed tools/list JSON. The JSON is everything from the first
+// `{` (the header carries no braces).
+function readMcpSnapshotTools() {
+  const text = readText(MCP_SNAPSHOT_REL);
+  const jsonStart = text.indexOf("{");
+  if (jsonStart === -1) throw new Error("no JSON body found");
+  const parsed = JSON.parse(text.slice(jsonStart));
+  const tools = parsed?.result?.tools;
+  if (!Array.isArray(tools)) throw new Error("result.tools is not an array");
+  return tools.map((t) => ({ name: String(t.name), description: String(t.description ?? "") }));
+}
+
+// Tier split is derived deterministically from the tool name: read tools are
+// named get_* / list_* / search_*, act tools carry a mutation verb prefix. A
+// future read tool under a new verb would land in "act" — harmless for the
+// drift contract (the gate only asserts the NAME SET matches the snapshot).
+function isMcpReadTool(name) {
+  return /^(get|list|search)_/.test(name);
+}
+
+function buildMcpCatalogBlock(tools) {
+  const cell = (s) => s.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+  const table = (rows) =>
+    [
+      "| Tool | What it does |",
+      "| --- | --- |",
+      ...rows.map((t) => `| \`${t.name}\` | ${cell(t.description)} |`),
+    ].join("\n");
+  const reads = tools.filter((t) => isMcpReadTool(t.name));
+  const acts = tools.filter((t) => !isMcpReadTool(t.name));
+  return [
+    `${MCP_CATALOG_BEGIN} — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->`,
+    "",
+    `**Read tools** — always available once the server is on (${reads.length}):`,
+    "",
+    table(reads),
+    "",
+    `**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (${acts.length}):`,
+    "",
+    table(acts),
+    "",
+    MCP_CATALOG_END,
+  ].join("\n");
+}
+
+function extractMcpCatalogNames(fileText) {
+  const m = MCP_CATALOG_SPAN_RE.exec(fileText);
+  if (!m) return null;
+  const names = new Set();
+  const rowRe = /^\|\s*`([a-z0-9_]+)`\s*\|/gm;
+  let r;
+  while ((r = rowRe.exec(m[0]))) names.add(r[1]);
+  return names;
+}
+
+function checkMcpCatalog(writeCatalog) {
+  let tools;
+  try {
+    tools = readMcpSnapshotTools();
+  } catch (e) {
+    errors.push(
+      `docs-drift: could not parse the MCP tools/list snapshot (${MCP_SNAPSHOT_REL}): ${e.message}.`,
+    );
+    return;
+  }
+  if (tools.length < 80) {
+    errors.push(
+      `docs-drift: only ${tools.length} MCP tools parsed from ${MCP_SNAPSHOT_REL} (floor: 80) — the snapshot parser likely broke.`,
+    );
+    return;
+  }
+  const snapshotNames = new Set(tools.map((t) => t.name));
+  const block = buildMcpCatalogBlock(tools);
+
+  for (const rel of MCP_CATALOG_TARGETS) {
+    const abs = resolve(repoRoot, rel);
+    let text;
+    try {
+      text = readFileSync(abs, "utf8");
+    } catch {
+      errors.push(`docs-drift: MCP catalog target ${rel} is missing.`);
+      continue;
+    }
+    if (!MCP_CATALOG_SPAN_RE.test(text)) {
+      errors.push(
+        `docs-drift: ${rel} has no MCP catalog markers (\`${MCP_CATALOG_BEGIN} … -->\` / \`${MCP_CATALOG_END}\`).`,
+      );
+      continue;
+    }
+    if (writeCatalog) {
+      writeFileSync(abs, text.replace(MCP_CATALOG_SPAN_RE, block));
+      console.log(`✓ docs-drift: wrote MCP catalog into ${rel}`);
+      continue;
+    }
+    const names = extractMcpCatalogNames(text);
+    const missing = [...snapshotNames].filter((n) => !names.has(n)).sort();
+    const extra = [...names].filter((n) => !snapshotNames.has(n)).sort();
+    if (missing.length || extra.length) {
+      errors.push(
+        `docs-drift: ${rel} MCP catalog is out of sync with the tools/list snapshot.` +
+          (missing.length ? `\n    missing (in snapshot, not in doc): ${missing.join(", ")}` : "") +
+          (extra.length ? `\n    extra (in doc, not in snapshot): ${extra.join(", ")}` : "") +
+          "\n    regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog",
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 const writeIndex = process.argv.includes("--write-adr-index");
+const writeCatalog = process.argv.includes("--write-mcp-catalog");
 
 checkCommands();
 checkScreens();
 checkSettingsKeys();
 checkAdrHygiene(writeIndex);
+checkMcpCatalog(writeCatalog);
 
 if (errors.length > 0) {
   console.error(`✖ docs-drift: ${errors.length} spec↔code drift instance(s) found (ADR 0065):\n`);

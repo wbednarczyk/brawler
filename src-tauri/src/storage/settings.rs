@@ -119,6 +119,13 @@ pub struct McpSettings {
     pub enabled: bool,
     /// Listen port; clamped to `[1024, 65535]`, default `8317`.
     pub port: u16,
+    /// Whether the MCP `act` (write) tier is enabled (ADR 0088 M3). Default
+    /// `false`: the read wave is always available when the server is on, but
+    /// write tools stay gated behind this toggle and reject calls with a typed
+    /// `writes_disabled` error until the user opts in. Deliberately absent from
+    /// the MCP surface (`update_settings` is `Excluded`), so a connected agent
+    /// can never enable its own writes.
+    pub writes_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -223,6 +230,10 @@ pub struct SettingsUpdate {
     /// Requested MCP listen port (ADR 0078); clamped to `[1024, 65535]` on
     /// write rather than rejected.
     pub mcp_port: Option<i64>,
+    /// Enable/disable the MCP `act` (write) tier (ADR 0088 M3). Default `false`.
+    /// This is the ONLY path to toggle write access — and `update_settings` is
+    /// `Excluded` from the MCP registry, so an agent can never flip it itself.
+    pub mcp_writes_enabled: Option<bool>,
 }
 
 pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
@@ -263,6 +274,7 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             // Clamp on read too, so a hand-edited row can never drive a
             // privileged or impossible bind; `as u16` is safe post-clamp.
             port: clamp_mcp_port(setting_i64_or(connection, "mcp_port", MCP_PORT_DEFAULT)?) as u16,
+            writes_enabled: setting_bool_or(connection, "mcp_writes_enabled", false)?,
         },
         database: {
             let config = super::pool::read_pool_config(connection);
@@ -473,6 +485,15 @@ pub(crate) fn update_settings(
     if let Some(mcp_port) = input.mcp_port {
         let clamped = clamp_mcp_port(mcp_port);
         upsert_setting(connection, "mcp_port", &clamped.to_string(), "integer")?;
+    }
+
+    if let Some(mcp_writes_enabled) = input.mcp_writes_enabled {
+        upsert_setting(
+            connection,
+            "mcp_writes_enabled",
+            if mcp_writes_enabled { "true" } else { "false" },
+            "string",
+        )?;
     }
 
     // Connection-pool tuning is clamped to safe ranges rather than rejected, so a

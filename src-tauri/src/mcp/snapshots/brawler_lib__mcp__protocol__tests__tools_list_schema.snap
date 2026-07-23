@@ -1,6 +1,5 @@
 ---
 source: src/mcp/protocol.rs
-assertion_line: 320
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -36,8 +35,9 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
             },
             "limit": {
               "description": "Maximum number of matches to return (default 50).",
-              "maximum": 200,
-              "minimum": 1,
+              "format": "int64",
+              "maximum": 200.0,
+              "minimum": 1.0,
               "type": "integer"
             },
             "query": {
@@ -82,6 +82,2206 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "get_quality_assessment"
+      },
+      {
+        "description": "Every company tracked in the user's workspace (identity, exchange, qualified ticker).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_companies"
+      },
+      {
+        "description": "One company's identity card: name, exchange, ticker, ISIN, sector (with its provenance), and latest reported shares outstanding.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_company_basic_info"
+      },
+      {
+        "description": "The user's watchlists (id, name, ordering).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_watchlists"
+      },
+      {
+        "description": "Which companies belong to which watchlist (the membership edges).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_watchlist_memberships"
+      },
+      {
+        "description": "The unified newsfeed: official filings (ESPI/EBI) and allowed media items with their read/saved state.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_feed_items"
+      },
+      {
+        "description": "Typed filing classifications (ESPI/EBI signals) for one company, with their confirmation status.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_company_signals"
+      },
+      {
+        "description": "One company's calendar events (dividends, general meetings, report dates) and their status.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_company_events"
+      },
+      {
+        "description": "One company's stored financial facts, each carrying its trust-ladder provenance: sourceTier, validationStatus, and citation. Decision support only.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_financial_facts"
+      },
+      {
+        "description": "One company's fiscal periods (year + period type + period-end date).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_financial_periods"
+      },
+      {
+        "description": "The metric catalog: every KPI/financial-concept definition (id, label, unit) facts are keyed by.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_kpi_definitions"
+      },
+      {
+        "description": "Every fact the extraction pipeline flagged for review (a drift or contradiction against another source) — the data-quality review surface.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_flagged_fact_provenance"
+      },
+      {
+        "description": "One company's price context: latest quote and the recent range, plus derived valuation ratios where computable.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_price_context"
+      },
+      {
+        "description": "One company's shareholder structure: significant holders, holder types, and free float, with change history.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_ownership_overview"
+      },
+      {
+        "description": "One company's insider-transaction timeline, management holdings, and rolling net-direction aggregates.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_insider_overview"
+      },
+      {
+        "description": "One company's KNF short-selling register: active positions, change history, aggregate net short %, and the 30-day change.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_short_positions"
+      },
+      {
+        "description": "One company's recorded analyst recommendations and price targets over time. Decision support only — never an investment recommendation.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_analyst_recommendations"
+      },
+      {
+        "description": "One company's deterministic financial-health scores (Piotroski F, Altman Z\") per fiscal period, computed from confirmed facts.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_company_health"
+      },
+      {
+        "description": "One company's active red flags (auditor concerns, short spikes, contradictions) plus the acknowledged history.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_red_flags"
+      },
+      {
+        "description": "One company's stored report documents, each tagged with its fiscal period and whether it is that period's canonical report.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_report_documents_view"
+      },
+      {
+        "description": "Comparable pairs of successive financial statements for one company — the (older, newer) document pairs get_report_diff can diff.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_report_diff_candidates"
+      },
+      {
+        "description": "The section-level text diff between two report documents (discover the pair via list_report_diff_candidates).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "newerReportDocumentId": {
+              "type": "string"
+            },
+            "olderReportDocumentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "newerReportDocumentId",
+            "olderReportDocumentId"
+          ],
+          "type": "object"
+        },
+        "name": "get_report_diff"
+      },
+      {
+        "description": "Video-transcript jobs (optionally scoped to one company): their source, status, and resolved company.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Optional qualified ticker to scope the result to one company.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_video_transcript_jobs"
+      },
+      {
+        "description": "One transcript job's ordered segments (timestamped text) — the transcript body itself.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "transcriptJobId": {
+              "description": "The transcript job id (from `list_video_transcript_jobs`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "transcriptJobId"
+          ],
+          "type": "object"
+        },
+        "name": "list_transcript_segments"
+      },
+      {
+        "description": "One company's research notes, each preserving the origin (report/article/transcript) it traces back to.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_notebook_entries"
+      },
+      {
+        "description": "One company's tracked management claims (guidance/promises), with their verification period and verdict.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_management_claims"
+      },
+      {
+        "description": "Pre-report expectations the user recorded (optionally scoped to one company), with any resolution outcome.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Optional qualified ticker to scope the result to one company.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_report_expectations"
+      },
+      {
+        "description": "The decision journal (optionally scoped to one company): recorded decisions and their rationale.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Optional qualified ticker to scope the result to one company.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_decision_entries"
+      },
+      {
+        "description": "Open and answered research questions across the workspace, with their scope and status.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_research_questions"
+      },
+      {
+        "description": "The upcoming report-season calendar: which tracked companies report when, with preparation state.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_report_season"
+      },
+      {
+        "description": "Fired attention events (newest first), optionally scoped to one company and optionally including dismissed ones.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "includeDismissed": {
+              "default": false,
+              "description": "Include dismissed events (default: only non-dismissed).",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_attention_events"
+      },
+      {
+        "description": "The most recently composed morning briefing (its structured item list plus any narrative), or null when none exists yet.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "get_latest_morning_briefing"
+      },
+      {
+        "description": "Recent autopilot runs (optionally scoped to one company): what the autonomous pipeline produced and its notification state.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "limit": {
+              "description": "Maximum number of runs to return.",
+              "format": "int64",
+              "maximum": 200.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_autopilot_runs"
+      },
+      {
+        "description": "One autopilot run's full composed result (discover run ids via list_autopilot_runs).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "runId": {
+              "description": "The run id (from `list_autopilot_runs`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "get_autopilot_run"
+      },
+      {
+        "description": "The quality-scorecard framework catalog: every framework and its criteria (the rubric get_quality_assessment scores against).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_quality_frameworks"
+      },
+      {
+        "description": "The alert-rule catalog: every configured rule (trigger, scope, enabled state). Fired events are read via list_attention_events.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "list_alert_rules"
+      },
+      {
+        "description": "One company's extraction-coverage gaps: the fiscal periods where the deterministic pipeline emitted nothing (a flagged/failed outcome). Complements list_flagged_fact_provenance (flagged facts that DID emit) — the coverage-gap review surface.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_flagged_extraction_outcomes"
+      },
+      {
+        "description": "Official filings (ESPI/EBI) the deterministic rule classifier could not place — the explicit unclassified bucket, never guessed at. Optionally scoped to one company. Classify one with classify_filing.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Optional qualified ticker (`GPW:CDR`) to scope the bucket to one company.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Maximum filings to return (default 50, max 200).",
+              "format": "int64",
+              "maximum": 200.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_unclassified_filings"
+      },
+      {
+        "description": "Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article/transcript (provenance). References the company by its internal id (from list_companies).",
+        "inputSchema": {
+          "definitions": {
+            "NewNotebookOrigin": {
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "sourceId": {
+                  "type": "string"
+                },
+                "sourceType": {
+                  "type": "string"
+                },
+                "sourceUrl": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sourceType"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "bodyFormat": {
+              "type": "string"
+            },
+            "claimStatus": {
+              "type": "string"
+            },
+            "companyId": {
+              "type": "string"
+            },
+            "eventDate": {
+              "type": "string"
+            },
+            "followUpAfter": {
+              "type": "string"
+            },
+            "followUpDate": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "origins": {
+              "items": {
+                "$ref": "#/definitions/NewNotebookOrigin"
+              },
+              "type": "array"
+            },
+            "tags": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "companyId",
+            "kind",
+            "origins",
+            "tags",
+            "title"
+          ],
+          "type": "object"
+        },
+        "name": "create_notebook_entry"
+      },
+      {
+        "description": "Create a research note anchored to selected transcript segments (the selection is the note's origin/provenance).",
+        "inputSchema": {
+          "definitions": {
+            "TranscriptNoteDraft": {
+              "properties": {
+                "body": {
+                  "type": "string"
+                },
+                "claimStatus": {
+                  "type": "string"
+                },
+                "eventDate": {
+                  "type": "string"
+                },
+                "followUpAfter": {
+                  "type": "string"
+                },
+                "followUpDate": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "tags": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "body",
+                "kind",
+                "tags",
+                "title"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "noteDraft": {
+              "$ref": "#/definitions/TranscriptNoteDraft"
+            },
+            "transcriptJobId": {
+              "type": "string"
+            },
+            "transcriptSegmentIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "noteDraft",
+            "transcriptJobId",
+            "transcriptSegmentIds"
+          ],
+          "type": "object"
+        },
+        "name": "create_note_from_transcript_selection"
+      },
+      {
+        "description": "Update an existing research note (by id): title/body/tags/kind. The note keeps its recorded origins.",
+        "inputSchema": {
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "claimStatus": {
+              "type": "string"
+            },
+            "eventDate": {
+              "type": "string"
+            },
+            "followUpAfter": {
+              "type": "string"
+            },
+            "followUpDate": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "tags": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "id",
+            "kind",
+            "tags",
+            "title"
+          ],
+          "type": "object"
+        },
+        "name": "update_notebook_entry"
+      },
+      {
+        "description": "Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report/transcript it was made in).",
+        "inputSchema": {
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "companyId": {
+              "type": "string"
+            },
+            "dueFiscalYear": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "duePeriodType": {
+              "type": "string"
+            },
+            "madeAt": {
+              "type": "string"
+            },
+            "sourceEvidenceId": {
+              "type": "string"
+            },
+            "sourceEvidenceType": {
+              "type": "string"
+            },
+            "sourcePeriodId": {
+              "type": "string"
+            },
+            "statement": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "targetComparator": {
+              "type": "string"
+            },
+            "targetMetricKey": {
+              "type": "string"
+            },
+            "targetUnit": {
+              "type": "string"
+            },
+            "targetValueNumeric": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "statement"
+          ],
+          "type": "object"
+        },
+        "name": "create_management_claim"
+      },
+      {
+        "description": "Update a tracked management claim (by id). Must carry its `sourceEvidenceId` provenance.",
+        "inputSchema": {
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "dueFiscalYear": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "duePeriodType": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "madeAt": {
+              "type": "string"
+            },
+            "sourceEvidenceId": {
+              "type": "string"
+            },
+            "sourceEvidenceType": {
+              "type": "string"
+            },
+            "statement": {
+              "type": "string"
+            },
+            "targetComparator": {
+              "type": "string"
+            },
+            "targetMetricKey": {
+              "type": "string"
+            },
+            "targetUnit": {
+              "type": "string"
+            },
+            "targetValueNumeric": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_management_claim"
+      },
+      {
+        "description": "Record a verification verdict on a management claim (optionally linking the verifying fact).",
+        "inputSchema": {
+          "properties": {
+            "claimId": {
+              "type": "string"
+            },
+            "revisesClaimId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "verifyingFactId": {
+              "type": "string"
+            },
+            "verifyingRelation": {
+              "description": "Relation recorded in the evidence graph when a verifying fact is linked (`supports` | `contradicts`); applied by the verification slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "claimId",
+            "status"
+          ],
+          "type": "object"
+        },
+        "name": "set_claim_verdict"
+      },
+      {
+        "description": "Record a financial fact for a company/period/metric. Must carry a citation (`sourceDocumentRef` or `attribution`). Decision support only.",
+        "inputSchema": {
+          "properties": {
+            "asReportedScale": {
+              "type": "string"
+            },
+            "asReportedValue": {
+              "type": "string"
+            },
+            "attribution": {
+              "type": "string"
+            },
+            "companyId": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "string"
+            },
+            "confirmationState": {
+              "type": "string"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "dataQuality": {
+              "type": "string"
+            },
+            "definitionId": {
+              "type": "string"
+            },
+            "extractionMethod": {
+              "type": "string"
+            },
+            "measureWindow": {
+              "type": "string"
+            },
+            "periodId": {
+              "type": "string"
+            },
+            "reportingStandard": {
+              "type": "string"
+            },
+            "sourceDocumentRef": {
+              "type": "string"
+            },
+            "statementBasis": {
+              "type": "string"
+            },
+            "supersedesId": {
+              "type": "string"
+            },
+            "valueNumeric": {
+              "type": "string"
+            },
+            "variant": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "definitionId",
+            "periodId",
+            "valueNumeric"
+          ],
+          "type": "object"
+        },
+        "name": "create_financial_fact"
+      },
+      {
+        "description": "Update a stored financial fact (by id). Must carry its citation provenance.",
+        "inputSchema": {
+          "properties": {
+            "confirmationState": {
+              "type": "string"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "dataQuality": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "sourceDocumentRef": {
+              "type": "string"
+            },
+            "supersedesId": {
+              "type": "string"
+            },
+            "valueNumeric": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_financial_fact"
+      },
+      {
+        "description": "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation.",
+        "inputSchema": {
+          "definitions": {
+            "QualitativeVerdictInput": {
+              "description": "One agent-authored qualitative criterion verdict. `ordinal` and `label` are resolved from the framework's criteria (not supplied by the caller); `citationsJson` is the serialized typed-evidence array (provenance).",
+              "properties": {
+                "citationsJson": {
+                  "description": "Serialized, non-empty typed-evidence array — the write's provenance.",
+                  "type": "string"
+                },
+                "confidence": {
+                  "description": "`low` | `medium` | `high`.",
+                  "type": "string"
+                },
+                "criterionId": {
+                  "type": "string"
+                },
+                "reasoning": {
+                  "type": "string"
+                },
+                "verdict": {
+                  "description": "`pass` | `partial` | `fail` | `insufficient_evidence`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "citationsJson",
+                "confidence",
+                "criterionId",
+                "reasoning",
+                "verdict"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "frameworkId": {
+              "type": "string"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/definitions/QualitativeVerdictInput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "companyId",
+            "frameworkId",
+            "results"
+          ],
+          "type": "object"
+        },
+        "name": "set_qualitative_verdicts"
+      },
+      {
+        "description": "Open a research question scoped to a company/watchlist/sector.",
+        "inputSchema": {
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "scopeId": {
+              "type": "string"
+            },
+            "scopeType": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scopeId",
+            "scopeType",
+            "title"
+          ],
+          "type": "object"
+        },
+        "name": "create_research_question"
+      },
+      {
+        "description": "Update a research question (title/body/status) by id.",
+        "inputSchema": {
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_research_question"
+      },
+      {
+        "description": "Link two research-graph entities (note/claim/fact/document…) with a typed relation.",
+        "inputSchema": {
+          "properties": {
+            "fromId": {
+              "type": "string"
+            },
+            "fromType": {
+              "type": "string"
+            },
+            "relationType": {
+              "type": "string"
+            },
+            "toId": {
+              "type": "string"
+            },
+            "toType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "fromId",
+            "fromType",
+            "relationType",
+            "toId",
+            "toType"
+          ],
+          "type": "object"
+        },
+        "name": "create_evidence_link"
+      },
+      {
+        "description": "Create a personal follow-up reminder scoped to a company/watchlist/sector.",
+        "inputSchema": {
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "companyId": {
+              "type": "string"
+            },
+            "dueAt": {
+              "type": "string"
+            },
+            "reminderKind": {
+              "type": "string"
+            },
+            "scopeId": {
+              "type": "string"
+            },
+            "scopeType": {
+              "type": "string"
+            },
+            "sourceId": {
+              "type": "string"
+            },
+            "sourceType": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "reminderKind",
+            "scopeId",
+            "scopeType",
+            "title"
+          ],
+          "type": "object"
+        },
+        "name": "create_research_reminder"
+      },
+      {
+        "description": "Update a research reminder (status/due/snooze) by id.",
+        "inputSchema": {
+          "properties": {
+            "dueAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "snoozedUntil": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_research_reminder"
+      },
+      {
+        "description": "Append an immutable decision-journal entry for a company (rationale + decided-at).",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "decidedAt": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "rationaleMd": {
+              "type": "string"
+            },
+            "supersededByEntryId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "decidedAt",
+            "kind",
+            "rationaleMd"
+          ],
+          "type": "object"
+        },
+        "name": "create_decision_entry"
+      },
+      {
+        "description": "Record pre-report expectations for a company's upcoming report event (stance + optional metrics).",
+        "inputSchema": {
+          "definitions": {
+            "NewExpectationMetric": {
+              "properties": {
+                "comparator": {
+                  "type": "string"
+                },
+                "expectedValue": {
+                  "type": "string"
+                },
+                "metricKey": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "comparator",
+                "expectedValue",
+                "metricKey"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "eventKey": {
+              "type": "string"
+            },
+            "fiscalYear": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "metrics": {
+              "items": {
+                "$ref": "#/definitions/NewExpectationMetric"
+              },
+              "type": "array"
+            },
+            "periodType": {
+              "type": "string"
+            },
+            "stanceMd": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "eventKey",
+            "fiscalYear",
+            "periodType",
+            "stanceMd"
+          ],
+          "type": "object"
+        },
+        "name": "create_report_expectation"
+      },
+      {
+        "description": "Update a company's report expectation (stance/metrics) by its event key.",
+        "inputSchema": {
+          "definitions": {
+            "NewExpectationMetric": {
+              "properties": {
+                "comparator": {
+                  "type": "string"
+                },
+                "expectedValue": {
+                  "type": "string"
+                },
+                "metricKey": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "comparator",
+                "expectedValue",
+                "metricKey"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "eventKey": {
+              "type": "string"
+            },
+            "metrics": {
+              "description": "`Some(rows)` replaces the metric set wholesale; `None` keeps it.",
+              "items": {
+                "$ref": "#/definitions/NewExpectationMetric"
+              },
+              "type": "array"
+            },
+            "stanceMd": {
+              "description": "`None` keeps the stored stance.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "eventKey"
+          ],
+          "type": "object"
+        },
+        "name": "update_report_expectation"
+      },
+      {
+        "description": "Resolve a report expectation after the report lands (resolution note).",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "eventKey": {
+              "type": "string"
+            },
+            "resolutionNoteMd": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "eventKey",
+            "resolutionNoteMd"
+          ],
+          "type": "object"
+        },
+        "name": "record_expectation_resolution"
+      },
+      {
+        "description": "Add a calendar event (dividend/meeting/report date) for a company.",
+        "inputSchema": {
+          "properties": {
+            "attribution": {
+              "type": "string"
+            },
+            "companyId": {
+              "type": "string"
+            },
+            "eventDate": {
+              "type": "string"
+            },
+            "eventTime": {
+              "type": "string"
+            },
+            "eventType": {
+              "type": "string"
+            },
+            "fetchedAt": {
+              "type": "string"
+            },
+            "sourceAdapterId": {
+              "type": "string"
+            },
+            "sourceEventKey": {
+              "type": "string"
+            },
+            "sourceType": {
+              "type": "string"
+            },
+            "sourceUrl": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "eventDate",
+            "eventType",
+            "title"
+          ],
+          "type": "object"
+        },
+        "name": "create_company_event"
+      },
+      {
+        "description": "Add a KPI/financial-concept definition to the metric catalog.",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "computation": {
+              "type": "string"
+            },
+            "displayFormat": {
+              "type": "string"
+            },
+            "formula": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "metricKey": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "sector": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "valueKind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "computation",
+            "label",
+            "metricKey",
+            "scope",
+            "valueKind"
+          ],
+          "type": "object"
+        },
+        "name": "create_kpi_definition"
+      },
+      {
+        "description": "Mark a KPI definition relevant to a company (scorecard editor).",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "definitionId": {
+              "type": "string"
+            },
+            "firstSeenPeriod": {
+              "type": "string"
+            },
+            "lastSeenPeriod": {
+              "type": "string"
+            },
+            "rank": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "definitionId",
+            "source"
+          ],
+          "type": "object"
+        },
+        "name": "create_kpi_relevance"
+      },
+      {
+        "description": "Update a company's KPI-relevance row (status/rank) by id.",
+        "inputSchema": {
+          "properties": {
+            "firstSeenPeriod": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSeenPeriod": {
+              "type": "string"
+            },
+            "rank": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_kpi_relevance"
+      },
+      {
+        "description": "Create a quality-scorecard framework.",
+        "inputSchema": {
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "name": "create_quality_framework"
+      },
+      {
+        "description": "Update a quality framework (name/description) by id.",
+        "inputSchema": {
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_quality_framework"
+      },
+      {
+        "description": "Add a criterion to a quality framework.",
+        "inputSchema": {
+          "properties": {
+            "assessmentGuidance": {
+              "description": "Required (non-empty) for a qualitative criterion; ignored for quantitative.",
+              "type": "string"
+            },
+            "expression": {
+              "default": "",
+              "type": "string"
+            },
+            "frameworkId": {
+              "type": "string"
+            },
+            "kind": {
+              "description": "`quantitative` (default) | `qualitative` (ADR 0075). Absent ⇒ quantitative.",
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "ordinal": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "partialBand": {
+              "type": "string"
+            },
+            "weight": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "frameworkId",
+            "label"
+          ],
+          "type": "object"
+        },
+        "name": "create_framework_criterion"
+      },
+      {
+        "description": "Update a framework criterion by id.",
+        "inputSchema": {
+          "properties": {
+            "assessmentGuidance": {
+              "description": "Update the qualitative guidance seed; absent ⇒ keep existing.",
+              "type": "string"
+            },
+            "expression": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "description": "Switch a criterion's kind (ADR 0075); absent ⇒ keep existing.",
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "ordinal": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "partialBand": {
+              "type": "string"
+            },
+            "weight": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_framework_criterion"
+      },
+      {
+        "description": "Create an alert rule (trigger + scope). Fired events surface via list_attention_events.",
+        "inputSchema": {
+          "properties": {
+            "priceMax": {
+              "format": "double",
+              "type": "number"
+            },
+            "priceMin": {
+              "format": "double",
+              "type": "number"
+            },
+            "scopeRef": {
+              "type": "string"
+            },
+            "scopeType": {
+              "type": "string"
+            },
+            "signalCategory": {
+              "type": "string"
+            },
+            "triggerType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scopeRef",
+            "scopeType",
+            "triggerType"
+          ],
+          "type": "object"
+        },
+        "name": "create_alert_rule"
+      },
+      {
+        "description": "Update an alert rule (trigger/scope/enabled) by id.",
+        "inputSchema": {
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "priceMax": {
+              "format": "double",
+              "type": "number"
+            },
+            "priceMin": {
+              "format": "double",
+              "type": "number"
+            },
+            "scopeRef": {
+              "type": "string"
+            },
+            "scopeType": {
+              "type": "string"
+            },
+            "signalCategory": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_alert_rule"
+      },
+      {
+        "description": "Track a new company (exchange + ticker + display name). On GPW this also enqueues a quote backfill.",
+        "inputSchema": {
+          "properties": {
+            "cik": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "exchange": {
+              "type": "string"
+            },
+            "isin": {
+              "type": "string"
+            },
+            "lei": {
+              "type": "string"
+            },
+            "ticker": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "displayName",
+            "exchange",
+            "ticker"
+          ],
+          "type": "object"
+        },
+        "name": "create_company"
+      },
+      {
+        "description": "Create a watchlist.",
+        "inputSchema": {
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "name": "create_watchlist"
+      },
+      {
+        "description": "Add a company to a watchlist (by their internal ids).",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "watchlistId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "watchlistId"
+          ],
+          "type": "object"
+        },
+        "name": "add_company_to_watchlist"
+      },
+      {
+        "description": "Remove a company from a watchlist (by their internal ids).",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "watchlistId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "watchlistId"
+          ],
+          "type": "object"
+        },
+        "name": "remove_company_from_watchlist"
+      },
+      {
+        "description": "Set a feed item's read/saved flags (by id).",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "saved": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "update_feed_item_state"
+      },
+      {
+        "description": "Mark a company's upcoming report event as prepared.",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "eventKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "eventKey"
+          ],
+          "type": "object"
+        },
+        "name": "mark_report_prepared"
+      },
+      {
+        "description": "Mark a company's report event as processed (optionally linking the report document).",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "eventKey": {
+              "type": "string"
+            },
+            "linkedReportDocumentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "eventKey"
+          ],
+          "type": "object"
+        },
+        "name": "mark_report_processed"
+      },
+      {
+        "description": "Set a 'reviewed' checkpoint for a research scope (optionally cascading to its companies).",
+        "inputSchema": {
+          "properties": {
+            "cascadeToCompanies": {
+              "type": "boolean"
+            },
+            "reviewedAt": {
+              "type": "string"
+            },
+            "scopeId": {
+              "type": "string"
+            },
+            "scopeType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scopeId",
+            "scopeType"
+          ],
+          "type": "object"
+        },
+        "name": "mark_research_scope_reviewed"
+      },
+      {
+        "description": "Confirm a proposed filing signal (by id).",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "confirm_company_signal"
+      },
+      {
+        "description": "Reject a proposed filing signal (by id).",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "reject_company_signal"
+      },
+      {
+        "description": "Classify an unclassified official filing (from list_unclassified_filings) into a confirmed signal. Takes `feedItemId` (the evidence anchor) and a `category` key from the seeded taxonomy. Rejects an unknown category, a non-official item, or an already-classified filing.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "description": "A signal category key from the seeded taxonomy (e.g. `dividend`, `significant_contract`). An unknown key is rejected.",
+              "type": "string"
+            },
+            "feedItemId": {
+              "description": "The unclassified official filing to classify (`feed_items.id`) — this is also the created signal's evidence anchor.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "category",
+            "feedItemId"
+          ],
+          "type": "object"
+        },
+        "name": "classify_filing"
+      },
+      {
+        "description": "Confirm or reject a proposed derived calendar event (`action`: confirm|reject).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "description": "`confirm` places the proposed event on the calendar; `reject` discards it.",
+              "type": "string"
+            },
+            "eventId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "eventId"
+          ],
+          "type": "object"
+        },
+        "name": "confirm_derived_event"
+      },
+      {
+        "description": "Acknowledge an active red flag (by id).",
+        "inputSchema": {
+          "properties": {
+            "flagId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "flagId"
+          ],
+          "type": "object"
+        },
+        "name": "acknowledge_red_flag"
+      },
+      {
+        "description": "Relabel a shareholder's holder type for a company; returns the recomputed ownership overview.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "holderKey": {
+              "type": "string"
+            },
+            "holderType": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "holderKey"
+          ],
+          "type": "object"
+        },
+        "name": "set_ownership_holder_type"
+      },
+      {
+        "description": "Mark an attention event as seen (by id).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "mark_attention_event_seen"
+      },
+      {
+        "description": "Dismiss an attention event (by id).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "dismiss_attention_event"
+      },
+      {
+        "description": "Set an autopilot run's notification state (unread|read|dismissed).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "notificationState": {
+              "type": "string"
+            },
+            "runId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "notificationState",
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "set_autopilot_run_notification_state"
+      },
+      {
+        "description": "Run the deterministic quantitative scorecard engine for a framework+company and persist the evaluation.",
+        "inputSchema": {
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "frameworkId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "frameworkId"
+          ],
+          "type": "object"
+        },
+        "name": "evaluate_framework"
+      },
+      {
+        "description": "Enable/disable an alert rule (by id).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "enabled",
+            "id"
+          ],
+          "type": "object"
+        },
+        "name": "set_alert_rule_enabled"
+      },
+      {
+        "description": "Trigger an autopilot run over one company's report document (fail-fast on unknown ids); enqueues the durable pipeline.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "reportDocumentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "reportDocumentId"
+          ],
+          "type": "object"
+        },
+        "name": "trigger_autopilot_run"
+      },
+      {
+        "description": "Enqueue composition of a fresh morning briefing (read the result via get_latest_morning_briefing).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "generate_morning_briefing"
+      },
+      {
+        "description": "Run a source-refresh sweep across all enabled adapters (`trigger`: manual | scheduler).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "trigger": {
+              "description": "`manual` (default) | `scheduler`.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "refresh_sources"
+      },
+      {
+        "description": "Run a refresh for one source adapter (by `adapterId`; optional `trigger`, `date`).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "adapterId": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "trigger": {
+              "description": "`manual` (default) | `scheduler`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "adapterId"
+          ],
+          "type": "object"
+        },
+        "name": "refresh_source"
+      },
+      {
+        "description": "Run the aggregator fundamentals pull across tracked companies.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "run_aggregator_fundamentals_pull"
+      },
+      {
+        "description": "Run an on-track history backfill for one company (`companyId`); progress via get_backfill_progress.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companyId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId"
+          ],
+          "type": "object"
+        },
+        "name": "backfill_company_history"
+      },
+      {
+        "description": "Run the deterministic structured-first extraction pipeline over one company report+period (`mode`: autopilot | assist).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "fiscalYear": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "mode": {
+              "description": "Trust-ladder mode `autopilot` (default) | `assist`.",
+              "type": "string"
+            },
+            "periodEnd": {
+              "type": "string"
+            },
+            "periodType": {
+              "type": "string"
+            },
+            "reportDocumentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "fiscalYear",
+            "periodEnd",
+            "periodType",
+            "reportDocumentId"
+          ],
+          "type": "object"
+        },
+        "name": "run_structured_extraction"
+      },
+      {
+        "description": "Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "description": "Trust-ladder mode `autopilot` (default) | `assist`.",
+              "type": "string"
+            },
+            "outcomeId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "outcomeId"
+          ],
+          "type": "object"
+        },
+        "name": "rerun_extraction_outcome"
       }
     ]
   }

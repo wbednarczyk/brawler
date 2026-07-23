@@ -33,7 +33,33 @@ export function attentionEventBadgeText(event: AttentionEvent, text: Translate):
   }
 }
 
-/** The "what fired" detail sentence, using the rule's category/price context when known. */
+/** Localized label for a run's raw status (the autopilot event's statement detail). */
+function autopilotStatusLabel(status: string | null, text: Translate): string {
+  switch (status) {
+    case "succeeded":
+      return text("Succeeded");
+    case "failed":
+      return text("Failed");
+    case "partial":
+      return text("Partial");
+    case "running":
+      return text("Running");
+    case "pending":
+      return text("Pending");
+    default:
+      return text("Finished");
+  }
+}
+
+/**
+ * The "what happened" statement for a fired attention event — the CONCRETE event,
+ * never a bare category (v0.60 D6, owner dogfooding 2026-07-23). Each event now
+ * carries its evidence specifics from the backend join (`evidenceTitle` /
+ * `evidenceDetail`, raw source data); this composes the localized sentence
+ * client-side (ADR 0087 dec. 4 / ui-authoring §6 — the backend never bakes
+ * prose). A missing `evidenceTitle` (legacy row / pruned evidence) falls back to
+ * the prior generic copy so a row never crashes or blanks. Decision support only.
+ */
 export function attentionEventTitleText(
   event: AttentionEvent,
   rule: AlertRule | undefined,
@@ -41,18 +67,22 @@ export function attentionEventTitleText(
 ): string {
   switch (event.triggerType) {
     case "signal_category":
-      // D3 fix (v0.57 fix wave 2, owner screenshot 27-toast-stack.png): the
-      // raw category code ("insider_transaction") rendered verbatim in both
-      // locales — this must resolve through the SAME category → display-name
-      // mapping `text(signal.categoryDisplayName)` uses elsewhere
-      // (`formatSignalCategoryDisplayName`, matching the backend's
-      // `signal_categories` seed), never a raw enum value. No rule (a
-      // system-raised event with nothing to look up) keeps the prior
-      // trigger-type fallback.
+      // The signal's own filing title IS the statement (e.g. "Wstępne wyniki
+      // produkcyjne i sprzedażowe za czerwiec 2026") — the category stays on the
+      // badge. Raw source data, shown verbatim. Fallback (no title): the D3-fix
+      // category display name via the rule, or the trigger type when even that is
+      // unknown (a system-raised event with nothing to look up).
+      if (event.evidenceTitle) return event.evidenceTitle;
       return rule?.signalCategory
         ? text(formatSignalCategoryDisplayName(rule.signalCategory))
         : event.triggerType;
     case "autopilot_run_completed":
+      // Which report the autopilot finished, and how it ended (owner: "Autopilot
+      // zakończony → co to oznacza?"). Title is raw source data; the status is
+      // translated. Fallback keeps the prior generic copy.
+      if (event.evidenceTitle) {
+        return `${event.evidenceTitle} — ${autopilotStatusLabel(event.evidenceDetail, text)}`;
+      }
       return text("Autopilot finished");
     case "price_enters_range":
       return rule
@@ -61,6 +91,15 @@ export function attentionEventTitleText(
     case "price_week52_low":
       return text("52-week low");
     case "source_reconciliation":
+      // The missed report + the registry that caught it (owner: "jaki dokładniej
+      // raport? które to źródło główne?"). The primary channel missed it; the
+      // GPW ESPI/EBI witness (`evidenceDetail`) backfilled it from the registry.
+      if (event.evidenceTitle) {
+        const source = event.evidenceDetail ?? text("the official registry");
+        return text("{title} — missed by the primary source, backfilled from {source}")
+          .replace("{title}", event.evidenceTitle)
+          .replace("{source}", source);
+      }
       return text("Official report missed by the primary source");
     default:
       return event.triggerType;

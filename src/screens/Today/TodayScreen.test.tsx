@@ -12,6 +12,7 @@ import {
   waitFor,
   within,
 } from "../../test/appWorkflowHarness";
+import { COMPANY_SPECS, makeClaimToVerify, makeSourceAdapter } from "../../test/scenarios/entities";
 import type { AttentionEvent } from "../../api/attention";
 import type { MorningBriefing } from "../../api/briefing";
 import type { MorningBriefingItem } from "../../api/generated/MorningBriefingItem";
@@ -37,6 +38,13 @@ const baseAutopilotRun = {
   producedFactIds: [],
   notificationState: "unread",
   lastError: null,
+  // Typed severity (ADR 0087 dec. 2) now lands on the payload from D3a; the Today
+  // frontend still routes via the placeholder adapter until D3a swaps the call
+  // sites, so this fixture value is inert for these tests.
+  severity: "routine" as const,
+  // Null by default (legacy/tolerant fallback: the summary stays the statement);
+  // the D6 tests set a title to prove the document identity leads the row.
+  reportDocumentTitle: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 };
@@ -109,6 +117,14 @@ function attentionEvent(overrides: Partial<AttentionEvent> = {}): AttentionEvent
     firedAt: "2026-06-10T09:00:00Z",
     seen: false,
     dismissed: false,
+    // Typed severity now on the payload (ADR 0087 dec. 2); inert here — the Today
+    // frontend routes via the placeholder adapter until D3a swaps the call sites.
+    severity: "notable",
+    // Evidence specifics (v0.60 D6): null by default so the category-display
+    // fallback still applies; the D6 tests set a title to prove the concrete
+    // statement leads the row.
+    evidenceTitle: null,
+    evidenceDetail: null,
     ...overrides,
   };
 }
@@ -156,36 +172,41 @@ async function findCategoryRow(container: HTMLElement, category: string): Promis
   );
 }
 
-const PRIORITY: Record<string, number> = {
-  autopilot: 0,
-  attention: 1,
-  verify: 2,
-  changed: 3,
-  upcoming: 4,
-};
+/** Severity rank (urgent leads), read from each row's `data-severity` attribute. */
+const SEVERITY_RANK: Record<string, number> = { urgent: 0, notable: 1, routine: 2 };
 
-describe("Today/Pulse — prioritized attention stream (J1, ADR 0076 U-Rb)", () => {
-  it("merges all four categories into one stream in the fixed priority order", async () => {
+/** The `data-severity` of each top-level stream row, in DOM order. */
+function streamSeverities(container: HTMLElement): string[] {
+  return [...container.querySelectorAll("li[data-category]")].map(
+    (el) => (el as HTMLElement).dataset.severity ?? "routine",
+  );
+}
+
+describe("Today/Pulse — severity-ranked attention stream (J1, ADR 0087)", () => {
+  it("merges every category into one severity-ranked stream (notable leads routine)", async () => {
     appTestState.autopilotRunsResponse = [{ ...baseAutopilotRun }];
-    // Fired alerts (ADR 0068 T4) are their own describe block below; keep this
-    // test to the four legacy categories it names.
-    appTestState.attentionEventsResponse = [];
+    // A fired alert is `notable` under the placeholder adapter; every other
+    // category is `routine` — so the attention row must lead the routine rows
+    // regardless of recency (ADR 0087 dec. 1c severity-first ranking).
+    appTestState.attentionEventsResponse = [attentionEvent({ id: "attn_merge_1" })];
+    appTestState.alertRulesResponse = [signalRule];
     const { container } = renderApp({ section: "Today" });
 
-    // Wait for the async claim/feed loads to settle into stream rows. Each
-    // category loads on its own effect, so wait for the two slower async ones
-    // (verify = claims, upcoming = report season) explicitly — not just the
-    // autopilot "Details" row — or the assertion races the verify load.
+    // Each category loads on its own effect; wait for the slower async ones.
     await screen.findByRole("button", { name: "Details" });
     await findCategoryRow(container as HTMLElement, "verify");
     await findCategoryRow(container as HTMLElement, "upcoming");
+    await findCategoryRow(container as HTMLElement, "attention");
 
     const cats = streamCategories(container as HTMLElement);
-    // All four attention categories are represented.
-    expect(new Set(cats)).toEqual(new Set(["autopilot", "verify", "changed", "upcoming"]));
-    // …and each category's rows are contiguous, in the fixed priority order.
-    const idxs = cats.map((c) => PRIORITY[c]);
-    expect(idxs).toEqual([...idxs].sort((a, b) => a - b));
+    expect(new Set(cats)).toEqual(
+      new Set(["autopilot", "attention", "verify", "changed", "upcoming"]),
+    );
+    // Severity rank is monotonic non-decreasing down the stream.
+    const ranks = streamSeverities(container as HTMLElement).map((s) => SEVERITY_RANK[s]);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    // The single notable (attention) row leads every routine row.
+    expect(ranks.lastIndexOf(1)).toBeLessThan(ranks.indexOf(2));
   });
 
   it("gives every stream row a ticker, a type badge, a date and exactly one action button", async () => {
@@ -289,6 +310,104 @@ describe("Today quiet state (ADR 0076 U-Rb D6)", () => {
   });
 });
 
+// The single claim fixture the overdue-escalation tests seed. Its bucket is set
+// by which slot (`due`/`overdue`) it lands in — the frontend derives severity
+// from that (verifyClaimSeverity), not from anything on the claim itself.
+const sampleClaimToVerify = makeClaimToVerify(COMPANY_SPECS[0]);
+
+/** The `data-severity` of the single top-level verify row, or null if absent. */
+function verifyRowSeverity(container: HTMLElement): string | null {
+  const row = container.querySelector('li[data-category="verify"]') as HTMLElement | null;
+  return row?.dataset.severity ?? null;
+}
+
+describe("Today verify severity — the one FE-side severity entry (ADR 0087 dec. 2, product-spec §Attention Routing)", () => {
+  it("escalates an OVERDUE claim's verify row to notable, ranked above routine and below urgent", async () => {
+    // Routine autopilot + an URGENT attention row bracket the overdue claim.
+    appTestState.autopilotRunsResponse = [{ ...baseAutopilotRun }];
+    appTestState.attentionEventsResponse = [
+      attentionEvent({ id: "attn_overdue_rank", severity: "urgent" }),
+    ];
+    appTestState.alertRulesResponse = [signalRule];
+    appTestState.claimsToVerifyResponse = {
+      due: [],
+      overdue: [sampleClaimToVerify],
+      upcoming: [],
+    };
+    const { container } = renderApp({ section: "Today" });
+
+    await screen.findByRole("button", { name: "Details" });
+    await findCategoryRow(container as HTMLElement, "verify");
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    // The overdue claim escalated to notable (was routine before ADR 0087's
+    // FE-side entry).
+    expect(verifyRowSeverity(container as HTMLElement)).toBe("notable");
+
+    // Ordering: the urgent attention row precedes the notable verify row, which
+    // precedes the routine autopilot row.
+    const cats = streamCategories(container as HTMLElement);
+    const sevs = streamSeverities(container as HTMLElement);
+    const urgentIndex = sevs.indexOf("urgent");
+    const verifyIndex = cats.indexOf("verify");
+    const routineIndex = sevs.lastIndexOf("routine");
+    expect(urgentIndex).toBeGreaterThanOrEqual(0);
+    expect(urgentIndex).toBeLessThan(verifyIndex);
+    expect(verifyIndex).toBeLessThan(routineIndex);
+  });
+
+  it("keeps a DUE-but-not-yet-overdue claim's verify row routine", async () => {
+    appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.reportSeasonUpcomingResponse = [];
+    appTestState.claimsToVerifyResponse = {
+      due: [sampleClaimToVerify],
+      overdue: [],
+      upcoming: [],
+    };
+    const { container } = renderApp({ section: "Today" });
+
+    await findCategoryRow(container as HTMLElement, "verify");
+    expect(verifyRowSeverity(container as HTMLElement)).toBe("routine");
+  });
+
+  it("never folds the escalated (notable) overdue claim into a routine aggregate, and raises no toast for it", async () => {
+    // >3 routine autopilot runs across distinct companies collapse into an
+    // aggregate; the notable overdue claim must survive as its own verify row.
+    appTestState.autopilotRunsResponse = Array.from({ length: 4 }, (_, i) => ({
+      ...baseAutopilotRun,
+      id: `run_agg_${i}`,
+      companyId: `company_agg_${i}`,
+    }));
+    appTestState.attentionEventsResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.reportSeasonUpcomingResponse = [];
+    appTestState.claimsToVerifyResponse = {
+      due: [],
+      overdue: [sampleClaimToVerify],
+      upcoming: [],
+    };
+    const { container } = renderApp({ section: "Today" });
+
+    await findCategoryRow(container as HTMLElement, "verify");
+
+    // Exactly one verify row, escalated, standing on its own — a lone notable
+    // claim is below the notable-wall threshold, so it never folds into an
+    // aggregate (and a notable row never joins the routine aggregate anyway).
+    const verifyRows = container.querySelectorAll('li[data-category="verify"]');
+    expect(verifyRows).toHaveLength(1);
+    expect((verifyRows[0] as HTMLElement).dataset.severity).toBe("notable");
+    // The routine autopilot rows DID collapse (proof the aggregate stage ran).
+    await waitFor(() =>
+      expect(container.querySelector(".today-group-chip")).not.toBeNull(),
+    );
+    // A claim is not an attention event — it raises no toast (persistent or not).
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(container.querySelector(".ui-toast-message")).toBeNull();
+  });
+});
+
 /** The single `AlertRule` the attention-list tests join `attentionEvent`s against. */
 const signalRule = {
   id: "alert_rule_1",
@@ -311,7 +430,6 @@ function rowTicker(row: HTMLElement): string | null {
 describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
   const otherCompanyId = initialCompanies[1].id;
   const pinnedTicker = initialCompanies[0].qualifiedTicker;
-  const otherTicker = initialCompanies[1].qualifiedTicker;
 
   function seedOnlyAttention(events: ReturnType<typeof attentionEvent>[]) {
     appTestState.autopilotRunsResponse = [];
@@ -322,9 +440,10 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     appTestState.reportSeasonUpcomingResponse = [];
   }
 
-  it("renders open attention events grouped by company with their rule's trigger context", async () => {
+  it("collapses multiple fired events for one company into a ×N group row, expandable in place (ADR 0087 dec. 1b)", async () => {
+    const user = userEvent.setup();
     seedOnlyAttention([
-      attentionEvent({ id: "attn_other", companyId: otherCompanyId, evidenceRef: "signal_other" }),
+      attentionEvent({ id: "attn_other", companyId: otherCompanyId, evidenceRef: "signal_other", firedAt: "2026-06-08T09:00:00Z" }),
       attentionEvent({ id: "attn_pinned_1", firedAt: "2026-06-09T09:00:00Z" }),
       attentionEvent({ id: "attn_pinned_2", firedAt: "2026-06-10T09:00:00Z" }),
     ]);
@@ -332,19 +451,47 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     const { container } = renderApp({ section: "Today" });
     await findCategoryRow(container as HTMLElement, "attention");
 
+    // Two top-level rows: the other company (×1) and the pinned company's ×2 group.
     const rows = [...container.querySelectorAll('li[data-category="attention"]')] as HTMLElement[];
-    expect(rows).toHaveLength(3);
-    // Grouped by company: the two `pinnedTicker` rows sit together, not split
-    // by the `otherTicker` row landing between them.
-    const tickers = rows.map(rowTicker);
-    const pinnedIndexes = tickers.flatMap((ticker, i) => (ticker === pinnedTicker ? [i] : []));
-    expect(pinnedIndexes).toEqual([pinnedIndexes[0], pinnedIndexes[0] + 1]);
-    expect(tickers).toContain(otherTicker);
-    // The rule's category is the "what fired" context, not just a bare
-    // trigger-type label — and its human display name (D3 fix), never the
-    // raw enum code the backend/rule actually stores.
-    expect(within(rows[0]).getByText("Profit warning / estimate")).toBeInTheDocument();
-    expect(within(rows[0]).queryByText(/^profit_warning$/)).not.toBeInTheDocument();
+    expect(rows).toHaveLength(2);
+    // The per-company count chip carries its unit so "×2" is not opaque (owner
+    // dogfooding 2026-07-23): attention groups count fired events.
+    const group = rows.find((row) => within(row).queryByText("×2 events")) as HTMLElement;
+    expect(group).toBeTruthy();
+    expect(within(group).queryByText("×2")).toBeNull();
+    expect(rowTicker(group)).toBe(pinnedTicker);
+    // The group header shows the newest member's rule context — its human display
+    // name, never the raw enum code.
+    expect(within(group).getByText("Profit warning / estimate")).toBeInTheDocument();
+    expect(within(group).queryByText(/^profit_warning$/)).not.toBeInTheDocument();
+    expect([...container.querySelectorAll('[data-member-category]')].length).toBe(0);
+
+    // Members expand in place — one compact member row per event.
+    await user.click(within(group).getByRole("button", { name: "Details" }));
+    expect(group.querySelectorAll('[data-member-category="attention"]')).toHaveLength(2);
+    // Each member keeps its own single Review action (so j/k traverses members).
+    expect(group.querySelectorAll('[data-today-row="true"]').length).toBe(3);
+    expect(container.querySelector('[data-counter="urgent"]')).not.toBeNull();
+  });
+
+  it("labels a per-company autopilot group chip with its 'runs' unit", async () => {
+    // Same opaque-×N fix, autopilot side: a per-company group of runs counts runs,
+    // not events (owner dogfooding 2026-07-23).
+    appTestState.autopilotRunsResponse = [
+      { ...baseAutopilotRun, id: "run_grp_0", companyId: pinnedCompanyId },
+      { ...baseAutopilotRun, id: "run_grp_1", companyId: pinnedCompanyId },
+    ];
+    appTestState.attentionEventsResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "autopilot");
+
+    const rows = [...container.querySelectorAll('li[data-category="autopilot"]')] as HTMLElement[];
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByText("×2 runs")).toBeInTheDocument();
   });
 
   it("dismisses a fired event: the row disappears and the domain command fires", async () => {
@@ -355,8 +502,8 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     const { container } = renderApp({ section: "Today" });
     await findCategoryRow(container as HTMLElement, "attention");
 
-    // Scoped to the row itself — the same event also raised a persistent
-    // toast with its own "Dismiss" control by now.
+    // Scoped to the row itself — the default event is `notable`, so it also raised
+    // a transient toast (no Dismiss control of its own) by now.
     const row = container.querySelector('li[data-category="attention"]') as HTMLElement;
     await user.click(within(row).getByRole("button", { name: "Dismiss" }));
 
@@ -372,8 +519,8 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     const { container } = renderApp({ section: "Today" });
     await findCategoryRow(container as HTMLElement, "attention");
 
-    // Scoped to the row itself — a persistent toast for this same event is
-    // also on screen by now, carrying the same "profit_warning" text.
+    // Scoped to the row itself — a transient toast for this same (notable) event
+    // is also on screen by now, carrying the same "profit_warning" text.
     const row = container.querySelector('li[data-category="attention"]') as HTMLElement;
     const reviewButton = within(row).getByRole("button", { name: "Review" });
     // `fireEvent`, not `userEvent`: no Today "Review" row action was ever
@@ -393,9 +540,10 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
   });
 
-  it("raises a persistent toast for a new unseen event, once per session (no duplicate on Today re-entry)", async () => {
+  it("raises a persistent toast for a new unseen URGENT event, once per session (no duplicate on Today re-entry)", async () => {
     const user = userEvent.setup();
-    seedOnlyAttention([attentionEvent({ id: "attn_toast_1" })]);
+    // Persistent toasts are reserved for `urgent` events (ADR 0087 dec. 3).
+    seedOnlyAttention([attentionEvent({ id: "attn_toast_1", severity: "urgent" })]);
     renderApp({ section: "Today" });
     await screen.findByRole("alert");
 
@@ -417,6 +565,36 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     await screen.findByRole("heading", { name: "Today" });
 
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("raises a TRANSIENT (auto-dismissing) toast for a NOTABLE event, never a persistent one (ADR 0087 dec. 3)", async () => {
+    seedOnlyAttention([attentionEvent({ id: "attn_notable_1", severity: "notable" })]);
+    renderApp({ section: "Today" });
+
+    // Notable → a transient toast (`role="status"`, `caution` tone), announcing
+    // the landing; it is NOT the persistent (`role="alert"`) variant, and the
+    // toast itself carries no Dismiss control (the stream row stays the place to act).
+    const message = await screen.findByText(/Profit warning \/ estimate/, {
+      selector: ".ui-toast-message",
+    });
+    const toast = message.closest(".ui-toast") as HTMLElement;
+    expect(toast).not.toBeNull();
+    expect(toast.className).toContain("ui-toast-caution");
+    expect(toast.className).not.toContain("ui-toast-persistent");
+    expect(toast.querySelector('[role="status"]')).not.toBeNull();
+    expect(within(toast).queryByRole("alert")).toBeNull();
+    // The transient toast has no Dismiss of its own (only persistent toasts do).
+    expect(within(toast).queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  it("raises NO toast for a ROUTINE event — stream only (ADR 0087 dec. 3)", async () => {
+    seedOnlyAttention([attentionEvent({ id: "attn_routine_1", severity: "routine" })]);
+    const { container } = renderApp({ section: "Today" });
+    // The routine event still renders its stream row…
+    await findCategoryRow(container as HTMLElement, "attention");
+    // …but never surfaces as a toast (persistent or transient).
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(container.ownerDocument.querySelector(".ui-toast-message")).toBeNull();
   });
 
   it("resolves the company id to its ticker even when the attention list loads before the company list (live defect: raw 'company_gpw_scw' id shown)", async () => {
@@ -488,6 +666,9 @@ describe("Today attention toast — Polish locale content (D3 fix)", () => {
         triggerType: "source_reconciliation",
         evidenceType: "source_reconciliation",
         ruleId: null,
+        // Missed-report reconciliation → urgent, so it raises the persistent
+        // (role="alert") toast this test asserts (ADR 0087 dec. 3).
+        severity: "urgent",
       }),
     ];
     appTestState.feedItemsResponse = [];
@@ -514,15 +695,24 @@ describe("Today caps and 'show all' links (ADR 0076 U-Rb D2)", () => {
     appTestState.autopilotRunsResponse = [];
     appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
     appTestState.reportSeasonUpcomingResponse = [];
-    appTestState.feedItemsResponse = Array.from({ length: 10 }, (_, i) =>
-      reportFeedItem(`feed_${i}`, i),
-    );
+    // Distinct companies so grouping (ADR 0087) does not collapse them — this
+    // proves the pre-group item cap, not the grouping.
+    appTestState.feedItemsResponse = Array.from({ length: 10 }, (_, i) => ({
+      ...reportFeedItem(`feed_${i}`, i),
+      company: `GPW:Z${i}`,
+    }));
 
     const { container } = renderApp({ section: "Today" });
 
     await screen.findByRole("button", { name: /Show all in Inbox/ });
-    const changedRows = [...container.querySelectorAll('li[data-category="changed"]')];
-    expect(changedRows.length).toBe(8);
+    // All routine, distinct companies, >3 → they collapse into one cross-company
+    // aggregate; the pre-group cap still bounds it to 8 members (10 total > cap).
+    const changedRows = [...container.querySelectorAll('li[data-category="changed"]')] as HTMLElement[];
+    expect(changedRows).toHaveLength(1);
+    const aggregate = changedRows[0];
+    expect(within(aggregate).getByText(/×8/)).toBeInTheDocument();
+    await user.click(within(aggregate).getByRole("button", { name: "Details" }));
+    expect(aggregate.querySelectorAll('[data-member-category="changed"]')).toHaveLength(8);
 
     await user.click(screen.getByRole("button", { name: /Show all in Inbox/ }));
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
@@ -535,15 +725,16 @@ describe("Today stream keyboard navigation (ADR 0076 U-Rb D4)", () => {
     appTestState.autopilotRunsResponse = [];
     appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
     appTestState.reportSeasonUpcomingResponse = [];
+    // Distinct companies so grouping keeps three separate rows to rove across.
     appTestState.feedItemsResponse = [
-      reportFeedItem("feed_a", 0),
-      reportFeedItem("feed_b", 1),
-      reportFeedItem("feed_c", 2),
+      { ...reportFeedItem("feed_a", 0), company: "GPW:D0" },
+      { ...reportFeedItem("feed_b", 1), company: "GPW:D1" },
+      { ...reportFeedItem("feed_c", 2), company: "GPW:D2" },
     ];
 
     const { container } = renderApp({ section: "Today" });
 
-    await screen.findByRole("button", { name: /Show all in Inbox/ }).catch(() => null);
+    await findCategoryRow(container as HTMLElement, "changed");
     const buttons = [...container.querySelectorAll('[data-today-row="true"]')] as HTMLElement[];
     expect(buttons.length).toBeGreaterThanOrEqual(3);
 
@@ -621,6 +812,210 @@ describe("Today autopilot detail — undo / dismiss / drift behind the expandabl
     expect(screen.queryByRole("region", { name: "Structure changed" })).not.toBeInTheDocument();
   });
 
+  describe("rows state WHAT concretely happened (v0.60 D6, owner dogfooding 2026-07-23)", () => {
+    it("an autopilot run leads with its report document title; the summary drops to the sub-line", async () => {
+      appTestState.autopilotRunsResponse = [
+        {
+          ...baseAutopilotRun,
+          id: "run_titled_1",
+          reportDocumentTitle: "Skonsolidowany raport kwartalny Q2 2026",
+        },
+      ];
+
+      const { container } = renderApp({ section: "Today" });
+
+      const title = await screen.findByText("Skonsolidowany raport kwartalny Q2 2026");
+      expect(title).toHaveClass("today-row-title");
+      // The token summary is no longer the bare statement — it moves to the sub-line.
+      const sub = container.querySelector(".today-row-sub");
+      expect(sub?.textContent).toBe("New report processed.");
+    });
+
+    it("splits a filename glued onto an autopilot document title: statement leads, filename is a secondary link", async () => {
+      appTestState.autopilotRunsResponse = [
+        {
+          ...baseAutopilotRun,
+          id: "run_glued_1",
+          reportDocumentTitle:
+            "Y24_25_Sprawozdanie jednostkowe.xhtmlJednostkowe Sprawozdanie Finansowe AB S.A.",
+        },
+      ];
+
+      const { container } = renderApp({ section: "Today" });
+
+      // The human statement is the row title — no filename glued into it.
+      const title = await screen.findByText("Jednostkowe Sprawozdanie Finansowe AB S.A.");
+      expect(title).toHaveClass("today-row-title");
+      expect(container.querySelector(".today-row-title")?.textContent).not.toContain(".xhtml");
+      // The filename moves to a keyboard-reachable secondary link line.
+      const link = screen.getByRole("button", {
+        name: /Y24_25_Sprawozdanie jednostkowe\.xhtml/,
+      });
+      expect(link).toHaveClass("today-row-doc-link");
+    });
+
+    it("renders a filename-only autopilot title as generic statement + filename link", async () => {
+      appTestState.autopilotRunsResponse = [
+        {
+          ...baseAutopilotRun,
+          id: "run_fileonly_1",
+          summaryText: "New report processed.",
+          reportDocumentTitle: "2410_Passus_2023_PSSF_MSSF_skrócone_PL-sig.pdf",
+        },
+      ];
+
+      const { container } = renderApp({ section: "Today" });
+
+      // Filename-only → the generic summary is the statement; the filename links out.
+      const title = await screen.findByText("New report processed.");
+      expect(title).toHaveClass("today-row-title");
+      expect(container.querySelector(".today-row-title")?.textContent).not.toContain(".pdf");
+      expect(
+        screen.getByRole("button", { name: /2410_Passus_2023_PSSF_MSSF_skrócone_PL-sig\.pdf/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("a signal attention row states its own filing title, never the bare category", async () => {
+      appTestState.attentionEventsResponse = [
+        attentionEvent({
+          id: "attn_titled_1",
+          evidenceTitle: "Wstępne wyniki produkcyjne i sprzedażowe za czerwiec 2026",
+        }),
+      ];
+      appTestState.alertRulesResponse = [signalRule];
+
+      renderApp({ section: "Today" });
+
+      expect(
+        await screen.findByText("Wstępne wyniki produkcyjne i sprzedażowe za czerwiec 2026"),
+      ).toBeInTheDocument();
+    });
+
+    it("splits a filename off an attention row's evidence title (ABE-style completion row)", async () => {
+      appTestState.attentionEventsResponse = [
+        attentionEvent({
+          id: "attn_glued_1",
+          evidenceTitle:
+            "Y24_25_Sprawozdanie jednostkowe.xhtmlJednostkowe Sprawozdanie Finansowe AB S.A.",
+        }),
+      ];
+      appTestState.alertRulesResponse = [signalRule];
+
+      const { container } = renderApp({ section: "Today" });
+
+      const title = await screen.findByText("Jednostkowe Sprawozdanie Finansowe AB S.A.");
+      expect(title).toHaveClass("today-row-title");
+      expect(
+        screen.getByRole("button", { name: /Y24_25_Sprawozdanie jednostkowe\.xhtml/ }),
+      ).toHaveClass("today-row-doc-link");
+      expect(container.querySelector(".today-row-title")?.textContent).not.toContain(".xhtml");
+    });
+
+    it("a reconciliation row names the missed report and the registry that caught it", async () => {
+      appTestState.attentionEventsResponse = [
+        attentionEvent({
+          id: "attn_recon_1",
+          ruleId: null,
+          triggerType: "source_reconciliation",
+          evidenceType: "source_reconciliation",
+          evidenceRef: "recon_1",
+          severity: "urgent",
+          evidenceTitle: "Raport bieżący 15/2026 — zawarcie znaczącej umowy",
+          evidenceDetail: "GPW ESPI/EBI",
+        }),
+      ];
+
+      renderApp({ section: "Today" });
+
+      expect(
+        await screen.findByText(
+          "Raport bieżący 15/2026 — zawarcie znaczącej umowy — missed by the primary source, backfilled from GPW ESPI/EBI",
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("alert-rule origin indicator (owner dogfooding 2026-07-23)", () => {
+    it("marks a rule-fired event row and leaves a system reconciliation row unmarked", async () => {
+      appTestState.attentionEventsResponse = [
+        attentionEvent({ id: "attn_from_rule", evidenceTitle: "Dywidenda 2026" }),
+        attentionEvent({
+          id: "attn_system",
+          companyId: initialCompanies[1].id,
+          ruleId: null,
+          triggerType: "source_reconciliation",
+          evidenceType: "source_reconciliation",
+          evidenceRef: "recon_sys",
+          evidenceTitle: "Raport bieżący 9/2026",
+          evidenceDetail: "GPW ESPI/EBI",
+        }),
+      ];
+      appTestState.alertRulesResponse = [signalRule];
+
+      const { container } = renderApp({ section: "Today" });
+      await findCategoryRow(container as HTMLElement, "attention");
+
+      const rows = [...container.querySelectorAll('li[data-category="attention"]')] as HTMLElement[];
+      const ruleRow = rows.find((row) => within(row).queryByText("Dywidenda 2026")) as HTMLElement;
+      const systemRow = rows.find((row) =>
+        within(row).queryByText(/Raport bieżący 9\/2026/),
+      ) as HTMLElement;
+
+      expect(within(ruleRow).getByRole("img", { name: "From your alert rule" })).toBeInTheDocument();
+      expect(within(systemRow).queryByRole("img", { name: "From your alert rule" })).toBeNull();
+    });
+
+    it("hides the indicator on a mixed group header while each member keeps its own", async () => {
+      const user = userEvent.setup();
+      appTestState.attentionEventsResponse = [
+        attentionEvent({
+          id: "attn_mix_rule",
+          evidenceTitle: "Wezwanie do zapisywania akcji",
+          firedAt: "2026-06-11T09:00:00Z",
+        }),
+        attentionEvent({
+          id: "attn_mix_system",
+          ruleId: null,
+          triggerType: "source_reconciliation",
+          evidenceType: "source_reconciliation",
+          evidenceRef: "recon_mix",
+          evidenceTitle: "Raport bieżący 12/2026",
+          evidenceDetail: "GPW ESPI/EBI",
+          firedAt: "2026-06-10T09:00:00Z",
+        }),
+      ];
+      appTestState.alertRulesResponse = [signalRule];
+
+      const { container } = renderApp({ section: "Today" });
+      await findCategoryRow(container as HTMLElement, "attention");
+
+      const rows = [...container.querySelectorAll('li[data-category="attention"]')] as HTMLElement[];
+      expect(rows).toHaveLength(1);
+      const group = rows[0];
+      // Header: not every member is rule-fired → no indicator on the collapsed head.
+      const head = group.querySelector(".today-row-head") as HTMLElement;
+      expect(within(head).queryByRole("img", { name: "From your alert rule" })).toBeNull();
+
+      // Expanded: the rule-fired member carries its own indicator; the system one does not.
+      await user.click(within(group).getByRole("button", { name: "Details" }));
+      const members = [
+        ...group.querySelectorAll('[data-member-category="attention"]'),
+      ] as HTMLElement[];
+      const ruleMember = members.find((m) =>
+        within(m).queryByText("Wezwanie do zapisywania akcji"),
+      ) as HTMLElement;
+      const systemMember = members.find((m) =>
+        within(m).queryByText(/Raport bieżący 12\/2026/),
+      ) as HTMLElement;
+      expect(
+        within(ruleMember).getByRole("img", { name: "From your alert rule" }),
+      ).toBeInTheDocument();
+      expect(
+        within(systemMember).queryByRole("img", { name: "From your alert rule" }),
+      ).toBeNull();
+    });
+  });
+
   describe("autopilot run undo (ADR 0055 §4)", () => {
     it("shows Undo behind the detail, confirms two-step, calls the command, and shows the reverted state", async () => {
       const user = userEvent.setup();
@@ -672,32 +1067,239 @@ describe("Today autopilot detail — undo / dismiss / drift behind the expandabl
   });
 });
 
-describe("Today morning-briefing card (ADR 0068 decision 4, v0.54 §T5)", () => {
-  it("shows an empty state with no briefing yet, and Generate enqueues + refetches the result", async () => {
+describe("Today v0.60 — four counter tiles + per-category error strips (ADR 0087)", () => {
+  it("renders four tiles led by Pilne; a seeded urgent event lights the tile and the Pilne filter shows only urgent rows", async () => {
+    const user = userEvent.setup();
+    // A routine autopilot run plus one URGENT attention event (real payload
+    // severity, ADR 0087 dec. 2) — so the Pilne tile counts 1 and its filter keeps
+    // only the urgent attention row while hiding the routine autopilot row.
+    appTestState.autopilotRunsResponse = [{ ...baseAutopilotRun }];
+    appTestState.attentionEventsResponse = [
+      attentionEvent({ id: "attn_pilne_urgent_1", severity: "urgent" }),
+    ];
+    appTestState.alertRulesResponse = [signalRule];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+    const { container } = renderApp({ section: "Today" });
+    await screen.findByRole("button", { name: "Details" });
+
+    const tiles = [...container.querySelectorAll("[data-counter]")].map(
+      (el) => (el as HTMLElement).dataset.counter,
+    );
+    expect(tiles).toEqual(["urgent", "autopilot", "verify", "upcoming"]);
+
+    // The Pilne tile reflects the one urgent row.
+    const pilne = screen.getByRole("button", { name: /Urgent/ });
+    expect(within(pilne).getByText("1")).toBeInTheDocument();
+
+    await user.click(pilne);
+    expect(pilne).toHaveAttribute("aria-pressed", "true");
+    // Filtered to urgent: only the urgent attention row remains, the routine
+    // autopilot row is filtered out.
+    const urgentRows = [...container.querySelectorAll("li[data-category]")] as HTMLElement[];
+    expect(urgentRows).toHaveLength(1);
+    expect(urgentRows[0].dataset.category).toBe("attention");
+    expect(urgentRows[0].dataset.severity).toBe("urgent");
+
+    // Toggling off restores the full stream (both rows).
+    await user.click(pilne);
+    expect(container.querySelectorAll("li[data-category]").length).toBeGreaterThan(1);
+  });
+
+  it("shows a per-category error strip with retry and blocks the quiet state while errored (no false-quiet, ADR 0081 Q9)", async () => {
+    const user = userEvent.setup();
+    appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.reportSeasonUpcomingResponse = [];
+
+    let failClaims = true;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "list_claims_to_verify" && failClaims) {
+        throw new Error("boom");
+      }
+      return handleAppCommand(command as string, args as Record<string, unknown> | undefined);
+    });
+
+    renderApp({ section: "Today" });
+
+    // The errored category is visibly errored (typed, translated — never a raw
+    // `.message`), and the quiet state must not render alongside it.
+    expect(await screen.findByText("Couldn't load claims to verify.")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing needs your attention.")).not.toBeInTheDocument();
+
+    // Retry refetches only that category; on success the strip clears.
+    failClaims = false;
+    await user.click(screen.getByRole("button", { name: /Try again/ }));
+    await waitFor(() =>
+      expect(screen.queryByText("Couldn't load claims to verify.")).not.toBeInTheDocument(),
+    );
+  });
+});
+
+describe("Today v0.60 — config banner wired to source health (ADR 0087 dec. 5)", () => {
+  it("raises a banner for a failing (enabled + attention) source and its Diagnostics action opens Sources", async () => {
+    const user = userEvent.setup();
+    // Only the failing adapter, so exactly one banner (the minimal scenario's other
+    // adapters are healthy/off and must not raise one).
+    appTestState.sourceAdaptersResponse = [
+      makeSourceAdapter({
+        id: "bankier-market-rss",
+        displayName: "Bankier Giełda RSS",
+        sourceType: "public_media",
+        fetchMode: "rss",
+        visibility: "optional",
+        userConfigurable: true,
+        healthStatus: "attention",
+        enabled: true,
+        sourceUrl: "https://www.bankier.pl/rss/gielda.xml",
+        markets: ["GPW"],
+      }),
+    ];
+
+    renderApp({ section: "Today" });
+
+    // One banner, naming the source, with the translated "may be delayed" clause.
+    const banner = await screen.findByText(
+      /Bankier Giełda RSS.*isn't responding — signals may be delayed/,
+    );
+    expect(banner).toBeInTheDocument();
+
+    // Diagnostics jumps to the Sources surface.
+    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    expect(await screen.findByRole("heading", { name: "Sources" })).toBeInTheDocument();
+  });
+
+  it("raises no banner when every source is healthy, off, or merely not-refreshed", async () => {
+    appTestState.sourceAdaptersResponse = [
+      makeSourceAdapter({
+        id: "bankier-company-komunikaty",
+        displayName: "Bankier Company Komunikaty",
+        sourceType: "official_report",
+        fetchMode: "public_json",
+        visibility: "required",
+        userConfigurable: true,
+        healthStatus: "healthy",
+        enabled: true,
+        sourceUrl: "https://www.bankier.pl/x",
+        markets: ["GPW"],
+      }),
+      makeSourceAdapter({
+        id: "portal-analiz",
+        displayName: "Portal Analiz",
+        sourceType: "authenticated_research",
+        fetchMode: "authenticated",
+        visibility: "developer",
+        userConfigurable: false,
+        healthStatus: "off",
+        enabled: false,
+        sourceUrl: "https://portalanaliz.pl/",
+        markets: ["GPW"],
+      }),
+    ];
+
+    renderApp({ section: "Today" });
+    await screen.findByRole("button", { name: "Details" });
+    expect(screen.queryByText(/isn't responding/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Today v0.60 — cross-company routine aggregate + upcoming show-all (ADR 0087)", () => {
+  it("collapses >3 routine autopilot runs across companies into one ×K aggregate, expandable in place", async () => {
+    const user = userEvent.setup();
+    appTestState.autopilotRunsResponse = Array.from({ length: 5 }, (_, i) => ({
+      ...baseAutopilotRun,
+      id: `run_agg_${i}`,
+      companyId: `co_agg_${i}`,
+    }));
+    appTestState.attentionEventsResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+    const { container } = renderApp({ section: "Today" });
+
+    await screen.findByRole("button", { name: "Details" });
+    // The five routine runs collapse into ONE autopilot row.
+    const rows = [...container.querySelectorAll('li[data-category="autopilot"]')] as HTMLElement[];
+    expect(rows).toHaveLength(1);
+    const aggregate = rows[0];
+    expect(within(aggregate).getByText(/×5/)).toBeInTheDocument();
+    // The counter still counts the underlying rows, not the collapsed 1.
+    const autopilotTile = screen.getByRole("button", { name: /Autopilot/ });
+    expect(within(autopilotTile).getByText("5")).toBeInTheDocument();
+    // Members are hidden until expanded — then one per company, in place.
+    expect(aggregate.querySelectorAll('[data-member-category="autopilot"]')).toHaveLength(0);
+    await user.click(within(aggregate).getByRole("button", { name: "Details" }));
+    expect(aggregate.querySelectorAll('[data-member-category="autopilot"]')).toHaveLength(5);
+    // Header + five members each expose one Review, so j/k traverses all six.
+    expect(aggregate.querySelectorAll('[data-today-row="true"]').length).toBe(6);
+  });
+
+  it("caps upcoming at 6 and links to the Report-season surface with the full count", async () => {
+    const user = userEvent.setup();
+    appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = Array.from({ length: 8 }, (_, i) => ({
+      companyId: `co_up_${i}`,
+      qualifiedTicker: `GPW:U${i}`,
+      displayName: `Company ${i}`,
+      eventKey: `q1-${i}`,
+      eventDate: `2026-08-${String(10 + i).padStart(2, "0")}`,
+      eventTime: null,
+      title: `Q1 report ${i}`,
+      preparationStatus: "upcoming",
+    }));
+    const { container } = renderApp({ section: "Today" });
+
+    const showAll = await screen.findByRole("button", {
+      name: /Show all upcoming reports \(8\)/,
+    });
+    // Cap 6 (of 8) → one cross-company routine aggregate; expanding shows the 6
+    // capped members, and the "Show all (8)" link carries the full count.
+    await findCategoryRow(container as HTMLElement, "upcoming");
+    const upcomingRows = [...container.querySelectorAll('li[data-category="upcoming"]')] as HTMLElement[];
+    expect(upcomingRows).toHaveLength(1);
+    await user.click(within(upcomingRows[0]).getByRole("button", { name: "Details" }));
+    expect(upcomingRows[0].querySelectorAll('[data-member-category="upcoming"]')).toHaveLength(6);
+
+    await user.click(showAll);
+    expect(await screen.findByRole("heading", { name: "Report Season" })).toBeInTheDocument();
+  });
+});
+
+describe("Today morning-briefing strip (ADR 0087 dec. 5 mockup amendment)", () => {
+  it("shows a no-briefing summary, and Generate enqueues + reveals the composed strip", async () => {
     const user = userEvent.setup();
     appTestState.morningBriefingResponse = null;
-    const { container } = renderApp({ section: "Today" });
+    renderApp({ section: "Today" });
 
     expect(
       await screen.findByText("No briefing yet. Generate one to see what's changed."),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Generate briefing" }));
+    await user.click(screen.getByRole("button", { name: "Generate" }));
 
     expect(invoke).toHaveBeenCalledWith("generate_morning_briefing");
-    await waitFor(() => {
-      expect(container.querySelector(".today-briefing-items")).not.toBeNull();
-    });
+    // The empty summary is replaced by the composed strip's Expand affordance.
+    await screen.findByRole("button", { name: /Expand/ });
     expect(
       screen.queryByText("No briefing yet. Generate one to see what's changed."),
     ).not.toBeInTheDocument();
   });
 
-  it("renders the deterministic item list (the only briefing mode after ADR 0084) and Review opens the item's evidence", async () => {
+  it("expands the strip in place to the deterministic item list, and Review opens the item's evidence", async () => {
+    const user = userEvent.setup();
     appTestState.morningBriefingResponse = morningBriefing({
       items: [morningBriefingItem({ title: "Profit warning issued", detail: "Profit warning" })],
     });
-    renderApp({ section: "Today" });
+    const { container } = renderApp({ section: "Today" });
+
+    // The list is hidden until the strip is expanded (ADR 0087 hierarchy tier 3).
+    expect(container.querySelector(".today-briefing-items")).toBeNull();
+    await user.click(await screen.findByRole("button", { name: /Expand/ }));
 
     const row = (await screen.findByText("Profit warning issued — Profit warning")).closest("li");
     expect(row).not.toBeNull();
@@ -706,5 +1308,253 @@ describe("Today morning-briefing card (ADR 0068 decision 4, v0.54 §T5)", () => 
 
     // `signal` items open the evidence company's Feed (the company workspace).
     expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+  });
+});
+
+// ADR 0081 mid-milestone live checkpoint (owner's real DB, 2026-07-23): a
+// systemic cause (many companies each missing an official-report reconciliation)
+// rendered as a wall of separate PILNE rows. While still urgent, that one cause
+// must read as ONE alarm — the urgent same-cause aggregate + a group-level
+// Dismiss all. (Aging separately demotes the events that go unacted past 72h;
+// that is the backend severity path, covered in storage::tests::severity.)
+describe("Today v0.60 fix — urgent systemic-cause aggregate + Dismiss all (ADR 0087 amendment 2026-07-23)", () => {
+  function reconciliationEvents(n: number, idPrefix: string) {
+    return Array.from({ length: n }, (_, i) =>
+      attentionEvent({
+        id: `${idPrefix}_${i}`,
+        companyId: `co_${idPrefix}_${i}`,
+        triggerType: "source_reconciliation",
+        evidenceType: "source_reconciliation",
+        ruleId: null,
+        severity: "urgent",
+        firedAt: `2026-06-${String(10 + i).padStart(2, "0")}T09:00:00Z`,
+      }),
+    );
+  }
+
+  function seedReconciliations(n: number, idPrefix: string) {
+    appTestState.autopilotRunsResponse = [];
+    appTestState.alertRulesResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+    appTestState.attentionEventsResponse = reconciliationEvents(n, idPrefix);
+  }
+
+  it("collapses 14 same-cause urgent reconciliations across companies into one leading PILNE aggregate", async () => {
+    const user = userEvent.setup();
+    seedReconciliations(14, "attn_rec");
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    // ONE leading urgent aggregate row, not 14 separate PILNE rows.
+    const rows = [...container.querySelectorAll('li[data-category="attention"]')] as HTMLElement[];
+    expect(rows).toHaveLength(1);
+    const aggregate = rows[0];
+    expect(aggregate.dataset.severity).toBe("urgent");
+    expect(within(aggregate).getByText(/×14/)).toBeInTheDocument();
+    // It keeps the PILNE severity chip (urgent aggregates lead + still shout).
+    expect(within(aggregate).getByText("Urgent")).toBeInTheDocument();
+
+    // Members expand in place — one per company, each with its own Review.
+    expect(aggregate.querySelectorAll('[data-member-category="attention"]')).toHaveLength(0);
+    await user.click(within(aggregate).getByRole("button", { name: "Details" }));
+    expect(aggregate.querySelectorAll('[data-member-category="attention"]')).toHaveLength(14);
+  });
+
+  it("keeps a different urgent cause (an insider signal) as its own row, never merged", async () => {
+    seedReconciliations(2, "attn_mix_rec");
+    // Add two insider (signal_category) urgent events across two more companies:
+    // a DIFFERENT cause, so it must NOT fold into the reconciliation aggregate.
+    appTestState.alertRulesResponse = [signalRule];
+    appTestState.attentionEventsResponse = [
+      ...reconciliationEvents(2, "attn_mix_rec"),
+      attentionEvent({
+        id: "attn_mix_ins_0",
+        companyId: "co_mix_ins_0",
+        triggerType: "signal_category",
+        ruleId: signalRule.id,
+        severity: "urgent",
+        firedAt: "2026-06-20T09:00:00Z",
+      }),
+    ];
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    const rows = [...container.querySelectorAll('li[data-category="attention"]')] as HTMLElement[];
+    // The reconciliation pair collapses (×2 aggregate); the lone insider stays a row.
+    const aggregate = rows.find((row) => within(row).queryByText(/×2/));
+    const insider = rows.find((row) => within(row).queryByText(/×2/) === null);
+    expect(aggregate).toBeTruthy();
+    expect(insider).toBeTruthy();
+    expect(rows).toHaveLength(2);
+  });
+
+  it("Dismiss all on an attention aggregate two-step-confirms and dismisses every member event", async () => {
+    const user = userEvent.setup();
+    seedReconciliations(3, "attn_da");
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    const aggregate = container.querySelector('li[data-category="attention"]') as HTMLElement;
+    await user.click(within(aggregate).getByRole("button", { name: "Details" }));
+
+    // Two-step (like Undo): the first click reveals the confirm, the second fires.
+    await user.click(within(aggregate).getByRole("button", { name: "Dismiss all" }));
+    await user.click(within(aggregate).getByRole("button", { name: "Dismiss all" }));
+
+    for (let i = 0; i < 3; i += 1) {
+      expect(invoke).toHaveBeenCalledWith(
+        "dismiss_attention_event",
+        expect.objectContaining({ input: expect.objectContaining({ id: `attn_da_${i}` }) }),
+      );
+    }
+    // Every member dismissed → the aggregate empties out of the stream.
+    await waitFor(() =>
+      expect(container.querySelector('li[data-category="attention"]')).toBeNull(),
+    );
+  });
+
+  it("folds an AGED (notable) same-cause wall into one Uwaga aggregate carrying Dismiss all", async () => {
+    const user = userEvent.setup();
+    // 14 reconciliations that aged out of urgent (backend demoted them to notable):
+    // a wall that merely changed color must still collapse to ONE notable line.
+    appTestState.autopilotRunsResponse = [];
+    appTestState.alertRulesResponse = [];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+    appTestState.attentionEventsResponse = reconciliationEvents(14, "attn_aged").map((event) => ({
+      ...event,
+      severity: "notable" as const,
+    }));
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    const rows = [...container.querySelectorAll('li[data-category="attention"]')] as HTMLElement[];
+    expect(rows).toHaveLength(1);
+    const aggregate = rows[0];
+    expect(aggregate.dataset.severity).toBe("notable");
+    expect(within(aggregate).getByText(/×14/)).toBeInTheDocument();
+    // Notable → the "Notable" chip (Polish: Uwaga), never the urgent PILNE chip.
+    expect(within(aggregate).getByText("Notable")).toBeInTheDocument();
+    expect(within(aggregate).queryByText("Urgent")).toBeNull();
+
+    // The attention aggregate still carries the two-step Dismiss all.
+    await user.click(within(aggregate).getByRole("button", { name: "Details" }));
+    await user.click(within(aggregate).getByRole("button", { name: "Dismiss all" }));
+    await user.click(within(aggregate).getByRole("button", { name: "Dismiss all" }));
+    expect(invoke).toHaveBeenCalledWith(
+      "dismiss_attention_event",
+      expect.objectContaining({ input: expect.objectContaining({ id: "attn_aged_0" }) }),
+    );
+    await waitFor(() =>
+      expect(container.querySelector('li[data-category="attention"]')).toBeNull(),
+    );
+  });
+});
+
+// Archive view (owner 2026-07-23: "dwa widoki? ten co teraz i drugi Archiwum").
+// Dismiss stays the acknowledgement — nothing is deleted; the Archive is the
+// read-only history of DISMISSED attention events.
+describe("Today Archive view (owner 2026-07-23)", () => {
+  function seedArchive(
+    dismissed: ReturnType<typeof attentionEvent>[],
+    active: ReturnType<typeof attentionEvent>[] = [],
+  ) {
+    appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = [...active, ...dismissed];
+    appTestState.alertRulesResponse = [signalRule];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+  }
+
+  it("renders a two-state Active | Archive switch that defaults to Active (aria-pressed toggles)", async () => {
+    seedArchive([]);
+    const user = userEvent.setup();
+    renderApp({ section: "Today" });
+
+    const activeSeg = await screen.findByRole("button", { name: "Active" });
+    const archiveSeg = screen.getByRole("button", { name: "Archive" });
+    expect(activeSeg).toHaveAttribute("aria-pressed", "true");
+    expect(archiveSeg).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(archiveSeg);
+    expect(archiveSeg).toHaveAttribute("aria-pressed", "true");
+    expect(activeSeg).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(activeSeg);
+    expect(activeSeg).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("Archive lists dismissed events (with their snapshot title) and hides the active-stream chrome", async () => {
+    seedArchive(
+      [
+        attentionEvent({
+          id: "attn_archived_1",
+          dismissed: true,
+          seen: true,
+          evidenceTitle: "Zarchiwizowany komunikat spółki",
+        }),
+      ],
+      [attentionEvent({ id: "attn_active_1", evidenceTitle: "Aktywny komunikat spółki" })],
+    );
+    const user = userEvent.setup();
+    renderApp({ section: "Today" });
+
+    await user.click(await screen.findByRole("button", { name: "Archive" }));
+
+    // The dismissed event's snapshot title renders in the read-only archive…
+    expect(await screen.findByText("Zarchiwizowany komunikat spółki")).toBeInTheDocument();
+    // …the archive is honestly scoped to attention events…
+    expect(screen.getByText("Dismissed attention events")).toBeInTheDocument();
+    // …the counters column (an active-stream concern) is gone…
+    expect(screen.queryByRole("group", { name: "Filter the stream" })).toBeNull();
+    // …and an active (non-dismissed) event never appears in the archive.
+    expect(screen.queryByText("Aktywny komunikat spółki")).toBeNull();
+    // The archive row carries no Dismiss control (already dismissed).
+    const archiveRow = document.querySelector('li[data-category="attention"]') as HTMLElement;
+    expect(within(archiveRow).queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  it("the active stream is unaffected — a dismissed event never appears in Active", async () => {
+    seedArchive(
+      [attentionEvent({ id: "attn_archived_2", dismissed: true, seen: true, evidenceTitle: "Odrzucone" })],
+      [attentionEvent({ id: "attn_active_2", evidenceTitle: "Aktywne" })],
+    );
+    renderApp({ section: "Today" });
+
+    expect(await screen.findByText("Aktywne")).toBeInTheDocument();
+    expect(screen.queryByText("Odrzucone")).toBeNull();
+  });
+
+  it("raises no toast from archive data (dismissed events never reach the toast wiring)", async () => {
+    // A dismissed URGENT event — would toast if it leaked into the active toast set.
+    seedArchive([
+      attentionEvent({
+        id: "attn_archived_urgent",
+        severity: "urgent",
+        dismissed: true,
+        seen: true,
+        evidenceTitle: "Odrzucony pilny alert",
+      }),
+    ]);
+    const user = userEvent.setup();
+    const { container } = renderApp({ section: "Today" });
+
+    await user.click(await screen.findByRole("button", { name: "Archive" }));
+    await screen.findByText("Odrzucony pilny alert");
+    // No toast fired — not in active, not from opening the archive.
+    expect(container.querySelector(".ui-toast-message")).toBeNull();
+  });
+
+  it("shows a quiet empty state when the archive is empty", async () => {
+    seedArchive([], [attentionEvent({ id: "attn_active_3", evidenceTitle: "Aktywne" })]);
+    const user = userEvent.setup();
+    renderApp({ section: "Today" });
+
+    await user.click(await screen.findByRole("button", { name: "Archive" }));
+    expect(await screen.findByText("Archive is empty.")).toBeInTheDocument();
   });
 });

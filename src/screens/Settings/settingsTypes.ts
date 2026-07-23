@@ -1,5 +1,14 @@
 import type { FormEvent } from "react";
-import type { AccentPalette, AppLocale, CredentialStatus, FeedPruneResult, LicenseStatus, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
+import type {
+  AccentPalette,
+  AppLocale,
+  CredentialStatus,
+  FeedPruneResult,
+  LicenseStatus,
+  ShortcutBindingSetting,
+  Theme,
+  UserSettings,
+} from "../../api/types";
 import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 
 export type SettingsScreenProps = {
@@ -27,7 +36,10 @@ export type SettingsScreenProps = {
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
   onBackfillYearsChange: (backfillYears: number) => void;
   onMcpPortChange: (port: number) => void;
-  onShortcutBindingsChange: (shortcutBindings: Record<string, ShortcutBindingSetting>) => void;
+  onMcpWritesEnabledChange: (enabled: boolean) => void;
+  onShortcutBindingsChange: (
+    shortcutBindings: Record<string, ShortcutBindingSetting>,
+  ) => void;
   onYoutubeTranscriptionModelChange: (model: string) => void;
   onYoutubeTranscriptionTimeoutChange: (timeoutSeconds: number) => void;
   onLogLevelChange: (level: string) => void;
@@ -48,7 +60,10 @@ export type SettingsScreenProps = {
   onClearGeminiApiKey: () => void;
   onOpenGeminiApiKeyPage: () => void;
   onImportApplied: () => void;
-  formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
+  formatTimestamp: (
+    value: string | null | undefined,
+    emptyLabel?: string,
+  ) => string;
   formatPollInterval: (seconds: number) => string;
   formatGeminiModel: (value: string | null | undefined) => string;
   formatCredentialConfigured: (status: CredentialStatus | null) => string;

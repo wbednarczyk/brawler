@@ -54,6 +54,17 @@ export type TodayPulse = {
   dismissAttentionEventRow: (id: string) => void;
   /** Optimistically flip `seen`, then persist it. Idempotent — safe to call on every open. */
   markAttentionEventSeenRow: (id: string) => void;
+  /** Refetch the pinned-companies claims (per-category error-strip retry, ADR 0087). */
+  retryClaims: () => void;
+  /**
+   * DISMISSED attention events, newest-first — the read-only Archive view (owner
+   * 2026-07-23). Dismiss is an acknowledgement, never a delete: nothing is lost.
+   * Loaded lazily (`loadArchive`) so an ordinary active session never pays for it.
+   */
+  archivedAttentionEvents: AttentionEvent[];
+  archiveLoading: boolean;
+  /** Fetch the dismissed archive on demand (idempotent per-open; re-runs a refetch). */
+  loadArchive: () => void;
 };
 
 /**
@@ -70,6 +81,9 @@ export function useTodayPulse(pinnedCompanyIds: string[], companies: Company[]):
   const [claims, setClaims] = useState<PulseClaim[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
+  // Bumped by `retryClaims` to re-run the claims effect on demand (error retry).
+  const [claimsNonce, setClaimsNonce] = useState(0);
+  const retryClaims = useCallback(() => setClaimsNonce((n) => n + 1), []);
 
   const [autopilotRuns, setAutopilotRuns] = useState<AutopilotRun[]>([]);
   const [autopilotLoading, setAutopilotLoading] = useState(false);
@@ -182,6 +196,35 @@ export function useTodayPulse(pinnedCompanyIds: string[], companies: Company[]):
     });
   }, []);
 
+  // Archive (dismissed events), loaded LAZILY: the effect runs only once the view
+  // switches to Archive (archiveNonce > 0), so an active-only session never fetches
+  // it. `includeDismissed` returns both states; keep only the dismissed ones,
+  // newest-first (the backend already orders by firedAt desc). Independent state,
+  // so archive data NEVER reaches the toast wiring (which reads `attentionEvents`).
+  const [archivedAttentionEvents, setArchivedAttentionEvents] = useState<AttentionEvent[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveNonce, setArchiveNonce] = useState(0);
+  const loadArchive = useCallback(() => setArchiveNonce((n) => n + 1), []);
+
+  useEffect(() => {
+    if (archiveNonce === 0) return;
+    let cancelled = false;
+    setArchiveLoading(true);
+    listAttentionEvents({ companyId: null, includeDismissed: true })
+      .then((events) => {
+        if (!cancelled) setArchivedAttentionEvents(events.filter((event) => event.dismissed));
+      })
+      .catch(() => {
+        if (!cancelled) setArchivedAttentionEvents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setArchiveLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [archiveNonce]);
+
   // Key on the joined id list so the effect re-runs when the pin set changes,
   // not on every render (settings hands us a fresh array each time).
   const pinnedKey = pinnedCompanyIds.join(",");
@@ -235,7 +278,7 @@ export function useTodayPulse(pinnedCompanyIds: string[], companies: Company[]):
     return () => {
       cancelled = true;
     };
-  }, [pinnedKey, companyById]);
+  }, [pinnedKey, companyById, claimsNonce]);
 
   return {
     season,
@@ -252,5 +295,9 @@ export function useTodayPulse(pinnedCompanyIds: string[], companies: Company[]):
     attentionRulesById,
     dismissAttentionEventRow,
     markAttentionEventSeenRow,
+    retryClaims,
+    archivedAttentionEvents,
+    archiveLoading,
+    loadArchive,
   };
 }

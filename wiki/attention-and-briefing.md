@@ -1,77 +1,88 @@
-# Attention alerts and the morning briefing
+# Attention: the Today stream, alerts, and the morning briefing
 
-Brawler can tell you **what deserves a look** instead of leaving you to
-re-scan everything. Two things work together: **alert rules** you set up once,
-and the **morning briefing** at the top of Today that sums up what changed. Both
-are **decision support only** — they state facts and link to the evidence, and
-never tell you to buy, sell, or hold.
+Brawler tells you **what deserves a look** instead of leaving you to re-scan
+everything. Since v0.60 the **Today screen is a single prioritized attention
+stream**: everything that happened lands in one list, ordered by how much it
+matters — with repeats folded together so ten similar events read as one line,
+not ten. Everything here is **decision support only** — facts with links to
+evidence, never buy/sell/hold.
+
+## How the stream decides what leads
+
+Every item carries one of three **importance levels**, assigned by the app
+(you never configure this):
+
+- **PILNE (urgent)** — leads the stream with a red edge: insider transactions,
+  profit warnings, auditor concerns, a report your primary source missed.
+- **UWAGA (notable)** — below urgent, amber edge: failed autopilot runs, fired
+  price alerts, dividends/meetings you asked to be alerted about, and claims
+  **overdue** for verification.
+- **Routine** — dimmed, at the bottom: successful report processing, upcoming
+  report dates.
+
+**Urgency ages.** An urgent item you haven't acted on for **3 days** stops
+shouting — it demotes to notable. Nothing is hidden or deleted; it just no
+longer outranks today's news.
+
+**Repeats fold together.** Events of the same kind collapse: several for one
+company become one row with an **×N** count, and the same cause across many
+companies becomes one row with **×N spółek** (urgent folds from 2 companies,
+others from 4). Expand the row in place to see every member — each keeps its
+own **Przejrzyj** (Review). Attention groups also carry **Odrzuć wszystkie**
+(Dismiss all, with a confirm step) so a systemic burst clears in one action.
+
+## Archiwum
+
+W nagłówku Dziś przełącznik **Aktywne | Archiwum** otwiera drugi, **tylko do
+odczytu** widok: **Archiwum** odrzuconych zdarzeń uwagi. Odrzucenie (**Odrzuć**)
+jest **potwierdzeniem, nie usunięciem** — nic nie znika. Archiwum pokazuje te
+zdarzenia od najnowszego, z tym samym układem wiersza (waga, spółka, tytuł,
+znacznik reguły alertu), ale bez akcji odrzucania; **Przejrzyj** służy tylko do
+przejścia do dowodu. Puste archiwum mówi wprost: „Archiwum jest puste." Na razie
+(v0.60) archiwum obejmuje **tylko zdarzenia uwagi** (nie przebiegi autopilota);
+przywracania (cofnięcia odrzucenia) celowo jeszcze nie ma.
+
+## Counters and filters
+
+The right-hand tiles — **Pilne / Autopilot / Do weryfikacji / Nadchodzące
+raporty** — show live counts; click one to filter the stream to that category,
+click again to clear.
+
+## App-level conditions get one banner
+
+When something is wrong with the app itself — e.g. a source hasn't responded
+for days — Today shows **one dismissible banner** above the stream (with a
+Diagnostyka shortcut), instead of repeating the condition on every row.
 
 ## The morning briefing
 
-Open **Today**. At the very top sits the **morning briefing** — a short answer
-to "what changed in my companies, and what needs doing?". It pulls together, for
-your tracked companies:
-
-- **new typed signals** since your last briefing (insider trades, dividends,
-  profit warnings…),
-- **autopilot runs** that fetched and read a new report,
-- **claims due** for verification,
-- **upcoming report dates**, and
-- **alerts that fired**.
-
-Each line links straight to its evidence — click it to jump to the signal, the
-run, or the price context behind it.
-
-**The briefing is deterministic** — a structured list composed from your data (new reports, signals, due claims), no AI involved and no keys needed.
-
-**Refreshing it.** Brawler composes one **automatically once a day** while the
-app is open. You can also press **Generate briefing** any time to recompose it
-on the spot.
+The **Poranny przegląd** strip sits above the stream: one line with a
+timestamp and grouped counts of what changed since the last briefing (new
+signals, autopilot runs, claims due, upcoming reports, fired alerts). Expand it
+for the full list — every entry click-throughs to its evidence. It is
+**deterministic** — composed from your data, no AI, no keys. One composes
+automatically each day while the app is open; **Wygeneruj** recomposes it on
+demand.
 
 ## Alert rules
 
 An **alert rule** says *what you want to be told about*. Set them up in
-**Alerts** (left sidebar, Library group). Each rule has three parts:
+**Alerts** (left sidebar, Library group): a **trigger** (a signal category, an
+autopilot run completing, a price entering your range or hitting a 52-week
+low), a **scope** (company or watchlist), and an on/off switch. Preset chips
+cover the common cases. A rule never fires twice for the same thing and alerts
+at most once a day.
 
-1. **Trigger** — one of:
-   - a **signal category** (e.g. any insider transaction, any profit warning),
-   - an **autopilot run completing** for a company, or
-   - a **price condition**: the price **enters a range you set** (a low and a
-     high), or reaches a **52-week low**.
-2. **Scope** — a **single company** or a whole **watchlist**.
-3. **On / off** — disable a rule to silence it without deleting it.
+## Pop-ups (toasts) are pointers, not the inbox
 
-Start from the **preset rule chips** for the common cases, pick the scope, and
-for a price range type or drag the **min/max** values. Price rules are checked
-against the daily prices on each pull. You can delete a rule (with an undo), and
-review recently **fired alerts** on the same screen.
-
-## Where fired alerts show up
-
-When a rule fires, Brawler records an **attention event** tied to the exact
-thing that set it off. You see it in two places:
-
-- A **pop-up alert** (toast) in the corner, which you can **click through** to
-  the evidence, or dismiss.
-- The **Today attention list**, where fired alerts sit in the stream **grouped
-  by company**. Each has a **Review** action (marks it seen and opens the
-  evidence) and a **Dismiss**.
-
-An alert **never fires twice for the same thing** — re-fetching the same filing
-won't re-alert you — and each rule alerts at most **once a day**.
+The stream is the system of record. A corner pop-up only announces that
+something **urgent** just landed — click it to jump to the row, or dismiss it;
+nothing is lost either way (dismissing the row also clears its pop-up and vice
+versa). Notable events show a brief fading pop-up at most; routine events never
+pop up. The stack is capped and never covers buttons you need.
 
 ## A note on scope
 
-Attention routing is **in-app only** for now: alerts live inside Brawler, not as
-operating-system notifications (that may come later). Everything stays **local**
-on your machine, and every alert is a **fact with a link** — never advice.
-
----
-
-### A small quality-of-life note: confirmations
-
-Around the app, when you kick off something that runs in the background — a
-**source refresh**, an **import**, or starting an **AI digest or brief** —
-Brawler now confirms it with a brief **pop-up** in the corner that fades on its
-own. It's just reassurance that the action started or finished; the detailed
-result still appears where it always did.
+Attention routing is **in-app only** for now: alerts live inside Brawler, not
+as operating-system notifications. Everything stays **local**, and every alert
+is a **fact with a link** — never advice.

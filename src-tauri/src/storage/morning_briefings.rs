@@ -151,8 +151,11 @@ fn item_type_rank(item_type: &str) -> u8 {
 /// date, used only as the fallback domain date for undated items. Event-like
 /// items (signals, completed runs, fired alerts) are included only when their
 /// domain date is **strictly after** `since`; claims-due and upcoming reports are
-/// a current-state snapshot. Ordering is by domain date, then a stable
-/// (type, company, evidence-ref) tiebreak — never `created_at`.
+/// a current-state snapshot. Items are deduped to at most one per
+/// (company, type, evidence-ref) — keeping the newest by domain date (ADR 0087
+/// dec. 1) — then ordered by domain date, then a stable (type, company,
+/// evidence-ref) tiebreak — never `created_at`. `title`/`detail` carry only
+/// verbatim source data or typed codes/tokens, never composed prose (dec. 4).
 pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> ComposedBriefing {
     let since10 = date10(since);
     let today10 = date10(today);
@@ -179,7 +182,9 @@ pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> 
             evidence_type: "company_signal".to_owned(),
             evidence_ref: signal.id.clone(),
             title: signal.title.clone(),
-            detail: Some(signal.category_display_name.clone()),
+            // detail = the raw category CODE (typed); the frontend translates it
+            // via its signal-category display formatter (ADR 0087 dec. 4).
+            detail: Some(signal.category.clone()),
         });
     }
 
@@ -199,8 +204,11 @@ pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> 
             citation_key: String::new(),
             evidence_type: "attention_event".to_owned(),
             evidence_ref: event.id.clone(),
-            title: format!("Alert fired: {}", event.trigger_type),
-            detail: Some(format!("{} · {}", event.trigger_type, event.evidence_type)),
+            // Typed codes only (ADR 0087 dec. 4): title = trigger_type code,
+            // detail = evidence_type code. The frontend maps both to localized
+            // labels — the backend never composes the "Alert fired: a · b" prose.
+            title: event.trigger_type.clone(),
+            detail: Some(event.evidence_type.clone()),
         });
     }
 
@@ -220,10 +228,14 @@ pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> 
             citation_key: String::new(),
             evidence_type: "autopilot_run".to_owned(),
             evidence_ref: run.id.clone(),
+            // title = the run's summary_text AS STORED (a typed token stream for
+            // new runs; legacy prose rows pass through — the frontend reads both
+            // tolerantly). The `report_processed` fallback is itself a typed token
+            // that renders "New report processed." — never English prose here.
             title: run
                 .summary_text
                 .clone()
-                .unwrap_or_else(|| "Autopilot run completed".to_owned()),
+                .unwrap_or_else(|| "report_processed".to_owned()),
             detail: Some(run.status.clone()),
         });
     }
@@ -235,8 +247,11 @@ pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> 
             .as_deref()
             .map(date10)
             .unwrap_or_else(|| today10.clone());
+        // detail = a typed due token `due:<period_type>:<fiscal_year>` (ADR 0087
+        // dec. 4); the frontend parses and localizes it (and tolerates the legacy
+        // "Due <period> <year>" prose on older stored rows).
         let detail = match (claim.due_period_type.as_deref(), claim.due_fiscal_year) {
-            (Some(period), Some(year)) => Some(format!("Due {period} {year}")),
+            (Some(period), Some(year)) => Some(format!("due:{period}:{year}")),
             _ => None,
         };
         items.push(ComposedBriefingItem {
@@ -264,6 +279,33 @@ pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> 
             detail: Some(entry.qualified_ticker.clone()),
         });
     }
+
+    // Dedup (ADR 0087 dec. 1): at most one item per (company, type, evidence-ref).
+    // A gather that surfaces the same evidence twice (e.g. a join fan-out, or the
+    // same condition stated per row) collapses to a single item, keeping the
+    // newest by domain date. Runs before ordering; the sort below re-establishes
+    // deterministic order regardless of collapse.
+    let mut deduped: Vec<ComposedBriefingItem> = Vec::with_capacity(items.len());
+    let mut index_by_key: std::collections::HashMap<(String, &'static str, String), usize> =
+        std::collections::HashMap::new();
+    for item in items {
+        let key = (
+            item.company_id.clone(),
+            item.item_type,
+            item.evidence_ref.clone(),
+        );
+        match index_by_key.get(&key) {
+            Some(&existing) if item.domain_date > deduped[existing].domain_date => {
+                deduped[existing] = item;
+            }
+            Some(_) => {}
+            None => {
+                index_by_key.insert(key, deduped.len());
+                deduped.push(item);
+            }
+        }
+    }
+    let mut items = deduped;
 
     // Order by domain date, then a stable (type, company, evidence-ref) tiebreak.
     items.sort_by(|a, b| {
@@ -527,6 +569,8 @@ mod tests {
             last_error: None,
             created_at: "2026-07-01T00:00:00Z".to_owned(),
             updated_at: updated.to_owned(),
+            severity: crate::storage::severity_for_autopilot_run(status),
+            report_document_title: None,
         }
     }
 
@@ -541,6 +585,9 @@ mod tests {
             fired_at: fired.to_owned(),
             seen: false,
             dismissed,
+            severity: crate::storage::severity_for_attention_event("signal_category", None),
+            evidence_title: None,
+            evidence_detail: None,
         }
     }
 
@@ -688,6 +735,107 @@ mod tests {
             .expect("a briefing exists");
         assert_eq!(latest.id, stored.id);
         assert_eq!(latest.items.first().unwrap().citation_key, "b1");
+    }
+
+    #[test]
+    fn briefing_items_carry_typed_payloads_never_composed_prose() {
+        // Guardrail (ADR 0087 dec. 4, guardrail-harvest of card abd456e): the
+        // composer writes ONLY verbatim source data or typed codes/tokens into
+        // `title`/`detail` — NEVER composed English prose. The frontend
+        // (`briefingItemText.ts`) is the sole place codes become localized copy.
+        // Adding a builder that bakes an English sentence into a persisted column
+        // is the defect class this pins shut.
+        let composed = compose_briefing(&full_sources(), "2026-07-10", "2026-07-15");
+        let by_type = |t: &str| {
+            composed
+                .items
+                .iter()
+                .find(|item| item.item_type == t)
+                .unwrap_or_else(|| panic!("expected one {t} item"))
+        };
+
+        let signal = by_type(BRIEFING_ITEM_SIGNAL);
+        assert_eq!(
+            signal.title, "Signal sig_new",
+            "signal title = its own title"
+        );
+        assert_eq!(
+            signal.detail.as_deref(),
+            Some("profit_warning"),
+            "signal detail = the raw category CODE, never its display name"
+        );
+
+        let attn = by_type(BRIEFING_ITEM_ATTENTION_EVENT);
+        assert_eq!(
+            attn.title, "signal_category",
+            "attention title = trigger_type code"
+        );
+        assert_eq!(
+            attn.detail.as_deref(),
+            Some("company_signal"),
+            "attention detail = evidence_type code"
+        );
+
+        let run = by_type(BRIEFING_ITEM_AUTOPILOT_RUN);
+        assert_eq!(
+            run.detail.as_deref(),
+            Some("succeeded"),
+            "autopilot detail = status code"
+        );
+
+        let claim = by_type(BRIEFING_ITEM_CLAIM_DUE);
+        assert_eq!(claim.title, "Claim claim_1", "claim title = its statement");
+        assert_eq!(
+            claim.detail.as_deref(),
+            Some("due:Q2:2026"),
+            "claim detail = typed due token due:<period>:<year>"
+        );
+
+        let report = by_type(BRIEFING_ITEM_REPORT_DATE);
+        assert_eq!(
+            report.detail.as_deref(),
+            Some("GPW:beta"),
+            "report detail = qualified ticker (source data)"
+        );
+
+        // The class assertion: no composed English prose in any column.
+        for item in &composed.items {
+            let blob = format!("{} {}", item.title, item.detail.clone().unwrap_or_default());
+            assert!(
+                !blob.contains("Alert fired"),
+                "no 'Alert fired:' prose: {blob}"
+            );
+            assert!(
+                !blob.contains("Due Q2 2026"),
+                "no 'Due <p> <y>' prose: {blob}"
+            );
+            assert!(!blob.contains(" · "), "no composed ' · ' join: {blob}");
+        }
+    }
+
+    #[test]
+    fn dedup_collapses_repeated_evidence_keeps_newest() {
+        // ADR 0087 dec. 1: at most one item per (company, type, evidence_ref).
+        // A gather that returns the same run twice (e.g. a join fan-out) collapses
+        // to a single row, keeping the newest by domain_date. Fails pre-dedup.
+        let sources = BriefingSources {
+            autopilot_runs: vec![
+                run("run_dup", "acme", "2026-07-13T09:00:00Z", "succeeded"),
+                run("run_dup", "acme", "2026-07-14T09:00:00Z", "succeeded"),
+            ],
+            ..BriefingSources::default()
+        };
+        let composed = compose_briefing(&sources, "2026-07-10", "2026-07-15");
+        let dup: Vec<&ComposedBriefingItem> = composed
+            .items
+            .iter()
+            .filter(|item| item.evidence_ref == "run_dup")
+            .collect();
+        assert_eq!(dup.len(), 1, "duplicate evidence collapses to one item");
+        assert_eq!(
+            dup[0].domain_date, "2026-07-14",
+            "dedup keeps the newest by domain date"
+        );
     }
 
     #[test]

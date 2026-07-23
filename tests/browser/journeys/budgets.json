@@ -4,7 +4,7 @@
   "journeys": {
     "J1": {
       "interactions": 7,
-      "screenTransitions": 5,
+      "screenTransitions": 6,
       "modalOpens": 1,
       "contextLosses": 1,
       "byProject": {}

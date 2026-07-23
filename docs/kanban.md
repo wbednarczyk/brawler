@@ -16,7 +16,7 @@ Active project tracking lives in **Radicle issues rendered by Radboard**, not in
 ## Radboard Conventions
 
 - Milestones: app version labels such as `milestone:v0.38.0`.
-- Epics: major capability issues labeled `epic`, one per milestone (owner-approved exception: `v0.59.0` carries two — AI-layer retirement `3579e69` + deterministic fundamentals `971aff6`).
+- Epics: major capability issues labeled `epic`, one per milestone (owner-approved exceptions: `v0.59.0` carried two — AI-layer retirement `3579e69` + deterministic fundamentals `971aff6`; `v0.60.0` carries two — Today re-invention `4f6ec2c` + MCP surface v2 `dc04eef`).
 - Tasks: reviewable work-slice issues linked to their epic with `parent:<epic-hex7>`.
 - Bugs: deferred bugs labeled `bug`, with `state:*`, `priority:*`, and an `area:*` label; link with `parent:<epic-hex7>` or `blocked:<bug-hex7>` when relevant.
 - Use repeated label flags only (never comma-joined), e.g. `area:fundamentals`, `area:research-workspace`, `area:release-workflow`, `area:packaging`, `state:*`, `priority:critical|high|medium|low`.

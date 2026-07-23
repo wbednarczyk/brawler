@@ -58,7 +58,7 @@ pub struct StructuredExtractionSummary {
 /// Normalizes the optional trust-ladder `mode` input (default `autopilot`;
 /// rejects anything other than `autopilot`/`assist`) — shared by both extraction
 /// entry points so they validate identically.
-fn normalize_mode(raw: Option<&str>) -> Result<String, String> {
+pub(crate) fn normalize_mode(raw: Option<&str>) -> Result<String, String> {
     match raw.map(str::trim) {
         None | Some("") => Ok(storage::MODE_AUTOPILOT.to_owned()),
         Some(value) if value == storage::MODE_AUTOPILOT || value == storage::MODE_ASSIST => {
@@ -71,7 +71,7 @@ fn normalize_mode(raw: Option<&str>) -> Result<String, String> {
 }
 
 /// Maps the internal pipeline result to the serializable UI summary.
-fn summarize(
+pub(crate) fn summarize(
     result: jobs::structured_extraction::StructuredExtractionResult,
 ) -> StructuredExtractionSummary {
     StructuredExtractionSummary {
@@ -114,7 +114,7 @@ pub async fn run_structured_extraction(
 /// batch of confirmed facts can flip a company's Piotroski F / Altman Z″ enough to
 /// raise a `score_deterioration`. Best-effort — a detection failure never fails
 /// the extraction — and only when the run actually emitted facts.
-fn detect_score_deterioration_after_extraction(
+pub(crate) fn detect_score_deterioration_after_extraction(
     state: &app_state::AppState,
     company_id: &str,
     emitted: bool,

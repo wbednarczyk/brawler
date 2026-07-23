@@ -41,6 +41,7 @@ mod decision_journal;
 mod diagnostics;
 mod error;
 mod espi_cover_note_facts;
+mod severity;
 pub use espi_cover_note_facts::CoverNoteRescanSummary;
 mod events;
 mod feed;
@@ -117,6 +118,10 @@ pub use financials::{
 pub use fundamentals_provenance::{
     ExtractionOutcome, FactProvenance, FactTierBreakdown, FundamentalsProvenanceStore,
     NewExtractionOutcome, NewFactProvenance, TierFactCount,
+};
+pub use severity::{
+    severity_for_attention_event, severity_for_autopilot_run, severity_for_signal_category,
+    AttentionSeverity,
 };
 // Connection-level free functions — internal reuse only (the ingest-time
 // cover-note witness path holds a raw `&Connection` post-commit, no pool handle).
@@ -213,6 +218,7 @@ pub use short_positions::{
     ShortPositionEventRow, ShortPositionExit, ShortPositionRow, ShortPositionsInput,
     ShortPositionsView,
 };
+pub use signals::ClassifyFilingOutcome;
 pub use signals::SignalNeedingDate;
 pub use signals::SignalStore;
 pub use sources::{BackfillMarketStatus, SourcesStore};
@@ -1345,6 +1351,26 @@ impl AppState {
     ) -> StorageResult<bool> {
         self.signals()
             .derive_event_from_extracted_date(signal_id, event_date)
+    }
+
+    /// The unclassified-filings triage bucket: official filings with no
+    /// `company_signals` row (ADR 0088 dec. 4).
+    pub fn list_unclassified_filings(
+        &self,
+        company_id: Option<&str>,
+        limit: i64,
+    ) -> StorageResult<Vec<UnclassifiedFiling>> {
+        self.signals().list_unclassified_filings(company_id, limit)
+    }
+
+    /// Agent-driven classification of one unclassified official filing (ADR 0088
+    /// dec. 4). Returns the precondition outcome; only `Created` wrote a signal.
+    pub fn classify_filing_outcome(
+        &self,
+        feed_item_id: &str,
+        category: &str,
+    ) -> StorageResult<ClassifyFilingOutcome> {
+        self.signals().classify_filing(feed_item_id, category)
     }
 
     pub fn list_transcript_jobs(

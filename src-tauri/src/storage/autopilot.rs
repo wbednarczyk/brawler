@@ -77,6 +77,18 @@ pub struct AutopilotRun {
     pub last_error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Typed importance (ADR 0087 dec. 2), **computed at read** from `status` by
+    /// the single backend mapping [`super::severity`] — never stored. `failed` /
+    /// `partial` runs are `notable`; a `succeeded`/`pending`/`running` run is
+    /// `routine`. The frontend routes on this value, never on the status string.
+    pub severity: AttentionSeverity,
+    /// The processed report's document title, resolved by LEFT JOIN at read (v0.60
+    /// D6; ADR 0087 dec. 4 — a raw source datum, never composed prose). Lets a
+    /// Today autopilot row state WHICH report it processed instead of a bare
+    /// "New report processed." `None` for a document with no stored title or a
+    /// legacy run whose document is gone — the frontend falls back to the token
+    /// summary.
+    pub report_document_title: Option<String>,
 }
 
 /// Filter for [`AutopilotStore::list_runs`]. All fields optional; `None` = no
@@ -284,7 +296,11 @@ impl AutopilotStore {
         let connection = self.db.checkout()?;
         connection
             .query_row(
-                "SELECT * FROM autopilot_run WHERE id = ?1",
+                "SELECT autopilot_run.*, report_documents.title AS report_document_title
+                 FROM autopilot_run
+                 LEFT JOIN report_documents
+                     ON report_documents.id = autopilot_run.report_document_id
+                 WHERE autopilot_run.id = ?1",
                 [id],
                 map_run_row,
             )
@@ -297,10 +313,13 @@ impl AutopilotStore {
         let limit = input.limit.unwrap_or(50).clamp(1, 500);
         let mut statement = connection.prepare(
             "
-            SELECT * FROM autopilot_run
-            WHERE (?1 IS NULL OR company_id = ?1)
-                AND (?2 IS NULL OR notification_state = ?2)
-            ORDER BY created_at DESC, id DESC
+            SELECT autopilot_run.*, report_documents.title AS report_document_title
+            FROM autopilot_run
+            LEFT JOIN report_documents
+                ON report_documents.id = autopilot_run.report_document_id
+            WHERE (?1 IS NULL OR autopilot_run.company_id = ?1)
+                AND (?2 IS NULL OR autopilot_run.notification_state = ?2)
+            ORDER BY autopilot_run.created_at DESC, autopilot_run.id DESC
             LIMIT ?3
             ",
         )?;
@@ -481,6 +500,8 @@ fn kpi_delta_reason_is_skipped_budget(kpi_delta_json: Option<&str>) -> bool {
 fn map_run_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutopilotRun> {
     let produced_json: String = row.get("produced_fact_ids_json")?;
     let produced_fact_ids = serde_json::from_str::<Vec<String>>(&produced_json).unwrap_or_default();
+    let status: String = row.get("status")?;
+    let severity = super::severity::severity_for_autopilot_run(&status);
     Ok(AutopilotRun {
         id: row.get("id")?,
         company_id: row.get("company_id")?,
@@ -488,7 +509,7 @@ fn map_run_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutopilotRun> {
         trigger: row.get("trigger")?,
         mode: row.get("mode")?,
         sweep_id: row.get("sweep_id")?,
-        status: row.get("status")?,
+        status,
         stage: row.get("stage")?,
         summary_text: row.get("summary_text")?,
         kpi_delta_json: row.get("kpi_delta_json")?,
@@ -499,5 +520,11 @@ fn map_run_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutopilotRun> {
         last_error: row.get("last_error")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+        severity,
+        // Present only on the read models that join report_documents (list/get);
+        // internal callers using a bare `SELECT *` (e.g. self-heal) never read it.
+        report_document_title: row
+            .get::<_, Option<String>>("report_document_title")
+            .unwrap_or(None),
     })
 }

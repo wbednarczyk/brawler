@@ -16,6 +16,7 @@
 
 import {
   SAMPLE_NOW,
+  makeAlertRule,
   makeAttentionEvent,
   makeCompany,
   makeFeedItem,
@@ -33,7 +34,13 @@ export type ScenarioOverlayName =
   | "stale-processing"
   | "conflicting-statuses"
   | "mixed-locale"
-  | "attention-overflow";
+  | "attention-overflow"
+  | "attention-mixed-severity"
+  | "attention-notable-only"
+  | "morning-review"
+  | "today-dense"
+  | "orphaned-evidence"
+  | "pruned-feed";
 
 // One fixed, distinct `CompanySpec` per overlay so simultaneous overlays never
 // collide on IDs and each overlay's content is independently identifiable.
@@ -187,6 +194,261 @@ function applyAttentionOverflow(data: ScenarioData): ScenarioData {
   return { ...data, attentionEvents: [...extra, ...data.attentionEvents] };
 }
 
+// Toast policy v2 (ADR 0087 dec. 3): a persistent toast is reserved for `urgent`
+// events only. These two overlays exercise the SELECTIVE side of the cap.
+const MIXED_URGENT_COUNT = 5;
+const MIXED_NOTABLE_COUNT = 15;
+const NOTABLE_ONLY_COUNT = 12;
+
+/**
+ * ~20 unseen events of which only SOME (5) are `urgent`; the rest are `notable`.
+ * Only the urgent ones may raise persistent toasts, so the persistent stack caps
+ * at 3 visible + a "+N more" summary counting ONLY the urgent overflow — never
+ * the notable events (which raise transient toasts at most).
+ *
+ * OWNS the attention set (REPLACES, not appends): the whole point is an exact
+ * severity MIX, so a base-scenario urgent event must not perturb the persistent
+ * count. This is the documented replace-exception (cf. `partial-data`).
+ */
+function applyAttentionMixedSeverity(data: ScenarioData): ScenarioData {
+  const ruleId = data.alertRules[0]?.id ?? "alert_rule_sample_1";
+  const companyIds = data.companies.length > 0 ? data.companies.map((c) => c.id) : ["company_overlay_missing"];
+  const urgent = Array.from({ length: MIXED_URGENT_COUNT }, (_, i) => ({
+    ...makeAttentionEvent(`attn_overlay_mixed_urgent_${i}`, ruleId, companyIds[i % companyIds.length], "urgent" as const),
+    firedAt: SAMPLE_NOW,
+  }));
+  const notable = Array.from({ length: MIXED_NOTABLE_COUNT }, (_, i) => ({
+    ...makeAttentionEvent(`attn_overlay_mixed_notable_${i}`, ruleId, companyIds[i % companyIds.length], "notable" as const),
+    evidenceRef: `signal_overlay_mixed_notable_${i}`,
+    firedAt: SAMPLE_NOW,
+  }));
+  return { ...data, attentionEvents: [...urgent, ...notable] };
+}
+
+/**
+ * Many unseen events, NONE `urgent` (all `notable`). A persistent toast must
+ * never appear — the stream is the system of record, and only urgent events are
+ * allowed to interrupt (ADR 0087 dec. 3). OWNS the attention set (REPLACES): a
+ * base-scenario urgent event would defeat the "zero urgent" premise.
+ */
+function applyAttentionNotableOnly(data: ScenarioData): ScenarioData {
+  const ruleId = data.alertRules[0]?.id ?? "alert_rule_sample_1";
+  const companyIds = data.companies.length > 0 ? data.companies.map((c) => c.id) : ["company_overlay_missing"];
+  const notable = Array.from({ length: NOTABLE_ONLY_COUNT }, (_, i) => ({
+    ...makeAttentionEvent(`attn_overlay_notable_only_${i}`, ruleId, companyIds[i % companyIds.length], "notable" as const),
+    evidenceRef: `signal_overlay_notable_only_${i}`,
+    firedAt: SAMPLE_NOW,
+  }));
+  return { ...data, attentionEvents: [...notable] };
+}
+
+// Ids that exist in the browser-smoke `companies` projection, so each urgent /
+// group row's Review opens a REAL company workspace during the J1 journey. The
+// aggregate companies are the synthetic `T0x` smoke tickers — never interacted
+// with, only collapsed into the "×N companies" routine aggregate.
+const MR_INSIDER_COMPANY = "company_gpw_pkn";
+const MR_RECON_COMPANY = "company_gpw_kgh";
+const MR_GROUP_COMPANY = "company_gpw_pzu";
+const MR_AGGREGATE_COMPANIES = [
+  "company_gpw_t01",
+  "company_gpw_t02",
+  "company_gpw_t03",
+  "company_gpw_t04",
+  "company_gpw_t05",
+  "company_gpw_t06",
+];
+
+/** One routine (`succeeded` → routine severity) autopilot run for a company. */
+function makeRoutineRun(id: string, companyId: string): ScenarioData["autopilotRuns"][number] {
+  return {
+    id,
+    companyId,
+    reportDocumentId: `doc_${id}`,
+    trigger: "scheduled",
+    sweepId: null,
+    mode: "autopilot",
+    status: "succeeded",
+    stage: "notify",
+    summaryText: "New report processed.",
+    kpiDeltaJson: null,
+    reportDiffRef: null,
+    crossRefsJson: null,
+    producedFactIds: [],
+    notificationState: "unread",
+    lastError: null,
+    // `succeeded` → routine (product-spec §Attention Routing / `storage::severity`).
+    severity: "routine",
+    reportDocumentTitle: "Skonsolidowany raport kwartalny Q2 2026",
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  };
+}
+
+/**
+ * The J1 morning-review seed (ADR 0087, docs/plans/v0.60-today-redesign.md §1):
+ * exactly 10 new overnight items so the redesigned Today's grouped, severity-
+ * ranked stream can be exercised end-to-end at the acceptance-bar item count.
+ *
+ *   - 2 URGENT: an insider transaction (PKN) + a missed-report reconciliation
+ *     (KGH, a system event with no user rule) — the rows that must LEAD the
+ *     stream and raise the (only) persistent toasts.
+ *   - a 2-member NOTABLE group (PZU, two same-category fired alerts on distinct
+ *     evidence) — the "repeats collapse into one ×N row" case.
+ *   - 6 ROUTINE autopilot runs across distinct companies — more than the
+ *     aggregate threshold, so they fold into one "×N companies" routine row.
+ *
+ * Additive (the store-mutation contract): every entity carries a fixed
+ * `*_mr_*` id and is prepended, never replacing base-scenario rows.
+ */
+function applyMorningReview(data: ScenarioData): ScenarioData {
+  const ruleId = data.alertRules[0]?.id ?? "alert_rule_sample_1";
+
+  // A genuine insider-transaction rule so the insider event's CAUSE
+  // (`insider_transaction`) is distinct from the base sample event's
+  // `profit_warning` — otherwise the two urgent same-cause rows would collapse
+  // into one cross-company aggregate (ADR 0087 amendment 2026-07-23) and the
+  // canonical morning-review scene would lose its distinct leading insider row.
+  const insiderRule = {
+    ...makeAlertRule("alert_rule_mr_insider", "signal_category", MR_INSIDER_COMPANY),
+    signalCategory: "insider_transaction" as const,
+  };
+  const insider = {
+    ...makeAttentionEvent("attn_mr_insider", insiderRule.id, MR_INSIDER_COMPANY, "urgent"),
+    evidenceRef: "signal_mr_insider",
+    firedAt: SAMPLE_NOW,
+  };
+  const reconciliation = {
+    ...makeAttentionEvent("attn_mr_recon", ruleId, MR_RECON_COMPANY, "urgent"),
+    ruleId: null,
+    triggerType: "source_reconciliation" as const,
+    evidenceType: "source_reconciliation" as const,
+    evidenceRef: "recon_mr_1",
+    // The concrete missed report + the source that missed it (v0.60 D6): the J1
+    // scene must state WHICH report and WHICH source, not a bare category.
+    evidenceTitle: "Raport bieżący 15/2026 — zawarcie znaczącej umowy",
+    evidenceDetail: "GPW ESPI/EBI",
+    firedAt: SAMPLE_NOW,
+  };
+  // Two notable fired alerts for ONE company, distinct evidence → a ×2 group.
+  const group = [0, 1].map((i) => ({
+    ...makeAttentionEvent(`attn_mr_group_${i}`, ruleId, MR_GROUP_COMPANY, "notable" as const),
+    evidenceRef: `signal_mr_group_${i}`,
+    // Distinct fired times so the group orders its members newest-first.
+    firedAt: `2026-07-2${i}T09:00:00Z`,
+  }));
+
+  const runs = MR_AGGREGATE_COMPANIES.map((companyId, i) => makeRoutineRun(`run_mr_${i}`, companyId));
+
+  return {
+    ...data,
+    alertRules: [insiderRule, ...data.alertRules],
+    attentionEvents: [insider, reconciliation, ...group, ...data.attentionEvents],
+    autopilotRuns: [...runs, ...data.autopilotRuns],
+  };
+}
+
+/**
+ * A DENSE Today (ADR 0087 dec. 1, docs/plans/v0.60-today-redesign.md §11 Dense
+ * row): one routine autopilot run for EVERY company in the store (28 in the
+ * browser projection). Well over the aggregate threshold, so the whole wall
+ * folds into a single "×N companies" routine aggregate row — the stream must
+ * stay a screenful, never a page-overflowing wall.
+ */
+function applyTodayDense(data: ScenarioData): ScenarioData {
+  const runs = data.companies.map((company, i) => makeRoutineRun(`run_dense_${i}`, company.id));
+  return { ...data, autopilotRuns: [...runs, ...data.autopilotRuns] };
+}
+
+// UI dogfooding finding ⇒ overlay (docs/testing.md standing rule; owner
+// dogfooding 2026-07-23). The two data states the owner's real database exposed
+// on Today. Each carries a fixed `*_overlay_orphan_*` / `*_overlay_pruned_*` id
+// and is additive (prepended), never replacing base rows.
+
+// One fixed CompanySpec per orphan row so simultaneous overlays never collide.
+const ORPHAN_SPECS: CompanySpec[] = [
+  { key: "orphanA", ticker: "ZZO1", name: "Orphan Evidence A S.A.", sector: "Technology" },
+  { key: "orphanB", ticker: "ZZO2", name: "Orphan Evidence B S.A.", sector: "Energy" },
+  { key: "orphanC", ticker: "ZZO3", name: "Orphan Evidence C S.A.", sector: "Financials" },
+];
+const PRUNED_CLEAN_SPEC: CompanySpec = { key: "prunedClean", ticker: "ZZP1", name: "Pruned Feed Clean S.A.", sector: "Consumer Staples" };
+const PRUNED_GLUED_SPEC: CompanySpec = { key: "prunedGlued", ticker: "ZZP2", name: "Pruned Feed Glued S.A.", sector: "Consumer Staples" };
+
+// A clean human snapshot title — survives the pruned feed row and renders verbatim.
+export const PRUNED_CLEAN_SNAPSHOT = "Skonsolidowany raport kwartalny za III kwartał 2026 r.";
+// The owner's real glued case: a filename fused onto the human title. The row must
+// split it — the human part is the statement, the filename drops to a link line —
+// so a document extension NEVER lands in a rendered row statement.
+export const PRUNED_GLUED_SNAPSHOT = "Y24_25_Sprawozdanie jednostkowe.xhtmlJednostkowe Sprawozdanie Finansowe AB S.A.";
+export const PRUNED_GLUED_HUMAN = "Jednostkowe Sprawozdanie Finansowe AB S.A.";
+export const PRUNED_GLUED_FILENAME = "Y24_25_Sprawozdanie jednostkowe.xhtml";
+
+/**
+ * Orphaned attention evidence (owner dogfooding 2026-07-23: 27 real orphans). A
+ * signal-triggered attention event whose `evidenceTitle` is null AND whose rule +
+ * signal rows are GONE (a cascade-pruned rule id that no longer resolves): the FE
+ * must render the category fallback, never a blank statement or a crash. A
+ * REPRESENTATIVE few (the real count is immaterial; the null-title + dangling-rule
+ * STATE is what regresses) across distinct companies so each stays its own
+ * `notable` row (below the notable cross-company fold threshold), not an aggregate.
+ */
+function applyOrphanedEvidence(data: ScenarioData): ScenarioData {
+  const companies = ORPHAN_SPECS.map(makeCompany);
+  const events = ORPHAN_SPECS.map((spec, i) => ({
+    ...makeAttentionEvent(
+      `attn_overlay_orphan_${i}`,
+      // A dangling rule id — no matching alertRules row, so the rule lookup misses
+      // and the title composer falls back to the trigger category, never crashes.
+      "alert_rule_orphan_pruned_missing",
+      makeCompany(spec).id,
+      "notable" as const,
+    ),
+    // The orphan STATE: no snapshot title survived, and the signal it cited is gone.
+    evidenceTitle: null,
+    evidenceDetail: null,
+    evidenceRef: `signal_orphan_pruned_gone_${i}`,
+    firedAt: SAMPLE_NOW,
+  }));
+  return {
+    ...data,
+    companies: [...companies, ...data.companies],
+    attentionEvents: [...events, ...data.attentionEvents],
+  };
+}
+
+/**
+ * Pruned feed with a surviving snapshot title (owner dogfooding 2026-07-23). An
+ * attention event whose `evidenceTitle` was snapshotted at fire time but whose
+ * live feed item was later pruned (`evidenceRef` no longer resolves): the row must
+ * render the SNAPSHOT, not blank. Two rows on distinct companies: a CLEAN human
+ * snapshot (renders verbatim) and a GLUED filename+title snapshot (the row splits
+ * it so the extension never lands in the statement — the anti-filename gate's
+ * adversarial case). `notable` so both stay their own rows.
+ */
+function applyPrunedFeed(data: ScenarioData): ScenarioData {
+  const cleanCompany = makeCompany(PRUNED_CLEAN_SPEC);
+  const gluedCompany = makeCompany(PRUNED_GLUED_SPEC);
+  const ruleId = data.alertRules[0]?.id ?? "alert_rule_sample_1";
+  const clean = {
+    ...makeAttentionEvent("attn_overlay_pruned_clean", ruleId, cleanCompany.id, "notable" as const),
+    evidenceTitle: PRUNED_CLEAN_SNAPSHOT,
+    evidenceDetail: null,
+    evidenceRef: "feed_overlay_pruned_clean_gone",
+    firedAt: SAMPLE_NOW,
+  };
+  const glued = {
+    ...makeAttentionEvent("attn_overlay_pruned_glued", ruleId, gluedCompany.id, "notable" as const),
+    evidenceTitle: PRUNED_GLUED_SNAPSHOT,
+    evidenceDetail: null,
+    evidenceRef: "feed_overlay_pruned_glued_gone",
+    firedAt: SAMPLE_NOW,
+  };
+  return {
+    ...data,
+    companies: [cleanCompany, gluedCompany, ...data.companies],
+    attentionEvents: [clean, glued, ...data.attentionEvents],
+  };
+}
+
 const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData> = {
   "partial-data": applyPartialData,
   "stale-processing": applyStaleProcessing,
@@ -195,6 +457,12 @@ const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData
   "dense-history": applyDenseHistory,
   "mixed-locale": applyMixedLocale,
   "attention-overflow": applyAttentionOverflow,
+  "attention-mixed-severity": applyAttentionMixedSeverity,
+  "attention-notable-only": applyAttentionNotableOnly,
+  "morning-review": applyMorningReview,
+  "today-dense": applyTodayDense,
+  "orphaned-evidence": applyOrphanedEvidence,
+  "pruned-feed": applyPrunedFeed,
 };
 
 /** Fixed application order — independent of the order the caller supplies. */
@@ -206,6 +474,12 @@ const OVERLAY_ORDER: readonly ScenarioOverlayName[] = [
   "dense-history",
   "mixed-locale",
   "attention-overflow",
+  "attention-mixed-severity",
+  "attention-notable-only",
+  "morning-review",
+  "today-dense",
+  "orphaned-evidence",
+  "pruned-feed",
 ];
 
 /**

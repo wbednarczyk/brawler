@@ -23,7 +23,11 @@ import { McpSettings } from "./McpSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import { TranscriptSettings } from "./TranscriptSettings";
-import { makeTextTranslator, makeTranslator, type LocaleKey } from "../../shared/locale";
+import {
+  makeTextTranslator,
+  makeTranslator,
+  type LocaleKey,
+} from "../../shared/locale";
 import { useSettingsScreenViewModel } from "../../app/state/screenViewModels";
 import { ErrorText, Panel, PanelHeader, SelectField, Subnav } from "../../ui";
 
@@ -44,69 +48,80 @@ const settingsTabs = [
   { id: "sources", icon: RadioTower, labelKey: "settings.sources.title" },
   { id: "transcripts", icon: Captions, labelText: "Transcripts" },
   { id: "credentials", icon: KeyRound, labelKey: "settings.credentials.title" },
-  { id: "importExport", icon: Download, labelKey: "settings.importExport.title" },
+  {
+    id: "importExport",
+    icon: Download,
+    labelKey: "settings.importExport.title",
+  },
   { id: "shortcuts", icon: Keyboard, labelText: "Keyboard shortcuts" },
   { id: "logs", icon: Logs, labelText: "Logs" },
   { id: "database", icon: Database, labelText: "Data storage" },
   { id: "mcp", icon: Plug, labelText: "MCP server" },
   { id: "license", icon: FileKey2, labelText: "License" },
-] satisfies Array<{ id: SettingsTab; icon: LucideIcon; labelKey?: LocaleKey; labelText?: string }>;
+] satisfies Array<{
+  id: SettingsTab;
+  icon: LucideIcon;
+  labelKey?: LocaleKey;
+  labelText?: string;
+}>;
 
 export function SettingsScreen() {
   const {
-  theme,
-  accentPalette,
-  locale,
-  settings,
-  settingsError,
-  licenseStatus,
-  licenseError,
-  licenseInFlight,
-  licenseKeyDraft,
-  feedPruneRetentionDays,
-  feedPruneResult,
-  onPruneFeedItems,
-  geminiCredentialStatus,
-  geminiCredentialError,
-  geminiCredentialInFlight,
-  geminiApiKeyDraft,
-  shortcutBindings,
-  shortcutReferences,
-  onThemeChange,
-  onAccentPaletteChange,
-  onLocaleChange,
-  onPollIntervalChange,
-  onBackfillYearsChange,
-  onMcpPortChange,
-  onShortcutBindingsChange,
-  onYoutubeTranscriptionModelChange,
-  onYoutubeTranscriptionTimeoutChange,
-  onLogLevelChange,
-  onLogMaxFilesChange,
-  onLogMaxFileBytesChange,
-  onDbMaxConnectionsChange,
-  onDbBusyTimeoutMsChange,
-  onDbAcquireTimeoutMsChange,
-  onResetDatabaseSettings,
-  onSourcesWorkersChange,
-  onAutopilotWorkersChange,
-  onResetQueueSettings,
-  onClearLicenseKey,
-  onLicenseKeyDraftChange,
-  onSubmitLicenseKey,
-  onGeminiApiKeyDraftChange,
-  onSaveGeminiApiKey,
-  onClearGeminiApiKey,
-  onOpenGeminiApiKeyPage,
-  onImportApplied,
-  formatTimestamp,
-  formatPollInterval,
-  formatCredentialConfigured,
-  formatCredentialKind,
+    theme,
+    accentPalette,
+    locale,
+    settings,
+    settingsError,
+    licenseStatus,
+    licenseError,
+    licenseInFlight,
+    licenseKeyDraft,
+    feedPruneRetentionDays,
+    feedPruneResult,
+    onPruneFeedItems,
+    geminiCredentialStatus,
+    geminiCredentialError,
+    geminiCredentialInFlight,
+    geminiApiKeyDraft,
+    shortcutBindings,
+    shortcutReferences,
+    onThemeChange,
+    onAccentPaletteChange,
+    onLocaleChange,
+    onPollIntervalChange,
+    onBackfillYearsChange,
+    onMcpPortChange,
+    onMcpWritesEnabledChange,
+    onShortcutBindingsChange,
+    onYoutubeTranscriptionModelChange,
+    onYoutubeTranscriptionTimeoutChange,
+    onLogLevelChange,
+    onLogMaxFilesChange,
+    onLogMaxFileBytesChange,
+    onDbMaxConnectionsChange,
+    onDbBusyTimeoutMsChange,
+    onDbAcquireTimeoutMsChange,
+    onResetDatabaseSettings,
+    onSourcesWorkersChange,
+    onAutopilotWorkersChange,
+    onResetQueueSettings,
+    onClearLicenseKey,
+    onLicenseKeyDraftChange,
+    onSubmitLicenseKey,
+    onGeminiApiKeyDraftChange,
+    onSaveGeminiApiKey,
+    onClearGeminiApiKey,
+    onOpenGeminiApiKeyPage,
+    onImportApplied,
+    formatTimestamp,
+    formatPollInterval,
+    formatCredentialConfigured,
+    formatCredentialKind,
   } = useSettingsScreenViewModel();
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
-  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("appearance");
+  const [activeSettingsTab, setActiveSettingsTab] =
+    useState<SettingsTab>("appearance");
   const tabLabel = (tab: (typeof settingsTabs)[number]) =>
     tab.labelKey ? t(tab.labelKey) : text(tab.labelText ?? "");
 
@@ -118,7 +133,10 @@ export function SettingsScreen() {
         titleId="settings-title"
       />
 
-      <div className="settings-layout" aria-label={t("settings.applicationSettings")}>
+      <div
+        className="settings-layout"
+        aria-label={t("settings.applicationSettings")}
+      >
         <Subnav
           activeId={activeSettingsTab}
           ariaLabel={t("settings.sections")}
@@ -140,7 +158,9 @@ export function SettingsScreen() {
             aria-label={text("Settings section")}
             label={text("Section")}
             value={activeSettingsTab}
-            onChange={(event) => setActiveSettingsTab(event.target.value as SettingsTab)}
+            onChange={(event) =>
+              setActiveSettingsTab(event.target.value as SettingsTab)
+            }
           >
             {settingsTabs.map((tab) => (
               <option key={tab.id} value={tab.id}>
@@ -177,8 +197,12 @@ export function SettingsScreen() {
           {activeSettingsTab === "transcripts" ? (
             <TranscriptSettings
               settings={settings}
-              onYoutubeTranscriptionModelChange={onYoutubeTranscriptionModelChange}
-              onYoutubeTranscriptionTimeoutChange={onYoutubeTranscriptionTimeoutChange}
+              onYoutubeTranscriptionModelChange={
+                onYoutubeTranscriptionModelChange
+              }
+              onYoutubeTranscriptionTimeoutChange={
+                onYoutubeTranscriptionTimeoutChange
+              }
             />
           ) : null}
           {activeSettingsTab === "credentials" ? (
@@ -232,7 +256,11 @@ export function SettingsScreen() {
             </>
           ) : null}
           {activeSettingsTab === "mcp" ? (
-            <McpSettings settings={settings} onMcpPortChange={onMcpPortChange} />
+            <McpSettings
+              settings={settings}
+              onMcpPortChange={onMcpPortChange}
+              onMcpWritesEnabledChange={onMcpWritesEnabledChange}
+            />
           ) : null}
           {activeSettingsTab === "license" ? (
             <LicenseSettings

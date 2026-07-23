@@ -260,11 +260,34 @@ mod tests {
             .nth(1)
             .and_then(|code| code.parse().ok())
             .unwrap_or_else(|| panic!("no status line in response: {text:?}"));
-        let response_body = text
-            .split_once("\r\n\r\n")
-            .map(|(_, b)| b.to_owned())
-            .unwrap_or_default();
+        let (head, body) = text.split_once("\r\n\r\n").unwrap_or(("", ""));
+        // A large tools/list body trips tiny_http's chunked-transfer threshold;
+        // de-chunk so the helper stays valid as the tool surface grows.
+        let response_body = if head
+            .to_ascii_lowercase()
+            .contains("transfer-encoding: chunked")
+        {
+            dechunk(body)
+        } else {
+            body.to_owned()
+        };
         (status, response_body)
+    }
+
+    /// Decode an HTTP/1.1 chunked body (`<hex-size>\r\n<data>\r\n … 0\r\n\r\n`).
+    fn dechunk(body: &str) -> String {
+        let mut rest = body;
+        let mut out = String::new();
+        while let Some((size_line, tail)) = rest.split_once("\r\n") {
+            let size = usize::from_str_radix(size_line.trim(), 16).unwrap_or(0);
+            if size == 0 {
+                break;
+            }
+            out.push_str(&tail[..size]);
+            rest = &tail[size..];
+            rest = rest.strip_prefix("\r\n").unwrap_or(rest);
+        }
+        out
     }
 
     fn host_of(addr: SocketAddr) -> String {
@@ -397,14 +420,23 @@ mod tests {
             .iter()
             .filter_map(|tool| tool["name"].as_str())
             .collect();
+        // Transport-level check: the four MVP tools lead the list (frozen order)
+        // and the full exposed surface is served. The exact schema contract is
+        // frozen by the `tools/list` insta snapshot in `protocol::tests`.
         assert_eq!(
-            names,
-            vec![
+            &names[..4],
+            &[
                 "get_company_dossier",
                 "search_research",
                 "list_claims_due",
                 "get_quality_assessment"
             ]
+        );
+        assert_eq!(
+            names.len(),
+            96,
+            "41 read (4 MVP + 34 read-wave + list_alert_rules + list_flagged_extraction_outcomes \
+             + list_unclassified_filings) + 55 act tools incl. classify_filing (ADR 0088 dec. 2/3/4)"
         );
     }
 

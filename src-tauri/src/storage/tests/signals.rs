@@ -525,3 +525,216 @@ fn list_filters_by_category_and_status() {
         "rule signals are confirmed, not proposed"
     );
 }
+
+// ---- Unclassified-filings triage (v0.60 M4, ADR 0088 dec. 4) ----------------
+
+/// Seed a matched 'Public media' feed item that must NEVER surface as an
+/// unclassified filing (the bucket is official filings only).
+fn seed_media_item(state: &AppState, company: &Company, id: &str) {
+    let connection = state.checkout().expect("connection");
+    connection
+        .execute(
+            "
+            INSERT INTO feed_items (
+                id, type, source_adapter_id, source_name, source_url, title,
+                summary, language, published_at, fetched_at, dedupe_key,
+                attribution, display_company
+            ) VALUES (?1, 'Public media', 'bankier-market-rss', 'Bankier RSS',
+                      ?2, ?3, '', 'pl', '2026-05-30T09:00:00Z',
+                      '2026-05-30T09:30:00Z', ?4, 'Bankier', ?5)
+            ",
+            params![
+                id,
+                format!("https://example.test/{id}"),
+                "CD Projekt w mediach — komentarz analityka",
+                format!("media:{id}"),
+                company.qualified_ticker,
+            ],
+        )
+        .expect("media feed item inserts");
+    connection
+        .execute(
+            "INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+             VALUES (?1, ?2, 'ticker')",
+            params![id, company.id],
+        )
+        .expect("media company match inserts");
+}
+
+#[test]
+fn unclassified_filings_lists_official_reports_without_a_signal() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    // One official filing the rule classifier cannot place (matches no pattern),
+    // one it can (dividend), and one 'Public media' item.
+    state
+        .ingest_bankier_company_items(&[
+            espi_item(
+                &company,
+                "9300001",
+                "Zmiana adresu strony internetowej Spółki",
+            ),
+            espi_item(
+                &company,
+                "9300002",
+                "Rekomendacja Zarządu w sprawie wypłaty dywidendy za rok 2025",
+            ),
+        ])
+        .expect("ingestion should classify");
+    seed_media_item(&state, &company, "feed_media_1");
+
+    let unclassified = state
+        .list_unclassified_filings(None, 50)
+        .expect("unclassified filings should list");
+
+    // Exactly the unmatched official filing appears — never the classified
+    // dividend filing, never the media item.
+    assert_eq!(
+        unclassified.len(),
+        1,
+        "only the unclassifiable official filing surfaces: {unclassified:?}"
+    );
+    let filing = &unclassified[0];
+    assert_eq!(filing.title, "Zmiana adresu strony internetowej Spółki");
+    assert_eq!(filing.company_id, company.id);
+    assert!(
+        !unclassified
+            .iter()
+            .any(|f| f.title.contains("dywidend") || f.title.contains("mediach")),
+        "classified + media items are excluded"
+    );
+
+    // The company filter narrows to the same company; an unknown company is empty.
+    assert_eq!(
+        state
+            .list_unclassified_filings(Some(&company.id), 50)
+            .expect("scoped list")
+            .len(),
+        1
+    );
+    assert!(state
+        .list_unclassified_filings(Some("company_absent"), 50)
+        .expect("scoped list")
+        .is_empty());
+}
+
+#[test]
+fn classify_filing_creates_a_confirmed_signal_and_clears_the_bucket() {
+    use crate::storage::ClassifyFilingOutcome;
+
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .ingest_bankier_company_items(&[espi_item(
+            &company,
+            "9400001",
+            "Zawiadomienie o zmianie adresu Spółki",
+        )])
+        .expect("ingestion should classify");
+
+    let feed_item_id = state
+        .list_unclassified_filings(None, 50)
+        .expect("bucket")
+        .first()
+        .expect("one unclassified filing")
+        .feed_item_id
+        .clone();
+
+    let signal = match state
+        .classify_filing_outcome(&feed_item_id, "significant_contract")
+        .expect("classification should create a signal")
+    {
+        ClassifyFilingOutcome::Created(signal) => signal,
+        other => panic!("expected a created signal, got {other:?}"),
+    };
+    assert_eq!(signal.category, "significant_contract");
+    assert_eq!(signal.status, "confirmed");
+    // Honest provenance: an agent-authored classification over the MCP triage
+    // tool is `agent`, never `rule` (the deterministic classifier) — ADR 0088.
+    assert_eq!(signal.classified_by, "agent");
+    assert_eq!(signal.feed_item_id, feed_item_id);
+    assert_eq!(signal.company_id, company.id);
+
+    // The filing has left the unclassified bucket.
+    assert!(state
+        .list_unclassified_filings(None, 50)
+        .expect("bucket")
+        .is_empty());
+    // The signal is readable through the normal signals list.
+    assert!(state
+        .list_company_signals(CompanySignalListInput {
+            company_id: Some(company.id.clone()),
+            ..Default::default()
+        })
+        .expect("signals")
+        .iter()
+        .any(|s| s.feed_item_id == feed_item_id && s.category == "significant_contract"));
+}
+
+#[test]
+fn classify_filing_rejects_unknown_category_non_official_and_already_classified() {
+    use crate::storage::ClassifyFilingOutcome;
+
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .ingest_bankier_company_items(&[espi_item(
+            &company,
+            "9500001",
+            "Zawiadomienie o zmianie adresu Spółki",
+        )])
+        .expect("ingestion");
+    seed_media_item(&state, &company, "feed_media_reject");
+
+    let feed_item_id = state
+        .list_unclassified_filings(None, 50)
+        .expect("bucket")
+        .first()
+        .expect("one filing")
+        .feed_item_id
+        .clone();
+
+    // Unknown category is rejected before any write.
+    assert!(matches!(
+        state
+            .classify_filing_outcome(&feed_item_id, "not_a_real_category")
+            .expect("query"),
+        ClassifyFilingOutcome::UnknownCategory
+    ));
+    // A 'Public media' item is not an official filing.
+    assert!(matches!(
+        state
+            .classify_filing_outcome("feed_media_reject", "dividend")
+            .expect("query"),
+        ClassifyFilingOutcome::NotAnOfficialFiling
+    ));
+    // A missing feed item is not found.
+    assert!(matches!(
+        state
+            .classify_filing_outcome("feed_absent", "dividend")
+            .expect("query"),
+        ClassifyFilingOutcome::FeedItemNotFound
+    ));
+
+    // First classification succeeds; a second is a conflict.
+    assert!(matches!(
+        state
+            .classify_filing_outcome(&feed_item_id, "dividend")
+            .expect("first classification"),
+        ClassifyFilingOutcome::Created(_)
+    ));
+    // A second classification of the same filing — any valid category — is a
+    // conflict: the filing already has a signal (it left the bucket).
+    assert!(matches!(
+        state
+            .classify_filing_outcome(&feed_item_id, "own_shares")
+            .expect("query"),
+        ClassifyFilingOutcome::AlreadyClassified
+    ));
+}

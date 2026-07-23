@@ -59,7 +59,12 @@ pub const TRIGGER_PRICE_WEEK52_LOW: &str = "price_week52_low";
 /// from [`TRIGGER_TYPES`] (which validates user-owned alert rules).
 pub const TRIGGER_SOURCE_RECONCILIATION: &str = "source_reconciliation";
 
-const TRIGGER_TYPES: &[&str] = &[
+/// The user-creatable trigger types (validates user-owned alert rules). The
+/// system [`TRIGGER_SOURCE_RECONCILIATION`] is deliberately absent (not
+/// user-creatable). `pub(crate)` so the severity classification gate
+/// (`storage::severity`) derives its inventory from this source of truth rather
+/// than a hand copy.
+pub(crate) const TRIGGER_TYPES: &[&str] = &[
     TRIGGER_SIGNAL_CATEGORY,
     TRIGGER_AUTOPILOT_RUN_COMPLETED,
     TRIGGER_PRICE_ENTERS_RANGE,
@@ -112,7 +117,7 @@ pub struct AlertRule {
 }
 
 /// New-rule input (enabled defaults to true).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -139,7 +144,7 @@ pub struct NewAlertRule {
 }
 
 /// Mutable fields of an existing rule. `None` (absent) leaves a field unchanged.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -200,6 +205,26 @@ pub struct AttentionEvent {
     pub fired_at: String,
     pub seen: bool,
     pub dismissed: bool,
+    /// Typed importance (ADR 0087 dec. 2), **computed at read** from
+    /// `trigger_type` + the signal's category (for `signal_category` events) by
+    /// the single backend mapping [`super::severity`] — never stored. The
+    /// frontend routes on this value and never re-infers importance from strings.
+    pub severity: AttentionSeverity,
+    /// The specific title of the event's evidence, resolved by LEFT JOIN at read
+    /// (ADR 0087 dec. 4 — a raw source datum, never composed prose): the filing
+    /// title (`company_signal` → `feed_items.title`), the missed report's witness
+    /// title (`source_reconciliation` → `witness_title`), or the processed
+    /// report's document title (`autopilot_run` → `report_documents.title`).
+    /// `None` for a legacy row or pruned evidence — the frontend falls back to
+    /// generic copy. So a stream row can state WHAT concretely happened, never a
+    /// bare category (v0.60 D6, owner dogfooding 2026-07-23).
+    pub evidence_title: Option<String>,
+    /// A secondary raw datum whose meaning depends on `evidence_type`: for a
+    /// `source_reconciliation` event, the display name of the source that missed
+    /// the report (adapter id → its registry display name); for an `autopilot_run`
+    /// event, the run's raw status (the frontend translates it). `None` otherwise
+    /// or when the evidence row is gone.
+    pub evidence_detail: Option<String>,
 }
 
 /// Filter for listing attention events.
@@ -490,17 +515,65 @@ pub(super) fn list_attention_events(
             attention_events.evidence_ref,
             attention_events.fired_at,
             attention_events.seen,
-            attention_events.dismissed
+            attention_events.dismissed,
+            company_signals.category AS signal_category,
+            -- Evidence specifics (v0.60 D6): the concrete title behind each event,
+            -- resolved by evidence-type-guarded LEFT JOINs so every row can state
+            -- WHAT happened, not just its category. Single query, no N+1.
+            feed_items.title AS signal_title,
+            -- The missed report's title. The live GPW registry parser leaves
+            -- `witness_title` empty on fresh rows (separate parser card), but
+            -- `report_type`+`report_number` ARE parsed — fall back to their
+            -- trimmed concatenation (two raw registry strings, no invented words;
+            -- both absent → NULL → generic FE copy). Owner ledger 2026-07-23.
+            NULLIF(
+                COALESCE(
+                    NULLIF(recon.witness_title, ''),
+                    NULLIF(TRIM(
+                        COALESCE(recon.report_type, '') || ' ' ||
+                        COALESCE(recon.report_number, '')
+                    ), '')
+                ), ''
+            ) AS recon_title,
+            recon.witness_adapter_id AS recon_adapter,
+            report_documents.title AS run_document_title,
+            autopilot_run.status AS run_status,
+            -- Durable fire-time title snapshot (v0.60 D7): preferred over the live
+            -- join so a `company_signal` title survives the feed prune that
+            -- cascade-deletes its signal row. NULL on legacy rows → live join.
+            attention_events.evidence_title AS snapshot_title
         FROM attention_events
         LEFT JOIN alert_rules ON alert_rules.id = attention_events.rule_id
+        -- Resolve the signal category for `signal_category` events (evidence_ref
+        -- is the signal id) so severity is computed at read; the evidence_type
+        -- guard keeps quote/run refs from spuriously joining.
+        LEFT JOIN company_signals
+            ON company_signals.id = attention_events.evidence_ref
+            AND attention_events.evidence_type = 'company_signal'
+        -- The signal's own filing title (its statement on the surface).
+        LEFT JOIN feed_items ON feed_items.id = company_signals.feed_item_id
+        -- The missed report a `source_reconciliation` event points at (evidence_ref
+        -- is the reconciliation-result id): its witness title + witness source.
+        LEFT JOIN source_reconciliation_results recon
+            ON recon.id = attention_events.evidence_ref
+            AND attention_events.evidence_type = 'source_reconciliation'
+        -- The run behind an `autopilot_run` event, and that run's report document,
+        -- so the event states which report was processed and how the run ended.
+        LEFT JOIN autopilot_run
+            ON autopilot_run.id = attention_events.evidence_ref
+            AND attention_events.evidence_type = 'autopilot_run'
+        LEFT JOIN report_documents ON report_documents.id = autopilot_run.report_document_id
         WHERE (?1 IS NULL OR attention_events.company_id = ?1)
           AND (?2 = 1 OR attention_events.dismissed = 0)
         ORDER BY attention_events.fired_at DESC, attention_events.id DESC
         ",
     )?;
+    // Read-time now: the aging demotion (ADR 0087 dec. 2 amendment) is computed
+    // against wall-clock now, once per list, so a stale `urgent` stops leading.
+    let now = time::OffsetDateTime::now_utc();
     let rows = statement.query_map(
         params![input.company_id, input.include_dismissed as i64],
-        attention_event_from_row,
+        |row| attention_event_from_row(row, now),
     )?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
@@ -519,18 +592,67 @@ pub(super) fn dismiss_attention_event(connection: &Connection, id: &str) -> Stor
     Ok(())
 }
 
-fn attention_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AttentionEvent> {
+fn attention_event_from_row(
+    row: &rusqlite::Row<'_>,
+    now: time::OffsetDateTime,
+) -> rusqlite::Result<AttentionEvent> {
+    let trigger_type: String = row.get(2)?;
+    let evidence_type: String = row.get(4)?;
+    let signal_category: Option<String> = row.get(9)?;
+    let fired_at: String = row.get(6)?;
+    // Base mapping, then the age demotion (ADR 0087 dec. 2 amendment): an `urgent`
+    // event unacted past the threshold stops shouting. Purely age-based.
+    let base =
+        super::severity::severity_for_attention_event(&trigger_type, signal_category.as_deref());
+    let severity = super::severity::aged_attention_severity(base, &fired_at, now);
+    // Compose the concrete evidence specifics from the joined columns (v0.60 D6),
+    // dispatching on the evidence type so each event states WHAT happened. Titles
+    // are raw source data; the frontend translates/composes any prose (ADR 0087
+    // dec. 4). An absent join column stays `None` → generic frontend fallback.
+    // The durable fire-time snapshot (v0.60 D7) is preferred over the live join for
+    // every evidence type: it is the event's own journal of WHAT happened and
+    // outlives evidence pruning. An empty/NULL snapshot (legacy rows, or a fire
+    // site with no title in scope) falls back to the read-time join.
+    let snapshot_title: Option<String> = row
+        .get::<_, Option<String>>(15)?
+        .map(|title| title.trim().to_owned())
+        .filter(|title| !title.is_empty());
+    let (evidence_title, evidence_detail) = match evidence_type.as_str() {
+        EVIDENCE_COMPANY_SIGNAL => (snapshot_title.or(row.get::<_, Option<String>>(10)?), None),
+        EVIDENCE_SOURCE_RECONCILIATION => {
+            let title: Option<String> = snapshot_title.or(row.get(11)?);
+            let adapter: Option<String> = row.get(12)?;
+            (title, adapter.map(|id| adapter_display_name(&id)))
+        }
+        EVIDENCE_AUTOPILOT_RUN => (
+            snapshot_title.or(row.get::<_, Option<String>>(13)?),
+            row.get(14)?,
+        ),
+        _ => (None, None),
+    };
     Ok(AttentionEvent {
         id: row.get(0)?,
         rule_id: row.get::<_, Option<String>>(1)?,
-        trigger_type: row.get(2)?,
+        trigger_type,
         company_id: row.get(3)?,
-        evidence_type: row.get(4)?,
+        evidence_type,
         evidence_ref: row.get(5)?,
-        fired_at: row.get(6)?,
+        fired_at,
         seen: row.get::<_, i64>(7)? != 0,
         dismissed: row.get::<_, i64>(8)? != 0,
+        severity,
+        evidence_title,
+        evidence_detail,
     })
+}
+
+/// A source adapter's user-facing display name from its id, via the source-adapter
+/// registry (the single source of truth). Falls back to the raw id for an
+/// unregistered/legacy adapter — a source proper noun, never silently blanked.
+fn adapter_display_name(adapter_id: &str) -> String {
+    crate::source_adapters::registry::descriptor(adapter_id)
+        .map(|descriptor| descriptor.display_name.to_owned())
+        .unwrap_or_else(|| adapter_id.to_owned())
 }
 
 /// Persist one attention event, applying dedup + the per-rule wall-clock daily
@@ -555,7 +677,17 @@ pub(super) fn insert_attention_event(
     company_id: &str,
     evidence_type: &str,
     evidence_ref: &str,
+    // The event's concrete "what happened" title, snapshotted at fire time so it
+    // survives evidence pruning (v0.60 D7). `company_signal` evidence is fatal to
+    // feed pruning — the signal row is `ON DELETE CASCADE` off `feed_items` — so
+    // the durable snapshot is the only thing that keeps such a row from degrading
+    // to a bare category. `None` when no title is in scope; the read model still
+    // falls back to the live join for evidence rows that outlive pruning.
+    evidence_title: Option<&str>,
 ) -> StorageResult<bool> {
+    let evidence_title = evidence_title
+        .map(str::trim)
+        .filter(|title| !title.is_empty());
     let already: bool = connection.query_row(
         "SELECT EXISTS(
             SELECT 1 FROM attention_events
@@ -588,11 +720,11 @@ pub(super) fn insert_attention_event(
     let fired_at = now_rfc3339();
     let affected = connection.execute(
         "
-        INSERT INTO attention_events (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        INSERT INTO attention_events (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at, evidence_title)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(rule_id, evidence_type, evidence_ref) DO NOTHING
         ",
-        params![id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at],
+        params![id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at, evidence_title],
     )?;
     Ok(affected > 0)
 }
@@ -611,8 +743,15 @@ pub(super) fn insert_system_attention_event(
     company_id: &str,
     evidence_type: &str,
     evidence_ref: &str,
+    // Fire-time title snapshot (v0.60 D7) — for reconciliation the missed report's
+    // witness title is trivially in scope at the insert site. See
+    // `insert_attention_event` for the durability rationale.
+    evidence_title: Option<&str>,
     fire_date: &str,
 ) -> StorageResult<bool> {
+    let evidence_title = evidence_title
+        .map(str::trim)
+        .filter(|title| !title.is_empty());
     let id = format!(
         "attn_sys_{}_{}_{}",
         slug_part(trigger_type),
@@ -623,8 +762,8 @@ pub(super) fn insert_system_attention_event(
     let affected = connection.execute(
         "
         INSERT OR IGNORE INTO attention_events
-            (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
-        VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?6)
+            (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at, evidence_title)
+        VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?6, ?7)
         ",
         params![
             id,
@@ -632,7 +771,8 @@ pub(super) fn insert_system_attention_event(
             company_id,
             evidence_type,
             evidence_ref,
-            fired_at
+            fired_at,
+            evidence_title
         ],
     )?;
     Ok(affected > 0)
@@ -740,6 +880,11 @@ pub(super) fn evaluate_signal_rules(
     signal_id: &str,
     _signal_date: Option<&str>,
 ) -> StorageResult<usize> {
+    // The signal's own filing title, resolved once at fire time and snapshotted
+    // onto every event this signal fires (v0.60 D7). At fire time the signal and
+    // its feed item both exist; the snapshot is what survives the later feed prune
+    // that cascade-deletes the signal row.
+    let evidence_title = signal_filing_title(connection, signal_id)?;
     let mut fired = 0;
     for rule in enabled_rules_for_company(connection, TRIGGER_SIGNAL_CATEGORY, company_id)? {
         if rule.signal_category.as_deref() != Some(category) {
@@ -752,11 +897,30 @@ pub(super) fn evaluate_signal_rules(
             company_id,
             EVIDENCE_COMPANY_SIGNAL,
             signal_id,
+            evidence_title.as_deref(),
         )? {
             fired += 1;
         }
     }
     Ok(fired)
+}
+
+/// The filing title behind a `company_signal` (its feed item's title), resolved at
+/// fire time so it can be snapshotted onto the attention event. Returns `None`
+/// when the signal or its feed item is already absent — the read model then keeps
+/// its live-join fallback.
+fn signal_filing_title(connection: &Connection, signal_id: &str) -> StorageResult<Option<String>> {
+    let mut statement = connection.prepare(
+        "SELECT feed_items.title
+         FROM company_signals
+         JOIN feed_items ON feed_items.id = company_signals.feed_item_id
+         WHERE company_signals.id = ?1",
+    )?;
+    let mut rows = statement.query([signal_id])?;
+    match rows.next()? {
+        Some(row) => Ok(row.get::<_, Option<String>>(0)?),
+        None => Ok(None),
+    }
 }
 
 /// An autopilot run for `company_id` reached `finalize_notify`. Fire every
@@ -769,6 +933,10 @@ pub(super) fn evaluate_autopilot_completion(
     let mut fired = 0;
     for rule in enabled_rules_for_company(connection, TRIGGER_AUTOPILOT_RUN_COMPLETED, company_id)?
     {
+        // Autopilot evidence (`report_documents` via `autopilot_run`) is NOT
+        // cascade-deleted by feed pruning, so its title outlives pruning through
+        // the read-time join — no fire-time snapshot needed, and the title is not
+        // in scope here without a fresh lookup (v0.60 D7: join fallback retained).
         if insert_attention_event(
             connection,
             &rule.id,
@@ -776,6 +944,7 @@ pub(super) fn evaluate_autopilot_completion(
             company_id,
             EVIDENCE_AUTOPILOT_RUN,
             run_id,
+            None,
         )? {
             fired += 1;
         }
@@ -812,6 +981,8 @@ pub(super) fn evaluate_price_rules(
                 company_id,
                 EVIDENCE_DAILY_QUOTE,
                 &quote_date,
+                // Price events carry no filing title; the row states its own range.
+                None,
             )?
         {
             fired += 1;
@@ -828,6 +999,7 @@ pub(super) fn evaluate_price_rules(
                 company_id,
                 EVIDENCE_DAILY_QUOTE,
                 &quote_date,
+                None,
             )? {
                 fired += 1;
             }

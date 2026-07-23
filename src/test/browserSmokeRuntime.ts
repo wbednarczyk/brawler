@@ -23,9 +23,20 @@ import type {
 import type { FactProvenance } from "../api/generated/FactProvenance";
 import type { ReportDocument } from "../api/reportDocumentsTypes";
 import type { AutopilotRun } from "../api/autopilot";
-import { createMockRuntime, type InvocationMatch, type PendingInvocation } from "./scenarios/runtime";
-import type { ScenarioData, ScenarioName, ScenarioSpec } from "./scenarios/scenarios";
-import { applyScenarioOverlays, type ScenarioOverlayName } from "./scenarios/overlays";
+import {
+  createMockRuntime,
+  type InvocationMatch,
+  type PendingInvocation,
+} from "./scenarios/runtime";
+import type {
+  ScenarioData,
+  ScenarioName,
+  ScenarioSpec,
+} from "./scenarios/scenarios";
+import {
+  applyScenarioOverlays,
+  type ScenarioOverlayName,
+} from "./scenarios/overlays";
 import type { CommandError } from "../api/generated/CommandError";
 
 type InvokeArgs = Record<string, unknown> | undefined;
@@ -33,14 +44,44 @@ type InvokeArgs = Record<string, unknown> | undefined;
 const companies: Company[] = [
   company("company_gpw_cdr", "GPW", "CDR", "CD PROJEKT S.A.", "PLOPTTC00011"),
   company("company_gpw_pkn", "GPW", "PKN", "ORLEN S.A.", "PLPKN0000018"),
-  company("company_gpw_kgh", "GPW", "KGH", "KGHM POLSKA MIEDZ S.A.", "PLKGHM000017"),
+  company(
+    "company_gpw_kgh",
+    "GPW",
+    "KGH",
+    "KGHM POLSKA MIEDZ S.A.",
+    "PLKGHM000017",
+  ),
   company("company_gpw_pzu", "GPW", "PZU", "PZU S.A.", "PLPZU0000011"),
   company("company_gpw_dnp", "GPW", "DNP", "DINO POLSKA S.A.", "PLDINPL00011"),
-  company("company_gpw_acp", "GPW", "ACP", "ASSECO POLAND S.A.", "PLSOFTB00016"),
-  company("company_gpw_bft", "GPW", "BFT", "BENEFIT SYSTEMS S.A.", "PLBNFTS00107"),
-  company("company_gpw_cbf", "GPW", "CBF", "CYFROWY POLSAT S.A.", "PLCFRPT00013"),
+  company(
+    "company_gpw_acp",
+    "GPW",
+    "ACP",
+    "ASSECO POLAND S.A.",
+    "PLSOFTB00016",
+  ),
+  company(
+    "company_gpw_bft",
+    "GPW",
+    "BFT",
+    "BENEFIT SYSTEMS S.A.",
+    "PLBNFTS00107",
+  ),
+  company(
+    "company_gpw_cbf",
+    "GPW",
+    "CBF",
+    "CYFROWY POLSAT S.A.",
+    "PLCFRPT00013",
+  ),
   company("company_gpw_cmp", "GPW", "CMP", "COMPREMUM S.A.", "PLCOMP000001"),
-  company("company_gpw_nc4", "NC", "4MB", "4MOBILITY SPOLKA AKCYJNA", "PLESLTN00010"),
+  company(
+    "company_gpw_nc4",
+    "NC",
+    "4MB",
+    "4MOBILITY SPOLKA AKCYJNA",
+    "PLESLTN00010",
+  ),
   ...Array.from({ length: 18 }, (_, index) => {
     const number = index + 1;
     const ticker = `T${String(number).padStart(2, "0")}`;
@@ -55,12 +96,24 @@ const companies: Company[] = [
 ];
 
 const watchlists: Watchlist[] = [
-  { id: "watchlist_main_gpw", name: "Main GPW", description: null, companyCount: 6 },
-  { id: "watchlist_followups", name: "Follow-up", description: null, companyCount: 3 },
+  {
+    id: "watchlist_main_gpw",
+    name: "Main GPW",
+    description: null,
+    companyCount: 6,
+  },
+  {
+    id: "watchlist_followups",
+    name: "Follow-up",
+    description: null,
+    companyCount: 3,
+  },
 ];
 
 const watchlistMemberships: WatchlistMembership[] = [
-  ...companies.slice(0, 16).map((entry) => membership("watchlist_main_gpw", "Main GPW", entry.id)),
+  ...companies
+    .slice(0, 16)
+    .map((entry) => membership("watchlist_main_gpw", "Main GPW", entry.id)),
   membership("watchlist_followups", "Follow-up", "company_gpw_cdr"),
   membership("watchlist_followups", "Follow-up", "company_gpw_acp"),
   membership("watchlist_followups", "Follow-up", "company_gpw_bft"),
@@ -80,9 +133,16 @@ const feedItems: FeedItem[] = companies.slice(0, 7).map((entry, index) => ({
   publishedAt: "2026-06-05T09:12:00Z",
   fetchedAt: "2026-06-05T09:15:00Z",
   attribution: "Sample",
-  summary: "Deterministic source item used by browser UI regression smoke tests.",
+  summary:
+    "Deterministic source item used by browser UI regression smoke tests.",
   bodyText: "Longer body text remains available for detail-pane layout checks.",
-  attachments: [{ id: `attachment_${entry.id}`, label: "report.pdf", url: "https://example.test/report.pdf" }],
+  attachments: [
+    {
+      id: `attachment_${entry.id}`,
+      label: "report.pdf",
+      url: "https://example.test/report.pdf",
+    },
+  ],
 }));
 
 // A realistic "results" report with several long-named PDF attachments, used to
@@ -104,10 +164,28 @@ feedItems.push({
   summary: "Półroczne wyniki finansowe wraz z raportem z przeglądu.",
   bodyText: "Treść raportu okresowego dostępna do podglądu.",
   attachments: [
-    { id: "att_results_1", label: "H1_25_26_Sprawozdanie Zarządu.pdf", url: "https://example.test/H1_25_26_Sprawozdanie_Zarzadu.pdf" },
-    { id: "att_results_2", label: "H1_25_26_Sprawozdanie_finansowe.pdf", url: "https://example.test/H1_25_26_Sprawozdanie_finansowe.pdf" },
-    { id: "att_results_3", label: "AB S.A._31.03.2026_Raport z przeglądu śródrocznego skróconego JSF_MSSF.pdf", url: "https://example.test/AB_JSF_MSSF.pdf" },
-    { id: "att_results_4", label: "GK AB_31.03.2026_Raport z przeglądu śródrocznego skróconego SSF_MSSF.pdf", url: "https://example.test/GK_AB_SSF_MSSF.pdf" },
+    {
+      id: "att_results_1",
+      label: "H1_25_26_Sprawozdanie Zarządu.pdf",
+      url: "https://example.test/H1_25_26_Sprawozdanie_Zarzadu.pdf",
+    },
+    {
+      id: "att_results_2",
+      label: "H1_25_26_Sprawozdanie_finansowe.pdf",
+      url: "https://example.test/H1_25_26_Sprawozdanie_finansowe.pdf",
+    },
+    {
+      id: "att_results_3",
+      label:
+        "AB S.A._31.03.2026_Raport z przeglądu śródrocznego skróconego JSF_MSSF.pdf",
+      url: "https://example.test/AB_JSF_MSSF.pdf",
+    },
+    {
+      id: "att_results_4",
+      label:
+        "GK AB_31.03.2026_Raport z przeglądu śródrocznego skróconego SSF_MSSF.pdf",
+      url: "https://example.test/GK_AB_SSF_MSSF.pdf",
+    },
   ],
 });
 
@@ -179,17 +257,76 @@ const companySignals: CompanySignal[] = [
 ];
 
 const sourceAdapters: SourceAdapter[] = [
-  sourceAdapter("gpw-company-registry", "GPW Company Directory", "company_registry", "required", true, ["GPW"], 470),
-  sourceAdapter("newconnect-company-directory", "NewConnect Company Directory", "company_registry", "required", true, ["NEWCONNECT"], 350),
-  sourceAdapter("bankier-company-komunikaty", "Bankier Company Komunikaty", "official_report", "optional", true, ["GPW"], 7),
-  sourceAdapter("bankier-market-rss", "Bankier Gielda RSS", "public_media", "optional", false, ["GPW"], 3),
-  sourceAdapter("gpw-market-events-rss", "GPW Market Events RSS", "official_calendar", "optional", true, ["GPW"], 5),
-  sourceAdapter("bankier-kalendarium-html", "Bankier Kalendarium", "public_calendar", "optional", true, ["GPW"], 4),
-  sourceAdapter("portal-analiz", "Portal Analiz", "authenticated_research", "developer", false, ["GPW"], null),
+  sourceAdapter(
+    "gpw-company-registry",
+    "GPW Company Directory",
+    "company_registry",
+    "required",
+    true,
+    ["GPW"],
+    470,
+  ),
+  sourceAdapter(
+    "newconnect-company-directory",
+    "NewConnect Company Directory",
+    "company_registry",
+    "required",
+    true,
+    ["NEWCONNECT"],
+    350,
+  ),
+  sourceAdapter(
+    "bankier-company-komunikaty",
+    "Bankier Company Komunikaty",
+    "official_report",
+    "optional",
+    true,
+    ["GPW"],
+    7,
+  ),
+  sourceAdapter(
+    "bankier-market-rss",
+    "Bankier Gielda RSS",
+    "public_media",
+    "optional",
+    false,
+    ["GPW"],
+    3,
+  ),
+  sourceAdapter(
+    "gpw-market-events-rss",
+    "GPW Market Events RSS",
+    "official_calendar",
+    "optional",
+    true,
+    ["GPW"],
+    5,
+  ),
+  sourceAdapter(
+    "bankier-kalendarium-html",
+    "Bankier Kalendarium",
+    "public_calendar",
+    "optional",
+    true,
+    ["GPW"],
+    4,
+  ),
+  sourceAdapter(
+    "portal-analiz",
+    "Portal Analiz",
+    "authenticated_research",
+    "developer",
+    false,
+    ["GPW"],
+    null,
+  ),
 ];
 
 const registryEntries: CompanyRegistryEntry[] = companies.map((entry) => ({
-  sourceAdapterId: entry.exchange === "NC" ? "newconnect-company-directory" : "gpw-company-registry",
+  sourceAdapterId:
+    entry.exchange === "NC"
+      ? "newconnect-company-directory"
+      : "gpw-company-registry",
   exchange: entry.exchange,
   ticker: entry.ticker,
   qualifiedTicker: entry.qualifiedTicker,
@@ -211,26 +348,28 @@ const notebookEntries: NotebookEntry[] = companies.flatMap((entry, index) =>
   ),
 );
 
-const companyEvents: CompanyEvent[] = companies.slice(0, 4).map((entry, index) => ({
-  id: `event_${entry.id}`,
-  companyId: entry.id,
-  company: entry.qualifiedTicker,
-  companyName: entry.displayName,
-  eventType: "periodic_report",
-  title: `${entry.ticker} periodic report`,
-  eventDate: `2026-06-${String(10 + index).padStart(2, "0")}`,
-  eventTime: null,
-  status: "scheduled",
-  sourceType: "official_calendar",
-  sourceAdapterId: "gpw-market-events-rss",
-  sourceEventKey: `event:${entry.id}`,
-  sourceUrl: "https://example.test/event",
-  attribution: "Sample",
-  fetchedAt: "2026-06-05T09:00:00Z",
-  manual: false,
-  createdAt: "2026-06-05T09:00:00Z",
-  updatedAt: "2026-06-05T09:00:00Z",
-}));
+const companyEvents: CompanyEvent[] = companies
+  .slice(0, 4)
+  .map((entry, index) => ({
+    id: `event_${entry.id}`,
+    companyId: entry.id,
+    company: entry.qualifiedTicker,
+    companyName: entry.displayName,
+    eventType: "periodic_report",
+    title: `${entry.ticker} periodic report`,
+    eventDate: `2026-06-${String(10 + index).padStart(2, "0")}`,
+    eventTime: null,
+    status: "scheduled",
+    sourceType: "official_calendar",
+    sourceAdapterId: "gpw-market-events-rss",
+    sourceEventKey: `event:${entry.id}`,
+    sourceUrl: "https://example.test/event",
+    attribution: "Sample",
+    fetchedAt: "2026-06-05T09:00:00Z",
+    manual: false,
+    createdAt: "2026-06-05T09:00:00Z",
+    updatedAt: "2026-06-05T09:00:00Z",
+  }));
 
 // KNF short-selling register (v0.55 T4b). CD PROJEKT carries active positions +
 // change history (populated panel); ORLEN carries only a remembered exit (the
@@ -421,7 +560,7 @@ const settings: UserSettings = {
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
   queue: { sourcesWorkers: 2, autopilotWorkers: 3 },
   pinnedCompanyIds: [],
-  mcp: { enabled: false, port: 8317 },
+  mcp: { enabled: false, port: 8317, writesEnabled: false },
 };
 
 const licenseStatus: LicenseStatus = {
@@ -472,12 +611,40 @@ const FUNDAMENTALS_COMPANY_ID = "company_gpw_cdr";
 const NOW = "2026-06-05T09:00:00Z";
 
 const kpiDefinitions: KpiDefinition[] = [
-  kpiDefinition("def_revenue", "revenue", "Revenue", "monetary", null, "reported"),
-  kpiDefinition("def_operating_profit", "operating_profit", "Operating profit", "monetary", null, "reported"),
-  kpiDefinition("def_net_profit", "net_profit", "Net profit", "monetary", null, "reported"),
+  kpiDefinition(
+    "def_revenue",
+    "revenue",
+    "Revenue",
+    "monetary",
+    null,
+    "reported",
+  ),
+  kpiDefinition(
+    "def_operating_profit",
+    "operating_profit",
+    "Operating profit",
+    "monetary",
+    null,
+    "reported",
+  ),
+  kpiDefinition(
+    "def_net_profit",
+    "net_profit",
+    "Net profit",
+    "monetary",
+    null,
+    "reported",
+  ),
   kpiDefinition("def_ebitda", "ebitda", "EBITDA", "monetary", null, "reported"),
   kpiDefinition("def_eps", "eps", "EPS", "monetary", "per_share", "reported"),
-  kpiDefinition("def_gross_margin", "gross_margin", "Gross margin", "percentage", null, "derived"),
+  kpiDefinition(
+    "def_gross_margin",
+    "gross_margin",
+    "Gross margin",
+    "percentage",
+    null,
+    "derived",
+  ),
 ];
 
 const financialPeriods: FinancialPeriod[] = [
@@ -491,14 +658,72 @@ const financialPeriods: FinancialPeriod[] = [
 // asReportedScale carry the original as-reported figure (the v0.37 540f931
 // formatting work renders these instead of the raw integer).
 const financialFacts: FinancialFact[] = [
-  financialFact("fact_rev_2024", "period_cdr_2024_annual", "def_revenue", "1093600000", "1 093,6", "mln"),
-  financialFact("fact_rev_q1", "period_cdr_2025_q1", "def_revenue", "228400000", "228,4", "mln"),
-  financialFact("fact_rev_q2", "period_cdr_2025_q2", "def_revenue", "251900000", "251,9", "mln"),
-  financialFact("fact_rev_q3", "period_cdr_2025_q3", "def_revenue", "319700000", "319,7", "mln"),
-  financialFact("fact_np_2024", "period_cdr_2024_annual", "def_net_profit", "481100000", "481,1", "mln"),
-  financialFact("fact_np_q3", "period_cdr_2025_q3", "def_net_profit", "112400000", "112,4", "mln"),
-  financialFact("fact_eps_2024", "period_cdr_2024_annual", "def_eps", "478", "4,78", "", "PLN"),
-  financialFact("fact_eps_q3", "period_cdr_2025_q3", "def_eps", "112", "1,12", "", "PLN"),
+  financialFact(
+    "fact_rev_2024",
+    "period_cdr_2024_annual",
+    "def_revenue",
+    "1093600000",
+    "1 093,6",
+    "mln",
+  ),
+  financialFact(
+    "fact_rev_q1",
+    "period_cdr_2025_q1",
+    "def_revenue",
+    "228400000",
+    "228,4",
+    "mln",
+  ),
+  financialFact(
+    "fact_rev_q2",
+    "period_cdr_2025_q2",
+    "def_revenue",
+    "251900000",
+    "251,9",
+    "mln",
+  ),
+  financialFact(
+    "fact_rev_q3",
+    "period_cdr_2025_q3",
+    "def_revenue",
+    "319700000",
+    "319,7",
+    "mln",
+  ),
+  financialFact(
+    "fact_np_2024",
+    "period_cdr_2024_annual",
+    "def_net_profit",
+    "481100000",
+    "481,1",
+    "mln",
+  ),
+  financialFact(
+    "fact_np_q3",
+    "period_cdr_2025_q3",
+    "def_net_profit",
+    "112400000",
+    "112,4",
+    "mln",
+  ),
+  financialFact(
+    "fact_eps_2024",
+    "period_cdr_2024_annual",
+    "def_eps",
+    "478",
+    "4,78",
+    "",
+    "PLN",
+  ),
+  financialFact(
+    "fact_eps_q3",
+    "period_cdr_2025_q3",
+    "def_eps",
+    "112",
+    "1,12",
+    "",
+    "PLN",
+  ),
 ];
 
 // Structured-first extraction provenance (ADR 0061): Revenue Q3 is a clean,
@@ -534,7 +759,9 @@ const factProvenance: FactProvenance[] = [
 // "Layout changed" chip), and the SENTINEL period of a `no_period_derived`
 // failure (fiscalYear 0 / empty periodType — renders as "Period unknown", never
 // as a real period). ORLEN has none, covering the reassuring empty state.
-const flaggedExtractionOutcomes: NonNullable<ScenarioData["flaggedExtractionOutcomes"]> = [
+const flaggedExtractionOutcomes: NonNullable<
+  ScenarioData["flaggedExtractionOutcomes"]
+> = [
   {
     id: "outcome_cdr_2025_h1",
     companyId: FUNDAMENTALS_COMPANY_ID,
@@ -625,7 +852,8 @@ const autopilotRuns: AutopilotRun[] = [
     // Legacy/fallback only (contracts.md § Autonomous Report Pipeline) — the Today
     // card composes its own localized sentence from kpiDeltaJson/reportDiffRef/
     // crossRefsJson (bug e77a1a2 part 2), never this raw English string.
-    summaryText: "CD PROJEKT Q3 2025: net profit auto-confirmed from the new report.",
+    summaryText:
+      "CD PROJEKT Q3 2025: net profit auto-confirmed from the new report.",
     kpiDeltaJson: JSON.stringify({
       extractionAvailable: true,
       structured: true,
@@ -644,6 +872,10 @@ const autopilotRuns: AutopilotRun[] = [
     producedFactIds: ["fact_np_q3"],
     notificationState: "unread",
     lastError: null,
+    // status `succeeded` → routine (product-spec §Attention Routing / `storage::severity`).
+    severity: "routine",
+    // The processed report's title (v0.60 D6): the Today row states WHICH report.
+    reportDocumentTitle: "CD PROJEKT — Raport kwartalny Q3 2025",
     createdAt: "2026-06-20T09:00:00Z",
     updatedAt: "2026-06-20T09:00:00Z",
   },
@@ -659,10 +891,17 @@ const reportDocuments: ReportDocument[] = [
 ];
 
 const irReportsUrls: Record<string, string> = {
-  [FUNDAMENTALS_COMPANY_ID]: "https://www.cdprojekt.com/en/investors/financial-reports/",
+  [FUNDAMENTALS_COMPANY_ID]:
+    "https://www.cdprojekt.com/en/investors/financial-reports/",
 };
 
-function company(id: string, exchange: string, ticker: string, displayName: string, isin: string): Company {
+function company(
+  id: string,
+  exchange: string,
+  ticker: string,
+  displayName: string,
+  isin: string,
+): Company {
   return {
     id,
     exchange,
@@ -675,7 +914,11 @@ function company(id: string, exchange: string, ticker: string, displayName: stri
   };
 }
 
-function membership(watchlistId: string, watchlistName: string, companyId: string): WatchlistMembership {
+function membership(
+  watchlistId: string,
+  watchlistName: string,
+  companyId: string,
+): WatchlistMembership {
   return { watchlistId, watchlistName, companyId };
 }
 
@@ -719,7 +962,12 @@ function sourceAdapter(
   };
 }
 
-function notebookEntry(id: string, companyId: string, title: string, kind: string): NotebookEntry {
+function notebookEntry(
+  id: string,
+  companyId: string,
+  title: string,
+  kind: string,
+): NotebookEntry {
   return {
     id,
     companyId,
@@ -816,7 +1064,11 @@ function financialFact(
   };
 }
 
-function kpiRelevanceEntry(id: string, definitionId: string, rank: string): KpiRelevance {
+function kpiRelevanceEntry(
+  id: string,
+  definitionId: string,
+  rank: string,
+): KpiRelevance {
   return {
     id,
     companyId: FUNDAMENTALS_COMPANY_ID,
@@ -858,7 +1110,6 @@ function reportDocument(
     docKind: "periodic_ssf",
   };
 }
-
 
 // ---------------------------------------------------------------------------
 // Adapter onto the canonical mock runtime (ADR 0048 Keystone B/C, Radicle 749a5a8)
@@ -905,12 +1156,20 @@ function seedBrowserStore(data: ScenarioData) {
   data.shortPositions = structuredClone(shortPositions);
   data.shortPositionEvents = structuredClone(shortPositionEvents);
   data.redFlagsByCompany = structuredClone(redFlagsByCompany);
-  data.analystRecommendationsByCompany = structuredClone(analystRecommendationsByCompany);
+  data.analystRecommendationsByCompany = structuredClone(
+    analystRecommendationsByCompany,
+  );
   data.irResolutions = [
     {
       candidates: [
-        { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_Q3_2025.pdf", label: "Q3 2025 consolidated report" },
-        { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_H1_2025.pdf", label: "H1 2025 report" },
+        {
+          url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_Q3_2025.pdf",
+          label: "Q3 2025 consolidated report",
+        },
+        {
+          url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_H1_2025.pdf",
+          label: "H1 2025 report",
+        },
       ],
     },
   ];
@@ -925,7 +1184,9 @@ function seedBrowserStore(data: ScenarioData) {
 
 function seedIrReportUrls(runtime: ReturnType<typeof createMockRuntime>) {
   for (const [companyId, url] of Object.entries(irReportsUrls)) {
-    void runtime.invoke("set_company_ir_reports_url", { input: { companyId, url } });
+    void runtime.invoke("set_company_ir_reports_url", {
+      input: { companyId, url },
+    });
   }
 }
 
@@ -986,12 +1247,21 @@ export function installBrowserSmokeRuntime() {
   // preview), then a localStorage key set via the project's storageState (survives
   // navigations within the context, which a query param does not). The app then
   // applies data-theme/data-palette from these persisted settings on first render.
-  const requestedTheme = params.get("theme") ?? readSmokeOverride("brawler:smoke:theme");
-  if (requestedTheme === "light" || requestedTheme === "dark" || requestedTheme === "system") {
+  const requestedTheme =
+    params.get("theme") ?? readSmokeOverride("brawler:smoke:theme");
+  if (
+    requestedTheme === "light" ||
+    requestedTheme === "dark" ||
+    requestedTheme === "system"
+  ) {
     settings.theme = requestedTheme;
   }
-  const requestedPalette = params.get("palette") ?? readSmokeOverride("brawler:smoke:palette");
-  if (requestedPalette === "night-neon" || requestedPalette === "midnight-horizon") {
+  const requestedPalette =
+    params.get("palette") ?? readSmokeOverride("brawler:smoke:palette");
+  if (
+    requestedPalette === "night-neon" ||
+    requestedPalette === "midnight-horizon"
+  ) {
     settings.accentPalette = requestedPalette;
   }
   const runtime = createMockRuntime("rich");
@@ -999,9 +1269,16 @@ export function installBrowserSmokeRuntime() {
   activeRuntime = runtime;
   window.__brawlerMock = {
     reset(spec) {
-      const base: ScenarioName = spec === undefined ? "rich" : typeof spec === "string" ? spec : spec.base;
+      const base: ScenarioName =
+        spec === undefined
+          ? "rich"
+          : typeof spec === "string"
+            ? spec
+            : spec.base;
       const overlays: readonly ScenarioOverlayName[] =
-        spec === undefined || typeof spec === "string" ? [] : spec.overlays ?? [];
+        spec === undefined || typeof spec === "string"
+          ? []
+          : (spec.overlays ?? []);
       runtime.reset(base);
       seedAndOverlay(runtime, overlays);
     },
@@ -1011,7 +1288,9 @@ export function installBrowserSmokeRuntime() {
     reject: (id, error) => runtime.controls.reject(id, error),
     releaseAll: () => runtime.controls.releaseAll(),
   };
-  mockIPC((command, args) => dispatch(command, args as InvokeArgs), { shouldMockEvents: true });
+  mockIPC((command, args) => dispatch(command, args as InvokeArgs), {
+    shouldMockEvents: true,
+  });
 }
 
 function dispatch(command: string, args: InvokeArgs): unknown {
@@ -1027,7 +1306,10 @@ function dispatch(command: string, args: InvokeArgs): unknown {
       return null;
     default:
       return activeRuntime
-        ? activeRuntime.invoke(command, args as Record<string, unknown> | undefined)
+        ? activeRuntime.invoke(
+            command,
+            args as Record<string, unknown> | undefined,
+          )
         : null;
   }
 }

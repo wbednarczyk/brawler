@@ -53,6 +53,8 @@ export type UseReportSeasonResult = {
   process: (entry: ReportSeasonEntry) => void;
   writeExpectation: (entry: ReportSeasonEntry, draft: ExpectationDraft) => Promise<void>;
   resolveExpectation: (entry: ReportSeasonEntry, note: string) => Promise<void>;
+  /** Refetch the season read model (Today per-category error-strip retry, ADR 0087). */
+  reload: () => void;
 };
 
 export function useReportSeason(watchlistId: string | null): UseReportSeasonResult {
@@ -261,6 +263,7 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
       process,
       writeExpectation,
       resolveExpectation,
+      reload: () => void refreshSeason(),
     }),
     [
       season,
@@ -277,6 +280,7 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
       process,
       writeExpectation,
       resolveExpectation,
+      refreshSeason,
     ],
   );
 }

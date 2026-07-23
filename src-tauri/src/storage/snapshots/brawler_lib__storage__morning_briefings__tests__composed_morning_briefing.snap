@@ -15,7 +15,7 @@ ComposedBriefing {
             evidence_ref: "claim_1",
             title: "Claim claim_1",
             detail: Some(
-                "Due Q2 2026",
+                "due:Q2:2026",
             ),
         },
         ComposedBriefingItem {
@@ -25,9 +25,9 @@ ComposedBriefing {
             citation_key: "b2",
             evidence_type: "attention_event",
             evidence_ref: "attn_new",
-            title: "Alert fired: signal_category",
+            title: "signal_category",
             detail: Some(
-                "signal_category · company_signal",
+                "company_signal",
             ),
         },
         ComposedBriefingItem {
@@ -51,7 +51,7 @@ ComposedBriefing {
             evidence_ref: "sig_new",
             title: "Signal sig_new",
             detail: Some(
-                "Profit warning",
+                "profit_warning",
             ),
         },
         ComposedBriefingItem {

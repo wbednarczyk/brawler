@@ -48,6 +48,7 @@ mod research_reminders;
 mod schema;
 mod search;
 mod settings;
+mod severity;
 mod short_positions;
 mod signals;
 mod source_registry;

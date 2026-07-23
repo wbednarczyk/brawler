@@ -14,6 +14,7 @@ import {
   legacyNotebookEntry,
 } from "./scenarios/legacyMinimal";
 import { createMockRuntime } from "./scenarios/runtime";
+import type { ScenarioName, ScenarioSpec } from "./scenarios/scenarios";
 
 export { currentWeekTestDate };
 
@@ -175,6 +176,17 @@ export function resetAppTestState() {
   runtime.reset("minimal");
   canned.searchResponse = null;
   canned.refreshSourcesError = null;
+}
+
+/**
+ * Rebuild the backing store from a full scenario spec (base + overlays) — the
+ * canonical way for a Vitest test to exercise a scenario overlay (the ADR 0081
+ * mechanism the browser layer reaches via `primeMockScenario`). Call it in the
+ * test body BEFORE `renderApp` (the per-test `beforeEach` has already reset to
+ * `minimal`). Re-exports the overlay-spec type so callers stay decoupled.
+ */
+export function seedScenario(spec: ScenarioName | ScenarioSpec) {
+  runtime.reset(spec);
 }
 
 // --- Seed values consumed by individual tests (now sourced from the canonical

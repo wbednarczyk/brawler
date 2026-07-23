@@ -43,6 +43,107 @@
   gap: var(--space-1);
 }
 
+/* Config-state banner(s) (ADR 0087 dec. 5): a condition that is a property of
+   the app, stated once above the stream, never repeated per row. */
+.today-config-banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-1) var(--space-1) 0;
+}
+
+.today-config-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--tone-caution) 45%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone-caution) 10%, var(--surface-raised));
+  font-size: var(--font-sm);
+}
+
+.today-config-banner-icon {
+  flex: none;
+  color: var(--tone-caution);
+}
+
+.today-config-banner-message {
+  font-weight: 650;
+}
+
+.today-config-banner-detail {
+  color: var(--muted);
+}
+
+.today-config-banner-action {
+  margin-left: auto;
+}
+
+/* Morning-briefing STRIP (ADR 0087 dec. 5 mockup amendment): the card wall of
+   near-identical rows collapses to one summary line that expands in place. */
+.today-briefing-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-1) var(--space-1) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+
+.today-brief-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.today-brief-icon {
+  flex: none;
+  align-self: center;
+  color: var(--tone-caution);
+}
+
+.today-brief-label {
+  font-weight: 650;
+  font-size: var(--font-sm);
+}
+
+.today-brief-since {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.today-brief-summary {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  min-width: 0;
+}
+
+.today-brief-expand {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.today-brief-expand svg {
+  transition: transform 0.15s ease;
+}
+
+.today-brief-expand-open svg {
+  transform: rotate(90deg);
+}
+
 .today-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 240px;
@@ -63,6 +164,19 @@
   align-content: start;
 }
 
+/* Archive view (owner 2026-07-23): a read-only, full-width history of dismissed
+   attention events — no counters column. */
+.today-body-archive {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "stream";
+}
+
+.today-archive-subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+}
+
 .today-counter {
   display: flex;
   flex-direction: column;
@@ -76,6 +190,74 @@
   color: var(--text);
   text-align: left;
   cursor: pointer;
+}
+
+/* Severity legend: a quiet info toggle beside the Pilne tile + a compact popover
+   mirroring the product-spec taxonomy (owner dogfooding 2026-07-23). */
+.today-legend {
+  position: relative;
+  align-self: flex-end;
+  margin-top: calc(-1 * var(--space-2));
+}
+
+.today-legend-toggle {
+  color: var(--muted);
+}
+
+.today-legend-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  width: min(320px, 80vw);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.today-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.today-legend-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.today-legend-badge {
+  font-weight: 600;
+  font-size: var(--font-sm);
+}
+
+.today-legend-badge.today-sev-urgent {
+  color: var(--danger);
+}
+
+.today-legend-badge.today-sev-notable {
+  color: var(--warn, var(--accent));
+}
+
+.today-legend-badge.today-sev-routine {
+  color: var(--muted);
+}
+
+.today-legend-desc {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.today-legend-aging {
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
 }
 
 .today-counter:hover {
@@ -109,6 +291,35 @@
   font-weight: 500;
 }
 
+/* The "Pilne" tile (ADR 0087 mockup amendment): the urgent-row counter leads the
+   column and reads in the negative tone when it holds anything. */
+.today-counter-hot .today-counter-count {
+  color: var(--tone-negative);
+}
+
+.today-counter-hot.today-counter-empty .today-counter-count {
+  color: var(--muted);
+}
+
+/* Per-category inline error strip (ADR 0087; D1 §7): a failed category fetch is
+   always visibly errored (never false-quiet) with a scoped retry. */
+.today-error-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--tone-negative) 45%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone-negative) 8%, var(--surface-raised));
+  color: var(--tone-negative);
+  font-size: var(--font-sm);
+}
+
+.today-error-strip-message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* The stream region owns the internal scroll (panel-scroll convention). */
 .today-stream-region {
   grid-area: stream;
@@ -127,8 +338,97 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-2) var(--space-0);
+  padding: var(--space-2) var(--space-2);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  /* Severity left-border cue (ADR 0087 + mockup): red / amber / none. */
+  border-left: 3px solid transparent;
+}
+
+/* Severity cues (ADR 0087 dec. 2 render): urgent leads (red), notable (amber),
+   routine is the dimmed baseline (no accent). Dimming uses a muted title color,
+   not opacity, to stay above the AA contrast floor (axe gate). */
+.today-sev-urgent {
+  border-left-color: var(--tone-negative);
+}
+
+.today-sev-notable {
+  border-left-color: var(--tone-caution);
+}
+
+.today-sev-routine .today-row-title {
+  color: color-mix(in srgb, var(--text) 80%, var(--muted));
+}
+
+.today-sev-routine .today-row-icon {
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+/* The severity chip reads as a compact uppercase flag. */
+.today-sev-chip {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 650;
+}
+
+/* Grouped-row members expand in place: compact rows indented under the header,
+   each keeping its own single Review action so j/k traverses them inline. */
+.today-group-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: var(--space-5);
+  border-top: 1px dashed color-mix(in srgb, var(--border) 60%, transparent);
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+}
+
+.today-stream-member {
+  border-bottom: none;
+  border-left: 2px solid color-mix(in srgb, var(--border) 60%, transparent);
+  padding: var(--space-1) var(--space-2);
+}
+
+.today-stream-member .today-row-title {
+  font-size: var(--font-sm);
+}
+
+.today-row-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Alert-rule origin indicator: a quiet bell glyph chip in the row's fixed chip
+   slot (owner dogfooding 2026-07-23). Compact, icon-only — its name is the label. */
+.today-rule-origin {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+}
+
+/* The filename split off a document title (owner dogfooding 2026-07-23): a quiet
+   secondary link line — metadata, not prose. Monospace-ish, dimmed, truncating. */
+.today-row-doc-link {
+  margin-top: var(--space-1);
+  padding: 0;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono, monospace);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.today-row-doc-link:hover,
+.today-row-doc-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.today-row-expand {
+  min-width: 0;
 }
 
 .today-stream-row:last-child {

@@ -67,6 +67,20 @@ export function isCheckpointRun(env: EnvMap = PROCESS_ENV): boolean {
   return Boolean(env.BRAWLER_UX_STAGE ?? env.BRAWLER_UX_JOURNEY ?? env.BRAWLER_UX_CARD);
 }
 
+/**
+ * Stream-specificity metrics measured over the REAL rendered Today stream (owner
+ * dogfooding 2026-07-23). Advisory except `filenameAsStatement`, which the caller
+ * HARD-asserts to zero — a filename must never be a row's statement on real data.
+ */
+export type StreamSpecificityMetrics = {
+  /** Rendered row statements (`.today-row-title`). */
+  totalRows: number;
+  /** Statements that are NOT a known generic fallback copy — the concrete ones. */
+  rowsWithSpecificStatement: number;
+  /** Statements that are a document filename (a document extension present). Must be 0. */
+  filenameAsStatement: number;
+};
+
 export type CheckpointManifest = CheckpointMeta & {
   recordedAt: string;
   appVersion: string | null;
@@ -77,6 +91,8 @@ export type CheckpointManifest = CheckpointMeta & {
   theme: string | null;
   /** Non-sensitive dataset label supplied by the caller — NEVER the DB path/contents. */
   datasetLabel: string;
+  /** Stream-specificity metrics (advisory; the hard zero is asserted by the caller). */
+  streamMetrics: StreamSpecificityMetrics | null;
   screenshotDir: string;
   observations: string[];
 };
@@ -93,7 +109,12 @@ const CHECKPOINT_ROOT = "test-results/live/checkpoints";
 export async function recordCheckpoint(
   page: Page,
   meta: CheckpointMeta,
-  opts: { datasetLabel: string; nowIso: string; observations: string[] },
+  opts: {
+    datasetLabel: string;
+    nowIso: string;
+    observations: string[];
+    streamMetrics?: StreamSpecificityMetrics;
+  },
 ): Promise<CheckpointManifest> {
   const dir = join(CHECKPOINT_ROOT, `${meta.stage}-${meta.card}`);
   mkdirSync(dir, { recursive: true });
@@ -134,6 +155,7 @@ export async function recordCheckpoint(
     locale: env?.locale ?? null,
     theme: env?.theme ?? null,
     datasetLabel: opts.datasetLabel,
+    streamMetrics: opts.streamMetrics ?? null,
     screenshotDir: dir,
     observations: opts.observations,
   };

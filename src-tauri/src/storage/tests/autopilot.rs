@@ -129,6 +129,78 @@ fn create_run_is_idempotent_per_company_and_document() {
 }
 
 #[test]
+fn list_runs_carries_the_report_document_title() {
+    // v0.60 D6: an autopilot run must name the report it processed, so the Today
+    // row states WHICH report instead of a bare "New report processed."
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+    let document_id = fetched_statement(
+        &state,
+        &company.id,
+        "Skonsolidowany raport kwartalny Q2 2026",
+        "https://example.test/cdr-q2-2026",
+    );
+
+    state
+        .autopilot()
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            &document_id,
+            "manual",
+            MODE_ASSIST,
+            None,
+        )
+        .expect("create run");
+
+    // Both read models (get + list) resolve the document title via the join.
+    let run = state.autopilot().get_run("run1").expect("run");
+    assert_eq!(
+        run.report_document_title.as_deref(),
+        Some("Skonsolidowany raport kwartalny Q2 2026"),
+        "get_run resolves the processed report's document title"
+    );
+
+    let runs = state
+        .autopilot()
+        .list_runs(&ListAutopilotRunsInput::default())
+        .expect("list");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(
+        runs[0].report_document_title.as_deref(),
+        Some("Skonsolidowany raport kwartalny Q2 2026"),
+        "list_runs resolves the processed report's document title"
+    );
+}
+
+#[test]
+fn list_runs_report_document_title_is_none_without_a_document_row() {
+    // Tolerant fallback: a run whose report document has no stored row (legacy /
+    // pruned) reports no title — the frontend keeps its generic copy.
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+
+    state
+        .autopilot()
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "orphan_doc",
+            "manual",
+            MODE_ASSIST,
+            None,
+        )
+        .expect("create run");
+
+    let runs = state
+        .autopilot()
+        .list_runs(&ListAutopilotRunsInput::default())
+        .expect("list");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].report_document_title, None);
+}
+
+#[test]
 fn failed_run_without_facts_is_recreated_on_next_detection() {
     // Self-heal (ADR 0059): a transient extraction failure finalizes the run as
     // `failed` with no produced facts. The next detection sweep must be able to

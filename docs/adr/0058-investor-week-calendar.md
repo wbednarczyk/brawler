@@ -62,7 +62,7 @@ The active scope (`watchlist | market`) and enabled layers (macro, holidays) per
 - **Real-data validation** before locking the whole-market dedup-by-ticker and the adapter mapping (per the real-data-validation guardrail, [ADR 0045](0045-guardrail-harvest-loop.md)).
 - Migrations are append-only and idempotent (`CREATE TABLE IF NOT EXISTS`, tolerant reads), per `AGENTS.md`.
 
-## Build order (slotted as milestone `v0.68.0`)
+## Build order (slotted as milestone `v0.67.0`)
 
 1. Read model + view layering: `list_investor_week`, the Mon–Fri layered week, scope + layer toggles (watchlist-first default).
 2. Company layer event types `ipo_debut` + `ex_dividend`; widen the Bankier mapping + ESPI ex-date derivation.
@@ -80,4 +80,4 @@ Each task ships its tests (migration invariants, adapter mapping, read-model uni
 
 ## Status notes
 
-Accepted 2026-06-30 after an inspiration-driven scoping discussion. Locked: watchlist-first + opt-in market layer; layers = macro (model + manual + sample now, live source deferred to a follow-up ADR), holidays (curated static), IPO debut + ex-dividend; foreign earnings out of scope. Slotted as a new milestone `v0.59.0` (the booked arc runs through `v0.58.0`; no renumbering); re-slotted to `v0.66.0` at the 2026-07-03 numbering finalization (stale `v0.59.0` references in the propagated docs corrected 2026-07-19), then to `v0.68.0` at the 2026-07-20 arc re-sequencing (ADR 0084 retirement + `v0.60.0` Today reinvention + `v0.61.0` MCP surface v2 inserted ahead; [roadmap](../roadmap.md)). Docs propagated in the same planning step: roadmap, data-model, contracts, source-strategy, ui-flows, ui-information-architecture. Implementation deferred — sequenced after the booked milestones.
+Accepted 2026-06-30 after an inspiration-driven scoping discussion. Locked: watchlist-first + opt-in market layer; layers = macro (model + manual + sample now, live source deferred to a follow-up ADR), holidays (curated static), IPO debut + ex-dividend; foreign earnings out of scope. Slotted as a new milestone `v0.59.0` (the booked arc runs through `v0.58.0`; no renumbering); re-slotted to `v0.66.0` at the 2026-07-03 numbering finalization (stale `v0.59.0` references in the propagated docs corrected 2026-07-19), then to `v0.68.0` at the 2026-07-20 arc re-sequencing (ADR 0084 retirement + `v0.60.0` Today reinvention + `v0.61.0` MCP surface v2 inserted ahead), then to `v0.67.0` at the 2026-07-22 v0.60 planning (MCP surface v2 folded into `v0.60.0`, arc shifted back one; [roadmap](../roadmap.md), ADR 0088). Docs propagated in the same planning step: roadmap, data-model, contracts, source-strategy, ui-flows, ui-information-architecture. Implementation deferred — sequenced after the booked milestones.

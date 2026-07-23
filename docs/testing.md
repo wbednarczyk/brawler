@@ -774,6 +774,40 @@ Or the pieces separately:
 - **A punchline probe asserts the OUTCOME, not just settlement.** A probe whose purpose is "the flow produced X" must require a nonzero/expected result (`Wydobyto [1-9]`, a row count delta, a DB assertion) — "it settled" with a zero result is a probe FAILURE. A settle-only assert once passed while the feature under test silently did nothing.
 - **Panes are company-scoped.** A live cockpit layout can hold panels pinned to OTHER companies (the owner may be using the app concurrently); an unscoped `.first()` locator can silently read a neighbour's pane. Always scope by `data-company-id` (present on coverage + review panels for exactly this reason).
 
+## UI dogfooding finding ⇒ overlay (standing rule, ADR 0045 harvest)
+
+A UI defect found by dogfooding/live checkpoint on real data is fixed **twice** in the same
+change: the fix itself, **and an overlay in the scenario runtime reproducing the data state
+that exposed it** (`src/test/scenarios/runtime.ts` overlays — the ADR 0081 mechanism), so the
+state renders in CI forever. Precedents (v0.60): stale-urgent wall, orphaned evidence
+(cascade-pruned signals), pruned-feed titles. What a gate CANNOT judge — whether copy is
+*understandable* — stays a human verdict (ADR 0081 rule 4); everything mechanical about the
+state must redden without a human.
+
+## MCP dogfooding ritual (closure step, ADR 0088 dec. 5)
+
+A **real talk-to-your-research session** over the live MCP port is a mandatory closure step for
+any milestone that changes the MCP surface (standing since `v0.60.0`). Mock-green tool tests are
+never completion evidence for the port — the ritual is the MCP equivalent of the desktop
+dogfooding pass.
+
+Setup: the real Windows app running (live drive above), MCP enabled with a real token, the
+client agent with the **`brawler-mcp` skill loaded** (`.claude/skills/brawler-mcp/SKILL.md` —
+the ritual also tests the skill itself). Checklist (evidence: transcript summary + tool-call
+results in the closure chat, never raw DB contents):
+
+1. **Read every changed domain** — at least one successful call per read tool the milestone
+   added/changed, on the owner's real data.
+2. **Write with provenance** — one real research write (note/claim/verdict) with citations;
+   verify the entry appears in the UI with its origin label.
+3. **Refusal honesty** — a write with empty provenance → typed `provenance_required`; any act
+   call with the writes toggle OFF → typed `writes_disabled`; a denylisted command is absent
+   from `tools/list`.
+4. **Trigger + observe** — fire one job trigger (the hermetic-test-exempt networked triggers
+   are exercised HERE) and observe its result through a read tool.
+5. **Skill fidelity** — note anywhere the skill's guidance mismatched reality; a mismatch is a
+   docs defect to fix in the same closure.
+
 ## Packaging smoke tests
 
 Checklist for public release artifact candidates. Native Windows owns hands-on desktop/packaged-executable validation; a WSL Linux build does not validate Windows desktop behavior.

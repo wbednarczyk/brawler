@@ -86,3 +86,5 @@
 - [0084](0084-retire-in-app-ai-layer.md) — Retire the In-App AI Analysis Layer — Intelligence via MCP — Accepted (2026-07-20, owner sign-off)
 - [0085](0085-biznesradar-fundamentals-witness.md) — BiznesRadar Fundamentals Page as the Aggregator Witness — Accepted (2026-07-21, owner sign-off)
 - [0086](0086-aggregator-primary-fundamentals.md) — Aggregator-primary fundamentals, PDF-fact retirement, review-free facts — Accepted (2026-07-21, owner decisions at Track C planning)
+- [0087](0087-today-attention-home-v2.md) — Today attention home v2 — grouped stream, typed severity, quiet toasts — Accepted (2026-07-22, owner sign-off at v0.60 planning)
+- [0088](0088-mcp-surface-v2-ui-parity.md) — MCP surface v2 — UI-parity tool registry, capability tiers, provenance-mandatory writes — Accepted (2026-07-22, owner sign-off at v0.60 planning)

@@ -292,6 +292,11 @@ describe("Persistent-toast overflow summary — locale reactivity (D1 fix)", () 
       firedAt: "2026-06-10T09:00:00Z",
       seen: false,
       dismissed: false,
+      // signal_category + profit_warning → urgent, the only level that raises a
+      // PERSISTENT toast (ADR 0087 dec. 3) — exactly what the overflow cap exercises.
+      severity: "urgent",
+      evidenceTitle: null,
+      evidenceDetail: null,
     };
   }
 

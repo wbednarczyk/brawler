@@ -4,4 +4,4 @@
  * Closed set of machine-readable command failure kinds (ADR 0070). Serialized
  * as `snake_case` on the wire; additive-only.
  */
-export type CommandErrorCode = "not_found" | "invalid_input" | "missing_credential" | "network" | "provider" | "conflict" | "internal";
+export type CommandErrorCode = "not_found" | "invalid_input" | "missing_credential" | "network" | "provider" | "conflict" | "writes_disabled" | "provenance_required" | "internal";

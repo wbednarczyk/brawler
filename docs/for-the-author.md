@@ -2,7 +2,7 @@
 
 > Dokument dla człowieka, nie dla agenta: zwięzły obraz tego, z czego składa się aplikacja i co potrafi DZIŚ. Aktualizowany przy każdym release (krok w skillu `brawler-release`). Wersja interaktywna: prywatny Artifact „Brawler — mapa systemu”. Normy i szczegóły są gdzie indziej (contracts, data-model, ADR-y) — tu ma być czytelnie, nie wyczerpująco.
 
-**Stan: v0.59** · 11 trybów/ekranów · ~170 typowanych komend · 20 domen silnika · 112 migracji · 4 narzędzia MCP · ~3000 testów w jednej bramce · **zero AI w analizie** (BYOA przez MCP; w apce został tylko provider transkrypcji).
+**Stan: v0.60** · 11 trybów/ekranów (Dziś przebudowane: strumień ważności + Archiwum) · ~200 typowanych komend · 20 domen silnika · 114 migracji · **96 narzędzi MCP** (41 read + 55 act za przełącznikiem zapisu, proweniencja obowiązkowa) · ~3200 testów w jednej bramce · **zero AI w analizie** (BYOA przez MCP; w apce został tylko provider transkrypcji).
 
 ## Pięć warstw (przekrój od góry)
 

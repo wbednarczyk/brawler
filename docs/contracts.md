@@ -451,7 +451,7 @@ a management claim (see [Management Claims](#management-claims)) is how a claim 
 recorded now, and claim proposals a previous version stored remain in the
 claim-extraction jobs and proposals tables as readable user data (no table drop,
 no row deletion — ADR 0084 decision 5). Agent-proposed claims with mandatory
-provenance return via MCP write-tools (v0.61.0).
+provenance return via MCP write-tools (v0.60.0).
 
 ## Claims Review Queue
 
@@ -764,7 +764,7 @@ The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-auton
 
 **Runs and review.**
 
-`list_autopilot_runs(input)` returns recent runs for the attention home / review queue. `input` is `{ companyId?: string, notificationState?: "unread" | "read" | "dismissed", limit?: number }`. Each run carries `{ id, companyId, reportDocumentId, trigger, mode, status, stage, summaryText, kpiDeltaJson, reportDiffRef, crossRefsJson, producedFactIds, notificationState, lastError, createdAt }`. `status` is `pending` | `running` | `succeeded` | `failed` | `partial`; `stage` is the current/last stage reached. A `failed`/`partial` run still appears with a summary of how far it got.
+`list_autopilot_runs(input)` returns recent runs for the attention home / review queue. `input` is `{ companyId?: string, notificationState?: "unread" | "read" | "dismissed", limit?: number }`. Each run carries `{ id, companyId, reportDocumentId, trigger, mode, status, stage, summaryText, kpiDeltaJson, reportDiffRef, crossRefsJson, producedFactIds, notificationState, lastError, createdAt, severity, reportDocumentTitle }`. `status` is `pending` | `running` | `succeeded` | `failed` | `partial`; `stage` is the current/last stage reached. `reportDocumentTitle` (nullable, since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) decision 4) is the processed report's document title, resolved by LEFT JOIN on `report_documents` **at read** — a raw source datum so the Today autopilot row states WHICH report it processed instead of a bare "New report processed."; `null` for a document with no stored title or a legacy run whose document is gone (frontend falls back to the token summary). A `failed`/`partial` run still appears with a summary of how far it got. `severity` ∈ `urgent` | `notable` | `routine` (`AttentionSeverity`, since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) decision 2) is **computed at read** from `status` by the single backend mapping (`storage::severity`) — `failed`/`partial` → `notable`, otherwise `routine` — never stored; the level → status table lives in [Product Spec § Attention Routing](product-spec.md#severity-taxonomy).
 
 `kpiDeltaJson` (extract stage) and `crossRefsJson` (cross-reference stage) are opaque JSON envelopes, not typed fields — each stage owns its own shape (e.g. `{ extractionAvailable, structured?, tier?, factsProposed, factsAutoConfirmed }` and `{ claimsOverdue, claimsDue, openQuestions }` respectively — the retired PDF profile-drift arm no longer writes `structureChanged`/`driftJson` here, [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1). `factsProposed`/`factsAutoConfirmed` are honest counts of facts the run actually produced (bug e77a1a2): `factsProposed` is every fact the run emitted this run, `factsAutoConfirmed` is the subset `confirmed` — which, facts being review-free ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5), equals `factsProposed` for every emitting run — never inferred from a raw `produced`/`proposed` count that only one tier happened to populate.
 
@@ -885,13 +885,13 @@ List rules:
 
 ### Investor Week Calendar
 
-Status: planned (v0.68.0, ADR 0058)
+Status: planned (v0.67.0, ADR 0058)
 
-The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.68.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.67.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
 
 `list_investor_week(input)` returns the week read model. `input` is `{ weekAnchor: "YYYY-MM-DD", scope: "watchlist" | "market", watchlistId?: string, layers: { macro: boolean, holidays: boolean } }`. It returns working-day columns (Mon–Fri; a weekend column only when populated); each column groups items by layer (`company`, `macro`, `holiday`) with per-layer freshness so a stale layer is visible rather than silently empty. The `company` layer unions tracked `company_events` with, when `scope = "market"`, untracked `market_calendar_events`, deduped by ticker.
 
-Macro (`macro_events`) read/write — manual entry ships in `v0.68.0`; a live macro source is deferred to a follow-up ADR:
+Macro (`macro_events`) read/write — manual entry ships in `v0.67.0`; a live macro source is deferred to a follow-up ADR:
 
 - `list_macro_events(input)`: `{ from: "YYYY-MM-DD", to: "YYYY-MM-DD" }` → macro releases in range.
 - `create_macro_event` / `update_macro_event` / `delete_macro_event`: user-entered releases (`manual = 1`), with `indicatorKey`, `title`, `country`, `eventDate`, optional `eventTime`/`importance`/`actual`/`forecast`/`previous`.
@@ -1069,8 +1069,10 @@ Initial local commands:
 - `confirm_company_signal(input)`: confirms a `proposed` (AI) signal, transitioning it to `confirmed`. For `dividend` and `general_meeting` signals this also derives a `proposed` calendar event when a future date can be extracted from the filing body (`v0.41.0`, see below and [ADR 0036](adr/0036-report-document-storage-and-backfill.md)); other categories transition status and persist provenance only.
 - `reject_company_signal(input)`: discards a `proposed` signal without creating a signal/event.
 - `confirm_derived_event(input)`: confirms a `proposed` derived calendar event (from a dividend/general-meeting signal) onto the calendar, or rejects it; takes `{ eventId, action: "confirm" | "reject" }`. A guessed-date event is never auto-confirmed (`v0.41.0`, [ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
+- `list_unclassified_filings(input)`: the explicit **unclassified** bucket — official-report feed items with no `company_signals` row (the rule classifier could not place them; absence is the definition, never a flag). Takes `{ companyId?, limit? }` (default 50, max 200), newest first. Materializes `UnclassifiedFiling { feedItemId, companyId, title, bodyText, signalDate }`. Headless/MCP-first (`v0.60.0`, [ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) decision 4); no UI entry point yet (Today/Inbox surfacing is future scope).
+- `classify_filing(input)`: agent-driven classification of one unclassified official filing into a `confirmed` signal. Takes `{ feedItemId, category }`; the mandatory `feedItemId` is the signal's evidence anchor. Validates `category` against the seeded taxonomy, that the item is an official filing matched to a company, and that no signal already exists (a second attempt is a `conflict`); unknown category / non-official item are `invalid_input`. The created signal carries **honest provenance** — `classified_by = agent` (never `rule`; the CHECK set is extended to `rule | ai | agent` by migration `0113`), `status = confirmed`, `confidence = 1.0`. Headless/MCP-first (`v0.60.0`, [ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) decision 4).
 
-The opt-in **AI fallbacks** — `run_ai_signal_classification` (classify filings the rule classifier left unknown) and `run_ai_event_derivation` (date signals the deterministic parser could not) — are retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2). The deterministic ESPI rule classifier and `signal_dates` date parsing stay; filings they cannot classify land in an explicit **unclassified** bucket (a future MCP triage tool, `v0.61.0`), never guessed. The `espiAiFallbackEnabled` toggle is removed.
+The opt-in **AI fallbacks** — `run_ai_signal_classification` (classify filings the rule classifier left unknown) and `run_ai_event_derivation` (date signals the deterministic parser could not) — are retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2). The deterministic ESPI rule classifier and `signal_dates` date parsing stay; filings they cannot classify land in an explicit **unclassified** bucket, surfaced by `list_unclassified_filings` and resolved by `classify_filing` (both exist as of `v0.60.0`, [ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) decision 4), never guessed. The `espiAiFallbackEnabled` toggle is removed.
 
 Confirm/reject input:
 
@@ -1121,11 +1123,18 @@ Attention event (`AttentionEvent`, returned by the event commands):
   "evidenceRef": "run_42",
   "firedAt": "2026-07-15T00:00:00Z",
   "seen": false,
-  "dismissed": false
+  "dismissed": false,
+  "severity": "notable",
+  "evidenceTitle": "Skonsolidowany raport kwartalny Q2 2026",
+  "evidenceDetail": "succeeded"
 }
 ```
 
 `evidenceType` ∈ `company_signal` (ref = signal id) | `autopilot_run` (ref = run id) | `daily_quote` (ref = quote date).
+
+`evidenceTitle` / `evidenceDetail` (nullable, since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) decision 4; experience contract §4): the event's **concrete specifics**, resolved by evidence-type-guarded LEFT JOINs **at read** so every stream row states WHAT happened, not a bare category. `evidenceTitle` = the filing title (`company_signal`), the missed report's witness title (`source_reconciliation` → `witness_title`), or the processed report's document title (`autopilot_run` → `report_documents.title`). The `company_signal` title reads through a **durable fire-time snapshot** (`v0.60` D7): `COALESCE(NULLIF(attention_events.evidence_title,''), feed_items.title)` — the snapshot is written when the event fires so the title survives the feed prune that cascade-deletes the signal row (a `company_signals.feed_item_id` `ON DELETE CASCADE`), which otherwise degrades the row to a bare category; `source_reconciliation` snapshots the witness title at fire time too, `autopilot_run` keeps the live join (its `report_documents` row outlives feed pruning). For `source_reconciliation` the title is a fallback chain — `NULLIF(witness_title,'')` first, else the trimmed `report_type` + `report_number` concatenation (both raw registry strings) — because the live GPW registry parser leaves `witness_title` empty on fresh rows while still parsing the report type/number; both absent → `null`. `evidenceDetail` = a secondary raw datum whose meaning depends on `evidenceType`: the missing source's registry display name (`source_reconciliation`, adapter id → display name) or the run's raw status (`autopilot_run`). Both are **raw source data** — the frontend composes/translates any prose ([ui-authoring §6](ui-authoring.md)); a `null` (legacy row / pruned evidence) means the frontend falls back to generic copy.
+
+`severity` ∈ `urgent` | `notable` | `routine` (`AttentionSeverity`, since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) decision 2). **Computed at read** by a single backend mapping (`storage::severity`) from `triggerType` + the signal category (resolved from the event's evidence for `signal_category` events) — never stored, never re-inferred by the frontend. The authoritative level → trigger/category table lives in [Product Spec § Attention Routing](product-spec.md#severity-taxonomy).
 
 Rule commands:
 
@@ -1168,14 +1177,15 @@ A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-br
       "citationKey": "b1",
       "evidenceType": "company_signal",
       "evidenceRef": "signal_42",
-      "title": "Profit warning",
-      "detail": "Profit warning"
+      "title": "Profit warning issued",
+      "detail": "profit_warning"
     }
   ]
 }
 ```
 
-- `itemType` ∈ `signal` (ref = signal id) | `autopilot_run` (ref = run id) | `claim_due` (ref = claim id) | `report_date` (ref = `companyId:eventKey`) | `attention_event` (ref = attention-event id). Items are ordered by `domainDate` (never `createdAt`); `citationKey` (`b1`, `b2`, …) is what a narrative citation references and resolves against `(evidenceType, evidenceRef)`.
+- `itemType` ∈ `signal` (ref = signal id) | `autopilot_run` (ref = run id) | `claim_due` (ref = claim id) | `report_date` (ref = `companyId:eventKey`) | `attention_event` (ref = attention-event id). Items are ordered by `domainDate` (never `createdAt`); `citationKey` (`b1`, `b2`, …) is what a narrative citation references and resolves against `(evidenceType, evidenceRef)`. Items are **deduped** to at most one per `(companyId, itemType, evidenceRef)`, keeping the newest by `domainDate` ([ADR 0087](adr/0087-today-attention-home-v2.md) dec. 1).
+- **Typed `title`/`detail` (since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) dec. 4).** The composer writes ONLY verbatim source data or typed codes/tokens into `title`/`detail` — never composed English prose; the frontend (`briefingItemText.ts`) translates. Per `itemType`: **signal** — `title` = signal title, `detail` = category CODE (e.g. `profit_warning`); **attention_event** — `title` = `trigger_type` code (e.g. `signal_category`), `detail` = `evidence_type` code (e.g. `company_signal`); **autopilot_run** — `title` = the run's `summaryText` token stream as stored (`report_processed` fallback), `detail` = `status` code (`succeeded`/`partial`); **claim_due** — `title` = claim statement, `detail` = typed token `due:<periodType>:<fiscalYear>` (e.g. `due:Q2:2026`); **report_date** — `title` = entry title, `detail` = qualified ticker. Legacy briefings composed before `v0.60` keep their English prose (no migration); the frontend reads both tolerantly (a non-token title/detail passes through verbatim).
 - The narrative is **decision-support only** (facts + links, never advice); it is stored only when every citation it references resolves to a composed item.
 
 Commands:
@@ -2296,7 +2306,7 @@ Research briefs and digests are **gone entirely** — generation and read alike
 ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5, clean cut): the
 `ai_research_brief*` / `ai_research_digest*` tables are dropped by migration
 0102, so there is nothing left to list. Their replacement arrives as MCP
-read/write tools (`v0.61.0`).
+read/write tools (`v0.60.0`).
 
 These command names may be refined during implementation, but the ownership boundary should remain stable.
 
@@ -2645,7 +2655,7 @@ decision 5, clean cut): the run/re-run generation commands, the durable
 assessment job, and the current-state read are all gone. Criterion
 verdicts are manual now — `criterion_results` keeps only its deterministic
 `source='engine'` DSL rows, which the cut does not touch — and agent-written
-verdicts return via MCP write-tools with mandatory provenance (`v0.61.0`).
+verdicts return via MCP write-tools with mandatory provenance (`v0.60.0`).
 
 Citations are rejected when they do not reference an evidence id supplied to the request (the research-brief `rejects_unknown_citation_keys` precedent): uncited reasoning is never stored.
 
@@ -2913,18 +2923,73 @@ Initial `list_unmatched_source_items` behavior:
 
 Feed, job, transcript, and notebook changes should be emitted as Tauri events.
 
-## External Surface — MCP Server (read-only MVP)
+## External Surface — MCP Server (capability-tier registry)
 
-A second **driving adapter** ([ADR 0039](adr/0039-ports-and-adapters-posture.md)) over the same domain read models: an in-app, localhost-only MCP server ([ADR 0078](adr/0078-mcp-external-surface.md)) — stateless MCP Streamable HTTP subset on `POST http://127.0.0.1:<port>/mcp`, bearer-token auth (token in the OS keychain, shown once at generation), off by default, app-open-only lifetime. A thin `brawler-mcp-stdio` binary forwards newline-delimited JSON-RPC from stdin to the HTTP endpoint for stdio-only clients.
+A second **driving adapter** ([ADR 0039](adr/0039-ports-and-adapters-posture.md)) over the same domain models: an in-app, localhost-only MCP server ([ADR 0078](adr/0078-mcp-external-surface.md)) — stateless MCP Streamable HTTP subset on `POST http://127.0.0.1:<port>/mcp`, bearer-token auth (token in the OS keychain, shown once at generation), off by default, app-open-only lifetime. A thin `brawler-mcp-stdio` binary forwards newline-delimited JSON-RPC from stdin to the HTTP endpoint for stdio-only clients.
 
-**MCP tools (read-only; the `tools/list` insta snapshot is the frozen contract; adding a mutating tool requires a new ADR):**
+**The registry rule ([ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md)).** Every MCP exposure is a **registry entry** in `src-tauri/src/mcp/registry.rs` — `{ tool_name, command_name, tier, provenance }` — over the typed command layer; no hand-written per-tool wrappers. `tools/list` and `tools/call` route through the registry (never a hand-rolled match). Tool input/output JSON Schemas are **generated from the serde types** by `schemars` (ADR 0088 dec. 1) — never hand-written; the `tools/list` insta snapshot remains the **frozen contract** (ADR 0078 G-1), and regenerating it is a reviewed spec change. **Every Tauri command carries exactly one capability tier**; a command absent from the registry fails the classification gate (a source-scan test over the real `invoke_handler` inventory), so no command can silently leak into — or stay out of — the MCP surface undecided.
+
+| Tier | What | MCP posture |
+| --- | --- | --- |
+| `read` | Domain reads (companies/watchlists, feed, signals, facts + provenance, coverage, quotes, ownership, insiders, analyst recs, health/red flags, reports/diffs/transcripts, notes, claims, expectations, journal, research questions, quality frameworks, calendar, autopilot runs, attention, briefing). | Active whenever the server is enabled. |
+| `act` | Research writes, workspace actions, and job triggers. | Gated at `tools/call` by the live `mcpWritesEnabled` setting (**default OFF**) → typed `writes_disabled` when off; **provenance mandatory** on writes carrying a carrier (`origins` / `sourceEvidenceId` / `citationsJson` / manual-fact citation), checked BEFORE the handler and rejected with typed `provenance_required` if empty (ADR 0088 dec. 3). Both are domain failures (`isError: true`), never protocol errors. |
+| `excluded` | Deletes, undo, bulk import/backup, settings/credentials mutations, MCP self-management, dev/diagnostic mutations. | Permanent denylist — UI-only, never reachable over MCP. |
+
+**Current exposure (v0.60 M3/M4 — reads + the act wave + the triage pair):** **41 `read` tools** (the 4 MVP composites + 34 per-domain reads + `list_alert_rules` + the two triage reads `list_flagged_extraction_outcomes` and `list_unclassified_filings`) and **55 `act` tools** are dispatchable. Read handlers live in `src-tauri/src/mcp/reads.rs`; **read** company-scoped tools take a **qualified ticker** (`GPW:CDR`, bare ticker when unambiguous), resolved internally. Outputs are the domain read models verbatim — decision support only, never buy/sell/hold ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+
+MVP composites (unchanged shapes):
 
 - `get_company_dossier { company }` — identity + fundamentals coverage + confirmed facts slice + scorecard summary.
 - `search_research { query, company?, limit? }` — the unified FTS search read model.
 - `list_claims_due { company? }` — management claims to verify (the `list_claims_to_verify` read model).
-- `get_quality_assessment { company }` — qualitative assessment + framework evaluations (decision support; never a verdict, [ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+- `get_quality_assessment { company }` — qualitative assessment + framework evaluations.
 
-Tool inputs are strict (`deny_unknown_fields`); tool failures map onto the [Error codes](#error-codes) set (ADR 0070).
+Read wave, per domain (tool name = backing command; `{ company }` = required qualified ticker):
+
+| Domain | Tools |
+| --- | --- |
+| Companies / watchlists | `list_companies`, `get_company_basic_info { company }`, `list_watchlists`, `list_watchlist_memberships` |
+| Feed / signals / events | `list_feed_items`, `list_company_signals { company }`, `list_company_events { company }` |
+| Facts / periods / KPIs | **`list_financial_facts { company }`** (see below), `list_financial_periods { company }`, `list_kpi_definitions`, `list_flagged_fact_provenance` |
+| Quotes / ownership / insiders / analysts | `get_price_context { company }`, `get_ownership_overview { company }`, `get_insider_overview { company }`, `list_short_positions { company }`, `get_analyst_recommendations { company }` |
+| Health / red flags | `get_company_health { company }`, `get_red_flags { company }` |
+| Reports / diffs | `get_report_documents_view { company }`, `list_report_diff_candidates { company }`, `get_report_diff { olderReportDocumentId, newerReportDocumentId }` |
+| Transcripts | `list_video_transcript_jobs { company? }`, `list_transcript_segments { transcriptJobId }` |
+| Notes / claims | `list_notebook_entries { company }`, `list_management_claims { company }` |
+| Expectations / journal / questions | `list_report_expectations { company? }`, `list_decision_entries { company? }`, `list_research_questions` |
+| Calendar / attention / briefing / autopilot | `list_report_season`, `list_attention_events { company?, includeDismissed? }`, `get_latest_morning_briefing`, `list_autopilot_runs { company?, limit? }`, `get_autopilot_run { runId }` |
+| Quality frameworks | `list_quality_frameworks` |
+| Triage (ADR 0088 dec. 4) | `list_flagged_extraction_outcomes { company }` (per-period extraction-coverage gaps), `list_unclassified_filings { company?, limit? }` (official filings the rule classifier could not place; classify one with `classify_filing`) |
+
+**Facts + provenance (mandatory carrier, ADR 0088 dec. 2).** `list_financial_facts { company }` returns `{ company, facts: [ …FinancialFact, sourceTier?, validationStatus?, citation? ] }` — every fact is joined (via `fundamentals_provenance().get_many`) with its trust-ladder provenance: `sourceTier` (e.g. `deterministic_esef` / `aggregator` / `manual`), `validationStatus` (`ok` | `flagged`), and free-form `citation`. The three fields are `null` only when a fact has no provenance row. This is the one composition in the MCP read layer.
+
+Deliberately **not exposed** (still `read`-tier, each justified in `registry.rs`): infra/diagnostics/logs/metrics, settings/credentials/adapter config, reference/autocomplete plumbing (`lookup_company`, `list_company_sectors`, criterion-editor helpers), surfaces superseded by a richer tool (`list_report_documents` → `get_report_documents_view`; `list_fact_provenance` → folded into `list_financial_facts`), import/export dumps, research-timeline aggregates, and the unmatched-source triage surface `list_unmatched_source_items` (a separate family; no MCP tool this slice). The flagged-extraction and unclassified-filings triage surfaces are now **exposed** (M4, above).
+
+Read tool inputs are strict (`deny_unknown_fields` ⇒ `additionalProperties: false`, camelCase field names); tool failures map onto the [Error codes](#error-codes) set (ADR 0070) — an unknown ticker is `not_found`, an ambiguous bare ticker is `invalid_input`.
+
+### Act tier (writes, ADR 0088 dec. 2/3, M3)
+
+**Call-time gating.** Act tools are **always listed** in `tools/list` (discoverability; their description notes the write toggle) — the gate is at `tools/call` dispatch (`registry::call`), in order: (1) read the **live** `mcpWritesEnabled` setting — if off, return typed **`writes_disabled`** (`isError: true`, the handler never runs, nothing is written); (2) if the row carries a provenance requirement, run `validate_provenance` on the raw arguments BEFORE the handler — an empty carrier returns typed **`provenance_required`** naming the missing field. Both are domain failures in the tool result, never JSON-RPC protocol errors.
+
+**Self-enable is impossible.** `update_settings` is `excluded` from the registry, so a connected agent can never flip `mcpWritesEnabled` itself — only the user can, in Settings → MCP server. This is the durable safety property behind default-OFF.
+
+**Internal ids, not tickers.** Unlike reads, act tools reference entities by the **internal ids** the read tools return in every payload (e.g. `Company.id`, a period id, a framework/criterion id) — an agent reads the workspace, then writes against the ids it saw. Handlers live in `src-tauri/src/mcp/acts.rs`; each binds to the same `AppState`/sub-facade write the Tauri command delegates to (ADR 0039), so the MCP and UI write paths cannot diverge.
+
+**Provenance carriers.** Enforced where the input carries the carrier and a new provenance-bearing datum enters: `create_notebook_entry` (`origins`), `create_note_from_transcript_selection` (`transcriptSegmentIds` — the selection is the origin), `create_management_claim` / `update_management_claim` (`sourceEvidenceId`), `create_financial_fact` / `update_financial_fact` (`sourceDocumentRef` | `attribution`), `set_qualitative_verdicts` (every `results[].citationsJson` non-empty). **No carrier** on `update_notebook_entry` (origins are immutable from creation; the update input has no origins field) and `set_claim_verdict` (a verdict's evidence is the optional `verifyingFactId`, absent for a qualitative claim) — provenance integrity is enforced at create.
+
+**Exposed act catalog** (55 tools; tool name = backing command):
+
+| Group | Tools |
+| --- | --- |
+| Research writes (provenance) | `create_notebook_entry`, `create_note_from_transcript_selection`, `update_notebook_entry`, `create_management_claim`, `update_management_claim`, `set_claim_verdict`, `create_financial_fact`, `update_financial_fact`, `set_qualitative_verdicts` |
+| Research writes (no carrier) | `create_research_question`, `update_research_question`, `create_evidence_link`, `create_research_reminder`, `update_research_reminder`, `create_decision_entry`, `create_report_expectation`, `update_report_expectation`, `record_expectation_resolution`, `create_company_event`, `create_kpi_definition`, `create_kpi_relevance`, `update_kpi_relevance`, `create_quality_framework`, `update_quality_framework`, `create_framework_criterion`, `update_framework_criterion`, `create_alert_rule`, `update_alert_rule` |
+| Workspace actions | `create_company`, `create_watchlist`, `add_company_to_watchlist`, `remove_company_from_watchlist`, `update_feed_item_state`, `mark_report_prepared`, `mark_report_processed`, `mark_research_scope_reviewed`, `confirm_company_signal`, `reject_company_signal`, `classify_filing` (unclassified-bucket triage; `feedItemId` is the evidence anchor, no provenance carrier — ADR 0088 dec. 4), `confirm_derived_event`, `acknowledge_red_flag`, `set_ownership_holder_type`, `mark_attention_event_seen`, `dismiss_attention_event`, `set_autopilot_run_notification_state` |
+| Job triggers (light / fail-fast) | `evaluate_framework`, `set_alert_rule_enabled`, `trigger_autopilot_run`, `generate_morning_briefing` |
+| Job triggers (networked / heavy) | `refresh_sources`, `refresh_source`, `run_aggregator_fundamentals_pull`, `backfill_company_history`, `run_structured_extraction`, `rerun_extraction_outcome` — gated identically; **invocation-exempt** in the hermetic `every_exposed_act_tool_is_listed_and_gated` umbrella (they run live source/extraction/backfill work with no hermetic seam), exercised by the **M6 live dogfooding ritual** instead |
+
+Act commands **classified but not exposed** (each justified inline in `registry.rs`): niche period plumbing (`create/update_financial_period`), `clone_framework`, company-config setters (`set_company_ir_reports_url`, `set_company_sector`, `rename_watchlist`), report-pipeline document machinery (`capture_report_document`, `fetch_report_document`, `extract_report_sections`, `reclassify_report_documents`, `resolve_ir_report`, `extract_report_document_data`, `resolve_transcript_job_company`), the video-transcript lifecycle (`create/update/run_video_transcript_job` — the only in-app AI dependency), and the **admin / one-off job triggers** (`backfill_company_health_facts`, `backfill_ownership_extraction`, `run_history_sweep`, `rebuild_fundamentals`, `refresh_gpw_company_registry(_if_stale)`) — whole-corpus rebuilds, quote-history sweeps, registry refresh, and derived-fact backfills the exposed extraction/refresh tools already cover.
+
+**`set_qualitative_verdicts { frameworkId, companyId, results: [{ criterionId, verdict, reasoning, citationsJson, confidence }] }`** — the qualitative-verdict WRITE path (successor to the in-app agent writer retired by [ADR 0084](adr/0084-retire-in-app-ai-layer.md) dec. 5). A typed command (`Result<FrameworkEvaluation, CommandError>`, async + `spawn_blocking`) that is **MCP-first / headless — no UI entry point**; it and the MCP `act` handler share `build_persist_qualitative_input` (resolves each result's `ordinal`/`label` from the framework criteria, writes `prompt_version = "mcp"`), persisting one immutable qualitative snapshot via `persist_qualitative_assessment`. Registry: `act` + `CitationsJson`. Read the result back via the `get_quality_assessment` read tool.
 
 **Typed commands (UI management surface):**
 
@@ -2936,4 +3001,4 @@ Tool inputs are strict (`deny_unknown_fields`); tool failures map onto the [Erro
 
 All token commands return `Result<T, CommandError>` (ADR 0070; keychain failures map via `From<CredentialError>` — caller-input problems → `invalid_input`, backend/persistence failures → `internal`).
 
-Settings: `mcp` group (`enabled` — default false; `port` — default 8317, clamped to `[1024, 65535]` on write and read) in `UserSettings` (`mcp: { enabled, port }`) / `UpdateSettingsInput` (`mcpEnabled?`, `mcpPort?`); tolerant reads (missing rows fall back to defaults), upsert writes (no seed-row migration). **Port-change semantics:** changing `mcp.port` via `update_settings` while the server is running takes effect on the **next start** (disable→enable, or the next app open) — no hot-rebind; `mcp_status.port` reports the port the listener is actually serving. Lifetime is app-open-only (started in the `lib.rs` setup closure when enabled, torn down with the process).
+Settings: `mcp` group (`enabled` — default false; `port` — default 8317, clamped to `[1024, 65535]` on write and read; `writesEnabled` — default false, the `act`-tier gate, ADR 0088 M3) in `UserSettings` (`mcp: { enabled, port, writesEnabled }`) / `UpdateSettingsInput` (`mcpEnabled?`, `mcpPort?`, `mcpWritesEnabled?`); tolerant reads (missing rows fall back to defaults), upsert writes (no seed-row migration). `update_settings` is itself `excluded` from the MCP registry, so a connected agent can never enable its own writes — only the user, in Settings → MCP server. **Port-change semantics:** changing `mcp.port` via `update_settings` while the server is running takes effect on the **next start** (disable→enable, or the next app open) — no hot-rebind; `mcp_status.port` reports the port the listener is actually serving. Lifetime is app-open-only (started in the `lib.rs` setup closure when enabled, torn down with the process).

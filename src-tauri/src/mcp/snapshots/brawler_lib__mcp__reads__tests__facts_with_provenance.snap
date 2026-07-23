@@ -1,0 +1,35 @@
+---
+source: src/mcp/reads.rs
+expression: redact(&payload)
+---
+{
+  "company": "GPW:TST",
+  "facts": [
+    {
+      "asReportedScale": null,
+      "asReportedValue": null,
+      "attribution": "total",
+      "citation": "Skonsolidowany raport roczny 2025 SSF",
+      "companyId": "company_gpw_tst",
+      "confidence": null,
+      "confirmationState": "confirmed",
+      "createdAt": "[timestamp]",
+      "currency": "PLN",
+      "dataQuality": "final",
+      "definitionId": "kpidef_net_profit",
+      "extractionMethod": "manual",
+      "id": "fact_period_company_gpw_tst_2025_fy_[uid]_kpidef_net_profit_consolidated_total_reported_flow_final_[uid]",
+      "measureWindow": "flow",
+      "periodId": "period_company_gpw_tst_2025_fy_[uid]",
+      "reportingStandard": null,
+      "sourceDocumentRef": null,
+      "sourceTier": "deterministic_esef",
+      "statementBasis": "consolidated",
+      "supersedesId": null,
+      "updatedAt": "[timestamp]",
+      "validationStatus": "ok",
+      "valueNumeric": "1250000",
+      "variant": "reported"
+    }
+  ]
+}

@@ -10,14 +10,26 @@
 // wall-clock/random, so parallel workers stay reproducible.
 
 import packageJson from "../../../package.json";
-import { COMPANY_SPECS, SAMPLE_NOW, companyId as companyIdFor } from "./entities";
+import {
+  COMPANY_SPECS,
+  SAMPLE_NOW,
+  companyId as companyIdFor,
+} from "./entities";
 import {
   legacyInvalidLicenseStatus,
   legacyLicenseStatus,
   legacyMissingLicenseStatus,
 } from "./legacyMinimal";
-import { buildScenario, type ScenarioData, type ScenarioName, type ScenarioSpec } from "./scenarios";
-import { createControlledAsync, type MockRuntimeControls } from "./controlledAsync";
+import {
+  buildScenario,
+  type ScenarioData,
+  type ScenarioName,
+  type ScenarioSpec,
+} from "./scenarios";
+import {
+  createControlledAsync,
+  type MockRuntimeControls,
+} from "./controlledAsync";
 import type { ResearchEvidenceInput } from "../../api/researchTypes";
 import type { OwnershipOverview } from "../../api/ownership";
 import type { CompanyHealth } from "../../api/generated/CompanyHealth";
@@ -26,7 +38,12 @@ import type { RedFlagsView } from "../../api/redFlags";
 import type { AnalystRecommendationsView } from "../../api/analystRecommendations";
 import type { CommandError } from "../../api/generated/CommandError";
 
-export type { MockRuntimeControls, InvocationPhase, InvocationMatch, PendingInvocation } from "./controlledAsync";
+export type {
+  MockRuntimeControls,
+  InvocationPhase,
+  InvocationMatch,
+  PendingInvocation,
+} from "./controlledAsync";
 
 /** Narrow alias — the router treats every payload structurally. */
 type Args = Record<string, unknown> | undefined;
@@ -94,7 +111,13 @@ export interface MockRuntime {
 
 /** `{ input: X }` → X, `{ companyId }` → the object, `undefined` → {}. */
 function unwrap(args: Args): Record<string, unknown> {
-  if (args && typeof args === "object" && "input" in args && args.input && typeof args.input === "object") {
+  if (
+    args &&
+    typeof args === "object" &&
+    "input" in args &&
+    args.input &&
+    typeof args.input === "object"
+  ) {
     return args.input as Record<string, unknown>;
   }
   return (args ?? {}) as Record<string, unknown>;
@@ -114,7 +137,11 @@ function dateMinusDays(day: string, days: number): string {
 
 /** Signed contribution of a KNF register-change event to the aggregate net short
  * % — mirrors `signed_event_delta` in `storage/short_positions.rs`. */
-function signedEventDelta(kind: string, fromPct: number | null, toPct: number | null): number {
+function signedEventDelta(
+  kind: string,
+  fromPct: number | null,
+  toPct: number | null,
+): number {
   switch (kind) {
     case "entered":
       return toPct ?? 0;
@@ -159,7 +186,11 @@ function mcpTokenStatus(ctx: RuntimeContext) {
  * keeps the same array reference and React bails. Enforced by runtime.test.ts
  * "re-render safety"; see docs/testing.md → "mock runtime conventions".
  */
-function mapReplace<T>(items: T[], match: (item: T) => boolean, patch: (item: T) => T): { next: T[]; updated: T | undefined } {
+function mapReplace<T>(
+  items: T[],
+  match: (item: T) => boolean,
+  patch: (item: T) => T,
+): { next: T[]; updated: T | undefined } {
   let updated: T | undefined;
   const next = items.map((item) => {
     if (!match(item)) return item;
@@ -181,9 +212,12 @@ function buildTimeline(data: ScenarioData, input: ResearchEvidenceInput) {
         .map((membership) => membership.companyId)
     : [];
   const filteredItems = data.researchEvidence.filter((item) => {
-    const companyMatches = !input.companyId || item.companyId === input.companyId;
-    const watchlistMatches = !input.watchlistId || watchlistCompanyIds.includes(item.companyId);
-    const typeMatches = selectedTypes.size === 0 || selectedTypes.has(item.evidenceType);
+    const companyMatches =
+      !input.companyId || item.companyId === input.companyId;
+    const watchlistMatches =
+      !input.watchlistId || watchlistCompanyIds.includes(item.companyId);
+    const typeMatches =
+      selectedTypes.size === 0 || selectedTypes.has(item.evidenceType);
     const changedSinceReview = input.watchlistId
       ? item.reviewState.changedSinceWatchlistReview
       : item.reviewState.changedSinceCompanyReview;
@@ -192,11 +226,15 @@ function buildTimeline(data: ScenarioData, input: ResearchEvidenceInput) {
   });
   const memberCompanyIds = input.watchlistId ? watchlistCompanyIds : [];
   const companySummaries = memberCompanyIds.map((companyId) => {
-    const companyItems = filteredItems.filter((item) => item.companyId === companyId);
+    const companyItems = filteredItems.filter(
+      (item) => item.companyId === companyId,
+    );
     return {
       companyId,
       total: companyItems.length,
-      changedSinceReview: companyItems.filter((item) => item.reviewState.changedSinceWatchlistReview).length,
+      changedSinceReview: companyItems.filter(
+        (item) => item.reviewState.changedSinceWatchlistReview,
+      ).length,
       lastReviewedAt: null,
     };
   });
@@ -205,16 +243,19 @@ function buildTimeline(data: ScenarioData, input: ResearchEvidenceInput) {
     summary: {
       total: filteredItems.length,
       changedSinceReview: filteredItems.filter((item) =>
-        input.watchlistId ? item.reviewState.changedSinceWatchlistReview : item.reviewState.changedSinceCompanyReview,
+        input.watchlistId
+          ? item.reviewState.changedSinceWatchlistReview
+          : item.reviewState.changedSinceCompanyReview,
       ).length,
       lastReviewedAt: data.researchReviewCheckpoints[0]?.reviewedAt ?? null,
       memberCompanyCount: memberCompanyIds.length,
-      companiesWithChangedEvidence: companySummaries.filter((summary) => summary.changedSinceReview > 0).length,
+      companiesWithChangedEvidence: companySummaries.filter(
+        (summary) => summary.changedSinceReview > 0,
+      ).length,
       companySummaries,
     },
   };
 }
-
 
 // ---------------------------------------------------------------------------
 // Search (ported intent of ADR 0032 FTS over the in-memory store)
@@ -224,29 +265,48 @@ function runSearch(data: ScenarioData, query: string) {
   const needle = query.trim().toLowerCase();
   if (!needle) return { groups: [] };
   const groups: { contentType: string; matches: unknown[] }[] = [];
-  const push = (contentType: string, sourceId: string, companyId: string | null, title: string) => {
+  const push = (
+    contentType: string,
+    sourceId: string,
+    companyId: string | null,
+    title: string,
+  ) => {
     let group = groups.find((g) => g.contentType === contentType);
     if (!group) {
       group = { contentType, matches: [] };
       groups.push(group);
     }
-    group.matches.push({ contentType, sourceId, companyId, parentId: null, title, snippet: title, score: 1 });
+    group.matches.push({
+      contentType,
+      sourceId,
+      companyId,
+      parentId: null,
+      title,
+      snippet: title,
+      score: 1,
+    });
   };
   for (const c of data.companies) {
-    if (c.displayName.toLowerCase().includes(needle) || c.ticker.toLowerCase().includes(needle)) {
+    if (
+      c.displayName.toLowerCase().includes(needle) ||
+      c.ticker.toLowerCase().includes(needle)
+    ) {
       push("company", c.id, c.id, c.displayName);
     }
   }
   for (const f of data.feedItems) {
-    if (f.title.toLowerCase().includes(needle)) push("feed_item", f.id, null, f.title);
+    if (f.title.toLowerCase().includes(needle))
+      push("feed_item", f.id, null, f.title);
   }
   for (const n of data.notebookEntries) {
-    if (n.title.toLowerCase().includes(needle)) push("notebook_entry", n.id, n.companyId, n.title);
+    if (n.title.toLowerCase().includes(needle))
+      push("notebook_entry", n.id, n.companyId, n.title);
   }
   return { groups };
 }
 
-type FrameworkCriterion = ScenarioData["qualityFrameworks"][number]["criteria"][number];
+type FrameworkCriterion =
+  ScenarioData["qualityFrameworks"][number]["criteria"][number];
 
 // Shared kind/guidance/expression resolution + validation for the
 // create_/update_framework_criterion handlers (F9 — one resolver, no
@@ -260,18 +320,29 @@ type FrameworkCriterion = ScenarioData["qualityFrameworks"][number]["criteria"][
 function resolveCriterionKindFields(
   input: Record<string, unknown>,
   existing?: FrameworkCriterion,
-): { kind: "qualitative" | "quantitative"; expression: string; assessmentGuidance: string } {
-  const kind = str(input.kind) === "qualitative"
-    ? ("qualitative" as const)
-    : str(input.kind) === "quantitative"
-      ? ("quantitative" as const)
-      : (existing?.kind ?? "quantitative");
-  const assessmentGuidance = kind === "qualitative"
-    ? (str(input.assessmentGuidance) ?? existing?.assessmentGuidance ?? "").trim()
-    : "";
-  const expression = kind === "qualitative"
-    ? ""
-    : (str(input.expression) ?? existing?.expression ?? "").trim();
+): {
+  kind: "qualitative" | "quantitative";
+  expression: string;
+  assessmentGuidance: string;
+} {
+  const kind =
+    str(input.kind) === "qualitative"
+      ? ("qualitative" as const)
+      : str(input.kind) === "quantitative"
+        ? ("quantitative" as const)
+        : (existing?.kind ?? "quantitative");
+  const assessmentGuidance =
+    kind === "qualitative"
+      ? (
+          str(input.assessmentGuidance) ??
+          existing?.assessmentGuidance ??
+          ""
+        ).trim()
+      : "";
+  const expression =
+    kind === "qualitative"
+      ? ""
+      : (str(input.expression) ?? existing?.expression ?? "").trim();
   if (kind === "qualitative" && assessmentGuidance === "") {
     throw new Error("a qualitative criterion requires assessment guidance");
   }
@@ -309,10 +380,17 @@ function periodHasFacts(
 ): boolean {
   const periodIds = new Set(
     d.financialPeriods
-      .filter((p) => p.companyId === companyId && p.fiscalYear === fiscalYear && p.periodType === periodType)
+      .filter(
+        (p) =>
+          p.companyId === companyId &&
+          p.fiscalYear === fiscalYear &&
+          p.periodType === periodType,
+      )
       .map((p) => p.id),
   );
-  return d.financialFacts.some((f) => f.companyId === companyId && periodIds.has(f.periodId));
+  return d.financialFacts.some(
+    (f) => f.companyId === companyId && periodIds.has(f.periodId),
+  );
 }
 
 /** The latest confirmed actual for a metric in the period, or null. */
@@ -323,11 +401,18 @@ function confirmedActual(
   periodType: string,
   metricKey: string,
 ): string | null {
-  const definitionId = d.kpiDefinitions.find((k) => k.metricKey === metricKey)?.id;
+  const definitionId = d.kpiDefinitions.find(
+    (k) => k.metricKey === metricKey,
+  )?.id;
   if (!definitionId) return null;
   const periodIds = new Set(
     d.financialPeriods
-      .filter((p) => p.companyId === companyId && p.fiscalYear === fiscalYear && p.periodType === periodType)
+      .filter(
+        (p) =>
+          p.companyId === companyId &&
+          p.fiscalYear === fiscalYear &&
+          p.periodType === periodType,
+      )
       .map((p) => p.id),
   );
   const fact = d.financialFacts.find(
@@ -348,7 +433,12 @@ function evaluateExpectationOutcome(
 ): "met" | "missed" | "unknown" {
   const e = Number(expected.trim());
   const a = Number(actual.trim());
-  if (expected.trim() === "" || actual.trim() === "" || !Number.isFinite(e) || !Number.isFinite(a)) {
+  if (
+    expected.trim() === "" ||
+    actual.trim() === "" ||
+    !Number.isFinite(e) ||
+    !Number.isFinite(a)
+  ) {
     return "unknown";
   }
   let met: boolean;
@@ -411,9 +501,14 @@ function emptyInsiderOverview(companyId: string): InsiderOverview {
   };
 }
 
-function ensureOwnershipOverview(data: ScenarioData, companyId: string): OwnershipOverview {
+function ensureOwnershipOverview(
+  data: ScenarioData,
+  companyId: string,
+): OwnershipOverview {
   if (!data.ownershipOverviews) data.ownershipOverviews = [];
-  let overview = data.ownershipOverviews.find((entry) => entry.companyId === companyId);
+  let overview = data.ownershipOverviews.find(
+    (entry) => entry.companyId === companyId,
+  );
   if (!overview) {
     overview = emptyOwnershipOverview(companyId);
     data.ownershipOverviews.push(overview);
@@ -478,12 +573,19 @@ function buildHandlers(): Record<string, Handler> {
           (entry) =>
             (ticker && entry.ticker.toUpperCase() === ticker) ||
             (isin && entry.isin?.toUpperCase() === isin) ||
-            (displayName && displayName.length >= 3 && entry.displayName.toUpperCase().includes(displayName)),
+            (displayName &&
+              displayName.length >= 3 &&
+              entry.displayName.toUpperCase().includes(displayName)),
         )
         .sort((left, right) => {
-          const leftPreferred = left.exchange.toUpperCase() === exchange ? 0 : 1;
-          const rightPreferred = right.exchange.toUpperCase() === exchange ? 0 : 1;
-          return leftPreferred - rightPreferred || left.qualifiedTicker.localeCompare(right.qualifiedTicker);
+          const leftPreferred =
+            left.exchange.toUpperCase() === exchange ? 0 : 1;
+          const rightPreferred =
+            right.exchange.toUpperCase() === exchange ? 0 : 1;
+          return (
+            leftPreferred - rightPreferred ||
+            left.qualifiedTicker.localeCompare(right.qualifiedTicker)
+          );
         })[0];
       if (!match) return null;
       return {
@@ -512,7 +614,9 @@ function buildHandlers(): Record<string, Handler> {
       d.companies = [...d.companies, company];
       // Mark the matching directory entry tracked (drives the "already added" state).
       d.registry = d.registry.map((entry) =>
-        entry.qualifiedTicker === company.qualifiedTicker ? { ...entry, tracked: true } : entry,
+        entry.qualifiedTicker === company.qualifiedTicker
+          ? { ...entry, tracked: true }
+          : entry,
       );
       void ctx;
       return company;
@@ -520,7 +624,9 @@ function buildHandlers(): Record<string, Handler> {
     delete_company: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       d.companies = d.companies.filter((c) => c.id !== companyId);
-      d.watchlistMemberships = d.watchlistMemberships.filter((m) => m.companyId !== companyId);
+      d.watchlistMemberships = d.watchlistMemberships.filter(
+        (m) => m.companyId !== companyId,
+      );
       return undefined;
     },
 
@@ -533,7 +639,10 @@ function buildHandlers(): Record<string, Handler> {
     get_price_context: (d, a) => {
       const companyId = str(unwrap(a).companyId) ?? "";
       const company = d.companies.find((c) => c.id === companyId);
-      const emptyReason = company?.exchange.toUpperCase() === "GPW" ? "no_quotes" : "unmapped_ticker";
+      const emptyReason =
+        company?.exchange.toUpperCase() === "GPW"
+          ? "no_quotes"
+          : "unmapped_ticker";
       return {
         lastClose: 0,
         lastDate: "",
@@ -582,7 +691,10 @@ function buildHandlers(): Record<string, Handler> {
     acknowledge_red_flag: (d, a) => {
       const flagId = str(unwrap(a).flagId) ?? "";
       const companyId = flagId.split(":")[2] ?? "";
-      const view = d.redFlagsByCompany?.[companyId] ?? { active: [], history: [] };
+      const view = d.redFlagsByCompany?.[companyId] ?? {
+        active: [],
+        history: [],
+      };
       const flag = view.active.find((f) => f.flagId === flagId);
       const next: RedFlagsView = flag
         ? {
@@ -633,7 +745,10 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       const companyId = str(input.companyId) ?? "";
       const holderKey = str(input.holderKey) ?? "";
-      const holderType = input.holderType == null ? undefined : (str(input.holderType) ?? undefined);
+      const holderType =
+        input.holderType == null
+          ? undefined
+          : (str(input.holderType) ?? undefined);
       const overview = ensureOwnershipOverview(d, companyId);
       overview.holders = overview.holders.map((h) =>
         h.holderKey === holderKey ? { ...h, holderType } : h,
@@ -685,7 +800,8 @@ function buildHandlers(): Record<string, Handler> {
     // --- Autopilot (autonomous report pipeline, ADR 0055) ---
     get_company_autopilot: (d, a) => {
       const companyId = str(unwrap(a).companyId) ?? "";
-      const mode = d.autopilotModes.find((m) => m.companyId === companyId)?.mode ?? "off";
+      const mode =
+        d.autopilotModes.find((m) => m.companyId === companyId)?.mode ?? "off";
       return { companyId, mode };
     },
     set_company_autopilot: (d, a) => {
@@ -709,11 +825,18 @@ function buildHandlers(): Record<string, Handler> {
     list_company_autopilot_modes: (d) => d.autopilotModes,
     set_companies_autopilot: (d, a) => {
       const input = unwrap(a);
-      const companyIds = Array.isArray(input.companyIds) ? (input.companyIds as string[]) : [];
+      const companyIds = Array.isArray(input.companyIds)
+        ? (input.companyIds as string[])
+        : [];
       const mode = str(input.mode) ?? "off";
       const ids = new Set(companyIds);
-      const kept = d.autopilotModes.filter((entry) => !ids.has(entry.companyId));
-      d.autopilotModes = [...kept, ...companyIds.map((companyId) => ({ companyId, mode }))];
+      const kept = d.autopilotModes.filter(
+        (entry) => !ids.has(entry.companyId),
+      );
+      d.autopilotModes = [
+        ...kept,
+        ...companyIds.map((companyId) => ({ companyId, mode })),
+      ];
       return companyIds.length;
     },
     list_autopilot_runs: (d, a) => {
@@ -737,7 +860,9 @@ function buildHandlers(): Record<string, Handler> {
       const revertedFactIds = d.financialFacts
         .filter((f) => producedFactIds.includes(f.id))
         .map((f) => f.id);
-      d.financialFacts = d.financialFacts.filter((f) => !producedFactIds.includes(f.id));
+      d.financialFacts = d.financialFacts.filter(
+        (f) => !producedFactIds.includes(f.id),
+      );
       const { next } = mapReplace(
         d.autopilotRuns,
         (r) => r.id === runId,
@@ -756,12 +881,16 @@ function buildHandlers(): Record<string, Handler> {
       const pollMs = (d.settings.pollIntervalSeconds || 900) * 1000;
       const sourceNextDueMs: Record<string, number> = {};
       d.sourceAdapters
-        .filter((adapter) => adapter.enabled && adapter.sourceType !== "company_registry")
+        .filter(
+          (adapter) =>
+            adapter.enabled && adapter.sourceType !== "company_registry",
+        )
         .forEach((adapter, index) => {
           sourceNextDueMs[adapter.id] = now + pollMs + (5 + index * 10) * 1000;
         });
       const registry = d.sourceAdapters.find(
-        (adapter) => adapter.enabled && adapter.sourceType === "company_registry",
+        (adapter) =>
+          adapter.enabled && adapter.sourceType === "company_registry",
       );
       const registryNextDueMs = registry
         ? now + registry.defaultPollIntervalSeconds * 1000
@@ -773,13 +902,18 @@ function buildHandlers(): Record<string, Handler> {
     list_watchlists: (d) => d.watchlists,
     list_watchlist_memberships: (d, a) => {
       const watchlistId = str(unwrap(a).watchlistId);
-      return watchlistId ? d.watchlistMemberships.filter((m) => m.watchlistId === watchlistId) : d.watchlistMemberships;
+      return watchlistId
+        ? d.watchlistMemberships.filter((m) => m.watchlistId === watchlistId)
+        : d.watchlistMemberships;
     },
     create_watchlist: (d, a) => {
       const input = unwrap(a);
       const name = str(input.name) ?? "Watchlist";
       const watchlist = {
-        id: `watchlist_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`,
+        id: `watchlist_${name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_|_$/g, "")}`,
         name,
         description: str(input.description),
         companyCount: 0,
@@ -792,7 +926,11 @@ function buildHandlers(): Record<string, Handler> {
       const { next, updated } = mapReplace(
         d.watchlists,
         (w) => w.id === str(input.id),
-        (w) => ({ ...w, name: str(input.name) ?? w.name, description: str(input.description) }),
+        (w) => ({
+          ...w,
+          name: str(input.name) ?? w.name,
+          description: str(input.description),
+        }),
       );
       d.watchlists = next;
       return updated ?? d.watchlists[0];
@@ -800,7 +938,9 @@ function buildHandlers(): Record<string, Handler> {
     delete_watchlist: (d, a) => {
       const watchlistId = str(unwrap(a).watchlistId);
       d.watchlists = d.watchlists.filter((w) => w.id !== watchlistId);
-      d.watchlistMemberships = d.watchlistMemberships.filter((m) => m.watchlistId !== watchlistId);
+      d.watchlistMemberships = d.watchlistMemberships.filter(
+        (m) => m.watchlistId !== watchlistId,
+      );
       return undefined;
     },
     add_company_to_watchlist: (d, a) => {
@@ -808,9 +948,19 @@ function buildHandlers(): Record<string, Handler> {
       const watchlistId = str(input.watchlistId) ?? "";
       const companyId = str(input.companyId) ?? "";
       const watchlist = d.watchlists.find((w) => w.id === watchlistId);
-      if (watchlist && !d.watchlistMemberships.some((m) => m.watchlistId === watchlistId && m.companyId === companyId)) {
-        d.watchlistMemberships = [...d.watchlistMemberships, { watchlistId, watchlistName: watchlist.name, companyId }];
-        d.watchlists = d.watchlists.map((w) => (w.id === watchlistId ? { ...w, companyCount: w.companyCount + 1 } : w));
+      if (
+        watchlist &&
+        !d.watchlistMemberships.some(
+          (m) => m.watchlistId === watchlistId && m.companyId === companyId,
+        )
+      ) {
+        d.watchlistMemberships = [
+          ...d.watchlistMemberships,
+          { watchlistId, watchlistName: watchlist.name, companyId },
+        ];
+        d.watchlists = d.watchlists.map((w) =>
+          w.id === watchlistId ? { ...w, companyCount: w.companyCount + 1 } : w,
+        );
       }
       return undefined;
     },
@@ -823,7 +973,8 @@ function buildHandlers(): Record<string, Handler> {
         (m) => !(m.watchlistId === watchlistId && m.companyId === companyId),
       );
       const watchlist = d.watchlists.find((w) => w.id === watchlistId);
-      if (watchlist && d.watchlistMemberships.length < before) watchlist.companyCount = Math.max(0, watchlist.companyCount - 1);
+      if (watchlist && d.watchlistMemberships.length < before)
+        watchlist.companyCount = Math.max(0, watchlist.companyCount - 1);
       return undefined;
     },
 
@@ -847,7 +998,10 @@ function buildHandlers(): Record<string, Handler> {
     delete_unsaved_feed_items: (d) => {
       const before = d.feedItems.length;
       d.feedItems = d.feedItems.filter((f) => f.saved);
-      return { itemsDeleted: before - d.feedItems.length, deletedAt: SAMPLE_NOW };
+      return {
+        itemsDeleted: before - d.feedItems.length,
+        deletedAt: SAMPLE_NOW,
+      };
     },
     prune_old_feed_items: (d, a) => {
       const retentionDays = Number(unwrap(a).retentionDays ?? 30);
@@ -864,7 +1018,9 @@ function buildHandlers(): Record<string, Handler> {
       const dateFrom = str(input.dateFrom);
       const dateTo = str(input.dateTo);
       const watchlistCompanyIds = watchlistId
-        ? d.watchlistMemberships.filter((m) => m.watchlistId === watchlistId).map((m) => m.companyId)
+        ? d.watchlistMemberships
+            .filter((m) => m.watchlistId === watchlistId)
+            .map((m) => m.companyId)
         : [];
       return d.events.filter((event) => {
         const companyMatches = !companyId || event.companyId === companyId;
@@ -872,8 +1028,16 @@ function buildHandlers(): Record<string, Handler> {
         const statusMatches = !status || event.status === status;
         const dateFromMatches = !dateFrom || event.eventDate >= dateFrom;
         const dateToMatches = !dateTo || event.eventDate <= dateTo;
-        const watchlistMatches = !watchlistId || watchlistCompanyIds.includes(event.companyId);
-        return companyMatches && typeMatches && statusMatches && dateFromMatches && dateToMatches && watchlistMatches;
+        const watchlistMatches =
+          !watchlistId || watchlistCompanyIds.includes(event.companyId);
+        return (
+          companyMatches &&
+          typeMatches &&
+          statusMatches &&
+          dateFromMatches &&
+          dateToMatches &&
+          watchlistMatches
+        );
       });
     },
     create_company_event: (d, a, ctx) => {
@@ -908,12 +1072,18 @@ function buildHandlers(): Record<string, Handler> {
       const companyId = str(input.companyId);
       const status = str(input.status);
       return d.signals.filter(
-        (s) => (!companyId || s.companyId === companyId) && (!status || s.status === status),
+        (s) =>
+          (!companyId || s.companyId === companyId) &&
+          (!status || s.status === status),
       );
     },
     confirm_company_signal: (d, a) => {
       const id = str(unwrap(a).id);
-      const { next, updated } = mapReplace(d.signals, (s) => s.id === id, (s) => ({ ...s, status: "confirmed" as const }));
+      const { next, updated } = mapReplace(
+        d.signals,
+        (s) => s.id === id,
+        (s) => ({ ...s, status: "confirmed" as const }),
+      );
       d.signals = next;
       return updated ?? d.signals[0];
     },
@@ -931,11 +1101,13 @@ function buildHandlers(): Record<string, Handler> {
         typeof value === "number" && Number.isFinite(value) ? value : null;
       const rule: ScenarioData["alertRules"][number] = {
         id: ctx.nextId("alert_rule"),
-        triggerType: triggerType as ScenarioData["alertRules"][number]["triggerType"],
+        triggerType:
+          triggerType as ScenarioData["alertRules"][number]["triggerType"],
         signalCategory: str(input.signalCategory),
         priceMin: num(input.priceMin),
         priceMax: num(input.priceMax),
-        scopeType: (str(input.scopeType) ?? "company") as ScenarioData["alertRules"][number]["scopeType"],
+        scopeType: (str(input.scopeType) ??
+          "company") as ScenarioData["alertRules"][number]["scopeType"],
         scopeRef: str(input.scopeRef) ?? "",
         enabled: true,
         createdAt: SAMPLE_NOW,
@@ -953,7 +1125,9 @@ function buildHandlers(): Record<string, Handler> {
           existing.scopeRef === rule.scopeRef,
       );
       if (identical) {
-        throw new Error(`an identical alert rule already exists: ${identical.id}`);
+        throw new Error(
+          `an identical alert rule already exists: ${identical.id}`,
+        );
       }
       d.alertRules = [...d.alertRules, rule];
       return rule;
@@ -968,12 +1142,22 @@ function buildHandlers(): Record<string, Handler> {
         (r) => r.id === id,
         (r) => ({
           ...r,
-          signalCategory: input.signalCategory != null ? str(input.signalCategory) : r.signalCategory,
+          signalCategory:
+            input.signalCategory != null
+              ? str(input.signalCategory)
+              : r.signalCategory,
           priceMin: num(input.priceMin, r.priceMin),
           priceMax: num(input.priceMax, r.priceMax),
-          scopeType: input.scopeType != null ? (str(input.scopeType) as typeof r.scopeType) : r.scopeType,
-          scopeRef: input.scopeRef != null ? (str(input.scopeRef) ?? r.scopeRef) : r.scopeRef,
-          enabled: typeof input.enabled === "boolean" ? input.enabled : r.enabled,
+          scopeType:
+            input.scopeType != null
+              ? (str(input.scopeType) as typeof r.scopeType)
+              : r.scopeType,
+          scopeRef:
+            input.scopeRef != null
+              ? (str(input.scopeRef) ?? r.scopeRef)
+              : r.scopeRef,
+          enabled:
+            typeof input.enabled === "boolean" ? input.enabled : r.enabled,
           updatedAt: SAMPLE_NOW,
         }),
       );
@@ -1004,12 +1188,26 @@ function buildHandlers(): Record<string, Handler> {
       const companyId = str(input.companyId);
       const includeDismissed = input.includeDismissed === true;
       return d.attentionEvents
-        .filter((e) => (!companyId || e.companyId === companyId) && (includeDismissed || !e.dismissed))
-        .sort((left, right) => (left.firedAt < right.firedAt ? 1 : left.firedAt > right.firedAt ? -1 : 0));
+        .filter(
+          (e) =>
+            (!companyId || e.companyId === companyId) &&
+            (includeDismissed || !e.dismissed),
+        )
+        .sort((left, right) =>
+          left.firedAt < right.firedAt
+            ? 1
+            : left.firedAt > right.firedAt
+              ? -1
+              : 0,
+        );
     },
     mark_attention_event_seen: (d, a) => {
       const id = str(unwrap(a).id);
-      const { next } = mapReplace(d.attentionEvents, (e) => e.id === id, (e) => ({ ...e, seen: true }));
+      const { next } = mapReplace(
+        d.attentionEvents,
+        (e) => e.id === id,
+        (e) => ({ ...e, seen: true }),
+      );
       d.attentionEvents = next;
       return undefined;
     },
@@ -1032,22 +1230,30 @@ function buildHandlers(): Record<string, Handler> {
       const companyId = str(input.companyId) ?? "";
       const runId = str(input.runId) ?? "run_fidelity";
       const inWatchlist = (watchlistId: string) =>
-        d.watchlistMemberships.some((m) => m.watchlistId === watchlistId && m.companyId === companyId);
+        d.watchlistMemberships.some(
+          (m) => m.watchlistId === watchlistId && m.companyId === companyId,
+        );
       const matching = d.alertRules.filter(
         (r) =>
           r.enabled &&
           r.triggerType === "autopilot_run_completed" &&
-          (r.scopeType === "company" ? r.scopeRef === companyId : inWatchlist(r.scopeRef)),
+          (r.scopeType === "company"
+            ? r.scopeRef === companyId
+            : inWatchlist(r.scopeRef)),
       );
       let firstEvent: ScenarioData["attentionEvents"][number] | undefined;
       for (const rule of matching) {
         const existing = d.attentionEvents.find(
-          (e) => e.ruleId === rule.id && e.evidenceType === "autopilot_run" && e.evidenceRef === runId,
+          (e) =>
+            e.ruleId === rule.id &&
+            e.evidenceType === "autopilot_run" &&
+            e.evidenceRef === runId,
         );
         if (existing) {
           firstEvent ??= existing;
           continue;
         }
+        const firedRun = d.autopilotRuns.find((r) => r.id === runId);
         const event: ScenarioData["attentionEvents"][number] = {
           id: ctx.nextId("attn"),
           ruleId: rule.id,
@@ -1058,6 +1264,13 @@ function buildHandlers(): Record<string, Handler> {
           firedAt: SAMPLE_NOW,
           seen: false,
           dismissed: false,
+          // `autopilot_run_completed` → notable (product-spec §Attention Routing /
+          // `storage::severity`).
+          severity: "notable",
+          // Mirror the backend join (v0.60 D6): the processed report's title + the
+          // run's status, so the event states WHAT the autopilot finished.
+          evidenceTitle: firedRun?.reportDocumentTitle ?? null,
+          evidenceDetail: firedRun?.status ?? null,
         };
         d.attentionEvents = [...d.attentionEvents, event];
         firstEvent ??= event;
@@ -1075,7 +1288,9 @@ function buildHandlers(): Record<string, Handler> {
     // tick" poll idiom (`CompanyCoveragePanel`) the card's hook reuses.
     generate_morning_briefing: (d, _a, ctx) => {
       const company = d.companies[0];
-      const signal = company ? d.signals.find((s) => s.companyId === company.id) : undefined;
+      const signal = company
+        ? d.signals.find((s) => s.companyId === company.id)
+        : undefined;
       const briefingId = ctx.nextId("briefing");
       const items = company
         ? [
@@ -1109,11 +1324,15 @@ function buildHandlers(): Record<string, Handler> {
 
     list_notebook_entries: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return companyId ? d.notebookEntries.filter((n) => n.companyId === companyId) : d.notebookEntries;
+      return companyId
+        ? d.notebookEntries.filter((n) => n.companyId === companyId)
+        : d.notebookEntries;
     },
     create_notebook_entry: (d, a, ctx) => {
       const input = unwrap(a);
-      const rawOrigins = Array.isArray(input.origins) ? (input.origins as Record<string, unknown>[]) : [];
+      const rawOrigins = Array.isArray(input.origins)
+        ? (input.origins as Record<string, unknown>[])
+        : [];
       const entry = {
         id: ctx.nextId("note"),
         companyId: str(input.companyId) ?? "",
@@ -1140,7 +1359,8 @@ function buildHandlers(): Record<string, Handler> {
       d.notebookEntries = [...d.notebookEntries, entry];
       return entry;
     },
-    create_note_from_transcript_selection: (d, a, ctx) => handlers.create_notebook_entry(d, a, ctx),
+    create_note_from_transcript_selection: (d, a, ctx) =>
+      handlers.create_notebook_entry(d, a, ctx),
     update_notebook_entry: (d, a) => {
       const input = unwrap(a);
       const { next, updated } = mapReplace(
@@ -1168,11 +1388,15 @@ function buildHandlers(): Record<string, Handler> {
     // --- Transcripts ---
     list_video_transcript_jobs: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return companyId ? d.transcriptJobs.filter((j) => j.companyId === companyId) : d.transcriptJobs;
+      return companyId
+        ? d.transcriptJobs.filter((j) => j.companyId === companyId)
+        : d.transcriptJobs;
     },
     list_transcript_segments: (d, a) => {
       const jobId = str(unwrap(a).transcriptJobId);
-      return d.transcriptSegments.filter((s) => !jobId || s.transcriptJobId === jobId);
+      return d.transcriptSegments.filter(
+        (s) => !jobId || s.transcriptJobId === jobId,
+      );
     },
     create_video_transcript_job: (d, a, ctx) => {
       const input = unwrap(a);
@@ -1206,7 +1430,12 @@ function buildHandlers(): Record<string, Handler> {
       let updated: ScenarioData["transcriptJobs"][number] | undefined;
       d.transcriptJobs = d.transcriptJobs.map((job) => {
         if (job.id !== id) return job;
-        updated = { ...job, status: "completed", startedAt: SAMPLE_NOW, finishedAt: SAMPLE_NOW };
+        updated = {
+          ...job,
+          status: "completed",
+          startedAt: SAMPLE_NOW,
+          finishedAt: SAMPLE_NOW,
+        };
         return updated;
       });
       return updated ?? d.transcriptJobs[0];
@@ -1218,7 +1447,10 @@ function buildHandlers(): Record<string, Handler> {
       let updated: ScenarioData["transcriptJobs"][number] | undefined;
       d.transcriptJobs = d.transcriptJobs.map((job) => {
         if (job.id !== id) return job;
-        updated = { ...job, sourceLabel: sourceLabel !== null ? sourceLabel : job.sourceLabel };
+        updated = {
+          ...job,
+          sourceLabel: sourceLabel !== null ? sourceLabel : job.sourceLabel,
+        };
         return updated;
       });
       return updated ?? d.transcriptJobs[0];
@@ -1226,7 +1458,9 @@ function buildHandlers(): Record<string, Handler> {
     delete_video_transcript_job: (d, a) => {
       const jobId = str(unwrap(a).jobId);
       d.transcriptJobs = d.transcriptJobs.filter((j) => j.id !== jobId);
-      d.transcriptSegments = d.transcriptSegments.filter((s) => s.transcriptJobId !== jobId);
+      d.transcriptSegments = d.transcriptSegments.filter(
+        (s) => s.transcriptJobId !== jobId,
+      );
       return undefined;
     },
     resolve_transcript_job_company: (d, a) => {
@@ -1250,15 +1484,24 @@ function buildHandlers(): Record<string, Handler> {
     },
 
     // --- Research workspace ---
-    list_research_evidence: (d, a) => buildTimeline(d, unwrap(a) as ResearchEvidenceInput),
-    list_company_timeline: (d, a) => buildTimeline(d, { companyId: str(unwrap(a).companyId) } as ResearchEvidenceInput),
+    list_research_evidence: (d, a) =>
+      buildTimeline(d, unwrap(a) as ResearchEvidenceInput),
+    list_company_timeline: (d, a) =>
+      buildTimeline(d, {
+        companyId: str(unwrap(a).companyId),
+      } as ResearchEvidenceInput),
     list_watchlist_timeline: (d, a) =>
-      buildTimeline(d, { watchlistId: str(unwrap(a).watchlistId) } as ResearchEvidenceInput),
+      buildTimeline(d, {
+        watchlistId: str(unwrap(a).watchlistId),
+      } as ResearchEvidenceInput),
     mark_research_scope_reviewed: (d, a, ctx) => {
       const input = unwrap(a);
-      const scopeType = (str(input.scopeType) ?? "company") as "company" | "watchlist";
+      const scopeType = (str(input.scopeType) ?? "company") as
+        "company" | "watchlist";
       const scopeId = str(input.scopeId) ?? "";
-      const existing = d.researchReviewCheckpoints.find((c) => c.scopeType === scopeType && c.scopeId === scopeId);
+      const existing = d.researchReviewCheckpoints.find(
+        (c) => c.scopeType === scopeType && c.scopeId === scopeId,
+      );
       if (!existing) {
         const checkpoint = {
           id: ctx.nextId("checkpoint"),
@@ -1268,13 +1511,20 @@ function buildHandlers(): Record<string, Handler> {
           createdAt: SAMPLE_NOW,
           updatedAt: SAMPLE_NOW,
         };
-        d.researchReviewCheckpoints = [...d.researchReviewCheckpoints, checkpoint];
+        d.researchReviewCheckpoints = [
+          ...d.researchReviewCheckpoints,
+          checkpoint,
+        ];
         return checkpoint;
       }
       const { next, updated } = mapReplace(
         d.researchReviewCheckpoints,
         (c) => c.scopeType === scopeType && c.scopeId === scopeId,
-        (c) => ({ ...c, reviewedAt: str(input.reviewedAt) ?? SAMPLE_NOW, updatedAt: SAMPLE_NOW }),
+        (c) => ({
+          ...c,
+          reviewedAt: str(input.reviewedAt) ?? SAMPLE_NOW,
+          updatedAt: SAMPLE_NOW,
+        }),
       );
       d.researchReviewCheckpoints = next;
       return updated ?? existing;
@@ -1283,7 +1533,9 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       return (
         d.researchReviewCheckpoints.find(
-          (c) => c.scopeType === str(input.scopeType) && c.scopeId === str(input.scopeId),
+          (c) =>
+            c.scopeType === str(input.scopeType) &&
+            c.scopeId === str(input.scopeId),
         ) ?? null
       );
     },
@@ -1292,12 +1544,15 @@ function buildHandlers(): Record<string, Handler> {
       const scopeId = str(input.scopeId);
       const status = str(input.status);
       return d.researchQuestions.filter(
-        (q) => (!scopeId || q.scopeId === scopeId) && (!status || q.status === status),
+        (q) =>
+          (!scopeId || q.scopeId === scopeId) &&
+          (!status || q.status === status),
       );
     },
     create_research_question: (d, a) => {
       const input = unwrap(a);
-      const scopeType = (str(input.scopeType) ?? "company") as "company" | "watchlist";
+      const scopeType = (str(input.scopeType) ?? "company") as
+        "company" | "watchlist";
       const scopeId = str(input.scopeId) ?? "";
       const question = {
         id: `research_question_${scopeType}_${scopeId}_${d.researchQuestions.length + 1}`,
@@ -1326,7 +1581,10 @@ function buildHandlers(): Record<string, Handler> {
           sourceUrl: null,
           attribution: null,
           trustCategory: "user_note",
-          reviewState: { changedSinceCompanyReview: true, changedSinceWatchlistReview: true },
+          reviewState: {
+            changedSinceCompanyReview: true,
+            changedSinceWatchlistReview: true,
+          },
         },
       ];
       return question;
@@ -1341,7 +1599,10 @@ function buildHandlers(): Record<string, Handler> {
           ...q,
           title: str(input.title) ?? q.title,
           body: str(input.body) ?? q.body,
-          status: status === "open" || status === "answered" || status === "closed" ? status : q.status,
+          status:
+            status === "open" || status === "answered" || status === "closed"
+              ? status
+              : q.status,
           updatedAt: SAMPLE_NOW,
         }),
       );
@@ -1356,7 +1617,9 @@ function buildHandlers(): Record<string, Handler> {
     list_evidence_links: (d, a) => {
       const input = unwrap(a);
       const endpointId = str(input.endpointId);
-      return d.evidenceLinks.filter((l) => !endpointId || l.fromId === endpointId || l.toId === endpointId);
+      return d.evidenceLinks.filter(
+        (l) => !endpointId || l.fromId === endpointId || l.toId === endpointId,
+      );
     },
     create_evidence_link: (d, a, ctx) => {
       const input = unwrap(a);
@@ -1376,7 +1639,15 @@ function buildHandlers(): Record<string, Handler> {
           link.relationType === relationType,
       );
       if (existing) return existing;
-      const link = { id: ctx.nextId("evidence_link"), fromType, fromId, toType, toId, relationType, createdAt: SAMPLE_NOW };
+      const link = {
+        id: ctx.nextId("evidence_link"),
+        fromType,
+        fromId,
+        toType,
+        toId,
+        relationType,
+        createdAt: SAMPLE_NOW,
+      };
       d.evidenceLinks = [...d.evidenceLinks, link];
       return link;
     },
@@ -1390,14 +1661,17 @@ function buildHandlers(): Record<string, Handler> {
       const scopeId = str(input.scopeId);
       const status = str(input.status);
       return d.researchReminders.filter(
-        (r) => (!scopeId || r.scopeId === scopeId) && (!status || r.status === status),
+        (r) =>
+          (!scopeId || r.scopeId === scopeId) &&
+          (!status || r.status === status),
       );
     },
     create_research_reminder: (d, a, ctx) => {
       const input = unwrap(a);
       const reminder = {
         id: ctx.nextId("reminder"),
-        scopeType: (str(input.scopeType) ?? "company") as "company" | "watchlist",
+        scopeType: (str(input.scopeType) ?? "company") as
+          "company" | "watchlist",
         scopeId: str(input.scopeId) ?? "",
         companyId: str(input.companyId),
         reminderKind: (str(input.reminderKind) ?? "manual_research") as never,
@@ -1424,9 +1698,17 @@ function buildHandlers(): Record<string, Handler> {
         (r) => r.id === str(input.id),
         (r) => ({
           ...r,
-          status: status === "open" || status === "completed" || status === "dismissed" ? status : r.status,
+          status:
+            status === "open" ||
+            status === "completed" ||
+            status === "dismissed"
+              ? status
+              : r.status,
           dueAt: str(input.dueAt) !== null ? str(input.dueAt) : r.dueAt,
-          snoozedUntil: str(input.snoozedUntil) !== null ? str(input.snoozedUntil) : r.snoozedUntil,
+          snoozedUntil:
+            str(input.snoozedUntil) !== null
+              ? str(input.snoozedUntil)
+              : r.snoozedUntil,
           updatedAt: SAMPLE_NOW,
         }),
       );
@@ -1440,7 +1722,9 @@ function buildHandlers(): Record<string, Handler> {
     },
     list_management_claims: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return companyId ? d.managementClaims.filter((c) => c.companyId === companyId) : d.managementClaims;
+      return companyId
+        ? d.managementClaims.filter((c) => c.companyId === companyId)
+        : d.managementClaims;
     },
     list_claims_to_verify: (d) => d.claimsToVerify,
     create_management_claim: (d, a, ctx) => {
@@ -1458,7 +1742,11 @@ function buildHandlers(): Record<string, Handler> {
       const { next, updated } = mapReplace(
         d.managementClaims,
         (c) => c.id === str(input.id),
-        (c) => ({ ...c, statement: str(input.statement) ?? c.statement, updatedAt: SAMPLE_NOW }),
+        (c) => ({
+          ...c,
+          statement: str(input.statement) ?? c.statement,
+          updatedAt: SAMPLE_NOW,
+        }),
       );
       d.managementClaims = next;
       return updated ?? d.managementClaims[0];
@@ -1472,25 +1760,37 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       const status = str(input.status);
       const validStatus =
-        status === "pending" || status === "delivered" || status === "partially_delivered" || status === "missed" || status === "revised";
+        status === "pending" ||
+        status === "delivered" ||
+        status === "partially_delivered" ||
+        status === "missed" ||
+        status === "revised";
       const { next, updated } = mapReplace(
         d.managementClaims,
         (c) => c.id === str(input.claimId),
-        (c) => ({ ...c, status: validStatus ? status : c.status, verifyingFactId: str(input.verifyingFactId), updatedAt: SAMPLE_NOW }),
+        (c) => ({
+          ...c,
+          status: validStatus ? status : c.status,
+          verifyingFactId: str(input.verifyingFactId),
+          updatedAt: SAMPLE_NOW,
+        }),
       );
       d.managementClaims = next;
       return updated ?? d.managementClaims[0];
     },
     list_financial_periods: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return companyId ? d.financialPeriods.filter((p) => p.companyId === companyId) : d.financialPeriods;
+      return companyId
+        ? d.financialPeriods.filter((p) => p.companyId === companyId)
+        : d.financialPeriods;
     },
     create_financial_period: (d, a, ctx) => {
       const base = { ...d.financialPeriods[0] };
       const input = unwrap(a);
       base.id = ctx.nextId("period");
       base.companyId = str(input.companyId) ?? base.companyId;
-      if (typeof input.fiscalYear === "number") base.fiscalYear = input.fiscalYear;
+      if (typeof input.fiscalYear === "number")
+        base.fiscalYear = input.fiscalYear;
       base.periodType = str(input.periodType) ?? base.periodType;
       base.periodEndDate = str(input.periodEndDate) ?? null;
       d.financialPeriods = [...d.financialPeriods, base];
@@ -1499,7 +1799,8 @@ function buildHandlers(): Record<string, Handler> {
     update_financial_period: (d, a) => {
       const input = unwrap(a);
       const period = d.financialPeriods.find((p) => p.id === str(input.id));
-      if (period && typeof input.fiscalYear === "number") period.fiscalYear = input.fiscalYear;
+      if (period && typeof input.fiscalYear === "number")
+        period.fiscalYear = input.fiscalYear;
       return period ?? d.financialPeriods[0];
     },
     delete_financial_period: (d, a) => {
@@ -1512,7 +1813,9 @@ function buildHandlers(): Record<string, Handler> {
       const companyId = str(input.companyId);
       const periodId = str(input.periodId);
       return d.financialFacts.filter(
-        (f) => (!companyId || f.companyId === companyId) && (!periodId || f.periodId === periodId),
+        (f) =>
+          (!companyId || f.companyId === companyId) &&
+          (!periodId || f.periodId === periodId),
       );
     },
     create_financial_fact: (d, a, ctx) => {
@@ -1532,7 +1835,11 @@ function buildHandlers(): Record<string, Handler> {
       const { next, updated } = mapReplace(
         d.financialFacts,
         (f) => f.id === str(input.id),
-        (f) => ({ ...f, valueNumeric: str(input.valueNumeric) ?? f.valueNumeric, updatedAt: SAMPLE_NOW }),
+        (f) => ({
+          ...f,
+          valueNumeric: str(input.valueNumeric) ?? f.valueNumeric,
+          updatedAt: SAMPLE_NOW,
+        }),
       );
       d.financialFacts = next;
       return updated ?? d.financialFacts[0];
@@ -1556,7 +1863,9 @@ function buildHandlers(): Record<string, Handler> {
     },
     list_kpi_relevance: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return companyId ? d.kpiRelevance.filter((r) => r.companyId === companyId) : d.kpiRelevance;
+      return companyId
+        ? d.kpiRelevance.filter((r) => r.companyId === companyId)
+        : d.kpiRelevance;
     },
     create_kpi_relevance: (d, a, ctx) => {
       const base = { ...d.kpiRelevance[0] };
@@ -1571,7 +1880,11 @@ function buildHandlers(): Record<string, Handler> {
       const { next, updated } = mapReplace(
         d.kpiRelevance,
         (r) => r.id === str(input.id),
-        (r) => ({ ...r, status: str(input.status) ?? r.status, updatedAt: SAMPLE_NOW }),
+        (r) => ({
+          ...r,
+          status: str(input.status) ?? r.status,
+          updatedAt: SAMPLE_NOW,
+        }),
       );
       d.kpiRelevance = next;
       return updated ?? d.kpiRelevance[0];
@@ -1582,14 +1895,19 @@ function buildHandlers(): Record<string, Handler> {
       return undefined;
     },
     list_fact_provenance: (d, a) => {
-      const store = (d as { factProvenance?: Array<{ factId: string }> }).factProvenance ?? [];
-      const ids = new Set(((unwrap(a).factIds as string[] | undefined) ?? []).map(String));
+      const store =
+        (d as { factProvenance?: Array<{ factId: string }> }).factProvenance ??
+        [];
+      const ids = new Set(
+        ((unwrap(a).factIds as string[] | undefined) ?? []).map(String),
+      );
       return store.filter((p) => ids.has(p.factId));
     },
     list_flagged_fact_provenance: (d) =>
-      ((d as { factProvenance?: Array<{ validationStatus: string }> }).factProvenance ?? []).filter(
-        (p) => p.validationStatus === "flagged",
-      ),
+      (
+        (d as { factProvenance?: Array<{ validationStatus: string }> })
+          .factProvenance ?? []
+      ).filter((p) => p.validationStatus === "flagged"),
     // The company's NON-EMITTING extraction outcomes, newest attempt first (ADR
     // 0061 decision 2). Clean periods are excluded, and an absent row means
     // "never attempted" — so `[]` is the honest "nothing flagged" state, never a
@@ -1598,7 +1916,9 @@ function buildHandlers(): Record<string, Handler> {
       const companyId = str(unwrap(a).companyId) ?? "";
       return [...(d.flaggedExtractionOutcomes ?? [])]
         .filter((o) => o.companyId === companyId && o.reasonCode !== "emitted")
-        .sort((left, right) => right.lastAttemptedAt.localeCompare(left.lastAttemptedAt));
+        .sort((left, right) =>
+          right.lastAttemptedAt.localeCompare(left.lastAttemptedAt),
+        );
     },
     // "Try again" on a flagged period. The company/document/period come from the
     // STORED row, so the retry cannot target a different slot than the one shown.
@@ -1606,7 +1926,9 @@ function buildHandlers(): Record<string, Handler> {
     // UI depends on — a period whose cause is fixed LEAVES the flagged list.
     rerun_extraction_outcome: (d, a) => {
       const outcomeId = str(unwrap(a).outcomeId) ?? "";
-      const outcome = (d.flaggedExtractionOutcomes ?? []).find((o) => o.id === outcomeId);
+      const outcome = (d.flaggedExtractionOutcomes ?? []).find(
+        (o) => o.id === outcomeId,
+      );
       if (!outcome) {
         throw new Error(`no extraction outcome with id ${outcomeId}`);
       }
@@ -1647,7 +1969,9 @@ function buildHandlers(): Record<string, Handler> {
     }),
     list_report_documents: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return companyId ? d.reportDocuments.filter((r) => r.companyId === companyId) : d.reportDocuments;
+      return companyId
+        ? d.reportDocuments.filter((r) => r.companyId === companyId)
+        : d.reportDocuments;
     },
     // Classification is deterministic Rust code (classify_doc_kind); the mock does
     // NOT re-derive kinds (a TS port would drift and the dual-execution corpus
@@ -1679,46 +2003,91 @@ function buildHandlers(): Record<string, Handler> {
         return upper === "ANNUAL" ? "FY" : upper;
       };
       type Key = string;
-      const key = (fy: number, pt: string): Key => `${fy} ${canonicalLabel(pt)}`;
+      const key = (fy: number, pt: string): Key =>
+        `${fy} ${canonicalLabel(pt)}`;
       const rows = new Map<Key, { fiscalYear: number; periodType: string }>();
 
       // Reports: canonical periodic document per period (ssf beats jsf).
-      const reports = new Map<Key, { documentId: string; docKind: string; title: string | null; structured: boolean; fetched: boolean }>();
+      const reports = new Map<
+        Key,
+        {
+          documentId: string;
+          docKind: string;
+          title: string | null;
+          structured: boolean;
+          fetched: boolean;
+        }
+      >();
       for (const doc of d.reportDocuments) {
         if (doc.companyId !== companyId) continue;
-        if (doc.docKind !== "periodic_ssf" && doc.docKind !== "periodic_jsf") continue;
+        if (doc.docKind !== "periodic_ssf" && doc.docKind !== "periodic_jsf")
+          continue;
         const period = doc.periodId ? periodById.get(doc.periodId) : undefined;
         if (!period) continue;
         const k = key(period.fiscalYear, period.periodType);
-        rows.set(k, { fiscalYear: period.fiscalYear, periodType: canonicalLabel(period.periodType) });
+        rows.set(k, {
+          fiscalYear: period.fiscalYear,
+          periodType: canonicalLabel(period.periodType),
+        });
         const existing = reports.get(k);
-        if (existing && existing.docKind === "periodic_ssf" && doc.docKind === "periodic_jsf") continue;
+        if (
+          existing &&
+          existing.docKind === "periodic_ssf" &&
+          doc.docKind === "periodic_jsf"
+        )
+          continue;
         reports.set(k, {
           documentId: doc.id,
           docKind: doc.docKind,
           title: doc.title ?? null,
-          structured: (doc.contentType ?? "").includes("xhtml") || (doc.contentType ?? "").includes("html"),
+          structured:
+            (doc.contentType ?? "").includes("xhtml") ||
+            (doc.contentType ?? "").includes("html"),
           fetched: doc.fetchStatus === "fetched",
         });
       }
 
       // Facts grouped by period, split by provenance validation state.
       const provenance = new Map(
-        ((d as { factProvenance?: Array<{ factId: string; validationStatus: string }> }).factProvenance ?? []).map(
-          (p) => [p.factId, p.validationStatus],
-        ),
+        (
+          (
+            d as {
+              factProvenance?: Array<{
+                factId: string;
+                validationStatus: string;
+              }>;
+            }
+          ).factProvenance ?? []
+        ).map((p) => [p.factId, p.validationStatus]),
       );
-      const facts = new Map<Key, { total: number; validated: number; unvalidated: number; flagged: number }>();
+      const facts = new Map<
+        Key,
+        {
+          total: number;
+          validated: number;
+          unvalidated: number;
+          flagged: number;
+        }
+      >();
       for (const fact of d.financialFacts) {
         if (fact.companyId !== companyId) continue;
         const period = periodById.get(fact.periodId);
         if (!period) continue;
         const k = key(period.fiscalYear, period.periodType);
-        rows.set(k, { fiscalYear: period.fiscalYear, periodType: canonicalLabel(period.periodType) });
-        const cell = facts.get(k) ?? { total: 0, validated: 0, unvalidated: 0, flagged: 0 };
+        rows.set(k, {
+          fiscalYear: period.fiscalYear,
+          periodType: canonicalLabel(period.periodType),
+        });
+        const cell = facts.get(k) ?? {
+          total: 0,
+          validated: 0,
+          unvalidated: 0,
+          flagged: 0,
+        };
         cell.total += 1;
         const status = provenance.get(fact.id);
-        if (status === "passed" || status === "witness_confirmed") cell.validated += 1;
+        if (status === "passed" || status === "witness_confirmed")
+          cell.validated += 1;
         else if (status === "flagged") cell.flagged += 1;
         else cell.unvalidated += 1;
         facts.set(k, cell);
@@ -1726,7 +2095,12 @@ function buildHandlers(): Record<string, Handler> {
 
       const periods = [...rows.entries()]
         .map(([k, { fiscalYear, periodType }]) => {
-          const factCell = facts.get(k) ?? { total: 0, validated: 0, unvalidated: 0, flagged: 0 };
+          const factCell = facts.get(k) ?? {
+            total: 0,
+            validated: 0,
+            unvalidated: 0,
+            flagged: 0,
+          };
           return {
             fiscalYear,
             periodType,
@@ -1736,7 +2110,12 @@ function buildHandlers(): Record<string, Handler> {
             skippedBudget: false,
           };
         })
-        .sort((x, y) => y.fiscalYear - x.fiscalYear || periodIndex(y.periodType) - periodIndex(x.periodType) || y.periodType.localeCompare(x.periodType));
+        .sort(
+          (x, y) =>
+            y.fiscalYear - x.fiscalYear ||
+            periodIndex(y.periodType) - periodIndex(x.periodType) ||
+            y.periodType.localeCompare(x.periodType),
+        );
 
       return { companyId, periods };
     },
@@ -1755,12 +2134,15 @@ function buildHandlers(): Record<string, Handler> {
       const docs = d.reportDocuments.filter((r) => r.companyId === companyId);
       const periodOf = (doc: (typeof docs)[number]) => {
         const p = doc.periodId ? periodById.get(doc.periodId) : undefined;
-        return p ? { fiscalYear: p.fiscalYear, periodType: p.periodType } : null;
+        return p
+          ? { fiscalYear: p.fiscalYear, periodType: p.periodType }
+          : null;
       };
       const key = (fy: number, pt: string) => `${fy} ${pt}`;
       const canonicalByKey = new Map<string, string>();
       for (const doc of docs) {
-        if (doc.docKind !== "periodic_ssf" && doc.docKind !== "periodic_jsf") continue;
+        if (doc.docKind !== "periodic_ssf" && doc.docKind !== "periodic_jsf")
+          continue;
         const period = periodOf(doc);
         if (!period) continue;
         const k = key(period.fiscalYear, period.periodType);
@@ -1770,14 +2152,19 @@ function buildHandlers(): Record<string, Handler> {
           continue;
         }
         const current = docs.find((x) => x.id === currentId);
-        if (current?.docKind === "periodic_jsf" && doc.docKind === "periodic_ssf") {
+        if (
+          current?.docKind === "periodic_jsf" &&
+          doc.docKind === "periodic_ssf"
+        ) {
           canonicalByKey.set(k, doc.id);
         }
       }
       const rows = docs.map((doc) => {
         const period = periodOf(doc);
         const canonical =
-          period != null && canonicalByKey.get(key(period.fiscalYear, period.periodType)) === doc.id;
+          period != null &&
+          canonicalByKey.get(key(period.fiscalYear, period.periodType)) ===
+            doc.id;
         return {
           document: doc,
           fiscalYear: period?.fiscalYear ?? null,
@@ -1863,13 +2250,20 @@ function buildHandlers(): Record<string, Handler> {
       const base = {
         ...d.reportDocuments[0],
         id: documentId,
-        companyId: str(input.companyId) ?? d.reportDocuments[0]?.companyId ?? "",
+        companyId:
+          str(input.companyId) ?? d.reportDocuments[0]?.companyId ?? "",
         url: str(input.url) ?? d.reportDocuments[0]?.url ?? "",
-        title: str(input.title) ?? d.reportDocuments[0]?.title ?? "Captured report",
+        title:
+          str(input.title) ?? d.reportDocuments[0]?.title ?? "Captured report",
       };
       d.reportDocuments = [...d.reportDocuments, base];
       // Contract return shape is DocumentCaptureResult, not the document itself.
-      return { documentId, localPath: `${documentId}.pdf`, success: true, error: null };
+      return {
+        documentId,
+        localPath: `${documentId}.pdf`,
+        success: true,
+        error: null,
+      };
     },
     list_report_season: (d) => ({
       upcoming: d.reportSeasonUpcoming,
@@ -1879,7 +2273,11 @@ function buildHandlers(): Record<string, Handler> {
     get_pre_report_card: (d, a) => {
       const input = unwrap(a);
       const companyId = str(input.companyId);
-      return d.preReportCards.find((c) => c.companyId === companyId) ?? d.preReportCards[0] ?? null;
+      return (
+        d.preReportCards.find((c) => c.companyId === companyId) ??
+        d.preReportCards[0] ??
+        null
+      );
     },
     mark_report_prepared: (d, a) => {
       const input = unwrap(a);
@@ -1896,7 +2294,11 @@ function buildHandlers(): Record<string, Handler> {
       const { next, updated } = mapReplace(
         d.reportPreparations,
         (p) => p.companyId === str(input.companyId),
-        (p) => ({ ...p, status: "processed" as const, processedAt: SAMPLE_NOW }),
+        (p) => ({
+          ...p,
+          status: "processed" as const,
+          processedAt: SAMPLE_NOW,
+        }),
       );
       d.reportPreparations = next;
       return updated ?? d.reportPreparations[0];
@@ -1932,7 +2334,10 @@ function buildHandlers(): Record<string, Handler> {
           sourceUrl: null,
           attribution: null,
           trustCategory: "user_note",
-          reviewState: { changedSinceCompanyReview: true, changedSinceWatchlistReview: true },
+          reviewState: {
+            changedSinceCompanyReview: true,
+            changedSinceWatchlistReview: true,
+          },
         },
       ];
       return entry;
@@ -1943,7 +2348,11 @@ function buildHandlers(): Record<string, Handler> {
       const kind = str(input.kind);
       // Chronology of DECISIONS: decided_at DESC, id DESC (never insertion).
       return ctx.decisionEntries
-        .filter((e) => (!companyId || e.companyId === companyId) && (!kind || e.kind === kind))
+        .filter(
+          (e) =>
+            (!companyId || e.companyId === companyId) &&
+            (!kind || e.kind === kind),
+        )
         .sort((x, y) => {
           const dx = String(x.decidedAt);
           const dy = String(y.decidedAt);
@@ -1964,7 +2373,8 @@ function buildHandlers(): Record<string, Handler> {
         .filter((p) => p.companyId === companyId && p.exitedAt === null)
         .sort(
           (x, y) =>
-            y.netPositionPct - x.netPositionPct || (x.holderName < y.holderName ? -1 : 1),
+            y.netPositionPct - x.netPositionPct ||
+            (x.holderName < y.holderName ? -1 : 1),
         );
       const changedHolders = new Set(
         d.shortPositionEvents
@@ -1973,7 +2383,13 @@ function buildHandlers(): Record<string, Handler> {
       );
       const events = d.shortPositionEvents
         .filter((e) => e.companyId === companyId)
-        .sort((x, y) => (x.positionDate < y.positionDate ? 1 : x.positionDate > y.positionDate ? -1 : 0))
+        .sort((x, y) =>
+          x.positionDate < y.positionDate
+            ? 1
+            : x.positionDate > y.positionDate
+              ? -1
+              : 0,
+        )
         .slice(0, 50)
         .map((e) => ({
           kind: e.kind,
@@ -1986,7 +2402,10 @@ function buildHandlers(): Record<string, Handler> {
         .filter((p) => p.companyId === companyId && p.exitedAt !== null)
         .sort((x, y) => (String(x.exitedAt) < String(y.exitedAt) ? 1 : -1));
       const lastExit = exits.length
-        ? { holderName: exits[0].holderName, exitedOn: String(exits[0].exitedAt).slice(0, 10) }
+        ? {
+            holderName: exits[0].holderName,
+            exitedOn: String(exits[0].exitedAt).slice(0, 10),
+          }
         : null;
 
       return {
@@ -2001,12 +2420,17 @@ function buildHandlers(): Record<string, Handler> {
         aggregatePct: active.reduce((sum, p) => sum + p.netPositionPct, 0),
         delta30dPp: d.shortPositionEvents
           .filter((e) => e.companyId === companyId && e.positionDate >= cutoff)
-          .reduce((sum, e) => sum + signedEventDelta(e.kind, e.fromPct, e.toPct), 0),
+          .reduce(
+            (sum, e) => sum + signedEventDelta(e.kind, e.fromPct, e.toPct),
+            0,
+          ),
         // Mirrors source_adapters.last_success_at for knf-short-selling; the
         // sample world has no adapter-run state, so expose the sample clock when
         // any register data exists, null otherwise (matches a never-pulled DB).
         registerUpdatedAt:
-          d.shortPositions.length > 0 || d.shortPositionEvents.length > 0 ? SAMPLE_NOW : null,
+          d.shortPositions.length > 0 || d.shortPositionEvents.length > 0
+            ? SAMPLE_NOW
+            : null,
       };
     },
 
@@ -2014,7 +2438,9 @@ function buildHandlers(): Record<string, Handler> {
     create_report_expectation: (_d, a, ctx) => {
       const input = unwrap(a);
       const id = ctx.nextId("report_expectation");
-      const metricsIn = Array.isArray(input.metrics) ? (input.metrics as Record<string, unknown>[]) : [];
+      const metricsIn = Array.isArray(input.metrics)
+        ? (input.metrics as Record<string, unknown>[])
+        : [];
       const expectation = {
         id,
         companyId: str(input.companyId) ?? "",
@@ -2036,13 +2462,24 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       const companyId = str(input.companyId);
       const eventKey = str(input.eventKey);
-      const found = ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey);
+      const found = ctx.reportExpectations.find(
+        (e) => e.companyId === companyId && e.eventKey === eventKey,
+      );
       if (!found) throw new Error("report expectation not found");
       // Freeze check shares the read: once the period's facts land, the edit is
       // refused and frozenAt stamped (mirror of the Rust in-transaction check).
-      if (periodHasFacts(d, String(found.companyId), Number(found.fiscalYear), String(found.periodType))) {
+      if (
+        periodHasFacts(
+          d,
+          String(found.companyId),
+          Number(found.fiscalYear),
+          String(found.periodType),
+        )
+      ) {
         ctx.reportExpectations = ctx.reportExpectations.map((e) =>
-          e === found ? { ...e, frozenAt: (e.frozenAt as string | null) ?? SAMPLE_NOW } : e,
+          e === found
+            ? { ...e, frozenAt: (e.frozenAt as string | null) ?? SAMPLE_NOW }
+            : e,
         );
         throw new Error("report expectation is frozen");
       }
@@ -2053,11 +2490,14 @@ function buildHandlers(): Record<string, Handler> {
         : (found.metrics as unknown[]);
       const updated = {
         ...found,
-        stanceMd: typeof input.stanceMd === "string" ? input.stanceMd : found.stanceMd,
+        stanceMd:
+          typeof input.stanceMd === "string" ? input.stanceMd : found.stanceMd,
         metrics: nextMetrics,
         updatedAt: SAMPLE_NOW,
       };
-      ctx.reportExpectations = ctx.reportExpectations.map((e) => (e === found ? updated : e));
+      ctx.reportExpectations = ctx.reportExpectations.map((e) =>
+        e === found ? updated : e,
+      );
       return updated;
     },
     list_report_expectations: (d, a, ctx) => {
@@ -2065,16 +2505,25 @@ function buildHandlers(): Record<string, Handler> {
       // Freeze-on-read: stamp frozenAt for any expectation whose facts arrived.
       ctx.reportExpectations = ctx.reportExpectations.map((e) => {
         if (e.frozenAt) return e;
-        const frozen = periodHasFacts(d, String(e.companyId), Number(e.fiscalYear), String(e.periodType));
+        const frozen = periodHasFacts(
+          d,
+          String(e.companyId),
+          Number(e.fiscalYear),
+          String(e.periodType),
+        );
         return frozen ? { ...e, frozenAt: SAMPLE_NOW } : e;
       });
-      return ctx.reportExpectations.filter((e) => !companyId || e.companyId === companyId);
+      return ctx.reportExpectations.filter(
+        (e) => !companyId || e.companyId === companyId,
+      );
     },
     expectation_review: (d, a, ctx) => {
       const input = unwrap(a);
       const companyId = str(input.companyId);
       const eventKey = str(input.eventKey);
-      const found = ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey);
+      const found = ctx.reportExpectations.find(
+        (e) => e.companyId === companyId && e.eventKey === eventKey,
+      );
       if (!found) throw new Error("report expectation not found");
       const factsAvailable = periodHasFacts(
         d,
@@ -2088,28 +2537,36 @@ function buildHandlers(): Record<string, Handler> {
         );
       }
       const current =
-        ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey) ?? found;
-      const metrics = (current.metrics as Record<string, unknown>[]).map((m) => {
-        const actual = confirmedActual(
-          d,
-          String(current.companyId),
-          Number(current.fiscalYear),
-          String(current.periodType),
-          String(m.metricKey),
-        );
-        const outcome =
-          actual == null
-            ? "unknown"
-            : evaluateExpectationOutcome(String(m.comparator), String(m.expectedValue), actual);
-        return {
-          metricKey: m.metricKey,
-          comparator: m.comparator,
-          expectedValue: m.expectedValue,
-          unit: m.unit ?? null,
-          actualValue: actual,
-          outcome,
-        };
-      });
+        ctx.reportExpectations.find(
+          (e) => e.companyId === companyId && e.eventKey === eventKey,
+        ) ?? found;
+      const metrics = (current.metrics as Record<string, unknown>[]).map(
+        (m) => {
+          const actual = confirmedActual(
+            d,
+            String(current.companyId),
+            Number(current.fiscalYear),
+            String(current.periodType),
+            String(m.metricKey),
+          );
+          const outcome =
+            actual == null
+              ? "unknown"
+              : evaluateExpectationOutcome(
+                  String(m.comparator),
+                  String(m.expectedValue),
+                  actual,
+                );
+          return {
+            metricKey: m.metricKey,
+            comparator: m.comparator,
+            expectedValue: m.expectedValue,
+            unit: m.unit ?? null,
+            actualValue: actual,
+            outcome,
+          };
+        },
+      );
       return {
         companyId: current.companyId,
         eventKey: current.eventKey,
@@ -2127,7 +2584,9 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       const companyId = str(input.companyId);
       const eventKey = str(input.eventKey);
-      const found = ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey);
+      const found = ctx.reportExpectations.find(
+        (e) => e.companyId === companyId && e.eventKey === eventKey,
+      );
       if (!found) throw new Error("report expectation not found");
       const updated = {
         ...found,
@@ -2135,7 +2594,9 @@ function buildHandlers(): Record<string, Handler> {
         resolvedAt: (found.resolvedAt as string | null) ?? SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
       };
-      ctx.reportExpectations = ctx.reportExpectations.map((e) => (e === found ? updated : e));
+      ctx.reportExpectations = ctx.reportExpectations.map((e) =>
+        e === found ? updated : e,
+      );
       return updated;
     },
 
@@ -2179,8 +2640,13 @@ function buildHandlers(): Record<string, Handler> {
         variantsByFold.set(fold, variants);
       }
       return [...variantsByFold.values()]
-        .map((variants) => [...variants.entries()].sort((a, b) => b[1] - a[1])[0][0])
-        .sort((a, b) => a.toLocaleLowerCase().localeCompare(b.toLocaleLowerCase()));
+        .map(
+          (variants) =>
+            [...variants.entries()].sort((a, b) => b[1] - a[1])[0][0],
+        )
+        .sort((a, b) =>
+          a.toLocaleLowerCase().localeCompare(b.toLocaleLowerCase()),
+        );
     },
     // Basic info read model (v0.53 follow-up): identity facts + sector with
     // provenance + latest shares_outstanding fact, mirroring
@@ -2192,13 +2658,17 @@ function buildHandlers(): Record<string, Handler> {
       const manual = ctx.companySectors.get(companyId) ?? null;
       const registry = REGISTRY_SECTORS.get(companyId) ?? null;
       const periodsById = new Map(
-        d.financialPeriods.filter((p) => p.companyId === companyId).map((p) => [p.id, p]),
+        d.financialPeriods
+          .filter((p) => p.companyId === companyId)
+          .map((p) => [p.id, p]),
       );
       // Mirror `latest_shares_outstanding` exactly (mock-fidelity, ADR 0049):
       // exclude superseded facts, then order by fiscal year, then period end
       // date (null last), then recency — never fiscal year alone.
       const supersededIds = new Set(
-        d.financialFacts.map((f) => f.supersedesId).filter((id): id is string => Boolean(id)),
+        d.financialFacts
+          .map((f) => f.supersedesId)
+          .filter((id): id is string => Boolean(id)),
       );
       const sharesFacts = d.financialFacts
         .filter(
@@ -2218,7 +2688,9 @@ function buildHandlers(): Record<string, Handler> {
           );
         });
       const latest = sharesFacts[0];
-      const latestPeriod = latest ? periodsById.get(latest.periodId) : undefined;
+      const latestPeriod = latest
+        ? periodsById.get(latest.periodId)
+        : undefined;
       return {
         displayName: company.displayName,
         exchange: company.exchange,
@@ -2245,7 +2717,9 @@ function buildHandlers(): Record<string, Handler> {
     list_quality_frameworks: (d) => d.qualityFrameworks,
     get_quality_framework: (d, a) => {
       const id = str(unwrap(a).id);
-      return d.qualityFrameworks.find((f) => f.id === id) ?? d.qualityFrameworks[0];
+      return (
+        d.qualityFrameworks.find((f) => f.id === id) ?? d.qualityFrameworks[0]
+      );
     },
     create_quality_framework: (d, a, ctx) => {
       const input = unwrap(a);
@@ -2266,7 +2740,12 @@ function buildHandlers(): Record<string, Handler> {
       const { next, updated } = mapReplace(
         d.qualityFrameworks,
         (f) => f.id === str(input.id),
-        (f) => ({ ...f, name: str(input.name) ?? f.name, description: str(input.description), updatedAt: SAMPLE_NOW }),
+        (f) => ({
+          ...f,
+          name: str(input.name) ?? f.name,
+          description: str(input.description),
+          updatedAt: SAMPLE_NOW,
+        }),
       );
       d.qualityFrameworks = next;
       return updated ?? d.qualityFrameworks[0];
@@ -2278,14 +2757,22 @@ function buildHandlers(): Record<string, Handler> {
     },
     clone_framework: (d, a, ctx) => {
       const id = str(unwrap(a).id ?? unwrap(a).frameworkId);
-      const source = d.qualityFrameworks.find((f) => f.id === id) ?? d.qualityFrameworks[0];
-      const clone = { ...source, id: ctx.nextId("framework"), origin: "user" as const, clonedFrom: source.id };
+      const source =
+        d.qualityFrameworks.find((f) => f.id === id) ?? d.qualityFrameworks[0];
+      const clone = {
+        ...source,
+        id: ctx.nextId("framework"),
+        origin: "user" as const,
+        clonedFrom: source.id,
+      };
       d.qualityFrameworks = [...d.qualityFrameworks, clone];
       return clone;
     },
     reset_framework_to_template: (d, a) => {
       const id = str(unwrap(a).id);
-      return d.qualityFrameworks.find((f) => f.id === id) ?? d.qualityFrameworks[0];
+      return (
+        d.qualityFrameworks.find((f) => f.id === id) ?? d.qualityFrameworks[0]
+      );
     },
     create_framework_criterion: (d, a, ctx) => {
       const input = unwrap(a);
@@ -2297,7 +2784,11 @@ function buildHandlers(): Record<string, Handler> {
       // replays valid inputs (the Rust replayer expects success), so a
       // malformed-predicate case is out of its scope by design; the UI gates on
       // validate_criterion_expression before create.
-      const { kind, expression, assessmentGuidance: guidance } = resolveCriterionKindFields(input);
+      const {
+        kind,
+        expression,
+        assessmentGuidance: guidance,
+      } = resolveCriterionKindFields(input);
       const criterion = {
         id: ctx.nextId("criterion"),
         frameworkId,
@@ -2317,13 +2808,21 @@ function buildHandlers(): Record<string, Handler> {
     update_framework_criterion: (d, a) => {
       const input = unwrap(a);
       const id = str(input.id);
-      const existing = d.qualityFrameworks.flatMap((f) => f.criteria).find((c) => c.id === id);
+      const existing = d.qualityFrameworks
+        .flatMap((f) => f.criteria)
+        .find((c) => c.id === id);
       // Resolve the EFFECTIVE kind/guidance/expression (input override else the
       // existing value) via the shared resolver (F9) — including a
       // qualitative→quantitative switch that must not keep the empty expression a
       // qualitative row carries (ADR 0075 T5).
-      const { kind, expression, assessmentGuidance: guidance } = resolveCriterionKindFields(input, existing);
-      let updated: ScenarioData["qualityFrameworks"][number]["criteria"][number] | undefined;
+      const {
+        kind,
+        expression,
+        assessmentGuidance: guidance,
+      } = resolveCriterionKindFields(input, existing);
+      let updated:
+        | ScenarioData["qualityFrameworks"][number]["criteria"][number]
+        | undefined;
       d.qualityFrameworks = d.qualityFrameworks.map((framework) =>
         !framework.criteria.some((c) => c.id === id)
           ? framework
@@ -2361,10 +2860,16 @@ function buildHandlers(): Record<string, Handler> {
       // keys in the history list. Mint a fresh snapshot from the newest matching
       // one and prepend it (newest-first, like ORDER BY created_at DESC).
       const template =
-        d.frameworkEvaluations.find((e) => e.companyId === companyId) ?? d.frameworkEvaluations[0];
+        d.frameworkEvaluations.find((e) => e.companyId === companyId) ??
+        d.frameworkEvaluations[0];
       if (!template) return undefined;
       let serial = d.frameworkEvaluations.length + 1;
-      while (d.frameworkEvaluations.some((e) => e.id === `${template.id}_run${serial}`)) serial += 1;
+      while (
+        d.frameworkEvaluations.some(
+          (e) => e.id === `${template.id}_run${serial}`,
+        )
+      )
+        serial += 1;
       const id = `${template.id}_run${serial}`;
       const minted = {
         ...template,
@@ -2383,30 +2888,43 @@ function buildHandlers(): Record<string, Handler> {
       const companyId = str(input.companyId);
       const frameworkId = str(input.frameworkId);
       return d.frameworkEvaluations.filter(
-        (e) => (!companyId || e.companyId === companyId) && (!frameworkId || e.frameworkId === frameworkId),
+        (e) =>
+          (!companyId || e.companyId === companyId) &&
+          (!frameworkId || e.frameworkId === frameworkId),
       );
     },
     get_framework_evaluation: (d, a) => {
       const id = str(unwrap(a).id);
-      return d.frameworkEvaluations.find((e) => e.id === id) ?? d.frameworkEvaluations[0];
+      return (
+        d.frameworkEvaluations.find((e) => e.id === id) ??
+        d.frameworkEvaluations[0]
+      );
     },
     delete_framework_evaluation: (d, a) => {
       const id = str(unwrap(a).id);
-      d.frameworkEvaluations = d.frameworkEvaluations.filter((e) => e.id !== id);
+      d.frameworkEvaluations = d.frameworkEvaluations.filter(
+        (e) => e.id !== id,
+      );
       return undefined;
     },
     validate_criterion_expression: (d, a) => {
       const expression = str(unwrap(a).expression) ?? "";
-      const referencedMetricKeys = d.metricKeys.map((m) => m.key).filter((key) => expression.includes(key));
+      const referencedMetricKeys = d.metricKeys
+        .map((m) => m.key)
+        .filter((key) => expression.includes(key));
       return { ok: true, error: null, referencedMetricKeys };
     },
     list_source_adapters: (d, a) => {
       const includeDeveloperOnly = unwrap(a).includeDeveloperOnly === true;
-      return includeDeveloperOnly ? d.sourceAdapters : d.sourceAdapters.filter((s) => s.visibility !== "developer");
+      return includeDeveloperOnly
+        ? d.sourceAdapters
+        : d.sourceAdapters.filter((s) => s.visibility !== "developer");
     },
     list_unmatched_source_items: (d, a) => {
       const adapterId = str(unwrap(a).adapterId);
-      return adapterId ? d.unmatchedSourceItems.filter((i) => i.adapterId === adapterId) : d.unmatchedSourceItems;
+      return adapterId
+        ? d.unmatchedSourceItems.filter((i) => i.adapterId === adapterId)
+        : d.unmatchedSourceItems;
     },
     set_source_adapter_enabled: (d, a) => {
       const input = unwrap(a);
@@ -2416,7 +2934,8 @@ function buildHandlers(): Record<string, Handler> {
         throw new Error("source is not user configurable");
       }
       const enabled = input.enabled !== false;
-      const healthStatus: ScenarioData["sourceAdapters"][number]["healthStatus"] = enabled ? "notRefreshed" : "off";
+      const healthStatus: ScenarioData["sourceAdapters"][number]["healthStatus"] =
+        enabled ? "notRefreshed" : "off";
       const { next, updated } = mapReplace(
         d.sourceAdapters,
         (s) => s.id === id,
@@ -2426,7 +2945,8 @@ function buildHandlers(): Record<string, Handler> {
       return updated ?? adapter;
     },
     refresh_source: (d, a) => {
-      const adapterId = str(unwrap(a).adapterId) ?? d.sourceAdapters[0]?.id ?? "";
+      const adapterId =
+        str(unwrap(a).adapterId) ?? d.sourceAdapters[0]?.id ?? "";
       return {
         adapterId,
         itemsFetched: 2,
@@ -2455,7 +2975,11 @@ function buildHandlers(): Record<string, Handler> {
           saved: false,
           bodyText: "Official GPW body text fetched from the detail page.",
           attachments: [
-            { id: "feed_attachment_sample_report_pdf", label: "report.pdf", url: "https://www.gpw.pl/pub/GPW/ESPI/2026/report.pdf" },
+            {
+              id: "feed_attachment_sample_report_pdf",
+              label: "report.pdf",
+              url: "https://www.gpw.pl/pub/GPW/ESPI/2026/report.pdf",
+            },
           ],
         },
         ...d.feedItems,
@@ -2569,27 +3093,45 @@ function buildHandlers(): Record<string, Handler> {
       // AI-provider keys into the nested `aiProviders` block.
       const input = unwrap(a);
       const ai = d.settings.aiProviders;
-      const pick = <T>(key: string, fallback: T): T => (key in input ? (input[key] as T) : fallback);
+      const pick = <T>(key: string, fallback: T): T =>
+        key in input ? (input[key] as T) : fallback;
       d.settings = {
         ...d.settings,
         theme: pick("theme", d.settings.theme),
         accentPalette: pick("accentPalette", d.settings.accentPalette),
         locale: pick("locale", d.settings.locale),
         developerMode: pick("developerMode", d.settings.developerMode),
-        pollIntervalSeconds: pick("pollIntervalSeconds", d.settings.pollIntervalSeconds),
+        pollIntervalSeconds: pick(
+          "pollIntervalSeconds",
+          d.settings.pollIntervalSeconds,
+        ),
         backfillYears: pick("backfillYears", d.settings.backfillYears),
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),
         pinnedCompanyIds: pick("pinnedCompanyIds", d.settings.pinnedCompanyIds),
         mcp: {
           enabled: pick("mcpEnabled", d.settings.mcp.enabled),
           // Mirror of the backend clamp ([1024, 65535], ADR 0078).
-          port: Math.min(65_535, Math.max(1024, pick("mcpPort", d.settings.mcp.port))),
+          port: Math.min(
+            65_535,
+            Math.max(1024, pick("mcpPort", d.settings.mcp.port)),
+          ),
+          // The act-tier write gate (ADR 0088 M3), default off.
+          writesEnabled: pick("mcpWritesEnabled", d.settings.mcp.writesEnabled),
         },
         aiProviders: {
           ...ai,
-          youtubeTranscriptionProvider: pick("youtubeTranscriptionProvider", ai.youtubeTranscriptionProvider),
-          youtubeTranscriptionModel: pick("youtubeTranscriptionModel", ai.youtubeTranscriptionModel),
-          youtubeTranscriptionTimeoutSeconds: pick("youtubeTranscriptionTimeoutSeconds", ai.youtubeTranscriptionTimeoutSeconds),
+          youtubeTranscriptionProvider: pick(
+            "youtubeTranscriptionProvider",
+            ai.youtubeTranscriptionProvider,
+          ),
+          youtubeTranscriptionModel: pick(
+            "youtubeTranscriptionModel",
+            ai.youtubeTranscriptionModel,
+          ),
+          youtubeTranscriptionTimeoutSeconds: pick(
+            "youtubeTranscriptionTimeoutSeconds",
+            ai.youtubeTranscriptionTimeoutSeconds,
+          ),
         },
       };
       return d.settings;
@@ -2651,7 +3193,11 @@ function buildHandlers(): Record<string, Handler> {
         ctx.mcpRunning = enabled;
         ctx.mcpError = null;
       }
-      return { running: ctx.mcpRunning, port: d.settings.mcp.port, error: ctx.mcpError };
+      return {
+        running: ctx.mcpRunning,
+        port: d.settings.mcp.port,
+        error: ctx.mcpError,
+      };
     },
     mcp_status: (d, _a, ctx) => ({
       running: ctx.mcpRunning,
@@ -2665,7 +3211,9 @@ function buildHandlers(): Record<string, Handler> {
     // configuration.
     set_provider_api_key: (d, a) => {
       const providerId = str(unwrap(a).providerId) ?? "";
-      const existing = d.credentialStatuses.find((c) => c.providerId === providerId);
+      const existing = d.credentialStatuses.find(
+        (c) => c.providerId === providerId,
+      );
       const credential = existing ?? {
         providerId,
         secretKind: "api_key",
@@ -2681,7 +3229,9 @@ function buildHandlers(): Record<string, Handler> {
     },
     clear_provider_api_key: (d, a) => {
       const providerId = str(unwrap(a).providerId) ?? "";
-      const credential = d.credentialStatuses.find((c) => c.providerId === providerId);
+      const credential = d.credentialStatuses.find(
+        (c) => c.providerId === providerId,
+      );
       if (credential) credential.configured = false;
       return (
         credential ?? {
@@ -2725,8 +3275,14 @@ function buildHandlers(): Record<string, Handler> {
       warnings: [],
       errors: [],
     }),
-    apply_research_import: () => ({ summary: { ...emptyApplySummary(), companiesCreated: 1 }, warnings: [] }),
-    apply_settings_import: () => ({ summary: { ...emptyApplySummary(), settingsUpdated: 1 }, warnings: [] }),
+    apply_research_import: () => ({
+      summary: { ...emptyApplySummary(), companiesCreated: 1 },
+      warnings: [],
+    }),
+    apply_settings_import: () => ({
+      summary: { ...emptyApplySummary(), settingsUpdated: 1 },
+      warnings: [],
+    }),
   };
   return handlers;
 }
@@ -2832,7 +3388,9 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_attention_events",
 ]);
 
-export function createMockRuntime(spec: ScenarioName | ScenarioSpec = "minimal"): MockRuntime {
+export function createMockRuntime(
+  spec: ScenarioName | ScenarioSpec = "minimal",
+): MockRuntime {
   const scenario: ScenarioName = typeof spec === "string" ? spec : spec.base;
   let data = buildScenario(spec);
   let counter = 0;
@@ -2867,7 +3425,9 @@ export function createMockRuntime(spec: ScenarioName | ScenarioSpec = "minimal")
     try {
       return Promise.resolve(handler(data, args, ctx));
     } catch (error) {
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      return Promise.reject(
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
   }
 
@@ -2895,7 +3455,8 @@ export function createMockRuntime(spec: ScenarioName | ScenarioSpec = "minimal")
     reset(nextScenario) {
       data = buildScenario(nextScenario ?? scenario);
       if (nextScenario) {
-        runtime.scenario = typeof nextScenario === "string" ? nextScenario : nextScenario.base;
+        runtime.scenario =
+          typeof nextScenario === "string" ? nextScenario : nextScenario.base;
       }
       counter = 0;
       queuedFailures.clear();

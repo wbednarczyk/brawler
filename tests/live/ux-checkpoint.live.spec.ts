@@ -5,6 +5,34 @@ import {
   recordCheckpoint,
   requireCheckpointMeta,
 } from "./helpers/checkpointEvidence";
+// Single-source pattern + generic copies, reused from the app (never duplicated):
+// the anti-filename regex (documentTitle.ts) and the localized generic fallbacks.
+import { FILENAME_EXTENSION } from "../../src/screens/Today/documentTitle";
+import { makeTextTranslator, supportedLocales } from "../../src/shared/locale";
+
+// The generic attention-fallback statements (both locales) — a row whose statement
+// is one of these stated only its category, not WHAT concretely happened. Resolved
+// through the locale layer so the copy stays single-source (never hardcoded PL).
+const GENERIC_FALLBACK_KEYS = [
+  "Autopilot finished",
+  "52-week low",
+  "Price range",
+  "Official report missed by the primary source",
+];
+// The raw trigger enums a title composer falls back to when even the rule is gone.
+const RAW_TRIGGER_FALLBACKS = [
+  "signal_category",
+  "autopilot_run_completed",
+  "price_enters_range",
+  "price_week52_low",
+  "source_reconciliation",
+];
+const GENERIC_STATEMENTS = new Set<string>([
+  ...supportedLocales.flatMap((loc) =>
+    GENERIC_FALLBACK_KEYS.map((key) => makeTextTranslator(loc)(key)),
+  ),
+  ...RAW_TRIGGER_FALLBACKS,
+]);
 
 // Q6 live UX checkpoint (ADR 0081). A generic, exploration-support spec: it drives
 // the *mechanical* J1 path against the real Windows app and records evidence, so a
@@ -78,11 +106,38 @@ test("J1 morning-review mechanical path + checkpoint evidence", async () => {
     observations.push("No Review action present (quiet morning) — nothing to open.");
   }
 
+  // Specificity probe over the REAL rendered stream (owner dogfooding 2026-07-23):
+  // how many rows state something CONCRETE vs a bare generic fallback, and — the
+  // hard gate — how many state a raw filename (must be zero on real data). The
+  // "specific" count is advisory (clarity is a human verdict); the filename count
+  // is a HARD assertion. Metrics land in the manifest for the human charter.
+  const rowStatements = await page.locator(".today-row-title").allInnerTexts();
+  const trimmed = rowStatements.map((s) => s.trim()).filter((s) => s.length > 0);
+  const filenameAsStatement = trimmed.filter((s) => FILENAME_EXTENSION.test(s)).length;
+  const rowsWithSpecificStatement = trimmed.filter((s) => !GENERIC_STATEMENTS.has(s)).length;
+  const streamMetrics = {
+    totalRows: trimmed.length,
+    rowsWithSpecificStatement,
+    filenameAsStatement,
+  };
+  observations.push(
+    `Stream specificity: ${rowsWithSpecificStatement}/${trimmed.length} rows state something concrete; ` +
+      `${filenameAsStatement} filename-as-statement (must be 0).`,
+  );
+
   const manifest = await recordCheckpoint(page, meta, {
     datasetLabel: process.env.BRAWLER_UX_DATASET ?? "owner real database (label only)",
     nowIso: new Date().toISOString(),
     observations,
+    streamMetrics,
   });
+
+  // HARD gate: a filename must NEVER be a row's statement on the owner's real data
+  // (owner dogfooding 2026-07-23). Advisory metrics aside, this one reddens.
+  expect(
+    streamMetrics.filenameAsStatement,
+    "no Today row statement may be a raw filename on real data",
+  ).toBe(0);
   await page.screenshot({
     path: `${manifest.screenshotDir}/today.png`,
     fullPage: true,

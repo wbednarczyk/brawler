@@ -238,6 +238,10 @@ pub(super) fn reconcile_gpw_espi_witness(
                 &company.id,
                 attention::EVIDENCE_SOURCE_RECONCILIATION,
                 &id,
+                // The missed report's witness title is in scope at the insert site,
+                // so snapshot it (v0.60 D7 uniform posture). Empty title → None →
+                // the read model's report_type/number join fallback still applies.
+                Some(listing.title.as_str()),
                 &date,
             )?;
         }

@@ -38,6 +38,15 @@ pub enum CommandErrorCode {
     Provider,
     /// The operation conflicts with current state (uniqueness/constraint, stale write).
     Conflict,
+    /// The MCP `act` (write) tier is disabled (ADR 0088 M3). Returned only over
+    /// the MCP boundary when a write tool is called while `mcpWritesEnabled` is
+    /// off; the user enables it in Settings → MCP server. `update_settings` is
+    /// itself MCP-excluded, so a connected agent can never clear this itself.
+    WritesDisabled,
+    /// An MCP `act` write is missing its mandatory provenance carrier (ADR 0088
+    /// dec. 3). Returned only over the MCP boundary; the message names the
+    /// required field (e.g. a non-empty `origins` array).
+    ProvenanceRequired,
     /// An unexpected internal failure with no more specific code.
     Internal,
 }

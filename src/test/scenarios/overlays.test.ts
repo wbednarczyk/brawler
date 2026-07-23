@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { applyScenarioOverlays, type ScenarioOverlayName } from "./overlays";
+import {
+  applyScenarioOverlays,
+  PRUNED_CLEAN_SNAPSHOT,
+  PRUNED_GLUED_SNAPSHOT,
+  type ScenarioOverlayName,
+} from "./overlays";
 import { buildScenario, type ScenarioName } from "./scenarios";
 
 const ALL_OVERLAYS: readonly ScenarioOverlayName[] = [
@@ -11,6 +16,12 @@ const ALL_OVERLAYS: readonly ScenarioOverlayName[] = [
   "conflicting-statuses",
   "mixed-locale",
   "attention-overflow",
+  "attention-mixed-severity",
+  "attention-notable-only",
+  "morning-review",
+  "today-dense",
+  "orphaned-evidence",
+  "pruned-feed",
 ];
 const BASES: readonly ScenarioName[] = ["empty", "minimal", "rich"];
 
@@ -112,6 +123,73 @@ describe("scenario overlays — required content", () => {
     const overflowEvents = data.attentionEvents.filter((event) => event.id.startsWith("attn_overlay_overflow_"));
     expect(overflowEvents.length).toBe(20);
     expect(overflowEvents.every((event) => !event.seen && !event.dismissed)).toBe(true);
+  });
+
+  it("attention-mixed-severity: exactly 5 urgent + 15 notable, owning the attention set (ADR 0087 dec. 3)", () => {
+    const data = buildScenario({ base: "rich", overlays: ["attention-mixed-severity"] });
+    const urgent = data.attentionEvents.filter((e) => e.severity === "urgent");
+    const notable = data.attentionEvents.filter((e) => e.severity === "notable");
+    // Owns the set (replaces base) — no base-scenario urgent perturbs the mix.
+    expect(data.attentionEvents.length).toBe(20);
+    expect(urgent.length).toBe(5);
+    expect(notable.length).toBe(15);
+    expect(data.attentionEvents.every((e) => !e.seen && !e.dismissed)).toBe(true);
+  });
+
+  it("attention-notable-only: many notable events, ZERO urgent (no persistent toast can fire)", () => {
+    const data = buildScenario({ base: "rich", overlays: ["attention-notable-only"] });
+    expect(data.attentionEvents.length).toBeGreaterThanOrEqual(10);
+    expect(data.attentionEvents.some((e) => e.severity === "urgent")).toBe(false);
+    expect(data.attentionEvents.every((e) => e.severity === "notable")).toBe(true);
+  });
+
+  it("morning-review: 2 urgent + a notable ×2 group + 6 routine autopilot runs (J1 seed, ADR 0087)", () => {
+    const data = buildScenario({ base: "rich", overlays: ["morning-review"] });
+    const urgent = data.attentionEvents.filter((e) => e.id.startsWith("attn_mr_") && e.severity === "urgent");
+    const group = data.attentionEvents.filter((e) => e.id.startsWith("attn_mr_group_"));
+    const runs = data.autopilotRuns.filter((r) => r.id.startsWith("run_mr_"));
+    expect(urgent.length).toBe(2);
+    // The reconciliation is a system event (no user rule).
+    expect(data.attentionEvents.some((e) => e.id === "attn_mr_recon" && e.ruleId === null)).toBe(true);
+    expect(group.length).toBe(2);
+    expect(group.every((e) => e.severity === "notable")).toBe(true);
+    expect(runs.length).toBe(6);
+    expect(runs.every((r) => r.severity === "routine")).toBe(true);
+  });
+
+  it("today-dense: one routine autopilot run per company (a wall that must aggregate)", () => {
+    const data = buildScenario({ base: "rich", overlays: ["today-dense"] });
+    const denseRuns = data.autopilotRuns.filter((r) => r.id.startsWith("run_dense_"));
+    expect(denseRuns.length).toBe(data.companies.length);
+    expect(denseRuns.length).toBeGreaterThanOrEqual(3);
+    expect(denseRuns.every((r) => r.severity === "routine")).toBe(true);
+  });
+
+  it("orphaned-evidence: signal events with a null title AND a dangling (unresolved) rule id", () => {
+    const data = buildScenario({ base: "rich", overlays: ["orphaned-evidence"] });
+    const orphans = data.attentionEvents.filter((e) => e.id.startsWith("attn_overlay_orphan_"));
+    expect(orphans.length).toBeGreaterThanOrEqual(2);
+    // The orphan STATE: no surviving snapshot title, and a rule id that resolves to
+    // no alertRules row (cascade-pruned) — the FE must fall back, never crash/blank.
+    expect(orphans.every((e) => e.evidenceTitle === null)).toBe(true);
+    expect(orphans.every((e) => e.triggerType === "signal_category")).toBe(true);
+    const ruleIds = new Set(data.alertRules.map((r) => r.id));
+    expect(orphans.every((e) => e.ruleId !== null && !ruleIds.has(e.ruleId))).toBe(true);
+    // And the cited signal is gone (no matching signal row).
+    const signalIds = new Set(data.signals.map((s) => s.id));
+    expect(orphans.every((e) => !signalIds.has(e.evidenceRef))).toBe(true);
+  });
+
+  it("pruned-feed: snapshot titles survive though the live feed item is gone (clean + glued)", () => {
+    const data = buildScenario({ base: "rich", overlays: ["pruned-feed"] });
+    const clean = data.attentionEvents.find((e) => e.id === "attn_overlay_pruned_clean");
+    const glued = data.attentionEvents.find((e) => e.id === "attn_overlay_pruned_glued");
+    expect(clean?.evidenceTitle).toBe(PRUNED_CLEAN_SNAPSHOT);
+    expect(glued?.evidenceTitle).toBe(PRUNED_GLUED_SNAPSHOT);
+    // The cited feed items are pruned (no matching feed row).
+    const feedIds = new Set(data.feedItems.map((f) => f.id));
+    expect(feedIds.has(clean!.evidenceRef)).toBe(false);
+    expect(feedIds.has(glued!.evidenceRef)).toBe(false);
   });
 
   it("mixed-locale: realistic Polish AND English source strings, not planted UI literals", () => {

@@ -31,7 +31,9 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     const region = await openMcpSection(user);
 
     // No token yet: enabling refuses with a surfaced error (never a crash).
-    await user.click(within(region).getByRole("switch", { name: "Enable the server" }));
+    await user.click(
+      within(region).getByRole("switch", { name: "Enable the server" }),
+    );
     expect(invoke).toHaveBeenCalledWith("set_mcp_enabled", { enabled: true });
     expect(
       await within(region).findByText(/auth token is not configured/i),
@@ -39,18 +41,26 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     expect(within(region).getByText("Stopped")).toBeInTheDocument();
 
     // Generate a token, then enabling succeeds and the pill flips to Running.
-    await user.click(within(region).getByRole("button", { name: "Generate token" }));
+    await user.click(
+      within(region).getByRole("button", { name: "Generate token" }),
+    );
     await within(region).findByLabelText("Access token");
 
-    await user.click(within(region).getByRole("switch", { name: "Enable the server" }));
+    await user.click(
+      within(region).getByRole("switch", { name: "Enable the server" }),
+    );
     expect(await within(region).findByText("Active")).toBeInTheDocument();
 
     // The enabled state persists: navigate away and back, the section re-reads
     // mcp_status on mount and the toggle + pill still show the server running.
     await user.click(within(region).getByRole("button", { name: "Logs" }));
-    await user.click(within(region).getByRole("button", { name: "MCP server" }));
+    await user.click(
+      within(region).getByRole("button", { name: "MCP server" }),
+    );
     expect(await within(region).findByText("Active")).toBeInTheDocument();
-    expect(within(region).getByRole("switch", { name: "Enable the server" })).toBeChecked();
+    expect(
+      within(region).getByRole("switch", { name: "Enable the server" }),
+    ).toBeChecked();
   });
 
   // v0.52 dogfooding gap: the app runs on Windows and its server is loopback-only,
@@ -62,7 +72,9 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     const region = await openMcpSection(user);
 
     expect(
-      within(region).getByText(/same machine as this app \(Windows\).*mirrored networking/i),
+      within(region).getByText(
+        /same machine as this app \(Windows\).*mirrored networking/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -71,17 +83,26 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     renderApp();
     const region = await openMcpSection(user);
 
-    await user.click(within(region).getByRole("button", { name: "Generate token" }));
-    const tokenField = await within(region).findByLabelText<HTMLInputElement>("Access token");
+    await user.click(
+      within(region).getByRole("button", { name: "Generate token" }),
+    );
+    const tokenField =
+      await within(region).findByLabelText<HTMLInputElement>("Access token");
     expect(tokenField.value.length).toBeGreaterThan(0);
     expect(within(region).getByText(/shown once/i)).toBeInTheDocument();
 
     // Leave the section and come back: the reveal is gone; only status remains.
     await user.click(within(region).getByRole("button", { name: "Logs" }));
-    await user.click(within(region).getByRole("button", { name: "MCP server" }));
+    await user.click(
+      within(region).getByRole("button", { name: "MCP server" }),
+    );
 
-    expect(within(region).queryByLabelText("Access token")).not.toBeInTheDocument();
-    expect(within(region).getByText("A token is configured.")).toBeInTheDocument();
+    expect(
+      within(region).queryByLabelText("Access token"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(region).getByText("A token is configured."),
+    ).toBeInTheDocument();
   });
 
   it("copies the revealed token to the clipboard", async () => {
@@ -94,9 +115,14 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     renderApp();
     const region = await openMcpSection(user);
 
-    await user.click(within(region).getByRole("button", { name: "Generate token" }));
-    const tokenField = await within(region).findByLabelText<HTMLInputElement>("Access token");
-    await user.click(within(region).getByRole("button", { name: "Copy token" }));
+    await user.click(
+      within(region).getByRole("button", { name: "Generate token" }),
+    );
+    const tokenField =
+      await within(region).findByLabelText<HTMLInputElement>("Access token");
+    await user.click(
+      within(region).getByRole("button", { name: "Copy token" }),
+    );
 
     expect(writeText).toHaveBeenCalledWith(tokenField.value);
   });
@@ -106,17 +132,25 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     renderApp();
     const region = await openMcpSection(user);
 
-    await user.click(within(region).getByRole("button", { name: "Generate token" }));
+    await user.click(
+      within(region).getByRole("button", { name: "Generate token" }),
+    );
     await within(region).findByText("A token is configured.");
 
     // The trigger opens the InlineConfirm; its confirm affordance carries the
     // same "Revoke token" label and commits the revoke (the trigger is hidden
     // while confirming, so only one such button exists at a time).
-    await user.click(within(region).getByRole("button", { name: "Revoke token" }));
-    await user.click(within(region).getByRole("button", { name: "Revoke token" }));
+    await user.click(
+      within(region).getByRole("button", { name: "Revoke token" }),
+    );
+    await user.click(
+      within(region).getByRole("button", { name: "Revoke token" }),
+    );
 
     expect(invoke).toHaveBeenCalledWith("revoke_mcp_token");
-    expect(await within(region).findByText(/No token yet/i)).toBeInTheDocument();
+    expect(
+      await within(region).findByText(/No token yet/i),
+    ).toBeInTheDocument();
   });
 
   it("commits the listen port on blur through update_settings, clamped", async () => {
@@ -124,20 +158,52 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     renderApp();
     const region = await openMcpSection(user);
 
-    const portField = within(region).getByLabelText<HTMLInputElement>("Listen port");
+    const portField =
+      within(region).getByLabelText<HTMLInputElement>("Listen port");
     await user.clear(portField);
     await user.type(portField, "9000");
     await user.tab();
 
-    expect(invoke).toHaveBeenCalledWith("update_settings", { input: { mcpPort: 9000 } });
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { mcpPort: 9000 },
+    });
 
     // Out-of-range input clamps and surfaces the range hint rather than persisting the raw value.
     await user.clear(portField);
     await user.type(portField, "70000");
     await user.tab();
 
-    expect(invoke).toHaveBeenCalledWith("update_settings", { input: { mcpPort: 65535 } });
-    expect(within(region).getByText(/between 1024 and 65535/i)).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { mcpPort: 65535 },
+    });
+    expect(
+      within(region).getByText(/between 1024 and 65535/i),
+    ).toBeInTheDocument();
+  });
+
+  // ADR 0088 M3: the write tier is a second toggle, off by default, committed
+  // through update_settings. Its helper copy states the citation requirement and
+  // that an assistant can never enable it itself (update_settings is MCP-excluded).
+  it("toggles the write tier through update_settings and shows the citation caveat", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const region = await openMcpSection(user);
+
+    const writesToggle = within(region).getByRole("switch", {
+      name: "Allow write tools",
+    });
+    expect(writesToggle).not.toBeChecked();
+    expect(within(region).getByText("Read-only")).toBeInTheDocument();
+    expect(
+      within(region).getByText(
+        /Write tools require citations.*never turn this on itself/i,
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(writesToggle);
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { mcpWritesEnabled: true },
+    });
   });
 
   it("has no accessibility violations", async () => {
