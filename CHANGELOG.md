@@ -1,5 +1,61 @@
 # Changelog
 
+## v0.60.0 - 2026-07-27
+
+Two epics land together: **the Today home is re-invented as a real triage
+surface**, and **the MCP port grows from 4 tools to a UI-parity surface of 96**
+— the first full milestone of the BYOA (bring-your-own-agent) direction.
+
+### Added
+
+- **Today attention home v2** (ADR 0087). The Today/Pulse screen is now a
+  grouped, deduplicated, severity-ranked attention stream with a typed
+  three-level severity (`urgent` / `notable` / `routine`) mapped in exactly one
+  backend place — a new trigger without a classification reddens a gate. Four
+  summary tiles (Urgent first) sit above an expandable morning-briefing bar.
+- **Severity aging and systemic-cause aggregates.** Stale urgent items demote
+  after 72 h instead of shouting forever; the same root cause firing across
+  many companies collapses into one cross-company aggregate row with a group
+  **Dismiss all**.
+- **Attention Archive view** — dismissed/seen items remain reachable instead of
+  vanishing.
+- **Evidence-specific rows**: each attention row carries copy specific to its
+  evidence, with fire-time title snapshots (migration 0114) so a later rename
+  never rewrites history; filenames render as metadata, not headlines. An
+  in-app severity legend and an alert-origin indicator explain why a row is
+  where it is.
+- **MCP surface v2** (ADR 0088): a registry-driven, UI-parity tool surface over
+  the typed command layer — **96 tools (41 read + 55 act)** with
+  schemars-generated schemas and a frozen `tools/list` snapshot; every IPC
+  command must be classified (`read` / `act` / `excluded`) or the gate reddens.
+- **Provenance-mandatory writes behind an off-by-default switch.** Agent writes
+  require `mcpWritesEnabled` (Settings → MCP; the setting itself is on the
+  denylist, so an agent cannot switch it on). Every write family enforces its
+  provenance rules at call time; job triggers are allowed, deletes/undo/settings
+  stay UI-only.
+- **Unclassified-filings triage pair** (`list_unclassified_filings` +
+  `classify_filing`) so an agent can work through official reports the
+  deterministic classifier left unclassified, plus `set_qualitative_verdicts`
+  to close the post-AI-retirement verdict path.
+- **Agent onboarding docs**: a wiki MCP agent guide + connection how-to, and the
+  repo-side `brawler-mcp` skill, both held to the live catalog by a drift gate.
+  An MCP dogfooding ritual joins the closure checklist.
+
+### Changed
+
+- **Toasts are pointers now.** The attention stream is the system of record:
+  only urgent toasts persist, the stack never blocks interaction, and
+  seen/dismiss state stays in sync with the stream.
+- **The briefing seam is cut on the token pattern**: the backend stores only
+  typed codes and source data (no composed English prose in the database), the
+  frontend translates — briefing items are now fully bilingual and
+  restyle-safe.
+- **Config-state banner and per-category error bars** on Today — a
+  misconfigured or failing source shows up as its own labeled state instead of
+  a silently quiet screen.
+- Journey J1 ("morning triage at 10 new items") now takes **6 interactions
+  against a budget of ≤15**, enforced by the journey E2E budget ratchet.
+
 ## v0.59.0 - 2026-07-22
 
 The biggest philosophical release since the first scaffold: **the in-app AI
