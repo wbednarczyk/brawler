@@ -37,6 +37,7 @@ import {
   applyScenarioOverlays,
   type ScenarioOverlayName,
 } from "./scenarios/overlays";
+import { makeCompanyPeriodsComparison, makeKpiComparison, makeProfileComparison, makeReconciliationResult } from "./scenarios/entities";
 import type { CommandError } from "../api/generated/CommandError";
 
 type InvokeArgs = Record<string, unknown> | undefined;
@@ -1131,6 +1132,99 @@ function reportDocument(
 
 let activeRuntime: ReturnType<typeof createMockRuntime> | null = null;
 
+// Source-reconciliation rows for the developer-gated Diagnostics screen. One row
+// per status so the reconciliation table exercises all three StatusChip labels —
+// the `espi_only` "Missed by primary" / "Pominięte przez główne" chip is the long
+// one that overran the fixed severity-sized grid track (bug 228762e); its
+// no-overlap layout is asserted in diagnostics-reconciliation-layout.spec.ts.
+const reconciliationResults = [
+  { ...makeReconciliationResult(), id: "recon_matched", status: "matched" as const, qualifiedTicker: "GPW:CDR" },
+  {
+    ...makeReconciliationResult(),
+    id: "recon_espi_only",
+    status: "espi_only" as const,
+    qualifiedTicker: "GPW:PKN",
+    reportNumber: "22/2026",
+    witnessTitle: "ESPI report the primary feed never surfaced.",
+  },
+  {
+    ...makeReconciliationResult(),
+    id: "recon_bankier_only",
+    status: "bankier_only" as const,
+    qualifiedTicker: "GPW:PKO",
+    reportNumber: "8/2026",
+    witnessTitle: "Bankier-only witness with no ESPI counterpart.",
+  },
+];
+
+// Comparative valuation L1 (ADR 0089 §B3). CD PROJEKT carries a populated
+// 5-peer percentile + 3-method valuation (two drawable methods, P/BV a typed
+// absence) so the football field + grade breakdown render in specs/visuals;
+// CYFROWY POLSAT carries the honest thin state (N=2 < 4) so the threshold
+// message renders. Keyed by companyId; every other company reads the computed
+// typed-absence default. Matches the generated B1/B2 DTO shapes exactly.
+const sectorPercentilesSeed: NonNullable<ScenarioData["sectorPercentiles"]> = {
+  company_gpw_cdr: {
+    companyId: "company_gpw_cdr",
+    sector: "Technology",
+    peerCount: 5,
+    thin: false,
+    emptyReason: null,
+    metrics: [
+      { metricKey: "pe_ratio", kind: "market_ratio", value: "18.40", percentile: "37.00", median: "21.10", sampleSize: 5, absentReason: null },
+      { metricKey: "ev_ebitda", kind: "market_ratio", value: "12.30", percentile: "52.00", median: "12.00", sampleSize: 5, absentReason: null },
+      { metricKey: "pbv_ratio", kind: "market_ratio", value: "3.10", percentile: "61.00", median: "2.60", sampleSize: 5, absentReason: null },
+      { metricKey: "roe", kind: "canonical_kpi", value: "0.18", percentile: "48.00", median: "0.17", sampleSize: 5, absentReason: null },
+      { metricKey: "fcf_yield", kind: "market_ratio", value: null, percentile: null, median: null, sampleSize: 0, absentReason: "no_company_value" },
+    ],
+  },
+  company_gpw_cbf: {
+    companyId: "company_gpw_cbf",
+    sector: "Communication",
+    peerCount: 2,
+    thin: true,
+    emptyReason: null,
+    metrics: [
+      { metricKey: "pe_ratio", kind: "market_ratio", value: "9.20", percentile: null, median: null, sampleSize: 2, absentReason: "insufficient_peers" },
+    ],
+  },
+};
+
+const comparativeValuationsSeed: NonNullable<ScenarioData["comparativeValuations"]> = {
+  company_gpw_cdr: {
+    companyId: "company_gpw_cdr",
+    sector: "Technology",
+    peerCount: 5,
+    thin: false,
+    currentPrice: "132",
+    dataAsOf: "2026-06-30",
+    emptyReason: null,
+    methods: [
+      { method: "pe_multiple", driverKey: "net_profit_ttm", driverValue: "481", peerMultipleLow: "16.0", peerMultipleBase: "20.0", peerMultipleHigh: "24.5", fairLow: "96", fairBase: "122", fairHigh: "148", peerSampleSize: 4, absentReason: null },
+      { method: "ev_ebitda_multiple", driverKey: "ebitda_ttm", driverValue: "640", peerMultipleLow: "9.0", peerMultipleBase: "11.0", peerMultipleHigh: "13.0", fairLow: "108", fairBase: "131", fairHigh: "154", peerSampleSize: 4, absentReason: null },
+      { method: "pbv_multiple", driverKey: "total_equity", driverValue: null, peerMultipleLow: null, peerMultipleBase: null, peerMultipleHigh: null, fairLow: null, fairBase: null, fairHigh: null, peerSampleSize: 0, absentReason: "insufficient_peers" },
+    ],
+    convergence: { baseLow: "122", baseHigh: "131", spreadPct: "7.11", methodCount: 2 },
+    confidence: { grade: "B", composite: "0.72", dataCompleteness: "0.80", peerDepth: "0.60", methodConvergence: "0.70", validation: "0.75" },
+  },
+  company_gpw_cbf: {
+    companyId: "company_gpw_cbf",
+    sector: "Communication",
+    peerCount: 2,
+    thin: true,
+    currentPrice: "42",
+    dataAsOf: "2026-06-30",
+    emptyReason: null,
+    methods: [
+      { method: "pe_multiple", driverKey: "net_profit_ttm", driverValue: "310", peerMultipleLow: null, peerMultipleBase: null, peerMultipleHigh: null, fairLow: null, fairBase: null, fairHigh: null, peerSampleSize: 1, absentReason: "insufficient_peers" },
+      { method: "ev_ebitda_multiple", driverKey: "ebitda_ttm", driverValue: "980", peerMultipleLow: null, peerMultipleBase: null, peerMultipleHigh: null, fairLow: null, fairBase: null, fairHigh: null, peerSampleSize: 1, absentReason: "insufficient_peers" },
+      { method: "pbv_multiple", driverKey: "total_equity", driverValue: "5400", peerMultipleLow: null, peerMultipleBase: null, peerMultipleHigh: null, fairLow: null, fairBase: null, fairHigh: null, peerSampleSize: 1, absentReason: "insufficient_peers" },
+    ],
+    convergence: null,
+    confidence: { grade: "D", composite: "0.22", dataCompleteness: "0.50", peerDepth: "0.10", methodConvergence: "0.00", validation: "0.25" },
+  },
+};
+
 function seedBrowserStore(data: ScenarioData) {
   data.companies = structuredClone(companies);
   data.watchlists = structuredClone(watchlists);
@@ -1151,6 +1245,26 @@ function seedBrowserStore(data: ScenarioData) {
   data.factProvenance = structuredClone(factProvenance);
   data.flaggedExtractionOutcomes = structuredClone(flaggedExtractionOutcomes);
   data.kpiRelevance = structuredClone(kpiRelevance);
+  data.reconciliationResults = structuredClone(reconciliationResults);
+  // Populated cross-company comparison (ADR 0089 §A3) over two browser-harness
+  // companies so the Compare success table renders (CDR reports in PLN, CBF in
+  // EUR — the FX chip + fx_missing flag). Matched by the runtime mock on
+  // (companyIds set, metricKeys=["revenue"], granularity="annual").
+  // Plus the N=1 CDR comparisons the Fundamentals periods × deltas section
+  // (§A5) requests — its own KPI set at annual (default) and quarterly (the
+  // wide, overflow-tested view). Matched on (companyIds={CDR}, metricKeys=
+  // ["revenue","net_profit","eps"], granularity).
+  // The Profil default view (§A7) requests the whole canonical catalog at annual;
+  // makeProfileComparison matches it on (companyIds={CDR,CBF}, all six metricKeys,
+  // annual). makeKpiComparison still serves the single-metric Trend view.
+  data.kpiComparisons = [
+    makeProfileComparison("company_gpw_cdr", "company_gpw_cbf"),
+    makeKpiComparison("company_gpw_cdr", "company_gpw_cbf"),
+    makeCompanyPeriodsComparison("company_gpw_cdr", "annual"),
+    makeCompanyPeriodsComparison("company_gpw_cdr", "quarterly"),
+  ];
+  data.sectorPercentiles = structuredClone(sectorPercentilesSeed);
+  data.comparativeValuations = structuredClone(comparativeValuationsSeed);
   data.reportDocuments = structuredClone(reportDocuments);
   data.autopilotRuns = structuredClone(autopilotRuns);
   data.shortPositions = structuredClone(shortPositions);
@@ -1240,6 +1354,14 @@ export function installBrowserSmokeRuntime() {
   const requestedLocale = params.get("locale");
   if (requestedLocale === "pl" || requestedLocale === "en") {
     settings.locale = requestedLocale;
+  }
+  // Allow `?dev=1` to seed the developer-gated surfaces (Diagnostics) reachable
+  // in a browser spec. The real unlock is a hidden chord → passphrase → backend
+  // command (mocked here as accept-any), which is racy to drive across the
+  // viewport matrix; this test-only override makes Diagnostics deterministically
+  // reachable. Harness-only — never present in production code.
+  if (params.get("dev") === "1") {
+    settings.developerMode = true;
   }
   // Allow the seeded appearance to be forced deterministically, so the Playwright
   // `chromium-compact-light` project can drive the whole suite under the light

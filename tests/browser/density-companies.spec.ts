@@ -144,3 +144,52 @@ test.describe("company panel density matrix", { tag: "@clickable" }, () => {
     });
   }
 });
+
+// Periods × deltas section (v0.61 §A5, ADR 0089 dec. 1). The quarterly view is
+// deliberate wide content (value + Δ QoQ + Δ YoY per period); the narrow-window
+// rule requires it to scroll inside its own bounded, contained scroller so it
+// never forces a pane- or page-level horizontal scrollbar.
+test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, () => {
+  test("the wide quarterly table scrolls inside its own container, not the pane", async ({
+    page,
+  }) => {
+    await openApp(page);
+    const pane = await openCompanyDashboard(page, "Fundamentals", "Company fundamentals");
+    const section = pane.locator("section.fundamentals-periods");
+    await expect(section).toBeVisible();
+
+    // Switch to the wide quarterly grain (three sub-columns per period).
+    await section.getByRole("button", { name: /Quarterly|Kwartalny/ }).click();
+    const scroller = section.locator(".fundamentals-periods-scroll");
+    await expect(scroller).toBeVisible();
+    // The sanctioned wide-content scroller carries data-hscroll (layout-gate exempt).
+    await expect(scroller).toHaveAttribute("data-hscroll");
+
+    await setPaneSize(page, { width: 380, height: 700, pane });
+
+    // No global horizontal scroll despite the wide table.
+    await expectNoPageOverflow(page);
+
+    // The table overflows its OWN scroller (proving it is genuinely wide)…
+    const inner = await scroller.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    expect(
+      inner.scrollWidth,
+      "the quarterly table is wide enough to exercise its scroller",
+    ).toBeGreaterThan(inner.clientWidth);
+
+    // …while the pane itself never overflows horizontally (containment holds).
+    const paneBox = await pane.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    expect(
+      paneBox.scrollWidth,
+      `the pane overflows horizontally (${paneBox.scrollWidth} > ${paneBox.clientWidth})`,
+    ).toBeLessThanOrEqual(paneBox.clientWidth + 1);
+
+    await resetPaneSize(page, pane);
+  });
+});

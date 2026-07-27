@@ -1675,6 +1675,144 @@ fn validate_reference_exists(
     }
 }
 
+/// One canonical fact selected for the cross-company comparison read model
+/// (ADR 0089 dec. 1) — the single reporting variant per `(company, metric,
+/// period)` slot, carrying just what the read model needs plus the provenance
+/// `validation_status` evidence link. Slot preference mirrors
+/// `quality_frameworks::load_period_facts` (final › reported › consolidated ›
+/// total), so the two read paths never disagree about "the" value.
+#[derive(Clone, Debug)]
+pub struct CanonicalComparisonFact {
+    pub company_id: String,
+    pub metric_key: String,
+    pub fiscal_year: i64,
+    pub period_type: String,
+    pub period_end_date: Option<String>,
+    pub fact_id: String,
+    pub value_numeric: String,
+    pub currency: Option<String>,
+    pub measure_window: String,
+    pub validation_status: Option<String>,
+}
+
+/// Select the canonical confirmed fact per `(company, metric, period)` for the
+/// requested companies × metric keys × period types (the granularity filter).
+/// One row per slot: the DB returns every candidate ordered by the canonical
+/// preference and we keep the first per slot (same collapse as
+/// `load_period_facts`), LEFT-joining provenance for the evidence link. Empty
+/// inputs short-circuit to no rows.
+pub(super) fn comparison_facts(
+    connection: &Connection,
+    company_ids: &[String],
+    metric_keys: &[String],
+    period_types: &[&str],
+) -> StorageResult<Vec<CanonicalComparisonFact>> {
+    if company_ids.is_empty() || metric_keys.is_empty() || period_types.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders =
+        |n: usize| -> String { std::iter::repeat_n("?", n).collect::<Vec<_>>().join(", ") };
+    let sql = format!(
+        "SELECT f.company_id, d.metric_key, p.fiscal_year, p.period_type,
+                p.period_end_date, f.id, f.value_numeric, f.currency,
+                f.measure_window, prov.validation_status
+         FROM financial_facts f
+         JOIN financial_periods p ON p.id = f.period_id
+         JOIN kpi_definitions d ON d.id = f.definition_id
+         LEFT JOIN financial_fact_provenance prov ON prov.fact_id = f.id
+         WHERE f.confirmation_state = 'confirmed'
+           AND f.company_id IN ({})
+           AND d.metric_key IN ({})
+           AND p.period_type IN ({})
+         ORDER BY f.company_id, d.metric_key, p.fiscal_year, p.period_type,
+                  CASE f.data_quality WHEN 'final' THEN 0 ELSE 1 END,
+                  CASE f.variant WHEN 'reported' THEN 0 ELSE 1 END,
+                  CASE f.statement_basis WHEN 'consolidated' THEN 0 ELSE 1 END,
+                  CASE f.attribution WHEN 'total' THEN 0 WHEN 'owners_of_parent' THEN 1 ELSE 2 END,
+                  f.id",
+        placeholders(company_ids.len()),
+        placeholders(metric_keys.len()),
+        placeholders(period_types.len()),
+    );
+
+    let mut statement = connection.prepare(&sql)?;
+    let params: Vec<&dyn rusqlite::ToSql> = company_ids
+        .iter()
+        .map(|s| s as &dyn rusqlite::ToSql)
+        .chain(metric_keys.iter().map(|s| s as &dyn rusqlite::ToSql))
+        .chain(period_types.iter().map(|s| s as &dyn rusqlite::ToSql))
+        .collect();
+
+    let rows = statement.query_map(params.as_slice(), |row| {
+        Ok(CanonicalComparisonFact {
+            company_id: row.get(0)?,
+            metric_key: row.get(1)?,
+            fiscal_year: row.get(2)?,
+            period_type: row.get(3)?,
+            period_end_date: row.get(4)?,
+            fact_id: row.get(5)?,
+            value_numeric: row.get(6)?,
+            currency: row.get(7)?,
+            measure_window: row.get(8)?,
+            validation_status: row.get(9)?,
+        })
+    })?;
+
+    // Keep the first (canonical) row per slot — the ORDER BY already ranks them.
+    let mut seen: std::collections::HashSet<(String, String, i64, String)> =
+        std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row?;
+        let slot = (
+            row.company_id.clone(),
+            row.metric_key.clone(),
+            row.fiscal_year,
+            row.period_type.clone(),
+        );
+        if seen.insert(slot) {
+            out.push(row);
+        }
+    }
+    Ok(out)
+}
+
+/// The `value_kind` per requested `metric_key` (drives % vs p.p. deltas in the
+/// comparison read model). Prefers the app-owned scope when several definitions
+/// share a key (`canonical` › `sector` › `user` › `company`); a key with no
+/// definition is simply absent from the map.
+pub(super) fn metric_value_kinds(
+    connection: &Connection,
+    metric_keys: &[String],
+) -> StorageResult<std::collections::HashMap<String, String>> {
+    let mut out = std::collections::HashMap::new();
+    if metric_keys.is_empty() {
+        return Ok(out);
+    }
+    let placeholders = std::iter::repeat_n("?", metric_keys.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT metric_key, value_kind FROM kpi_definitions
+         WHERE metric_key IN ({placeholders})
+         ORDER BY CASE scope WHEN 'canonical' THEN 0 WHEN 'sector' THEN 1
+                             WHEN 'user' THEN 2 ELSE 3 END"
+    );
+    let mut statement = connection.prepare(&sql)?;
+    let params: Vec<&dyn rusqlite::ToSql> = metric_keys
+        .iter()
+        .map(|s| s as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = statement.query_map(params.as_slice(), |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    for row in rows {
+        let (metric_key, value_kind) = row?;
+        out.entry(metric_key).or_insert(value_kind);
+    }
+    Ok(out)
+}
+
 use super::database::Database;
 /// financials domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
 /// exposes only this domain's operations. Reach it via `AppState::financials()`.
@@ -1767,6 +1905,31 @@ impl FinancialsStore {
         let connection = self.db.checkout()?;
 
         list_financial_facts(&connection, input)
+    }
+
+    /// Canonical confirmed facts for the cross-company comparison read model
+    /// (ADR 0089 dec. 1) — one per `(company, metric, period)` slot across the
+    /// requested companies × metric keys × period types. See
+    /// [`comparison_facts`].
+    pub fn comparison_facts(
+        &self,
+        company_ids: &[String],
+        metric_keys: &[String],
+        period_types: &[&str],
+    ) -> StorageResult<Vec<CanonicalComparisonFact>> {
+        let connection = self.db.checkout()?;
+
+        comparison_facts(&connection, company_ids, metric_keys, period_types)
+    }
+
+    /// The `value_kind` per requested `metric_key` — see [`metric_value_kinds`].
+    pub fn metric_value_kinds(
+        &self,
+        metric_keys: &[String],
+    ) -> StorageResult<std::collections::HashMap<String, String>> {
+        let connection = self.db.checkout()?;
+
+        metric_value_kinds(&connection, metric_keys)
     }
 
     /// The company's expected primary-KPI `metric_key`s (ADR 0061 dec. 4d). See

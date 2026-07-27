@@ -67,7 +67,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "list_claims_due"
       },
       {
-        "description": "Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus previously-stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — qualitative criteria are recorded manually now, and this tool reads only stored verdicts (new criteria stay empty until the planned MCP write-tools). Decision support only — never an investment recommendation.",
+        "description": "Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — this tool reads only stored verdicts; agents record new verdicts with provenance via the `set_qualitative_verdicts` write-tool (until then a criterion reads as unassessed). Decision support only — never an investment recommendation.",
         "inputSchema": {
           "additionalProperties": false,
           "properties": {
@@ -232,6 +232,72 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "get_price_context"
+      },
+      {
+        "description": "Compare one or more canonical KPIs across companies on a shared, aligned period axis (annual or quarterly). Each cell carries the native + PLN-converted value with its FX basis, the evidence link (fact id + validation status), and server-computed QoQ/YoY deltas; gaps and unconvertible currencies are typed flags, never silent. Works for a single company too (the periods×deltas view). Decision support only.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companies": {
+              "description": "Qualified tickers to compare, e.g. `[\"GPW:CDR\", \"GPW:PKN\"]` (1..N).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "granularity": {
+              "description": "`\"annual\"` (default) or `\"quarterly\"`.",
+              "type": "string"
+            },
+            "metricKeys": {
+              "description": "Canonical metric keys to align, e.g. `[\"revenue\", \"net_profit\"]` (1..N).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "companies",
+            "metricKeys"
+          ],
+          "type": "object"
+        },
+        "name": "get_kpi_comparison"
+      },
+      {
+        "description": "Where one company stands against its tracked sector peers: rank-based percentiles for the level-0 market ratios (P/E, P/BV, EV/EBITDA, dividend yield, FCF yield) and selected canonical KPIs, computed from confirmed data only. Always returns the peer count N and flags thin sets (N < 4); a company with no sector returns a typed empty reason. Decision support only.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_sector_percentiles"
+      },
+      {
+        "description": "One company's append-only comparative-valuation run history (ADR 0089): each stored run's method (P/E, EV/EBITDA, or P/BV multiple), per-share fair-value range (low/base/high), input signature, confidence grade, and data-as-of date, newest first. The compute-and-persist path is the act-tier compute_comparative_valuation. Decision support only.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "list_valuation_runs"
       },
       {
         "description": "One company's shareholder structure: significant holders, holder types, and free float, with change history.",
@@ -2116,6 +2182,22 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "evaluate_framework"
+      },
+      {
+        "description": "Compute the level-1 comparative valuation for one company (peer-multiple implied fair-value ranges for P/E, EV/EBITDA, and P/BV, method-convergence spread, and a deterministic confidence grade) and append a valuation_runs row per method whose input signature changed. Read the history via list_valuation_runs. Decision support only — never buy/sell/hold language.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companyId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId"
+          ],
+          "type": "object"
+        },
+        "name": "compute_comparative_valuation"
       },
       {
         "description": "Enable/disable an alert rule (by id).",

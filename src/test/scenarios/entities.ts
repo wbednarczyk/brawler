@@ -50,6 +50,12 @@ import type {
   KpiDefinition,
   KpiRelevance,
 } from "../../api/financialsTypes";
+import type {
+  KpiComparison,
+  KpiComparisonCell,
+  KpiComparisonPeriod,
+  KpiComparisonSeries,
+} from "../../api/comparison";
 import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { OwnershipOverview } from "../../api/ownership";
 import type { CompanyHealth } from "../../api/companyHealth";
@@ -996,6 +1002,282 @@ export function makeKpiDefinition(): KpiDefinition {
     displayFormat: "currency",
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
+  };
+}
+
+// A populated cross-company comparison (ADR 0089 dec. 1) for the Compare screen
+// (§A3) — a fixed two-company × revenue × annual read model with three aligned
+// FY periods, so the browser/visual harness renders the success table (the
+// runtime mock's computed default is the empty comparison, since the base
+// scenario carries no confirmed facts wired to these companies). PKN reports in
+// PLN (native, delta-defined); TPE reports in EUR (FX chip + one fx_missing
+// gap on the latest period), exercising the typed flags + EUR→PLN basis.
+export function makeKpiComparison(
+  companyA = "company_gpw_pkn",
+  companyB = "company_gpw_tpe",
+): KpiComparison {
+  const axis: KpiComparisonPeriod[] = [
+    { fiscalYear: 2022, periodType: "FY", key: "2022:FY" },
+    { fiscalYear: 2023, periodType: "FY", key: "2023:FY" },
+    { fiscalYear: 2024, periodType: "FY", key: "2024:FY" },
+  ];
+  const cell = (over: Partial<KpiComparisonCell> & { fiscalYear: number }): KpiComparisonCell => ({
+    periodType: "FY",
+    factId: null,
+    value: null,
+    currency: null,
+    valuePln: null,
+    fxBasis: null,
+    validationStatus: null,
+    deltaQoQ: null,
+    deltaYoY: null,
+    flags: [],
+    ...over,
+  });
+  return {
+    granularity: "annual",
+    metricKeys: ["revenue"],
+    axis,
+    series: [
+      {
+        companyId: companyA,
+        metricKey: "revenue",
+        valueKind: "currency",
+        cells: [
+          cell({ fiscalYear: 2022, factId: "fact_cmp_pkn_2022", value: "953", currency: "PLN", valuePln: "953", fxBasis: "native_pln", validationStatus: "confirmed" }),
+          cell({ fiscalYear: 2023, factId: "fact_cmp_pkn_2023", value: "1230", currency: "PLN", valuePln: "1230", fxBasis: "native_pln", validationStatus: "confirmed", deltaYoY: "29.07" }),
+          cell({ fiscalYear: 2024, factId: "fact_cmp_pkn_2024", value: "985", currency: "PLN", valuePln: "985", fxBasis: "native_pln", validationStatus: "confirmed", deltaYoY: "-19.92" }),
+        ],
+      },
+      {
+        companyId: companyB,
+        metricKey: "revenue",
+        valueKind: "currency",
+        cells: [
+          cell({ fiscalYear: 2022, factId: "fact_cmp_tpe_2022", value: "388", currency: "EUR", valuePln: "1746", fxBasis: "period_average", validationStatus: "confirmed" }),
+          cell({ fiscalYear: 2023, factId: "fact_cmp_tpe_2023", value: "412", currency: "EUR", valuePln: "1854", fxBasis: "period_average", validationStatus: "confirmed", deltaYoY: "6.19" }),
+          cell({ fiscalYear: 2024, factId: "fact_cmp_tpe_2024", value: "451", currency: "EUR", valuePln: null, fxBasis: null, validationStatus: "confirmed", flags: ["fx_missing"] }),
+        ],
+      },
+    ],
+  };
+}
+
+// Profil comparison for the Compare screen's default view (v0.61 §A7). Pivots
+// the whole seeded canonical catalog (`kpiDefinitions` order) over two companies
+// at annual granularity, exercising every Różnica path: monetary multiples, a
+// p.p. margin delta, a per-share "—", and one fx_missing gap. `companyA` reports
+// in PLN, `companyB` in EUR (converted, plus one missing-rate cell). Matched by
+// the runtime mock on (companyIds set, all six metricKeys, granularity="annual").
+export function makeProfileComparison(
+  companyA = "company_gpw_cdr",
+  companyB = "company_gpw_cbf",
+): KpiComparison {
+  const axis: KpiComparisonPeriod[] = [
+    { fiscalYear: 2022, periodType: "FY", key: "2022:FY" },
+    { fiscalYear: 2023, periodType: "FY", key: "2023:FY" },
+    { fiscalYear: 2024, periodType: "FY", key: "2024:FY" },
+  ];
+  const cell = (over: Partial<KpiComparisonCell> & { fiscalYear: number }): KpiComparisonCell => ({
+    periodType: "FY",
+    factId: null,
+    value: null,
+    currency: null,
+    valuePln: null,
+    fxBasis: null,
+    validationStatus: null,
+    deltaQoQ: null,
+    deltaYoY: null,
+    flags: [],
+    ...over,
+  });
+  // PLN monetary series (companyA): valuePln == native value.
+  const pln = (metricKey: string, values: number[]): KpiComparisonSeries => ({
+    companyId: companyA,
+    metricKey,
+    valueKind: "monetary",
+    cells: axis.map((period, index) =>
+      cell({
+        fiscalYear: period.fiscalYear,
+        factId: `fact_${companyA}_${metricKey}_${period.fiscalYear}`,
+        value: String(values[index]),
+        currency: "PLN",
+        valuePln: String(values[index]),
+        fxBasis: "native_pln",
+        validationStatus: "confirmed",
+      }),
+    ),
+  });
+  // EUR monetary series (companyB): converted valuePln; `null` marks an
+  // fx_missing gap (no comparable number that period).
+  const eur = (metricKey: string, valuesPln: (number | null)[]): KpiComparisonSeries => ({
+    companyId: companyB,
+    metricKey,
+    valueKind: "monetary",
+    cells: axis.map((period, index) => {
+      const converted = valuesPln[index];
+      if (converted === null) {
+        return cell({
+          fiscalYear: period.fiscalYear,
+          factId: `fact_${companyB}_${metricKey}_${period.fiscalYear}`,
+          value: "10",
+          currency: "EUR",
+          validationStatus: "confirmed",
+          flags: ["fx_missing"],
+        });
+      }
+      return cell({
+        fiscalYear: period.fiscalYear,
+        factId: `fact_${companyB}_${metricKey}_${period.fiscalYear}`,
+        value: String(Math.round(converted / 4.3)),
+        currency: "EUR",
+        valuePln: String(converted),
+        fxBasis: "period_average",
+        validationStatus: "confirmed",
+      });
+    }),
+  });
+  // Per-share EPS series for companyB (native PLN per share).
+  const perShare = (companyId: string, values: number[]): KpiComparisonSeries => ({
+    companyId,
+    metricKey: "eps",
+    valueKind: "monetary",
+    cells: axis.map((period, index) =>
+      cell({
+        fiscalYear: period.fiscalYear,
+        factId: `fact_${companyId}_eps_${period.fiscalYear}`,
+        value: String(values[index]),
+        currency: "PLN",
+        valuePln: String(values[index]),
+        fxBasis: "native_pln",
+        validationStatus: "confirmed",
+      }),
+    ),
+  });
+  // Percentage series: currency-less native value (the read model tags a
+  // currency_unknown flag; the native value is the comparable number).
+  const pct = (companyId: string, metricKey: string, values: number[]): KpiComparisonSeries => ({
+    companyId,
+    metricKey,
+    valueKind: "percentage",
+    cells: axis.map((period, index) =>
+      cell({
+        fiscalYear: period.fiscalYear,
+        factId: `fact_${companyId}_${metricKey}_${period.fiscalYear}`,
+        value: String(values[index]),
+        validationStatus: "confirmed",
+        flags: ["currency_unknown"],
+      }),
+    ),
+  });
+  return {
+    granularity: "annual",
+    metricKeys: ["revenue", "operating_profit", "net_profit", "ebitda", "eps", "gross_margin"],
+    axis,
+    series: [
+      pln("revenue", [900, 950, 985]),
+      eur("revenue", [360, 430, 110]),
+      pln("operating_profit", [300, 350, 410]),
+      eur("operating_profit", [150, 170, 41]),
+      pln("net_profit", [400, 450, 481]),
+      eur("net_profit", [140, 160, 38]),
+      pln("ebitda", [500, 560, 620]),
+      eur("ebitda", [220, 240, null]),
+      // Per-share EPS (both in native currency): Różnica is always "—" (the def's
+      // `per_share` unit makes an absolute multiple meaningless).
+      pln("eps", [4.0, 4.5, 4.78]),
+      perShare(companyB, [15.0, 15.5, 16.1]),
+      pct(companyA, "gross_margin", [39.0, 40.0, 41.0]),
+      pct(companyB, "gross_margin", [34.0, 34.5, 35.2]),
+    ],
+  };
+}
+
+// N=1 comparison for the Fundamentals periods × deltas section (v0.61 §A5). The
+// panel requests its own KPI set (`["revenue", "net_profit", "eps"]` for the
+// browser-harness CDR facts) at one granularity; this returns a populated,
+// deliberately wide axis with inline deltas, one no_fact gap, and one
+// undefined-delta flag so the section renders every rendering path.
+export function makeCompanyPeriodsComparison(
+  companyId = "company_gpw_cdr",
+  granularity: "annual" | "quarterly" = "quarterly",
+): KpiComparison {
+  const axis: KpiComparisonPeriod[] =
+    granularity === "annual"
+      ? [
+          { fiscalYear: 2022, periodType: "FY", key: "2022:FY" },
+          { fiscalYear: 2023, periodType: "FY", key: "2023:FY" },
+          { fiscalYear: 2024, periodType: "FY", key: "2024:FY" },
+        ]
+      : [
+          { fiscalYear: 2024, periodType: "Q2", key: "2024:Q2" },
+          { fiscalYear: 2024, periodType: "Q3", key: "2024:Q3" },
+          { fiscalYear: 2024, periodType: "Q4", key: "2024:Q4" },
+          { fiscalYear: 2025, periodType: "Q1", key: "2025:Q1" },
+          { fiscalYear: 2025, periodType: "Q2", key: "2025:Q2" },
+          { fiscalYear: 2025, periodType: "Q3", key: "2025:Q3" },
+        ];
+  const quarterly = granularity === "quarterly";
+  const cell = (over: Partial<KpiComparisonCell> & { fiscalYear: number; periodType: string }): KpiComparisonCell => ({
+    factId: null,
+    value: null,
+    currency: null,
+    valuePln: null,
+    fxBasis: null,
+    validationStatus: null,
+    deltaQoQ: null,
+    deltaYoY: null,
+    flags: [],
+    ...over,
+  });
+  const monetary = (metricKey: string, base: number, step: number, mutate?: (index: number, spec: Partial<KpiComparisonCell>) => void): KpiComparisonSeries => ({
+    companyId,
+    metricKey,
+    valueKind: "monetary",
+    cells: axis.map((period, index) => {
+      const value = String(base + index * step);
+      const spec: Partial<KpiComparisonCell> = {
+        factId: `fact_${companyId}_${metricKey}_${period.key.replace(":", "_")}`,
+        value,
+        currency: "PLN",
+        valuePln: value,
+        fxBasis: "native_pln",
+        validationStatus: "confirmed",
+        deltaYoY: index > 0 ? (index * 3.1).toFixed(2) : null,
+        deltaQoQ: quarterly && index > 0 ? (index * 1.4).toFixed(2) : null,
+      };
+      mutate?.(index, spec);
+      return cell({ fiscalYear: period.fiscalYear, periodType: period.periodType, ...spec });
+    }),
+  });
+  return {
+    granularity,
+    metricKeys: ["revenue", "net_profit", "eps"],
+    axis,
+    series: [
+      monetary("revenue", 228, 24),
+      // Net profit's second period has an undefined YoY (non-positive base).
+      monetary("net_profit", 41, 14, (index, spec) => {
+        if (index === 1) {
+          spec.deltaYoY = null;
+          spec.flags = ["delta_yoy_undefined"];
+        }
+      }),
+      // EPS's first period is a no_fact gap.
+      monetary("eps", 1, 1, (index, spec) => {
+        if (index === 0) {
+          spec.factId = null;
+          spec.value = null;
+          spec.currency = null;
+          spec.valuePln = null;
+          spec.fxBasis = null;
+          spec.validationStatus = null;
+          spec.deltaYoY = null;
+          spec.deltaQoQ = null;
+          spec.flags = ["no_fact"];
+        }
+      }),
+    ],
   };
 }
 

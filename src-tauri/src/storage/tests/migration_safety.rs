@@ -2950,3 +2950,102 @@ fn every_emittable_metric_key_has_a_canonical_definition() {
          silently drop at NoDefinition — unseeded: {unseeded:?}"
     );
 }
+
+#[test]
+fn migration_0115_creates_fx_rates_and_seeds_nbp_adapter_idempotently() {
+    // ADR 0089 dec. 2 / plan v0.61 §A1: migration 0115 adds the append-only
+    // `fx_rates` table (NBP Table-A mids, upsert by (currency, date)) and seeds
+    // the internal `nbp-fx` source adapter. `CREATE TABLE IF NOT EXISTS` + an
+    // `ON CONFLICT DO UPDATE` seed, so re-running the runner is a safe no-op that
+    // neither errors nor duplicates — and it never disturbs stored FX rows.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    // The table exists and accepts a decimal-exact mid keyed by (currency, date).
+    connection
+        .execute(
+            "INSERT INTO fx_rates (currency, date, mid_rate, source_adapter_id)
+             VALUES ('EUR', '2024-01-15', '4.3748', 'nbp-fx')",
+            [],
+        )
+        .expect("an fx_rate row must be storable");
+    // The PK rejects a duplicate key on a plain insert (append-only by key).
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO fx_rates (currency, date, mid_rate) VALUES ('EUR', '2024-01-15', '9.9')",
+                [],
+            )
+            .is_err(),
+        "the (currency, date) primary key must reject a duplicate key"
+    );
+
+    // The nbp-fx adapter row is seeded exactly once.
+    let nbp_before: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM source_adapters WHERE id = 'nbp-fx'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count nbp-fx");
+    assert_eq!(nbp_before, 1, "nbp-fx must be seeded once");
+
+    // Re-running the runner is a safe no-op on the table and the seed.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+
+    let nbp_after: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM source_adapters WHERE id = 'nbp-fx'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count nbp-fx after");
+    assert_eq!(nbp_after, 1, "nbp-fx re-seed must not duplicate");
+    assert_eq!(
+        count_rows(&connection, "fx_rates").expect("count"),
+        1,
+        "re-running migrations must not disturb stored FX rates"
+    );
+}
+
+#[test]
+fn migration_0116_creates_valuation_runs_idempotently() {
+    // ADR 0089 dec. 5 / plan §B2: migration 0116 adds the append-only
+    // `valuation_runs` table (IF NOT EXISTS + IF NOT EXISTS indexes), so
+    // re-running the runner is a safe no-op that neither errors nor disturbs data.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    connection
+        .execute(
+            "INSERT INTO valuation_runs
+                (id, company_id, method, inputs_json, fair_low, fair_base, fair_high,
+                 data_as_of, confidence_grade)
+             VALUES ('v1', 'c1', 'pe_multiple', '{\"a\":1}', '19', '22', '25',
+                     '2026-07-27', 'B')",
+            [],
+        )
+        .expect("a valuation run row must be storable");
+
+    // The newest-run index exists (list ordering + signature lookup).
+    let index_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+              WHERE type = 'index' AND name = 'idx_valuation_runs_company_as_of')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("index existence check");
+    assert!(index_exists, "the company/as_of index must be created");
+
+    // Re-running the runner is a safe no-op on the new table.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    assert_eq!(
+        count_rows(&connection, "valuation_runs").expect("count"),
+        1,
+        "re-running migrations must not disturb stored valuation runs"
+    );
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "re-run must reach exactly the expected migration count",
+    );
+}

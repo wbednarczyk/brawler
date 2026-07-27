@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { Button, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { Button, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
@@ -318,6 +318,67 @@ describe("FilterToolbar", () => {
     fireEvent.click(disclosure);
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
     expect(controls).toHaveAttribute("data-collapsed", "true");
+  });
+});
+
+describe("RangeBarChart (football field)", () => {
+  const rows = [
+    { key: "pe", label: "P/E × median", low: 96, base: 122, high: 148, rangeText: "96–148 zł" },
+    { key: "evebitda", label: "EV/EBITDA × median", low: 108, base: 131, high: 154, rangeText: "108–154 zł" },
+    { key: "pbv", label: "P/BV × median", absentText: "too few peers" },
+  ];
+
+  it("is a labelled group exposing every method row label + range text", () => {
+    render(
+      <RangeBarChart
+        ariaLabel="Implied fair-value ranges"
+        rangeLegendLabel="implied range"
+        rows={rows}
+      />,
+    );
+    const group = screen.getByRole("group", { name: "Implied fair-value ranges" });
+    expect(group).toBeInTheDocument();
+    expect(screen.getByText("P/E × median")).toBeInTheDocument();
+    expect(screen.getByText("EV/EBITDA × median")).toBeInTheDocument();
+    expect(screen.getByText("96–148 zł")).toBeInTheDocument();
+    expect(screen.getByText("108–154 zł")).toBeInTheDocument();
+  });
+
+  it("draws a bar per drawable row and positions the fill within the shared domain", () => {
+    const { container } = render(
+      <RangeBarChart ariaLabel="ff" rangeLegendLabel="implied range" rows={rows} />,
+    );
+    // Two drawable rows → two range fills; the absent row draws no track.
+    const fills = container.querySelectorAll(".ui-range-bar-fill");
+    expect(fills).toHaveLength(2);
+    for (const fill of fills) {
+      const left = parseFloat((fill as HTMLElement).style.left);
+      const width = parseFloat((fill as HTMLElement).style.width);
+      expect(left).toBeGreaterThanOrEqual(0);
+      expect(left + width).toBeLessThanOrEqual(100.01);
+    }
+    expect(container.querySelectorAll(".ui-range-bar-track")).toHaveLength(2);
+  });
+
+  it("renders a typed-absence row as its reason text, never a zero-width bar", () => {
+    render(<RangeBarChart ariaLabel="ff" rangeLegendLabel="implied range" rows={rows} />);
+    expect(screen.getByText("too few peers")).toBeInTheDocument();
+  });
+
+  it("draws the shared marker line across every drawable row + a legend entry", () => {
+    const { container } = render(
+      <RangeBarChart
+        ariaLabel="ff"
+        rangeLegendLabel="implied range"
+        markerLegendLabel="current price"
+        marker={{ value: 132, label: "132 zł" }}
+        rows={rows}
+      />,
+    );
+    // One marker per drawable row (2), positioned inside the domain.
+    const markers = container.querySelectorAll(".ui-range-bar-marker");
+    expect(markers).toHaveLength(2);
+    expect(screen.getByText(/current price — 132 zł/)).toBeInTheDocument();
   });
 });
 

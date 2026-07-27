@@ -247,7 +247,7 @@ fn exposed_tools() -> Vec<RegistryEntry> {
         exposed_read(
             "get_quality_assessment",
             "list_framework_evaluations",
-            "Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus previously-stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — qualitative criteria are recorded manually now, and this tool reads only stored verdicts (new criteria stay empty until the planned MCP write-tools). Decision support only — never an investment recommendation.",
+            "Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — this tool reads only stored verdicts; agents record new verdicts with provenance via the `set_qualitative_verdicts` write-tool (until then a criterion reads as unassessed). Decision support only — never an investment recommendation.",
             tools::tool_schema::<GetQualityAssessmentInput>,
             tools::get_quality_assessment_handler,
         ),
@@ -349,6 +349,27 @@ fn read_wave_tools() -> Vec<RegistryEntry> {
             "One company's price context: latest quote and the recent range, plus derived valuation ratios where computable.",
             tools::tool_schema::<reads::CompanyRef>,
             reads::get_price_context_handler,
+        ),
+        exposed_read(
+            "get_kpi_comparison",
+            "get_kpi_comparison",
+            "Compare one or more canonical KPIs across companies on a shared, aligned period axis (annual or quarterly). Each cell carries the native + PLN-converted value with its FX basis, the evidence link (fact id + validation status), and server-computed QoQ/YoY deltas; gaps and unconvertible currencies are typed flags, never silent. Works for a single company too (the periods×deltas view). Decision support only.",
+            tools::tool_schema::<reads::KpiComparisonRef>,
+            reads::get_kpi_comparison_handler,
+        ),
+        exposed_read(
+            "get_sector_percentiles",
+            "get_sector_percentiles",
+            "Where one company stands against its tracked sector peers: rank-based percentiles for the level-0 market ratios (P/E, P/BV, EV/EBITDA, dividend yield, FCF yield) and selected canonical KPIs, computed from confirmed data only. Always returns the peer count N and flags thin sets (N < 4); a company with no sector returns a typed empty reason. Decision support only.",
+            tools::tool_schema::<reads::CompanyRef>,
+            reads::get_sector_percentiles_handler,
+        ),
+        exposed_read(
+            "list_valuation_runs",
+            "list_valuation_runs",
+            "One company's append-only comparative-valuation run history (ADR 0089): each stored run's method (P/E, EV/EBITDA, or P/BV multiple), per-share fair-value range (low/base/high), input signature, confidence grade, and data-as-of date, newest first. The compute-and-persist path is the act-tier compute_comparative_valuation. Decision support only.",
+            tools::tool_schema::<reads::CompanyRef>,
+            reads::list_valuation_runs_handler,
         ),
         exposed_read(
             "get_ownership_overview",
@@ -888,6 +909,13 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
             acts::evaluate_framework_handler,
         ),
         exposed_act(
+            "compute_comparative_valuation",
+            None,
+            "Compute the level-1 comparative valuation for one company (peer-multiple implied fair-value ranges for P/E, EV/EBITDA, and P/BV, method-convergence spread, and a deterministic confidence grade) and append a valuation_runs row per method whose input signature changed. Read the history via list_valuation_runs. Decision support only — never buy/sell/hold language.",
+            tools::tool_schema::<acts::ComputeComparativeValuationInput>,
+            acts::compute_comparative_valuation_handler,
+        ),
+        exposed_act(
             "set_alert_rule_enabled",
             None,
             "Enable/disable an alert rule (by id).",
@@ -1386,10 +1414,11 @@ mod tests {
         );
         assert_eq!(
             tools.len(),
-            96,
-            "the frozen exposed-tool count (41 read: 4 MVP + 34 read wave + list_alert_rules + \
-             list_flagged_extraction_outcomes + list_unclassified_filings; 55 act incl. \
-             classify_filing, ADR 0088 dec. 2/3/4)"
+            100,
+            "the frozen exposed-tool count (44 read: 4 MVP + 34 read wave + get_kpi_comparison \
+             + get_sector_percentiles + list_valuation_runs (ADR 0089) + list_alert_rules + \
+             list_flagged_extraction_outcomes + list_unclassified_filings; 56 act incl. \
+             compute_comparative_valuation (ADR 0089), classify_filing, ADR 0088 dec. 2/3/4)"
         );
 
         for (name, required, properties) in expected {
@@ -1480,6 +1509,13 @@ mod tests {
             ("list_kpi_definitions", json!({}), false),
             ("list_flagged_fact_provenance", json!({}), false),
             ("get_price_context", company.clone(), false),
+            (
+                "get_kpi_comparison",
+                json!({ "companies": ["GPW:TST"], "metricKeys": ["revenue"], "granularity": "annual" }),
+                false,
+            ),
+            ("get_sector_percentiles", company.clone(), false),
+            ("list_valuation_runs", company.clone(), false),
             ("get_ownership_overview", company.clone(), false),
             ("get_insider_overview", company.clone(), false),
             ("list_short_positions", company.clone(), false),
@@ -1929,6 +1965,10 @@ mod tests {
             (
                 "evaluate_framework",
                 json!({ "frameworkId": framework_id, "companyId": company_id }),
+            ),
+            (
+                "compute_comparative_valuation",
+                json!({ "companyId": company_id }),
             ),
             (
                 "set_alert_rule_enabled",

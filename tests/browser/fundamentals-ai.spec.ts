@@ -45,8 +45,12 @@ test.describe("fundamentals visual harness", () => {
     // Cockpit dashboard (ADR 0057) shows the Fundamentals panel directly.
     const panel = page.getByLabel("Wskaźniki finansowe spółki");
     await expect(panel).toBeVisible();
-    // Localized KPI labels (not English / internal ids).
-    await expect(panel.getByText("Przychody", { exact: true })).toBeVisible();
+    // Localized KPI labels (not English / internal ids). Scoped to the facts
+    // matrix specifically: the §A5 "Pozycje × okresy" section in the same panel
+    // also carries a "Przychody" row, so an unscoped panel match is ambiguous.
+    await expect(
+      page.getByLabel("Tabela faktów finansowych").getByText("Przychody", { exact: true }),
+    ).toBeVisible();
     await panel.screenshot({ path: `${SHOT_DIR}/fundamentals-pl-${tag}.png` });
 
     await page.getByRole("button", { name: /^Przychody, / }).first().click();

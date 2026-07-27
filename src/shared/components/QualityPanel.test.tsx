@@ -405,6 +405,39 @@ describe("QualityPanel", () => {
     expect(await screen.findByText("Assess durable competitive advantage.")).toBeInTheDocument();
   });
 
+  // Card b875e69 (ADR 0088): agents write qualitative verdicts over MCP with
+  // `set_qualitative_verdicts`; those land in the evaluation history as
+  // `source: "agent"` rows. The panel must SURFACE the newest agent verdict per
+  // qualitative criterion — otherwise the write capability is unreachable.
+  it("renders an MCP-written qualitative verdict and its reasoning", async () => {
+    const user = userEvent.setup();
+    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
+    listFrameworkEvaluationsMock.mockResolvedValue([
+      evaluation({
+        id: "qeval_agent",
+        periodId: null,
+        passCount: 0,
+        partialCount: 0,
+        failCount: 0,
+        unavailableCount: 0,
+        createdAt: "2026-07-01T10:00:00Z",
+        results: [agentResult({ verdict: "partial", reasoning: "Moat is real but narrowing." })],
+      }),
+    ]);
+
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Wide moat");
+
+    // The agent's verdict is visible — not the hardcoded "Not assessed yet".
+    expect(screen.getByText("Partial")).toBeInTheDocument();
+    expect(screen.queryByText("Not assessed yet")).not.toBeInTheDocument();
+
+    // Expanding reveals the agent's written reasoning alongside the guidance.
+    await user.click(screen.getByRole("button", { name: /Wide moat/ }));
+    expect(await screen.findByText("Moat is real but narrowing.")).toBeInTheDocument();
+    expect(screen.getByText("Assess durable competitive advantage.")).toBeInTheDocument();
+  });
+
   it("keeps the quantitative scorecard when a newer qual-only snapshot exists", async () => {
     // ADR 0075 Decision 5: a qualitative-only snapshot (written by the agent
     // job into the same framework_evaluations table) must never become the

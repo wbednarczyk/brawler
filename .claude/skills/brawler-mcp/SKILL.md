@@ -96,7 +96,7 @@ keeps it exact — do not hand-edit):
 
 <!-- BEGIN GENERATED MCP CATALOG — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->
 
-**Read tools** — always available once the server is on (41):
+**Read tools** — always available once the server is on (44):
 
 | Tool | What it does |
 | --- | --- |
@@ -116,6 +116,9 @@ keeps it exact — do not hand-edit):
 | `list_kpi_definitions` | The metric catalog: every KPI/financial-concept definition (id, label, unit) facts are keyed by. |
 | `list_flagged_fact_provenance` | Every fact the extraction pipeline flagged for review (a drift or contradiction against another source) — the data-quality review surface. |
 | `get_price_context` | One company's price context: latest quote and the recent range, plus derived valuation ratios where computable. |
+| `get_kpi_comparison` | Compare one or more canonical KPIs across companies on a shared, aligned period axis (annual or quarterly). Each cell carries the native + PLN-converted value with its FX basis, the evidence link (fact id + validation status), and server-computed QoQ/YoY deltas; gaps and unconvertible currencies are typed flags, never silent. Works for a single company too (the periods×deltas view). Decision support only. |
+| `get_sector_percentiles` | Where one company stands against its tracked sector peers: rank-based percentiles for the level-0 market ratios (P/E, P/BV, EV/EBITDA, dividend yield, FCF yield) and selected canonical KPIs, computed from confirmed data only. Always returns the peer count N and flags thin sets (N < 4); a company with no sector returns a typed empty reason. Decision support only. |
+| `list_valuation_runs` | One company's append-only comparative-valuation run history (ADR 0089): each stored run's method (P/E, EV/EBITDA, or P/BV multiple), per-share fair-value range (low/base/high), input signature, confidence grade, and data-as-of date, newest first. The compute-and-persist path is the act-tier compute_comparative_valuation. Decision support only. |
 | `get_ownership_overview` | One company's shareholder structure: significant holders, holder types, and free float, with change history. |
 | `get_insider_overview` | One company's insider-transaction timeline, management holdings, and rolling net-direction aggregates. |
 | `list_short_positions` | One company's KNF short-selling register: active positions, change history, aggregate net short %, and the 30-day change. |
@@ -142,7 +145,7 @@ keeps it exact — do not hand-edit):
 | `list_flagged_extraction_outcomes` | One company's extraction-coverage gaps: the fiscal periods where the deterministic pipeline emitted nothing (a flagged/failed outcome). Complements list_flagged_fact_provenance (flagged facts that DID emit) — the coverage-gap review surface. |
 | `list_unclassified_filings` | Official filings (ESPI/EBI) the deterministic rule classifier could not place — the explicit unclassified bucket, never guessed at. Optionally scoped to one company. Classify one with classify_filing. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (55):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (56):
 
 | Tool | What it does |
 | --- | --- |
@@ -192,6 +195,7 @@ keeps it exact — do not hand-edit):
 | `dismiss_attention_event` | Dismiss an attention event (by id). |
 | `set_autopilot_run_notification_state` | Set an autopilot run's notification state (unread\|read\|dismissed). |
 | `evaluate_framework` | Run the deterministic quantitative scorecard engine for a framework+company and persist the evaluation. |
+| `compute_comparative_valuation` | Compute the level-1 comparative valuation for one company (peer-multiple implied fair-value ranges for P/E, EV/EBITDA, and P/BV, method-convergence spread, and a deterministic confidence grade) and append a valuation_runs row per method whose input signature changed. Read the history via list_valuation_runs. Decision support only — never buy/sell/hold language. |
 | `set_alert_rule_enabled` | Enable/disable an alert rule (by id). |
 | `trigger_autopilot_run` | Trigger an autopilot run over one company's report document (fail-fast on unknown ids); enqueues the durable pipeline. |
 | `generate_morning_briefing` | Enqueue composition of a fresh morning briefing (read the result via get_latest_morning_briefing). |

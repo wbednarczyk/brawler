@@ -942,6 +942,24 @@ Rules:
 - The PK serves the 52-week / percentile range scans (indexed reads, never a corpus recompute).
 - Migrations are append-only (0071); reads of quote-derived ratios tolerate missing facts (ratio resolves to `null`, never a crash).
 
+### FX Rates (NBP)
+
+NBP Table-A mid rates — the FX substrate powering PLN conversion for cross-company comparison ([ADR 0089](adr/0089-cross-company-comparison-and-valuation-l1.md) decision 2, `v0.61.0`). Migration `0115_fx_rates.sql`.
+
+`fx_rates` — `(currency, date, mid_rate, source_adapter_id, fetched_at)`, PK `(currency, date)`. NBP Table-A daily average ("mid") rates (keyless official public API; `mid_rate` is decimal-exact TEXT, never a float — parsed from the raw JSON number token). Append-only; corrections upsert by key like `daily_quotes`, never a wholesale rewrite. Fed by the internal `nbp-fx` source adapter (developer-visibility; never swept by the source scheduler) via the `fx_daily_pull` durable-queue job on the market-data (`sources`) lane — a full-history backfill on first need (chunked in ≤90-day windows for NBP's 93-day range limit; a 404 window is a non-publication day, not an error), then a recent-window daily pull. Needed currencies are table-driven (defaults EUR/USD/GBP/CHF ∪ any already stored ∪ any requested), never a hardcoded enum.
+
+Feeds the comparison read model's PLN conversion: **flow** KPIs (`measure_window = flow`) at the period-average mid over the period's dates, **stock** KPIs at the last mid ≤ period end; a PLN amount passes through unconverted (basis `native_pln`); ratios/percentages are never converted. A missing rate is a typed per-cell flag, never a silent PLN guess.
+
+### Valuation Runs
+
+Comparative valuation L1 history ([ADR 0089](adr/0089-cross-company-comparison-and-valuation-l1.md) decisions 4–5, `v0.61.0`). Migration `0116_valuation_runs.sql`.
+
+`valuation_runs` — append-only valuation history (L1 now, v0.62 DCF later): `id`, `company_id`, `method` (`pe_multiple | ev_ebitda_multiple | pbv_multiple`; DCF adds new method values, not columns), `inputs_json`, `fair_low` / `fair_base` / `fair_high` (per share, decimal-exact TEXT), `data_as_of`, `confidence_grade` (`A`–`D`), `created_at`.
+
+- **Append-only, immutable once applied** (0116). A run appends only when the input **signature** (`inputs_json`, the canonical serialization of the method's driver + peer-multiple dispersion + `data_as_of`) differs from that `(company_id, method)`'s latest stored run — never a row per render.
+- **Newest-run selection orders by the domain `data_as_of` date, never `created_at`** (a late backfill can carry an older domain date than a wall-clock-later insert). `created_at` only tie-breaks within an as-of date. Indexed `(company_id, data_as_of DESC, created_at DESC)` for the `list_valuation_runs` read and `(company_id, method, …)` for the signature lookup.
+- The compute-and-persist path is the `compute_comparative_valuation` command (contracts.md); `fair_*` are NULL only on a method's typed absence (an absence never persists a row).
+
 ### Attention Routing (Alert Rules + Events)
 
 User-owned alert rules and the attention events their evaluation emits ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md), `v0.54.0`). Migration `0077_alert_rules_attention_events.sql`.

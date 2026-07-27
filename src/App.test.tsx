@@ -25,9 +25,10 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     expect(within(nav).getByText("Library")).toBeInTheDocument();
     expect(within(nav).getByText("Utilities")).toBeInTheDocument();
     expect(within(nav).getByRole("button", { name: "Today" })).toBeInTheDocument();
-    // Compare is hidden from primary nav until v0.53 market data gives it
-    // content (U-Rc, ADR 0076 Resolved) — an empty mode in nav is trust debt.
-    expect(within(nav).queryByRole("button", { name: "Compare" })).not.toBeInTheDocument();
+    // Compare is a live mode destination again (ADR 0089, v0.61): the
+    // comparison read model + FX substrate now give the mode real content, so
+    // the reserved slot under Dashboard is restored to the spine.
+    expect(within(nav).getByRole("button", { name: "Compare" })).toBeInTheDocument();
   });
 
   it("opens the Today mode home", async () => {

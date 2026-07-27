@@ -53,8 +53,9 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 
 - **Trigger:** research maturity or a price condition (v0.54 alert: price enters my range).
 - **Steps:** Company workspace synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review).
-- **Screens:** Company workspace, decision journal.
-- **Budget:** ≤15 interactions for the recording flow (the thinking is not budgeted).
+- **v0.61 ([ADR 0089](adr/0089-cross-company-comparison-and-valuation-l1.md)):** the synthesis gains a **relative-position** step that used to happen off-app in a spreadsheet — **Compare mode (Porównaj)** aligns the same canonical KPIs across a chosen zestaw spółek (Profil view: KPIs × companies at one period with a Różnica column for a pair; Trend view: one KPI × periods) and the **comparative-valuation L1** section (percentile chips with N, football-field implied ranges per multiple, confidence grade A–D, honest thin-peer state at N<4). Peer context and relative valuation are now two selections in-app instead of manual per-peer lookups; every cell keeps its evidence link and typed gaps. This is a distinct J6 sub-flow with its own friction budget (`J6-compare`, sharing J6's ceiling) — the recording flow's budget is unchanged.
+- **Screens:** Company workspace, Compare, decision journal.
+- **Budget:** ≤15 interactions for the recording flow (the thinking is not budgeted); the compare sub-flow reaches a 2-company Profil comparison in ≤2 selections from entry.
 - **Done well:** the decision has a date, a rationale, provenance — and will come back for outcome review (NS2 calibration).
 
 ## J7 — Weekly review

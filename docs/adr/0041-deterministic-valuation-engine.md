@@ -5,9 +5,11 @@ Status: Proposed (draft — planning)
 > **Update (2026-07-03):** valuation is delivered in layers (triangulation): **level 0**
 > market ratios ship with the market-data foundation (`v0.53.0`,
 > [ADR 0067](0067-market-data-foundation.md)); **level 1** comparative/multiples valuation
-> with a confidence grade and football-field readout ships with Compare (`v0.60.0`, ADR at
-> that milestone's planning); the DCF/owner-earnings engine below is unchanged and lands
-> `v0.61.0` — now with real prices, so upside is computable.
+> with a confidence grade and football-field readout ships with Compare (`v0.61.0`,
+> [ADR 0089](0089-cross-company-comparison-and-valuation-l1.md) — version renumbered −1 at the
+> 2026-07-22 reshuffle); the DCF/owner-earnings engine below is unchanged and lands
+> `v0.62.0` — now with real prices, so upside is computable. ADR 0089 also decides the
+> `valuation_runs` table lands with L1 (decision 4's persistence, pulled one milestone early).
 
 This ADR captures the **design intent** for a deterministic valuation engine: a pure-computation
 domain slice that turns confirmed fundamentals into inspectable, scenario-based fair-value estimates.

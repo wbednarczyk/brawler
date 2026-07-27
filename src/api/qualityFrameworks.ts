@@ -100,4 +100,5 @@ export function listAvailableMetricKeys(companyId?: string) {
 // are managed through the criterion CRUD above. The in-app AI assessor is
 // retired and its stored verdicts were dropped with their table (ADR 0084
 // decision 5), so there is no `get_qualitative_assessment` read any more —
-// verdicts return as agent writes over MCP (v0.61.0).
+// verdicts arrive as agent writes over MCP (`set_qualitative_verdicts`, shipped
+// v0.60, ADR 0088).

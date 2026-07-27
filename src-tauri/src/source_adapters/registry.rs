@@ -384,6 +384,21 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
         rate_limit_policy: "Internal derived-event owner; never fetches — red-flag detections write their synthetic feed items under this adapter id (v0.57 T7, ADR 0083 D8)",
         policy_note: "Not a real source: owns the synthetic feed items derived red flags raise (report_delay / fund_exit / score_deterioration) so provenance and the KNF-pattern alert path stay uniform. Seeded disabled by migration 0092; no network access, no scheduler participation.",
     },
+    SourceAdapterDescriptor {
+        id: crate::source_adapters::nbp_fx::ADAPTER_ID,
+        role: SourceRole::Primary,
+        display_name: crate::source_adapters::nbp_fx::DISPLAY_NAME,
+        source_url: crate::source_adapters::nbp_fx::SOURCE_URL,
+        source_type: "fx_rates",
+        fetch_mode: "public_json",
+        // No market rows: FX rates are marketless (migration 0115 seeds no
+        // source_adapter_markets entries).
+        markets: &[],
+        visibility: SourceVisibility::Developer,
+        default_poll_interval_seconds: 86_400,
+        rate_limit_policy: "Internal FX substrate (ADR 0089 dec. 2); driven by the fx_daily_pull durable-queue job on the market-data lane, not the source-refresh sweep; keyless official NBP API; full-history backfill on first need chunked in <=90-day windows, then a recent-window daily pull",
+        policy_note: "Not a user feed: NBP Table-A daily average (mid) rates power PLN conversion for cross-company comparison (ADR 0089). Keyless official Narodowy Bank Polski public API; PLN-based, so the app's comparison currency is the source's own base. Developer-visibility, never swept by the source scheduler; the fx_daily_pull job stamps its health.",
+    },
 ];
 
 /// Look up an adapter descriptor by its id.

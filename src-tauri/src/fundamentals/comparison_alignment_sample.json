@@ -1,0 +1,84 @@
+{
+  "_meta": {
+    "purpose": "Committed hermetic test sample for get_kpi_comparison (v0.61 §A2, ADR 0089 dec.1). Derived from the hand-labeled real-data ground truth (private/realdata/v061-alignment-ground-truth.json) — the figures are PUBLIC GPW annual results, so they are safe to commit as seed/sample data. Both the hermetic insta golden and the real-data-gated test parse this schema; the gated test reads the private copy and compares against the REAL DB, this copy drives the DB-free golden.",
+    "slot": "statement_basis=consolidated, attribution=total, variant=reported, measure_window=flow, confirmation_state=confirmed",
+    "units": "value = base units (PLN), decimal-exact; all pairs PLN so valuePln == value",
+    "delta_semantics": "monetary KPI -> YoY/QoQ percent change vs same period-type prior year/quarter (rounded 2dp); undefined when the prior value is <= 0 or the sign flips positive->negative; ratio/percentage KPI -> p.p. delta. Delta across a missing period or first period = null."
+  },
+  "pairs": [
+    {
+      "id": "pair1_deep_revenue",
+      "kind": "deep_full_overlap",
+      "kpi": "revenue",
+      "value_kind": "monetary",
+      "granularity": "annual",
+      "companies": [
+        {"id": "company_gpw_acp", "ticker": "ACP", "sector": "systemy informatyczne"},
+        {"id": "company_gpw_cog", "ticker": "COG", "sector": "hutnictwo żelaza i stali"}
+      ],
+      "expected_axis": [2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],
+      "expected_cells": {
+        "ACP": {"2004":482013000,"2005":533234000,"2006":497687000,"2007":1282399000,"2008":2786580000,"2009":3050252000,"2010":3237733000,"2011":4960000000,"2012":5529100000,"2013":5898100000,"2014":6231900000,"2015":7256200000,"2016":7932000000,"2017":7830500000,"2018":9328600000,"2019":10667400000,"2020":12190300000,"2021":14498100000,"2022":17370100000,"2023":16896500000,"2024":17132000000,"2025":16779800000},
+        "COG": {"2004":128338000,"2005":118134000,"2006":149417000,"2007":444990000,"2008":842994000,"2009":948968000,"2010":1148157000,"2011":1549647000,"2012":1399674000,"2013":1294269000,"2014":1422546000,"2015":1364804000,"2016":1352393000,"2017":1789280000,"2018":2081841000,"2019":1901604000,"2020":1733221000,"2021":2811151000,"2022":3666690000,"2023":2721524000,"2024":2293369000,"2025":2080844000}
+      },
+      "expected_yoy_verified": {
+        "ACP_2005": "10.63",
+        "COG_2005": "-7.95"
+      }
+    },
+    {
+      "id": "pair2_deep_netprofit_signed",
+      "kind": "deep_full_overlap_with_losses",
+      "note": "Negative net_profit (PKN 2008/2014, KGH 2015/2016/2023) exercises signed-value + YoY-across-sign-change handling.",
+      "kpi": "net_profit",
+      "value_kind": "monetary",
+      "granularity": "annual",
+      "companies": [
+        {"id": "company_gpw_kgh", "ticker": "KGH", "sector": "górnictwo metali"},
+        {"id": "company_gpw_pkn", "ticker": "PKN", "sector": "wydobycie i produkcja"}
+      ],
+      "expected_axis": [2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],
+      "expected_cells": {
+        "KGH": {"2004":1376453000,"2005":2104017000,"2006":3510003000,"2007":3935516000,"2008":2765866000,"2009":2328561000,"2010":4730424000,"2011":11128000000,"2012":4803000000,"2013":3033000000,"2014":2451000000,"2015":-5009000000,"2016":-4449000000,"2017":1525000000,"2018":1658000000,"2019":1421000000,"2020":1797000000,"2021":6155000000,"2022":4774000000,"2023":-3691000000,"2024":2870000000,"2025":3688000000},
+        "PKN": {"2004":2537596000,"2005":4637776000,"2006":2060198000,"2007":2480426000,"2008":-2526626000,"2009":1300167000,"2010":2455467000,"2011":2015003000,"2012":2169990000,"2013":90000000,"2014":-5828000000,"2015":3233000000,"2016":5740000000,"2017":7173000000,"2018":5511000000,"2019":4298000000,"2020":2825000000,"2021":11188000000,"2022":33630000000,"2023":20727000000,"2024":1383000000,"2025":2648000000}
+      },
+      "expected_yoy_verified": {
+        "KGH_2015": "delta_undefined_sign_change",
+        "KGH_2016": "delta_undefined_negative_base",
+        "KGH_2017": "delta_undefined_negative_base",
+        "PKN_2013": "-95.85",
+        "PKN_2014": "delta_undefined_sign_change"
+      }
+    },
+    {
+      "id": "pair3_sparse_mismatched_revenue",
+      "kind": "sparse_mismatched_axis_same_sector",
+      "note": "SPARSE/MISMATCH. Union axis 2021..2025; CRQ has gap cells (2021, 2025) typed no_fact, never 0. CRQ contiguous so no cross-gap delta.",
+      "kpi": "revenue",
+      "value_kind": "monetary",
+      "granularity": "annual",
+      "companies": [
+        {"id": "company_gpw_crq", "ticker": "CRQ", "sector": "Nowe Technologie"},
+        {"id": "company_gpw_scw", "ticker": "SCW", "sector": "Nowe Technologie"}
+      ],
+      "expected_axis": [2021,2022,2023,2024,2025],
+      "expected_cells": {
+        "CRQ": {"2022":7680000,"2023":13028000,"2024":15807000},
+        "SCW": {"2021":1551000,"2022":2165000,"2023":5492000,"2024":15865000,"2025":21360000}
+      },
+      "gap_cells": [
+        {"company":"CRQ","year":2021,"reason":"no_fact"},
+        {"company":"CRQ","year":2025,"reason":"no_fact"}
+      ],
+      "expected_yoy_verified": {
+        "CRQ_2022": "null",
+        "CRQ_2023": "69.64",
+        "CRQ_2024": "21.33",
+        "SCW_2022": "39.59",
+        "SCW_2023": "153.67",
+        "SCW_2024": "188.87",
+        "SCW_2025": "34.64"
+      }
+    }
+  ]
+}

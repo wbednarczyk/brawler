@@ -267,6 +267,17 @@
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
+/* Source reconciliation rows reuse the event-log grid, but their first cell is a
+   variable-length StatusChip ("Dopasowano" / "Pominięte przez główne" / "Tylko
+   Bankier"), not the short fixed-size severity badge. A px-capped track sized for
+   the shortest label stretches the chip to 92px while its nowrap label paints out
+   onto the ticker column (bug 228762e). Size the status track to its content so
+   the longest chip fits; min-width:0 keeps the flexible message column shrinkable
+   at narrow widths. Guardrail: diagnostics-reconciliation-layout.spec.ts. */
+[aria-labelledby="diagnostics-reconciliation-title"] .diagnostic-event-main {
+  grid-template-columns: auto minmax(130px, 180px) minmax(0, 1fr) minmax(180px, auto);
+}
+
 .diagnostic-severity {
   width: fit-content;
   min-width: 64px;

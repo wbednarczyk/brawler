@@ -516,6 +516,24 @@ act_handler!(
     |state, input| state.evaluate_framework(input).map_err(CommandError::from)
 );
 
+/// `compute_comparative_valuation` input — the internal company id (act tier
+/// references entities by internal id, per the module contract).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ComputeComparativeValuationInput {
+    pub company_id: String,
+}
+
+act_handler!(
+    compute_comparative_valuation_handler,
+    ComputeComparativeValuationInput,
+    |state, input| crate::commands::valuation::compute_and_persist_comparative_valuation(
+        state,
+        &input.company_id,
+    )
+    .map_err(|message| CommandError::new(CommandErrorCode::Internal, message))
+);
+
 /// `set_alert_rule_enabled` input (mirrors the command's local struct).
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]

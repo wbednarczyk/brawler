@@ -72,6 +72,15 @@ impl CompanyStore {
         list_company_sectors(&connection)
     }
 
+    /// Every tracked company's `(id, sector)` in one indexed scan — the substrate
+    /// the sector-percentile read model (ADR 0089 dec. 3) derives its peer set
+    /// from at read time. `sector` is `None` when the company has no classified
+    /// sector (registry or manual).
+    pub fn list_companies_with_sector(&self) -> StorageResult<Vec<(String, Option<String>)>> {
+        let connection = self.db.checkout()?;
+        list_companies_with_sector(&connection)
+    }
+
     /// The latest recorded non-superseded `shares_outstanding` fact and the
     /// period it was reported for (e.g. `("41636000", "2025 FY")`) — the Basic
     /// info panel's read model input.
@@ -656,6 +665,21 @@ pub(super) fn list_company_sectors(connection: &Connection) -> StorageResult<Vec
     )?;
     let rows = statement
         .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Every tracked company's `(id, sector)` (ADR 0089 dec. 3 peer-set substrate).
+/// One indexed scan of `companies`; `sector` is `NULL` when unclassified. Ordered
+/// by `id` so the peer set (and the read model built over it) is deterministic.
+pub(super) fn list_companies_with_sector(
+    connection: &Connection,
+) -> StorageResult<Vec<(String, Option<String>)>> {
+    let mut statement = connection.prepare("SELECT id, sector FROM companies ORDER BY id")?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }

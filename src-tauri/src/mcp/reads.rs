@@ -311,6 +311,73 @@ pub fn get_price_context_handler(
     })
 }
 
+/// Cross-company KPI comparison over qualified tickers (ADR 0089 dec. 1). Speaks
+/// the user's vocabulary (`GPW:CDR`) and resolves to internal ids before the
+/// shared read model runs. `granularity` defaults to `annual`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct KpiComparisonRef {
+    /// Qualified tickers to compare, e.g. `["GPW:CDR", "GPW:PKN"]` (1..N).
+    pub companies: Vec<String>,
+    /// Canonical metric keys to align, e.g. `["revenue", "net_profit"]` (1..N).
+    pub metric_keys: Vec<String>,
+    /// `"annual"` (default) or `"quarterly"`.
+    #[serde(default)]
+    pub granularity: Option<String>,
+}
+
+pub fn get_kpi_comparison_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input: KpiComparisonRef| {
+        let company_ids = input
+            .companies
+            .iter()
+            .map(|reference| resolve_company(state, reference).map(|company| company.id))
+            .collect::<Result<Vec<_>, _>>()?;
+        crate::commands::comparison::compute_kpi_comparison(
+            state,
+            &crate::commands::comparison::KpiComparisonInput {
+                company_ids,
+                metric_keys: input.metric_keys,
+                granularity: input.granularity.unwrap_or_else(|| "annual".to_owned()),
+            },
+        )
+        .map_err(internal)
+    })
+}
+
+/// Sector percentiles for one company (ADR 0089 dec. 3): where it stands against
+/// its tracked sector peers on the level-0 market ratios and selected canonical
+/// KPIs. Speaks the user's vocabulary (`GPW:CDR`) and resolves to the internal id.
+pub fn get_sector_percentiles_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input: CompanyRef| {
+        let company = resolve_company(state, &input.company)?;
+        crate::commands::sector_percentiles::compute_company_sector_percentiles(state, &company.id)
+            .map_err(internal)
+    })
+}
+
+/// Append-only comparative-valuation run history for one company (ADR 0089
+/// dec. 5). Read-tier; the compute-and-persist path is the `act`-tier
+/// `compute_comparative_valuation`.
+pub fn list_valuation_runs_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input: CompanyRef| {
+        let company = resolve_company(state, &input.company)?;
+        state
+            .valuation_runs()
+            .list_runs(&company.id)
+            .map_err(internal)
+    })
+}
+
 pub fn get_ownership_overview_handler(
     state: &AppState,
     arguments: &Value,

@@ -45,6 +45,8 @@ export { LineChart } from "./LineChart";
 export type { LineChartPoint, LineChartProps } from "./LineChart";
 export { MultiLineChart, MULTI_LINE_MAX_SERIES } from "./MultiLineChart";
 export type { MultiLineChartProps, MultiLineSeries } from "./MultiLineChart";
+export { RangeBarChart } from "./RangeBarChart";
+export type { RangeBarChartProps, RangeBarMarker, RangeBarRow } from "./RangeBarChart";
 export { Sparkline } from "./Sparkline";
 export type { SparklineProps } from "./Sparkline";
 export { TrendChart } from "./TrendChart";

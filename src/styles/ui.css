@@ -1234,3 +1234,123 @@
     transparent 4px 7px
   );
 }
+
+/* RangeBarChart — the "football field" of implied-value ranges (ADR 0089 dec. 4,
+   v0.61 §B3). One bar per method on a shared domain + an optional reference
+   marker. Theme-aware tokens; decision-support only (no verdict colours). */
+.ui-range-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ui-range-bar-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The label and range are variable-length, so their tracks are content-sized —
+   never a px cap chosen from the shortest label (ui-authoring chip-track rule,
+   ADR 0045 harvest). The bar takes the remaining space and may shrink to 0. */
+.ui-range-bar-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.ui-range-bar-label {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ui-range-bar-track {
+  position: relative;
+  height: 12px;
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  min-width: 0;
+}
+
+.ui-range-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+.ui-range-bar-base {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  transform: translateX(-1px);
+  background: var(--primary);
+}
+
+.ui-range-bar-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  transform: translateX(-1px);
+  background: var(--warning);
+}
+
+.ui-range-bar-range {
+  font-size: var(--font-xs);
+  color: var(--text);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.ui-range-bar-absent {
+  grid-column: 2 / -1;
+  font-size: var(--font-xs);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.ui-range-bar-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+.ui-range-bar-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-range-bar-sw {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.ui-range-bar-sw-range {
+  background: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+.ui-range-bar-sw-marker {
+  width: 3px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--warning);
+}

@@ -7,6 +7,7 @@ import {
   Home,
   Inbox,
   ListChecks,
+  Scale,
   Settings,
   Video,
 } from "lucide-react";
@@ -76,10 +77,11 @@ export const navGroups: NavGroup[] = [
       // standalone Research screen is retired into a Dashboard preset. Amends ADR
       // 0057 decision 5: never a blank canvas (seeds a company / resumes layout).
       { label: "Cockpit", icon: FlaskConical, localeKey: "nav.dashboard" },
-      // Compare is hidden from the spine until v0.53 market data gives the mode
-      // content (U-Rc, ADR 0076 Resolved) — an empty mode in nav is trust debt.
-      // The Section value and CompareScreen stay; restore the entry with:
-      // { label: "Compare", icon: Scale, localeKey: "nav.compare" }
+      // Compare — the cross-company mode (ADR 0089), restored to the spine in
+      // v0.61 now that the comparison read model + FX substrate give it real
+      // content. Sits directly under Dashboard; the reserved slot (held since
+      // v0.48) and the pl/en `nav.compare` labels are now live.
+      { label: "Compare", icon: Scale, localeKey: "nav.compare" },
     ],
   },
   {

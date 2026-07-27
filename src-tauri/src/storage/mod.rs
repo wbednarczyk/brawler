@@ -49,6 +49,7 @@ mod feed_matching;
 mod financials;
 mod fundamentals_provenance;
 mod fundamentals_witness;
+mod fx_rates;
 mod history_sweeps;
 mod import_export;
 mod ingestion;
@@ -83,6 +84,7 @@ mod signals;
 mod sources;
 mod transcripts;
 mod types;
+mod valuation_runs;
 mod watchlists;
 
 pub use analyst_recommendations::{
@@ -110,19 +112,21 @@ pub use events::EventStore;
 pub use feed::FeedStore;
 pub use financials::FinancialsStore;
 pub use financials::{
-    FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance, ListFinancialFactsInput,
-    ListFinancialPeriodsInput, ListKpiDefinitionsInput, NewFinancialFact, NewFinancialPeriod,
-    NewKpiDefinition, NewKpiRelevance, PeriodFactCoverage, UpdateFinancialFact,
+    CanonicalComparisonFact, FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance,
+    ListFinancialFactsInput, ListFinancialPeriodsInput, ListKpiDefinitionsInput, NewFinancialFact,
+    NewFinancialPeriod, NewKpiDefinition, NewKpiRelevance, PeriodFactCoverage, UpdateFinancialFact,
     UpdateFinancialPeriod, UpdateKpiRelevance,
 };
 pub use fundamentals_provenance::{
     ExtractionOutcome, FactProvenance, FactTierBreakdown, FundamentalsProvenanceStore,
     NewExtractionOutcome, NewFactProvenance, TierFactCount,
 };
+pub use fx_rates::FxRatesStore;
 pub use severity::{
     severity_for_attention_event, severity_for_autopilot_run, severity_for_signal_category,
     AttentionSeverity,
 };
+pub use valuation_runs::{NewValuationRun, StoredValuationRun, ValuationRunsStore};
 // Connection-level free functions — internal reuse only (the ingest-time
 // cover-note witness path holds a raw `&Connection` post-commit, no pool handle).
 pub(crate) use fundamentals_provenance::record_extraction_outcome;
@@ -757,6 +761,16 @@ impl AppState {
         market_data::MarketDataStore::new(self.db.clone())
     }
 
+    /// FX-rate (`fx_rates`) domain store — NBP Table-A mids (ADR 0089 dec. 2).
+    pub fn fx_rates(&self) -> fx_rates::FxRatesStore {
+        fx_rates::FxRatesStore::new(self.db.clone())
+    }
+
+    /// Valuation-runs (`valuation_runs`) append-only history (ADR 0089 dec. 5).
+    pub fn valuation_runs(&self) -> valuation_runs::ValuationRunsStore {
+        valuation_runs::ValuationRunsStore::new(self.db.clone())
+    }
+
     pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
         self.companies().list_companies()
     }
@@ -806,6 +820,10 @@ impl AppState {
 
     pub fn list_company_sectors(&self) -> StorageResult<Vec<String>> {
         self.companies().list_company_sectors()
+    }
+
+    pub fn list_companies_with_sector(&self) -> StorageResult<Vec<(String, Option<String>)>> {
+        self.companies().list_companies_with_sector()
     }
 
     pub fn latest_shares_outstanding(

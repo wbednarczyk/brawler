@@ -55,6 +55,7 @@ pub fn spawn(state: AppState) {
         let mut registry_due: Option<i64> = None;
         let mut briefing_due: Option<i64> = None;
         let mut aggregator_pull_due: Option<i64> = None;
+        let mut fx_pull_due: Option<i64> = None;
         loop {
             std::thread::sleep(BASE_TICK);
             let (next_source, next_registry) = run_tick(&state, source_due, registry_due);
@@ -78,6 +79,13 @@ pub fn spawn(state: AppState) {
                 // inside its 24h window.
                 fire_daily(&mut aggregator_pull_due, || {
                     crate::jobs::aggregator_fundamentals_pull::enqueue_daily_pull(&state)
+                });
+                // Daily NBP FX pull (ADR 0089 dec. 2). One recurring row keeps the
+                // needed currencies' mids current; the job self-heals a missing
+                // currency into a full-history backfill. App-open only, idempotent
+                // per day under its singleton job id.
+                fire_daily(&mut fx_pull_due, || {
+                    crate::jobs::fx_daily_pull::enqueue_fx_daily_pull(&state)
                 });
             }
         }

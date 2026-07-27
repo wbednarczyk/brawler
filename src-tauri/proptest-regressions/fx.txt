@@ -1,0 +1,29 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9a95283e8581fcf497b3c4644249c06acb0541efc55121ee17bf0c27371d869c # shrinks to rates = [], a = "2024-01-01", b = "2024-01-01"
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 73a3bd1b7116f86bc83ca92001e8f9ecc9f93f37e34687e5f5bb9fc2bba3e9c2 # shrinks to rates = [], a = "2024-01-01", b = "2024-01-01"
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 140816ddb6a90b1353bc1e47f00728c22ff2501dd807ef335a1103ee68b00724 # shrinks to rates = [], end = "2024-01-01"
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 02e1bcf26a823b4067f7df51dbafb7bda7d3e5b33757b4179ca70a3d4595bbb0 # shrinks to rates = [], end = "2024-01-01"
+cc 7e744f6a6b453e6ed8749130c172baf40e088bfbf8e8b556f189cda4a3059870 # shrinks to amount = 0.001, rates = [("2024-01-01", 0.001)], end = "2024-01-01"

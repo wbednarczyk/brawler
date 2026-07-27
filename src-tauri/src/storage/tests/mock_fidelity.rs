@@ -90,6 +90,59 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Cross-company comparison read model (v0.61 §A2, ADR 0089 dec. 1). Same
+        // computed helper the command wrapper offloads, so the corpus can never
+        // diverge from real assembly. A fresh company has no confirmed facts, so
+        // the axis is empty and each requested (company, metric) is an empty
+        // series — the deterministic empty comparison both sides must agree on.
+        "get_kpi_comparison" => {
+            let parsed: crate::commands::comparison::KpiComparisonInput =
+                serde_json::from_value(input.clone()).expect("KpiComparisonInput");
+            serde_json::to_value(
+                crate::commands::comparison::compute_kpi_comparison(state, &parsed)
+                    .expect("get_kpi_comparison"),
+            )
+            .unwrap()
+        }
+        // Sector percentiles read model (v0.61 §B1, ADR 0089 dec. 3). Same
+        // computed helper the command wrapper offloads, so the corpus can never
+        // diverge from real assembly. A freshly created company has no classified
+        // sector, so the deterministic result both sides must agree on is the
+        // typed `no_sector` empty state (peerCount 0, thin true).
+        "get_sector_percentiles" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::sector_percentiles::compute_company_sector_percentiles(
+                    state, company_id,
+                )
+                .expect("get_sector_percentiles"),
+            )
+            .unwrap()
+        }
+        // Comparative valuation L1 (v0.61 §B2, ADR 0089 dec. 4-5). Same
+        // compute-and-persist helper the command wrapper offloads. A freshly
+        // created company has no sector, so both sides agree on the typed
+        // `no_sector` empty state and persist no run.
+        "compute_comparative_valuation" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::valuation::compute_and_persist_comparative_valuation(
+                    state, company_id,
+                )
+                .expect("compute_comparative_valuation"),
+            )
+            .unwrap()
+        }
+        "list_valuation_runs" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                state
+                    .valuation_runs()
+                    .list_runs(company_id)
+                    .expect("list_valuation_runs"),
+            )
+            .unwrap()
+        }
         // Company health scores (v0.57 T2, ADR 0083). Same computed helper the
         // command wrapper offloads, so the corpus can never diverge from real
         // score assembly.

@@ -668,6 +668,192 @@ function buildHandlers(): Record<string, Handler> {
       };
     },
 
+    // Cross-company comparison read model (v0.61 §A2, ADR 0089 dec. 1). The
+    // scenario data carries no confirmed facts wired to the requested companies,
+    // so the read model is the empty comparison the real backend also returns:
+    // an empty axis and one empty series per (company, metric). Populated
+    // alignment/delta/FX correctness is pinned by the Rust golden + proptest,
+    // not the corpus (which asserts the empty-state parity).
+    get_kpi_comparison: (d, a) => {
+      const input = unwrap(a);
+      const companyIds = Array.isArray(input.companyIds)
+        ? (input.companyIds as string[])
+        : [];
+      const metricKeys = Array.isArray(input.metricKeys)
+        ? (input.metricKeys as string[])
+        : [];
+      const granularity = str(input.granularity) ?? "annual";
+      // A seeded populated comparison (ADR 0089 §A3) wins when the request set
+      // matches by (companyIds set, metricKeys, granularity) — order-independent
+      // on companies, mirroring the real read model. Otherwise the computed
+      // empty default (no confirmed facts) is returned, keeping the fidelity
+      // corpus's empty-state parity intact.
+      const wanted = [...companyIds].sort().join(",");
+      const seeded = d.kpiComparisons?.find(
+        (comparison) =>
+          comparison.granularity === granularity &&
+          comparison.metricKeys.join(",") === metricKeys.join(",") &&
+          [...new Set(comparison.series.map((series) => series.companyId))]
+            .sort()
+            .join(",") === wanted,
+      );
+      if (seeded) return seeded;
+      const series = companyIds.flatMap((companyId) =>
+        metricKeys.map((metricKey) => ({
+          companyId,
+          metricKey,
+          valueKind: null,
+          cells: [],
+        })),
+      );
+      return { granularity, metricKeys, axis: [], series };
+    },
+
+    // --- Sector percentiles (v0.61 B1, ADR 0089 dec. 3) ---
+    // Mirrors `commands::sector_percentiles::compute_company_sector_percentiles`:
+    // the peer set is the tracked companies sharing the target's sector (the
+    // company itself included); a company with no sector returns the typed
+    // `no_sector` empty state. Scenario data carries no resolvable ratios/KPIs, so
+    // every ranked metric is a typed absence — the fidelity corpus asserts the
+    // empty-state parity; populated percentile math is pinned by the Rust golden +
+    // proptest, not the corpus.
+    get_sector_percentiles: (d, a, ctx) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      // A seeded populated/thin percentile payload (ADR 0089 §B3) wins for the
+      // companies the browser/visual harness dresses; every other company reads
+      // the sector-derived typed-absence default below (fidelity-corpus parity).
+      const seeded = d.sectorPercentiles?.[companyId];
+      if (seeded) return seeded;
+      const sectorOf = (id: string): string | null =>
+        ctx.companySectors.get(id) ?? REGISTRY_SECTORS.get(id) ?? null;
+      const specs: { metricKey: string; kind: string }[] = [
+        { metricKey: "pe_ratio", kind: "market_ratio" },
+        { metricKey: "pbv_ratio", kind: "market_ratio" },
+        { metricKey: "ev_ebitda", kind: "market_ratio" },
+        { metricKey: "dividend_yield", kind: "market_ratio" },
+        { metricKey: "fcf_yield", kind: "market_ratio" },
+        { metricKey: "roe", kind: "canonical_kpi" },
+        { metricKey: "roa", kind: "canonical_kpi" },
+        { metricKey: "roic", kind: "canonical_kpi" },
+        { metricKey: "fcf_margin", kind: "canonical_kpi" },
+        { metricKey: "net_debt_to_ebitda", kind: "canonical_kpi" },
+      ];
+      const rawSector = sectorOf(companyId);
+      const sector = rawSector?.trim() ? rawSector.trim() : null;
+      if (sector === null) {
+        return {
+          companyId,
+          sector: null,
+          peerCount: 0,
+          thin: true,
+          emptyReason: "no_sector",
+          metrics: [],
+        };
+      }
+      const fold = sector.toLocaleLowerCase();
+      const peers = d.companies.filter((c) => {
+        const s = sectorOf(c.id);
+        return s !== null && s.trim().toLocaleLowerCase() === fold;
+      });
+      // No resolvable values in the mock ⇒ every metric is `no_company_value`.
+      const metrics = specs.map((spec) => ({
+        metricKey: spec.metricKey,
+        kind: spec.kind,
+        value: null,
+        percentile: null,
+        median: null,
+        sampleSize: 0,
+        absentReason: "no_company_value",
+      }));
+      return {
+        companyId,
+        sector,
+        peerCount: peers.length,
+        thin: peers.length < 4,
+        emptyReason: null,
+        metrics,
+      };
+    },
+
+    // --- Comparative valuation L1 (v0.61 B2, ADR 0089 dec. 4-5) ---
+    // Mirrors `commands::valuation::compute_and_persist_comparative_valuation`:
+    // the peer set is the tracked companies sharing the target's sector; a company
+    // with no sector returns the typed `no_sector` empty state. Scenario data
+    // carries no resolvable multiples/drivers, so every method is a typed absence
+    // and no run persists — the fidelity corpus asserts that empty-state parity;
+    // populated valuation math is pinned by the Rust golden + proptest.
+    compute_comparative_valuation: (d, a, ctx) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      // A seeded populated/thin valuation payload (ADR 0089 §B3) wins for the
+      // harness-dressed companies; every other company reads the typed-absence
+      // default below (no resolvable multiples ⇒ fidelity-corpus parity).
+      const seededValuation = d.comparativeValuations?.[companyId];
+      if (seededValuation) return seededValuation;
+      const sectorOf = (id: string): string | null =>
+        ctx.companySectors.get(id) ?? REGISTRY_SECTORS.get(id) ?? null;
+      const methodDefs: [string, string][] = [
+        ["pe_multiple", "net_profit_ttm"],
+        ["ev_ebitda_multiple", "ebitda_ttm"],
+        ["pbv_multiple", "total_equity"],
+      ];
+      const methods = methodDefs.map(([method, driverKey]) => ({
+        method,
+        driverKey,
+        driverValue: null,
+        peerMultipleLow: null,
+        peerMultipleBase: null,
+        peerMultipleHigh: null,
+        fairLow: null,
+        fairBase: null,
+        fairHigh: null,
+        peerSampleSize: 0,
+        absentReason: "insufficient_peers",
+      }));
+      const confidence = {
+        grade: "D",
+        composite: "0",
+        dataCompleteness: "0",
+        peerDepth: "0",
+        methodConvergence: "0",
+        validation: "0",
+      };
+      const rawSector = sectorOf(companyId);
+      const sector = rawSector?.trim() ? rawSector.trim() : null;
+      if (sector === null) {
+        return {
+          companyId,
+          sector: null,
+          peerCount: 0,
+          thin: true,
+          currentPrice: null,
+          dataAsOf: "",
+          emptyReason: "no_sector",
+          methods,
+          convergence: null,
+          confidence,
+        };
+      }
+      const fold = sector.toLocaleLowerCase();
+      const peers = d.companies.filter((c) => {
+        const s = sectorOf(c.id);
+        return s !== null && s.trim().toLocaleLowerCase() === fold;
+      });
+      return {
+        companyId,
+        sector,
+        peerCount: peers.length,
+        thin: peers.length < 4,
+        currentPrice: null,
+        dataAsOf: "",
+        emptyReason: null,
+        methods,
+        convergence: null,
+        confidence,
+      };
+    },
+    // No resolvable multiples in the mock ⇒ no run persists ⇒ empty history.
+    list_valuation_runs: () => [],
+
     // --- Company health scores (v0.57 T2, ADR 0083) ---
     // A fresh company has no FY periods, so the read model is the empty default
     // (no latest, empty history); populated F/Z correctness is pinned by the

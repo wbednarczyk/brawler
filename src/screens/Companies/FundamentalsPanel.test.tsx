@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { FundamentalsPanel, factsRecordedLabel, tierLabel } from "./FundamentalsPanel";
 import { getPriceContext } from "../../api/marketData";
+import { getKpiComparison } from "../../api/comparison";
+import type { KpiComparison } from "../../api/comparison";
+import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 
 // The Autopilot / custom-KPI child fields load state via the mocked `invoke`
 // on mount (out of scope here); stub them so the render exercises only the
@@ -30,6 +33,18 @@ vi.mock("../../api/analystRecommendations", () => ({
   getAnalystRecommendations: vi.fn(() =>
     Promise.resolve({ companyId: "c", entries: [] }),
   ),
+}));
+
+// The periods×deltas section (v0.61 §A5) calls the N=1 comparison read model;
+// stub it so each test controls the aligned axis + deltas it renders.
+vi.mock("../../api/comparison", () => ({
+  getKpiComparison: vi.fn(),
+}));
+
+// The fact-provenance fetch runs whenever facts are present; stub it to no rows
+// so the periods-section tests (which supply facts) don't hit the raw invoke.
+vi.mock("../../api/fundamentalsExtraction", () => ({
+  listFactProvenance: vi.fn(() => Promise.resolve([])),
 }));
 
 const identity = (value: string) => value;
@@ -188,5 +203,187 @@ describe("FundamentalsPanel price context error state", () => {
       expect(screen.getByText(/Failed to load price context/)).toBeInTheDocument();
     });
     expect(screen.getByText(/network unreachable/)).toBeInTheDocument();
+  });
+});
+
+// Periods × deltas section (v0.61 §A5, ADR 0089 dec. 1 N=1). The panel derives
+// its metric keys from its own KPI set (the fact matrix) and drives the N=1
+// comparison read model, then renders one row per KPI with QoQ/YoY inline. The
+// deltas + typed flags come straight from the read model — the section renders
+// them, it never recomputes.
+function kpiDef(id: string, metricKey: string, valueKind: string): KpiDefinition {
+  return {
+    id,
+    scope: "global",
+    companyId: null,
+    sector: null,
+    metricKey,
+    label: metricKey,
+    valueKind,
+    unit: null,
+    computation: "reported",
+    formula: null,
+    displayFormat: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function fact(id: string, definitionId: string, periodId: string): FinancialFact {
+  return {
+    id,
+    companyId: "company_gpw_cdr",
+    periodId,
+    definitionId,
+    valueNumeric: "1",
+    currency: "PLN",
+    statementBasis: "consolidated",
+    attribution: "total",
+    variant: "reported",
+    measureWindow: "flow",
+    dataQuality: "final",
+    asReportedValue: null,
+    asReportedScale: null,
+    reportingStandard: null,
+    extractionMethod: "manual",
+    confidence: null,
+    confirmationState: "confirmed",
+    supersedesId: null,
+    sourceDocumentRef: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+const period = (id: string, fiscalYear: number): FinancialPeriod => ({
+  id,
+  companyId: "company_gpw_cdr",
+  fiscalYear,
+  periodType: "annual",
+  periodEndDate: `${fiscalYear}-12-31`,
+  reportEvidenceRef: null,
+  createdAt: "",
+  updatedAt: "",
+});
+
+// A populated N=1 comparison: revenue (monetary, YoY %), net profit (monetary,
+// YoY undefined = non-positive/sign-flip base), gross margin (percentage → p.p.,
+// with a no_fact gap in the prior period).
+function n1Comparison(): KpiComparison {
+  return {
+    granularity: "annual",
+    metricKeys: ["revenue", "net_profit", "gross_margin"],
+    axis: [
+      { fiscalYear: 2023, periodType: "FY", key: "2023:FY" },
+      { fiscalYear: 2024, periodType: "FY", key: "2024:FY" },
+    ],
+    series: [
+      {
+        companyId: "company_gpw_cdr",
+        metricKey: "revenue",
+        valueKind: "monetary",
+        cells: [
+          { fiscalYear: 2023, periodType: "FY", factId: "fact_rev_2023", value: "100", currency: "PLN", valuePln: "100", fxBasis: "native_pln", validationStatus: "passed", deltaQoQ: null, deltaYoY: null, flags: [] },
+          { fiscalYear: 2024, periodType: "FY", factId: "fact_rev_2024", value: "120", currency: "PLN", valuePln: "120", fxBasis: "native_pln", validationStatus: "passed", deltaQoQ: null, deltaYoY: "20", flags: [] },
+        ],
+      },
+      {
+        companyId: "company_gpw_cdr",
+        metricKey: "net_profit",
+        valueKind: "monetary",
+        cells: [
+          { fiscalYear: 2023, periodType: "FY", factId: "fact_np_2023", value: "-5", currency: "PLN", valuePln: "-5", fxBasis: "native_pln", validationStatus: "passed", deltaQoQ: null, deltaYoY: null, flags: [] },
+          { fiscalYear: 2024, periodType: "FY", factId: "fact_np_2024", value: "8", currency: "PLN", valuePln: "8", fxBasis: "native_pln", validationStatus: "passed", deltaQoQ: null, deltaYoY: null, flags: ["delta_yoy_undefined"] },
+        ],
+      },
+      {
+        companyId: "company_gpw_cdr",
+        metricKey: "gross_margin",
+        valueKind: "percentage",
+        cells: [
+          { fiscalYear: 2023, periodType: "FY", factId: null, value: null, currency: null, valuePln: null, fxBasis: null, validationStatus: null, deltaQoQ: null, deltaYoY: null, flags: ["no_fact"] },
+          { fiscalYear: 2024, periodType: "FY", factId: "fact_gm_2024", value: "38.2", currency: null, valuePln: null, fxBasis: null, validationStatus: "passed", deltaQoQ: null, deltaYoY: "2.8", flags: [] },
+        ],
+      },
+    ],
+  };
+}
+
+const periodsProps = {
+  ...panelProps,
+  financialPeriods: [period("p_2023", 2023), period("p_2024", 2024)],
+  financialFacts: [
+    fact("f_rev", "def_revenue", "p_2024"),
+    fact("f_np", "def_net_profit", "p_2024"),
+    fact("f_gm", "def_gm", "p_2024"),
+  ],
+  kpiDefinitions: [
+    kpiDef("def_revenue", "revenue", "monetary"),
+    kpiDef("def_net_profit", "net_profit", "monetary"),
+    kpiDef("def_gm", "gross_margin", "percentage"),
+  ],
+};
+
+describe("FundamentalsPanel periods × deltas section", () => {
+  it("renders the aligned period columns and inline YoY deltas from the read model", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+
+    const section = await waitFor(() => {
+      const el = container.querySelector('[aria-label="Positions × periods"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    // N=1 call: exactly this company, its KPI set, default annual granularity.
+    expect(vi.mocked(getKpiComparison)).toHaveBeenCalledWith({
+      companyIds: ["company_gpw_cdr"],
+      metricKeys: ["revenue", "net_profit", "gross_margin"],
+      granularity: "annual",
+    });
+    await waitFor(() => {
+      expect(section.querySelector("table")).not.toBeNull();
+    });
+    // Period columns present; a monetary YoY renders as a percent.
+    expect(within(section).getByText("2023")).toBeInTheDocument();
+    expect(within(section).getByText("2024")).toBeInTheDocument();
+    expect(within(section).getByText("+20%")).toBeInTheDocument();
+  });
+
+  it("renders a delta em-dash with the undefined-change reason as a tooltip", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+
+    await waitFor(() => {
+      expect(container.querySelector('[aria-label="Positions × periods"] table')).not.toBeNull();
+    });
+    const reason =
+      "Undefined change (non-positive or sign-flipped base) — an honest gap, not a fabricated number.";
+    expect(container.querySelector(`[title="${reason}"]`)).not.toBeNull();
+  });
+
+  it("renders the typed no_fact flag for a missing period cell", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+
+    const section = await waitFor(() => {
+      const el = container.querySelector('[aria-label="Positions × periods"] table');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(within(section).getByText("no data for period")).toBeInTheDocument();
+  });
+
+  it("uses p.p. for a percentage KPI delta and % for a monetary KPI delta", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+
+    const section = await waitFor(() => {
+      const el = container.querySelector('[aria-label="Positions × periods"] table');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    // percentage KPI → plain-difference p.p.; monetary KPI → percent change.
+    expect(within(section).getByText("+2.8 p.p.")).toBeInTheDocument();
+    expect(within(section).getByText("+20%")).toBeInTheDocument();
   });
 });

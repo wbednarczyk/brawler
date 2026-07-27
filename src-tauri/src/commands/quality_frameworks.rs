@@ -166,12 +166,12 @@ pub fn list_available_metric_keys(
 
 // ---- Qualitative assessment (ADR 0075, as amended by ADR 0084) -------------
 //
-// Agent-written verdicts are retired with the in-app AI analysis layer: the
-// `qualitative_assessment` job, its enqueue/follow-up machinery and the
-// run/re-run commands are gone. Criterion verdicts are manual now and will be
-// agent-written with provenance through MCP write-tools later (v0.61.0). The
-// read below survives under ADR 0084 decision 5 — verdicts a previous version
-// stored are user data and stay readable.
+// The in-app AI analysis layer is retired: the `qualitative_assessment` job, its
+// enqueue/follow-up machinery and the run/re-run commands are gone. Criterion
+// verdicts are agent-written with provenance through the MCP write-tools
+// (`set_qualitative_verdicts`, shipped v0.60, ADR 0088). The read below survives
+// under ADR 0084 decision 5 — verdicts a previous version stored are user data
+// and stay readable.
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]

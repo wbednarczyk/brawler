@@ -230,6 +230,27 @@ impl JobHandler for CompanyBackfillHandler {
     }
 }
 
+/// NBP FX daily pull / full-history backfill (ADR 0089 dec. 2). Drains on the
+/// **sources** (market-data) lane and serializes on the `nbp-fx` source lock
+/// (ADR 0059) so it never races itself. Returns `Err` on a hard fetch failure so
+/// the queue retries with backoff; a 404 window (no publication day) is not an
+/// error.
+struct FxDailyPullHandler;
+
+impl JobHandler for FxDailyPullHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::fx_daily_pull::FX_DAILY_PULL_KIND
+    }
+
+    fn serialization_key(&self, _payload: &str) -> Option<String> {
+        Some(crate::source_adapters::nbp_fx::ADAPTER_ID.to_owned())
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::fx_daily_pull::run_fx_daily_pull(state, payload)
+    }
+}
+
 /// A scheduled company-registry refresh-if-stale check (Rust-side scheduler).
 struct ScheduledRegistryRefreshHandler;
 
@@ -271,6 +292,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(ScheduledRegistryRefreshHandler));
     worker.register(Arc::new(QuoteBackfillHandler));
     worker.register(Arc::new(CompanyBackfillHandler));
+    worker.register(Arc::new(FxDailyPullHandler));
     worker.register(Arc::new(
         crate::jobs::aggregator_fundamentals_pull::AggregatorFundamentalsPullHandler,
     ));
@@ -303,6 +325,10 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 // host politeness posture with the other source fetches; serializes
                 // on its own adapter id (ADR 0059 / ADR 0086).
                 crate::jobs::aggregator_fundamentals_pull::AGGREGATOR_FUNDAMENTALS_PULL_KIND,
+                // NBP FX pull/backfill: a small latency-tolerant external pull on
+                // the same market-data lane (ADR 0089 dec. 2 / ADR 0059);
+                // serializes on its own `nbp-fx` adapter id.
+                crate::jobs::fx_daily_pull::FX_DAILY_PULL_KIND,
             ],
             workers: config.sources_workers.max(1) as usize,
         },

@@ -1,0 +1,299 @@
+---
+source: src/fundamentals/comparison.rs
+expression: result
+---
+KpiComparison {
+    granularity: "annual",
+    metric_keys: [
+        "revenue",
+    ],
+    axis: [
+        KpiComparisonPeriod {
+            fiscal_year: 2021,
+            period_type: "FY",
+            key: "2021:FY",
+        },
+        KpiComparisonPeriod {
+            fiscal_year: 2022,
+            period_type: "FY",
+            key: "2022:FY",
+        },
+        KpiComparisonPeriod {
+            fiscal_year: 2023,
+            period_type: "FY",
+            key: "2023:FY",
+        },
+        KpiComparisonPeriod {
+            fiscal_year: 2024,
+            period_type: "FY",
+            key: "2024:FY",
+        },
+        KpiComparisonPeriod {
+            fiscal_year: 2025,
+            period_type: "FY",
+            key: "2025:FY",
+        },
+    ],
+    series: [
+        KpiComparisonSeries {
+            company_id: "company_gpw_crq",
+            metric_key: "revenue",
+            value_kind: Some(
+                "monetary",
+            ),
+            cells: [
+                KpiComparisonCell {
+                    fiscal_year: 2021,
+                    period_type: "FY",
+                    fact_id: None,
+                    value: None,
+                    currency: None,
+                    value_pln: None,
+                    fx_basis: None,
+                    validation_status: None,
+                    delta_qo_q: None,
+                    delta_yo_y: None,
+                    flags: [
+                        NoFact,
+                    ],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2022,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_CRQ_revenue_2022",
+                    ),
+                    value: Some(
+                        "7680000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "7680000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: None,
+                    flags: [],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2023,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_CRQ_revenue_2023",
+                    ),
+                    value: Some(
+                        "13028000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "13028000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: Some(
+                        "69.64",
+                    ),
+                    flags: [],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2024,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_CRQ_revenue_2024",
+                    ),
+                    value: Some(
+                        "15807000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "15807000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: Some(
+                        "21.33",
+                    ),
+                    flags: [],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2025,
+                    period_type: "FY",
+                    fact_id: None,
+                    value: None,
+                    currency: None,
+                    value_pln: None,
+                    fx_basis: None,
+                    validation_status: None,
+                    delta_qo_q: None,
+                    delta_yo_y: None,
+                    flags: [
+                        NoFact,
+                    ],
+                },
+            ],
+        },
+        KpiComparisonSeries {
+            company_id: "company_gpw_scw",
+            metric_key: "revenue",
+            value_kind: Some(
+                "monetary",
+            ),
+            cells: [
+                KpiComparisonCell {
+                    fiscal_year: 2021,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_SCW_revenue_2021",
+                    ),
+                    value: Some(
+                        "1551000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "1551000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: None,
+                    flags: [],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2022,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_SCW_revenue_2022",
+                    ),
+                    value: Some(
+                        "2165000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "2165000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: Some(
+                        "39.59",
+                    ),
+                    flags: [],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2023,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_SCW_revenue_2023",
+                    ),
+                    value: Some(
+                        "5492000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "5492000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: Some(
+                        "153.67",
+                    ),
+                    flags: [],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2024,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_SCW_revenue_2024",
+                    ),
+                    value: Some(
+                        "15865000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "15865000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: Some(
+                        "188.87",
+                    ),
+                    flags: [],
+                },
+                KpiComparisonCell {
+                    fiscal_year: 2025,
+                    period_type: "FY",
+                    fact_id: Some(
+                        "fact_SCW_revenue_2025",
+                    ),
+                    value: Some(
+                        "21360000",
+                    ),
+                    currency: Some(
+                        "PLN",
+                    ),
+                    value_pln: Some(
+                        "21360000",
+                    ),
+                    fx_basis: Some(
+                        "native_pln",
+                    ),
+                    validation_status: Some(
+                        "passed",
+                    ),
+                    delta_qo_q: None,
+                    delta_yo_y: Some(
+                        "34.64",
+                    ),
+                    flags: [],
+                },
+            ],
+        },
+    ],
+}

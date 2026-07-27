@@ -88,3 +88,4 @@
 - [0086](0086-aggregator-primary-fundamentals.md) — Aggregator-primary fundamentals, PDF-fact retirement, review-free facts — Accepted (2026-07-21, owner decisions at Track C planning)
 - [0087](0087-today-attention-home-v2.md) — Today attention home v2 — grouped stream, typed severity, quiet toasts — Accepted (2026-07-22, owner sign-off at v0.60 planning)
 - [0088](0088-mcp-surface-v2-ui-parity.md) — MCP surface v2 — UI-parity tool registry, capability tiers, provenance-mandatory writes — Accepted (2026-07-22, owner sign-off at v0.60 planning)
+- [0089](0089-cross-company-comparison-and-valuation-l1.md) — Cross-company comparison + comparative valuation level 1 — Accepted (2026-07-27, owner sign-off at v0.61 planning

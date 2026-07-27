@@ -5,6 +5,7 @@ pub mod app_state;
 pub mod data_directory;
 pub mod document_fetcher;
 pub mod fundamentals;
+pub mod fx;
 pub mod interpretation;
 pub mod ir_resolution;
 pub mod jobs;
@@ -18,6 +19,7 @@ pub mod report_documents_capture;
 pub mod signal_dates;
 pub mod source_adapters;
 pub mod storage;
+pub mod valuation;
 
 /// Reusable invariant assertions for data-transform property tests (ADR 0049).
 /// Test-only; never compiled into the shipped binary.
@@ -318,6 +320,10 @@ pub fn run() {
             commands::company_health::acknowledge_red_flag,
             commands::insider::get_insider_overview,
             commands::market_data::get_price_context,
+            commands::comparison::get_kpi_comparison,
+            commands::sector_percentiles::get_sector_percentiles,
+            commands::valuation::compute_comparative_valuation,
+            commands::valuation::list_valuation_runs,
             commands::analyst_recommendations::get_analyst_recommendations,
             commands::ownership::get_ownership_overview,
             commands::ownership::backfill_ownership_extraction,

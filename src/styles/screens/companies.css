@@ -627,6 +627,108 @@
   color: var(--accent);
 }
 
+/* Periods × deltas section (v0.61 §A5, ADR 0089 dec. 1). Reuses the facts-matrix
+   scroller containment (so the wide table never forces a pane scrollbar) and the
+   Compare table's delta colouring, kept in-panel per the storyboard surface 2. */
+.fundamentals-periods-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.fundamentals-periods-scroll {
+  overflow-x: auto;
+  /* Same containment contract as .facts-matrix-scroll: an overflow-x scroller in
+     a column flex chain otherwise propagates its content's min-content width up
+     and forces a panel-level horizontal scrollbar. */
+  contain: inline-size;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.fundamentals-periods-table {
+  border-collapse: collapse;
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+  min-width: 100%;
+}
+
+.fundamentals-periods-table th,
+.fundamentals-periods-table td {
+  border: 1px solid var(--border);
+  padding: var(--space-1) var(--space-3);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.fundamentals-periods-table thead th {
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--surface-raised);
+}
+
+.fundamentals-periods-corner,
+.fundamentals-periods-kpi {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.fundamentals-periods-kpi {
+  font-weight: 600;
+}
+
+.fundamentals-periods-corner {
+  background: var(--surface-raised);
+  z-index: 2;
+}
+
+.fundamentals-periods-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.fundamentals-periods-evidence {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  color: var(--primary);
+}
+
+.fundamentals-periods-evidence.is-selected {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+.fundamentals-periods-up {
+  color: var(--tone-positive);
+}
+
+.fundamentals-periods-dn {
+  color: var(--tone-negative);
+}
+
+.fundamentals-periods-empty {
+  color: var(--muted);
+}
+
+/* Focus: the most recent complete period column (storyboard "Fokus: ostatni
+   pełny okres") carries a subtle primary tint across its header + cells. */
+.fundamentals-periods-focus {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.fundamentals-periods-more {
+  align-self: flex-start;
+}
+
 .fact-detail-chart {
   display: flex;
   flex-direction: column;

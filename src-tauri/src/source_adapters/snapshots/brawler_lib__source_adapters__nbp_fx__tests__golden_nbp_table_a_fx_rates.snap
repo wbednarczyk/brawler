@@ -1,0 +1,26 @@
+---
+source: src/source_adapters/nbp_fx.rs
+expression: rates
+---
+[
+    FxRate {
+        currency: "USD",
+        date: "2024-01-15",
+        mid: 3.9963,
+    },
+    FxRate {
+        currency: "EUR",
+        date: "2024-01-15",
+        mid: 4.3748,
+    },
+    FxRate {
+        currency: "CHF",
+        date: "2024-01-15",
+        mid: 4.6797,
+    },
+    FxRate {
+        currency: "GBP",
+        date: "2024-01-15",
+        mid: 5.0861,
+    },
+]

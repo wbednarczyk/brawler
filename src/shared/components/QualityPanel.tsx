@@ -114,8 +114,9 @@ function formatThreshold(
 /// per-criterion verdicts would silently show non-engine tallies instead of the
 /// engine scorecard. The quant current-state read is the newest snapshot that
 /// carries engine results. The AI assessor is retired (ADR 0084) and its rows
-/// were dropped, but the guard stays: MCP-written verdicts (v0.61.0) will land
-/// in the same history with a non-`engine` source.
+/// were dropped, but the guard stays: MCP-written verdicts (`set_qualitative_verdicts`,
+/// shipped v0.60 per ADR 0088) land in the same history with a non-`engine`
+/// (`source: "agent"`) source and must never be read as the quantitative latest.
 function latestQuantitativeEvaluation(
   rows: FrameworkEvaluation[],
 ): FrameworkEvaluation | null {
@@ -261,6 +262,24 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
     }
     return map;
   }, [latest]);
+
+  // Agent-written qualitative verdicts (`set_qualitative_verdicts` over MCP,
+  // ADR 0088) land in the same evaluation history as `source: "agent"` rows.
+  // Surface the newest agent verdict per qualitative criterion so the write
+  // capability is user-reachable — the quant-latest guard keeps these rows out
+  // of the engine scorecard (card b875e69).
+  const qualitativeVerdictByCriterion = useMemo(() => {
+    const map = new Map<string, FrameworkEvaluation["results"][number]>();
+    const newestFirst = [...history].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    for (const evaluation of newestFirst) {
+      for (const result of evaluation.results) {
+        if (result.source === "agent" && result.criterionId && !map.has(result.criterionId)) {
+          map.set(result.criterionId, result);
+        }
+      }
+    }
+    return map;
+  }, [history]);
 
   async function runGuarded(action: () => Promise<void>) {
     setBusy(true);
@@ -443,19 +462,24 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   // A qualitative criterion (ADR 0075, amended by ADR 0084): a user-authored
   // check with written guidance and NO in-app verdict. The AI assessor and every
   // verdict it stored were removed in the clean cut (ADR 0084 decision 5), so the
-  // row shows the criterion and its guidance; verdicts return as agent writes
-  // over MCP with provenance (v0.61.0).
+  // row shows the criterion and its guidance; verdicts arrive as agent writes
+  // over MCP with provenance (`set_qualitative_verdicts`, shipped v0.60, ADR 0088).
   function renderQualitativeCriterion(criterion: QualityFramework["criteria"][number]) {
     const expanded = expandedCriterionId === criterion.id;
+    const verdict = qualitativeVerdictByCriterion.get(criterion.id) ?? null;
+    const verdictText = verdict ? verdictLabel(verdict.verdict) : text("Not assessed yet");
     return (
       <li key={criterion.id} className="quality-qualitative-row">
         <ExpandableRow
-          label={`${criterion.label} — ${text("Not assessed yet")}`}
+          label={`${criterion.label} — ${verdictText}`}
           isExpanded={expanded}
           onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
           actions={deleteCriterionButton(criterion.id)}
           detail={
             <div className="quality-qualitative-detail">
+              {verdict?.reasoning ? (
+                <p className="quality-reasoning">{verdict.reasoning}</p>
+              ) : null}
               <p className="quality-reasoning">
                 {criterion.assessmentGuidance ?? text("Not assessed yet.")}
               </p>
@@ -465,7 +489,9 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
           <span className="quality-history-header">
             <span className="quality-history-when">{criterion.label}</span>
             <span className="quality-criterion-trailing">
-              <StatusChip tone="neutral">{text("Not assessed yet")}</StatusChip>
+              <StatusChip tone={verdict ? verdictTone(verdict.verdict) : "neutral"}>
+                {verdictText}
+              </StatusChip>
             </span>
           </span>
         </ExpandableRow>

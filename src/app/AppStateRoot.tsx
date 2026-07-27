@@ -2003,7 +2003,9 @@ export function AppStateRoot({
                   openSources={() => setActiveSection("Sources")}
                 />
               ) : null}
-              {activeSection === "Compare" ? <CompareScreen /> : null}
+              {activeSection === "Compare" ? (
+                <CompareScreen openCompanyWorkspace={openCompanyWorkspaceById} />
+              ) : null}
               {activeSection === "Companies" ? (
                 <CompaniesProvider
                   value={{

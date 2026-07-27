@@ -1,0 +1,45 @@
+---
+source: src/fundamentals/sector_percentiles.rs
+expression: result
+---
+SectorPercentiles {
+    company_id: "t",
+    sector: Some(
+        "software",
+    ),
+    peer_count: 5,
+    thin: false,
+    empty_reason: None,
+    metrics: [
+        SectorPercentileMetric {
+            metric_key: "pe_ratio",
+            kind: MarketRatio,
+            value: Some(
+                "20",
+            ),
+            percentile: Some(
+                "50",
+            ),
+            median: Some(
+                "20",
+            ),
+            sample_size: 5,
+            absent_reason: None,
+        },
+        SectorPercentileMetric {
+            metric_key: "roe",
+            kind: CanonicalKpi,
+            value: Some(
+                "2",
+            ),
+            percentile: Some(
+                "40",
+            ),
+            median: Some(
+                "2",
+            ),
+            sample_size: 5,
+            absent_reason: None,
+        },
+    ],
+}

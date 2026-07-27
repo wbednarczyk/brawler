@@ -24,6 +24,9 @@ import type { AttentionEvent } from "../../api/generated/AttentionEvent";
 import type { ReconciliationResult } from "../../api/generated/ReconciliationResult";
 import type { MorningBriefing } from "../../api/generated/MorningBriefing";
 import type { AutopilotRun, CompanyAutopilot } from "../../api/autopilot";
+import type { KpiComparison } from "../../api/comparison";
+import type { SectorPercentiles } from "../../api/sectorPercentiles";
+import type { ComparativeValuation } from "../../api/valuation";
 import {
   legacyCompanies,
   legacyCompanyEvents,
@@ -66,6 +69,7 @@ import {
   makeFinancialFact,
   makeFinancialPeriod,
   makeIrReportResolution,
+  makeKpiComparison,
   makeKpiDefinition,
   makeKpiRelevance,
   makeLicenseStatus,
@@ -202,6 +206,19 @@ export interface ScenarioData {
   financialPeriods: FinancialPeriod[];
   financialFacts: FinancialFact[];
   kpiDefinitions: KpiDefinition[];
+  // Populated cross-company comparisons (ADR 0089 §A3). Optional seed matched by
+  // (companyIds set, metricKeys, granularity); an unmatched request reads back
+  // the empty computed default. Lets the browser/visual harness render the
+  // Compare success table without wiring confirmed facts to these companies.
+  kpiComparisons?: KpiComparison[];
+  // Comparative valuation L1 (ADR 0089 §B1/B2/B3). Optional seeds keyed by
+  // companyId: a company with a seed reads it back verbatim; an unseeded company
+  // falls through to the sector-derived computed default (every metric/method a
+  // typed absence, since the mock store carries no resolvable ratios/multiples).
+  // Lets the browser/visual harness render a populated football field + a thin
+  // state without wiring confirmed facts to these companies.
+  sectorPercentiles?: Record<string, SectorPercentiles>;
+  comparativeValuations?: Record<string, ComparativeValuation>;
   kpiRelevance: KpiRelevance[];
   reportDocuments: ReportDocument[];
   // Ownership overviews per company (ADR 0072, v0.56 T6). Optional seed: a company
@@ -390,6 +407,7 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     financialPeriods: deep.flatMap((spec) => [makeFinancialPeriod(spec, 2025), makeFinancialPeriod(spec, 2026)]),
     financialFacts: deep.map((spec) => makeFinancialFact(spec, 2026)),
     kpiDefinitions: [makeKpiDefinition()],
+    kpiComparisons: [makeKpiComparison()],
     kpiRelevance: deep.map(makeKpiRelevance),
     reportDocuments: deep.map(makeReportDocument),
     ownershipOverviews: deep.map(makeOwnershipOverview),

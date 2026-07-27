@@ -158,6 +158,105 @@
       ]
     },
     {
+      "name": "kpi comparison empty state for a fresh company (v0.61 A2)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "FDLCMP",
+              "displayName": "Fidelity Compare S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cmp_cid"
+        },
+        {
+          "command": "get_kpi_comparison",
+          "input": {
+            "companyIds": ["$cmp_cid"],
+            "metricKeys": ["revenue"],
+            "granularity": "annual"
+          },
+          "expectField": {
+            "granularity": "annual"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sector percentiles empty state for a company without a sector (v0.61 B1)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "FDLSCT",
+              "displayName": "Fidelity Sector S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "sct_cid"
+        },
+        {
+          "command": "get_sector_percentiles",
+          "input": {
+            "companyId": "$sct_cid"
+          },
+          "expectField": {
+            "emptyReason": "no_sector",
+            "peerCount": 0,
+            "thin": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "comparative valuation empty state + empty run history for a company without a sector (v0.61 B2)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "FDLVAL",
+              "displayName": "Fidelity Valuation S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "val_cid"
+        },
+        {
+          "command": "compute_comparative_valuation",
+          "input": {
+            "companyId": "$val_cid"
+          },
+          "expectField": {
+            "emptyReason": "no_sector",
+            "peerCount": 0,
+            "thin": true
+          }
+        },
+        {
+          "command": "list_valuation_runs",
+          "input": {
+            "companyId": "$val_cid"
+          },
+          "expectAbsent": {
+            "method": "pe_multiple"
+          }
+        }
+      ]
+    },
+    {
       "name": "cockpit layout save-list-delete lifecycle",
       "steps": [
         {

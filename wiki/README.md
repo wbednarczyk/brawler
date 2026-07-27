@@ -59,6 +59,13 @@ per feature.
 - **[Report comparison](report-comparison.md)** — see what changed between a
   company's two most recent financial statements of the same kind, section by
   section — fully local, deterministic, no AI.
+- **[Cross-company comparison and comparative valuation](cross-company-comparison.md)**
+  — the **Compare (Porównaj)** screen: pick a set of tracked companies and line
+  their KPIs up side by side (Profil view across companies, Trend view across
+  periods, a 4-series chart), read the one-company periods × QoQ/YoY deltas table
+  in Fundamentals, and see comparative valuation L1 — peer percentiles with N, a
+  football field of implied ranges per multiple, and an A–D confidence grade —
+  all evidence-linked, decision support only.
 - **[AI in Brawler: transcripts only (BYOA)](ai-provider-presets.md)**
   — route each AI capability to its own provider with a failover pool, and add
   free/self-hosted open-model hosts (Groq, OpenRouter, local Ollama, and more)

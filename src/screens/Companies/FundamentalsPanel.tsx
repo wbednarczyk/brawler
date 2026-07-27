@@ -6,6 +6,7 @@ import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
 import { FACT_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import { buildFactMatrix } from "./factMatrix";
+import { FundamentalsPeriodsSection } from "./FundamentalsPeriodsSection";
 import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
@@ -256,6 +257,20 @@ export function FundamentalsPanel({
         ),
       }))
       .filter((point) => Number.isFinite(point.value));
+
+  // The panel's own KPI set drives the N=1 periods×deltas comparison (§A5): the
+  // metric keys with facts, in matrix order, and their localized labels.
+  const comparisonMetricKeys = useMemo(
+    () => factMatrix.rows.map((row) => row.definition.metricKey),
+    [factMatrix],
+  );
+  const kpiLabelByMetricKey = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const row of factMatrix.rows) {
+      map[row.definition.metricKey] = localizedKpiLabel(row.definition, locale);
+    }
+    return map;
+  }, [factMatrix, locale]);
 
   const selectedFactRow = selectedFactDefinition
     ? factMatrix.rows.find((row) => row.definition.id === selectedFactDefinition.id)
@@ -617,6 +632,19 @@ export function FundamentalsPanel({
           )}
         </div>
       </section>
+
+      {/* Periods × deltas (v0.61 §A5, storyboard surface 2): the N=1 case of the
+          comparison read model, complementing the deltas-free matrix above with
+          QoQ/YoY per period. Only meaningful once the company has a KPI set. */}
+      {comparisonMetricKeys.length > 0 ? (
+        <FundamentalsPeriodsSection
+          companyId={companyId}
+          metricKeys={comparisonMetricKeys}
+          kpiLabelByMetricKey={kpiLabelByMetricKey}
+          selectedFactId={selectedFinancialFactId}
+          onSelectFact={selectFinancialFact}
+        />
+      ) : null}
 
       {/* Financial Periods List */}
       <section className="fundamentals-section" aria-label={text("Reporting periods")}>

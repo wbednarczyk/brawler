@@ -1,0 +1,116 @@
+---
+source: src/valuation/tests.rs
+expression: golden()
+---
+ComparativeValuation {
+    company_id: "t",
+    sector: Some(
+        "software",
+    ),
+    peer_count: 5,
+    thin: false,
+    current_price: Some(
+        "30",
+    ),
+    data_as_of: "2026-07-27",
+    empty_reason: None,
+    methods: [
+        ValuationMethodResult {
+            method: PeMultiple,
+            driver_key: "net_profit_ttm",
+            driver_value: Some(
+                "100",
+            ),
+            peer_multiple_low: Some(
+                "9.5",
+            ),
+            peer_multiple_base: Some(
+                "11",
+            ),
+            peer_multiple_high: Some(
+                "12.5",
+            ),
+            fair_low: Some(
+                "19",
+            ),
+            fair_base: Some(
+                "22",
+            ),
+            fair_high: Some(
+                "25",
+            ),
+            peer_sample_size: 4,
+            absent_reason: None,
+        },
+        ValuationMethodResult {
+            method: EvEbitdaMultiple,
+            driver_key: "ebitda_ttm",
+            driver_value: Some(
+                "200",
+            ),
+            peer_multiple_low: Some(
+                "4.75",
+            ),
+            peer_multiple_base: Some(
+                "5.5",
+            ),
+            peer_multiple_high: Some(
+                "6.25",
+            ),
+            fair_low: Some(
+                "13",
+            ),
+            fair_base: Some(
+                "16",
+            ),
+            fair_high: Some(
+                "19",
+            ),
+            peer_sample_size: 4,
+            absent_reason: None,
+        },
+        ValuationMethodResult {
+            method: PbvMultiple,
+            driver_key: "total_equity",
+            driver_value: Some(
+                "1000",
+            ),
+            peer_multiple_low: Some(
+                "1.375",
+            ),
+            peer_multiple_base: Some(
+                "1.75",
+            ),
+            peer_multiple_high: Some(
+                "2.125",
+            ),
+            fair_low: Some(
+                "27.5",
+            ),
+            fair_base: Some(
+                "35",
+            ),
+            fair_high: Some(
+                "42.5",
+            ),
+            peer_sample_size: 4,
+            absent_reason: None,
+        },
+    ],
+    convergence: Some(
+        ConvergenceSpread {
+            base_low: "16",
+            base_high: "35",
+            spread_pct: "86.36",
+            method_count: 3,
+        },
+    ),
+    confidence: ConfidenceGrade {
+        grade: B,
+        composite: "0.7841",
+        data_completeness: "1",
+        peer_depth: "1",
+        method_convergence: "0.1364",
+        validation: "1",
+    },
+}

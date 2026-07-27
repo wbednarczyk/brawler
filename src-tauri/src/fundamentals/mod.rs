@@ -8,6 +8,7 @@
 //! human-free check that decides whether an extracted fact set may be
 //! auto-accepted.
 
+pub mod comparison;
 pub mod expr;
 pub mod extraction;
 pub mod health;
@@ -16,6 +17,7 @@ pub mod management_holdings;
 pub mod metrics;
 pub mod ownership;
 pub mod scorecard;
+pub mod sector_percentiles;
 pub mod templates;
 pub mod validation;
 

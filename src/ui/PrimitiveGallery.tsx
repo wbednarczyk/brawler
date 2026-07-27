@@ -10,6 +10,7 @@ import { DenseRow } from "./DenseRow";
 import { DetailSection } from "./DetailSection";
 import { DonutChart, donutSwatchClass } from "./DonutChart";
 import { MultiLineChart } from "./MultiLineChart";
+import { RangeBarChart } from "./RangeBarChart";
 import { EmptyState } from "./EmptyState";
 import { ErrorText } from "./ErrorText";
 import { FieldRow, SelectField } from "./Fields";
@@ -251,6 +252,18 @@ export function PrimitiveGallery() {
                 { label: "2026-03-31", value: 6.1 },
               ],
             },
+          ]}
+        />
+        <SectionHeader title="Range bar chart (football field)" titleId="g-rangebar" level="h3" />
+        <RangeBarChart
+          ariaLabel="Implied fair-value ranges by method"
+          rangeLegendLabel="implied range"
+          markerLegendLabel="current price"
+          marker={{ value: 132, label: "132 zł" }}
+          rows={[
+            { key: "pe", label: "P/E × median", low: 96, base: 122, high: 148, rangeText: "96–148 zł" },
+            { key: "evebitda", label: "EV/EBITDA × median", low: 108, base: 131, high: 154, rangeText: "108–154 zł" },
+            { key: "pbv", label: "P/BV × median", absentText: "too few peers" },
           ]}
         />
       </section>

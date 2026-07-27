@@ -1866,4 +1866,25 @@ export const plText: Record<string, string> = {
     "Dla tego okresu nie zapisano więcej szczegółów.",
   "Attempts: {n}": "Podejść: {n}",
   "Trying again…": "Ponawianie…",
+  // Periods × deltas section (v0.61 §A5, ADR 0089 dec. 1). Mirrors the Compare
+  // screen's flag/delta voice (pl.ts compare.*) so the N=1 table reads the same.
+  "Positions × periods": "Pozycje × okresy",
+  "QoQ/YoY deltas computed from facts, not re-parsed reports.":
+    "Zmiany kw/kw i r/r liczone z faktów, nie z ponownego parsowania raportów.",
+  "Period granularity": "Rozdzielczość okresu",
+  "Quarterly": "Kwartalny",
+  "Could not load the periods table.": "Nie udało się wczytać tabeli okresowej.",
+  "No aligned periods yet.": "Brak zestrojonych okresów.",
+  "Positions and period deltas": "Pozycje i zmiany okresowe",
+  "Position": "Pozycja",
+  "Δ QoQ": "Δ k/k",
+  "Δ YoY": "Δ r/r",
+  "no data for period": "brak danych za okres",
+  "no FX rate": "brak kursu FX",
+  "unknown currency": "nieznana waluta",
+  "Undefined change (non-positive or sign-flipped base) — an honest gap, not a fabricated number.":
+    "Zmiana nieokreślona (podstawa niedodatnia lub zmiana znaku) — uczciwa luka, nie zmyślona liczba.",
+  "Show evidence": "Pokaż dowód",
+  "Show all periods": "Pokaż wszystkie okresy",
+  "Show fewer periods": "Pokaż mniej okresów",
 };
