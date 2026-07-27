@@ -171,10 +171,17 @@ function extractContractsCommands(contractsPath) {
   // Pattern B: standalone paragraph command definitions, e.g.
   // "`delete_company(companyId)` deletes a company...". Lowercase-only
   // character class deliberately excludes camelCase settings-field mentions.
-  const standaloneRe = /^`([a-z][a-z0-9_]*)[(`]/;
+  const standaloneRe = /^`([a-z][a-z0-9_]*)([(`])/;
   for (let i = 0; i < lines.length; i++) {
     const m = standaloneRe.exec(lines[i]);
-    if (m) record(m[1], i);
+    if (!m) continue;
+    // Backtick-terminated (no-parens) form additionally requires an underscore:
+    // all-lowercase single-word payload FIELDS are documented paragraph-first
+    // too (`severity` ∈ ...) and would otherwise be misread as commands, while
+    // real commands are multi-word snake_case — except `health`/`search`,
+    // which Pattern A bullets already cover (harvest 2026-07-27).
+    if (m[2] === "`" && !m[1].includes("_")) continue;
+    record(m[1], i);
   }
 
   return { found, sections };
