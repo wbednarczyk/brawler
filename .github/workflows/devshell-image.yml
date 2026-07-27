@@ -39,7 +39,9 @@ jobs:
           cat > Dockerfile.devshell <<'DOCKER'
           FROM nixos/nix:2.24.9
           RUN mkdir -p /etc/nix && printf 'experimental-features = nix-command flakes\nfilter-syscalls = false\n' >> /etc/nix/nix.conf
-          RUN nix profile install nixpkgs#gnumake nixpkgs#git nixpkgs#bash nixpkgs#coreutils
+          # --impure: in the nixos/nix image the `nixpkgs` registry entry resolves
+          # through the channel store path, which pure flake evaluation rejects.
+          RUN nix profile install --impure nixpkgs#gnumake nixpkgs#git nixpkgs#bash nixpkgs#coreutils
           WORKDIR /build
           COPY flake.nix flake.lock ./
           RUN nix develop --command true
