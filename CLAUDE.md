@@ -25,7 +25,7 @@ Mandatory in every session state — new, resumed, compacted, large-context — 
 Then load only what the task needs:
 
 - [docs/project-brief.md](docs/project-brief.md) — product-intent detail (markets, source priorities, open-core posture); the digest lives in [Product Intent](#product-intent) below, and this area map is the documentation map.
-- The active Radicle issue: `rad issue show <hex7>` ([docs/kanban.md](docs/kanban.md) is the pointer; `rad issue list --all` for the board).
+- The active issue: `gh issue view <n>` ([docs/kanban.md](docs/kanban.md) is the pointer; `gh issue list` for the board).
 - Implementing a planned milestone task: the per-milestone execution plan in [docs/plans/](docs/plans/) (start at its README — non-normative; ADRs/canonical docs win on conflict).
 - Area docs: architecture/boundaries → [docs/architecture.md](docs/architecture.md) + [docs/adr/](docs/adr/) · commands/IPC → [docs/contracts.md](docs/contracts.md) · data/DB/migrations → [docs/data-model.md](docs/data-model.md) · product behavior → [docs/product-spec.md](docs/product-spec.md) · UI flows/IA → [docs/ui-flows.md](docs/ui-flows.md) / [docs/ui-information-architecture.md](docs/ui-information-architecture.md) · sources → [docs/source-strategy.md](docs/source-strategy.md) · module ownership → [docs/modularization-design.md](docs/modularization-design.md) · tests → [docs/testing.md](docs/testing.md) · completed-card history (rarely) → [docs/kanban-archive.md](docs/kanban-archive.md).
 - **Any frontend UI work: [docs/ui-authoring.md](docs/ui-authoring.md) first** — primitive-first ([ADR 0037](docs/adr/0037-ui-component-framework-and-authoring-contract.md)): compose from `src/ui` primitives; never hand-roll a control, section, badge, row, or layout a primitive provides; no inline `style={{…}}`. Run the pre-write self-check before writing JSX. New panels/redesigns are mockup-first (approved mockup saved in `docs/mockups/`, gitignored).
@@ -37,7 +37,7 @@ Every fact has exactly one canonical home; update it there, do not duplicate it 
 
 - **Milestone intent + the active/upcoming plan** → [docs/roadmap.md](docs/roadmap.md) (forward-looking only; deferred scope's one home: roadmap *Not In V1*).
 - **Delivered/release history** → [CHANGELOG.md](CHANGELOG.md) (authoritative per-version) and [docs/kanban-archive.md](docs/kanban-archive.md) (completed-card detail); never normative.
-- **Live epic/task status** → Radicle/Radboard (`rad issue list --all`).
+- **Live epic/task status** → GitHub Issues + the "Brawler board" Project (`gh issue list`; state = the board `Status`, never a label).
 - **Commands/IPC** → contracts; **data shapes/DB/migrations** → data-model; **product behavior** → product-spec; **UI flows/IA** → ui-flows / ui-information-architecture; **architecture/boundaries + decisions** → architecture + ADRs; **source policy** → source-strategy; **build/test/CI** → engineering-workflow; **test strategy** → testing; **module ownership** → modularization-design.
 - **Decision rationale, rejected options, investigation evidence** → ADRs (normative); execution chronicle → CHANGELOG/kanban-archive (never normative).
 
@@ -57,8 +57,8 @@ Process:
 - Prefer small, reviewable changes. Commit at meaningful checkpoints (a coherent slice + tests + docs), only when the user asks or at a natural milestone. Never commit or push unattended.
 - **After implementing a milestone, write a retrospective before closure sign-off**: both domains (app + development loop) × what went well / what went wrong (especially unexpected gaps) / what to stop / what to improve; mark each item closed or still-open honestly — the human decides what needs action. Feed still-open items into the guardrail-harvest loop.
 - **Guardrail harvest (mandatory feedback loop).** When a defect is flagged — by the user, a review, a gate, or your own noticing — fixing the instance is not enough: convert the **class** into a durable guardrail in the same change (a precise automated gate when cleanly detectable, otherwise a documented rule + checklist line). Never add a broad gate that flags legitimate code. Put the guardrail where every agent reads it, not in private memory. Ritual: the `guardrail-harvest` skill; policy: [ADR 0045](docs/adr/0045-guardrail-harvest-loop.md).
-- Create a Radicle issue for every reported/discovered bug not fixed immediately (`bug` + state/priority/area labels; link `parent:<epic-hex7>` / `blocked:<bug-hex7>`).
-- Release/closure runs through the `brawler-release` skill and **`make release VERSION=x.y.z`** — never hand-assemble the bump/changelog/commit/tag/push (the target aborts if pre-bumped). Curated releases: `make release-prepare` → curate → `make release`. Updating `wiki/` for every user-facing change is a required release-prep step.
+- Create a GitHub issue for every reported/discovered bug not fixed immediately (`bug` + priority/area labels; `epic` for parenting).
+- **Continuous release** ([ADR 0090](docs/adr/0090-github-canonical-forge-and-continuous-release.md)): every PR carries one `release:major|minor|patch|skip` label and merge auto-ships it — agents **never** bump versions, tag, edit the changelog, or force a release via a label (owner's call). Update `wiki/` in the behavior-changing PR. Epic closure (retro, DoD §I): `brawler-release` skill.
 
 Architecture and design:
 
@@ -76,9 +76,9 @@ Product and policy:
 - Prefer official/public/RSS sources; no fragile/restricted scraping without a source ADR.
 - AI output is decision support only — never phrase analysis as buy/sell/hold advice.
 - Secrets use the OS keychain in runtime code; `.env` is dev/tests only. Strict Tauri permissions: typed commands only, no arbitrary shell, no broad FS access.
-- Radicle is the canonical forge. `rad issue ...` commands may run unattended for planning/tracking; publication, seeding, visibility, identity, node, and `rad init` operations may not (`rad init` is always `--private` unless an approved publication task). Label conventions: [docs/kanban.md](docs/kanban.md).
+- GitHub is the canonical forge (code, issues, board, CI, releases); Radicle is a code mirror only (`make sync-rad`, no process role). `gh issue`/`gh pr create` may run unattended; **merges, `release:*` labelling, and repo-setting mutations may not.** `rad init` stays `--private` unless an approved publication task. Label conventions: [docs/kanban.md](docs/kanban.md).
 - The private sibling `../brawler-private` (when present) is readable for owner-only context; never copy its content into this public repo unless explicitly asked.
-- Local build/test commands are primary; GitHub Actions mirrors them, staying conservative (no larger runners, no default macOS, no scheduled workflows; every CI check has a documented local equivalent). Nix from the first scaffold; no secrets in Nix files/`.envrc`.
+- Local build/test commands are primary; CI runs the same `make` targets, conservative (standard runners, no macOS, no scheduled workflows). Nix from the first scaffold; no secrets in Nix files/`.envrc`.
 - Agents may always drive the owner's real Windows app live from WSL: `make live-cycle` ([testing.md](docs/testing.md) § Live drive). A WSL Tauri build is a Linux app — never desktop evidence.
 
 ## Testing Expectations

@@ -25,7 +25,7 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: commit help install dev frontend-preview build check check-fast check-docs disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -33,6 +33,16 @@ help:
 	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (pre-commit runs this)\n"
 	@printf "  make check-fast          Fast inner-loop check (parallel core, no browser) — iteration only, NOT proof of done\n"
 	@printf "  make check-docs          Docs-only gate: mandatory-read budgets + docs drift, no code suites (pre-commit uses this for docs-only commits)\n"
+	@printf "  make check-rust-lint / check-rust-test / check-frontend-static / check-frontend-test / check-frontend-build / check-browser [SHARD=i/N] / check-docs-gates\n"
+	@printf "                            Granular CI-parity gate targets — each is one full-check.yml job; 'make check' composes them\n"
+	@printf "  make check-commits RANGE=<base>..<head>\n"
+	@printf "                            Validate every commit subject in the range against Conventional Commits\n"
+	@printf "  make check-release-label PR=<n>\n"
+	@printf "                            Assert the PR carries exactly one release:{major,minor,patch,skip} label\n"
+	@printf "  make pr-binary PR=<n>     Download a PR's cross-built Windows .exe to /mnt/d/Brawler/Builds/pr-<n>/\n"
+	@printf "  make sync-rad             Push master + tags to the Radicle mirror (second path only)\n"
+	@printf "  make release-publish VERSION=X.Y.Z\n"
+	@printf "                            Emergency local equivalent of the release.yml release job\n"
 	@printf "  make disk-clean          Safe temp cleanup: caches, mutants artifacts, old nix generations, journal, fstrim\n"
 	@printf "  make disk-clean-deep     disk-clean + cargo target dir (full rebuild next time) + full nix GC\n"
 	@printf "  make check-epic          Closure suite: the full gate + heavy periodic suites (coverage ratchet)\n"
@@ -114,13 +124,91 @@ build:
 # drift from the code, or ADR hygiene (Status: lines, INDEX.md) rots.
 check:
 	@node scripts/check/disk-guard.mjs
-	$(NIX) npm run check
-	$(NIX) npm run knip
+	$(MAKE) check-rust-lint
+	$(MAKE) check-rust-test
+	$(MAKE) check-frontend-static
+	$(MAKE) check-frontend-test
+	$(MAKE) check-frontend-build
 	$(MAKE) types-check
+	$(MAKE) check-browser
+	$(MAKE) check-docs-gates
+
+# --- Granular gate targets (the CI/Makefile parity contract, ADR 0090) ---------
+# Each CI job in .github/workflows/full-check.yml runs exactly ONE of these
+# `make <target>` wrappers (asserted by scripts/check/gate-integrity.mjs), so the
+# same step runs identically locally, in CI, and in any future infra. `make
+# check` above is the composition of the very same targets — one definition per
+# step, drift impossible by construction. Every wrapper is thin (no logic beyond
+# invoking the existing npm/cargo/script), and every step hard-fails (no `-`
+# prefix — gate-integrity forbids it).
+
+# Rust lint gate: format check + clippy-as-errors.
+check-rust-lint:
+	$(NIX) bash -c 'cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings'
+
+# Rust test gate: nextest (process-per-test) + doc-tests.
+check-rust-test:
+	$(NIX) bash -c 'cd src-tauri && cargo nextest run && cargo test --doc'
+
+# Frontend static gate: TS typecheck + ESLint + Stylelint + knip (dead-code +
+# api-surface guard). Stylelint lives here (CSS static analysis) so the full
+# `make check` scope is byte-for-byte the pre-refactor scope.
+check-frontend-static:
+	$(NIX) npm run typecheck
+	$(NIX) npm run lint
+	$(NIX) npm run stylelint
+	$(NIX) npm run knip
+
+# Frontend test gate: Vitest unit/component suite.
+check-frontend-test:
+	$(NIX) npm run test
+
+# Frontend build gate: the production Vite build (tsc + vite build).
+check-frontend-build:
+	$(NIX) npm run build
+
+# Browser gate: install Chromium, then run Playwright. SHARD=i/N runs one shard
+# (CI matrix); unset runs the whole suite (local parity). Pixel snapshots
+# auto-disable under CI=true inside the Playwright config.
+check-browser:
 	$(NIX) npm run test:browser:install
-	$(NIX) npm run test:browser
+	$(NIX) $(if $(SHARD),npx playwright test --shard=$(SHARD),npm run test:browser)
+
+# Docs gates: gate-integrity meta-guard (ADR 0062/0063) + spec↔code drift
+# (ADR 0065). Seconds; a docs-only PR runs only this + commit-lint in CI.
+check-docs-gates:
 	$(NIX) node scripts/check/gate-integrity.mjs
 	$(NIX) node scripts/check/docs-drift.mjs
+
+# Commit-message gate (ADR 0090): validate every commit subject in RANGE against
+# the Conventional Commits schema. CI passes the PR's commit range
+# (RANGE=<base>..<head>); locally e.g. RANGE=origin/master..HEAD. Commit
+# descriptions ARE the release notes (git-cliff), so this is a hard gate.
+check-commits:
+	@test -n "$(RANGE)" || { printf "Usage: make check-commits RANGE=<base>..<head>\n" >&2; exit 64; }
+	@fail=0; \
+	for sha in $$(git rev-list --reverse $(RANGE)); do \
+		subject="$$(git log -1 --format=%s "$$sha")"; \
+		if ! scripts/release/validate-commit-message.sh --message "$$subject" >/dev/null 2>&1; then \
+			printf "✖ commit %s: subject fails Conventional Commits: %s\n" "$$(git rev-parse --short "$$sha")" "$$subject" >&2; \
+			fail=1; \
+		fi; \
+	done; \
+	if [ "$$fail" -eq 0 ]; then printf "✓ check-commits: all commits in %s conform to Conventional Commits.\n" "$(RANGE)"; fi; \
+	exit $$fail
+
+# Release-label gate (ADR 0090, §D): a PR must carry EXACTLY ONE
+# release:{major,minor,patch,skip} label — the label drives continuous release.
+# Zero or more than one → red, merge blocked. Needs `gh` authenticated.
+check-release-label:
+	@test -n "$(PR)" || { printf "Usage: make check-release-label PR=<number>\n" >&2; exit 64; }
+	@labels="$$(gh pr view $(PR) --json labels --jq '.labels[].name' | grep -E '^release:(major|minor|patch|skip)$$' || true)"; \
+	count="$$(printf '%s\n' "$$labels" | grep -c . || true)"; \
+	if [ "$$count" -ne 1 ]; then \
+		printf "✖ PR #$(PR) must carry exactly one release:{major,minor,patch,skip} label (found %s: %s)\n" "$$count" "$$(printf '%s ' $$labels)" >&2; \
+		exit 1; \
+	fi; \
+	printf "✓ release-label: PR #$(PR) → %s\n" "$$labels"
 
 # Docs-only pre-commit gate (ADR 0062): the meta-guards a *documentation* change
 # can actually break — the mandatory-read byte budgets + parity (gate-integrity,
@@ -130,8 +218,7 @@ check:
 # docs-only; any code/config change still runs the full gate. Seconds, not minutes.
 check-docs:
 	@node scripts/check/disk-guard.mjs
-	$(NIX) node scripts/check/gate-integrity.mjs
-	$(NIX) node scripts/check/docs-drift.mjs
+	$(MAKE) check-docs-gates
 
 # Staged concurrent check (ADR 0048): fast-fail static stage, then the heavy
 # suites (Rust clippy+nextest+doc, Vitest, build) concurrently — overlaps the
@@ -351,7 +438,7 @@ changelog-check:
 # wastes a full gate run). Stages nothing: git add what you want first.
 # Optional BODY adds a second -m paragraph.
 commit:
-	@test -n "$(MSG)" || { printf 'Usage: make commit MSG="type(scope): subject (<=72 chars after colon)" [BODY="..."]\n' >&2; exit 64; }
+	@test -n "$(MSG)" || { printf 'Usage: make commit MSG="type(scope): subject" [BODY="..."]\n' >&2; exit 64; }
 	@scripts/release/validate-commit-message.sh --message "$(MSG)"
 	@if [ -n "$(BODY)" ]; then git commit -m "$(MSG)" -m "$(BODY)"; else git commit -m "$(MSG)"; fi
 
@@ -413,6 +500,54 @@ release:
 	git push origin "v$(VERSION)"
 	BRAWLER_GATE_ALREADY_GREEN=1 git push rad master
 	git push rad "v$(VERSION)"
+
+# Sync the Radicle mirror (second distribution path only — no process depends on
+# it, ADR 0090 §D). Owner runs it whenever convenient after releases.
+sync-rad:
+	git push rad master --follow-tags
+
+# Download a PR's cross-built Windows portable .exe for owner hands-on testing
+# (ADR 0090 §B2). Pulls the `windows-build` artifact from the latest full-check
+# run on the PR's head branch into /mnt/d/Brawler/Builds/pr-<n>/. Needs `gh`.
+pr-binary:
+	@test -n "$(PR)" || { printf "Usage: make pr-binary PR=<number>\n" >&2; exit 64; }
+	@dest="/mnt/d/Brawler/Builds/pr-$(PR)"; \
+	branch="$$(gh pr view $(PR) --json headRefName --jq .headRefName)"; \
+	run_id="$$(gh run list --branch "$$branch" --workflow full-check.yml --json databaseId --jq '.[0].databaseId')"; \
+	if [ -z "$$run_id" ]; then printf "No full-check run found for PR #$(PR) (branch %s).\n" "$$branch" >&2; exit 1; fi; \
+	mkdir -p "$$dest"; \
+	gh run download "$$run_id" --name windows-build --dir "$$dest"; \
+	printf "Downloaded PR #$(PR) Windows artifact to %s\n" "$$dest"
+
+# Stamp the release version into the manifests/binary/UI at build time WITHOUT
+# committing (ADR 0090 §D pt 2: tags are truth, manifests hold a placeholder).
+# Reuses the version bumper as a pure file-stamp; the tree is left dirty
+# deliberately (ephemeral in CI; discard locally).
+stamp-version:
+	@test -n "$(VERSION)" || { printf "Usage: make stamp-version VERSION=X.Y.Z\n" >&2; exit 64; }
+	$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"
+
+# Emergency LOCAL equivalent of the release.yml `release` job (ADR 0090 §D pt 3):
+# stamp version → build artifacts → tag (idempotent) → GitHub Release + upload
+# with git-cliff notes. The workflow is the primary path; this is the parity
+# fallback the owner runs from WSL when CI is unavailable.
+release-publish:
+	@test -n "$(VERSION)" || { printf "Usage: make release-publish VERSION=X.Y.Z\n" >&2; exit 64; }
+	$(MAKE) package-release-artifacts VERSION=$(VERSION)
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then \
+		printf "Tag v$(VERSION) already exists; skipping tag creation.\n"; \
+	else \
+		git tag -a "v$(VERSION)" -m "v$(VERSION)"; \
+		git push origin "v$(VERSION)"; \
+	fi
+	@prev="$$(git describe --tags --abbrev=0 "v$(VERSION)^" 2>/dev/null || true)"; \
+	range="$${prev:+$$prev..}v$(VERSION)"; \
+	$(NIX) git-cliff --config cliff.toml $$range --tag "v$(VERSION)" --strip header > /tmp/brawler-release-notes-$(VERSION).md; \
+	if gh release view "v$(VERSION)" >/dev/null 2>&1; then \
+		gh release upload "v$(VERSION)" $(RELEASE_OUT_DIR)/* --clobber; \
+	else \
+		gh release create "v$(VERSION)" $(RELEASE_OUT_DIR)/* --title "v$(VERSION)" --notes-file /tmp/brawler-release-notes-$(VERSION).md; \
+	fi
 
 license-keygen-author:
 	$(NIX) node scripts/licensing/generate-ed25519-key.mjs
@@ -574,7 +709,17 @@ package-windows-portable-zip:
 	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle $(RELEASE_FEATURE_FLAG)
 	$(NIX_WINDOWS) scripts/release/package-windows-portable-zip.sh "$(APP_VERSION)" "$(WINDOWS_EXE)" "$(RELEASE_OUT_DIR)"
 
-package-release-artifacts: package-linux-amd64 package-windows-portable-zip
+# Build all release artifacts. VERSION (optional) stamps the version into the
+# manifests at build time before packaging (ADR 0090 §D pt 2) — no commit. The
+# stamp runs first, then the artifact builds go through recursive `$(MAKE)` so
+# the derived APP_VERSION (artifact filenames) is re-read from the just-stamped
+# package.json. Without VERSION it builds at the current manifest version.
+package-release-artifacts:
+	@if [ -n "$(VERSION)" ] && [ "$(VERSION)" != "$(APP_VERSION)" ]; then \
+		$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"; \
+	fi
+	$(MAKE) package-linux-amd64
+	$(MAKE) package-windows-portable-zip
 
 package-windows-smoke-run:
 	@if [ ! -f "$(WINDOWS_ARTIFACT)" ]; then \

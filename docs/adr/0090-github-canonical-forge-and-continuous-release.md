@@ -1,0 +1,78 @@
+# ADR 0090: GitHub as the Canonical Forge for Everything; Radicle as the Second Path; Continuous Release
+
+Status: Accepted (2026-07-27, owner sign-off at CI/forge-migration planning)
+
+**Supersedes in part** [ADR 0007](0007-github-build-and-lean-testing.md) (the private-repo cost posture — deficit Actions minutes, manual-only `workflow_dispatch`, no push/PR CI — is void now that the repo is public; what survives is *local commands as the primary interface, CI as thin `make`-wrappers, zero CI-only logic, secret-free by default*), [ADR 0008](0008-license-and-project-governance.md) (project tracking and governance move to GitHub Issues + Projects), and [ADR 0024](0024-cross-platform-release-artifacts.md) (**GitHub is now canonical for code, issues, CI, and releases**; Radicle is a code replica / second path, no longer "canonical forge for issues, patches, and source refs"). **Amends** [ADR 0062](0062-mandatory-test-gate-and-test-driven-loop.md) (the "no CI mirror of `make check`" premise is replaced by `full-check.yml`; the master-always-green guarantee moves server-side — see § CI) and continues the [ADR 0081](0081-ux-quality-loop-v2.md) card-privacy rule (non-sensitive metadata only, now on GitHub cards).
+
+## Context
+
+Brawler's CI posture was inherited from when the repo was private: ADR 0007 treated Actions minutes as scarce, so **no `ci.yml` ever existed** — only `mutants.yml` (dispatch) and `release-artifacts.yml` (on tag). All verification lived in local git hooks; the `ci.yml`/`package.yml` names in the docs were drift. Project management lived on Radicle (~550 issues, wired into the session hooks, the release skill, gate-integrity markers, kanban.md, and ADRs 0008/0024/0031).
+
+**The unblocking fact:** a public repo gets free unlimited Actions minutes on standard runners, free Issues/Projects/milestones, rulesets, Dependabot, and secret scanning. The move costs 0 zł; the only cost is the rewiring work. The owner decided (2026-07-27) to make GitHub canonical for **everything** — code, issues, board, PRs, CI, releases — and keep Radicle purely as a code replica (push both remotes as before; sync at will). No process depends on Radicle anymore.
+
+## Decisions
+
+### 1. GitHub is canonical for everything; Radicle is the second path
+
+Code, issues, the board, PRs, CI, and releases are canonical on GitHub. Radicle stays a code mirror (`git push rad` unchanged), synced asynchronously via `make sync-rad` — never a process dependency. `rad init` stays `--private` unless an approved publication task (unchanged). Historical `rad:<hex7>` references in frozen chronicle docs stay resolvable through `docs/archive/radicle-issue-map.json` (§ Migration).
+
+### 2. CI: one full gate, one workflow, parallel jobs
+
+There is **no "fast" mode in CI** — "fast" exists only locally (`check-fast` at pre-commit). One definition of the full gate runs at every boundary.
+
+- **`full-check.yml`** — triggers: `pull_request` (required checks; per-PR concurrency cancellation) + `workflow_call` (called by `release.yml` on master pushes — Decision 4) + `workflow_dispatch`. Same jobs and names everywhere; one definition cannot drift. The master run (via `release.yml`, only for release-labeled merges) is the same scope, stamping the **merge commit's new SHA** (PR check-runs stick to the branch SHA; a release needs green on exactly the SHA it builds from).
+- **"Makefile everywhere": every CI job runs exactly one `make` target** (inside `nix develop`) — the same thing runs identically locally, in CI, and in any future infra; the workflow holds no logic beyond `make <target>` + cache + Nix setup. This requires **decomposing the Makefile**: today's monolithic `check` chain splits into granular targets (thin wrappers over the same npm/cargo scripts), and `make check` becomes a **composition of those same targets** — one step defined in one place. The job ↔ target map lives in [engineering-workflow.md](../engineering-workflow.md); **gate-integrity gains an assertion that every `run:` step in `full-check.yml` matches `make <target>`** so CI cannot silently stop using the Makefile.
+- **Cache (10 GB/repo) is the real bottleneck, not CPU**: one canonical job (rust-test) **writes** the cargo cache; every other cargo job **reads only** (`save-if: false`); npm and Playwright browsers share keys.
+- **Devshell image on ghcr.io**: a small separate workflow builds a container with a ready `nix develop` (rebuilt when `flake.lock` changes; ghcr is free for public repos); `full-check` jobs start in it in seconds instead of installing Nix per job. `install-nix-action` stays a documented fallback (and in `mutants.yml` unchanged).
+- **Paths-filter**: a micro-job detects the change scope; a **docs-only PR** (`docs/**`, `wiki/**`, `*.md`) skips the rust/frontend/browser/windows jobs and runs only `docs-gates` + `commit-lint`. Jobs skipped via `if:` still **satisfy** the required checks (GitHub mechanics), so the ruleset never hangs. This mirrors the local docs-only → `check-docs` rule — parity, not a new rule.
+
+### 3. Master always green (server-side guarantee)
+
+Every merge (merge commit or squash) creates a **new commit**, so the tested branch SHA ≠ the master SHA. The ruleset therefore **requires the branch up-to-date with master before merge** — then the merge commit's tree is bit-for-bit the tested one. At solo PR tempo the cost is an occasional "Update branch" + re-run (a merge queue is overkill at this scale). With merge commits the intermediate commits enter history **individually untested** — the master tip is always green, but bisection uses `git bisect --first-parent` (noted in engineering-workflow). The master run is a constructive verification: expected always-green; a red is a process alarm (something bypassed a PR), not a normal mode.
+
+### 4. Windows is a first-class platform in the PR loop
+
+Two path-filtered, required jobs in `full-check.yml` (code-touching PRs only; docs-only skips them):
+- **`windows-build`** (ubuntu, cross): `make package-windows-from-linux`, publishing the portable `.exe` as a short-retention PR artifact.
+- **`windows-boot-smoke`** (windows-latest, after the build): `make live-smoke EXE=<path>` — boots the real binary on real Windows (adapting the CDP live-drive harness from testing.md § Live drive) on a clean/sample DB, asserting the window comes up, main screens render, no critical console errors; screenshots as artifacts.
+- **`make pr-binary PR=n`** downloads a PR's artifact to `/mnt/d/Brawler/Builds/pr-n/` for the owner's optional hands-on. Native `cargo nextest` on Windows is **deliberately deferred** (cross-build + boot-smoke cover the main risk; enable after the first OS-specific bug). The CDP-harness-on-runner adaptation is a separate implementation slice; until it lands, `windows-build` is required alone.
+
+### 5. Continuous release driven by a PR label
+
+**Every merged PR carrying a release label is a new version and a public release.** No multi-epic version milestones, no dedicated release PRs, no manual `make release`/`release-prepare`, no hand-curated changelog. Since every merge passes the full check + Windows boot-smoke, every merge is a working app — so it can be a release.
+
+- **A release label is mandatory on every PR** — exactly one of `release:major` / `release:minor` / `release:patch` / `release:skip` (non-releasable: docs, CI, user-invisible refactor). The owner decides at PR creation/review. Job **`release-label`** in `full-check.yml` (required; triggers on `labeled`/`unlabeled`) reddens on zero or more-than-one label, blocking merge.
+- **Tags are the truth; manifests are stamped at build time.** Nobody commits version bumps. `release.yml` computes the next version = last tag + the merged PR's label increment (PR found by SHA via `gh api commits/:sha/pulls`), and `make package-release-artifacts VERSION=x.y.z` injects the version into manifests/binary/UI at build time. Repo manifests hold a placeholder (e.g. `0.0.0-dev`); `git tag` is the source of truth. Zero bot commits for versions, ruleset with no version exception, tagged SHA = exactly the checked SHA.
+- **`release.yml`** — trigger `push` on master (+ `workflow_dispatch` for re-runs): job **detect** (finds the PR by SHA, reads the label, ends here on `release:skip` — no re-test, the up-to-date rule already proved the tree); job **check** (`needs: detect`, `if: label != skip`) calls `full-check.yml` via `workflow_call`; job **release** (`needs: detect+check`) computes the version, builds artifacts, and **only after a successful build** tags (GITHUB_TOKEN, `contents: write`) → GitHub Release + artifact upload + auto-notes. Ordering prevents an orphaned tag; a "tag exists → skip" guard makes re-runs idempotent. Steps go through make targets (`make release-publish VERSION=… EXE=…` for local recovery).
+- **CHANGELOG.md stays the canon, written by the bot.** After a successful tag + Release, the release job generates the `previous-tag..tag` entry with git-cliff (from commit descriptions — which is why `commit-lint` is critical: commit messages **are** the release notes) and commits it to `CHANGELOG.md` (`docs(changelog): vX.Y.Z [skip ci]`, a narrow `github-actions` ruleset bypass — the only "zero bot commits" exception, version manifests still untouched; `pull --rebase` + retry against merge races). The same text goes to the GitHub Release (presentational copy). The changelog entry for X naturally lands one commit after tag X (cosmetic, documented).
+- **rad mirror sync is asynchronous**: `make sync-rad` (push master + tags to `rad`) when the owner finds it convenient. The old `make release`/`release-check`/`brawler-release` skill in their current form are retired/rewritten (§ Process consequences).
+
+### 6. Ruleset and merge flow
+
+The master ruleset requires a PR + the `full-check` jobs as required checks + branch up-to-date + no force-push/deletion. Bypasses: `github-actions` (only the changelog commit) + administrator as break-glass (no normal direct owner pushes). Merge methods: **merge commit or squash, chosen per PR** (rebase off); squash is no longer mandatory. Work enters through PRs — **agents may create branches and PRs (`gh pr create`) without asking; only the owner merges**; each commit must be well-described and Conventional-Commits-compliant (enforced by `commit-lint`; the subject-length limit is dropped, the schema stays).
+
+### 7. Board and status
+
+**GitHub Projects v2 ("Brawler board")** is the board: the single-select `Status` field (`Backlog / Ready / In progress / Review / Done`) is the **only home of state — no `state:*` labels on GitHub** (SSOT: state in two places guarantees label/board drift). Priorities/areas stay labels; milestones native; epics = the `epic` label + native sub-issues. Built-in automations: auto-add from the repo, closed → Done + archive.
+
+### 8. Migration and rollback
+
+`scripts/migration/rad-to-github.mjs` (owner-run, script-first — no issue content flows through the model's context): export all ~550 `rad` issues to `docs/archive/radicle-issues-2026-07.jsonl` (the rollback record), scaffold GitHub labels/milestones/project, create the ~390 open issues (body prefixed `> Migrated from Radicle rad:<hex7>`, labels, milestone, project `Status` from the old `state:*`, `parent:` → native sub-issue, `blocked:` → body link), and write `docs/archive/radicle-issue-map.json` (`hex7 → #n`) so existing hex references stay resolvable. Milestone `milestone:vX.Y.Z` labels migrate as historical grouping only — new work groups by epics, not version milestones.
+
+### 9. Privacy
+
+The [ADR 0081](0081-ux-quality-loop-v2.md) card-privacy rule is unchanged and reaffirmed: only non-sensitive verdict metadata reaches an active card — now a GitHub issue/board card. Screenshots and manifests stay local; a manifest carries a dataset **label**, never the DB path/contents.
+
+## Consequences
+
+- Roadmap moves from "milestone = version" to **functional epics with ordering** (the version number is set by the PR label on merge day); retro/closure cadence becomes **per epic**, not per version; wiki updates move from "at release" to "in the PR that changes user-facing behavior" (because a release *is* a PR). Historical version records stay as-is.
+- The first cold `full-check` run takes 30–60 min; warm cache brings it to ~15 (the Windows belt stretches code PRs to ~40–50 min until cargo-xwin caches warm). Not a regression.
+- `mutants.yml` remains manual-only (the only "manual-only" workflow now); `release-artifacts.yml` is replaced by `release.yml`.
+- The ADR 0062 guarantee is **strengthened, not weakened**: master-never-past-a-red-gate now holds on the server (ruleset + up-to-date rule) instead of only in the local pre-push hook, which stays as a dormant break-glass net.
+
+## Alternatives considered
+
+- **Keep CI manual-only / local-hooks-only.** Rejected: the cost premise that justified it (private-repo scarce minutes) is void; a solo local hook is a weaker guarantee than a server ruleset.
+- **Merge queue for the up-to-date guarantee.** Rejected at this scale: an occasional manual "Update branch" is cheaper than the queue's overhead for a solo cadence.
+- **Bot-committed version bumps (classic `make release`).** Rejected: build-time stamping keeps the ruleset exception-free and the tagged SHA identical to the tested one.
+- **`state:*` labels + board.** Rejected: two homes of state guarantee drift (SSOT).

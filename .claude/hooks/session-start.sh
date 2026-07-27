@@ -11,7 +11,7 @@ repoctx prime 2>/dev/null
 
 # --- your session-start context below (preserved across `repoctx init`) ---
 # Brawler live repo snapshot: branch/commits, working-tree state, version,
-# active Radicle work, and the milestone load. Read-only and best-effort — every
+# active GitHub work, and the milestone load. Read-only and best-effort — every
 # command is guarded and the script always exits 0, so a hook hiccup never blocks
 # session start. The standing RULES and the doc load order live in
 # session-context.sh (the committed, all-agents hook); this is only the dynamic
@@ -43,26 +43,34 @@ ver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.
 printf 'package.json: %s    latest tag: %s\n' \
   "${ver:-?}" "$(git describe --tags --abbrev=0 2>/dev/null || echo none)"
 
-# Radboard label conventions (docs/kanban.md): epic / parent:<hex7> /
-# milestone:vX.Y.Z / state:* / priority:* / area:*. `rad issue list` shows OPEN
-# issues only, which is what we want for an "active work" snapshot.
-if command -v rad >/dev/null 2>&1; then
-  print_section "active work (state:doing / in-progress)"
-  active=$(rad issue list 2>/dev/null | grep -Ei "state:(doing|in-progress)" | head -10)
-  if [ -n "${active}" ]; then
-    printf '%s\n' "${active}"
+# GitHub Issues + "Brawler board" (docs/kanban.md): state = board Status field,
+# priority:*/area:* labels, epic label + sub-issues, release:* label on PRs.
+# gh needs the network; offline it prints a note instead of failing the hook.
+if command -v gh >/dev/null 2>&1; then
+  if gh issue list --limit 1 >/dev/null 2>&1; then
+    print_section "open issues (most recent)"
+    gh issue list --state open --limit 10 \
+      --json number,title --jq '.[] | "#\(.number) \(.title)"' 2>/dev/null | head -10 \
+      || echo "(none)"
+
+    print_section "open epics"
+    gh issue list --state open --label epic --limit 10 \
+      --json number,title --jq '.[] | "#\(.number) \(.title)"' 2>/dev/null | head -10 \
+      || true
+
+    print_section "open issues per milestone"
+    gh issue list --state open --limit 200 \
+      --json milestone --jq '.[].milestone.title // empty' 2>/dev/null \
+      | sort | uniq -c | sort -rn | head -10
+
+    echo "(live state: the \"Brawler board\" Status field — 'gh project item-list')"
   else
-    echo "(none flagged state:doing — see open epics below for what's next)"
+    print_section "github board"
+    echo "(board unavailable offline — gh needs the network; try 'gh issue list')"
   fi
-
-  print_section "open epics"
-  rad issue list 2>/dev/null | grep -E "(^|[, ])epic([, ]|$)" | head -10 || true
-
-  print_section "open issues per milestone"
-  rad issue list 2>/dev/null | grep -oE "milestone:v[0-9.]+" | sort | uniq -c | sort -rn | head -10
 else
-  print_section "radicle"
-  echo "(rad not on PATH)"
+  print_section "github"
+  echo "(gh not on PATH)"
 fi
 
 exit 0

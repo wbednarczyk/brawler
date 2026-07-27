@@ -28,17 +28,29 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const makefilePath = resolve(repoRoot, "Makefile");
 
 // Every deterministic/hermetic suite that MUST be a hard-fail step of `make
-// check`. The value is a human label; the key is a substring that must appear in
-// the `check` recipe. `npm run check` covers the frontend (typecheck/lint/
-// stylelint/vitest/build) and rust (fmt/clippy/nextest/doc) sub-gates.
-const MANDATORY_MARKERS = {
-  "npm run check": "frontend + rust core gate (npm run check)",
-  "npm run knip": "dead-code audit (knip)",
-  "types-check": "ts-rs generated-DTO drift guard (make types-check)",
-  "npm run test:browser": "Playwright browser UI suite (full)",
-  "gate-integrity": "this meta-guard (self-referential)",
-  "docs-drift": "spec↔code drift gate (ADR 0065)",
-};
+// check`. After the ADR 0090 CI/Makefile-parity decomposition, `make check`
+// composes granular `$(MAKE) <target>` wrappers instead of inlining npm/cargo,
+// so this guard checks TWO layers and the guarantee is unweakened:
+//   (a) `make check` invokes each mandatory sub-`target`, and
+//   (b) that sub-target's own recipe still contains the underlying suite
+//       `marker` — so a suite cannot be silently gutted inside a wrapper.
+// A `marker` of null means the target IS the suite (types-check).
+const MANDATORY_SUITES = [
+  { target: "check-rust-lint", marker: "cargo fmt --check", label: "rust fmt check" },
+  { target: "check-rust-lint", marker: "cargo clippy", label: "rust clippy lint" },
+  { target: "check-rust-test", marker: "cargo nextest run", label: "rust nextest suite" },
+  { target: "check-rust-test", marker: "cargo test --doc", label: "rust doc-tests" },
+  { target: "check-frontend-static", marker: "npm run typecheck", label: "TS typecheck" },
+  { target: "check-frontend-static", marker: "npm run lint", label: "ESLint" },
+  { target: "check-frontend-static", marker: "npm run stylelint", label: "Stylelint" },
+  { target: "check-frontend-static", marker: "npm run knip", label: "knip dead-code + api-surface guard" },
+  { target: "check-frontend-test", marker: "npm run test", label: "Vitest suite" },
+  { target: "check-frontend-build", marker: "npm run build", label: "production build" },
+  { target: "types-check", marker: null, label: "ts-rs generated-DTO drift guard" },
+  { target: "check-browser", marker: "test:browser", label: "Playwright browser UI suite (full)" },
+  { target: "check-docs-gates", marker: "gate-integrity", label: "this meta-guard (self-referential)" },
+  { target: "check-docs-gates", marker: "docs-drift", label: "spec↔code drift gate (ADR 0065)" },
+];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.
 const GUARDED_TARGETS = ["check", "check-epic", "check-docs"];
@@ -99,16 +111,82 @@ for (const target of GUARDED_TARGETS) {
   }
 }
 
-// (2) Every mandatory suite is present in `check`.
+// (2) Every mandatory suite is present in `make check` — two layers (see
+//     MANDATORY_SUITES): the `check` recipe invokes the sub-target, AND the
+//     sub-target's own recipe still contains the underlying suite marker.
 const checkRecipe = recipeLines(makefile, "check") ?? [];
 const checkBody = checkRecipe.join("\n");
-for (const [marker, label] of Object.entries(MANDATORY_MARKERS)) {
-  if (!checkBody.includes(marker)) {
+const targetRecipeCache = new Map();
+function targetBody(target) {
+  if (!targetRecipeCache.has(target)) {
+    targetRecipeCache.set(target, (recipeLines(makefile, target) ?? []).join("\n"));
+  }
+  return targetRecipeCache.get(target);
+}
+for (const { target, marker, label } of MANDATORY_SUITES) {
+  if (!checkBody.includes(target)) {
     errors.push(
-      `Mandatory suite missing from \`make check\`: ${label} (expected marker "${marker}").\n` +
+      `Mandatory suite missing from \`make check\`: ${label} — the \`check\` recipe does not invoke \`${target}\`.\n` +
         `    Every deterministic suite must be a hard-fail step of the single gate — see ADR 0062.\n` +
         `    Do not remove a suite from the gate to make it pass; fix the suite.`,
     );
+    continue;
+  }
+  if (marker !== null && !targetBody(target).includes(marker)) {
+    errors.push(
+      `Mandatory suite gutted inside its wrapper: ${label} — target \`${target}\` no longer runs "${marker}".\n` +
+        `    The CI/Makefile-parity decomposition (ADR 0090) still requires the underlying suite to run.\n` +
+        `    Restore the step; do not hollow out a gate wrapper to make it pass.`,
+    );
+  }
+}
+
+// (2b) CI/Makefile parity (ADR 0090): every check-EXECUTING `run:` step in
+//      full-check.yml must invoke `make <target>` — CI carries zero bespoke
+//      logic, so the same thing runs identically locally and in CI. `uses:`
+//      steps (checkout/cache/setup/paths-filter actions) are exempt by nature;
+//      a small allowlist of infra `run:` steps (disk reclaim) is exempt too.
+const FULL_CHECK_PATH = ".github/workflows/full-check.yml";
+// Substrings (lower-cased) of infra run-step NAMES that legitimately do not call
+// make. Keep this list tiny and specific — it is the only bespoke-CI escape.
+const INFRA_RUN_STEP_NAMES = ["reclaim disk", "free disk space"];
+const workflow = readIfExists(FULL_CHECK_PATH);
+if (workflow === null) {
+  errors.push(
+    `\`${FULL_CHECK_PATH}\` not found — the CI/Makefile-parity contract (ADR 0090) cannot be verified.`,
+  );
+} else {
+  const wfLines = workflow.split("\n");
+  let currentName = "";
+  for (let i = 0; i < wfLines.length; i++) {
+    const nameMatch = wfLines[i].match(/^\s*-?\s*name:\s*(.+?)\s*$/);
+    if (nameMatch) currentName = nameMatch[1].replace(/^["']|["']$/g, "");
+    const runMatch = wfLines[i].match(/^(\s*)-?\s*run:\s*(.*)$/);
+    if (!runMatch) continue;
+    let cmd = runMatch[2].trim();
+    // Fold a block scalar (`run: |` / `run: >`) into the command text.
+    if (["", "|", ">", "|-", ">-", "|+", ">+"].includes(cmd)) {
+      const baseIndent = runMatch[1].length;
+      for (let j = i + 1; j < wfLines.length; j++) {
+        if (wfLines[j].trim() === "") continue;
+        const indent = wfLines[j].match(/^\s*/)[0].length;
+        if (indent <= baseIndent) break;
+        cmd += "\n" + wfLines[j].trim();
+      }
+    }
+    // A `make <target>` invocation at a COMMAND position: line start, after a
+    // shell separator (; && ||), or after `nix develop … -c`. Anchoring this way
+    // avoids false-passing prose like `echo "please make it"`.
+    const invokesMake = /(^|\n|[;&|]\s*|nix develop\b[^\n]*-c\s+)\s*make\s+[a-z]/m.test(cmd);
+    const isInfra = INFRA_RUN_STEP_NAMES.some((n) => currentName.toLowerCase().includes(n));
+    if (!invokesMake && !isInfra) {
+      errors.push(
+        `\`${FULL_CHECK_PATH}\` step "${currentName || "(unnamed)"}" runs bespoke logic instead of \`make <target>\` (ADR 0090).\n` +
+          `    Offending command: ${cmd.split("\n")[0]}\n` +
+          `    Every check-executing CI step must be a thin \`make <target>\` wrapper (or a setup \`uses:\` action).\n` +
+          `    If this is genuine infra (disk reclaim), name it accordingly and add it to INFRA_RUN_STEP_NAMES deliberately.`,
+      );
+    }
   }
 }
 
@@ -205,7 +283,7 @@ if (releaseSkillContent === null) {
       " surface and must not drift from the closure contract.",
   );
 } else {
-  const RELEASE_SKILL_MARKERS = ["make release", "check-epic", "retrospective", "rad issue state --solved"];
+  const RELEASE_SKILL_MARKERS = ["sync-rad", "check-epic", "retrospective", "gh issue close"];
   for (const marker of RELEASE_SKILL_MARKERS) {
     if (!releaseSkillContent.includes(marker)) {
       contextArchErrors.push(

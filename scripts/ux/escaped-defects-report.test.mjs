@@ -186,3 +186,18 @@ test("a tracked:<hex7> disposition is valid", () => {
     },
   );
 });
+
+test("a tracked:#<n> GitHub disposition is valid", () => {
+  withRetroDir(
+    {
+      "a.md": markedTable([
+        "| d1 | integration-seam | vertical-slice | contract test | tracked:#412 | open |",
+      ]),
+    },
+    (dir) => {
+      const { exitCode, output } = run(dir);
+      assert.equal(exitCode, 0);
+      assert.match(output, /Defects recorded: 1/);
+    },
+  );
+});

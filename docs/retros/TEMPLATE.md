@@ -20,7 +20,7 @@ validation that gated the approach. State the pre-handover gate result.
 - <a scope narrowing/change made with evidence; recorded in which ADR, not silently>
 
 **Still-open (app)**
-- <honest limitations, deferred behavior, tracked bugs (Radicle hex7) — not folded into "done">
+- <honest limitations, deferred behavior, tracked bugs (GitHub #n) — not folded into "done">
 
 ## Development-loop domain
 
@@ -61,8 +61,8 @@ evidence genuinely does not say) `unknown/historical-evidence-insufficient`.
 
 Disposition — one of: `automated-guardrail` (a precise gate now catches the class),
 `human-checklist` (documented rule, not automatable), `fixed-instance-only` (the one
-occurrence was fixed, the class is not yet worth a guardrail), `tracked:<hex7>` (open
-Radicle issue), or `accepted-limitation` (deliberately not fixed). **Not every escape
+occurrence was fixed, the class is not yet worth a guardrail), `tracked:#<n>` (open
+GitHub issue), or `accepted-limitation` (deliberately not fixed). **Not every escape
 needs a new automated test** — `human-checklist` and `fixed-instance-only` are valid,
 honest dispositions.
 
@@ -90,4 +90,4 @@ down). Only list journeys this milestone touched.
 ## Net
 
 One honest paragraph: the strongest pattern this milestone, the weakest moment, and
-what is genuinely **still-open** and tracked (with hex7s) rather than closed.
+what is genuinely **still-open** and tracked (with #n) rather than closed.

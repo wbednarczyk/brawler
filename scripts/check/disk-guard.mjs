@@ -26,6 +26,15 @@ import { statfsSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+// CI skip (ADR 0090): GitHub-hosted runners are ephemeral and set CI=true. The
+// guard exists to stop a full HOST drive from killing a long-lived WSL dev
+// session mid-work; on a throwaway runner it only false-fails on the small
+// preinstalled-toolchain footprint (the disk-reclaim step handles real space).
+if (process.env.CI === "true") {
+  console.log("✓ disk-guard: skipped under CI (ephemeral runner; disk reclaim handled in the workflow).");
+  process.exit(0);
+}
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FAIL_GIB = Number(process.env.BRAWLER_DISK_FAIL_GIB ?? 10);
 const WARN_GIB = Number(process.env.BRAWLER_DISK_WARN_GIB ?? 40);

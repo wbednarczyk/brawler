@@ -46,7 +46,7 @@ jobs:
       # already pins the Rust toolchain, cargo-mutants, cargo-nextest, and the
       # Linux Tauri system libraries (gtk3, webkitgtk_4_1, ...) needed to
       # compile src-tauri, so no separate rustup/apt-get step is needed here —
-      # this mirrors how release-artifacts.yml builds the same Rust workspace.
+      # this mirrors how release.yml builds the same Rust workspace.
       - name: Install Nix
         uses: cachix/install-nix-action@v31
         with:

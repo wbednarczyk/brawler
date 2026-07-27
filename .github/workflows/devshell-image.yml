@@ -1,0 +1,54 @@
+# Build the devshell container image consumed by full-check.yml (ADR 0090 §B,
+# decision 9). The image pre-realizes the default Nix devShell into /nix/store so
+# each check job's `nix develop -c` resolves in ~seconds instead of installing
+# and evaluating Nix per job. Rebuilt when the flake changes; also on demand
+# (seed this once before the first full-check run).
+name: Devshell image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - flake.nix
+      - flake.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/brawler-devshell
+
+jobs:
+  build:
+    name: Build and push devshell image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # nixos/nix base + GNU make/git/bash/coreutils on PATH (the workflow calls
+      # `make`/`git` OUTSIDE nix develop) + the default devShell pre-realized into
+      # the store, so `nix develop -c` in full-check reuses cached paths.
+      - name: Write Dockerfile
+        run: |
+          cat > Dockerfile.devshell <<'DOCKER'
+          FROM nixos/nix:2.24.9
+          RUN mkdir -p /etc/nix && printf 'experimental-features = nix-command flakes\nfilter-syscalls = false\n' >> /etc/nix/nix.conf
+          RUN nix profile install nixpkgs#gnumake nixpkgs#git nixpkgs#bash nixpkgs#coreutils
+          WORKDIR /build
+          COPY flake.nix flake.lock ./
+          RUN nix develop --command true
+          DOCKER
+
+      - name: Build image
+        run: docker build -f Dockerfile.devshell -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" .
+
+      - name: Push image
+        run: |
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"

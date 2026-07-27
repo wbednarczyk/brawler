@@ -1,6 +1,6 @@
 # ADR 0007: GitHub Build and Lean Testing
 
-Status: Accepted
+Status: Superseded in part by [ADR 0090](0090-github-canonical-forge-and-continuous-release.md) — the private-repo cost posture is void (public repo); local commands as the primary interface, thin `make`-wrapper CI, and secret-free-by-default survive.
 
 ## Context
 

@@ -1,0 +1,237 @@
+# Continuous release, driven by the merged PR's release:* label (ADR 0090 §D).
+#
+# Every master push: `detect` finds the merged PR and its release label. skip →
+# stop (no test re-run: the up-to-date rule made the tree bit-identical to the
+# green PR). Otherwise: re-run the full gate on this exact SHA (workflow_call),
+# then compute the next version (last tag + label increment), stamp it into the
+# manifests AT BUILD TIME (no bump commit — tags are truth), build artifacts,
+# tag, publish the GitHub Release with git-cliff notes, and bot-commit the
+# CHANGELOG.md entry (`[skip ci]`, narrow ruleset bypass for github-actions).
+#
+# workflow_dispatch with `tag` re-publishes an existing tag's artifacts (recovery).
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to re-publish, e.g. v0.62.0 (recovery only)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  pull-requests: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Detect release intent
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.detect.outputs.release }}
+      republish_tag: ${{ steps.detect.outputs.republish_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            echo "release=republish" >> "$GITHUB_OUTPUT"
+            echo "republish_tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A [skip ci] push (the changelog bot-commit) never triggers this
+          # workflow — GitHub's native guard. Find the PR for this SHA.
+          pr="$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" --jq '.[0].number' 2>/dev/null || true)"
+          if [ -z "$pr" ] || [ "$pr" = "null" ]; then
+            echo "No PR for ${{ github.sha }} — treating as skip."
+            echo "release=skip" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          label="$(gh pr view "$pr" --json labels --jq '[.labels[].name | select(startswith("release:"))] | .[0] // ""')"
+          echo "PR #$pr label: ${label:-<none>}"
+          case "$label" in
+            release:major) echo "release=major" >> "$GITHUB_OUTPUT" ;;
+            release:minor) echo "release=minor" >> "$GITHUB_OUTPUT" ;;
+            release:patch) echo "release=patch" >> "$GITHUB_OUTPUT" ;;
+            *) echo "release=skip" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  # Re-run the full gate on the exact SHA we are about to release. One gate
+  # definition, invoked as a reusable workflow. Skipped for `skip` (nothing to
+  # release) and `republish` (the tag already passed on merge).
+  check:
+    name: Full check
+    needs: detect
+    if: needs.detect.outputs.release != 'skip' && needs.detect.outputs.release != 'republish'
+    uses: ./.github/workflows/full-check.yml
+
+  release:
+    name: Build and publish release
+    needs: [detect, check]
+    # `always()` so republish (which skips `check`) still runs; guard on the
+    # detect verdict and on check not having failed.
+    if: |
+      always() &&
+      needs.detect.outputs.release != 'skip' &&
+      needs.detect.result == 'success' &&
+      (needs.check.result == 'success' || needs.check.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reclaim disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+
+      - name: Compute release version
+        id: version
+        run: |
+          set -euo pipefail
+          rel="${{ needs.detect.outputs.release }}"
+          if [ "$rel" = "republish" ]; then
+            tag="${{ needs.detect.outputs.republish_tag }}"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+            echo "republish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
+          last="${last:-v0.0.0}"
+          IFS=. read -r MA MI PA <<< "${last#v}"
+          case "$rel" in
+            major) MA=$((MA + 1)); MI=0; PA=0 ;;
+            minor) MI=$((MI + 1)); PA=0 ;;
+            patch) PA=$((PA + 1)) ;;
+          esac
+          version="$MA.$MI.$PA"
+          echo "Previous tag: $last → new version: v$version ($rel)"
+          echo "prev=$last" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "republish=false" >> "$GITHUB_OUTPUT"
+
+      # Linux bundling prerequisites (deb/rpm/AppImage) — same set as the old
+      # release-artifacts.yml. Not needed for the Windows cross-build.
+      - name: Install host packaging prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            appstream desktop-file-utils file libfuse2t64 \
+            libayatana-appindicator3-dev libgtk-3-dev librsvg2-dev libssl-dev \
+            libwebkit2gtk-4.1-dev patchelf pkg-config rpm squashfs-tools zip
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: false
+
+      - name: Cache cargo-xwin SDK data
+        uses: actions/cache@v4
+        with:
+          path: .xwin-cache
+          key: ${{ runner.os }}-xwin-${{ hashFiles('flake.lock') }}
+          restore-keys: ${{ runner.os }}-xwin-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      - run: make install
+
+      # Stamp version at build time (no commit) + build all release artifacts.
+      - name: Build release artifacts
+        run: make package-release-artifacts VERSION=${{ steps.version.outputs.version }}
+
+      - name: List release artifacts
+        run: find release-artifacts -maxdepth 1 -type f -print -exec file {} \;
+
+      # Tag AFTER a successful build so a failed build never orphans a tag.
+      # Idempotent: skip if the tag already exists (recovery re-runs).
+      - name: Create and push tag
+        if: steps.version.outputs.republish == 'false'
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists — skipping tag creation."
+          else
+            git tag -a "$tag" -m "$tag"
+            git push origin "$tag"
+          fi
+
+      - name: Generate release notes (git-cliff)
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          prev="${{ steps.version.outputs.prev }}"
+          range="${prev:+$prev..}$tag"
+          nix develop -c git-cliff --config cliff.toml $range --tag "$tag" --strip header > release-notes.md || \
+            printf "Release %s\n" "$tag" > release-notes.md
+          cat release-notes.md
+
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: release-artifacts/*
+
+      - name: Publish GitHub Release
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "$tag" --notes-file release-notes.md
+            gh release upload "$tag" release-artifacts/* --clobber
+          else
+            gh release create "$tag" release-artifacts/* --title "$tag" --notes-file release-notes.md
+          fi
+
+      # Prepend the entry to CHANGELOG.md on master (bot-commit, [skip ci] so it
+      # does not re-trigger this workflow). Needs the narrow github-actions
+      # ruleset bypass. Discard the build-time manifest stamp first so only
+      # CHANGELOG.md is committed. pull --rebase + retry guards a race with a
+      # concurrent merge (the commit touches only CHANGELOG.md → clean rebase).
+      - name: Commit changelog entry
+        if: steps.version.outputs.republish == 'false'
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+          # Discard ONLY the ephemeral build-time version stamp (the files
+          # bump-version.mjs touches) so the bot-commit contains just CHANGELOG.md.
+          git restore package.json package-lock.json \
+            src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json \
+            src-tauri/src/lib.rs 2>/dev/null || true
+          nix develop -c git-cliff --config cliff.toml --unreleased --tag "$tag" --prepend CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs(changelog): $tag [skip ci]"
+          ok=0
+          for i in 1 2 3; do
+            if git pull --rebase origin master && git push origin HEAD:master; then ok=1; break; fi
+            echo "changelog push attempt $i failed; retrying…"; sleep 5
+          done
+          if [ "$ok" -ne 1 ]; then echo "Failed to push changelog after 3 attempts" >&2; exit 1; fi

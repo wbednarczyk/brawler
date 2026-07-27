@@ -31,12 +31,14 @@ conventional_commits = true
 filter_unconventional = true
 split_commits = false
 commit_preprocessors = []
+# ADR 0090 continuous release: commit descriptions ARE the release notes, so only
+# user-facing types surface — feat/fix/perf. Everything else (refactor/docs/test/
+# build/ci/chore/style) is filtered from the generated CHANGELOG entry.
 commit_parsers = [
   { message = "^feat", group = "Features" },
   { message = "^fix", group = "Bug Fixes" },
   { message = "^perf", group = "Performance" },
-  { message = "^refactor", group = "Changed" },
-  { message = "^docs\\(public\\)", group = "Changed" },
+  { message = "^refactor", skip = true },
   { message = "^docs", skip = true },
   { message = "^test", skip = true },
   { message = "^build", skip = true },

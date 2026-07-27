@@ -28,7 +28,7 @@ if printf "%s" "$subject" | grep -Eq '^(Merge|Revert) '; then
   exit 0
 fi
 
-if printf "%s" "$subject" | grep -Eq '^(build|chore|ci|docs|feat|fix|perf|refactor|style|test)(\([a-z0-9._-]+\))?!?: .{1,72}$'; then
+if printf "%s" "$subject" | grep -Eq '^(build|chore|ci|docs|feat|fix|perf|refactor|style|test)(\([a-z0-9._-]+\))?!?: .+$'; then
   exit 0
 fi
 

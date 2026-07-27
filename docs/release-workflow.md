@@ -1,199 +1,46 @@
 # Release Workflow
 
-Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), and [Kanban Archive](kanban-archive.md). The repository-owned step-by-step closure runbook is the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md); this doc is the policy this repo enforces (SemVer, commit conventions, version-file list, retroactive tags) that the skill executes against.
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), [Kanban Archive](kanban-archive.md), [ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md). The epic-closure runbook is the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md); this doc is the policy the repo enforces.
 
-## Intent
+## Model: continuous release driven by a PR label ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md))
 
-Release workflow should make Brawler's version history, changelog, and commit discipline predictable without turning normal development into ceremony.
+**Every merged PR carrying a release label is a new version and a public release.** There is no "cut a release" step, no `make release`, no release PR, no hand-curated changelog, no version-bump commit. Since every merge passes the full CI gate + a real Windows boot-smoke, every merge is a working app — so it can ship.
 
-## SemVer Policy
+- **Each PR carries exactly one `release:*` label** — `release:major` / `release:minor` / `release:patch` / `release:skip` (non-releasable: docs, CI, user-invisible refactor). The **owner decides** the increment; the `release-label` required check reddens on zero or more than one label. **Agents never set/change a `release:*` label to force a release.**
+- **Tags are the truth; manifests are stamped at build time.** Nobody commits version bumps — repo manifests hold a `0.0.0-dev` placeholder and `git tag` is the source of truth. `release.yml` computes the next version = last tag + the merged PR's label increment, and `make package-release-artifacts VERSION=x.y.z` injects it into the binary/UI/manifests at build time.
+- **`release.yml`** (trigger: `push` on master, + `workflow_dispatch` for re-runs):
+  1. **detect** — find the PR by SHA (`gh api commits/:sha/pulls`), read the label. `release:skip` ends here (no test, no tag — the up-to-date ruleset already proved the tree).
+  2. **check** (`if: label != skip`) — call `full-check.yml` via `workflow_call`; green on the exact SHA being released.
+  3. **release** — compute the version, build artifacts, and **only after a successful build** tag → GitHub Release + artifact upload + auto-notes (a "tag exists → skip" guard makes re-runs idempotent, so ordering never orphans a tag). Local recovery parity: `make release-publish VERSION=… EXE=…`.
+- **`CHANGELOG.md` stays the canon, written by the bot.** After a successful tag, the release job generates the `previous-tag..tag` entry with git-cliff and commits it (`docs(changelog): vX.Y.Z [skip ci]`, the one narrow `github-actions` ruleset bypass; `[skip ci]` prevents a loop; `pull --rebase` + retry against merge races). The same text is the GitHub Release body. The entry for X naturally lands one commit after tag X — cosmetic, by design.
+- **Radicle mirror is asynchronous**: `make sync-rad` (push master + tags to `rad`) whenever the owner finds it convenient — a code mirror, not a process step.
 
-Brawler uses SemVer-style `0.x.y` versions before `1.0.0`.
+The human/agent role shrinks to: **the right `release:*` label on the PR** (owner) + **`make sync-rad`** when convenient. Everything else is automatic.
 
-Rules:
+## Commit convention (commit messages ARE the release notes)
 
-- Milestone releases bump the minor version, for example `0.24.0` to `0.25.0`.
-- Patch releases bump the patch version, for example `0.24.0` to `0.24.1`.
-- Prerelease and build metadata are allowed only when there is a concrete packaging or testing need, for example `0.25.0-rc.1`.
-- `1.0.0` waits until the app is stable enough for external users.
-- Version files must stay synchronized (the `make release` bump covers all six):
-  - `package.json`
-  - `package-lock.json`
-  - `src-tauri/Cargo.toml`
-  - `src-tauri/Cargo.lock`
-  - `src-tauri/tauri.conf.json`
-  - `src-tauri/src/lib.rs` — the health-version assertion
-- Milestone version bump still requires manual user signoff before closure.
-
-## Commit Convention
-
-New commits use Conventional Commits:
-
-```text
-<type>(optional-scope): <subject>
-```
-
-Allowed types:
-
-- `feat`
-- `fix`
-- `docs`
-- `test`
-- `refactor`
-- `perf`
-- `build`
-- `ci`
-- `chore`
-- `style`
+Commits use Conventional Commits `<type>(optional-scope): <subject>`. Allowed types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `style`. Single `[a-z0-9._-]+` scope (no commas). **No subject-length limit** (dropped 2026-07-27, ADR 0090) — the schema stays, enforced by `commit-lint` in CI (every commit in the PR) and the local `commit-msg` hook (`scripts/release/validate-commit-message.sh`). Breaking changes use `!`. git-cliff turns these into release notes (`feat`/`fix`/`perf` surface; `chore`/`refactor`/`test`/`docs` filtered), so a good commit subject IS the release note — there is no curation pass.
 
 Examples:
 
 ```text
 feat(research): add company evidence timeline
 fix(sources): include NewConnect lookup results
-docs(release): document changelog workflow
-chore(release): bump version to 0.25.0
-```
-
-Breaking changes use `!`:
-
-```text
 feat(api)!: change research timeline result shape
 ```
 
-## Local Commit Enforcement
+## SemVer
 
-The repository uses native Git hooks, not the external `pre-commit` framework.
+Brawler uses SemVer-style `0.x.y` before `1.0.0`. The `release:*` label maps to the increment: `major` → `x`, `minor` → `y`, `patch` → `z`. `1.0.0` waits until the app is stable enough for external users. Prerelease/build metadata only for a concrete packaging/testing need.
 
-Reason:
+## Epic closure (retro cadence)
 
-- commit message validation belongs in `commit-msg`, because `pre-commit` runs before the message exists
-- native hooks keep the dependency footprint small
-- the hook is inspectable and works in WSL without hosted services
+Under continuous release, **versions are not "closed" — epics are.** Closing an epic runs the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md): retrospective (both domains, still-open items honest) presented inline to the owner, the [Definition of Done §I](engineering-workflow.md#definition-of-done-the-handover-gate) audit, `wiki/` confirmed updated (it is updated **in the behavior-changing PR**, not at release), and `gh issue close <n> --reason completed` for the delivered task/epic issues (the board automation moves them to Done). The owner signs off before the tracking is closed.
 
-Install hooks in a checkout:
+## Release artifacts
 
-```bash
-make install-git-hooks
-```
+`release.yml` builds Linux `amd64` `.deb`/`.rpm`/`.AppImage` and the Windows `x64` portable via the Linux `cargo-xwin` path, on standard `ubuntu-latest`, and uploads them to the matching GitHub Release. GitHub Releases are the durable public binary download surface; Actions artifacts are temporary. `git-cliff` is provided by the project `flake.nix`.
 
-This runs:
+## Retroactive tags (historical)
 
-```bash
-git config core.hooksPath .githooks
-```
-
-The hook delegates to:
-
-```text
-scripts/release/validate-commit-message.sh
-```
-
-## Changelog
-
-`CHANGELOG.md` is the user/reviewer-facing release history.
-
-Historical entries through `0.24.1` are curated from `docs/kanban-archive.md` because early commits predate the commit convention. Future entries are generated with `git-cliff` from Conventional Commits and may be edited before release for clarity.
-
-Agents own changelog updates during milestone and patch closure. The project owner should not need to remember to run changelog commands manually during normal signoff. During wrap-up, the agent should generate the changelog entry, review/edit it for clarity, and include the updated `CHANGELOG.md` in the closure changes.
-
-`make changelog` reads Git commit history. It does not see uncommitted working-tree changes. The normal closure workflow is commit-first:
-
-1. The project owner commits all feature, fix, refactor, test, and documentation work for the epic or milestone.
-2. The project owner asks the agent to close or wrap up the epic or milestone.
-3. The agent confirms the feature work is committed before generating the release changelog.
-4. The agent performs the closure-only work:
-   - write the milestone retrospective (both domains, still-open items honest) for owner review, and create/update the `wiki/` guide for every new or changed user-facing capability — both are required closure steps before the release commit
-   - update roadmap/kanban text and Radicle/Radboard issue state (the version-bump target cannot infer these)
-   - bump synchronized version files
-   - run `make changelog`
-   - review/edit the generated `CHANGELOG.md` entry for clarity
-   - run release and relevant validation checks
-   - create the final release commit
-   - create the matching annotated release tag
-   - push the release commit and tag to both `origin` and `rad`
-5. The release commit message is:
-
-   ```text
-   chore(release): bump version to x.y.z
-   ```
-
-Do not use `make changelog` as proof of uncommitted feature work. If the feature work is still uncommitted, the agent should stop closure and ask the project owner to commit it first.
-
-After milestone docs and Radicle/Radboard state have been handled, the mechanical release commit can be made with:
-
-```bash
-make release VERSION=X.Y.Z
-```
-
-The target does not infer milestone scope, update roadmap text, archive kanban entries, or close Radicle issues — those remain explicit closure tasks before running it. Mechanical steps the target performs (dirty-file check, version bump, changelog, `release-check`, `check`, commit, tag, push): the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md).
-
-To land curated, human-readable changelog notes in the single tagged release commit, use the **split**: `make release-prepare VERSION=X.Y.Z` (bump + scaffold the changelog, then stop) → curate the notes → `make release VERSION=X.Y.Z` (finalize). The one-shot `make release` is for trivial releases only. Packaged builds compile the shipped cargo features named by `RELEASE_FEATURES` (empty since [ADR 0080](adr/0080-retire-embedding-model.md) retired `embedding-model`); see [Engineering Workflow](engineering-workflow.md).
-
-Release remote sync updates both project remotes (`origin`, the GitHub mirror; `rad`, the Radicle forge remote) — commands in the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md). Release sync does not authorize `rad publish`, `rad seed`, public seeding policy changes, repository visibility changes, or other publication operations; those still require separate explicit owner approval.
-
-The project owner grants standing permission for agents to run release-scoped `gh release ...` commands and release-scoped `git add`, `git commit`, `git tag`, and `git push` commands without asking for a separate approval prompt every time. This standing permission applies only inside the documented Brawler release workflow after the owner has asked to close, wrap up, or release a milestone, epic, or patch. It does not apply to normal feature work, unrelated commits, branch operations, merges, rebases, history rewrites, repository settings, Radicle publication/seeding policy, or new remotes.
-
-Pushing a `v*` tag to `origin` triggers the GitHub Release artifact workflow. The workflow runs on standard `ubuntu-latest`, builds Linux `amd64` `.deb`, `.rpm`, and `.AppImage` artifacts, builds the Windows `x64` portable zip through the Linux `cargo-xwin` path, and uploads those files to the matching GitHub Release. GitHub Releases are the durable public binary download surface; Actions artifacts are temporary workflow outputs only.
-
-GitHub Release notes are generated from the matching `CHANGELOG.md` section for the tag being packaged. The workflow fails if the checked-out tag does not contain a changelog entry for that tag, because release assets should not be published with stale or generic notes.
-
-GitHub Release artifacts are binary mirrors. Radicle remains canonical for source, issues, and patches.
-
-Commands:
-
-```bash
-make changelog
-make changelog-check
-make release-notes TAG=vX.Y.Z
-make package-release-artifacts
-```
-
-`git-cliff` is provided by:
-
-- project `flake.nix`, for reproducible repo-local development
-- the owner's separate `../setup-workstation/` workstation setup, outside this repo
-
-Agents must not edit `../setup-workstation/` unless the user explicitly asks for that repository to be changed.
-
-## Release Checks
-
-Run:
-
-```bash
-make release-check
-```
-
-This validates:
-
-- commit message convention samples
-- synchronized version files
-- `git-cliff` changelog generation
-
-Run `make check` separately for product code validation.
-
-## Wrap-Up Commit Message
-
-When an epic or milestone is wrapped up and the app version is bumped, the agent must propose a Conventional Commit message for the project owner to use.
-
-Rules:
-
-- Use `chore(release): bump version to x.y.z` for pure closure/version-bump commits.
-- Use `feat(<scope>): ...` when the commit primarily delivers user-visible capability.
-- Use `fix(<scope>): ...` for patch releases.
-- Use `build(release): ...` for release workflow, packaging, or changelog infrastructure.
-- Mention the proposed commit message in the final wrap-up response after validation results.
-
-## Retroactive Tags
-
-Old commits are not rewritten. Historical commit messages remain as-is.
-
-Retroactive version tags are allowed after auditing the exact release commit for each version. Tags should be annotated and local first. Push tags only after manual user approval.
-
-Recommended tag shape:
-
-```bash
-git tag -a v0.24.1 <commit> -m "Brawler 0.24.1"
-```
-
-Historical release commits can usually be identified from merge commits and version-bump commits, but each tag must be checked before creation.
+Pre-continuous-release tags were annotated and pushed after auditing the exact release commit for each version. Old commits are not rewritten; historical `chore(release)` commits and their tags remain valid history.

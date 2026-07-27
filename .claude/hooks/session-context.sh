@@ -11,5 +11,5 @@ Three always-on rules (full statements in CLAUDE.md):
 
 Git: do NOT commit or push unless the user explicitly asks (or the brawler-release skill runs). Edit, stop, wait.
 
-Load per task: `rad issue show <hex7>` (active work) → only the area's canonical doc(s) from the CLAUDE.md map. UI work → docs/ui-authoring.md first. Release/packaging → the brawler-release / packaging skills.
+Load per task: `gh issue view <n>` (active work; `gh issue list` / the "Brawler board" for the board) → only the area's canonical doc(s) from the CLAUDE.md map. UI work → docs/ui-authoring.md first. Release/packaging → the brawler-release / packaging skills.
 EOF

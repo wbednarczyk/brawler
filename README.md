@@ -7,6 +7,7 @@
 Company news, watchlists, source-backed notes, and AI decision support
 that **never leaves your computer**.
 
+[![Release](https://github.com/wbednarczyk/brawler/actions/workflows/release.yml/badge.svg?branch=master)](https://github.com/wbednarczyk/brawler/actions/workflows/release.yml)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL_2.0-brightgreen.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--1.0-orange)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows)
@@ -62,12 +63,12 @@ Prefer to build it yourself? Jump to [Build & Test](#%EF%B8%8F-build--test).
 
 ## Source & Forge Policy
 
-**Radicle is the canonical public forge. GitHub is a read-only mirror and backup.**
+**GitHub is the canonical forge for everything — code, issues, board, CI, and releases.** Radicle is a second distribution path (a code mirror), kept in sync but carrying no process role.
 
-- RID: `rad:z3yTYrLFsFx5qcPtV3XiFYFBpQWuh`
-- Public seed: `seed.mikolajczyk.org:8776`
+- GitHub: `github.com/wbednarczyk/brawler` — code, Issues, the "Brawler board" Project, CI, Releases.
+- Radicle (mirror): `rad:z3yTYrLFsFx5qcPtV3XiFYFBpQWuh` (public seed `seed.mikolajczyk.org:8776`).
 
-Use Radicle for issue and patch workflow; use GitHub for browsing, downloads, and backup.
+Use GitHub for the issue/PR workflow, downloads, and browsing.
 
 ## 🛠️ Build & Test
 
@@ -133,7 +134,7 @@ Canonical docs live in **[docs/](docs/)**:
 - [Architecture](docs/architecture.md) — runtime boundaries and module layout
 - [Engineering Workflow](docs/engineering-workflow.md) — build, test, CI, packaging
 - [Data Model](docs/data-model.md) & [Contracts](docs/contracts.md) — schema and command surface
-- [Roadmap](docs/roadmap.md) — active and upcoming milestones; [Radicle/Radboard Tracking](docs/kanban.md) — live status pointer
+- [Roadmap](docs/roadmap.md) — active and upcoming epics; [GitHub Issues & Board Tracking](docs/kanban.md) — live status pointer
 
 ## Contributing
 

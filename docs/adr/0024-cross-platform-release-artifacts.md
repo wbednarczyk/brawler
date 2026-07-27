@@ -1,6 +1,6 @@
 # ADR 0024: Cross-Platform Release Artifacts
 
-Status: Accepted for Milestone 28 implementation.
+Status: Superseded in part by [ADR 0090](0090-github-canonical-forge-and-continuous-release.md) — GitHub is now canonical for code, issues, CI, and releases; Radicle is a code replica (the second path), not the canonical forge. Accepted for Milestone 28 implementation.
 
 ## Context
 

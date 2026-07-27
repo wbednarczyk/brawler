@@ -54,7 +54,9 @@ const FIXED_DISPOSITIONS = new Set([
   "fixed-instance-only",
   "accepted-limitation",
 ]);
-const TRACKED_DISPOSITION = /^tracked:[0-9a-f]{7}$/;
+// Accepts both the GitHub form (tracked:#123) and the legacy Radicle form
+// (tracked:1a2b3c4) still present in pre-migration retros.
+const TRACKED_DISPOSITION = /^tracked:(#[0-9]+|[0-9a-f]{7})$/;
 
 export const STATUSES = new Set(["open", "closed"]);
 

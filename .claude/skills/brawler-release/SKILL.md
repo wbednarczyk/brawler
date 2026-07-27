@@ -1,168 +1,58 @@
 ---
 name: brawler-release
-description: Run the Brawler milestone/patch release workflow — synchronized version bump, changelog, release-check, single chore(release) commit, tag, push to both remotes. Use when closing a milestone, cutting a release, or preparing curated release notes.
+description: Close a Brawler epic under the continuous-release model — retrospective, Definition of Done §I audit, wiki + docs closure, and GitHub issue/board close. Use when wrapping up or closing an epic; releases themselves are automatic (a PR's release:* label ships the version on merge).
 ---
 
-# Brawler Release
+# Brawler Epic Closure
 
-Use this workflow only from the Brawler repository root when the user explicitly asks to wrap up, close, or release a milestone/epic.
+Use this workflow from the Brawler repository root when the user explicitly asks to wrap up or close an **epic**. Under continuous release ([ADR 0090](../../../docs/adr/0090-github-canonical-forge-and-continuous-release.md)) **there is no "cut a release" step**: every merged PR carrying a `release:major|minor|patch` label auto-ships a version through `release.yml` (tags are truth, manifests are stamped at build time, `CHANGELOG.md` is written by the release bot). Versions are not "closed"; **epics are.** This skill is the epic-closure runbook, not a release driver.
 
-> **This workflow is the driver, not a reference.** When closure is signed off, do the scope-specific closure it cannot infer (roadmap/kanban text, Radicle/Radboard issue state), then run **`make release VERSION=x.y.z`** for the mechanical bump/changelog/check/commit/tag/push. **Do not** hand-edit version files or run `scripts/release/bump-version.mjs` yourself — the target performs the bump and **aborts if the version is already bumped**, so a manual bump actively fights it. Reach for the target; do not re-assemble its steps by hand.
+## What the agent does NOT do
 
-## Closure Sequence (milestone/epic)
+- **Never bump version files, run a version script, hand-edit `CHANGELOG.md`, or create tags.** All of that is `release.yml`'s job, driven by the PR's `release:*` label. The manifests hold a `0.0.0-dev` placeholder on purpose.
+- **Never apply a `release:*` label to move the version** — the increment (`major`/`minor`/`patch`/`skip`) is an owner decision on the PR. An agent may *report* which label it believes fits and why, then wait.
+- **Never merge** — only the owner merges PRs (ADR 0090 § ruleset). Agents create branches and PRs (`gh pr create`) without asking; mutating repo settings needs the owner.
 
-Full closure order per [DoD §I](../../../docs/engineering-workflow.md#definition-of-done-the-handover-gate) and CLAUDE.md Working Rules:
+## Closure Sequence (per epic)
 
-1. **Write the retrospective** for the user, before closure sign-off: both domains (app + development loop) × went-well / went-wrong (incl. unexpected gaps) / stop / improve — closed vs still-open marked honestly. **Present its content (and the harvested-guardrails list) to the owner INLINE in chat — a committed file the owner never saw does not count** (owner feedback, 2026-07-12).
-2. **Human-only docs refresh**: update `docs/for-the-author.md` (state line, layer/domain summaries, "gdzie co znaleźć") and republish the "Brawler — mapa systemu" Artifact if systems changed; give the owner a short **"co nowego po ludzku"** summary in chat alongside the technical changelog.
+Full order per [DoD §I](../../../docs/engineering-workflow.md#definition-of-done-the-handover-gate) and CLAUDE.md Working Rules:
+
+1. **Write the retrospective** for the user, before closure sign-off: both domains (app + development loop) × went-well / went-wrong (incl. unexpected gaps) / stop / improve — closed vs still-open marked honestly. **Present its content (and the harvested-guardrails list) to the owner INLINE in chat — a committed file the owner never saw does not count** (owner feedback, 2026-07-12). Template: [docs/retros/TEMPLATE.md](../../../docs/retros/TEMPLATE.md).
+2. **Human-only docs refresh**: update `docs/for-the-author.md` (state line, layer/domain summaries, "gdzie co znaleźć") and republish the "Brawler — mapa systemu" Artifact if systems changed; give the owner a short **"co nowego po ludzku"** summary in chat.
 3. **Spec-conformance audit** of the epic's ADR(s), decision by decision: for each, verify a **live-path invocation** exists (`repoctx callers` from the real job/command/UI entry, not only unit tests) and record a verdict (conforms / partial / deviates / not built).
-4. **`make check-epic`** (full gate + coverage ratchet). **Mutants are NOT a closure step** (owner 2026-07-16): run `gh workflow run mutants.yml` ONLY on an explicit owner request, and then triage the results; NEVER `make mutants` locally (the sweep OOM-freezes the owner's WSL — three times). (+ **`make bench`** if a hot kernel changed.) Triage every failure: fix it or file a tracked Radicle issue.
-5. **`wiki/`** entries for every user-facing change delivered by the epic.
-6. **`docs/roadmap.md`** status line + **`docs/kanban-archive.md`** completed-card entry + `rad issue state --solved` for delivered tasks/epic (never `--closed` for delivered work).
-7. **Squash-merge to master** (default integration — see Release Boundary).
-8. **`make release-prepare`** → curate → **`make release`**.
+4. **`make check-epic`** (full gate + coverage ratchet) green under Nix. **Mutants are NOT a closure step** (owner 2026-07-16): run `gh workflow run mutants.yml` ONLY on an explicit owner request, then triage; NEVER `make mutants` locally (OOM-freezes WSL). (+ **`make bench`** if a hot kernel changed.) Triage every failure: fix it or file a tracked GitHub issue.
+5. **`wiki/`** entries for every user-facing change delivered by the epic. Under continuous release the wiki is updated **in the PR that changes user-facing behavior**, so by closure this should already be done — confirm it, don't defer it.
+6. **Close the tracking**: `gh issue close <n> --reason completed` for the delivered task issues and the epic; the project automation moves them to **Done** on the board. Do not touch `state:*` labels — state lives only in the board's `Status` field (ADR 0090 § board). `make sync-rad` mirrors master + tags to Radicle asynchronously (the owner runs it when convenient; it is not part of closure).
 
-**The user must sign off between the (1)–(2) findings and executing (5)–(7)** — do not move to roadmap/archive/merge/release until that sign-off is given.
+**The user must sign off between the (1)–(3) findings and executing (5)–(6)** — do not close issues or move the board until that sign-off is given.
 
-## Release Boundary
+## Standing permissions (epic closure)
 
-The normal workflow is:
+The owner grants standing permission for agents to run, unattended, when part of this closure workflow:
 
-1. The user commits feature work.
-2. The user explicitly asks the agent to wrap up or close the milestone.
-3. The agent performs release-only documentation and tracking closure, then may create exactly one release commit.
-4. The agent creates the matching annotated release tag for that release commit.
-5. After the release commit and tag are verified, the agent syncs both canonical/mirror remotes when the user has asked to complete the release.
+- `gh issue close ...` / `gh issue edit ...` for the epic's delivered task/epic issues (never `state:*` labels)
+- read-only Git inspection (`git status`, `git diff`, `git log`, `git show`, `git rev-parse`, `git describe`, `git tag --list`)
+- `gh pr create ...` for the closure PR (docs/wiki/tracking changes)
 
-Do not merge, publish, seed publicly, or rewrite history unless the user explicitly asks for that operation.
+This is narrow: it applies only after the owner asks to close an epic, and never authorizes merges, version bumps, tag creation, `release:*` labelling, repository setting changes, publication/seeding policy changes, or new remotes.
 
-**Integrating a feature branch to master for release uses squash-merge by default.** When the work for a milestone/epic is on a feature branch and the user asks to wrap/release, the default integration is a squash-merge into master (`git checkout master && git merge --squash <branch> && git commit`), producing **one** feature commit for the milestone — then the separate single `chore(release)` commit on top. Do not ask which merge strategy to use; squash is the default. (A non-squash merge or a different strategy is used only if the user asks for it.)
+## How a version actually ships (reference)
 
-## Standing Release Permissions
+The owner (or the agent, on the owner's instruction) sets exactly one `release:*` label on the PR. On merge, `release.yml`:
 
-The project owner grants standing permission for agents to run these commands unattended when they are part of this Brawler release workflow:
+1. **detect** — finds the PR by SHA, reads the label. `release:skip` ends here (no test, no tag).
+2. **check** — calls `full-check.yml` (`workflow_call`); green on the merge-commit SHA.
+3. **release** — computes `last-tag + label increment`, `make package-release-artifacts VERSION=x.y.z` (version stamped into the binary/UI/manifests at build), then tags → GitHub Release + artifacts + auto-notes, then commits the `docs(changelog): vX.Y.Z [skip ci]` entry.
 
-- any `gh release ...` command
-- read-only Git inspection needed to perform the release, including `git status`, `git diff`, `git log`, `git show`, `git rev-parse`, `git describe`, and `git tag --list`
-- `git add ...` for release wrap-up files
-- `git commit ...` for the single release commit
-- `git tag ...` for the matching release tag
-- `git push ...` for syncing the release commit and tag to the existing `origin` and `rad` remotes
-- any `rad issue ...` command for release-scoped Radicle/Radboard task and epic state updates
-- tag replacement commands, such as deleting/recreating a local tag or pushing an updated tag, only when the user explicitly asks to overwrite or repair an existing release tag
-
-This permission is narrow. It applies only after the user has asked to close, wrap up, or release a milestone/epic/patch and only for release-scoped work. It does not authorize feature commits, unrelated file staging, branch manipulation, merges, rebases, history rewrites, force pushes unrelated to an explicitly requested release tag repair, repository setting changes, publication/seeding policy changes, or new remotes.
-
-## Preconditions
-
-Before making release changes:
-
-- Confirm the user has explicitly signed off on milestone closure.
-- Check `git status --short`.
-- If unrelated dirty files exist, stop and ask which files belong in the release wrap-up.
-- Confirm the target version from the milestone label (`milestone:vX.Y.0`) or the user's explicit choice; confirm it with the user when ambiguous.
-
-## Required Version Files
-
-When bumping the app version, update the same version string in all of these places:
-
-- `package.json`: root `"version"`
-- `package-lock.json`: root `"version"` and `packages[""].version`
-- `src-tauri/Cargo.toml`: `[package].version`
-- `src-tauri/Cargo.lock`: `[[package]] name = "brawler"` `version`
-- `src-tauri/tauri.conf.json`: root `"version"`
-- `src-tauri/src/lib.rs`: `health_reports_ok` expected version assertion
-
-Keep only the app/package version changed; do not touch dependency versions.
-
-## Required Release Docs And Tracking
-
-For milestone closure, update:
-
-- **`wiki/` — required.** Create or update the user-facing `wiki/` entries (how-to guides, references, instructions) for every new or changed user-facing capability in the release. The wiki is the end-user documentation, distinct from the canonical `docs/` specs; a feature is not release-ready until its user-facing guide exists or is updated. Do this as part of `release-prepare`, before the release commit, so the docs ship with the release.
-- `docs/roadmap.md`: add or update `Status: completed in `X.Y.Z`.` under the milestone heading.
-- `docs/kanban-archive.md`: add the completed-card detail entry. Live state closes via `rad issue state --solved` on the relevant milestone/epic/task issues — `docs/kanban.md` is only the pointer + label conventions, not a place to hand-edit status.
-- If closure added or changed any ADR, regenerate `docs/adr/INDEX.md`: `node scripts/check/docs-drift.mjs --write-adr-index` (the docs-drift gate fails on a stale index).
-
-## Changelog Rule
-
-Do not hand-edit `CHANGELOG.md` as the changelog generation step.
-
-Use the Makefile target dedicated to changelog generation:
-
-```bash
-make changelog
-```
-
-`make changelog` produces a **scaffold**: one terse line per commit (the commit subject, with scope). It is not the finished release notes.
-
-After running the target:
-
-1. **Verify the heading is versioned**, not `## v -`. An empty version means `APP_VERSION` did not resolve (it is read from `package.json` by the Makefile). A `## v -` heading silently breaks the GitHub release: the release workflow runs `extract-changelog-entry.sh "vX.Y.Z"` against the **tagged** `CHANGELOG.md`, finds no `## vX.Y.Z` section, exits non-zero, and **no GitHub release or binaries are published**. This happened to `v0.41.2` and `v0.42.0` after the Node 18 removal left `node` off the bare PATH.
-2. **Curate the new section into detailed, user-facing release notes** before the release commit — this is the published GitHub release body. Expand the scaffold's one-liners into what changed and why it matters for a user (grouped under `### Added` / `### Changed` / `### Fixed`), drawing on the commit bodies. This curation is expected every release; the scaffold is the starting point, not the deliverable.
-
-Because the GitHub release notes are sliced from the `CHANGELOG.md` **at the release tag**, the curated section must be in the release commit (i.e. curate before `make release`, or the curation must land in the tagged commit). Curating on `master` after the tag does not change an already-published release — update it with `gh release edit vX.Y.Z --notes-file <file>` (or move the tag, only with explicit approval).
-
-### Preferred flow: prepare → curate → finalize
-
-`make release` in one shot generates a **terse** scaffold and immediately commits it, so the tagged notes are terse — forcing a post-hoc `gh release edit` and a second `CHANGELOG` commit (the second commit is a common source of unasked-follow-up-commit mistakes). To get **curated notes into the tagged commit with a single release commit**, use the two-step flow:
-
-```bash
-make release-prepare VERSION=X.Y.Z   # bumps version + generates the changelog scaffold, then stops
-# → curate the new "## vX.Y.Z" section in CHANGELOG.md into real release notes
-# → also ensure wiki/ entries for new/changed user-facing behavior exist (see above)
-make release VERSION=X.Y.Z           # validates, makes the single chore(release) commit, tags, pushes
-```
-
-`release` is skip-if-already-done: it sees the version already bumped and the `## vX.Y.Z` section present, skips regenerating, and commits the **curated** changelog. No `gh release edit`, no second commit.
-
-A one-shot `make release VERSION=X.Y.Z` (without `release-prepare`) still works for a trivial release — it bumps, generates the terse scaffold, and commits it inline, exactly as before. That target also runs `make release-check`, `make check`, creates the annotated tag `vX.Y.Z`, and pushes `master` plus the tag to both `origin` and `rad`. Run `make check` validation under Nix counts — the host toolchain can be split (see [engineering-workflow.md](../../../docs/engineering-workflow.md) Agent Day-To-Day Check Loop).
-
-Do not use the target before completing scope-specific closure work that it cannot infer, such as roadmap text, kanban archive entries, and Radicle/Radboard issue state.
+For a failed release, recovery is local via make targets (`make release-publish VERSION=… EXE=…`) — parity with the workflow. Details: [ADR 0090](../../../docs/adr/0090-github-canonical-forge-and-continuous-release.md) § 5, [release-workflow.md](../../../docs/release-workflow.md).
 
 ## Validation
 
-`make release` itself runs `make release-check` **and** the full `make check` — the single mandatory gate ([ADR 0062](../../../docs/adr/0062-mandatory-test-gate-and-test-driven-loop.md)). Never substitute piecemeal subset checks (a bare `typecheck`/`test`/`build`/`clippy` run) as release validation — that posture predates ADR 0062 and is not equivalent to the gate.
-
-For **milestone/epic closure**, run `make check-epic` (full gate + coverage ratchet) before sign-off, plus `make bench` if a hot kernel changed ([DoD §I](../../../docs/engineering-workflow.md#definition-of-done-the-handover-gate)). Mutants run ONLY on an explicit owner request (owner 2026-07-16) — never agent-initiated, never `make mutants` locally (WSL OOM).
-
-Validation counts only under Nix — the host toolchain can be silently split. A "gate green" claim needs the gate's own exit code as evidence: for a backgrounded run, grep the echoed `EXIT=` line rather than trusting a wrapper/task-notification exit code.
-
-## Release Commit, Tag, And Remote Sync
-
-During explicit milestone closure, the agent may create exactly one release commit limited to release wrap-up files: version files, `CHANGELOG.md`, roadmap/kanban docs, and release metadata.
-
-Use this commit message format:
-
-```text
-chore(release): bump version to X.Y.Z
-```
-
-Do not include unrelated feature work in the release commit. If unrelated changes are present, stop and ask.
-
-After the release commit is created, create the matching annotated release tag on that commit:
-
-```bash
-git tag -a vX.Y.Z -m "vX.Y.Z"
-```
-
-After the release commit and tag are created and validated, sync both remotes:
-
-```bash
-git push origin master
-git push origin vX.Y.Z
-git push rad master
-git push rad vX.Y.Z
-```
-
-`origin` is the GitHub source mirror/backup and public binary mirror. `rad` is the Radicle forge remote. Pushing the `vX.Y.Z` tag to `origin` triggers the GitHub Release artifact workflow, which builds and uploads release binaries through Makefile packaging targets.
-
-These pushes update existing remotes only; they are not permission to publish, seed publicly, change Radicle visibility, or change GitHub repository settings.
+`make check-epic` (full mandatory gate + coverage ratchet) is the closure gate — run it green under Nix before sign-off, plus `make bench` if a hot kernel changed ([DoD §I](../../../docs/engineering-workflow.md#definition-of-done-the-handover-gate)). Never substitute piecemeal subset checks. A "gate green" claim needs the gate's own exit code as evidence: for a backgrounded run, grep the echoed `EXIT=` line rather than trusting a wrapper/task-notification exit code. Validation counts only under Nix — the host toolchain can be silently split.
 
 ## Guardrails
 
-- Do not use `npm version`; it can create git tags or extra metadata changes.
-- Do not use `cargo set-version` unless the user explicitly approves adding that workflow.
-- Keep `package-lock.json` changes limited to the root package version fields unless dependencies changed separately.
-- If a version assertion test fails, update the expected Brawler version rather than weakening the test.
+- Do not hand-edit version files, `CHANGELOG.md`, or create tags — `release.yml` owns them (build-time stamping; ADR 0090 § 5).
+- Do not apply/change a `release:*` label to force a version — that increment is the owner's decision.
 - Do not merge, publish, seed publicly, change repository visibility, or rewrite history unless the user explicitly asks.
+- If a version assertion test flags a placeholder mismatch, the fix is the build-time stamping path, never weakening the test.

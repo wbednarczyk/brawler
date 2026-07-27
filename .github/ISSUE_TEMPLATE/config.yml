@@ -1,0 +1,2 @@
+# Owner/agents write freely — keep the blank-issue escape hatch (ADR 0090).
+blank_issues_enabled: true

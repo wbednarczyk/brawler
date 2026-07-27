@@ -24,7 +24,7 @@ anything that felt slow, confusing, or wrong. A feeling counts as a finding.
 
 ## Recording findings
 
-- Anything broken or jarring → Radicle issue (`bug` + labels) the same day; P1s block the release.
+- Anything broken or jarring → GitHub issue (`bug` + labels) the same day; P1s block the release.
 - UX friction that is not a bug → the milestone retro's **UX section** (journeys shorter/longer)
   and, when it names a defect class, the [guardrail-harvest](../.claude/skills/guardrail-harvest/SKILL.md) loop.
 - The run itself is a release-prep step: note date + build + verdict in the release notes draft.
@@ -48,4 +48,4 @@ BRAWLER_UX_JOURNEY="J1 morning review" BRAWLER_UX_CARD=<hex7> BRAWLER_UX_STAGE=v
 
 The spec (`tests/live/ux-checkpoint.live.spec.ts`) drives the **mechanical** path — Today renders an attention stream **or** an explicit quiet state (never a blank pane or the error fallback), a visible Review action opens a company-scoped cockpit, return works — and writes evidence under gitignored `test-results/live/checkpoints/`. It is **not** a scripted happy-path replay to rubber-stamp; it frees the human to explore.
 
-**The human charter** (the part automation cannot do) names: one **exploratory question**, findings graded **P1/P2/P3**, a **verdict** `proceed | revise | block`, and **which judgments stayed human**. A **P1 blocks expansion** of the slice. Lower-severity friction enters Radicle (`bug` + labels) or the milestone retro's UX section honestly — never silently dropped. Only non-sensitive verdict metadata reaches the active Radicle card; screenshots + `manifest.json` stay local (the manifest carries a dataset **label**, never the DB path/contents). Details + privacy contract: [testing.md § Live drive](testing.md#live-drive-real-app-via-cdp).
+**The human charter** (the part automation cannot do) names: one **exploratory question**, findings graded **P1/P2/P3**, a **verdict** `proceed | revise | block`, and **which judgments stayed human**. A **P1 blocks expansion** of the slice. Lower-severity friction enters GitHub Issues (`bug` + labels) or the milestone retro's UX section honestly — never silently dropped. Only non-sensitive verdict metadata reaches the active GitHub issue/board card ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md) § privacy, continuing ADR 0081); screenshots + `manifest.json` stay local (the manifest carries a dataset **label**, never the DB path/contents). Details + privacy contract: [testing.md § Live drive](testing.md#live-drive-real-app-via-cdp).

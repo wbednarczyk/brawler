@@ -7,7 +7,7 @@
 - [0004](0004-source-and-ai-policy.md) — Source and AI Policy — Accepted
 - [0005](0005-company-notebooks-and-transcripts.md) — Company Notebooks and Transcripts — Accepted
 - [0006](0006-theme-and-visual-direction.md) — Theme and Visual Direction — Accepted
-- [0007](0007-github-build-and-lean-testing.md) — GitHub Build and Lean Testing — Accepted
+- [0007](0007-github-build-and-lean-testing.md) — GitHub Build and Lean Testing — Superseded in part by [ADR 0090](0090-github-canonical-forge-and-continuous-rele
 - [0008](0008-license-and-project-governance.md) — License and Project Governance — Superseded in part by [ADR 0023](0023-public-private-documentation-split.md) and
 - [0009](0009-local-config-secrets-data-and-observability.md) — Local Config, Secrets, Data, and Observability — Accepted
 - [0010](0010-security-dependencies-and-ai-policy.md) — Security, Dependencies, and AI Policy — Accepted
@@ -24,7 +24,7 @@
 - [0021](0021-browser-ui-regression-testing.md) — Browser UI Regression Testing — accepted
 - [0022](0022-research-evidence-read-model-boundary.md) — Research Evidence Read-Model Boundary — accepted
 - [0023](0023-public-private-documentation-split.md) — Public And Private Documentation Split — Accepted
-- [0024](0024-cross-platform-release-artifacts.md) — Cross-Platform Release Artifacts — Accepted for Milestone 28 implementation
+- [0024](0024-cross-platform-release-artifacts.md) — Cross-Platform Release Artifacts — Superseded in part by [ADR 0090](0090-github-canonical-forge-and-continuous-rele
 - [0025](0025-research-reminders-and-digest-boundaries.md) — Research Reminders And Digest Boundaries — Accepted
 - [0026](0026-reusable-ui-foundation.md) — Reusable UI Foundation — Accepted
 - [0027](0027-company-fundamentals-scope.md) — Company Fundamentals Scope And KPI Taxonomy — Accepted
@@ -89,3 +89,4 @@
 - [0087](0087-today-attention-home-v2.md) — Today attention home v2 — grouped stream, typed severity, quiet toasts — Accepted (2026-07-22, owner sign-off at v0.60 planning)
 - [0088](0088-mcp-surface-v2-ui-parity.md) — MCP surface v2 — UI-parity tool registry, capability tiers, provenance-mandatory writes — Accepted (2026-07-22, owner sign-off at v0.60 planning)
 - [0089](0089-cross-company-comparison-and-valuation-l1.md) — Cross-company comparison + comparative valuation level 1 — Accepted (2026-07-27, owner sign-off at v0.61 planning
+- [0090](0090-github-canonical-forge-and-continuous-release.md) — GitHub as the Canonical Forge for Everything; Radicle as the Second Path; Continuous Release — Accepted (2026-07-27, owner sign-off at CI/forge-migration planning)

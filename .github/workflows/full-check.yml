@@ -1,0 +1,266 @@
+# Full check — the single distributed gate (ADR 0090).
+#
+# One definition, run at every boundary: on each PR (required checks), on each
+# master push via release.yml (workflow_call), and on demand (workflow_dispatch).
+# There is no "fast" mode in CI — "fast" lives only in the local pre-commit
+# (`make check-fast`). Every check-executing step is a thin `make <target>`
+# wrapper (scripts/check/gate-integrity.mjs asserts this), so the same thing runs
+# identically here and locally.
+#
+# Environment: the Linux check jobs run inside the pre-baked devshell image
+# (devshell-image.yml → ghcr.io/wbednarczyk/brawler-devshell) so `nix develop -c`
+# resolves in ~seconds instead of installing Nix per job. If that image is
+# unavailable, the documented fallback is to drop the `container:` line and add
+# an `install-nix-action` step (see mutants.yml) to each job.
+name: Full check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: full-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Path filter: a docs-only PR skips the heavy code/browser/windows jobs. The
+  # skipped jobs still SATISFY required checks (GitHub treats an `if:`-skipped
+  # required job as met), mirroring the local docs-only → `make check-docs` path.
+  changes:
+    name: Detect change scope
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!wiki/**'
+              - '!**/*.md'
+
+  rust-lint:
+    name: Rust lint (fmt + clippy)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # Restore-only: the canonical writer is rust-test (cache discipline — one
+      # writer, 10 GB/repo budget). save-if:false → never writes.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: false
+      - name: Reclaim disk space
+        run: rm -rf /opt/hostedtoolcache || true
+      - run: make check-rust-lint
+
+  rust-test:
+    name: Rust tests (nextest + doc)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      # The ONE canonical cargo cache writer (save-if default true).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Reclaim disk space
+        run: rm -rf /opt/hostedtoolcache || true
+      - run: make check-rust-test
+
+  types-check:
+    name: ts-rs binding drift
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: false
+      - name: Reclaim disk space
+        run: rm -rf /opt/hostedtoolcache || true
+      - run: make types-check
+
+  frontend-static:
+    name: Frontend static (typecheck + eslint + stylelint + knip)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: make install
+      - run: make check-frontend-static
+
+  frontend-test:
+    name: Frontend tests (vitest)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: make install
+      - run: make check-frontend-test
+
+  frontend-build:
+    name: Frontend build
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: make install
+      - run: make check-frontend-build
+
+  browser:
+    name: Browser (Playwright shard ${{ matrix.shard }})
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-playwright-
+      - name: Reclaim disk space
+        run: rm -rf /opt/hostedtoolcache || true
+      - run: make install
+      # Pixel snapshots auto-disable under CI=true (Playwright config); this
+      # asserts behavior/layout, not baselines.
+      - run: make check-browser SHARD=${{ matrix.shard }}
+
+  docs-gates:
+    name: Docs gates (gate-integrity + docs-drift)
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check-docs-gates
+
+  commit-lint:
+    name: Commit messages (Conventional Commits)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Full history so the PR commit range is walkable.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: make check-commits RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+
+  release-label:
+    name: Release label (exactly one release:*)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check-release-label PR=${{ github.event.pull_request.number }}
+
+  # Windows = first-class platform (ADR 0090 §B2): cross-build the portable .exe
+  # on every code-touching PR. Uses install-nix-action (the windows-cross devShell
+  # is not in the default devshell image) + the same caches as the old
+  # release-artifacts.yml. Redirects the copy target into the workspace (the
+  # runner has no /mnt/d). Artifact retained 3 days for owner hands-on
+  # (`make pr-binary PR=n`).
+  #
+  # TODO(ADR 0090 §B2): add a `windows-boot-smoke` job (windows-latest) that runs
+  # `make live-smoke EXE=<artifact>` — a separate implementation slice (CDP
+  # harness adapted for an unattended runner). Until then windows-build is the
+  # required Windows check on its own.
+  windows-build:
+    name: Windows cross-build (.exe)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reclaim disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: false
+      - name: Cache cargo-xwin SDK data
+        uses: actions/cache@v4
+        with:
+          path: .xwin-cache
+          key: ${{ runner.os }}-xwin-${{ hashFiles('flake.lock') }}
+          restore-keys: ${{ runner.os }}-xwin-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: make install
+      - run: make package-windows-from-linux WINDOWS_OUT_DIR=${{ github.workspace }}/windows-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: ${{ github.workspace }}/windows-out/*.exe
+          retention-days: 3
+          if-no-files-found: error

@@ -87,3 +87,7 @@ Brawler stays **spec-driven for intent** (the docs/ADRs define behavior before c
 - **Pre-push instead of pre-commit.** Rejected by the owner: at push it is too late; certainty is required at commit.
 - **A push/PR test-CI.** Deferred (conservative-CI posture); local pre-commit is sufficient for a solo/local-first project. A future belt-and-suspenders is a separate decision.
 - **Skip missing tools in pre-commit** (mirror pre-push). Rejected: a silent skip is the rot hole; fail with a fix instruction instead.
+
+## Amendment (2026-07-27, ADR 0090) — the gate now runs in CI
+
+The "**there is still no CI mirror of `make check`**" premise (Decision 3, 2026-07-15 amendment) is superseded by [ADR 0090](0090-github-canonical-forge-and-continuous-release.md): the repo is public with free Actions minutes, and `full-check.yml` runs the full gate on every PR (required checks) and on every release-labeled master push via `workflow_call`. The **master-never-past-a-red-gate** guarantee is unchanged in substance but **moves server-side** — a master ruleset requires the full-check jobs green **and** the branch up-to-date before merge, so the merge commit's tree is bit-for-bit the tested one. The local pre-push full-check hook stays as a dormant break-glass net, no longer the sole guarantee. The single-gate anti-rot contract (Decision 1/2) is unchanged; the CI jobs invoke the same decomposed `make` targets that compose `make check`, and gate-integrity asserts CI uses only `make <target>` steps.

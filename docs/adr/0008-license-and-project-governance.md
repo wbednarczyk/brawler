@@ -1,6 +1,6 @@
 # ADR 0008: License and Project Governance
 
-Status: Superseded in part by [ADR 0023](0023-public-private-documentation-split.md) and the public-opening governance work.
+Status: Superseded in part by [ADR 0023](0023-public-private-documentation-split.md) and [ADR 0090](0090-github-canonical-forge-and-continuous-release.md) — tracking and governance move to GitHub Issues + Projects.
 
 The historical private/proprietary posture in this ADR is no longer the target public posture. Use this ADR as background context only.
 

@@ -23,27 +23,26 @@ Recommended workflow:
 - `make check` in WSL before pushing/opening a PR; `make build` to validate frontend production output; `make frontend-preview` for a quick browser layout check from Windows (no Tauri APIs).
 - `make smoke-gemini-transcript`/`smoke-keyring`: opt-in live smoke tests needing local credentials/OS state.
 - Runtime logs: local JSON Lines under the app-data logs dir, level/rotation via Settings or `BRAWLER_LOG_*` env vars. Local metrics: Developer-mode-only Diagnostics snapshots, not telemetry.
-- Bump the app minor version in all package manifests when closing a milestone. Release guardrails: [Release Workflow](release-workflow.md); `make install-git-hooks` once, `make release-check` before closure handoff.
+- Work lands via PRs (`gh pr create`); `make install-git-hooks` once wires the local hooks. Release model + guardrails: [Release Workflow](release-workflow.md).
 - Native Windows checkout/worktree for hands-on testing; `scripts/windows/dev.ps1` there starts Tauri dev mode. Packaging paths (portable, Linux artifacts, native fallback, cross-build constraint): the `packaging` skill.
 
 ## Nix Development Environment
 
-Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop` the explicit entrypoint (optional `direnv`). Nix provides toolchains, not a command hiding place — build/test commands stay runnable inside `nix develop`. Secrets stay outside the Nix store (never in `flake.nix`/`flake.lock`/`.envrc`); commit `flake.lock`. Flake provides: Rust + fmt/lint, Node.js/npm, Linux Tauri prerequisites, SQLite dev libs, `pkg-config`, plus `devShells.windows-cross` (`packaging` skill). GitHub Actions runs the same commands inside `nix develop`; avoid heavy Nix packaging in default CI.
+Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop` the explicit entrypoint (optional `direnv`). Nix provides toolchains, not a command hiding place — build/test commands stay runnable inside `nix develop`. Secrets stay outside the Nix store (never in `flake.nix`/`flake.lock`/`.envrc`); commit `flake.lock`. Flake provides: Rust + fmt/lint, Node.js/npm, Linux Tauri prerequisites, SQLite dev libs, `pkg-config`, plus `devShells.windows-cross` (`packaging` skill). CI runs the same `make` targets inside `nix develop` (§ CI Posture).
 
 ## CI Posture
 
-- CI is manual-only via `workflow_dispatch`; conservative with minutes/storage (no larger runners, no default macOS, no scheduled workflows, standard `ubuntu-latest`). Secret-free by default; live-service tests are opt-in.
-- `paths-ignore` skips docs-only jobs; concurrency cancellation; short artifact retention (1-7 days), uploads rare.
-- Expected jobs: Nix flake check, frontend (install/typecheck/lint/unit), Rust (fmt/clippy/unit), migrations (clean SQLite DB), a Linux desktop smoke build; Windows build before the first packaging milestone.
-- Workflow files: `ci.yml` (parallel `nix`/`frontend`/`rust`/`migrations`, later `tauri-smoke`), `package.yml` (`workflow_dispatch`, slower), `mutants.yml` (`workflow_dispatch`, thin wrapper around `make mutants MUTANTS_JAIL=off`, moves the OOM-prone sweep off the owner's WSL). Actions calls project scripts, never bespoke logic; Windows packaging stays manual.
+Public repo, free Actions minutes ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md)) — **CI is the gate, not a manual mirror.** One full gate, one workflow: **`full-check.yml`** on `pull_request` (required checks, per-PR cancellation), on release-labeled master pushes via `workflow_call` from `release.yml`, and `workflow_dispatch`; no "fast" mode in CI (`check-fast` is local only). **Makefile everywhere:** every job runs exactly one granular `make check-*` target in `nix develop` (the Command Reference below is the job↔target list; cache + Nix setup are the only other steps), so CI and local runs are identical, and `gate-integrity` asserts every `run:` step matches `make <target>`. Windows is first-class on code PRs: `windows-build` + `windows-boot-smoke` (`live-smoke`, real binary on windows-latest).
+
+**Paths-filter:** a docs-only PR runs `check-docs-gates`+`check-commits` only (skipped jobs still satisfy required checks). Setup uses a ghcr.io devshell image (rebuilt on `flake.lock` change), `install-nix-action` the fallback; `mutants.yml` is the only manual-only workflow now. Standard `ubuntu`/`windows-latest`, no macOS/scheduled workflows, secret-free by default. **Master always green (server-side):** the ruleset requires the `full-check` jobs green **and** the branch up-to-date before merge (merge tree = tested tree); bisect merge history with `git bisect --first-parent`.
 
 ## Local Developer Commands
 
 The Makefile is the preferred local command surface from WSL; targets stay thin wrappers around documented project commands.
 
-**Gate split by git phase ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md), 2026-07-15).** **pre-commit → `make check-fast`** (parallel core, no browser, ~2–4 min) per code commit; docs-only → `make check-docs`. **The full `make check` (~15-min browser matrix) runs at pre-push to `master` only** — the shared-code boundary with no CI mirror: the guarantee master never advances past a red gate. A missing tool fails (not skips); `--no-verify` is WIP-only, never valid under "done". **Multi-phase epics:** phases gate on `make check-fast`; the browser matrix runs once, at epic completion.
+**Gate split by git phase ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md), 2026-07-15).** **pre-commit → `make check-fast`** (parallel core, no browser, ~2–4 min) per code commit; docs-only → `make check-docs`. The full `make check` runs in CI on every PR and locally at pre-push to `master` as a **dormant break-glass net** — master-never-past-a-red-gate now lives in the server ruleset (required checks + up-to-date, ADR 0090). A missing tool fails (not skips); `--no-verify` is WIP-only, never valid under "done". **Multi-phase epics:** phases gate on `make check-fast`; the matrix runs in each PR's CI.
 
-**Commit-message hook runs AFTER the gate** — a rejected message wastes a full `make check` run. Rules: Conventional Commits, single `[a-z0-9._-]+` scope (no commas), subject after the colon ≤ 72 chars. Pre-validate every non-trivial message first: `scripts/release/validate-commit-message.sh --message "<subject line>"` (guardrail, 2026-07-03).
+**Commit-message hook runs AFTER the gate** — a rejected message wastes a full run. Rules: Conventional Commits, single `[a-z0-9._-]+` scope (no commas); **no subject-length limit** (dropped 2026-07-27, ADR 0090 — commit messages are the release notes). Pre-validate: `scripts/release/validate-commit-message.sh --message "<subject line>"`. CI's `commit-lint` job re-checks every commit in the PR.
 
 **Pre-push hook ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md) / [ADR 0045](adr/0045-guardrail-harvest-loop.md)).** A **non-master** push runs only the cheap `smoke-walk` spec (~10-20s, auto-skips if Playwright is absent); a **`master`** push runs the full `make check` (above). Don't `--no-verify` past it.
 
@@ -82,7 +81,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §A — Always
 - [ ] Implemented to spec: read the canonical doc(s) for the area (the [Required Reading](../CLAUDE.md) map) — don't infer architecture/field/command names from code alone. ADR added/confirmed if durable architecture or policy changed.
-- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): `npm run check` (Rust fmt/clippy/nextest/doc + typecheck/lint/Vitest/build) → `knip` → `make types-check` (ts-rs drift) → the **full Playwright browser suite** → `gate-integrity`. Every step hard-fails; the **full gate runs at pre-push to `master`** (§ gate split, no CI mirror) — run it yourself before "done". A host pass is a hint, not a verdict. **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
+- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): `npm run check` (Rust fmt/clippy/nextest/doc + typecheck/lint/Vitest/build) → `knip` → `make types-check` (ts-rs drift) → the **full Playwright browser suite** → `gate-integrity`. Every step hard-fails; the **full gate runs in CI on every PR + local pre-push to `master`** (§ gate split) — run it yourself before "done". A host pass is a hint, not a verdict. **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
 - [ ] Canonical doc(s) whose behavior changed are updated **in this change** (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
 - [ ] Nothing committed or pushed unless the user asked, or via the release workflow.
 
@@ -122,7 +121,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **The feature actually works end-to-end against the real runtime/data it names — not just compiles and passes tests.** Mocks/samples are not completion evidence (roadmap rule). Desktop behavior is verified through the packaged Windows `.exe` / hands-on path, not a WSL Linux build.
 
 ### §H — Guardrail harvest (when anything was flagged or discovered) — always check
-- [ ] Every defect the user/a review/a gate/you flagged has its **class** closed in this change — a precise gate, or a documented rule + checklist line (the `guardrail-harvest` skill, `.claude/skills/guardrail-harvest/SKILL.md`). A discovered bug not fixed now → a tracked Radicle issue.
+- [ ] Every defect the user/a review/a gate/you flagged has its **class** closed in this change — a precise gate, or a documented rule + checklist line (the `guardrail-harvest` skill, `.claude/skills/guardrail-harvest/SKILL.md`). A discovered bug not fixed now → a tracked GitHub issue.
 
 ### §I — Milestone/epic closure only
 - [ ] **Every user-facing capability names the journey it serves** in [ux-journeys.md](ux-journeys.md) (or is explicitly declared a journey-independent utility), and the milestone retro's UX section records which journeys got shorter/longer ([ADR 0074](adr/0074-ux-journeys-and-anti-rot.md)).
@@ -144,37 +143,19 @@ Agents minimize token usage via direct `rtk` commands and the local WSL toolchai
 
 **`cargo check` proves compile, not tests** — the lib can compile while the test build breaks (e.g. an item only used via `use super::*;` in `#[cfg(test)]`). Run `cargo nextest run` before committing storage/test changes; a checkpoint must be test-green, not compile-green.
 
-Preferred agent commands for targeted iteration:
+Preferred commands for targeted iteration: `rtk grep "pattern" path` (compact grouped search); `rtk read path --max-lines N --line-numbers` / `rtk sed -n 'a,bp' path` (focused ranges); `rtk npm typecheck`; `rtk npm test` (frontend, scoped to `vitest run src` — **not** bare `vitest run`, which sweeps `tests/browser/` and errors) / `rtk npm test -- -t "name"` (focused); `rtk npm build`; `rtk cargo fmt --check` · `clippy --all-targets -- -D warnings` · `nextest run` (preferred) / `cargo test` (fallback); `rtk git diff -- path`.
 
-- `rtk grep "pattern" path`: search code and docs with compact grouped output.
-- `rtk read path --max-lines N --line-numbers`: inspect focused files or short files.
-- `rtk sed -n 'start,endp' path`: inspect tight line ranges only when `rtk read` is not suitable.
-- `rtk npm typecheck`: TypeScript checks.
-- `rtk npm test`: frontend tests. Use this, **not** a bare `vitest run` — `npm test` is scoped to `vitest run src`, whereas bare `vitest run` also sweeps in the Playwright specs under `tests/browser/` and fails with a confusing `test.describe() not expected here` error.
-- `rtk npm test -- -t "test name"`: focused frontend test run.
-- `rtk npm build`: frontend production build when UI/build behavior changed.
-- `rtk cargo fmt --check`: Rust formatting check
-- `rtk cargo clippy --all-targets -- -D warnings`: Rust linting
-- `rtk cargo nextest run`: preferred Rust test runner when installed
-- `rtk cargo test`: fallback Rust test runner
-- `rtk git diff -- path` or `rtk diff`: compact changed-line review.
+Avoid for normal iteration: `rtk proxy ...` (bypasses filtering, no token saving); shell-wrapped reads where `rtk grep`/`read`/`sed`/`git status` would work; full `make check` after every small edit. Full parity when appropriate: `make check` (mandatory gate), Nix-wrapped env checks, `make package-windows-from-linux` for packaging.
 
-Avoid for normal agent iteration:
-
-- `rtk proxy ...`, because it bypasses RTK output filtering and saves no tokens
-- large shell-wrapped read commands when a direct `rtk grep`, `rtk read`, `rtk sed`, or `rtk git status` command would work
-- full `make check` after every small edit
-
-Full parity when appropriate: `make check` (mandatory gate), Nix-wrapped commands to validate the environment, `make package-windows-from-linux` for packaging validation.
-
-**Layered parallelism ([ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)).** `make check` stages fast-fail checks then runs Rust/Vitest/build concurrently, workers capped against oversubscription — mechanics in [Testing](testing.md). Local WSL toolchain: `rustup` + `clippy`/`rustfmt`/`cargo-nextest`, Node/npm, `ripgrep`, `fd`, `jq`, `sqlite3`; `flake.nix` stays the source of truth.
+**Layered parallelism ([ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)).** `make check` stages fast-fail checks then runs Rust/Vitest/build concurrently, workers capped — mechanics in [Testing](testing.md). Local WSL toolchain: `rustup` + `clippy`/`rustfmt`/`cargo-nextest`, Node/npm, `ripgrep`, `fd`, `jq`, `sqlite3`; `flake.nix` stays the source of truth.
 
 ## Command Reference
 
 | `make` target | Underlying command | When |
 | --- | --- | --- |
 | `install` | `npm ci` | Set up deps. |
-| `check` | `check`→`knip`→`types-check`→`test:browser`→`gate-integrity.mjs`→`docs-drift.mjs` | **Mandatory gate**; runs at **push-to-master** (pre-push). `check-fast` (no browser) is the per-commit gate. |
+| `check` | composes the `check-*` targets (§ CI Posture) | **Mandatory gate**; runs on every PR (`full-check.yml`) + local pre-push to master. `check-fast` (no browser) is the per-commit gate. |
+| `check-rust-lint` · `check-rust-test` · `check-frontend-static` · `check-frontend-test` · `check-frontend-build` · `check-browser` · `check-docs-gates` · `check-commits` · `check-release-label` | granular gate wrappers | One per `full-check.yml` job (job name mirrors the target); `make check`/`check-fast` compose subsets. |
 | `docs-drift` | `node scripts/check/docs-drift.mjs` | Spec↔code drift gate standalone (also a `check` step); `--write-adr-index` regenerates `docs/adr/INDEX.md`. |
 | `check-fast` | `npm run check:parallel` | Inner-loop only, never proof of done. |
 | `disk-clean` | caches, mutants artifacts, old nix generations, fstrim | Run when `disk-guard` warns. |
@@ -189,8 +170,7 @@ Full parity when appropriate: `make check` (mandatory gate), Nix-wrapped command
 | `types` | `cargo test --features ts-export export_bindings` | Regenerate TS DTOs from Rust `#[ts(export)]`. |
 | `types-check` | `types` + hash diff on generated bindings | Drift guard. |
 | `install-git-hooks` | `git config core.hooksPath .githooks` | Wires pre-commit/push hooks. |
-| `release-check` | `npm run release:check` | Validate commit-msg/version/changelog guardrails. |
-| `changelog` | `git-cliff ... --prepend CHANGELOG.md` | Generate scaffold; curate before release (`brawler-release` skill). |
+| `sync-rad` | `git push rad master` + tags | Async Radicle mirror (owner-run; not a process step). |
 | `mutants` | `cargo mutants --test-tool nextest -f ...` | Closure-cadence mutation testing (periodic). |
 | `bench` | `cargo bench --bench transforms` + `bench:ratchet` | Closure-cadence benchmarks (periodic). |
 | `package-*`, `windows-package*`, `windows-test-help` | — | Packaging/Windows paths — the `packaging` skill. |
