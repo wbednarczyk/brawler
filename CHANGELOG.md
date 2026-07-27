@@ -1,5 +1,66 @@
 # Changelog
 
+## v0.61.0 - 2026-07-27
+
+The valuation arc opens: per-company fundamentals become **relative analysis**.
+A new **Porównaj (Compare)** mode lines companies up side by side, and a
+deterministic **comparative valuation (level 1)** says where a company stands
+against its sector peers — sourced, evidence-linked, and honest about thin
+GPW peer sets. Two epics (ADR 0089).
+
+### Added
+
+- **Porównaj mode** — its own sidebar entry under Dashboard. Pick a set of
+  companies (multi-select, watchlist quick-pick, or the sector-peers helper)
+  and the comparison computes reactively — no submit button. Two views:
+  - **Profil (default)**: every available canonical KPI vertically ×
+    companies at one selected period, with a **Różnica** column for a pair
+    (multiple for values, p.p. for ratios, "—" where incomparable).
+  - **Trend**: one KPI across periods with a multi-series overlay chart
+    (up to 4 colored series), sharing the chips' slot colors.
+  Every value links to its source evidence; gaps render as typed chips
+  ("brak danych za okres", "brak kursu FX"), never silently.
+- **Comparison read model** (`get_kpi_comparison`): aligned period axes
+  across companies, decimal-exact values, PLN conversion with a labeled
+  basis, and server-side QoQ/YoY deltas with a documented rule for
+  sign-changes (a typed "delta undefined" instead of a misleading percent).
+- **NBP FX substrate**: daily mid rates (Table A) in an append-only
+  `fx_rates` store with full-history backfill; flow KPIs convert at the
+  period-average mid, stock KPIs at the last mid on or before period end;
+  a missing rate is an explicit per-cell flag, never a silent guess.
+- **Fundamentals "Pozycje × okresy" table** in the company Dashboard:
+  line items × recent periods with inline QoQ/YoY deltas (the v0.47 promise),
+  driven by the same read model.
+- **Sector percentiles** (`get_sector_percentiles`): where the company's
+  level-0 ratios sit among its tracked sector peers (mid-rank inclusive
+  percentiles), always showing the peer count and a thin-flag under 4 peers.
+- **Comparative valuation L1**: implied fair-value ranges per multiple
+  (P/E, EV/EBITDA with a real net-debt bridge, P/BV) from peer P25/median/P75,
+  drawn as a **football field** with the current-price marker; a deterministic
+  **confidence grade (A–D)** built from four inspectable components (data
+  completeness, peer depth, method convergence, validation states); runs
+  recorded append-only in `valuation_runs` (only when inputs actually change).
+  Decision support only — ranges and facts, never a cheap/expensive verdict.
+- **4 new MCP tools**: `get_kpi_comparison`, `get_sector_percentiles`,
+  `list_valuation_runs` (read tier) and `compute_comparative_valuation`
+  (act tier, gated by the writes toggle) — the surface grows to 100 tools.
+- New `RangeBarChart` UI primitive (the football field), gallery + a11y covered.
+- User guide: `wiki/cross-company-comparison.md`; J6 journey E2E with budget.
+
+### Fixed
+
+- **MCP-written qualitative verdicts now actually render** in the Quality
+  panel — the write tool shipped in v0.60 but the panel never displayed the
+  results; found by the closure audit, fixed with a standing guard test.
+- KPI names in the Compare picker rendered raw English in the Polish UI
+  ("Current assets") — all KPI display names now route through
+  `localizedKpiLabel`, with a rule + tests guarding the class.
+- Diagnostics source-reconciliation rows: the long "Pominięte przez główne"
+  status chip painted over the ticker column (a Polish-only overflow) —
+  fixed with a content-sized status track and a bounding-box guardrail spec.
+- NULL-currency ratio/percentage cells no longer carry a spurious
+  `currency_unknown` flag (ratios have no currency by design).
+
 ## v0.60.0 - 2026-07-27
 
 Two epics land together: **the Today home is re-invented as a real triage
