@@ -41,7 +41,9 @@ jobs:
           RUN mkdir -p /etc/nix && printf 'experimental-features = nix-command flakes\nfilter-syscalls = false\n' >> /etc/nix/nix.conf
           # --impure: in the nixos/nix image the `nixpkgs` registry entry resolves
           # through the channel store path, which pure flake evaluation rejects.
-          RUN nix profile install --impure nixpkgs#gnumake nixpkgs#git nixpkgs#bash nixpkgs#coreutils
+          # --priority 4: the base image profile already ships bash/coreutils at
+          # priority 5 — the fresh installs must win the conflict.
+          RUN nix profile install --impure --priority 4 nixpkgs#gnumake nixpkgs#git nixpkgs#bash nixpkgs#coreutils
           WORKDIR /build
           COPY flake.nix flake.lock ./
           RUN nix develop --command true
