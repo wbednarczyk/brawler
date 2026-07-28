@@ -4,9 +4,12 @@
 # stop (no test re-run: the up-to-date rule made the tree bit-identical to the
 # green PR). Otherwise: re-run the full gate on this exact SHA (workflow_call),
 # then compute the next version (last tag + label increment), stamp it into the
-# manifests AT BUILD TIME (no bump commit — tags are truth), build artifacts,
-# tag, publish the GitHub Release with git-cliff notes, and bot-commit the
-# CHANGELOG.md entry (`[skip ci]`, narrow ruleset bypass for github-actions).
+# manifests at build time, build artifacts, tag, publish the GitHub Release
+# with git-cliff notes, and bot-commit the CHANGELOG.md entry TOGETHER WITH the
+# version stamp (`chore(release): vX.Y.Z [skip ci]`, narrow ruleset bypass for
+# github-actions) so repo manifests always show the released version
+# (ADR 0090 amendment, 2026-07-28). The tag still points at the exact tested
+# SHA — the stamp commit lands after it.
 #
 # workflow_dispatch with `tag` re-publishes an existing tag's artifacts (recovery).
 name: Release
@@ -212,38 +215,46 @@ jobs:
             gh release create "$tag" release-artifacts/* --title "$tag" --notes-file release-notes.md
           fi
 
-      # Prepend the entry to CHANGELOG.md on master (bot-commit, [skip ci] so it
-      # does not re-trigger this workflow). Needs the narrow github-actions
-      # ruleset bypass. Discard the build-time manifest stamp first so only
-      # CHANGELOG.md is committed. pull --rebase + retry guards a race with a
-      # concurrent merge (the commit touches only CHANGELOG.md → clean rebase).
-      - name: Commit changelog entry
+      # Prepend the entry to CHANGELOG.md AND stamp the released version into
+      # the repo manifests, one bot-commit on master ([skip ci] so it does not
+      # re-trigger this workflow; needs the narrow github-actions ruleset
+      # bypass). Race handling: each attempt regenerates the commit on a fresh
+      # origin/master instead of rebasing lockfiles — a concurrent merge can
+      # never produce a conflict (ADR 0090 amendment, 2026-07-28).
+      - name: Commit changelog and version stamp
         if: steps.version.outputs.republish == 'false'
         run: |
           set -euo pipefail
           tag="${{ steps.version.outputs.tag }}"
           version="${{ steps.version.outputs.version }}"
-          # Discard ONLY the ephemeral build-time version stamp (the files
-          # bump-version.mjs touches) so the bot-commit contains just CHANGELOG.md.
-          git restore package.json package-lock.json \
-            src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json \
-            src-tauri/src/lib.rs 2>/dev/null || true
           # Explicit range, NOT --unreleased: this step runs AFTER the tag step,
           # so "unreleased" (= commits since the last tag) is empty by definition
           # (v0.61.1 postmortem, 2026-07-28) — same range as the release-notes step.
           prev="${{ steps.version.outputs.prev }}"
           range="${prev:+$prev..}$tag"
-          nix develop -c git-cliff --config cliff.toml $range --tag "$tag" --prepend CHANGELOG.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          # A release whose commits are all changelog-filtered types is valid —
-          # nothing to record, not an error.
-          if git diff --cached --quiet; then echo "No changelog-visible changes for $tag."; exit 0; fi
-          git commit -m "docs(changelog): $tag [skip ci]"
           ok=0
           for i in 1 2 3; do
-            if git pull --rebase origin master && git push origin HEAD:master; then ok=1; break; fi
-            echo "changelog push attempt $i failed; retrying…"; sleep 5
+            git fetch origin master
+            # Drop the build-time stamp + any prior attempt; rebuild on fresh tip.
+            git checkout -f -B master origin/master
+            # Idempotence on re-runs: skip pieces that already landed.
+            current="$(node -p "require('./package.json').version")"
+            if [ "$current" != "$version" ]; then
+              node scripts/release/bump-version.mjs "$version"
+            fi
+            if ! grep -q "^## $tag " CHANGELOG.md; then
+              nix develop -c git-cliff --config cliff.toml $range --tag "$tag" --prepend CHANGELOG.md
+            fi
+            git add CHANGELOG.md package.json package-lock.json \
+              src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json \
+              src-tauri/src/lib.rs
+            # A release whose commits are all changelog-filtered types still
+            # stamps the version; fully-empty means everything already landed.
+            if git diff --cached --quiet; then echo "Nothing left to commit for $tag."; ok=1; break; fi
+            git commit -m "chore(release): $tag [skip ci]"
+            if git push origin HEAD:master; then ok=1; break; fi
+            echo "release-stamp push attempt $i failed; retrying…"; sleep 5
           done
-          if [ "$ok" -ne 1 ]; then echo "Failed to push changelog after 3 attempts" >&2; exit 1; fi
+          if [ "$ok" -ne 1 ]; then echo "Failed to push changelog + version stamp after 3 attempts" >&2; exit 1; fi

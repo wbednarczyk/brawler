@@ -3,7 +3,8 @@
 A ~15-minute owner walk of the real app with the real database before every release
 (v0.50 U12, [ADR 0074](adr/0074-ux-journeys-and-anti-rot.md)). The journey E2E suite
 proves the paths work against the mock; this run proves they work — and feel right —
-against reality. Run it after `make release-prepare` (or before `make release`), on the
+against reality. Under continuous release ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md))
+run it at epic closure, before merging the epic's last release-labeled PR, on the
 platform you actually use (Windows build for hands-on, per engineering-workflow).
 
 ## Script

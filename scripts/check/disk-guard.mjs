@@ -10,7 +10,11 @@
 //
 // So this guard checks BOTH levels and fails the gate BEFORE the session-killer:
 //   1. the repo's own filesystem (works everywhere, incl. CI), and
-//   2. on WSL, every mounted host drive backing the environment (/mnt/c).
+//   2. on WSL, the host drives backing the environment: the drive(s) actually
+//      holding each distro's ext4.vhdx — read from the Windows Lxss registry
+//      via interop (harvest 2026-07-28: the vhdx lived on Z:, which hit 99%
+//      while this guard stayed green watching only /mnt/c) — plus /mnt/c
+//      always (system drive: swap.vhdx + the original 2026-07-11 killer).
 //
 // Remedy it prints: `make disk-clean` (safe caches) / `make disk-clean-deep`
 // (adds cargo target + full nix GC) + the host-side vhdx compaction note —
@@ -23,6 +27,7 @@
 // Instant: statfs only, no directory walks. No dependencies.
 
 import { statfsSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -46,11 +51,31 @@ function freeGib(path) {
   return (s.bavail * s.bsize) / GIB;
 }
 
+// The drive(s) that actually hold a distro's ext4.vhdx — NOT assumed to be C:.
+// The Lxss registry key lists each distro's BasePath (e.g. `Z:\WSL`); reg.exe
+// works from inside WSL via interop. Silent empty result on bare Linux/CI or
+// with interop disabled — the /mnt/c fallback below still applies.
+function vhdxHostMounts() {
+  try {
+    const out = execFileSync(
+      "reg.exe",
+      ["query", String.raw`HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss`, "/s", "/v", "BasePath"],
+      { timeout: 5000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    const letters = [...out.matchAll(/REG_SZ\s+([A-Za-z]):\\/g)].map((m) => m[1].toLowerCase());
+    return [...new Set(letters)].map((l) => `/mnt/${l}`);
+  } catch {
+    return [];
+  }
+}
+
 const checks = [{ label: "repo filesystem (WSL root)", path: repoRoot }];
-// Host drives backing a WSL environment. /mnt/c is the standard drvfs mount of
-// the drive that holds ext4.vhdx; skip silently when absent (CI, bare Linux).
-for (const drive of ["/mnt/c"]) {
-  if (existsSync(drive)) checks.push({ label: `host drive ${drive} (backs the WSL vhdx)`, path: drive });
+// Host drives backing a WSL environment: the detected vhdx drive(s) + always
+// /mnt/c (system drive — WSL swap.vhdx lives there; the 2026-07-11 killer).
+// Skip silently when a mount is absent (CI, bare Linux); note that a vhdx
+// drive excluded from WSL automount would be invisible here.
+for (const drive of new Set([...vhdxHostMounts(), "/mnt/c"])) {
+  if (existsSync(drive)) checks.push({ label: `host drive ${drive} (backs the WSL vhdx/swap)`, path: drive });
 }
 
 const remedy = [

@@ -27,7 +27,25 @@ if [ "$package_version" = "$package_lock_version" ] \
   && [ "$package_version" = "$tauri_version" ] \
   && [ "$package_version" = "$cargo_version" ] \
   && [ "$package_version" = "$cargo_lock_version" ]; then
-  printf "Version files are synchronized at %s.\n" "$package_version"
+  # Tag parity (ADR 0090 amendment, 2026-07-28): the release bot stamps the
+  # released version into the manifests right after tagging, so on any checkout
+  # that can see v* tags the manifest version must equal the newest tag —
+  # anything else means the stamp commit failed or was reverted and the repo is
+  # silently drifting from the released version. Skipped when no v* tag is
+  # reachable (shallow CI checkouts fetch no tags); the net is local runs,
+  # where tags always exist.
+  latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null | head -1)"
+  if [ -n "$latest_tag" ] && [ "v$package_version" != "$latest_tag" ]; then
+    cat >&2 <<EOF
+Version files are synchronized at $package_version, but the newest release tag
+is $latest_tag. The repo manifests must carry the released version (release.yml
+stamps them post-tag). If the release bot-commit failed, re-apply it with:
+  node scripts/release/bump-version.mjs ${latest_tag#v}
+EOF
+    exit 1
+  fi
+  printf "Version files are synchronized at %s%s.\n" "$package_version" \
+    "${latest_tag:+ (matches $latest_tag)}"
   exit 0
 fi
 
