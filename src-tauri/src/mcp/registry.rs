@@ -1077,6 +1077,7 @@ fn classifications() -> Vec<RegistryEntry> {
         act("set_company_ir_reports_url", None),
         act("set_company_sector", None),
         act("rename_watchlist", None), // watchlist rename (UI config)
+        act("rename_cockpit_layout", None), // saved-view rename (UI config, issue #89)
         act("capture_report_document", None), // document-ingest plumbing (fetch/extract pipeline owns it)
         act("resolve_transcript_job_company", None), // transcript-triage UI step
         // Report-pipeline job triggers (multi-stage document machinery; UI-driven
@@ -1103,6 +1104,10 @@ fn classifications() -> Vec<RegistryEntry> {
         act("create_video_transcript_job", None),
         act("update_video_transcript_job", None),
         act("run_video_transcript_job", None),
+        // Local-filesystem write (the export save path; issue #106) — an agent
+        // must never write arbitrary files on the owner's machine; agents read
+        // exports through export_research_data/export_settings_data instead.
+        excluded("write_export_file"),
         // ---- Excluded: deletes ---------------------------------------------
         excluded("delete_company"),
         excluded("delete_watchlist"),

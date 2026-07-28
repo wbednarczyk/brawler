@@ -1,7 +1,6 @@
 import { useRef, useState, type MutableRefObject } from "react";
 import { downloadDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
 import {
   applyResearchImport,
   applySettingsImport,
@@ -9,6 +8,7 @@ import {
   exportSettingsData,
   previewResearchImport,
   previewSettingsImport,
+  writeExportFile,
   type ImportApplyResult,
   type ImportApplySummary,
   type ImportPreview,
@@ -322,7 +322,14 @@ async function saveExportFile(
     return;
   }
 
-  await writeTextFile(ensureAllowedExtension(selectedPath, filter.extensions, filter.defaultExtension), contents);
+  // Issue #106: typed backend command — the extension whitelist is enforced
+  // Rust-side and the webview holds no filesystem permission at all.
+  await writeExportFile({
+    path: selectedPath,
+    contents,
+    allowedExtensions: filter.extensions,
+    defaultExtension: filter.defaultExtension,
+  });
 }
 
 function ensureFileExtension(fileName: string, extension: string) {
@@ -332,11 +339,3 @@ function ensureFileExtension(fileName: string, extension: string) {
     : `${fileName}.${normalizedExtension}`;
 }
 
-function ensureAllowedExtension(path: string, allowedExtensions: string[], defaultExtension: string) {
-  const lowerPath = path.toLowerCase();
-  const hasAllowedExtension = allowedExtensions.some((extension) =>
-    lowerPath.endsWith(`.${extension.toLowerCase().replace(/^\./, "")}`),
-  );
-
-  return hasAllowedExtension ? path : `${path}.${defaultExtension.replace(/^\./, "")}`;
-}

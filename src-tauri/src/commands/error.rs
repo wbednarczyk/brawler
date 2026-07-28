@@ -108,6 +108,8 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::InvalidFrameworkValue { .. } => InvalidInput,
         StorageError::InvalidCriterionExpression { .. } => InvalidInput,
         StorageError::InvalidCockpitLayoutName { .. } => InvalidInput,
+        // Renaming onto an existing layout name is caller input, not a bug.
+        StorageError::DuplicateCockpitLayoutName { .. } => InvalidInput,
         StorageError::InvalidAlertRuleValue { .. } => InvalidInput,
         // Creating a rule identical to an existing one is caller input, not a bug.
         StorageError::DuplicateAlertRule { .. } => InvalidInput,

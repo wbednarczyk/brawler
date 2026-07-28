@@ -267,6 +267,27 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        "write_export_file" => {
+            // The command body minus the tauri async runtime: same path policy,
+            // same write, same scalar return (commands/import_export.rs).
+            let request: crate::commands::import_export::WriteExportFileInput =
+                serde_json::from_value(inner).expect("WriteExportFileInput");
+            let target = crate::commands::import_export::resolve_export_path(&request)
+                .expect("resolve_export_path");
+            std::fs::write(&target, request.contents.as_bytes()).expect("write_export_file");
+            Value::String(target.to_string_lossy().into_owned())
+        }
+        "rename_cockpit_layout" => {
+            let layout_id = inner["layoutId"].as_str().expect("layoutId");
+            let name = inner["name"].as_str().expect("name");
+            serde_json::to_value(
+                state
+                    .cockpit_layouts()
+                    .rename_cockpit_layout(layout_id, name)
+                    .expect("rename_cockpit_layout"),
+            )
+            .unwrap()
+        }
         "delete_cockpit_layout" => {
             let id = input["layoutId"].as_str().expect("layoutId");
             state

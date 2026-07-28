@@ -54,6 +54,7 @@ import {
 import {
   deleteCockpitLayout,
   listCockpitLayouts,
+  renameCockpitLayout,
   saveCockpitLayout,
   type CockpitLayout,
 } from "../api/cockpit";
@@ -460,6 +461,26 @@ export function AppStateRoot({
         refreshCockpitLayouts();
       },
     });
+  }
+
+  // Issue #89: in-place saved-view rename from the sidebar row. The backend
+  // rejects duplicates (save upserts BY NAME — a duplicate would fuse two
+  // layouts on the next save); the codes surface as translated toasts.
+  async function renameCockpitView(layoutId: string, name: string) {
+    try {
+      await renameCockpitLayout(layoutId, name);
+      await refreshCockpitLayouts();
+    } catch (caught) {
+      const message = String(caught);
+      toast.show({
+        message: message.includes("duplicate_cockpit_layout_name")
+          ? text("A view with this name already exists.")
+          : message.includes("invalid_cockpit_layout_name")
+            ? text("View name cannot be empty.")
+            : message,
+        tone: "negative",
+      });
+    }
   }
 
   // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
@@ -1867,6 +1888,7 @@ export function AppStateRoot({
           }
           onOpenCockpitView={openCockpitView}
           onDeleteCockpitView={deleteCockpitView}
+          onRenameCockpitView={renameCockpitView}
           onNavigateToSearchResult={navigateToSearchResult}
           pinnedCompanies={pinnedCompanies}
           selectedCompanyId={selectedCompanyId}

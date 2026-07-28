@@ -56,7 +56,6 @@ serde_json = { version = "1", features = ["raw_value"] }
 serde_yaml = "0.9"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
 thiserror = "2"
 # In-app read-only MCP server transport (ADR 0078 dec. 2). Pure-Rust, three small

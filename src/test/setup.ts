@@ -24,10 +24,6 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(() => Promise.resolve("/tmp/brawler-export.json")),
 }));
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  writeTextFile: vi.fn(() => Promise.resolve()),
-}));
-
 // dockview (Companies workspace pilot, ADR 0053) constructs a ResizeObserver at
 // mount; jsdom does not implement it. This minimal stub lets the docked
 // workspace render in the jsdom harness. NOTE for the pilot evaluation: needing

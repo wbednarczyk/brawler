@@ -283,6 +283,29 @@
           }
         },
         {
+          "command": "rename_cockpit_layout",
+          "input": {
+            "input": {
+              "layoutId": "$lid",
+              "name": "Fidelity Cockpit Renamed"
+            }
+          },
+          "expectField": {
+            "name": "Fidelity Cockpit Renamed",
+            "ordinal": 0
+          }
+        },
+        {
+          "command": "list_cockpit_layouts",
+          "input": {},
+          "expectContains": {
+            "name": "Fidelity Cockpit Renamed"
+          },
+          "expectAbsent": {
+            "name": "Fidelity Cockpit"
+          }
+        },
+        {
           "command": "delete_cockpit_layout",
           "input": {
             "layoutId": "$lid"
@@ -292,7 +315,23 @@
           "command": "list_cockpit_layouts",
           "input": {},
           "expectAbsent": {
-            "name": "Fidelity Cockpit"
+            "name": "Fidelity Cockpit Renamed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "export write path policy (issue #106)",
+      "steps": [
+        {
+          "command": "write_export_file",
+          "input": {
+            "input": {
+              "path": "/tmp/brawler-fidelity-export",
+              "contents": "{\"ok\":true}",
+              "allowedExtensions": ["json"],
+              "defaultExtension": "json"
+            }
           }
         }
       ]

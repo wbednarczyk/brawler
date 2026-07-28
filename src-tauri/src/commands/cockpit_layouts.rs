@@ -12,8 +12,24 @@ fn cockpit_error_code(error: storage::StorageError) -> String {
         storage::StorageError::InvalidCockpitLayoutName { .. } => {
             "invalid_cockpit_layout_name".to_owned()
         }
+        storage::StorageError::DuplicateCockpitLayoutName { .. } => {
+            "duplicate_cockpit_layout_name".to_owned()
+        }
         other => other.to_string(),
     }
+}
+
+/// Input for `rename_cockpit_layout` (issue #89) — in-place rename by id.
+#[derive(Debug, serde::Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameCockpitLayoutInput {
+    pub layout_id: String,
+    pub name: String,
 }
 
 #[tauri::command]
@@ -34,6 +50,17 @@ pub fn save_cockpit_layout(
     state
         .cockpit_layouts()
         .save_cockpit_layout(input)
+        .map_err(cockpit_error_code)
+}
+
+#[tauri::command]
+pub fn rename_cockpit_layout(
+    input: RenameCockpitLayoutInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::CockpitLayout, String> {
+    state
+        .cockpit_layouts()
+        .rename_cockpit_layout(&input.layout_id, &input.name)
         .map_err(cockpit_error_code)
 }
 

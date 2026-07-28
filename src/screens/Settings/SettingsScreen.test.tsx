@@ -11,7 +11,6 @@ import {
   userEvent,
   vi,
   waitFor,
-  writeTextFile,
   within,
 } from "../../test/appWorkflowHarness";
 
@@ -248,7 +247,16 @@ describe("Settings screen workflows", () => {
       filters: [{ name: "Research data", extensions: ["json"] }],
       canCreateDirectories: true,
     });
-    expect(writeTextFile).toHaveBeenCalledWith("/tmp/research-export.json", "{\"schemaVersion\":1}");
+    // Issue #106: the write is a typed backend command (extension enforcement
+    // happens Rust-side) — the webview holds no filesystem permission.
+    expect(invoke).toHaveBeenCalledWith("write_export_file", {
+      input: {
+        path: "/tmp/research-export",
+        contents: "{\"schemaVersion\":1}",
+        allowedExtensions: ["json"],
+        defaultExtension: "json",
+      },
+    });
 
     await user.upload(
       within(researchPanel).getByLabelText("Choose research data file"),
@@ -293,10 +301,14 @@ describe("Settings screen workflows", () => {
       filters: [{ name: "Settings", extensions: ["yaml", "yml"] }],
       canCreateDirectories: true,
     });
-    expect(writeTextFile).toHaveBeenCalledWith(
-      "/tmp/settings-export.yaml",
-      "schemaVersion: 1\nsettings:\n  theme: dark\n",
-    );
+    expect(invoke).toHaveBeenCalledWith("write_export_file", {
+      input: {
+        path: "/tmp/settings-export",
+        contents: "schemaVersion: 1\nsettings:\n  theme: dark\n",
+        allowedExtensions: ["yaml", "yml"],
+        defaultExtension: "yaml",
+      },
+    });
 
     await user.upload(
       within(settingsPanel).getByLabelText("Choose settings file"),

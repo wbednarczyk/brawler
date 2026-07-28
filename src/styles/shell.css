@@ -153,6 +153,18 @@
   min-width: 0;
 }
 
+/* Inline saved-view rename (issue #89): the TextField takes the label slot and
+   must shrink like the nav-item it replaces — never widen the sidebar. */
+.pinned-row > .nav-view-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pinned-row > .nav-view-rename .ui-text-input {
+  width: 100%;
+  min-width: 0;
+}
+
 .pinned-unpin {
   flex: 0 0 auto;
   width: 26px;

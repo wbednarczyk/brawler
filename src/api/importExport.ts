@@ -2,6 +2,7 @@ import { callCommand } from "./tauri";
 import type { ExportPayload } from "./generated/ExportPayload";
 import type { ImportPreview } from "./generated/ImportPreview";
 import type { ImportApplyResult } from "./generated/ImportApplyResult";
+import type { WriteExportFileInput } from "./generated/WriteExportFileInput";
 
 // GENERATED from src-tauri/src/storage/import_export/types.rs via ts-rs (ADR 0048).
 // The summaries are the complete Rust-side counts (incl. managementClaims).
@@ -33,4 +34,13 @@ export function previewSettingsImport(contents: string) {
 
 export function applySettingsImport(contents: string) {
   return callCommand<ImportApplyResult>("apply_settings_import", { input: { contents } });
+}
+
+export type { WriteExportFileInput } from "./generated/WriteExportFileInput";
+
+// Issue #106: the export write is a typed backend command (extension whitelist
+// enforced Rust-side; returns the final path) — the webview holds no
+// filesystem permission at all.
+export function writeExportFile(input: WriteExportFileInput) {
+  return callCommand<string>("write_export_file", { input });
 }
