@@ -39,6 +39,11 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -58,6 +63,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       # Restore-only: the canonical writer is rust-test (cache discipline — one
       # writer, 10 GB/repo budget). save-if:false → never writes.
       - uses: Swatinem/rust-cache@v2
@@ -77,6 +87,11 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       # The ONE canonical cargo cache writer (save-if default true).
       - uses: Swatinem/rust-cache@v2
         with:
@@ -94,6 +109,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -111,6 +131,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - uses: actions/cache@v4
         with:
           path: ~/.npm
@@ -128,6 +153,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - uses: actions/cache@v4
         with:
           path: ~/.npm
@@ -145,6 +175,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - uses: actions/cache@v4
         with:
           path: ~/.npm
@@ -166,6 +201,11 @@ jobs:
         shard: ['1/2', '2/2']
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - uses: actions/cache@v4
         with:
           path: ~/.npm
@@ -190,6 +230,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - run: make check-docs-gates
 
   commit-lint:
@@ -200,6 +245,11 @@ jobs:
     steps:
       # Full history so the PR commit range is walkable.
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
         with:
           fetch-depth: 0
       - run: make check-commits RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
@@ -213,6 +263,11 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - run: make check-release-label PR=${{ github.event.pull_request.number }}
 
   # Windows = first-class platform (ADR 0090 §B2): cross-build the portable .exe
@@ -234,6 +289,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - name: Reclaim disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true

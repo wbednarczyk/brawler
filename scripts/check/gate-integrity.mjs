@@ -149,7 +149,7 @@ for (const { target, marker, label } of MANDATORY_SUITES) {
 const FULL_CHECK_PATH = ".github/workflows/full-check.yml";
 // Substrings (lower-cased) of infra run-step NAMES that legitimately do not call
 // make. Keep this list tiny and specific — it is the only bespoke-CI escape.
-const INFRA_RUN_STEP_NAMES = ["reclaim disk", "free disk space"];
+const INFRA_RUN_STEP_NAMES = ["reclaim disk", "free disk space", "fix workspace ownership"];
 const workflow = readIfExists(FULL_CHECK_PATH);
 if (workflow === null) {
   errors.push(
