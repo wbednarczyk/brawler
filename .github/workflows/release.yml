@@ -254,9 +254,16 @@ jobs:
 
       # Preflight the stamp-push path BEFORE the tag exists (v0.61.3
       # postmortem, 2026-07-28): the stamp step pushes to the protected master
-      # with the release-stamp deploy key, so a missing secret or a ruleset
-      # without the DeployKey bypass must fail the release HERE — never after
-      # the tag/release shipped (which leaves master permanently unstamped).
+      # with the release-stamp deploy key, so a broken push path must fail the
+      # release HERE — never after the tag/release shipped (which leaves master
+      # permanently unstamped). The check probes CAPABILITY, not configuration:
+      # the first version read the ruleset's bypass_actors over the API, but
+      # that field is admin-only and GITHUB_TOKEN sees null — a false negative
+      # that failed the v0.61.5 rerun with the bypass correctly configured.
+      # The SSH probe below proves the secret holds a key GitHub accepts FOR
+      # THIS REPO (a deploy key's auth banner names its repository); the
+      # ruleset read stays as best-effort — it hard-fails only on a POSITIVE
+      # "no DeployKey bypass" reading, and skips when the field is unreadable.
       - name: Preflight release-stamp push path
         env:
           RELEASE_STAMP_DEPLOY_KEY: ${{ secrets.RELEASE_STAMP_DEPLOY_KEY }}
@@ -266,18 +273,33 @@ jobs:
             echo "RELEASE_STAMP_DEPLOY_KEY secret is missing — the changelog/version stamp cannot push to master." >&2
             exit 1
           fi
-          bypass_ok=$(gh api "repos/${{ github.repository }}/rulesets" --jq '
-            [.[] | select(.target == "branch")] | length' )
-          if [ "$bypass_ok" -gt 0 ]; then
-            has_bypass=$(gh api "repos/${{ github.repository }}/rulesets" --jq '.[].id' | while read -r id; do
-              gh api "repos/${{ github.repository }}/rulesets/$id" --jq '
-                select((.rules | map(.type) | index("pull_request")) != null)
-                | .bypass_actors | map(.actor_type) | index("DeployKey") != null'
-            done | grep -c true || true)
-            if [ "$has_bypass" -eq 0 ]; then
-              echo "No branch ruleset grants a DeployKey bypass — the stamp push would be rejected (GH013)." >&2
-              exit 1
-            fi
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          printf '%s\n' "$RELEASE_STAMP_DEPLOY_KEY" > ~/.ssh/release_stamp
+          chmod 600 ~/.ssh/release_stamp
+          auth_banner=$(ssh -i ~/.ssh/release_stamp -o IdentitiesOnly=yes -T git@github.com 2>&1 || true)
+          case "$auth_banner" in
+            *"${{ github.repository }}"*"successfully authenticated"*)
+              echo "release-stamp deploy key authenticates for ${{ github.repository }}." ;;
+            *)
+              echo "RELEASE_STAMP_DEPLOY_KEY does not authenticate as a deploy key of ${{ github.repository }}:" >&2
+              echo "$auth_banner" >&2
+              exit 1 ;;
+          esac
+          verdicts=$(gh api "repos/${{ github.repository }}/rulesets" --jq '.[].id' 2>/dev/null | while read -r id; do
+            gh api "repos/${{ github.repository }}/rulesets/$id" 2>/dev/null | jq -r '
+              select((.rules // [] | map(.type) | index("pull_request")) != null)
+              | if .bypass_actors == null then "unreadable"
+                elif ([.bypass_actors[].actor_type] | index("DeployKey")) != null then "ok"
+                else "missing"
+                end'
+          done || true)
+          if printf '%s\n' "$verdicts" | grep -q '^missing$'; then
+            echo "A pull_request ruleset has NO DeployKey bypass — the stamp push would be rejected (GH013)." >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$verdicts" | grep -q '^ok$'; then
+            echo "Ruleset bypass not verifiable with this token (bypass_actors is admin-only) — the SSH probe above is the effective guard."
           fi
 
       # Tag AFTER both successful builds so a failed build never orphans a tag.
