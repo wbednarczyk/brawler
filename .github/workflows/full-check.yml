@@ -16,7 +16,10 @@ name: Full check
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # NOTE deliberately NO labeled/unlabeled here: label events re-run only the
+    # tiny release-label.yml workflow, so green heavy checks on the same SHA
+    # stay untouched (and an in-flight run is not cancelled by labeling).
+    types: [opened, synchronize, reopened]
   workflow_call:
   workflow_dispatch:
 
@@ -253,22 +256,6 @@ jobs:
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - run: make check-commits RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-
-  release-label:
-    name: Release label (exactly one release:*)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Fix workspace ownership
-        # Container jobs: the runner mounts the workspace with a uid that differs
-        # from the container user; Nix's libgit2 then refuses the flake git input
-        # ("repository path is not owned by current user"). No-op outside containers.
-        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-      - run: make check-release-label PR=${{ github.event.pull_request.number }}
 
   # Windows = first-class platform (ADR 0090 §B2): cross-build the portable .exe
   # on every code-touching PR. Uses install-nix-action (the windows-cross devShell

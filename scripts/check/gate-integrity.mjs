@@ -146,10 +146,17 @@ for (const { target, marker, label } of MANDATORY_SUITES) {
 //      logic, so the same thing runs identically locally and in CI. `uses:`
 //      steps (checkout/cache/setup/paths-filter actions) are exempt by nature;
 //      a small allowlist of infra `run:` steps (disk reclaim) is exempt too.
-const FULL_CHECK_PATH = ".github/workflows/full-check.yml";
+// Both gate-carrying workflows are held to the make-parity contract: the full
+// gate and the label check split out of it (release-label.yml exists solely so
+// labeled/unlabeled events re-run a 4s job instead of the whole gate).
+const GATE_WORKFLOW_PATHS = [
+  ".github/workflows/full-check.yml",
+  ".github/workflows/release-label.yml",
+];
 // Substrings (lower-cased) of infra run-step NAMES that legitimately do not call
 // make. Keep this list tiny and specific — it is the only bespoke-CI escape.
 const INFRA_RUN_STEP_NAMES = ["reclaim disk", "free disk space", "fix workspace ownership"];
+for (const FULL_CHECK_PATH of GATE_WORKFLOW_PATHS) {
 const workflow = readIfExists(FULL_CHECK_PATH);
 if (workflow === null) {
   errors.push(
@@ -188,6 +195,7 @@ if (workflow === null) {
       );
     }
   }
+}
 }
 
 // ---------------------------------------------------------------------------
