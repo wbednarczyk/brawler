@@ -23,9 +23,8 @@ APP_VERSION := $(shell sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)"
 WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
-RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -57,15 +56,9 @@ help:
 	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
 	@printf "  make build               Build the frontend inside nix develop\n"
 	@printf "  make install-git-hooks   Install repo-local commit message hooks\n"
-	@printf "  make release-check       Validate release workflow guardrails\n"
-	@printf "  make changelog           Generate future changelog entries with git-cliff\n"
 	@printf "  make changelog-check     Validate git-cliff changelog generation\n"
 	@printf "  make release-notes TAG=vX.Y.Z\n"
 	@printf "                            Print the changelog entry used for GitHub Release notes\n"
-	@printf "  make release-prepare VERSION=X.Y.Z\n"
-	@printf "                            Bump version + generate the changelog scaffold, then stop for curation\n"
-	@printf "  make release VERSION=X.Y.Z\n"
-	@printf "                            Finalize: validate, commit, tag, and push (bumps + generates changelog if not prepared)\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
 	@printf "  make license-keygen-author\n"
@@ -175,10 +168,14 @@ check-browser:
 	$(NIX) $(if $(SHARD),npx playwright test --shard=$(SHARD),npm run test:browser)
 
 # Docs gates: gate-integrity meta-guard (ADR 0062/0063) + spec↔code drift
-# (ADR 0065). Seconds; a docs-only PR runs only this + commit-lint in CI.
+# (ADR 0065) + version sync (manifests agree with each other and, when tags are
+# visible, with the newest release tag — ADR 0090 amendment 2026-07-28; before
+# that the version-sync check hung off the retired `make release` and ran in no
+# gate at all). Seconds; a docs-only PR runs only this + commit-lint in CI.
 check-docs-gates:
 	$(NIX) node scripts/check/gate-integrity.mjs
 	$(NIX) node scripts/check/docs-drift.mjs
+	$(NIX) npm run release:version-check
 
 # Commit-message gate (ADR 0090): validate every commit subject in RANGE against
 # the Conventional Commits schema. CI passes the PR's commit range
@@ -427,9 +424,6 @@ commit-msg-check:
 version-check:
 	$(NIX) npm run release:version-check
 
-changelog:
-	$(NIX) git-cliff --config cliff.toml --unreleased --tag "v$(APP_VERSION)" --prepend CHANGELOG.md
-
 changelog-check:
 	$(NIX) npm run release:changelog-check
 
@@ -445,61 +439,6 @@ commit:
 release-notes:
 	@test -n "$(TAG)" || { printf "Usage: make release-notes TAG=vX.Y.Z\n" >&2; exit 64; }
 	@scripts/release/extract-changelog-entry.sh "$(TAG)" CHANGELOG.md
-
-release-check:
-	$(NIX) npm run release:check
-
-# Prepare a release for curation: bump the version and generate the changelog
-# scaffold, then STOP. This is the seam the one-shot `release` lacks — it lets the
-# `## vX.Y.Z` section be curated into real release notes *before* the release
-# commit, so the curated notes land in the tagged commit (the GitHub release notes
-# are sliced from CHANGELOG.md at the tag). After curating, run `make release`.
-release-prepare:
-	@test -n "$(VERSION)" || { printf "Usage: make release-prepare VERSION=X.Y.Z\n" >&2; exit 64; }
-	@test "$$(git branch --show-current)" = "master" || { printf "Release target must run from master.\n" >&2; exit 1; }
-	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then \
-		printf "Tag v$(VERSION) already exists.\n" >&2; \
-		exit 1; \
-	fi
-	$(NIX) node scripts/release/assert-release-worktree.mjs
-	@if [ "$(VERSION)" != "$(APP_VERSION)" ]; then \
-		$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"; \
-	else printf "Version already at $(VERSION); skipping bump.\n"; fi
-	@if grep -q "^## v$(VERSION) " CHANGELOG.md; then \
-		printf "CHANGELOG.md already has v$(VERSION); skipping generation.\n"; \
-	else $(MAKE) changelog; fi
-	@printf "\nPrepared v$(VERSION). Curate the '## v$(VERSION)' section in CHANGELOG.md into\nuser-facing release notes, then run:  make release VERSION=$(VERSION)\n"
-
-# Finalize a release: validate, make the single chore(release) commit, tag, and
-# push. Works whether or not `release-prepare` ran first — the bump and changelog
-# steps are skip-if-already-done (so a prepared+curated changelog is preserved),
-# and run inline for a one-shot `make release` (which then commits the terse
-# scaffold, same as before).
-release:
-	@test -n "$(VERSION)" || { printf "Usage: make release VERSION=X.Y.Z\n" >&2; exit 64; }
-	@test "$$(git branch --show-current)" = "master" || { printf "Release target must run from master.\n" >&2; exit 1; }
-	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then \
-		printf "Tag v$(VERSION) already exists.\n" >&2; \
-		exit 1; \
-	fi
-	$(NIX) node scripts/release/assert-release-worktree.mjs
-	@if [ "$(VERSION)" != "$(APP_VERSION)" ]; then \
-		$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"; \
-	else printf "Version already bumped to $(VERSION) (prepared); skipping bump.\n"; fi
-	@if grep -q "^## v$(VERSION) " CHANGELOG.md; then \
-		printf "CHANGELOG.md already has v$(VERSION) (prepared/curated); skipping generation.\n"; \
-	else $(MAKE) changelog; fi
-	$(MAKE) release-check
-	$(MAKE) check
-	git add $(RELEASE_FILES)
-	git commit -m "chore(release): bump version to $(VERSION)"
-	git tag -a "v$(VERSION)" -m "v$(VERSION)"
-	@# The `make check` above already gated this exact tree; tell the pre-push
-	@# hook not to re-run the full gate on these master pushes (ADR 0062 2026-07-15).
-	BRAWLER_GATE_ALREADY_GREEN=1 git push origin master
-	git push origin "v$(VERSION)"
-	BRAWLER_GATE_ALREADY_GREEN=1 git push rad master
-	git push rad "v$(VERSION)"
 
 # Sync the Radicle mirror (second distribution path only — no process depends on
 # it, ADR 0090 §D). Owner runs it whenever convenient after releases.
@@ -520,7 +459,8 @@ pr-binary:
 	printf "Downloaded PR #$(PR) Windows artifact to %s\n" "$$dest"
 
 # Stamp the release version into the manifests/binary/UI at build time WITHOUT
-# committing (ADR 0090 §D pt 2: tags are truth, manifests hold a placeholder).
+# committing (ADR 0090 §D pt 2, amended 2026-07-28: release.yml commits the
+# same stamp post-tag, so this build-time copy matches what lands on master).
 # Reuses the version bumper as a pure file-stamp; the tree is left dirty
 # deliberately (ephemeral in CI; discard locally).
 stamp-version:

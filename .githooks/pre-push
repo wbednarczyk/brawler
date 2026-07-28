@@ -13,9 +13,9 @@ set -euo pipefail
 # only (ADR 0045) — fast belt-and-suspenders, not the full matrix.
 #
 # Escape hatch: `BRAWLER_GATE_ALREADY_GREEN=1` skips the full check on a master
-# push. It exists for `make release`, which runs `make check` itself immediately
-# before pushing — re-running it in the hook would gate the identical tree twice.
-# This is a caller vouching it already ran the gate, NOT a way to weaken it: a
+# push — a manual vouch that the identical tree was just gated (e.g. a mirror
+# or recovery push right after a green `make check`; the old `make release` was
+# its original consumer and is gone, ADR 0090). NOT a way to weaken the gate: a
 # plain `git push` (no env var) always gets the full gate.
 #
 # Installed via `make install-git-hooks` (sets core.hooksPath to .githooks).
