@@ -33,8 +33,10 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      cargo-dev-minor-patch:
-        update-types: [minor, patch]
+      # Dev deps never ship — majors ride the same monthly PR (one red major
+      # can't block shipped updates here, unlike the prod groups).
+      cargo-dev-all:
+        update-types: [major, minor, patch]
 
   - package-ecosystem: npm
     directory: /
@@ -61,8 +63,9 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      npm-dev-minor-patch:
-        update-types: [minor, patch]
+      # Dev deps never ship — majors ride the same monthly PR.
+      npm-dev-all:
+        update-types: [major, minor, patch]
 
   - package-ecosystem: github-actions
     directory: /
@@ -73,5 +76,6 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      actions-minor-patch:
-        update-types: [minor, patch]
+      # Actions never ship in the app — majors ride the same monthly PR.
+      actions-all:
+        update-types: [major, minor, patch]
