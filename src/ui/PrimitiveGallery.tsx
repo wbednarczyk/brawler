@@ -123,6 +123,12 @@ export function PrimitiveGallery() {
             </StatusChip>
           ))}
         </ChipList>
+        {/* Issue #209: a chip in a slot narrower than its label clips inside
+            its own box (min-width:0 + max-width:100% + overflow hidden) —
+            robust to ±px font-metric variance across environments. */}
+        <div className="ui-chip-constrained-demo">
+          <StatusChip tone="warn">Awaiting verification</StatusChip>
+        </div>
         <ChipList ariaLabel="Status pills">
           {PILL_TONES.map((tone) => (
             <StatusPill key={tone} tone={tone}>

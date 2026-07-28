@@ -773,6 +773,7 @@ Or the pieces separately:
 **Live-probe honesty rules (harvested 2026-07-10, ADR 0045).** Two classes that green-washed real defects on the owner's app:
 - **A punchline probe asserts the OUTCOME, not just settlement.** A probe whose purpose is "the flow produced X" must require a nonzero/expected result (`Wydobyto [1-9]`, a row count delta, a DB assertion) — "it settled" with a zero result is a probe FAILURE. A settle-only assert once passed while the feature under test silently did nothing.
 - **Panes are company-scoped.** A live cockpit layout can hold panels pinned to OTHER companies (the owner may be using the app concurrently); an unscoped `.first()` locator can silently read a neighbour's pane. Always scope by `data-company-id` (present on coverage + review panels for exactly this reason).
+- **Locators are region-scoped (harvested 2026-07-28, issue #129).** Real-app toasts float at page level and inject arbitrary matching text (a per-company skip toast can name "GPW ESPI/EBI"), so a bare page-level `getByText` in a live spec strict-mode-collides intermittently. Scope every content locator to the panel/list container (`getByLabel` on the region), never the page.
 
 ## UI dogfooding finding ⇒ overlay (standing rule, ADR 0045 harvest)
 

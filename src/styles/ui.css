@@ -321,6 +321,12 @@
   gap: var(--space-3);
 }
 
+/* Issue #209 demo slot: deliberately narrower than the chip's label so the
+   gallery (and its browser spec) pins the shrink-and-clip behavior. */
+.ui-chip-constrained-demo {
+  width: 96px;
+}
+
 .field-with-clear {
   position: relative;
   display: block;
@@ -367,6 +373,13 @@
   background: color-mix(in srgb, var(--surface) 56%, transparent);
   font-size: var(--font-sm);
   white-space: nowrap;
+  /* Issue #209: a chip in a slot narrower than its label (±px font-metric
+     variance across environments) must shrink and clip inside its own box —
+     never paint over the neighboring cell or redden the overflow gate. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .primary-button,

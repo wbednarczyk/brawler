@@ -280,12 +280,15 @@ test.describe("Today dogfooding states — orphaned evidence + pruned feed", { t
 
     const stream = page.getByLabel("Attention stream");
     // Each orphan company's row still renders, with a non-empty statement and its
-    // category badge — the fallback, not a blank line.
+    // category badge — the fallback, not a blank line. The statement must be the
+    // localized generic copy, never a raw trigger enum token like
+    // "signal_category" (issue #119).
     for (const ticker of ["ZZO1", "ZZO2", "ZZO3"]) {
       const row = stream.locator("li[data-category='attention']").filter({ hasText: ticker });
       await expect(row).toBeVisible();
       const title = await row.locator(".today-row-title").innerText();
       expect(title.trim().length).toBeGreaterThan(0);
+      expect(title.trim()).not.toMatch(/^[a-z0-9]+(?:_[a-z0-9]+)+$/);
       await expect(row.locator(".ui-status-chip").first()).toBeVisible();
     }
     await expectNoPageOverflow(page);

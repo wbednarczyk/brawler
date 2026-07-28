@@ -1321,6 +1321,7 @@ export const plText: Record<string, string> = {
   "Own-share transactions": "Akcje własne",
   "Guidance change": "Zmiana prognoz",
   "General meeting": "Walne zgromadzenie",
+  "Major holdings change": "Zmiana znacznych pakietów akcji",
   "Other official filing": "Inny komunikat oficjalny",
   "Management claims": "Obietnice zarządu",
   "Track management promises with a due period and a verdict. Claims resurface for review when the due-period report arrives.":

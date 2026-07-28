@@ -434,11 +434,8 @@ mod tests {
         );
         assert_eq!(
             names.len(),
-            100,
-            "44 read (4 MVP + 34 read-wave + get_kpi_comparison + get_sector_percentiles \
-             + list_valuation_runs (ADR 0089) + list_alert_rules + list_flagged_extraction_outcomes \
-             + list_unclassified_filings) + 56 act tools incl. \
-             compute_comparative_valuation (ADR 0089), classify_filing (ADR 0088 dec. 2/3/4)"
+            crate::mcp::registry::FROZEN_EXPOSED_TOOL_COUNT,
+            "the frozen exposed-tool count (single source: registry::FROZEN_EXPOSED_TOOL_COUNT)"
         );
     }
 
