@@ -178,6 +178,10 @@ jobs:
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
             echo "Tag $tag already exists — skipping tag creation."
           else
+            # Annotated tags need a committer identity; a bare runner has none
+            # ("fatal: empty ident name" — first real release, 2026-07-28).
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$tag" -m "$tag"
             git push origin "$tag"
           fi
