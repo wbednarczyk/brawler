@@ -62,6 +62,8 @@ pub enum StorageError {
     CockpitLayoutNotFound { id: String },
     #[error("invalid cockpit layout name: {name}")]
     InvalidCockpitLayoutName { name: String },
+    #[error("a cockpit layout named {name} already exists")]
+    DuplicateCockpitLayoutName { name: String },
     #[error("invalid alert rule value for {key}: {value}")]
     InvalidAlertRuleValue { key: &'static str, value: String },
     #[error("alert rule not found: {id}")]

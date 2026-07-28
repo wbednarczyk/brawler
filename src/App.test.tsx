@@ -83,6 +83,32 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     confirm.mockRestore();
   });
 
+  // Issue #89: a saved view renames in place from its sidebar row (pencil →
+  // inline TextField → Enter), through the real rename_cockpit_layout command.
+  it("renames a saved view inline from its sidebar row", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "New view" }));
+    await user.type(await screen.findByLabelText("View name"), "Morning");
+    await user.click(screen.getByRole("button", { name: /Create view/i }));
+    expect(await within(nav).findByRole("button", { name: "Morning" })).toBeInTheDocument();
+
+    await user.click(within(nav).getByRole("button", { name: "Rename view: Morning" }));
+    const field = within(nav).getByLabelText("View name");
+    await user.clear(field);
+    await user.type(field, "Evening{Enter}");
+
+    expect(await within(nav).findByRole("button", { name: "Evening" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("button", { name: "Morning" })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("rename_cockpit_layout", {
+        input: expect.objectContaining({ name: "Evening" }),
+      });
+    });
+  });
+
   it("lists pinned companies in the spine and opens the company workspace", async () => {
     renderApp();
 

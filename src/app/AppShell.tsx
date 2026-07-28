@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { Activity, CheckCircle2, Columns3, Moon, PinOff, Plus, RefreshCw, Sun, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Activity, CheckCircle2, Columns3, Moon, Pencil, PinOff, Plus, RefreshCw, Sun, X } from "lucide-react";
 import type {
   HealthResponse,
   SourceIngestionResult,
@@ -14,6 +14,7 @@ import type { SearchMatch } from "../api/search";
 import { GlobalSearch } from "./GlobalSearch";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { navGroups, type Section } from "./navigation";
+import { TextField } from "../ui";
 import {
   createAppShortcutDefinitions,
   resolveAppShortcutReferenceItems,
@@ -60,6 +61,7 @@ type AppShellProps = {
   activeCockpitViewId: string | null;
   onOpenCockpitView: (viewId: string) => void;
   onDeleteCockpitView: (viewId: string) => void;
+  onRenameCockpitView: (viewId: string, name: string) => void;
   onNavigateToSearchResult: (match: SearchMatch) => void;
   pinnedCompanies: PinnedCompany[];
   selectedCompanyId: string | null;
@@ -93,6 +95,7 @@ export function AppShell({
   activeCockpitViewId,
   onOpenCockpitView,
   onDeleteCockpitView,
+  onRenameCockpitView,
   onNavigateToSearchResult,
   pinnedCompanies,
   selectedCompanyId,
@@ -113,6 +116,10 @@ export function AppShell({
   const developerMode = useDeveloperMode();
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
+  // Issue #89: inline saved-view rename — the pencil swaps the row label for a
+  // TextField; Enter commits, Escape/blur cancels.
+  const [renamingViewId, setRenamingViewId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   // The command palette's open() lives inside the CommandPaletteProvider (below),
   // which AppShell renders — so it cannot read that context directly. A binder
@@ -317,17 +324,52 @@ export function AppShell({
                       <>
                         {cockpitViews.map((view) => {
                           const isActive = activeSection === "Cockpit" && activeCockpitViewId === view.id;
+                          const isRenaming = renamingViewId === view.id;
                           return (
                             <div className={isActive ? "pinned-row pinned-row-active" : "pinned-row"} key={view.id}>
+                              {isRenaming ? (
+                                <TextField
+                                  className="nav-view-rename"
+                                  aria-label={text("View name")}
+                                  value={renameDraft}
+                                  autoFocus
+                                  onChange={(event) => setRenameDraft(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      const next = renameDraft.trim();
+                                      setRenamingViewId(null);
+                                      if (next && next !== view.name) {
+                                        onRenameCockpitView(view.id, next);
+                                      }
+                                    } else if (event.key === "Escape") {
+                                      setRenamingViewId(null);
+                                    }
+                                  }}
+                                  onBlur={() => setRenamingViewId(null)}
+                                />
+                              ) : (
+                                <button
+                                  className="nav-item"
+                                  aria-current={isActive ? "page" : undefined}
+                                  onClick={() => onOpenCockpitView(view.id)}
+                                  type="button"
+                                  title={view.name}
+                                >
+                                  <Columns3 size={18} aria-hidden="true" />
+                                  <span>{view.name}</span>
+                                </button>
+                              )}
                               <button
-                                className="nav-item"
-                                aria-current={isActive ? "page" : undefined}
-                                onClick={() => onOpenCockpitView(view.id)}
+                                className="pinned-unpin icon-button"
+                                onClick={() => {
+                                  setRenamingViewId(view.id);
+                                  setRenameDraft(view.name);
+                                }}
                                 type="button"
-                                title={view.name}
+                                aria-label={`${text("Rename view")}: ${view.name}`}
+                                title={text("Rename view")}
                               >
-                                <Columns3 size={18} aria-hidden="true" />
-                                <span>{view.name}</span>
+                                <Pencil size={14} aria-hidden="true" />
                               </button>
                               <button
                                 className="pinned-unpin icon-button"

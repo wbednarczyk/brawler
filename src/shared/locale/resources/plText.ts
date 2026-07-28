@@ -167,6 +167,10 @@ export const plText: Record<string, string> = {
   // Composable views — new-view creator (ADR 0057)
   "New view": "Nowy widok",
   "Delete view": "Usuń widok",
+  // Saved-view rename (issue #89) — "View name" reuses the creator's entry.
+  "Rename view": "Zmień nazwę widoku",
+  "A view with this name already exists.": "Widok o tej nazwie już istnieje.",
+  "View name cannot be empty.": "Nazwa widoku nie może być pusta.",
   "Delete this saved view?": "Usunąć ten zapisany widok?",
   // Undo toasts for reversible deletes (ADR 0076 D5)
   "View deleted": "Widok usunięty",

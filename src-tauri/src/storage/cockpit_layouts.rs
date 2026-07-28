@@ -71,6 +71,15 @@ impl CockpitLayoutStore {
         let connection = self.db.checkout()?;
         delete_cockpit_layout(&connection, layout_id)
     }
+
+    pub fn rename_cockpit_layout(
+        &self,
+        layout_id: &str,
+        new_name: &str,
+    ) -> StorageResult<CockpitLayout> {
+        let connection = self.db.checkout()?;
+        rename_cockpit_layout(&connection, layout_id, new_name)
+    }
 }
 
 const SELECT_COLUMNS: &str =
@@ -183,6 +192,42 @@ pub(super) fn save_cockpit_layout(
         ],
     )?;
     fetch_by_id(connection, &id)?.ok_or(StorageError::CockpitLayoutNotFound { id })
+}
+
+/// Rename a saved layout in place (issue #89). Keeps the row id/ordinal — the
+/// slug-style id is a naming convention, not a name dependency (see
+/// `unique_layout_id`'s comment). The name must be non-empty and not collide
+/// with another layout: `save_cockpit_layout` upserts BY NAME, so allowing a
+/// duplicate here would silently fuse two layouts on the next save.
+pub(super) fn rename_cockpit_layout(
+    connection: &Connection,
+    layout_id: &str,
+    new_name: &str,
+) -> StorageResult<CockpitLayout> {
+    let name = new_name.trim().to_owned();
+    if name.is_empty() {
+        return Err(StorageError::InvalidCockpitLayoutName {
+            name: new_name.to_owned(),
+        });
+    }
+    let existing =
+        fetch_by_id(connection, layout_id)?.ok_or(StorageError::CockpitLayoutNotFound {
+            id: layout_id.to_owned(),
+        })?;
+    if let Some(other) = fetch_by_name(connection, &name)? {
+        if other.id != existing.id {
+            return Err(StorageError::DuplicateCockpitLayoutName { name });
+        }
+    }
+    connection.execute(
+        "UPDATE cockpit_layouts
+         SET name = ?2,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = ?1",
+        params![existing.id, name],
+    )?;
+    fetch_by_id(connection, &existing.id)?
+        .ok_or(StorageError::CockpitLayoutNotFound { id: existing.id })
 }
 
 pub(super) fn delete_cockpit_layout(connection: &Connection, layout_id: &str) -> StorageResult<()> {

@@ -37,11 +37,13 @@ once the grid exists. These changes are **not** saved automatically: use the
 view's name in the field next to it, since it isn't pre-filled). Until you
 save, your rearranging only lasts for the current session.
 
-## Switching and deleting views
+## Switching, renaming, and deleting views
 
-Click a saved view's entry in the sidebar to open it. To delete one, hover
-over its row to reveal a delete icon and confirm — this only removes the
-saved layout, never any of your data.
+Click a saved view's entry in the sidebar to open it. Hovering a row reveals
+two icons: a **pencil** to rename the view in place (type the new name, press
+**Enter** to save, **Escape** to cancel — the name must be unique, since views
+are identified by name when saving layouts), and an **X** to delete it —
+deletion only removes the saved layout, never any of your data.
 
 ## Opening a company straight into its dashboard
 

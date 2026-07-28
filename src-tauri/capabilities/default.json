@@ -8,7 +8,6 @@
     "core:path:allow-resolve-directory",
     "core:path:allow-join",
     "opener:default",
-    "dialog:allow-save",
-    "fs:allow-write-text-file"
+    "dialog:allow-save"
   ]
 }

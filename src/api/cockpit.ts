@@ -21,3 +21,13 @@ export function saveCockpitLayout(input: SaveCockpitLayoutInput) {
 export function deleteCockpitLayout(layoutId: string) {
   return callCommand<void>("delete_cockpit_layout", { layoutId });
 }
+
+// Issue #89: in-place rename (id/ordinal preserved). Error codes:
+// cockpit_layout_not_found | invalid_cockpit_layout_name |
+// duplicate_cockpit_layout_name (save upserts BY NAME, so a duplicate would
+// silently fuse two layouts on the next save — the backend rejects it).
+export function renameCockpitLayout(layoutId: string, name: string) {
+  return callCommand<CockpitLayout>("rename_cockpit_layout", {
+    input: { layoutId, name },
+  });
+}

@@ -57,7 +57,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let app_data_dir = data_directory::runtime_data_dir(app.path().app_data_dir()?)?;
             std::fs::create_dir_all(&app_data_dir)?;
@@ -205,6 +204,7 @@ pub fn run() {
             commands::watchlists::remove_company_from_watchlist,
             commands::cockpit_layouts::list_cockpit_layouts,
             commands::cockpit_layouts::save_cockpit_layout,
+            commands::cockpit_layouts::rename_cockpit_layout,
             commands::cockpit_layouts::delete_cockpit_layout,
             commands::import_export::export_research_data,
             commands::import_export::preview_research_import,
@@ -212,6 +212,7 @@ pub fn run() {
             commands::import_export::export_settings_data,
             commands::import_export::preview_settings_import,
             commands::import_export::apply_settings_import,
+            commands::import_export::write_export_file,
             commands::feed::list_feed_items,
             commands::sources::list_unmatched_source_items,
             commands::feed::update_feed_item_state,

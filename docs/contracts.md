@@ -693,11 +693,12 @@ The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockvi
 Workflow actions:
 
 - `save_cockpit_layout(input)`: `{ name, panelsJson, layoutJson, dockviewVersion }` → upserts a layout by `name`, returns the saved row. `name` must be non-empty.
+- `rename_cockpit_layout(input)`: `{ layoutId, name }` (`RenameCockpitLayoutInput`) → renames the layout **in place** (id, ordinal, panels/layout JSON untouched), returns the updated row (issue #89). The name must be non-empty and unique: because `save_cockpit_layout` upserts BY NAME, a duplicate rename would silently fuse two layouts on the next save — rejected with `duplicate_cockpit_layout_name`. A rename to the layout's own name is a no-op update. **UI entry point**: the pencil affordance on the saved view's sidebar row (inline rename; Enter commits, Escape/blur cancels).
 - `delete_cockpit_layout(layoutId)` → removes the layout by id (idempotent — deleting an absent id is a no-op).
 
 Restore/fallback behavior, source-of-truth split between `panelsJson`/`layoutJson`, and import/export durability are canonical in [Data Model § Research Cockpit Layouts](data-model.md#research-cockpit-layouts).
 
-Error codes: `cockpit_layout_not_found`, `invalid_cockpit_layout_name`.
+Error codes: `cockpit_layout_not_found`, `invalid_cockpit_layout_name`, `duplicate_cockpit_layout_name`.
 
 ## Report-Over-Report Diff
 
@@ -2844,6 +2845,7 @@ Typed commands:
 - `export_settings_data() -> ExportPayload`
 - `preview_settings_import({ contents }) -> ImportPreview`
 - `apply_settings_import({ contents }) -> ImportApplyResult`
+- `write_export_file(input) -> string` — `{ path, contents, allowedExtensions, defaultExtension }` (`WriteExportFileInput`): writes an export payload to the **dialog-selected** absolute path and returns the final path. The extension whitelist is enforced backend-side (a path missing an allowed extension gets `defaultExtension` appended); a relative/empty path or an empty whitelist is rejected (`invalid_export_path: …`), an IO failure surfaces as `export_write_failed: …`. Offloaded (`spawn_blocking`). **This command replaced the unscoped `fs:allow-write-text-file` capability** (issue #106): the webview holds no filesystem permission at all — the export write is the strict-permissions posture's typed-command path. Denylisted on the MCP surface (an agent never writes arbitrary files on the owner's machine). **UI entry point**: the Import/Export settings export buttons (`saveExportFile` in `ImportExportSettings.tsx`).
 
 Rules:
 

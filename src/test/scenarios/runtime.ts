@@ -982,6 +982,26 @@ function buildHandlers(): Record<string, Handler> {
       d.cockpitLayouts = d.cockpitLayouts.filter((l) => l.id !== layoutId);
       return undefined;
     },
+    // Backend parity (storage/cockpit_layouts.rs rename_cockpit_layout, issue
+    // #89): in-place rename keeping id/ordinal; empty → invalid name, another
+    // layout with the target name → duplicate, unknown id → not found.
+    rename_cockpit_layout: (d, a) => {
+      const input = unwrap(a);
+      const layoutId = str(input.layoutId) ?? "";
+      const name = (str(input.name) ?? "").trim();
+      if (!name) throw new Error("invalid_cockpit_layout_name");
+      const existing = d.cockpitLayouts.find((l) => l.id === layoutId);
+      if (!existing) throw new Error("cockpit_layout_not_found");
+      const clash = d.cockpitLayouts.find((l) => l.name === name && l.id !== layoutId);
+      if (clash) throw new Error("duplicate_cockpit_layout_name");
+      const { next, updated } = mapReplace(
+        d.cockpitLayouts,
+        (l) => l.id === layoutId,
+        (l) => ({ ...l, name, updatedAt: SAMPLE_NOW }),
+      );
+      d.cockpitLayouts = next;
+      return updated;
+    },
 
     // --- Autopilot (autonomous report pipeline, ADR 0055) ---
     get_company_autopilot: (d, a) => {
@@ -3449,6 +3469,21 @@ function buildHandlers(): Record<string, Handler> {
       contents: "schemaVersion: 1\nsettings:\n  theme: dark\n",
       summary: emptyExportSummary(),
     }),
+    // Backend parity (commands/import_export.rs write_export_file, issue
+    // #106): extension whitelist enforced, absolute path required, returns the
+    // final path. The mock performs no IO — the contract is path policy.
+    write_export_file: (_d, a) => {
+      const input = unwrap(a);
+      const path = (str(input.path) ?? "").trim();
+      if (!path || !path.startsWith("/")) throw new Error(`invalid_export_path: ${path}`);
+      const allowed = Array.isArray(input.allowedExtensions)
+        ? (input.allowedExtensions as string[])
+        : [];
+      if (allowed.length === 0) throw new Error("invalid_export_path: empty extension whitelist");
+      const lower = path.toLowerCase();
+      const hasAllowed = allowed.some((ext) => lower.endsWith(`.${ext.toLowerCase()}`));
+      return hasAllowed ? path : `${path}.${str(input.defaultExtension) ?? ""}`;
+    },
     preview_research_import: () => ({
       valid: true,
       summary: { ...emptyApplySummary(), companiesCreated: 1 },
