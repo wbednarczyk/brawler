@@ -1,0 +1,33 @@
+# Release-label gate (ADR 0090 §D): every PR carries exactly one release:* label.
+#
+# Lives OUTSIDE full-check.yml on purpose: this is the only check that must
+# re-evaluate on labeled/unlabeled events. Keeping those triggers here means
+# applying a label re-runs a ~4s job instead of the whole gate — the heavy
+# checks' green on the same SHA stays untouched, and an in-flight full-check
+# run is not cancelled by labeling. (Do NOT fold this back into full-check
+# with job-level `if` on event action: a label event would then overwrite the
+# heavy contexts with "skipped", which SATISFIES required checks — a gate hole.)
+name: Release label
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-label:
+    name: Release label (exactly one release:*)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check-release-label PR=${{ github.event.pull_request.number }}
