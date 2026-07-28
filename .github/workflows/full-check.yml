@@ -136,7 +136,7 @@ jobs:
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
@@ -158,7 +158,7 @@ jobs:
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
@@ -180,7 +180,7 @@ jobs:
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
@@ -206,12 +206,12 @@ jobs:
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
@@ -306,12 +306,12 @@ jobs:
           workspaces: src-tauri
           save-if: false
       - name: Cache cargo-xwin SDK data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .xwin-cache
           key: ${{ runner.os }}-xwin-${{ hashFiles('flake.lock') }}
           restore-keys: ${{ runner.os }}-xwin-
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
