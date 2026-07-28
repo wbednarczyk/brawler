@@ -25,16 +25,8 @@ export function listCompanyTimeline(companyId: string) {
   return callCommand<ResearchTimelineResult>("list_company_timeline", { companyId });
 }
 
-export function listWatchlistTimeline(watchlistId: string) {
-  return callCommand<ResearchTimelineResult>("list_watchlist_timeline", { watchlistId });
-}
-
 export function markResearchScopeReviewed(input: ResearchReviewCheckpointInput) {
   return callCommand<ResearchReviewCheckpoint>("mark_research_scope_reviewed", { input });
-}
-
-export function listResearchReviewState(input: ResearchReviewCheckpointInput) {
-  return callCommand<ResearchReviewCheckpoint | null>("list_research_review_state", { input });
 }
 
 export function listResearchQuestions(input: ResearchQuestionListInput) {

@@ -1,5 +1,13 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/repoctx-first.sh\"" }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "startup",

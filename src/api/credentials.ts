@@ -6,21 +6,21 @@ import type { CredentialStatus } from "./types";
  * in-app analysis layer was retired, Gemini transcription is the only
  * credentialed provider left.
  */
-export const GEMINI_PROVIDER_ID = "provider_gemini";
+const GEMINI_PROVIDER_ID = "provider_gemini";
 
-export function getProviderCredentialStatus(providerId: string) {
+function getProviderCredentialStatus(providerId: string) {
   return callCommand<CredentialStatus>("get_provider_credential_status", {
     input: { providerId },
   });
 }
 
-export function setProviderApiKey(providerId: string, apiKey: string) {
+function setProviderApiKey(providerId: string, apiKey: string) {
   return callCommand<CredentialStatus>("set_provider_api_key", {
     input: { providerId, apiKey },
   });
 }
 
-export function clearProviderApiKey(providerId: string) {
+function clearProviderApiKey(providerId: string) {
   return callCommand<CredentialStatus>("clear_provider_api_key", {
     input: { providerId },
   });

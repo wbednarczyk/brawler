@@ -1,6 +1,5 @@
 import { callCommand } from "./tauri";
 import type { ComparativeValuation } from "./generated/ComparativeValuation";
-import type { StoredValuationRun } from "./generated/StoredValuationRun";
 
 // GENERATED DTOs from src-tauri/src/valuation/mod.rs + storage/valuation_runs.rs
 // via ts-rs (ADR 0048). Comparative valuation L1 (ADR 0089 dec. 4-5;
@@ -27,10 +26,4 @@ export function computeComparativeValuation(companyId: string) {
   return callCommand<ComparativeValuation>("compute_comparative_valuation", {
     companyId,
   });
-}
-
-/// The append-only comparative-valuation run history for one company, newest
-/// first by the domain `dataAsOf` date (never `createdAt`).
-export function listValuationRuns(companyId: string) {
-  return callCommand<StoredValuationRun[]>("list_valuation_runs", { companyId });
 }
