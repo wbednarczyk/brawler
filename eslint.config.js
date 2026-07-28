@@ -86,6 +86,44 @@ const DOCKVIEW_RESTRICTION = {
     "dockview is confined to the research-cockpit spike (src/screens/Cockpit/) pending ADR 0053 acceptance. Do not import it elsewhere without flipping ADR 0053 to Accepted and widening this rule.",
 };
 
+// Frontend layer contract (issue #50; canonical statement in
+// docs/modularization-design.md § Frontend layer contract). Enforced edges:
+// - src/api is the IPC bottom: it imports NO app-side layer.
+// - src/shared is reusable across screens: it never imports app/ or screens/
+//   (the composition roots).
+// - src/ui primitives are presentation-only: no app state, screens, or IPC;
+//   the only sanctioned shared leaves are locale + format (display helpers).
+// src/ui is a flat directory, so its cross-layer imports are exactly one
+// `../<layer>/…` hop — anchored patterns, immune to npm-specifier collisions
+// (e.g. "@tauri-apps/api/…" must NOT match an "api" layer ban).
+const UI_LAYER_RESTRICTIONS = [
+  {
+    group: ["../app/**", "../screens/**", "../api/**", "../App", "../main"],
+    message:
+      "src/ui primitives are presentation-only — no app state, screens, or IPC imports (docs/modularization-design.md § Frontend layer contract).",
+  },
+  {
+    // Everything under ../shared/ EXCEPT the sanctioned display leaves
+    // shared/locale and shared/format (negated `group` globs do not compose
+    // with the `../` prefix, hence the regex form).
+    regex: "^\\.\\./shared/(?!locale($|/)|format/)",
+    message:
+      "src/ui may reach only the sanctioned shared leaves: shared/locale and shared/format (display helpers). Anything else belongs above the primitive layer (docs/modularization-design.md § Frontend layer contract).",
+  },
+];
+
+const SHARED_LAYER_RESTRICTION = {
+  group: ["**/app/**", "**/screens/**"],
+  message:
+    "src/shared is reusable across screens — it must not import the composition roots (src/app, src/screens). Pass data/handlers in via props or a context the composer provides (docs/modularization-design.md § Frontend layer contract).",
+};
+
+const API_LAYER_RESTRICTION = {
+  group: ["../app/**", "../screens/**", "../shared/**", "../ui/**", "../App", "../main"],
+  message:
+    "src/api is the IPC bottom layer — it imports only its own modules and the Tauri API, never app/screens/shared/ui (docs/modularization-design.md § Frontend layer contract).",
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -155,6 +193,41 @@ export default tseslint.config(
     files: ["src/screens/Cockpit/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [BARREL_PATTERN] }],
+    },
+  },
+  // Layer-contract blocks (issue #50). Flat config REPLACES a rule across
+  // matching blocks, so each block restates the generic patterns that still
+  // apply to its files (barrel + dockview) alongside its layer bans.
+  {
+    files: ["src/ui/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      // src/ui is exempt from BARREL_PATTERN (siblings import relatively);
+      // dockview stays banned here.
+      "no-restricted-imports": [
+        "error",
+        { patterns: [DOCKVIEW_RESTRICTION, ...UI_LAYER_RESTRICTIONS] },
+      ],
+    },
+  },
+  {
+    files: ["src/shared/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [BARREL_PATTERN, DOCKVIEW_RESTRICTION, SHARED_LAYER_RESTRICTION] },
+      ],
+    },
+  },
+  {
+    files: ["src/api/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [BARREL_PATTERN, DOCKVIEW_RESTRICTION, API_LAYER_RESTRICTION] },
+      ],
     },
   },
 );
