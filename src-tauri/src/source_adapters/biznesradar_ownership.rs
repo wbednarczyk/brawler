@@ -286,7 +286,7 @@ pub(crate) fn refresh_with(
     // One fetch date for the whole run (the fallback basis for a page whose rows
     // carry no parsable "Data aktualizacji").
     let fetch_date = {
-        let format = time::format_description::parse("[year]-[month]-[day]")
+        let format = time::format_description::parse_borrowed::<2>("[year]-[month]-[day]")
             .map_err(|error| error.to_string())?;
         OffsetDateTime::now_utc()
             .date()
