@@ -201,7 +201,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ['1/2', '2/2']
+        # 4 shards: ~3-4 min fixed overhead per shard + ~2-3 min tests puts the
+        # browser lane under rust-test/windows-build on the critical path.
+        # More shards = overhead eats the gain. Ruleset contexts must match.
+        shard: ['1/4', '2/4', '3/4', '4/4']
     steps:
       - uses: actions/checkout@v7
       - name: Fix workspace ownership
