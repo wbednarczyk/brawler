@@ -22,7 +22,11 @@ test.afterAll(async () => {
 
 test("manual sources refresh completes without a database-locked failure and stamps Yahoo", async () => {
   const { page } = connection;
-  test.setTimeout(300_000);
+  // Issue #164 calibration: in the FULL live sweep this network-bound test runs
+  // after ~12 min of app hammering and the real Yahoo/KNF pull eats the 300s
+  // budget (solo it needs ~3.5 min). 480s reflects the measured full-sweep
+  // reality — a genuine hang still fails, just later.
+  test.setTimeout(480_000);
 
   // Navigate to the Sources screen.
   await page.getByRole("button", { name: /Źródła|Sources/ }).first().click();
@@ -43,8 +47,8 @@ test("manual sources refresh completes without a database-locked failure and sta
   await page.waitForTimeout(5_000);
   await expect(lockedError).toHaveCount(0);
 
-  // Wait until the sweep settles (refresh button re-enabled / no spinner), up
-  // to 4 minutes for the full watchlist pull.
+  // Wait until the sweep settles (refresh button re-enabled / no spinner) —
+  // budget matches the test timeout above minus the assertion tail (#164).
   await expect
     .poll(
       async () => {
@@ -55,7 +59,7 @@ test("manual sources refresh completes without a database-locked failure and sta
           ? "pending"
           : "stamped";
       },
-      { timeout: 240_000, intervals: [5_000] }
+      { timeout: 420_000, intervals: [5_000] }
     )
     .toBe("stamped");
 

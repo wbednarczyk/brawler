@@ -59,7 +59,8 @@ test("Sources lists the KNF register adapter and the ESPI witness chip", async (
 });
 
 test("manual sweep refreshes KNF + witness without an error state", async () => {
-  test.setTimeout(300_000);
+  // Issue #164 calibration: full-sweep contention (see sources-refresh spec).
+  test.setTimeout(480_000);
   await openScreen(/Źródła|Sources/);
   // Two controls carry this label (shell icon-button + the Sources panel
   // button) — drive the Sources panel one.
@@ -69,9 +70,10 @@ test("manual sweep refreshes KNF + witness without an error state", async () => 
     .click();
   // The sweep fetches several real sources; wait for the button to leave the
   // in-flight state ("Odświeżanie") and settle, then assert no failure banner.
+  // Budget matches the raised test timeout minus the assertion tail (#164).
   await expect(
     page.getByRole("button", { name: /Odświeżanie|Refreshing/ }),
-  ).toHaveCount(0, { timeout: 240_000 });
+  ).toHaveCount(0, { timeout: 420_000 });
   await expect(
     page.getByText(/Source refresh failed|Odświeżanie źródła nie powiodło się/),
   ).toHaveCount(0);

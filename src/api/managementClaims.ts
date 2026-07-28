@@ -6,7 +6,6 @@ import { callCommand } from "./tauri";
 import type { ManagementClaim } from "./generated/ManagementClaim";
 import type { ClaimsToVerify } from "./generated/ClaimsToVerify";
 import type { NewManagementClaimInput } from "./generated/NewManagementClaimInput";
-import type { UpdateManagementClaimInput } from "./generated/UpdateManagementClaimInput";
 import type { SetClaimVerdictInput } from "./generated/SetClaimVerdictInput";
 
 export type { ClaimStatus } from "./generated/ClaimStatus";
@@ -32,14 +31,7 @@ export function createManagementClaim(input: NewManagementClaimInput) {
   return callCommand<ManagementClaim>("create_management_claim", { input });
 }
 
-export function updateManagementClaim(input: UpdateManagementClaimInput) {
-  return callCommand<ManagementClaim>("update_management_claim", { input });
-}
-
 export function setClaimVerdict(input: SetClaimVerdictInput) {
   return callCommand<ManagementClaim>("set_claim_verdict", { input });
 }
 
-export function deleteManagementClaim(id: string) {
-  return callCommand<void>("delete_management_claim", { id });
-}

@@ -3,7 +3,6 @@ import type { ExtractionOutcome } from "./generated/ExtractionOutcome";
 import type { ExtractReportDocumentDataInput } from "./generated/ExtractReportDocumentDataInput";
 import type { FactProvenance } from "./generated/FactProvenance";
 import type { RerunExtractionOutcomeInput } from "./generated/RerunExtractionOutcomeInput";
-import type { RunStructuredExtractionInput } from "./generated/RunStructuredExtractionInput";
 import type { StructuredExtractionSummary } from "./generated/StructuredExtractionSummary";
 
 // GENERATED types from src-tauri (ADR 0061 / ts-rs). The structured-first
@@ -16,11 +15,9 @@ export type { RerunExtractionOutcomeInput } from "./generated/RerunExtractionOut
 export type { RunStructuredExtractionInput } from "./generated/RunStructuredExtractionInput";
 export type { StructuredExtractionSummary } from "./generated/StructuredExtractionSummary";
 
-export function runStructuredExtraction(input: RunStructuredExtractionInput) {
-  return callCommand<StructuredExtractionSummary>("run_structured_extraction", {
-    input,
-  });
-}
+// NOTE: `run_structured_extraction` and `list_flagged_fact_provenance` are
+// headless-only commands (autopilot flow / MCP port — contracts.md); they have
+// no frontend wrapper on purpose (issues #153/#131 — orphaned exports).
 
 // The reachable, one-click "Extract data" action over a single stored report
 // document (ADR 0061 S5). The period is derived server-side (no Inbox round-trip
@@ -36,10 +33,6 @@ export function listFactProvenance(factIds: string[]) {
   return callCommand<FactProvenance[]>("list_fact_provenance", {
     input: { factIds },
   });
-}
-
-export function listFlaggedFactProvenance() {
-  return callCommand<FactProvenance[]>("list_flagged_fact_provenance");
 }
 
 // The company's NON-EMITTING extraction outcomes, newest attempt first (ADR 0061

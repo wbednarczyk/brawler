@@ -8,7 +8,6 @@ import type { AutopilotRun } from "./generated/AutopilotRun";
 import type { ListAutopilotRunsInput } from "./generated/ListAutopilotRunsInput";
 import type { SetCompanyAutopilotInput } from "./generated/SetCompanyAutopilotInput";
 import type { SetRunNotificationStateInput } from "./generated/SetRunNotificationStateInput";
-import type { TriggerAutopilotRunInput } from "./generated/TriggerAutopilotRunInput";
 import type { UndoAutopilotRunResult } from "./generated/UndoAutopilotRunResult";
 import type { SetCompaniesAutopilotInput } from "./generated/SetCompaniesAutopilotInput";
 
@@ -47,18 +46,10 @@ export function listAutopilotRuns(input: ListAutopilotRunsInput = {}) {
   return callCommand<AutopilotRun[]>("list_autopilot_runs", { input });
 }
 
-export function getAutopilotRun(runId: string) {
-  return callCommand<AutopilotRun>("get_autopilot_run", { input: { runId } });
-}
-
 export function setAutopilotRunNotificationState(input: SetRunNotificationStateInput) {
   return callCommand<AutopilotRun>("set_autopilot_run_notification_state", { input });
 }
 
 export function undoAutopilotRun(runId: string) {
   return callCommand<UndoAutopilotRunResult>("undo_autopilot_run", { input: { runId } });
-}
-
-export function triggerAutopilotRun(input: TriggerAutopilotRunInput) {
-  return callCommand<AutopilotRun>("trigger_autopilot_run", { input });
 }

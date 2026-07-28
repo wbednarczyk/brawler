@@ -3,17 +3,13 @@ import type {
   FinancialFact,
   FinancialPeriod,
   KpiDefinition,
-  KpiRelevance,
   ListFinancialFactsInput,
   ListFinancialPeriodsInput,
   ListKpiDefinitionsInput,
   NewFinancialFact,
   NewFinancialPeriod,
   NewKpiDefinition,
-  NewKpiRelevance,
   UpdateFinancialFact,
-  UpdateFinancialPeriod,
-  UpdateKpiRelevance,
 } from "./financialsTypes";
 
 // ============================================================================
@@ -38,34 +34,6 @@ export function listFinancialPeriods(input: ListFinancialPeriodsInput) {
 
 export function createFinancialPeriod(input: NewFinancialPeriod) {
   return callCommand<FinancialPeriod>("create_financial_period", { input });
-}
-
-export function updateFinancialPeriod(input: UpdateFinancialPeriod) {
-  return callCommand<FinancialPeriod>("update_financial_period", { input });
-}
-
-export function deleteFinancialPeriod(id: string) {
-  return callCommand<void>("delete_financial_period", { id });
-}
-
-// ============================================================================
-// KPI Relevance Commands
-// ============================================================================
-
-export function listKpiRelevance(companyId: string) {
-  return callCommand<KpiRelevance[]>("list_kpi_relevance", { companyId });
-}
-
-export function createKpiRelevance(input: NewKpiRelevance) {
-  return callCommand<KpiRelevance>("create_kpi_relevance", { input });
-}
-
-export function updateKpiRelevance(input: UpdateKpiRelevance) {
-  return callCommand<KpiRelevance>("update_kpi_relevance", { input });
-}
-
-export function deleteKpiRelevance(id: string) {
-  return callCommand<void>("delete_kpi_relevance", { id });
 }
 
 // ============================================================================
