@@ -509,3 +509,28 @@ fn a_scattered_single_company_disagreement_is_not_a_mapping_suspect() {
         "one company is noise, not a mapping suspect: {summary:?}"
     );
 }
+
+/// Issue #132: the on-demand entry points (the `run_aggregator_fundamentals_pull`
+/// command, the rebuild's pass 1) must share the queue's per-adapter
+/// serialization — the politeness posture is "at most one BiznesRadar pull at a
+/// time" regardless of who triggered it. A pull racing an in-flight one is
+/// rejected with a typed busy error, never run concurrently.
+#[test]
+fn on_demand_pull_defers_to_an_in_flight_biznesradar_run() {
+    let (state, _company_id) = state_with_company();
+    let (fetcher, _) = MapFetcher::new(&[(AggregatorPageKind::Balance, BILANS)]);
+    let state = state.with_fundamentals_witness_fetcher(fetcher);
+
+    let guard = state
+        .try_acquire_source(ADAPTER_ID)
+        .expect("lock initially free");
+    let error = run_aggregator_fundamentals_pull_serialized(&state)
+        .expect_err("a concurrent on-demand pull must be rejected, not run in parallel");
+    assert!(
+        error.contains("aggregator_pull_already_running"),
+        "busy error carries the typed code: {error}"
+    );
+
+    drop(guard);
+    run_aggregator_fundamentals_pull_serialized(&state).expect("runs once the lock is free");
+}

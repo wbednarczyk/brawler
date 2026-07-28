@@ -42,7 +42,7 @@ use serde::Serialize;
 
 use crate::app_state::AppState;
 use crate::jobs::aggregator_fundamentals_pull::{
-    run_aggregator_fundamentals_pull, AggregatorPullSummary,
+    run_aggregator_fundamentals_pull_serialized, AggregatorPullSummary,
 };
 use crate::jobs::health_facts_backfill::backfill_company_health_facts;
 use crate::storage::FactTierBreakdown;
@@ -96,8 +96,9 @@ pub fn run_rebuild_fundamentals(state: &AppState) -> Result<RebuildFundamentalsS
 
     // --- Pass 1: BiznesRadar-primary pull (core KPIs, all companies × periods) ---
     // Internally per-company tolerant; a top-level failure (e.g. the company list
-    // itself) is collected without aborting the ESEF/WDF passes.
-    match run_aggregator_fundamentals_pull(state) {
+    // itself, or the per-adapter lock held by an in-flight pull — issue #132) is
+    // collected without aborting the ESEF/WDF passes and surfaces in `errors`.
+    match run_aggregator_fundamentals_pull_serialized(state) {
         Ok(aggregator) => summary.aggregator = aggregator,
         Err(error) => summary
             .errors
