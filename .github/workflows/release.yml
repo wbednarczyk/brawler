@@ -39,7 +39,7 @@ jobs:
       release: ${{ steps.detect.outputs.release }}
       republish_tag: ${{ steps.detect.outputs.republish_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: detect
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -91,7 +91,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
