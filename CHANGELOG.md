@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.61.3 - 2026-07-28
+
+
+### Bug Fixes
+
+- **release**: repo always shows the released version (post-tag bot stamp) + disk-guard vhdx-drive autodetect (#218)
+
+- **ui**: low-hanging batch — alert category names, verdict busy-guard, orphan fallback copy, chip overflow hardening, MCP count SSoT, region-scoped live locators (#219)
+
+## v0.61.2 - 2026-07-28
+
+
+### Bug Fixes
+
+- **ci**: changelog step uses the release range, not post-tag --unreleased (+ v0.61.1 backfill) (#214)
+
+
+### Performance
+
+- **ci**: browser suite in 4 Playwright shards (#213)
+
 ## v0.61.1 - 2026-07-28
 
 

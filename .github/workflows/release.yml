@@ -171,6 +171,34 @@ jobs:
       - name: List release artifacts
         run: find release-artifacts -maxdepth 1 -type f -print -exec file {} \;
 
+      # Preflight the stamp-push path BEFORE the tag exists (v0.61.3
+      # postmortem, 2026-07-28): the stamp step pushes to the protected master
+      # with the release-stamp deploy key, so a missing secret or a ruleset
+      # without the DeployKey bypass must fail the release HERE — never after
+      # the tag/release shipped (which leaves master permanently unstamped).
+      - name: Preflight release-stamp push path
+        env:
+          RELEASE_STAMP_DEPLOY_KEY: ${{ secrets.RELEASE_STAMP_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_STAMP_DEPLOY_KEY" ]; then
+            echo "RELEASE_STAMP_DEPLOY_KEY secret is missing — the changelog/version stamp cannot push to master." >&2
+            exit 1
+          fi
+          bypass_ok=$(gh api "repos/${{ github.repository }}/rulesets" --jq '
+            [.[] | select(.target == "branch")] | length' )
+          if [ "$bypass_ok" -gt 0 ]; then
+            has_bypass=$(gh api "repos/${{ github.repository }}/rulesets" --jq '.[].id' | while read -r id; do
+              gh api "repos/${{ github.repository }}/rulesets/$id" --jq '
+                select((.rules | map(.type) | index("pull_request")) != null)
+                | .bypass_actors | map(.actor_type) | index("DeployKey") != null'
+            done | grep -c true || true)
+            if [ "$has_bypass" -eq 0 ]; then
+              echo "No branch ruleset grants a DeployKey bypass — the stamp push would be rejected (GH013)." >&2
+              exit 1
+            fi
+          fi
+
       # Tag AFTER a successful build so a failed build never orphans a tag.
       # Idempotent: skip if the tag already exists (recovery re-runs).
       - name: Create and push tag
@@ -217,14 +245,26 @@ jobs:
 
       # Prepend the entry to CHANGELOG.md AND stamp the released version into
       # the repo manifests, one bot-commit on master ([skip ci] so it does not
-      # re-trigger this workflow; needs the narrow github-actions ruleset
-      # bypass). Race handling: each attempt regenerates the commit on a fresh
+      # re-trigger this workflow). The push goes over SSH with the release-stamp
+      # deploy key — GITHUB_TOKEN cannot bypass the master ruleset on a personal
+      # repo (v0.61.3 postmortem, 2026-07-28); the ruleset grants the DeployKey
+      # bypass and the preflight step asserts both halves before the tag exists.
+      # Race handling: each attempt regenerates the commit on a fresh
       # origin/master instead of rebasing lockfiles — a concurrent merge can
       # never produce a conflict (ADR 0090 amendment, 2026-07-28).
+      # Deliberately NOT gated on `republish == 'false'`: the step is idempotent
+      # ("Nothing left to commit"), and a republish recovery run must be able to
+      # heal a stamp its failed predecessor never landed (the v0.61.2 hole).
       - name: Commit changelog and version stamp
-        if: steps.version.outputs.republish == 'false'
+        env:
+          RELEASE_STAMP_DEPLOY_KEY: ${{ secrets.RELEASE_STAMP_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          printf '%s\n' "$RELEASE_STAMP_DEPLOY_KEY" > ~/.ssh/release_stamp
+          chmod 600 ~/.ssh/release_stamp
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/release_stamp -o IdentitiesOnly=yes"
           tag="${{ steps.version.outputs.tag }}"
           version="${{ steps.version.outputs.version }}"
           # Explicit range, NOT --unreleased: this step runs AFTER the tag step,
@@ -254,7 +294,7 @@ jobs:
             # stamps the version; fully-empty means everything already landed.
             if git diff --cached --quiet; then echo "Nothing left to commit for $tag."; ok=1; break; fi
             git commit -m "chore(release): $tag [skip ci]"
-            if git push origin HEAD:master; then ok=1; break; fi
+            if git push "git@github.com:${{ github.repository }}.git" HEAD:master; then ok=1; break; fi
             echo "release-stamp push attempt $i failed; retrying…"; sleep 5
           done
           if [ "$ok" -ne 1 ]; then echo "Failed to push changelog + version stamp after 3 attempts" >&2; exit 1; fi
