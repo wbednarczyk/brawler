@@ -24,7 +24,7 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -649,17 +649,29 @@ package-windows-portable-zip:
 	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle $(RELEASE_FEATURE_FLAG)
 	$(NIX_WINDOWS) scripts/release/package-windows-portable-zip.sh "$(APP_VERSION)" "$(WINDOWS_EXE)" "$(RELEASE_OUT_DIR)"
 
-# Build all release artifacts. VERSION (optional) stamps the version into the
+# Build release artifacts. VERSION (optional) stamps the version into the
 # manifests at build time before packaging (ADR 0090 §D pt 2) — no commit. The
 # stamp runs first, then the artifact builds go through recursive `$(MAKE)` so
 # the derived APP_VERSION (artifact filenames) is re-read from the just-stamped
 # package.json. Without VERSION it builds at the current manifest version.
-package-release-artifacts:
+# The per-side targets exist so CI can build Linux and Windows IN PARALLEL on
+# two runners (release.yml build-linux / build-windows); the composite target
+# stays the sequential local-parity path.
+package-release-linux:
 	@if [ -n "$(VERSION)" ] && [ "$(VERSION)" != "$(APP_VERSION)" ]; then \
 		$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"; \
 	fi
 	$(MAKE) package-linux-amd64
+
+package-release-windows:
+	@if [ -n "$(VERSION)" ] && [ "$(VERSION)" != "$(APP_VERSION)" ]; then \
+		$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"; \
+	fi
 	$(MAKE) package-windows-portable-zip
+
+package-release-artifacts:
+	$(MAKE) package-release-linux VERSION=$(VERSION)
+	$(MAKE) package-release-windows VERSION=$(VERSION)
 
 package-windows-smoke-run:
 	@if [ ! -f "$(WINDOWS_ARTIFACT)" ]; then \
