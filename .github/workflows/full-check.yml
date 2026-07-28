@@ -44,7 +44,7 @@ jobs:
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
