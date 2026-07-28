@@ -37,7 +37,7 @@ log = "0.4"
 quick-xml = "0.39"
 r2d2 = "0.8"
 libc = "0.2"
-pdf-extract = "0.7"
+pdf-extract = "0.12"
 r2d2_sqlite = "0.25"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
