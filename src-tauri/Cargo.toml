@@ -89,7 +89,7 @@ insta = "1"
 # Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049, T5):
 # RSS parse, formula parse. `make bench`; never a hard gate
 # (wall-clock is machine-dependent) — the bench-ratchet flags relative regressions.
-criterion = "0.5"
+criterion = "0.8"
 
 # Thin stdio↔HTTP adapter for the read-only MCP server (ADR 0078 decision 6):
 # a dumb line→POST pipe with no protocol knowledge, over `reqwest::blocking`
