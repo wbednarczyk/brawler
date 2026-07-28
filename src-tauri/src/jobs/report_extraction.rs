@@ -24,9 +24,17 @@ pub struct ReportExtractionResult {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    // digest 0.11 dropped LowerHex on the output array — hex-encode manually.
+    hasher
+        .finalize()
+        .iter()
+        .fold(String::with_capacity(64), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })
 }
 
 /// Extract and persist sections for one report document. Returns a structured
@@ -130,6 +138,20 @@ mod tests {
     use crate::storage::{AppState, CaptureReportDocumentInput};
     use rusqlite::Connection;
     use std::path::PathBuf;
+
+    /// The hand-rolled hex encoding (digest 0.11 dropped LowerHex) must keep
+    /// producing canonical lowercase sha256 hex — provenance hashes depend on it.
+    #[test]
+    fn sha256_hex_matches_known_vector() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
 
     /// A unique temp data dir per test invocation (mirrors the KPI job test).
     fn app_with_dir(tag: &str) -> AppState {
