@@ -49,6 +49,25 @@ Moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-not
 
 Live layout: `repoctx outline src/app/AppStateRoot.tsx`, `repoctx modules` (domains: `src/api`, `src/app`, `src/screens/<Domain>`, `src/shared`, `src/ui`, `src/styles`, `src/test`).
 
+### Frontend layer contract (ESLint-enforced)
+
+Import edges between the frontend layers (issue #50; enforced by the
+`no-restricted-imports` zone blocks in `eslint.config.js` — a violation
+reddens `make check-frontend-static`):
+
+| Layer | May import | Must never import |
+| --- | --- | --- |
+| `src/api` | its own modules, generated DTOs, the Tauri API | `app/`, `screens/`, `shared/`, `ui/` |
+| `src/ui` | sibling primitives, `shared/locale`, `shared/format` (sanctioned display leaves) | `app/`, `screens/`, `api/`, any other `shared/` subtree |
+| `src/shared` | `api/`, `ui/`, other `shared/` modules | `app/`, `screens/` (the composition roots — pass data/handlers via props or a composer-provided context) |
+| `src/app`, `src/screens` | anything below | — |
+
+Workspaces and tsconfig path aliases stay rejected (decision 2026-06-22,
+issue #50): one package, one build, one consumer — the gate encodes the
+boundaries without new tooling. Widening an edge (e.g. a new sanctioned
+`shared` leaf for `ui`) is a deliberate edit to both this table and the
+ESLint block, never an inline disable.
+
 - `src/app/App.tsx` is the app entry wrapper.
 - `src/app/AppStateRoot.tsx` owns app-level state wiring and composes controllers/view models. Keep feature-specific logic in the matching app controller, screen, API module, or shared helper. It is being **decomposed into feature-scoped React contexts** (Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)) so a screen subscribes only to the state it uses instead of receiving a mega view-model by prop-drilling. **Realized so far:** `src/app/state/SettingsContext.tsx` — the settings-domain context (`SettingsProvider` + selector hooks `useDeveloperMode`, `useAiFallbackEnabled`, `useAiAnalysisProviderConfigured`). It is now the single source for **every settings-derived UI flag** that was previously prop-drilled from `AppStateRoot`: developer mode (`AppShell`/`SourcesScreen`/`DiagnosticsScreen`), the ESPI AI fallback (`InboxScreen`), and whether an analysis provider is configured (`InboxDetailPane`/`CompanyWorkspace`) — `AppStateRoot` no longer computes or threads any of them. Shared leaf components (`FeedAiAnalysisPanel`, `FeedKpiExtractionPanel`) stay prop-driven (context-agnostic); the screen/pane that composes them reads the context. **Done:** every top-level screen now reads its view-model from a context instead of receiving a prop bundle from `AppStateRoot` — `SourcesContext` plus a `createScreenContext` factory backing `screenViewModels.tsx` (Inbox, Companies, Watchlists, Research, Notebooks, ReportSeason, Events, Transcripts, Settings). `AppStateRoot` assembles each view-model once and wraps the screen in its `Provider`; the screens take zero props. The screen `*ScreenProps` types are retained as the context value shapes. Add new settings selectors to `SettingsContext` rather than re-drilling a flag, and a new screen gets a `createScreenContext` entry rather than a prop bundle.
 - `src/app/AppShell.tsx` owns shell layout.
