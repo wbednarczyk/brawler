@@ -484,7 +484,11 @@ enum PeriodField {
 fn attr(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
     e.attributes().flatten().find_map(|a| {
         if local_of(a.key.as_ref()) == key {
-            a.unescape_value().ok().map(|v| v.into_owned())
+            // ESEF/iXBRL documents are XML 1.0 (declared or not) — the implicit
+            // variant applies 1.0 normalization rules either way.
+            a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(|v| v.into_owned())
         } else {
             None
         }

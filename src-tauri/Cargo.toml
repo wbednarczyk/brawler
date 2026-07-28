@@ -34,7 +34,7 @@ getrandom = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
 keyring = { version = "3", features = ["windows-native"] }
 log = "0.4"
-quick-xml = "0.39"
+quick-xml = "0.41"
 r2d2 = "0.8"
 libc = "0.2"
 pdf-extract = "0.12"
