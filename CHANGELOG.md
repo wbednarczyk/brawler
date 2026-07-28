@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.61.1 - 2026-07-28
+
+
+### Bug Fixes
+
+- **ci**: devshell image uses --impure profile install for nixos/nix registry
+
+- **ci**: devshell image resolves base-profile priority conflict (--priority 4)
+
+- **ci**: release tag step sets git identity (empty ident broke the first real release) (#212)
+
+
+### CI
+
+- label events re-run only the release-label check (#210)
+
+
+### Features
+
+- **ci**: GitHub-native CI, continuous release, and issue-tracking migration (ADR 0090)
+
 ## v0.61.0 - 2026-07-27
 
 The valuation arc opens: per-company fundamentals become **relative analysis**.
