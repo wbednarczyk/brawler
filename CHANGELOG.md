@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.61.5 - 2026-07-28
+
+
+### Bug Fixes
+
+- **release**: stamp pushes via release-stamp deploy key + pre-tag preflight; backfill v0.61.2–v0.61.4 stamps (#221)
+
+- **release**: preflight probes deploy-key capability over SSH — the ruleset API check false-negatives under GITHUB_TOKEN (#226)
+
+- **fundamentals**: on-demand BiznesRadar pull shares the queue's per-adapter serialization (no double-fetch race) (#225)
+
+
+### Features
+
+- **app**: saved cockpit views rename in place (#89) + export write via typed command, webview fs permission dropped (#106) (#222)
+
 ## v0.61.4 - 2026-07-28
 
 
