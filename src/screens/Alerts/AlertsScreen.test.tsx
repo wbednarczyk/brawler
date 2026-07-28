@@ -167,6 +167,21 @@ describe("Alerts screen — rules manager (T3, ADR 0068; relocated v0.54)", () =
     );
   });
 
+  // Issue #71 (same class as toast D3): the rule row title must resolve every
+  // category through the shared display-name map — the old hand-rolled ternary
+  // covered 4 legacy categories and leaked raw enum codes for the rest.
+  it("renders a non-legacy category rule with its display name, never the raw code", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const region = await openAlertsScreen(user);
+
+    await user.click(within(region).getByRole("button", { name: "Analyst recommendation" }));
+    await user.click(within(region).getByRole("button", { name: "Add alert" }));
+
+    expect(await within(region).findByText("Analyst recommendation change")).toBeInTheDocument();
+    expect(within(region).queryByText(/recommendation_change/)).toBeNull();
+  });
+
   it("rejects an identical duplicate rule with an inline error", async () => {
     const user = userEvent.setup();
     renderApp();

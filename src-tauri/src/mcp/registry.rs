@@ -1314,6 +1314,16 @@ fn act_gate(
     None
 }
 
+/// Frozen exposed-tool count — the single source of truth for BOTH assertion
+/// sites (the registry descriptor test below and the server `tools/list`
+/// round-trip in `mcp::server`). Adding a tool bumps exactly this constant.
+/// Itemization: 44 read (4 MVP + 34 read wave + get_kpi_comparison +
+/// get_sector_percentiles + list_valuation_runs (ADR 0089) + list_alert_rules +
+/// list_flagged_extraction_outcomes + list_unclassified_filings) + 56 act incl.
+/// compute_comparative_valuation (ADR 0089), classify_filing, ADR 0088 dec. 2/3/4.
+#[cfg(test)]
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 100;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1414,11 +1424,8 @@ mod tests {
         );
         assert_eq!(
             tools.len(),
-            100,
-            "the frozen exposed-tool count (44 read: 4 MVP + 34 read wave + get_kpi_comparison \
-             + get_sector_percentiles + list_valuation_runs (ADR 0089) + list_alert_rules + \
-             list_flagged_extraction_outcomes + list_unclassified_filings; 56 act incl. \
-             compute_comparative_valuation (ADR 0089), classify_filing, ADR 0088 dec. 2/3/4)"
+            FROZEN_EXPOSED_TOOL_COUNT,
+            "the frozen exposed-tool count (itemized at FROZEN_EXPOSED_TOOL_COUNT)"
         );
 
         for (name, required, properties) in expected {

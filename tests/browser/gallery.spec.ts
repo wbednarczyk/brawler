@@ -17,3 +17,20 @@ test("primitive gallery renders without horizontal overflow", async ({ page }) =
   );
   expect(hasOverflow).toBe(false);
 });
+
+// Issue #209: the CI smoke-walk caught ui-status-chip-warn painting 3px past
+// its box when the environment font metrics differ slightly from local. The
+// chip class must shrink and clip inside a slot narrower than its label —
+// never paint over the neighbor — regardless of font rendering.
+test("a constrained status chip clips inside its slot instead of painting out", async ({ page }) => {
+  await page.goto("/gallery.html");
+
+  const demo = page.locator(".ui-chip-constrained-demo");
+  const chip = demo.locator(".ui-status-chip");
+  await expect(chip).toBeVisible();
+
+  const slotBox = await demo.boundingBox();
+  const chipBox = await chip.boundingBox();
+  expect(chipBox!.width).toBeLessThanOrEqual(slotBox!.width + 1);
+  expect(chipBox!.x + chipBox!.width).toBeLessThanOrEqual(slotBox!.x + slotBox!.width + 1);
+});

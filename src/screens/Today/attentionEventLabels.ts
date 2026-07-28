@@ -70,12 +70,13 @@ export function attentionEventTitleText(
       // The signal's own filing title IS the statement (e.g. "Wstępne wyniki
       // produkcyjne i sprzedażowe za czerwiec 2026") — the category stays on the
       // badge. Raw source data, shown verbatim. Fallback (no title): the D3-fix
-      // category display name via the rule, or the trigger type when even that is
-      // unknown (a system-raised event with nothing to look up).
+      // category display name via the rule; when even the rule is pruned
+      // (doubly-orphaned, issue #119) the localized generic badge copy — a raw
+      // trigger enum token never reaches the statement.
       if (event.evidenceTitle) return event.evidenceTitle;
       return rule?.signalCategory
         ? text(formatSignalCategoryDisplayName(rule.signalCategory))
-        : event.triggerType;
+        : attentionEventBadgeText(event, text);
     case "autopilot_run_completed":
       // Which report the autopilot finished, and how it ended (owner: "Autopilot
       // zakończony → co to oznacza?"). Title is raw source data; the status is
@@ -102,6 +103,8 @@ export function attentionEventTitleText(
       }
       return text("Official report missed by the primary source");
     default:
-      return event.triggerType;
+      // Same #119 class: prefer the badge's localized copy over a raw enum
+      // token (the badge only passes an unknown trigger through verbatim).
+      return attentionEventBadgeText(event, text);
   }
 }

@@ -132,8 +132,11 @@ describe("attentionEventLabels — signal_category display name (D3 fix)", () =>
     ).toBe("Own-share transactions");
   });
 
-  it("falls back to the raw trigger type only when the rule (and thus the category) is unknown", () => {
+  // Issue #119 (D8 finding): when BOTH the signal row and the alert rule are
+  // pruned, the statement must fall back to the localized generic badge copy,
+  // never the raw trigger enum token ("signal_category").
+  it("falls back to the localized generic label, never the raw trigger enum, when the rule is unknown", () => {
     const signal = event({ triggerType: "signal_category", ruleId: null, evidenceType: "company_signal" });
-    expect(attentionEventTitleText(signal, undefined, text)).toBe("signal_category");
+    expect(attentionEventTitleText(signal, undefined, text)).toBe("Signal");
   });
 });

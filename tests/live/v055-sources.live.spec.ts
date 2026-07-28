@@ -47,9 +47,14 @@ async function openScreen(labelPattern: RegExp): Promise<void> {
 
 test("Sources lists the KNF register adapter and the ESPI witness chip", async () => {
   await openScreen(/Źródła|Sources/);
-  await expect(page.getByText("KNF Short Selling Register")).toBeVisible();
-  await expect(page.getByText("GPW ESPI/EBI")).toBeVisible();
-  await expect(page.getByText(/Świadek|Witness/).first()).toBeVisible();
+  // Issue #129: live-spec locators must be region-scoped — real-app toasts
+  // float at page level and can carry the same phrase (e.g. a per-company skip
+  // toast naming "GPW ESPI/EBI"), which strict-mode-collides with a bare
+  // page-level getByText.
+  const sourceList = page.getByLabel(/Source list|Lista źródeł/);
+  await expect(sourceList.getByText("KNF Short Selling Register")).toBeVisible();
+  await expect(sourceList.getByText("GPW ESPI/EBI")).toBeVisible();
+  await expect(sourceList.getByText(/Świadek|Witness/).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/01-sources.png`, fullPage: true });
 });
 

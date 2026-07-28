@@ -19,6 +19,7 @@ import { listWatchlists } from "../../api/watchlists";
 import type { Company, Watchlist } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { formatListTimestamp } from "../../shared/format/datetime";
+import { formatSignalCategoryDisplayName } from "../../shared/formatting/labels";
 import { useLocale } from "../../shared/locale";
 import { pluralNoun } from "../../shared/locale/plural";
 import {
@@ -274,15 +275,12 @@ export function AlertsScreen() {
   const ruleTitle = (rule: AlertRule): string => {
     switch (rule.triggerType) {
       case "signal_category":
-        return rule.signalCategory === "insider_transaction"
-          ? text("Insider transactions")
-          : rule.signalCategory === "profit_warning"
-            ? text("Profit warning")
-            : rule.signalCategory === "auditor_opinion"
-              ? text("Auditor opinion")
-              : rule.signalCategory === "short_position_change"
-                ? text("Short position")
-                : `${text("Signal")}: ${rule.signalCategory ?? ""}`;
+        // Issue #71 (same class as toast D3): resolve EVERY category through
+        // the shared display-name map (mirrors signal_categories.display_name)
+        // — a hand-rolled subset leaks raw enum codes for the rest.
+        return rule.signalCategory
+          ? text(formatSignalCategoryDisplayName(rule.signalCategory))
+          : text("Signal");
       case "autopilot_run_completed":
         return text("Autopilot finished");
       case "price_enters_range":

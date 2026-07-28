@@ -69,6 +69,10 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
   // CSS-only (container queries) so these states are inert at M/L/tall.
   const [composerOpen, setComposerOpen] = useState(false);
   const [shortExpanded, setShortExpanded] = useState(false);
+  // In-flight guard for verdict saves (issue #87): the write is idempotent
+  // today, but a double dispatch is a latent double-write on any
+  // non-idempotent successor — block re-entry while a save is pending.
+  const [savingVerdict, setSavingVerdict] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -89,11 +93,15 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
   }, [reload]);
 
   const resolveVerdict = async (claim: ManagementClaim, status: ClaimStatus) => {
+    if (savingVerdict) return;
+    setSavingVerdict(true);
     try {
       await setClaimVerdict({ claimId: claim.id, status });
       await reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSavingVerdict(false);
     }
   };
 
@@ -239,6 +247,7 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
                     label={text("Verdict")}
                     aria-label={text("Claim verdict")}
                     value={claim.status}
+                    disabled={savingVerdict}
                     onChange={(event) =>
                       void resolveVerdict(claim, event.target.value as ClaimStatus)
                     }
@@ -278,12 +287,14 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
                         <div className="claim-queue-actions">
                           <Button
                             className="compact-button"
+                            disabled={savingVerdict}
                             onClick={() => resolveVerdict(entry.claim, "delivered")}
                           >
                             {text("Delivered")}
                           </Button>
                           <Button
                             className="compact-button"
+                            disabled={savingVerdict}
                             onClick={() => resolveVerdict(entry.claim, "missed")}
                           >
                             {text("Missed")}

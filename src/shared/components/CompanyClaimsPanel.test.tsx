@@ -106,6 +106,40 @@ describe("CompanyClaimsPanel", () => {
     });
   });
 
+  // Issue #87: a mutating verdict action must be guarded while its save is in
+  // flight — a double click may not reach the backend twice (latent double-write
+  // on any non-idempotent successor command).
+  it("ignores a second verdict click while the first save is in flight", async () => {
+    const due = claim();
+    listClaimsToVerifyMock.mockResolvedValue({
+      due: [{ claim: due, arrivedPeriodId: "period_2026_q4", verifyingFactCandidate: null }],
+      overdue: [],
+      upcoming: [],
+    });
+    listManagementClaimsMock.mockResolvedValue([due]);
+    let resolveSave: (value: ManagementClaim) => void = () => {};
+    setClaimVerdictMock.mockImplementation(
+      () =>
+        new Promise<ManagementClaim>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+
+    render(<CompanyClaimsPanel companyId="company_gpw_cdr" />);
+    const delivered = await screen.findByRole("button", { name: "Delivered" });
+
+    await user.click(delivered);
+    expect(delivered).toBeDisabled();
+    await user.click(delivered);
+    expect(setClaimVerdictMock).toHaveBeenCalledTimes(1);
+
+    resolveSave(claim({ status: "delivered" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delivered" })).not.toBeDisabled();
+    });
+  });
+
   // U7-C density contract (ADR 0076 D6): at the S width tier the composer hides
   // behind a "Dodaj obietnicę" (Add claim) disclosure. jsdom has no container
   // queries, so we assert the disclosure STATE (aria-expanded + the data flag the
