@@ -147,13 +147,13 @@ jobs:
           save-if: false
 
       - name: Cache cargo-xwin SDK data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .xwin-cache
           key: ${{ runner.os }}-xwin-${{ hashFiles('flake.lock') }}
           restore-keys: ${{ runner.os }}-xwin-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
@@ -193,7 +193,7 @@ jobs:
           cat release-notes.md
 
       - name: Generate artifact attestations
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: release-artifacts/*
 
