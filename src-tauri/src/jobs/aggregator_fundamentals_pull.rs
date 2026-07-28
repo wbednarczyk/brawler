@@ -121,9 +121,30 @@ pub struct AggregatorPullSummary {
 /// scattered per-company disagreements stay informational.
 const MAPPING_SUSPECT_MIN_COMPANIES: usize = 5;
 
+/// The on-demand entry point (the `run_aggregator_fundamentals_pull` command and
+/// the rebuild's pass 1): same per-adapter serialization as the queue path
+/// (issue #132) — the politeness posture is **at most one BiznesRadar pull at a
+/// time**, regardless of who triggered it. The queue's dispatch acquires this
+/// lock itself (via `serialization_key`), so a racing on-demand run is rejected
+/// with a typed busy error instead of double-fetching the same pages and
+/// caching a late failure over an earlier success (C4 live-rebuild finding,
+/// 2026-07-22).
+pub fn run_aggregator_fundamentals_pull_serialized(
+    state: &AppState,
+) -> Result<AggregatorPullSummary, String> {
+    let _guard = state.try_acquire_source(ADAPTER_ID).ok_or_else(|| {
+        "aggregator_pull_already_running: a BiznesRadar fundamentals pull is already in flight \
+         (daily job or another on-demand run) — retry after it finishes"
+            .to_owned()
+    })?;
+    run_aggregator_fundamentals_pull(state)
+}
+
 /// Run the full BiznesRadar-primary pull over every tracked company. Synchronous
 /// and offloaded by the caller (the command via `run_blocking_task`, the queue via
-/// a worker thread).
+/// a worker thread). Callers other than the queue dispatch (which holds the
+/// per-adapter lock already) go through
+/// [`run_aggregator_fundamentals_pull_serialized`].
 pub fn run_aggregator_fundamentals_pull(state: &AppState) -> Result<AggregatorPullSummary, String> {
     let companies = state.list_companies().map_err(|error| error.to_string())?;
     let tolerance = Tolerance::default();

@@ -19,8 +19,10 @@ pub async fn run_aggregator_fundamentals_pull(
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<jobs::aggregator_fundamentals_pull::AggregatorPullSummary, String> {
     let state = state.inner().clone();
+    // Serialized entry (issue #132): shares the queue's per-adapter lock so an
+    // on-demand run can never race the daily job on the BiznesRadar host.
     jobs::scheduler::run_blocking_task(move || {
-        jobs::aggregator_fundamentals_pull::run_aggregator_fundamentals_pull(&state)
+        jobs::aggregator_fundamentals_pull::run_aggregator_fundamentals_pull_serialized(&state)
     })
     .await
 }
