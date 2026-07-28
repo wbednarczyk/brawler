@@ -8,6 +8,9 @@
 //   --export    Export only: dump every Radicle issue to JSONL. No mutations. Reads `rad` only.
 //   --dry-run   Export + compute the migration plan (counts + 5 sample rows). No mutations.
 //   --live      Full migration. Requires env MIGRATE_CONFIRM=yes. Runs `gh` mutations.
+//   --backfill-project  Repair: ensure the project exists and idempotently add every
+//               already-mapped issue + Status (use after a run where project scaffolding
+//               failed, e.g. missing `project` token scope). Requires MIGRATE_CONFIRM=yes.
 //
 // Design contract (token discipline): stdout carries ONLY summary counters, the dry-run
 // plan, and errors. All verbose per-item detail goes to the log file (MIGRATION_LOG env,
@@ -501,6 +504,15 @@ function scaffoldProject(repo) {
   }
   if (!project) return null;
 
+  // Link the (user-level) project to the repository — createProjectV2 makes a
+  // user project, which stays INVISIBLE in the repo's Projects tab until linked.
+  const link = graphql(
+    `mutation($project:ID!,$repo:ID!){ linkProjectV2ToRepository(input:{projectId:$project,repositoryId:$repo}){ repository{ id } } }`,
+    { project: project.id, repo: repo.id },
+    { label: 'link-project' }
+  );
+  if (!link.ok) log(`PROJECT link failed (may already be linked): ${link.stderr.slice(0, 160)}`);
+
   // Find the Status single-select field.
   const f = graphql(Q_PROJECT_FIELDS, { id: project.id }, { label: 'project-fields' });
   const fields = f.ok ? f.data?.data?.node?.fields?.nodes || [] : [];
@@ -678,6 +690,61 @@ function migrateLive(records, plan) {
   out(`log: ${LOG_PATH}`);
 }
 
+// Repair mode: issues were created but project scaffolding failed (e.g. the gh
+// token lacked the `project` scope), so resume would skip them forever. Ensures
+// the project exists, then idempotently adds every already-mapped issue to it
+// and sets Status (addProjectV2ItemById returns the existing item on repeats).
+function backfillProject(plan) {
+  if (process.env.MIGRATE_CONFIRM !== 'yes') {
+    err('REFUSED: --backfill-project requires env MIGRATE_CONFIRM=yes');
+    process.exit(2);
+  }
+  const repo = ghRepoInfo();
+  out('=== rad-to-github BACKFILL PROJECT ===');
+  const project = scaffoldProject(repo);
+  out(`project: ${project ? `#${project.number}` : 'FAILED'}`);
+  if (!project) {
+    err('Project scaffolding failed again — check `gh auth status` for the project scope.');
+    process.exit(1);
+  }
+  const map = loadMap();
+  let added = 0;
+  let statusSet = 0;
+  let failed = 0;
+  for (const r of plan.open) {
+    const number = map[r.short];
+    if (!number) continue;
+    const nodeId = nodeIdForIssue(repo, number);
+    if (!nodeId) {
+      failed += 1;
+      log(`BACKFILL no node id for #${number} (${r.short})`);
+      continue;
+    }
+    const add = graphql(Q_ADD_ITEM, { project: project.id, content: nodeId }, { label: `backfill-add:${r.short}` });
+    const itemId = add.ok ? add.data?.data?.addProjectV2ItemById?.item?.id : null;
+    if (!itemId) {
+      failed += 1;
+      log(`BACKFILL add failed for #${number}: ${add.stderr.slice(0, 160)}`);
+      continue;
+    }
+    added += 1;
+    if (project.statusFieldId) {
+      const optId = project.optionByName[statusForRecord(r).toLowerCase()];
+      if (optId) {
+        const s = graphql(
+          Q_SET_FIELD,
+          { project: project.id, item: itemId, field: project.statusFieldId, opt: optId },
+          { label: `backfill-status:${r.short}` }
+        );
+        if (s.ok) statusSet += 1;
+      }
+    }
+    if (added % 25 === 0) out(`  backfilled ${added} items...`);
+  }
+  out(`backfill done: added ${added}, status set ${statusSet}, failed ${failed}`);
+  out(`log: ${LOG_PATH}`);
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -686,6 +753,7 @@ function main() {
   const args = process.argv.slice(2);
   let mode = 'dry-run';
   if (args.includes('--live')) mode = 'live';
+  else if (args.includes('--backfill-project')) mode = 'backfill-project';
   else if (args.includes('--export')) mode = 'export';
   else if (args.includes('--dry-run')) mode = 'dry-run';
 
@@ -708,6 +776,9 @@ function main() {
   }
   if (mode === 'live') {
     migrateLive(records, plan);
+  }
+  if (mode === 'backfill-project') {
+    backfillProject(plan);
   }
 }
 

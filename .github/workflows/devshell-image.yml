@@ -37,13 +37,27 @@ jobs:
       - name: Write Dockerfile
         run: |
           cat > Dockerfile.devshell <<'DOCKER'
-          FROM nixos/nix:2.24.9
-          RUN mkdir -p /etc/nix && printf 'experimental-features = nix-command flakes\nfilter-syscalls = false\n' >> /etc/nix/nix.conf
-          # --impure: in the nixos/nix image the `nixpkgs` registry entry resolves
-          # through the channel store path, which pure flake evaluation rejects.
-          # --priority 4: the base image profile already ships bash/coreutils at
-          # priority 5 — the fresh installs must win the conflict.
-          RUN nix profile install --impure --priority 4 nixpkgs#gnumake nixpkgs#git nixpkgs#bash nixpkgs#coreutils
+          # glibc (FHS) base is REQUIRED: GitHub mounts its JS actions' node binary
+          # into job containers, and it needs the standard dynamic loader. The
+          # previous nixos/nix base broke every actions/* step with
+          # "exec /__e/node24/bin/node: no such file or directory".
+          FROM ubuntu:24.04
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+                ca-certificates curl git make xz-utils \
+              && rm -rf /var/lib/apt/lists/*
+          # System libraries for Playwright's downloaded Chromium (headless shell
+          # dlopens these from the OS): without them the browser shards die with
+          # "error while loading shared libraries: libnspr4.so".
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+                libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 \
+                libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+                libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64 \
+                libatspi2.0-0t64 fonts-liberation fonts-dejavu-core \
+              && rm -rf /var/lib/apt/lists/*
+          # Container-friendly Nix install (no init system, flakes enabled).
+          RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
+              | sh -s -- install linux --init none --no-confirm
+          ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
           WORKDIR /build
           COPY flake.nix flake.lock ./
           RUN nix develop --command true
