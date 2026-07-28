@@ -245,13 +245,13 @@ jobs:
     steps:
       # Full history so the PR commit range is walkable.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Fix workspace ownership
         # Container jobs: the runner mounts the workspace with a uid that differs
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-        with:
-          fetch-depth: 0
       - run: make check-commits RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
 
   release-label:
