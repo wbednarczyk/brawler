@@ -8,9 +8,11 @@
 //! windows (NBP's 93-day range limit), upserts them into `fx_rates`, and stamps
 //! the adapter's `last_success_at` (DoD §C).
 //!
-//! - **Backfill on first need**: a currency with no rows drags the fetch start
-//!   back to [`NBP_HISTORY_START`], so its full available history lands the first
-//!   time it is requested ([`ensure_fx_backfilled`]).
+//! - **Backfill**: a needed currency with no rows drags the fetch start back
+//!   to [`NBP_HISTORY_START`], so its full available history lands on the next
+//!   daily run. (The synchronous first-need entry point `ensure_fx_backfilled`
+//!   was removed unused, #159 — re-introduce deliberately with the first
+//!   non-PLN adapter.)
 //! - **Daily recent**: when every needed currency is already current, the start
 //!   is the latest stored date, so a steady-state pull is a single small window.
 //!
@@ -19,7 +21,6 @@
 
 use std::collections::BTreeSet;
 
-use serde_json::json;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::source_adapters::nbp_fx::{
@@ -43,34 +44,6 @@ pub fn enqueue_fx_daily_pull(state: &AppState) {
     {
         log::warn!("module=fx stage=plan_failed job=fx_daily_pull error={error}");
     }
-}
-
-/// Ensure a currency's history is present: if `fx_rates` has no row for it, plan
-/// a backfill pull that includes it (idempotent per currency via a stable job
-/// id). A no-op when the currency is already stored. The comparison read model
-/// calls this on first need (ADR 0089 dec. 2).
-pub fn ensure_fx_backfilled(state: &AppState, currency: &str) -> Result<(), String> {
-    let code = currency.trim().to_uppercase();
-    if code.is_empty() || code == crate::fx::PLN {
-        return Ok(());
-    }
-    let already = state
-        .fx_rates()
-        .latest_date_for(&code)
-        .map_err(|error| error.to_string())?
-        .is_some();
-    if already {
-        return Ok(());
-    }
-    let job_id = format!("{FX_DAILY_PULL_KIND}:backfill:{code}");
-    let payload = json!({ "currencies": [code] }).to_string();
-    if let Err(error) = state
-        .jobs()
-        .reschedule(&job_id, FX_DAILY_PULL_KIND, &payload, 3)
-    {
-        log::warn!("module=fx stage=plan_failed job=fx_backfill currency={code} error={error}");
-    }
-    Ok(())
 }
 
 /// Queue entry point: run the pull with the live HTTP fetcher.
@@ -187,6 +160,7 @@ mod tests {
     use crate::storage::open_in_memory_database;
     use rust_decimal::prelude::FromStr;
     use rust_decimal::Decimal;
+    use serde_json::json;
     use std::cell::RefCell;
 
     /// A trimmed NBP body for one day carrying the four default currencies.
@@ -401,51 +375,6 @@ mod tests {
 
         let job = state.jobs().claim_next().expect("claim").expect("a job");
         assert_eq!(job.kind, FX_DAILY_PULL_KIND);
-    }
-
-    #[test]
-    fn ensure_backfilled_enqueues_only_for_an_absent_currency() {
-        let state = AppState::new(open_in_memory_database().expect("db"));
-
-        // Absent -> a backfill job is planned naming the currency.
-        ensure_fx_backfilled(&state, "nok").expect("ensure");
-        let counts = state.jobs().counts().expect("counts");
-        assert_eq!(counts.pending, 1);
-        let job = state.jobs().claim_next().expect("claim").expect("a job");
-        assert_eq!(job.kind, FX_DAILY_PULL_KIND);
-        assert!(
-            job.payload.contains("NOK"),
-            "payload names the currency, got {}",
-            job.payload
-        );
-
-        // PLN is never backfilled (it is the base currency).
-        ensure_fx_backfilled(&state, "PLN").expect("ensure pln");
-        assert_eq!(
-            state.jobs().counts().expect("counts").pending,
-            0,
-            "PLN needs no FX row"
-        );
-
-        // A present currency is a no-op.
-        state
-            .fx_rates()
-            .upsert_rates(
-                &[FxRate {
-                    currency: "USD".to_owned(),
-                    date: "2024-01-15".to_owned(),
-                    mid: Decimal::from_str("3.99").unwrap(),
-                }],
-                ADAPTER_ID,
-                "t",
-            )
-            .expect("seed usd");
-        ensure_fx_backfilled(&state, "USD").expect("ensure usd");
-        assert_eq!(
-            state.jobs().counts().expect("counts").pending,
-            0,
-            "an already-stored currency plans no backfill"
-        );
     }
 
     #[test]
