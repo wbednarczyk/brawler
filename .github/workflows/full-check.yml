@@ -266,11 +266,6 @@ jobs:
   # release-artifacts.yml. Redirects the copy target into the workspace (the
   # runner has no /mnt/d). Artifact retained 3 days for owner hands-on
   # (`make pr-binary PR=n`).
-  #
-  # TODO(ADR 0090 §B2): add a `windows-boot-smoke` job (windows-latest) that runs
-  # `make live-smoke EXE=<artifact>` — a separate implementation slice (CDP
-  # harness adapted for an unattended runner). Until then windows-build is the
-  # required Windows check on its own.
   windows-build:
     name: Windows cross-build (.exe)
     needs: changes
@@ -314,3 +309,36 @@ jobs:
           path: ${{ github.workspace }}/windows-out/*.exe
           retention-days: 3
           if-no-files-found: error
+
+  # Boot the REAL cross-built .exe on windows-latest (#206, ADR 0090 §B2): the
+  # only job that proves the shipped artifact actually starts — window renders,
+  # IPC answers, no critical console errors (tests/live/boot-smoke.live.spec.ts
+  # over WebView2 CDP, clean first-run database). Same `make live-smoke` the
+  # owner can run against any built exe. Git Bash shell: the target's recipe is
+  # deliberately nix-less (it runs where the .exe runs — see the Makefile note).
+  windows-boot-smoke:
+    name: Windows boot smoke (real .exe)
+    needs: [changes, windows-build]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: ~\AppData\Local\npm-cache
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - uses: actions/download-artifact@v7
+        with:
+          name: windows-build
+          path: windows-out
+      - shell: bash
+        run: make live-smoke EXE="$(ls windows-out/brawler-*-windows-x64-portable.exe | head -1)"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: boot-smoke-screenshots
+          path: test-results/live/
+          retention-days: 3
+          if-no-files-found: ignore
