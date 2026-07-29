@@ -27,6 +27,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - name: Reclaim disk space
+        # Headroom for the sweep's scratch tree + per-mutant rebuild artifacts
+        # (~25-30 GB freed, same reclaim as the full-check heavy jobs). NOTE:
+        # telemetry disproved disk exhaustion as the runner-death cause — the
+        # real killer was mutant memory bombs; see the jail in the sweep step.
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+
+      - name: Add swap
+        # Headroom so legitimate build/test spikes page instead of pressuring
+        # the VM; the hard cap against mutant memory bombs is the cgroup jail
+        # in the sweep step (telemetry showed swap untouched at death — swap
+        # alone cannot outpace a tight allocation loop).
+        run: |
+          sudo fallocate -l 8G /mnt/extra-swap
+          sudo chmod 600 /mnt/extra-swap
+          sudo mkswap /mnt/extra-swap
+          sudo swapon /mnt/extra-swap
+          free -h
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -61,10 +79,36 @@ jobs:
       # artifact upload below is unconditional (`if: always()`) so the report
       # is still available when the job fails on missed mutants.
       - name: Run mutation sweep
-        run: >
-          make mutants MUTANTS_JAIL=off
-          MUTANTS_BUILD_JOBS=${{ inputs.build_jobs }}
-          MUTANTS_SHARD=${{ inputs.shard }}
+        # Memory jail via a root cgroup: mutants can turn a loop into a memory
+        # bomb (the class the TIMEOUT auto-limit cannot catch when allocation
+        # outruns it) — a <60s burst freezes the VM and the runner agent misses
+        # heartbeats ("runner received a shutdown signal"). Proven 2026-07-29 by
+        # streamed telemetry: death with 81G disk free, 13.6G RAM free, swap
+        # untouched — resources were healthy one tick earlier. The same sweep
+        # OOM-froze the owner's 16 GB WSL twice; the Makefile's systemd-run jail
+        # needs a user systemd manager this runner lacks, so cap a cgroup
+        # directly: the bomb OOMs INSIDE the cgroup (mutant recorded as caught /
+        # unviable) and the sweep continues.
+        #
+        # The TELEMETRY loop streams disk/memory into the live log every 60s —
+        # the only channel that survives a runner death (artifacts and later
+        # steps do not run when the agent is lost).
+        run: |
+          sudo mkdir -p /sys/fs/cgroup/mutants
+          echo 12G | sudo tee /sys/fs/cgroup/mutants/memory.max
+          echo 2G | sudo tee /sys/fs/cgroup/mutants/memory.swap.max
+          echo $$ | sudo tee /sys/fs/cgroup/mutants/cgroup.procs
+          ( while true; do
+              echo "TELEMETRY $(date -u +%H:%M:%S) disk_avail=$(df --output=avail -h / | tail -1 | xargs) mem_avail_mb=$(free -m | awk '/Mem:/{print $7}') swap_used_mb=$(free -m | awk '/Swap:/{print $3}')"
+              sleep 60
+            done ) &
+          TELEM_PID=$!
+          rc=0
+          make mutants MUTANTS_JAIL=off \
+            MUTANTS_BUILD_JOBS=${{ inputs.build_jobs }} \
+            MUTANTS_SHARD=${{ inputs.shard }} || rc=$?
+          kill "$TELEM_PID" 2>/dev/null || true
+          exit "$rc"
 
       - name: Upload mutants.out
         if: always()
