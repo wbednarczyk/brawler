@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.61.6 - 2026-07-29
+
+*(Backfilled by hand: the squash-merge title of #227 was not Conventional, so git-cliff filtered the release empty — the PR-title gate added after this prevents the class.)*
+
+### Bug Fixes
+
+- **tests**: cargo-mutants sandbox resolves scenario data via `BRAWLER_SCENARIOS_DIR` + a guard test banning cross-tree `include_str!` (#110) (#227)
+
+- **fundamentals**: capex displays as an outflow in the numeric fallback; as-reported values never rewritten (#156) (#227)
+
+### Features
+
+- **autopilot**: transient stage failures retry up to 3 attempts before the run fails (#159) (#227)
+
+- **fundamentals**: financial facts carry an optional annotation (migration 0117) editable from the fact row (#189) (#227)
+
+- **reports**: per-document extraction status chip (has data / flagged / empty) in the documents view (#155) (#227)
+
 ## v0.61.5 - 2026-07-28
 
 
