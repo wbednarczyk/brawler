@@ -204,8 +204,8 @@ The owner study (2026-07-02) is **resolved 2026-07-03** per its own decision cri
 Genuinely unresolved questions carried over from [Source Strategy](source-strategy.md) (resolved/superseded ones moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02); resolved 2026-07-03: Stooq EOD quotes → [ADR 0067](adr/0067-market-data-foundation.md), Bankier↔ESPI reconciliation → [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)):
 
 - Are there explicit GPW terms that constrain automated polling of `https://www.gpw.pl/komunikaty`? Never formally reviewed.
-- Which Investing.com Poland RSS categories are relevant to GPW companies, with stable source URLs and enough ticker/company identifiers to justify a media adapter?
-- What exact Portal Analiz scope is acceptable for v1 — followed companies only, watchlist-only search results, selected pages saved manually, or automated polling? (`portal-analiz` remains a disabled placeholder pending [ADR 0014](adr/0014-portal-analiz-authenticated-source-policy.md) scope decision.)
+- ~~Which Investing.com Poland RSS categories are relevant to GPW companies?~~ **Resolved 2026-07-29 (#73): rejected for ingestion** — terms prohibit storing site data without written consent, and GPW signal is incidental-only; see [Source Strategy](source-strategy.md).
+- What exact Portal Analiz scope is acceptable for v1? **Updated 2026-07-29 (#116): blocked on explicit publisher permission** — robots.txt bans bots (incl. `/feed/` for all agents) and Cloudflare 403-walls automated access; `portal-analiz` stays a disabled placeholder ([ADR 0014](adr/0014-portal-analiz-authenticated-source-policy.md)) until the owner obtains written permission; see [Source Strategy](source-strategy.md).
 
 ## Future: AI Recommendation Guardrail Enforcement
 
