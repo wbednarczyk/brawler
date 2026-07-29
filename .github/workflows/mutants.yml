@@ -27,6 +27,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - name: Reclaim disk space
+        # A sweep writes a full scratch tree + per-mutant rebuild artifacts for
+        # 30min-2h; two 2026-07-29 runs died mid-sweep with the runner agent lost
+        # (no logs uploaded) — the progressive-disk-exhaustion signature. Same
+        # reclaim the full-check heavy jobs use (~25-30 GB freed).
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
       - name: Checkout
         uses: actions/checkout@v7
 
