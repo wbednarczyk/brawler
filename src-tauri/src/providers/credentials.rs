@@ -396,9 +396,10 @@ mod tests {
                 "{provider_id} is enumerated but resolves no descriptor"
             );
         }
-        let fixture: Vec<String> = serde_json::from_str(include_str!(
-            "../../../src/test/scenarios/credentialProviders.json"
-        ))
+        let fixture: Vec<String> = serde_json::from_str(include_str!(concat!(
+            env!("BRAWLER_SCENARIOS_DIR"),
+            "/credentialProviders.json"
+        )))
         .expect("credentialProviders.json parses");
         assert_eq!(
             fixture, CREDENTIAL_PROVIDER_IDS,

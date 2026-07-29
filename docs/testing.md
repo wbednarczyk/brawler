@@ -491,8 +491,14 @@ Files: the corpus is `src/test/scenarios/fidelity-corpus.json` (language-neutral
 `src/test/scenarios/fidelity.test.ts` (over `createMockRuntime`); the Rust
 replayer is `src-tauri/src/storage/tests/mock_fidelity.rs` (over `AppState` on a
 fresh `open_in_memory_database`); it loads the corpus via `BRAWLER_FIDELITY_CORPUS`
-(set by `src-tauri/build.rs`, overridable — `make mutants` exports an absolute
-path since `cargo-mutants`' scratch copy excludes anything above the workspace).
+(set by `src-tauri/build.rs` from `BRAWLER_SCENARIOS_DIR` — `make mutants`
+exports that dir as an absolute path since `cargo-mutants`' scratch copy
+excludes anything above the workspace). The same rule covers every shared
+fixture under `src/test/scenarios/`: Rust tests embed one via
+`include_str!(concat!(env!("BRAWLER_SCENARIOS_DIR"), "/<file>"))`, never a
+literal `../../../` path — a cross-tree literal compiles everywhere except the
+mutants sandbox (#110); the `source_tree_guards` unit test reddens on any such
+literal.
 Journeys use seed-free root entities and
 seed-independent assertions, and reuse each created entity's returned id, so they
 hold regardless of either side's id-derivation scheme. **Add a journey to the

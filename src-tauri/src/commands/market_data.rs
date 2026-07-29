@@ -432,6 +432,7 @@ mod tests {
                 confirmation_state: None,
                 supersedes_id: None,
                 source_document_ref: None,
+                annotation: None,
             })
             .expect("shares_outstanding fact");
 
@@ -492,14 +493,16 @@ mod tests {
                 confirmation_state: None,
                 supersedes_id: None,
                 source_document_ref: None,
+                annotation: None,
             })
             .expect("shares_outstanding fact");
 
         let context = compute_price_context(&s, &c).expect("compute");
         let actual = serde_json::to_value(&context).expect("serialize");
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../src/test/scenarios/priceContextPopulated.json"
-        ))
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("BRAWLER_SCENARIOS_DIR"),
+            "/priceContextPopulated.json"
+        )))
         .expect("fixture parses");
         assert_eq!(
             actual, fixture,
