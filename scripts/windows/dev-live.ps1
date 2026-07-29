@@ -96,18 +96,26 @@ if (-not [string]::IsNullOrWhiteSpace($env:BRAWLER_EXTRA_BROWSER_ARGS)) {
 }
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $browserArgs
 
-# CI fallback: on the GitHub windows runner the env var demonstrably does not
-# reach the WebView2 browser process (2026-07-29 run: webview children alive,
-# frontend calling commands, yet no listener on the CDP port). The documented
-# alternative is the per-exe HKCU policy, which the WebView2 loader reads
-# regardless of environment inheritance. Opt-in (-DebugPolicyFallback) so local
-# live-drive never leaves a stale policy on the owner's machine.
+# CI fallback: the GitHub windows runner executes everything ELEVATED
+# (runneradmin), and WebView2 deliberately ignores user-controlled argument
+# sources for elevated hosts — the env var AND the HKCU policy (proven
+# 2026-07-29: policy written, env set, yet the browser command line carried
+# neither flag). Elevated hosts DO honor the machine-scoped HKLM policy, so
+# that is what this writes (HKCU too, harmlessly, for non-elevated contexts).
+# Opt-in (-DebugPolicyFallback) so local live-drive never leaves a stale
+# machine policy on the owner's box.
 if ($DebugPolicyFallback) {
-    $policyPath = "HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
-    New-Item -Path $policyPath -Force | Out-Null
     $exeLeaf = Split-Path $exe -Leaf
-    New-ItemProperty -Path $policyPath -Name $exeLeaf -Value $browserArgs -PropertyType String -Force | Out-Null
-    Write-Host "Debug policy fallback: $exeLeaf -> $browserArgs"
+    foreach ($hive in @("HKLM", "HKCU")) {
+        $policyPath = "${hive}:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
+        try {
+            New-Item -Path $policyPath -Force | Out-Null
+            New-ItemProperty -Path $policyPath -Name $exeLeaf -Value $browserArgs -PropertyType String -Force | Out-Null
+            Write-Host "Debug policy fallback (${hive}): $exeLeaf -> $browserArgs"
+        } catch {
+            Write-Host "Debug policy fallback (${hive}) not written: $($_.Exception.Message)"
+        }
+    }
 }
 
 Write-Host "Launching..." -ForegroundColor Green
