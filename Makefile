@@ -645,7 +645,7 @@ live-smoke:
 	if command -v wslpath >/dev/null 2>&1; then CAP_WIN="$$(wslpath -w "$$CAP_DIR")"; \
 	elif command -v cygpath >/dev/null 2>&1; then CAP_WIN="$$(cygpath -w "$$CAP_DIR")"; \
 	else CAP_WIN="$$CAP_DIR"; fi; \
-	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$$SCRIPT_PATH" -Port $(LIVE_CDP_PORT) -ExePath "$$EXE_WIN" -CaptureDir "$$CAP_WIN"; \
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$$SCRIPT_PATH" -Port $(LIVE_CDP_PORT) -ExePath "$$EXE_WIN" -CaptureDir "$$CAP_WIN" -DebugPolicyFallback; \
 	deadline=$$((SECONDS + 120)); up=""; \
 	while [ $$SECONDS -lt $$deadline ]; do \
 	  if curl -fsS "http://localhost:$(LIVE_CDP_PORT)/json/version" >/dev/null 2>&1; then up=1; break; fi; \
@@ -658,6 +658,8 @@ live-smoke:
 	  powershell.exe -NoProfile -Command "(Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv" >&2 || true; \
 	  printf "msedgewebview2 child processes (empty = the webview never spawned):\n" >&2; \
 	  powershell.exe -NoProfile -Command "Get-Process msedgewebview2* -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,StartTime" >&2 || true; \
+	  printf "msedgewebview2 command lines (is --remote-debugging-port present?):\n" >&2; \
+	  powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object Name -eq 'msedgewebview2.exe' | Select-Object -ExpandProperty CommandLine" >&2 || true; \
 	  printf "Listeners on the CDP port:\n" >&2; \
 	  powershell.exe -NoProfile -Command "Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object LocalPort -eq $(LIVE_CDP_PORT) | Format-Table LocalAddress,LocalPort,OwningProcess" >&2 || true; \
 	  for f in "$$CAP_DIR"/*; do [ -s "$$f" ] && { printf -- "--- %s\n" "$$f" >&2; tail -40 "$$f" >&2; }; done || true; \

@@ -3,7 +3,8 @@ param(
     [int] $Port = 9222,
     [string] $ExePath,
     [string] $OutputDir = $env:BRAWLER_WINDOWS_OUT,
-    [string] $CaptureDir
+    [string] $CaptureDir,
+    [switch] $DebugPolicyFallback
 )
 
 $ErrorActionPreference = "Stop"
@@ -94,6 +95,20 @@ if (-not [string]::IsNullOrWhiteSpace($env:BRAWLER_EXTRA_BROWSER_ARGS)) {
     $browserArgs = "$browserArgs $($env:BRAWLER_EXTRA_BROWSER_ARGS)"
 }
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $browserArgs
+
+# CI fallback: on the GitHub windows runner the env var demonstrably does not
+# reach the WebView2 browser process (2026-07-29 run: webview children alive,
+# frontend calling commands, yet no listener on the CDP port). The documented
+# alternative is the per-exe HKCU policy, which the WebView2 loader reads
+# regardless of environment inheritance. Opt-in (-DebugPolicyFallback) so local
+# live-drive never leaves a stale policy on the owner's machine.
+if ($DebugPolicyFallback) {
+    $policyPath = "HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
+    New-Item -Path $policyPath -Force | Out-Null
+    $exeLeaf = Split-Path $exe -Leaf
+    New-ItemProperty -Path $policyPath -Name $exeLeaf -Value $browserArgs -PropertyType String -Force | Out-Null
+    Write-Host "Debug policy fallback: $exeLeaf -> $browserArgs"
+}
 
 Write-Host "Launching..." -ForegroundColor Green
 # CaptureDir (CI diagnostics): a WebView2Environment creation failure surfaces on
