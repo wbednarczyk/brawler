@@ -60,6 +60,32 @@ pub struct ReportDocumentViewRow {
     pub fiscal_year: Option<i64>,
     pub period_type: Option<String>,
     pub canonical: bool,
+    /// Extraction verdict aggregated from `fundamentals_extraction_outcomes`
+    /// (#155). `None` = the pipeline never attempted this document, so the user
+    /// cannot yet know whether extraction is worth running.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub extraction: Option<DocumentExtractionStatus>,
+}
+
+/// The per-document "contains extractable financial data" indicator (#155),
+/// aggregated over every outcome slot recorded for the document: any emitting
+/// slot -> `has_data` (with the summed fact count), else any flagged slot ->
+/// `flagged`, else `empty` (attempted, nothing extractable found).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentExtractionStatus {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"has_data\" | \"flagged\" | \"empty\"")
+    )]
+    pub status: String,
+    pub fact_count: i64,
 }
 
 // ============================================================================
@@ -81,6 +107,35 @@ pub fn compute_report_documents_view(
     let documents = state
         .list_report_documents_by_company(company_id)
         .map_err(|e| e.to_string())?;
+
+    // Extraction indicator (#155): aggregate every outcome slot per document.
+    // No rows for a document -> None (never attempted) — reads tolerate the
+    // table predating a document, per the data-model rule.
+    let mut extraction_by_document: std::collections::BTreeMap<String, DocumentExtractionStatus> =
+        std::collections::BTreeMap::new();
+    for outcome in state
+        .fundamentals_provenance()
+        .list_extraction_outcomes(company_id)
+        .map_err(|e| e.to_string())?
+    {
+        let entry = extraction_by_document
+            .entry(outcome.report_document_id.clone())
+            .or_insert_with(|| DocumentExtractionStatus {
+                status: "empty".to_owned(),
+                fact_count: 0,
+            });
+        entry.fact_count += outcome.fact_count.max(0);
+        let emitted = outcome.fact_count > 0
+            || matches!(
+                outcome.acceptance.as_str(),
+                "accepted" | "accepted_via_witness" | "accepted_unreviewed"
+            );
+        if emitted {
+            entry.status = "has_data".to_owned();
+        } else if outcome.acceptance == "flagged" && entry.status != "has_data" {
+            entry.status = "flagged".to_owned();
+        }
+    }
 
     // Derive each document's period ONCE (ESEF file reads are not free), keeping
     // it beside its document for both canonical selection and the row output.
@@ -126,11 +181,13 @@ pub fn compute_report_documents_view(
                 Some((fiscal_year, period_type, _index)) => (Some(fiscal_year), Some(period_type)),
                 None => (None, None),
             };
+            let extraction = extraction_by_document.get(&document.id).cloned();
             ReportDocumentViewRow {
                 document,
                 fiscal_year,
                 period_type,
                 canonical,
+                extraction,
             }
         })
         .collect();
@@ -295,6 +352,104 @@ mod tests {
         assert_eq!(r.fiscal_year, None);
         assert_eq!(r.period_type, None);
         assert!(!r.canonical);
+    }
+
+    /// #155: the extraction indicator aggregates outcome slots per document —
+    /// no rows = None (never attempted), an emitting slot wins over a flagged
+    /// one, a flagged slot wins over empty, and fact counts sum across slots.
+    #[test]
+    fn extraction_indicator_aggregates_outcome_slots_per_document() {
+        let s = state();
+        let c = company(&s);
+        let attempted = document(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "x/ssf-2025.pdf",
+            true,
+        );
+        let untouched = document(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2024 SSF",
+            "x/ssf-2024.pdf",
+            true,
+        );
+        let outcome = |fiscal_year: i64, acceptance: &'static str, fact_count: i64| {
+            crate::storage::NewExtractionOutcome {
+                company_id: &c,
+                report_document_id: &attempted,
+                fiscal_year,
+                period_type: "FY",
+                period_end: "2025-12-31",
+                tier: Some("esef"),
+                acceptance,
+                reason_code: if fact_count > 0 {
+                    "emitted"
+                } else {
+                    "validation_failed"
+                },
+                detail_json: None,
+                drift_json: None,
+                structure_changed: false,
+                fact_count,
+            }
+        };
+        s.fundamentals_provenance()
+            .record_extraction_outcome(outcome(2025, "accepted", 7))
+            .expect("emitting outcome");
+        s.fundamentals_provenance()
+            .record_extraction_outcome(outcome(2024, "flagged", 0))
+            .expect("flagged outcome");
+
+        let view = compute_report_documents_view(&s, &c).expect("view");
+        let attempted_row = row(&view, &attempted);
+        let status = attempted_row
+            .extraction
+            .as_ref()
+            .expect("attempted document carries an indicator");
+        assert_eq!(status.status, "has_data", "an emitting slot wins");
+        assert_eq!(status.fact_count, 7);
+        assert!(
+            row(&view, &untouched).extraction.is_none(),
+            "no outcome rows means never attempted, not empty"
+        );
+    }
+
+    /// #155: attempted-but-nothing-found and flagged documents are distinct
+    /// from has-data ones.
+    #[test]
+    fn extraction_indicator_reports_flagged_when_nothing_emitted() {
+        let s = state();
+        let c = company(&s);
+        let doc = document(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "x/ssf-2025.pdf",
+            true,
+        );
+        s.fundamentals_provenance()
+            .record_extraction_outcome(crate::storage::NewExtractionOutcome {
+                company_id: &c,
+                report_document_id: &doc,
+                fiscal_year: 2025,
+                period_type: "FY",
+                period_end: "2025-12-31",
+                tier: Some("esef"),
+                acceptance: "flagged",
+                reason_code: "validation_failed",
+                detail_json: None,
+                drift_json: None,
+                structure_changed: false,
+                fact_count: 0,
+            })
+            .expect("flagged outcome");
+
+        let view = compute_report_documents_view(&s, &c).expect("view");
+        let status = row(&view, &doc).extraction.as_ref().expect("indicator");
+        assert_eq!(status.status, "flagged");
+        assert_eq!(status.fact_count, 0);
     }
 
     #[test]

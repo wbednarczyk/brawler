@@ -548,3 +548,36 @@ describe("CompanyReportDocumentsPanel", () => {
     expect(await screen.findByText("reclassify failed")).toBeInTheDocument();
   });
 });
+
+describe("extraction indicator chip (#155)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    reclassifyReportDocumentsMock.mockResolvedValue({ total: 1, updated: 0, byKind: {} });
+  });
+
+  it("shows the has-data chip with the fact count as tooltip", async () => {
+    mockView([
+      viewRow({}, { extraction: { status: "has_data", factCount: 12 } }),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    const chip = await screen.findByText("Financial data");
+    expect(chip.closest(".doc-extraction-chip")).toHaveAttribute(
+      "title",
+      "Extracted facts: 12",
+    );
+  });
+
+  it("distinguishes flagged and no-data outcomes, and omits the chip when never attempted", async () => {
+    mockView([
+      viewRow({ id: "doc_flagged", title: "Flagged 2025" }, { extraction: { status: "flagged", factCount: 0 } }),
+      viewRow({ id: "doc_empty", title: "Empty 2024" }, { fiscalYear: 2024, extraction: { status: "empty", factCount: 0 } }),
+      viewRow({ id: "doc_untouched", title: "Untouched 2023" }, { fiscalYear: 2023 }),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("Extraction flagged")).toBeInTheDocument();
+    expect(screen.getByText("No extractable data")).toBeInTheDocument();
+    expect(document.querySelectorAll(".doc-extraction-chip")).toHaveLength(2);
+  });
+});

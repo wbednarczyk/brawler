@@ -436,6 +436,24 @@ impl FundamentalsProvenanceStore {
         let rows = statement.query_map([company_id], extraction_outcome_from_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
+
+    /// Every outcome row for a company — emitting and non-emitting alike. The
+    /// report-documents view aggregates these per document into the "contains
+    /// extractable data" indicator (#155); no row for a document still means
+    /// "never attempted".
+    pub fn list_extraction_outcomes(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Vec<ExtractionOutcome>> {
+        let connection = self.db.checkout()?;
+        let mut statement = connection.prepare(&format!(
+            "{EXTRACTION_OUTCOME_COLUMNS}
+             WHERE company_id = ?1
+             ORDER BY last_attempted_at DESC, period_end DESC, id"
+        ))?;
+        let rows = statement.query_map([company_id], extraction_outcome_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
 }
 
 /// Shared column list + FROM for every outcome read, so the projection and

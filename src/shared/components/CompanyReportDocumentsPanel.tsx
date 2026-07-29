@@ -416,6 +416,29 @@ export function CompanyReportDocumentsPanel({
             <span className="doc-chips">
               {code ? <StatusChip tone="accent">{code}</StatusChip> : null}
               {isEsef(document) ? <StatusChip tone="neutral">ESEF</StatusChip> : null}
+              {row.extraction ? (
+                <StatusChip
+                  className="doc-extraction-chip"
+                  tone={
+                    row.extraction.status === "has_data"
+                      ? "ok"
+                      : row.extraction.status === "flagged"
+                        ? "warn"
+                        : "neutral"
+                  }
+                  title={
+                    row.extraction.status === "has_data"
+                      ? `${text("Extracted facts")}: ${row.extraction.factCount}`
+                      : undefined
+                  }
+                >
+                  {row.extraction.status === "has_data"
+                    ? text("Financial data")
+                    : row.extraction.status === "flagged"
+                      ? text("Extraction flagged")
+                      : text("No extractable data")}
+                </StatusChip>
+              ) : null}
             </span>
           </div>
           <a
