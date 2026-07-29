@@ -304,8 +304,16 @@ jobs:
 
       # Tag AFTER both successful builds so a failed build never orphans a tag.
       # Idempotent: skip if the tag already exists (recovery re-runs).
+      # Pushed over SSH with the release-stamp deploy key, NOT GITHUB_TOKEN:
+      # GitHub evaluates a pushed tag's tree against the CURRENT master head,
+      # so a workflow-touching PR merged between build start and tag push makes
+      # the App push look like a workflow edit → rejected without `workflows`
+      # permission (v0.62.0 race, 2026-07-29: #245 changed mutants.yml minutes
+      # after the epic merge). Deploy keys are not subject to that rule.
       - name: Create and push tag
         if: needs.version.outputs.republish == 'false'
+        env:
+          RELEASE_STAMP_DEPLOY_KEY: ${{ secrets.RELEASE_STAMP_DEPLOY_KEY }}
         run: |
           set -euo pipefail
           tag="${{ needs.version.outputs.tag }}"
@@ -317,7 +325,12 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$tag" -m "$tag"
-            git push origin "$tag"
+            mkdir -p ~/.ssh
+            ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+            printf '%s\n' "$RELEASE_STAMP_DEPLOY_KEY" > ~/.ssh/release_stamp
+            chmod 600 ~/.ssh/release_stamp
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/release_stamp -o IdentitiesOnly=yes" \
+              git push "git@github.com:${{ github.repository }}.git" "$tag"
           fi
 
       - name: Generate release notes (git-cliff)
