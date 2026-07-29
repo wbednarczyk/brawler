@@ -103,6 +103,12 @@ jobs:
             echo "tag=$tag" >> "$GITHUB_OUTPUT"
             echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
             echo "republish=true" >> "$GITHUB_OUTPUT"
+            # prev must be computed here too: with it empty the cliff range
+            # degenerates to a bare tag → "invalid revspec", so a republish run
+            # could never regenerate notes or heal a missing changelog stamp
+            # (v0.62.0 recovery, 2026-07-29).
+            prev="$(git describe --tags --abbrev=0 "$tag"^ 2>/dev/null || true)"
+            echo "prev=$prev" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           last="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
