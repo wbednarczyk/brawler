@@ -482,6 +482,7 @@ mod tests {
                 confirmation_state: None,
                 supersedes_id: None,
                 source_document_ref: None,
+                annotation: None,
             })
             .expect("fact");
         if let Some(status) = validation {

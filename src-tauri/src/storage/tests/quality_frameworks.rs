@@ -56,6 +56,7 @@ fn confirmed_fact(
             confirmation_state: Some("confirmed".to_owned()),
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("fact should create")
 }
@@ -462,6 +463,7 @@ fn evaluation_snapshot_is_pinned_when_facts_change() {
             confirmation_state: None,
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("update fact");
     let reloaded = state

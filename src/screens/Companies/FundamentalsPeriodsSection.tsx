@@ -254,6 +254,7 @@ export function FundamentalsPeriodsSection({
                                     valueNumeric: cell.value,
                                     currency: cell.currency,
                                     valueKind: row.valueKind,
+                                    metricKey: row.metricKey,
                                   },
                                   locale,
                                 )}

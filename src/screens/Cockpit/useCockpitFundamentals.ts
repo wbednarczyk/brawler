@@ -22,6 +22,7 @@ const EMPTY_FACT_FORM: FinancialFactForm = {
   valueNumeric: "",
   currency: "",
   periodId: "",
+  annotation: "",
 };
 
 // Cockpit-native fundamentals state + actions for one company. It owns the

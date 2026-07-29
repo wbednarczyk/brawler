@@ -573,6 +573,13 @@
   cursor: pointer;
 }
 
+.fact-annotation-marker {
+  margin-left: var(--space-1);
+  color: var(--accent);
+  font-weight: 700;
+  cursor: help;
+}
+
 .facts-matrix-cell:hover {
   background: var(--surface-raised);
 }

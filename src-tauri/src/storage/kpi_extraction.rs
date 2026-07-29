@@ -334,6 +334,7 @@ fn prepare_fact_write(
             confirmation_state: Some(input.confirmation_state.to_owned()),
             supersedes_id: None,
             source_document_ref: Some(input.report_document_id.to_owned()),
+            annotation: None,
         },
     )?;
     Ok(Some(outcome))
@@ -387,6 +388,7 @@ pub(super) fn record_structured_fact(
                         confirmation_state: Some(input.confirmation_state.to_owned()),
                         supersedes_id: None,
                         source_document_ref: Some(input.report_document_id.to_owned()),
+                        annotation: None,
                     },
                 )?;
                 write_fact_provenance(connection, &existing.id, &input)?;
@@ -484,6 +486,7 @@ fn apply_aggregator_precedence(
                         confirmation_state: Some(input.confirmation_state.to_owned()),
                         supersedes_id: None,
                         source_document_ref: Some(input.report_document_id.to_owned()),
+                        annotation: None,
                     },
                 )?;
                 write_fact_provenance(connection, &existing.id, input)?;
@@ -579,6 +582,7 @@ pub(super) fn record_aggregator_facts(
                 confirmation_state: Some(input.confirmation_state.to_owned()),
                 supersedes_id: None,
                 source_document_ref: Some(input.report_document_id.to_owned()),
+                annotation: None,
             },
         )?;
         commits.push(apply_aggregator_precedence(connection, input, outcome)?);

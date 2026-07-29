@@ -39,6 +39,7 @@ fn seed_fact(state: &AppState, company_id: &str, period_id: &str, metric_key: &s
             confirmation_state: Some("confirmed".to_owned()),
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("financial fact should create");
 }
@@ -493,6 +494,7 @@ fn creates_financial_fact() {
             confirmation_state: Some("confirmed".to_owned()),
             supersedes_id: None,
             source_document_ref: Some("annual_report_2026.pdf".to_owned()),
+            annotation: None,
         })
         .expect("financial fact should create");
 
@@ -558,6 +560,7 @@ fn lists_financial_facts_by_company() {
             confirmation_state: None,
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("first fact should create");
 
@@ -581,6 +584,7 @@ fn lists_financial_facts_by_company() {
             confirmation_state: None,
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("second fact should create");
 
@@ -645,6 +649,7 @@ fn updates_financial_fact() {
             confirmation_state: None,
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("fact should create");
 
@@ -657,6 +662,7 @@ fn updates_financial_fact() {
             confirmation_state: Some("provisional".to_owned()),
             supersedes_id: None,
             source_document_ref: Some("revised_report.pdf".to_owned()),
+            annotation: None,
         })
         .expect("fact should update");
 
@@ -718,6 +724,7 @@ fn deletes_financial_period_and_cascades_to_facts() {
             confirmation_state: None,
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("fact should create");
 
@@ -1018,4 +1025,96 @@ fn company_scoped_definition_list_includes_the_canonical_catalog() {
         .find(|d| d.metric_key == "eps_basic")
         .expect("eps");
     assert_eq!(eps.unit.as_deref(), Some("per_share"));
+}
+
+/// #156: the one-off annotation is stored on create (whitespace normalizes to
+/// NULL), survives an unrelated update, is replaced by new text, and an empty
+/// string on update clears it. Reddens if the keep/clear/replace contract or
+/// the create normalization drifts.
+#[test]
+fn fact_annotation_set_kept_replaced_and_cleared() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2025-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let new_fact = |metric_key: &str, annotation: Option<&str>| NewFinancialFact {
+        company_id: company.id.clone(),
+        period_id: period.id.clone(),
+        definition_id: definitions
+            .iter()
+            .find(|d| d.metric_key == metric_key)
+            .expect("canonical metric")
+            .id
+            .clone(),
+        value_numeric: "1000".to_owned(),
+        currency: Some("PLN".to_owned()),
+        statement_basis: None,
+        attribution: None,
+        variant: None,
+        measure_window: None,
+        data_quality: None,
+        as_reported_value: None,
+        as_reported_scale: None,
+        reporting_standard: None,
+        extraction_method: None,
+        confidence: None,
+        confirmation_state: Some("confirmed".to_owned()),
+        supersedes_id: None,
+        source_document_ref: None,
+        annotation: annotation.map(str::to_owned),
+    };
+    let update = |id: &str, value: Option<&str>, annotation: Option<&str>| UpdateFinancialFact {
+        id: id.to_owned(),
+        value_numeric: value.map(str::to_owned),
+        currency: None,
+        data_quality: None,
+        confirmation_state: None,
+        supersedes_id: None,
+        source_document_ref: None,
+        annotation: annotation.map(str::to_owned),
+    };
+
+    let fact = state
+        .create_financial_fact(new_fact("net_profit", Some("includes a one-off gain")))
+        .expect("fact should create");
+    assert_eq!(fact.annotation.as_deref(), Some("includes a one-off gain"));
+
+    // Whitespace-only on create normalizes to NULL.
+    let blank = state
+        .create_financial_fact(new_fact("total_assets", Some("   ")))
+        .expect("fact should create");
+    assert_eq!(blank.annotation, None);
+
+    // An unrelated update keeps the stored annotation.
+    let kept = state
+        .update_financial_fact(update(&fact.id, Some("2000"), None))
+        .expect("update should apply");
+    assert_eq!(kept.annotation.as_deref(), Some("includes a one-off gain"));
+
+    // New text replaces it.
+    let replaced = state
+        .update_financial_fact(update(&fact.id, None, Some("revised note")))
+        .expect("update should apply");
+    assert_eq!(replaced.annotation.as_deref(), Some("revised note"));
+
+    // An empty string clears it.
+    let cleared = state
+        .update_financial_fact(update(&fact.id, None, Some("")))
+        .expect("update should apply");
+    assert_eq!(cleared.annotation, None);
 }

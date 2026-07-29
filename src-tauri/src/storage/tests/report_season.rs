@@ -224,6 +224,7 @@ fn pre_report_card_composes_owning_domains() {
             confirmation_state: Some("confirmed".to_owned()),
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("confirmed fact should be created");
     state
@@ -246,6 +247,7 @@ fn pre_report_card_composes_owning_domains() {
             confirmation_state: Some("confirmed".to_owned()),
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("older fact should be created");
 

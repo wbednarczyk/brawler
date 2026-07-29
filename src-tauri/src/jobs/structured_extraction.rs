@@ -2075,6 +2075,7 @@ mod tests {
                 confirmation_state: None,
                 supersedes_id: None,
                 source_document_ref: None,
+                annotation: None,
             })
             .expect("mutate stored fact");
 
@@ -2330,6 +2331,7 @@ mod tests {
                     confirmation_state: Some("confirmed".to_owned()),
                     supersedes_id: None,
                     source_document_ref: None,
+                    annotation: None,
                 })
                 .expect("prior financial fact should create");
         }

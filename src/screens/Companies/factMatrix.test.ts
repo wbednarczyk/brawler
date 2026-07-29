@@ -55,6 +55,7 @@ function fact(id: string, periodId: string, definitionId: string): FinancialFact
     confirmationState: "confirmed",
     supersedesId: null,
     sourceDocumentRef: null,
+    annotation: null,
     createdAt: "",
     updatedAt: "",
   };

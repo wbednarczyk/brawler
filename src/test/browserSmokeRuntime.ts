@@ -1060,6 +1060,7 @@ function financialFact(
     confirmationState: "confirmed",
     supersedesId: null,
     sourceDocumentRef: "doc_cdr_q3_2025",
+    annotation: null,
     createdAt: NOW,
     updatedAt: NOW,
   };

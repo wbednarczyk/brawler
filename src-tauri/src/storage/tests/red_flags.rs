@@ -627,6 +627,7 @@ fn seed_altman_fy(state: &AppState, company_id: &str, year: i64, values: &[(&str
                 confirmation_state: None,
                 supersedes_id: None,
                 source_document_ref: None,
+                annotation: None,
             })
             .expect("fact create");
     }

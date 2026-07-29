@@ -443,6 +443,7 @@ mod tests {
             confirmation_state: Some(confirmation.to_owned()),
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         };
         s.create_financial_fact(fact("kpidef_net_profit", "1250000", "confirmed"))
             .expect("confirmed fact");

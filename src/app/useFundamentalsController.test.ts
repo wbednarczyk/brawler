@@ -27,6 +27,7 @@ const EMPTY_FACT_FORM: FinancialFactForm = {
   valueNumeric: "",
   currency: "",
   periodId: "",
+  annotation: "",
 };
 
 const period: FinancialPeriod = {
@@ -60,6 +61,7 @@ const fact: FinancialFact = {
   confirmationState: "confirmed",
   supersedesId: null,
   sourceDocumentRef: null,
+  annotation: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 };
@@ -247,6 +249,7 @@ describe("useFundamentalsController", () => {
       result.current.selectFinancialFact("fact_1");
     });
     expect(result.current.financialFactForm).toEqual({
+      annotation: "",
       definitionId: "kpi_revenue",
       valueNumeric: "1000",
       currency: "PLN",
@@ -269,6 +272,8 @@ describe("useFundamentalsController", () => {
       currency: "PLN",
       dataQuality: "final",
       confirmationState: "confirmed",
+      // Always sent on update: "" is the explicit clear-the-annotation signal.
+      annotation: "",
     });
     expect(financialsApi.createFinancialFact).not.toHaveBeenCalled();
     expect(refreshFinancialFacts).toHaveBeenCalledTimes(1);

@@ -95,6 +95,11 @@ pub struct FinancialFact {
     pub confirmation_state: String,
     pub supersedes_id: Option<String>,
     pub source_document_ref: Option<String>,
+    /// User-authored one-off note (#156): the value contains a one-off event
+    /// (e.g. discontinued operations inside net_profit). Renders as a visible
+    /// '*' marker; the value itself stays exactly as reported. Never written by
+    /// any extraction path.
+    pub annotation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -204,6 +209,7 @@ pub struct NewFinancialFact {
     pub confirmation_state: Option<String>,
     pub supersedes_id: Option<String>,
     pub source_document_ref: Option<String>,
+    pub annotation: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -221,6 +227,9 @@ pub struct UpdateFinancialFact {
     pub confirmation_state: Option<String>,
     pub supersedes_id: Option<String>,
     pub source_document_ref: Option<String>,
+    /// `None` keeps the stored annotation; `Some("")` clears it; any other
+    /// value replaces it (#156).
+    pub annotation: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -705,6 +714,7 @@ pub(super) fn list_financial_facts(
             confirmation_state,
             supersedes_id,
             source_document_ref,
+            annotation,
             created_at,
             updated_at
         FROM financial_facts
@@ -1243,6 +1253,7 @@ pub(super) fn create_financial_fact(
     let supersedes_id = empty_string_to_none(input.supersedes_id.map(|s| s.trim().to_owned()));
     let source_document_ref =
         empty_string_to_none(input.source_document_ref.map(|s| s.trim().to_owned()));
+    let annotation = empty_string_to_none(input.annotation.map(|s| s.trim().to_owned()));
 
     validate_reference_exists(connection, "companies", &company_id)?;
     validate_reference_exists(connection, "financial_periods", &period_id)?;
@@ -1286,8 +1297,9 @@ pub(super) fn create_financial_fact(
             confidence,
             confirmation_state,
             supersedes_id,
-            source_document_ref
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+            source_document_ref,
+            annotation
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
         ",
         params![
             id,
@@ -1308,7 +1320,8 @@ pub(super) fn create_financial_fact(
             confidence,
             confirmation_state,
             supersedes_id,
-            source_document_ref
+            source_document_ref,
+            annotation
         ],
     )?;
 
@@ -1385,6 +1398,14 @@ pub(super) fn update_financial_fact(
         })
         .or(current.source_document_ref);
 
+    // Annotation (#156): absent keeps the stored note, an empty string clears
+    // it (the user removed the marker), anything else replaces it.
+    let annotation = match input.annotation.as_deref().map(str::trim) {
+        None => current.annotation,
+        Some("") => None,
+        Some(text) => Some(text.to_owned()),
+    };
+
     connection.execute(
         "
         UPDATE financial_facts
@@ -1394,6 +1415,7 @@ pub(super) fn update_financial_fact(
             confirmation_state = ?5,
             supersedes_id = ?6,
             source_document_ref = ?7,
+            annotation = ?8,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?1
         ",
@@ -1404,7 +1426,8 @@ pub(super) fn update_financial_fact(
             data_quality,
             confirmation_state,
             supersedes_id,
-            source_document_ref
+            source_document_ref,
+            annotation
         ],
     )?;
 
@@ -1521,6 +1544,7 @@ fn get_financial_fact(connection: &Connection, id: &str) -> StorageResult<Financ
                 confirmation_state,
                 supersedes_id,
                 source_document_ref,
+                annotation,
                 created_at,
                 updated_at
             FROM financial_facts
@@ -1599,8 +1623,9 @@ fn financial_fact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Financia
         confirmation_state: row.get(16)?,
         supersedes_id: row.get(17)?,
         source_document_ref: row.get(18)?,
-        created_at: row.get(19)?,
-        updated_at: row.get(20)?,
+        annotation: row.get(19)?,
+        created_at: row.get(20)?,
+        updated_at: row.get(21)?,
     })
 }
 

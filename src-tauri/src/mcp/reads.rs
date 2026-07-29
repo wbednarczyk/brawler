@@ -856,6 +856,7 @@ mod tests {
                 confirmation_state: Some("confirmed".to_owned()),
                 supersedes_id: None,
                 source_document_ref: None,
+                annotation: None,
             })
             .expect("fact");
         state

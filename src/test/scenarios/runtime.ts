@@ -2033,6 +2033,8 @@ function buildHandlers(): Record<string, Handler> {
       base.definitionId = str(input.definitionId) ?? base.definitionId;
       base.valueNumeric = str(input.valueNumeric) ?? base.valueNumeric;
       base.supersedesId = str(input.supersedesId) ?? null;
+      // Mirrors the Rust normalizer (#156): empty/whitespace -> null.
+      base.annotation = str(input.annotation)?.trim() || null;
       d.financialFacts = [...d.financialFacts, base];
       return base;
     },
@@ -2044,6 +2046,11 @@ function buildHandlers(): Record<string, Handler> {
         (f) => ({
           ...f,
           valueNumeric: str(input.valueNumeric) ?? f.valueNumeric,
+          // Keep / clear / replace (#156): absent keeps, "" clears, text replaces.
+          annotation:
+            input.annotation === undefined
+              ? f.annotation
+              : str(input.annotation)?.trim() || null,
           updatedAt: SAMPLE_NOW,
         }),
       );

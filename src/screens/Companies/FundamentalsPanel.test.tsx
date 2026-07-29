@@ -61,7 +61,7 @@ const panelProps = {
   financialFacts: [],
   kpiDefinitions: [],
   fundamentalsForm: { periodFiscalYear: "", periodType: "annual" },
-  financialFactForm: { definitionId: "", valueNumeric: "", currency: "", periodId: "" },
+  financialFactForm: { definitionId: "", valueNumeric: "", currency: "", periodId: "", annotation: "" },
   selectedFinancialFactId: null,
   isFinancialFactEditMode: false,
   fundamentalsError: null,
@@ -250,6 +250,7 @@ function fact(id: string, definitionId: string, periodId: string): FinancialFact
     confirmationState: "confirmed",
     supersedesId: null,
     sourceDocumentRef: null,
+    annotation: null,
     createdAt: "",
     updatedAt: "",
   };
@@ -385,5 +386,30 @@ describe("FundamentalsPanel periods × deltas section", () => {
     // percentage KPI → plain-difference p.p.; monetary KPI → percent change.
     expect(within(section).getByText("+2.8 p.p.")).toBeInTheDocument();
     expect(within(section).getByText("+20%")).toBeInTheDocument();
+  });
+});
+
+describe("FundamentalsPanel fact annotation marker (#156)", () => {
+  it("renders a '*' with the note as tooltip on an annotated fact, and no marker otherwise", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const annotated = {
+      ...periodsProps,
+      financialFacts: [
+        { ...fact("f_rev", "def_revenue", "p_2024"), annotation: "includes a one-off gain" },
+        fact("f_np", "def_net_profit", "p_2024"),
+      ],
+    };
+    const { container } = render(<FundamentalsPanel {...annotated} />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".fact-annotation-marker")).not.toBeNull();
+    });
+    const markers = container.querySelectorAll(".fact-annotation-marker");
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toHaveAttribute("title", "includes a one-off gain");
+    expect(markers[0]).toHaveAttribute(
+      "aria-label",
+      "Annotation: includes a one-off gain",
+    );
   });
 });
