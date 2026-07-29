@@ -2,27 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyScenarioOverlays,
+  DEGRADED_MEDIA_LAST_ERROR,
+  DEGRADED_REPORTS_DETAIL_WARNING,
+  DEGRADED_REPORTS_LAST_ERROR,
+  FAILED_RUN_LAST_ERROR,
+  FAILED_RUN_REPORT_TITLE,
   PRUNED_CLEAN_SNAPSHOT,
   PRUNED_GLUED_SNAPSHOT,
+  SCENARIO_OVERLAY_NAMES,
   type ScenarioOverlayName,
 } from "./overlays";
 import { buildScenario, type ScenarioName } from "./scenarios";
 
-const ALL_OVERLAYS: readonly ScenarioOverlayName[] = [
-  "hostile-content",
-  "dense-history",
-  "partial-data",
-  "stale-processing",
-  "conflicting-statuses",
-  "mixed-locale",
-  "attention-overflow",
-  "attention-mixed-severity",
-  "attention-notable-only",
-  "morning-review",
-  "today-dense",
-  "orphaned-evidence",
-  "pruned-feed",
-];
+// The canonical list itself — never hand-copied, so a new overlay is composed,
+// idempotence-checked, and cross-base-checked the moment it is registered.
+const ALL_OVERLAYS: readonly ScenarioOverlayName[] = SCENARIO_OVERLAY_NAMES;
 const BASES: readonly ScenarioName[] = ["empty", "minimal", "rich"];
 
 describe("scenario overlays — composition (ADR 0081 Q2, Radicle a9992e2)", () => {
@@ -190,6 +184,75 @@ describe("scenario overlays — required content", () => {
     const feedIds = new Set(data.feedItems.map((f) => f.id));
     expect(feedIds.has(clean!.evidenceRef)).toBe(false);
     expect(feedIds.has(glued!.evidenceRef)).toBe(false);
+  });
+
+  it("failed-autopilot-run: the run, its completion event and the rule it fired from agree", () => {
+    const data = buildScenario({ base: "rich", overlays: ["failed-autopilot-run"] });
+    const run = data.autopilotRuns.find((r) => r.id === "run_overlay_failed_1");
+    const event = data.attentionEvents.find((e) => e.id === "attn_overlay_failed_run");
+
+    // The run's triple: failed + a concrete cause + the notable severity the
+    // backend derives from that status (`severity_for_autopilot_run`).
+    expect(run?.status).toBe("failed");
+    expect(run?.lastError).toBe(FAILED_RUN_LAST_ERROR);
+    expect(run?.severity).toBe("notable");
+    // Still an unread notification, and it names the report it choked on.
+    expect(run?.notificationState).toBe("unread");
+    expect(run?.reportDocumentTitle).toBe(FAILED_RUN_REPORT_TITLE);
+    // A failed run produced nothing — no facts to undo.
+    expect(run?.producedFactIds).toEqual([]);
+
+    // The completion event points at THAT run and carries its raw status as the
+    // secondary datum, so the Today row can state "<report> — Failed".
+    expect(event?.triggerType).toBe("autopilot_run_completed");
+    expect(event?.evidenceType).toBe("autopilot_run");
+    expect(event?.evidenceRef).toBe(run!.id);
+    expect(event?.evidenceTitle).toBe(FAILED_RUN_REPORT_TITLE);
+    expect(event?.evidenceDetail).toBe(run!.status);
+    expect(event?.severity).toBe("notable");
+    expect(event?.seen).toBe(false);
+    expect(event?.dismissed).toBe(false);
+
+    // An autopilot completion is never a system event: its rule must resolve.
+    const rule = data.alertRules.find((r) => r.id === event!.ruleId);
+    expect(rule?.triggerType).toBe("autopilot_run_completed");
+    expect(rule?.enabled).toBe(true);
+    expect(rule?.scopeRef).toBe(run!.companyId);
+    // ...and the company it happened to is in the store, so the row has a ticker.
+    expect(data.companies.some((c) => c.id === run!.companyId)).toBe(true);
+  });
+
+  it("degraded-sources: adapters report attention WITH a concrete last error", () => {
+    const data = buildScenario({ base: "rich", overlays: ["degraded-sources"] });
+    const reports = data.sourceAdapters.find((a) => a.id === "zzz-degraded-official-reports");
+    const media = data.sourceAdapters.find((a) => a.id === "zzz-degraded-media-rss");
+
+    for (const adapter of [reports, media]) {
+      // The pairing the backend writes: an error string, when it happened, and
+      // the health status derived from it — never an error with a green light.
+      expect(adapter?.healthStatus).toBe("attention");
+      expect(adapter?.lastError).toBeTruthy();
+      expect(adapter?.lastErrorAt).toBeTruthy();
+      expect(adapter?.enabled).toBe(true);
+    }
+    expect(reports?.lastError).toBe(DEGRADED_REPORTS_LAST_ERROR);
+    expect(media?.lastError).toBe(DEGRADED_MEDIA_LAST_ERROR);
+
+    // The reports adapter is the triage entry point (`openSourceStatus` selects
+    // the FIRST adapter with a lastError) and carries the failed-detail counters
+    // plus the warning text the Sources detail panel renders.
+    expect(data.sourceAdapters.find((a) => a.lastError)?.id).toBe("zzz-degraded-official-reports");
+    expect(reports?.lastDetailWarning).toBe(DEGRADED_REPORTS_DETAIL_WARNING);
+    expect(reports?.lastDetailItemsFailed).toBe(3);
+    expect((reports?.lastDetailItemsStored ?? 0) + (reports?.lastDetailItemsFailed ?? 0)).toBe(
+      reports?.lastDetailItemsAttempted,
+    );
+  });
+
+  it("unknown overlay names fail loudly instead of being silently skipped", () => {
+    expect(() =>
+      applyScenarioOverlays(buildScenario("minimal"), ["not-an-overlay" as ScenarioOverlayName]),
+    ).toThrow(/Unknown scenario overlay/);
   });
 
   it("mixed-locale: realistic Polish AND English source strings, not planted UI literals", () => {

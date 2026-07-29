@@ -661,6 +661,10 @@ Composable, deterministic adversarial data and async-ordering controls on the ON
 | `stale-processing` | an old visible research-evidence result plus a `running` brief job for the same scope |
 | `conflicting-statuses` | a source adapter reporting `attention` while its latest ingestion result shows a clean run — two independent reads deliberately disagree |
 | `mixed-locale` | realistic Polish + English feed items — real source content, never a planted UI-translation literal |
+| `failed-autopilot-run` | a coherent FAILED overnight run — `status: "failed"` + a concrete `lastError` + the `notable` severity the backend derives, plus its `autopilot_run_completed` event and the rule it fired from |
+| `degraded-sources` | source adapters whose last fetch failed — `lastError`/`lastErrorAt` + `healthStatus: "attention"` + the failed-detail counters and warning text |
+
+The last two are the **poor-state seeds** (epic #40 S2, [ADR 0091](adr/0091-failure-path-and-real-state-testing.md)): they apply LAST in the fixed order (the attention-set-owning overlays would otherwise drop the seeded event) and back the flow walks in `tests/browser/poor-state-*.spec.ts`, which walk Today / Sources / the company cockpit on poor state and assert the failure is **named** on screen. `SCENARIO_OVERLAY_NAMES` (exported from `overlays.ts`) is the one enumeration of the overlay set — an unknown name throws instead of being silently skipped.
 
 Each overlay reassigns the collections it touches (never mutates an entity in place — the same store-mutation contract handlers follow) and uses a fixed, overlay-dedicated `CompanySpec` so simultaneous overlays never collide. Application order is fixed internally, independent of the order the caller lists overlay names, and a repeated name is idempotent. `applyScenarioOverlays` is pure.
 
