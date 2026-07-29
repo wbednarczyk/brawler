@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.62.0 - 2026-07-29
+
+
+### Bug Fixes
+
+- **release**: dev-shell banner to stderr, empty-notes fallback, Conventional PR-title gate, v0.61.6 changelog backfill (#242)
+
+
+### Features
+
+- **testing**: failure-path & real-state test layer — chaos seam, job-failure visibility, honesty ratchets, shape corpus (epic #40) (#239)
+
 ## v0.61.6 - 2026-07-29
 
 *(Backfilled by hand: the squash-merge title of #227 was not Conventional, so git-cliff filtered the release empty — the PR-title gate added after this prevents the class.)*
