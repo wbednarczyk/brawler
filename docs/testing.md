@@ -335,6 +335,55 @@ shipped gates:
 - The diff transform also carries the property/invariant gates below
   (idempotence, order-stability).
 
+### Real-data honesty harness + ratchet (epic #40 S4)
+
+Does the app tell the owner the truth about what happened? The classes only the owner was
+catching — a row that states a bare category instead of the event, evidence that resolves to
+nothing, a filename standing in for prose — are measured on the **real** database and ratcheted
+([ADR 0091](adr/0091-failure-path-and-real-state-testing.md) decisions 4–5).
+
+**Privacy boundary (hard).** The real DB never enters the repo or default CI. The only committed
+artifact is `realdata-honesty-baseline.json` — aggregate counts/percentages, never a title,
+ticker, or id. Nothing in the harness prints or serializes row content; keep it that way. Public
+CI covers the same invariant class through the synthetic shape corpus (epic #40 S6).
+
+- **Harness** — `storage::tests::real_data_honesty::real_data_honesty_metrics`, `#[ignore]`, keyed
+  on `BRAWLER_REAL_DB` (a throwaway copy; `BRAWLER_REAL_DATA_DIR` optional). It **refuses** the
+  master snapshot and the live app DB — opening a database applies migrations. Metrics come from
+  the real read model (`list_attention_events`, `includeDismissed: true`) and the real frontend
+  statement rule, never a parallel SQL path, so a number moves exactly when the owner's app moves.
+  Emits `src-tauri/target/realdata-honesty-metrics.json`.
+- **Statement rule** — a row's statement is `splitDocumentTitle(evidenceTitle).statement`
+  (`AttentionRow.tsx`), so a filename glued to a human title counts as concrete and a
+  filename-only title counts as generic, exactly as rendered.
+- **Metrics**
+
+  | metric | definition | bound |
+  |---|---|---|
+  | `specificity_pct` | events with a concrete statement / events whose trigger can carry one (price triggers excluded by definition — their range/52-week-low copy *is* the honest statement, mirroring the price entries of `GENERIC_FALLBACK_KEYS` in `tests/live/ux-checkpoint.live.spec.ts`) | ratcheted floor |
+  | `orphaned_evidence` | events on a joined evidence type (`company_signal`, `source_reconciliation`, `autopilot_run`, `job`) whose fire-time snapshot is NULL **and** whose join resolves nothing | ratcheted ceiling |
+  | `filename_as_statement` | rendered statements still carrying a document extension | hard `0`, asserted in the harness |
+
+- **One filename pattern across languages** (ADR 0091 dec. 5) — canonical TS
+  `src/screens/Today/documentTitle.ts`; the Rust mirror (`FILENAME_EXTENSION_PATTERN`,
+  `LEADING_SEPARATORS_PATTERN`) is held to it by an `include_str!` parity gate that runs in
+  `make check` with no real data. Change the TS source; the gate then tells Rust to follow.
+- **Ratchet** — `scripts/check/realdata-ratchet.mjs` (sibling of the coverage ratchet): committed
+  baseline, tolerance for measurement noise, raises **printed, never written**. Exit `1` =
+  honesty regressed; exit `2` = the check could not conclude — unreadable/incomplete metrics, or
+  a stale baseline because honesty **improved** and the tighter bound was never committed (a
+  silent raise leaves the ratchet judging an old, looser app). Its verdicts are themselves tested
+  by `scripts/check/check-realdata-ratchet.sh` (synthetic JSON, no real data), which runs on
+  every invocation of the target below.
+
+```bash
+make realdata-honesty-check   # self-test, refresh throwaway copy, measure, judge
+```
+
+Local only, and **never part of `make check`**: it runs as a step of `check-epic`, printing a loud
+SKIP on any machine without the maintainer's snapshot (`HONESTY_MASTER_DB`, refreshed per
+`private/realdata/README.md`). Baseline numbers move only with the run that earned them.
+
 ## Data-transform correctness (property, golden, scale, fuzz, fidelity, pipeline)
 
 Brawler's roadmap is about munching a lot of structured data from many sources

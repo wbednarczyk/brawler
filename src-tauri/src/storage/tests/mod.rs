@@ -36,6 +36,7 @@ mod quality_frameworks;
 mod real_data_extraction;
 mod real_data_health_coverage;
 mod real_data_health_scores;
+mod real_data_honesty;
 mod real_data_insider;
 mod real_data_management_holdings;
 mod real_data_ownership;
