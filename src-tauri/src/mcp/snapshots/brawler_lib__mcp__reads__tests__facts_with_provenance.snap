@@ -1,11 +1,13 @@
 ---
 source: src/mcp/reads.rs
+assertion_line: 918
 expression: redact(&payload)
 ---
 {
   "company": "GPW:TST",
   "facts": [
     {
+      "annotation": null,
       "asReportedScale": null,
       "asReportedValue": null,
       "attribution": "total",

@@ -308,10 +308,11 @@ visual-update:
 # Uses nextest for a fast per-mutant test pass. Periodic/manual — slow (rebuilds
 # + runs the suite per mutant), never in `make check`; run at epic/milestone
 # closure cadence and triage every survivor by adding an assertion.
-# BRAWLER_FIDELITY_CORPUS: cargo-mutants copies only src-tauri/ into a scratch
-# tree, so the mock-fidelity test's corpus path (one level above the workspace)
-# doesn't exist there. Export an absolute path to the real file so build.rs's
-# fallback (see src-tauri/build.rs) picks it up in every mutant/baseline build.
+# BRAWLER_SCENARIOS_DIR: cargo-mutants copies only src-tauri/ into a scratch
+# tree, so the shared fixtures dir (one level above the workspace) doesn't
+# exist there. Export an absolute path to the real directory so build.rs
+# (see src-tauri/build.rs) bakes it into every mutant/baseline build; all
+# cross-tree fixture reads go through this env (guarded by source_tree_guards).
 # Resource caps (harvested 2026-07-03: an uncapped sweep saturated WSL — every
 # mutant rebuild used all cores and multi-GB rustc peaks, freezing the desktop).
 # Low-priority + bounded build/test parallelism keeps the machine usable; the
@@ -344,7 +345,7 @@ mutants:
 	        fi ;; \
 	  *) echo "MUTANTS_JAIL must be 'auto' or 'off' (got: $(MUTANTS_JAIL))" >&2; exit 1 ;; \
 	esac; \
-	$$jail_cmd $(NIX) bash -c "export BRAWLER_FIDELITY_CORPUS='$(CURDIR)/src/test/scenarios/fidelity-corpus.json'; \
+	$$jail_cmd $(NIX) bash -c "export BRAWLER_SCENARIOS_DIR='$(CURDIR)/src/test/scenarios'; \
 	  export CARGO_BUILD_JOBS=$(MUTANTS_BUILD_JOBS) NEXTEST_PROFILE=mutants; \
 	  cd src-tauri && nice -n 19 cargo mutants --test-tool nextest --jobs 1 \
 	  $(if $(MUTANTS_SHARD),--shard $(MUTANTS_SHARD)) \

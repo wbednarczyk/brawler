@@ -1,4 +1,4 @@
-use crate::document_fetcher::{DocumentFetcher, FetchedDocument};
+use crate::document_fetcher::{DocumentFetcher, DocumentFetcherError, FetchedDocument};
 use crate::storage::{self, CaptureReportDocumentInput, StorageResult};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -99,10 +99,10 @@ pub fn fetch_report_document(
     state: &crate::storage::AppState,
     fetcher: &dyn DocumentFetcher,
     doc_id: &str,
-) -> Result<crate::storage::ReportDocument, String> {
+) -> Result<crate::storage::ReportDocument, FetchDocumentError> {
     let document = state
         .get_report_document(doc_id)
-        .map_err(|error| error.to_string())?;
+        .map_err(FetchDocumentError::fatal)?;
     if document
         .local_path
         .as_deref()
@@ -113,16 +113,49 @@ pub fn fetch_report_document(
     match fetcher.fetch(&document.url) {
         Ok(fetched) => {
             store_fetched_document(state, &document.id, &document.url, &fetched)
-                .map_err(|error| error.to_string())?;
+                .map_err(FetchDocumentError::fatal)?;
             state
                 .get_report_document(doc_id)
-                .map_err(|error| error.to_string())
+                .map_err(FetchDocumentError::fatal)
         }
         Err(err) => {
-            let message = err.to_string();
-            let _ = state.mark_report_document_failed(&document.id, &message);
-            Err(message)
+            let error = FetchDocumentError::from_fetcher(&err);
+            let _ = state.mark_report_document_failed(&document.id, &error.message);
+            Err(error)
         }
+    }
+}
+
+/// Failure from [`fetch_report_document`], carrying whether a retry may
+/// succeed. Network-level errors (connect, timeout, HTTP status — the
+/// [`DocumentFetcherError::Request`] variant) are `transient`; storage errors
+/// and structural rejections (too large, bad content type) are not. Callers
+/// that don't retry render it via `Display` exactly like the old `String`.
+#[derive(Debug)]
+pub struct FetchDocumentError {
+    pub transient: bool,
+    pub message: String,
+}
+
+impl FetchDocumentError {
+    fn fatal(error: impl std::fmt::Display) -> Self {
+        Self {
+            transient: false,
+            message: error.to_string(),
+        }
+    }
+
+    fn from_fetcher(error: &DocumentFetcherError) -> Self {
+        Self {
+            transient: matches!(error, DocumentFetcherError::Request(_)),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for FetchDocumentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
     }
 }
 

@@ -255,6 +255,7 @@ fn claim_resurfaces_when_due_period_report_arrives_and_resolves_with_evidence() 
             confirmation_state: Some("confirmed".to_owned()),
             supersedes_id: None,
             source_document_ref: None,
+            annotation: None,
         })
         .expect("fact should create");
 

@@ -177,8 +177,12 @@
         {
           "command": "get_kpi_comparison",
           "input": {
-            "companyIds": ["$cmp_cid"],
-            "metricKeys": ["revenue"],
+            "companyIds": [
+              "$cmp_cid"
+            ],
+            "metricKeys": [
+              "revenue"
+            ],
             "granularity": "annual"
           },
           "expectField": {
@@ -329,7 +333,9 @@
             "input": {
               "path": "/tmp/brawler-fidelity-export",
               "contents": "{\"ok\":true}",
-              "allowedExtensions": ["json"],
+              "allowedExtensions": [
+                "json"
+              ],
               "defaultExtension": "json"
             }
           }
@@ -482,7 +488,7 @@
     },
     {
       "name": "fundamentals coverage assembles a period row from a fact (ADR 0077 T2.1)",
-      "_comment": "Coverage is a computed read model returning an object (companyId + periods array), not an array, so the subset harness can only assert its invariant top-level field. expectField is NOT capture-substituted (only step input is), so the companyId is asserted as the deterministic derived id (company_{exchange}_{ticker}, identical on both sides \u2014 the same scheme the qualified-ticker journey relies on). Per-cell correctness \u2014 a period row with facts.total >= 1 and report null \u2014 is pinned by the Rust unit tests and the TS mock scenario tests; this step proves both dispatchers implement the command and key the DTO by the scoped company.",
+      "_comment": "Coverage is a computed read model returning an object (companyId + periods array), not an array, so the subset harness can only assert its invariant top-level field. expectField is NOT capture-substituted (only step input is), so the companyId is asserted as the deterministic derived id (company_{exchange}_{ticker}, identical on both sides — the same scheme the qualified-ticker journey relies on). Per-cell correctness — a period row with facts.total >= 1 and report null — is pinned by the Rust unit tests and the TS mock scenario tests; this step proves both dispatchers implement the command and key the DTO by the scoped company.",
       "steps": [
         {
           "command": "create_company",
@@ -535,7 +541,7 @@
     },
     {
       "name": "flagged extraction outcomes read back as an empty array for a never-attempted company (ADR 0061 dec. 2)",
-      "_comment": "Outcome rows are written only by the extraction pipeline, whose tiers read stored report files (seeded through the network-bound fetch/backfill path, same rationale as the coverage step above). So the corpus pins the state that carries the guarantee: absence of a row means NEVER ATTEMPTED, and a fresh company therefore reads back an array with nothing in it \u2014 the honest \"nothing flagged\" state the UI must render as reassurance, never as a failure. expectAbsent asserts both that the result IS an array (so both dispatchers implement the command and return the read model, not an object or an error) and that no row names this company. Per-row correctness (typed reasonCode, sentinel period, in-place re-run) is pinned by the Rust unit tests and the TS panel tests.",
+      "_comment": "Outcome rows are written only by the extraction pipeline, whose tiers read stored report files (seeded through the network-bound fetch/backfill path, same rationale as the coverage step above). So the corpus pins the state that carries the guarantee: absence of a row means NEVER ATTEMPTED, and a fresh company therefore reads back an array with nothing in it — the honest \"nothing flagged\" state the UI must render as reassurance, never as a failure. expectAbsent asserts both that the result IS an array (so both dispatchers implement the command and return the read model, not an object or an error) and that no row names this company. Per-row correctness (typed reasonCode, sentinel period, in-place re-run) is pinned by the Rust unit tests and the TS panel tests.",
       "steps": [
         {
           "command": "create_company",
@@ -566,7 +572,7 @@
     },
     {
       "name": "report documents view returns an empty rows array for a company with no documents (ADR 0077 Panel B)",
-      "_comment": "The view is a computed read model returning an object (companyId + rows array). Report documents are seeded only through the network-bound fetch/backfill path (same rationale as the T2.1 coverage step), so the corpus exercises the empty case: a fresh company has no documents, so rows is []. The subset harness compares scalar fields (TS uses ===, so it cannot deep-compare the empty array), hence we assert the deterministic derived companyId \u2014 this proves both dispatchers implement the command and key the DTO by the scoped company. Per-row correctness (period fields, canonical \u2605) is pinned by the Rust unit tests in commands/report_documents_view.rs and the TS mock scenario tests.",
+      "_comment": "The view is a computed read model returning an object (companyId + rows array). Report documents are seeded only through the network-bound fetch/backfill path (same rationale as the T2.1 coverage step), so the corpus exercises the empty case: a fresh company has no documents, so rows is []. The subset harness compares scalar fields (TS uses ===, so it cannot deep-compare the empty array), hence we assert the deterministic derived companyId — this proves both dispatchers implement the command and key the DTO by the scoped company. Per-row correctness (period fields, canonical ★) is pinned by the Rust unit tests in commands/report_documents_view.rs and the TS mock scenario tests.",
       "steps": [
         {
           "command": "create_company",
@@ -595,7 +601,7 @@
     },
     {
       "name": "history sweep starts a manual sweep and reports empty progress (ADR 0077 T3.2)",
-      "_comment": "A history sweep enqueues extraction runs; run_history_sweep gates on mode != off (the UI disables the button in mode off), so the corpus opts the company into assist first. Report documents are seeded only through the network-bound fetch/backfill path (same rationale as the T2.1 coverage step), so the sweep runs over an empty company: it enqueues nothing, leaving runsTotal/runsDone/runsFailed at 0 \u2014 the stable scalars the subset harness pins. The returned sweep's trigger is the deterministic 'manual'. Per-run progress correctness is pinned by the Rust unit tests in commands/history_sweep.rs and the TS mock scenario tests.",
+      "_comment": "A history sweep enqueues extraction runs; run_history_sweep gates on mode != off (the UI disables the button in mode off), so the corpus opts the company into assist first. Report documents are seeded only through the network-bound fetch/backfill path (same rationale as the T2.1 coverage step), so the sweep runs over an empty company: it enqueues nothing, leaving runsTotal/runsDone/runsFailed at 0 — the stable scalars the subset harness pins. The returned sweep's trigger is the deterministic 'manual'. Per-run progress correctness is pinned by the Rust unit tests in commands/history_sweep.rs and the TS mock scenario tests.",
       "steps": [
         {
           "command": "create_company",
@@ -866,7 +872,7 @@
     },
     {
       "name": "mcp server lifecycle: disabled + enabled-without-token both report not running (ADR 0078 M3)",
-      "_comment": "The MCP server refuses to run without a keychain token and when the setting is off; both are clean refusals, never crashes (ADR 0078 decision 4). Both replayers scrub BRAWLER_MCP_TOKEN (dev env fallback) before this journey per the scrub-hermeticity rule (docs/testing.md), so no ambient dev token flips the assertion. Rust replayer: set_mcp_enabled drives the real McpLifecycle against an in-memory AppState + the TEST keychain descriptor; with the env scrubbed there is no token, so the enabled path refuses (running:false) and no socket is bound \u2014 this keeps the corpus deterministic AND portable across keychain backends (a real ephemeral listener would need a readable token, which the EntryOnly Linux mock backend cannot provide). Mock: running mirrors settings.mcp.enabled AND ctx.mcpToken (null here), so both paths yield running:false. The running-with-a-real-socket path is covered by the Rust nextest lifecycle tests (mcp/lifecycle.rs), which inject a token via the dev env fallback. Only running/port are asserted \u2014 error text differs across replayers by design.",
+      "_comment": "The MCP server refuses to run without a keychain token and when the setting is off; both are clean refusals, never crashes (ADR 0078 decision 4). Both replayers scrub BRAWLER_MCP_TOKEN (dev env fallback) before this journey per the scrub-hermeticity rule (docs/testing.md), so no ambient dev token flips the assertion. Rust replayer: set_mcp_enabled drives the real McpLifecycle against an in-memory AppState + the TEST keychain descriptor; with the env scrubbed there is no token, so the enabled path refuses (running:false) and no socket is bound — this keeps the corpus deterministic AND portable across keychain backends (a real ephemeral listener would need a readable token, which the EntryOnly Linux mock backend cannot provide). Mock: running mirrors settings.mcp.enabled AND ctx.mcpToken (null here), so both paths yield running:false. The running-with-a-real-socket path is covered by the Rust nextest lifecycle tests (mcp/lifecycle.rs), which inject a token via the dev env fallback. Only running/port are asserted — error text differs across replayers by design.",
       "steps": [
         {
           "command": "mcp_status",
@@ -940,7 +946,7 @@
     },
     {
       "name": "basic info picks the latest-period shares fact across years (v0.53 follow-up)",
-      "_comment": "Populated-path coverage for get_company_basic_info's shares selection (review 2026-07-14): two shares facts across fiscal years must resolve to the LATEST period on BOTH dispatchers \u2014 the mock previously sorted differently. fiscalYear 2025 > 2024 decides it (no createdAt tiebreak reliance). expectField is a superset, asserted as deterministic literals.",
+      "_comment": "Populated-path coverage for get_company_basic_info's shares selection (review 2026-07-14): two shares facts across fiscal years must resolve to the LATEST period on BOTH dispatchers — the mock previously sorted differently. fiscalYear 2025 > 2024 decides it (no createdAt tiebreak reliance). expectField is a superset, asserted as deterministic literals.",
       "steps": [
         {
           "command": "create_company",
@@ -1247,7 +1253,7 @@
     },
     {
       "name": "ownership overview reads the empty state and set-type is a no-op keyed by company (v0.56 T6, ADR 0072)",
-      "_comment": "Ownership stakes are written only through the network/report-extraction path (same rationale as the T2.1 coverage step), so the corpus exercises the seed-free empty case: a fresh company has no disclosed stakes, so the overview reads back freeFloatPct '100' with empty holders. expectField pins the deterministic derived companyId (company_gpw_<ticker>, identical on both sides) plus the always-present freeFloatPct scalar. set_ownership_holder_type on a holder that does not exist, and the T8 OCR confirm/reject on a report_document_id with no proposal, all affect zero rows on the Rust side and mutate nothing in the mock, so both dispatchers return the SAME empty overview \u2014 proving each implements get + set + the OCR confirm/reject commands and keys the DTO by the scoped company. Populated donut/history/proposal/residual/ocrProposals correctness is pinned by the Rust unit tests in commands/ownership.rs and jobs/ownership_ocr_extraction.rs, the shared populated wire-contract fixture, and the TS OwnershipSection tests.",
+      "_comment": "Ownership stakes are written only through the network/report-extraction path (same rationale as the T2.1 coverage step), so the corpus exercises the seed-free empty case: a fresh company has no disclosed stakes, so the overview reads back freeFloatPct '100' with empty holders. expectField pins the deterministic derived companyId (company_gpw_<ticker>, identical on both sides) plus the always-present freeFloatPct scalar. set_ownership_holder_type on a holder that does not exist, and the T8 OCR confirm/reject on a report_document_id with no proposal, all affect zero rows on the Rust side and mutate nothing in the mock, so both dispatchers return the SAME empty overview — proving each implements get + set + the OCR confirm/reject commands and keys the DTO by the scoped company. Populated donut/history/proposal/residual/ocrProposals correctness is pinned by the Rust unit tests in commands/ownership.rs and jobs/ownership_ocr_extraction.rs, the shared populated wire-contract fixture, and the TS OwnershipSection tests.",
       "steps": [
         {
           "command": "create_company",
@@ -1315,7 +1321,7 @@
             "companyId": "company_gpw_hlth",
             "statementType": "industrial",
             "piotroskiVariant": "Piotroski F (2000)",
-            "altmanVariant": "Altman Z\u2033 EM (1995)"
+            "altmanVariant": "Altman Z″ EM (1995)"
           }
         },
         {
@@ -1329,14 +1335,14 @@
           }
         },
         {
-          "_comment": "Red flags (v0.57 T7, ADR 0083 D8): a fresh company has no detections, so both sides return the empty computed view (active + history are empty arrays \u2014 asserted by parity-of-execution, not expectField, since === cannot match empty arrays). acknowledge_red_flag on a non-present flag id is idempotent and returns the same empty view on both sides.",
+          "_comment": "Red flags (v0.57 T7, ADR 0083 D8): a fresh company has no detections, so both sides return the empty computed view (active + history are empty arrays — asserted by parity-of-execution, not expectField, since === cannot match empty arrays). acknowledge_red_flag on a non-present flag id is idempotent and returns the same empty view on both sides.",
           "command": "get_red_flags",
           "input": {
             "companyId": "$cid"
           }
         },
         {
-          "_comment": "Analyst recommendations (v0.58 A3, ADR 0073): a fresh company has no ingested recommendations, so both sides return the empty view (empty entries array \u2014 parity-of-execution; latestTarget + lastRefreshedAt omitted because the adapter never ran). expectField pins the scalar companyId.",
+          "_comment": "Analyst recommendations (v0.58 A3, ADR 0073): a fresh company has no ingested recommendations, so both sides return the empty view (empty entries array — parity-of-execution; latestTarget + lastRefreshedAt omitted because the adapter never ran). expectField pins the scalar companyId.",
           "command": "get_analyst_recommendations",
           "input": {
             "companyId": "$cid"
@@ -1351,6 +1357,88 @@
             "input": {
               "flagId": "rf:fund_exit:company_gpw_hlth:none"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "financial fact annotation set, kept and cleared (#156)",
+      "_comment": "The one-off '*' annotation is user-authored fact state: create carries it (empty normalizes to null), update keeps it when the field is absent, replaces it with text, and clears it on an empty string. Pinned dual-execution so the mock's keep/clear/replace semantics cannot drift from storage.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "ANNOT",
+              "displayName": "Annotation Corp"
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_financial_period",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "fiscalYear": 2025,
+              "periodType": "FY",
+              "periodEndDate": null,
+              "reportEvidenceRef": null
+            }
+          },
+          "capture": "pid"
+        },
+        {
+          "command": "create_financial_fact",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "periodId": "$pid",
+              "definitionId": "kpidef_net_profit",
+              "valueNumeric": "1000",
+              "annotation": "includes a one-off gain"
+            }
+          },
+          "capture": "fid",
+          "expectField": {
+            "annotation": "includes a one-off gain"
+          }
+        },
+        {
+          "command": "update_financial_fact",
+          "input": {
+            "input": {
+              "id": "$fid",
+              "valueNumeric": "1100"
+            }
+          },
+          "expectField": {
+            "annotation": "includes a one-off gain"
+          }
+        },
+        {
+          "command": "update_financial_fact",
+          "input": {
+            "input": {
+              "id": "$fid",
+              "annotation": "revised note"
+            }
+          },
+          "expectField": {
+            "annotation": "revised note"
+          }
+        },
+        {
+          "command": "update_financial_fact",
+          "input": {
+            "input": {
+              "id": "$fid",
+              "annotation": ""
+            }
+          },
+          "expectField": {
+            "annotation": null
           }
         }
       ]

@@ -16,6 +16,15 @@ export default defineConfig({
     // are safe). NOTE: the suite's wall-clock is dominated by module-graph
     // import/transform, not the pool.
     pool: "threads",
+    // Measured 2026-07-29 (#51, full `vitest run src`, 1013 tests, warm cache):
+    // wall ~18s; aggregate import ~100s / transform ~40s / environment ~85s
+    // across workers. Cheap levers were tried and rejected: prebundling
+    // lucide-react via deps.optimizer moved import 103s→88s once, then
+    // regressed to noise (wall unchanged); `--no-isolate` broke 134 tests
+    // (suites rely on fresh module state) with no wall win. The cost is the
+    // app's own module graph × jsdom per file — structural, not trimmable by
+    // config. Focused runs (`npm test -- -t`, single files) stay ~2-3s, which
+    // is the actual inner loop.
     coverage: {
       provider: "v8",
       // Coverage of the app source only; tests, mocks, and generated/entry files

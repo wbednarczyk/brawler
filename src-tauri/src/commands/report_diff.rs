@@ -212,12 +212,12 @@ pub async fn fetch_report_document(
     let document_id = input.report_document_id;
     tauri::async_runtime::spawn_blocking(move || {
         let fetcher = crate::document_fetcher::HttpDocumentFetcher::new();
-        crate::report_documents_capture::fetch_report_document(&app, &fetcher, &document_id).map(
-            |document| FetchReportDocumentResult {
+        crate::report_documents_capture::fetch_report_document(&app, &fetcher, &document_id)
+            .map(|document| FetchReportDocumentResult {
                 report_document_id: document.id,
                 fetched: document.local_path.is_some(),
-            },
-        )
+            })
+            .map_err(|error| error.to_string())
     })
     .await
     .map_err(|error| error.to_string())?

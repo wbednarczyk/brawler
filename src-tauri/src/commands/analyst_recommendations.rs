@@ -267,9 +267,10 @@ mod tests {
                 .is_some(),
             "populated view should carry a lastRefreshedAt after ingest"
         );
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../src/test/scenarios/analystRecommendationsPopulated.json"
-        ))
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("BRAWLER_SCENARIOS_DIR"),
+            "/analystRecommendationsPopulated.json"
+        )))
         .expect("fixture parses");
         assert_eq!(
             actual, fixture,

@@ -1,5 +1,6 @@
 ---
 source: src/mcp/protocol.rs
+assertion_line: 323
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -1009,6 +1010,9 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "description": "Record a financial fact for a company/period/metric. Must carry a citation (`sourceDocumentRef` or `attribution`). Decision support only.",
         "inputSchema": {
           "properties": {
+            "annotation": {
+              "type": "string"
+            },
             "asReportedScale": {
               "type": "string"
             },
@@ -1078,6 +1082,10 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "description": "Update a stored financial fact (by id). Must carry its citation provenance.",
         "inputSchema": {
           "properties": {
+            "annotation": {
+              "description": "`None` keeps the stored annotation; `Some(\"\")` clears it; any other value replaces it (#156).",
+              "type": "string"
+            },
             "confirmationState": {
               "type": "string"
             },

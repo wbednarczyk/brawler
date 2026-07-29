@@ -982,6 +982,7 @@ export function makeFinancialFact(
     confirmationState: "confirmed",
     supersedesId: null,
     sourceDocumentRef: `report_doc_sample_${spec.key}`,
+    annotation: null,
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
   };

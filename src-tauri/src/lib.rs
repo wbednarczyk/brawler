@@ -31,6 +31,12 @@ pub mod transform_invariants;
 #[cfg(test)]
 pub mod test_support;
 
+/// Source-tree guard tests (ADR 0045 harvests, e.g. the cargo-mutants
+/// cross-tree include guard). Test-only; never compiled into the shipped
+/// binary.
+#[cfg(test)]
+mod source_tree_guards;
+
 /// TypeScript marker enums for API string-literal unions (ADR 0048); compiled
 /// only for `make types`. See the module docs.
 #[cfg(feature = "ts-export")]

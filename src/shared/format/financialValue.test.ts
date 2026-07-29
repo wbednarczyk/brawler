@@ -126,6 +126,61 @@ describe("formatFinancialValue", () => {
   });
 });
 
+describe("outflow display sign convention (#156)", () => {
+  it("renders stored-positive capex with a minus in the numeric fallback", () => {
+    expect(
+      formatFinancialValue(
+        {
+          valueNumeric: "245253000",
+          currency: "PLN",
+          valueKind: "monetary",
+          metricKey: "capex",
+        },
+        "pl",
+      ),
+    ).toBe("-245,3 mln PLN");
+  });
+
+  it("leaves an already-negative capex value untouched", () => {
+    expect(
+      formatFinancialValue(
+        {
+          valueNumeric: "-1000",
+          currency: "PLN",
+          valueKind: "monetary",
+          metricKey: "capex",
+        },
+        "en",
+      ),
+    ).toBe("-1 k PLN");
+  });
+
+  it("never rewrites the as-reported figure (the filing's own presentation wins)", () => {
+    expect(
+      formatFinancialValue(
+        {
+          valueNumeric: "245253000",
+          currency: "PLN",
+          asReportedValue: "245 253",
+          asReportedScale: "tys.",
+          valueKind: "monetary",
+          metricKey: "capex",
+        },
+        "pl",
+      ),
+    ).toBe("245 253 tys. PLN");
+  });
+
+  it("does not touch metrics outside the outflow set", () => {
+    expect(
+      formatFinancialValue(
+        { valueNumeric: "1000000", currency: "PLN", valueKind: "monetary", metricKey: "net_profit" },
+        "en",
+      ),
+    ).toBe("1 M PLN");
+  });
+});
+
 describe("formatFixedDecimal / formatFixedPercent", () => {
   it("never renders negative zero (live harvest 2026-07-15, shortPositions panel)", () => {
     expect(formatFixedPercent(-0, "pl")).toBe("0,00%");

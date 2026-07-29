@@ -16,6 +16,9 @@ export type FinancialFactForm = {
   valueNumeric: string;
   currency: string;
   periodId: string;
+  // One-off note (#156): rendered as a '*' marker next to the value. Empty
+  // string on save clears a stored annotation.
+  annotation: string;
 };
 
 type FundamentalsControllerInput = {
@@ -98,6 +101,8 @@ export function useFundamentalsController({
           currency: financialFactForm.currency || undefined,
           dataQuality: "final",
           confirmationState: "confirmed",
+          // Always sent: the backend treats "" as "clear the annotation".
+          annotation: financialFactForm.annotation.trim(),
         });
       } else {
         const selectedPeriod = financialPeriods.find((p) => p.id === financialFactForm.periodId);
@@ -119,6 +124,7 @@ export function useFundamentalsController({
           dataQuality: "final",
           extractionMethod: "manual",
           confirmationState: "confirmed",
+          annotation: financialFactForm.annotation.trim() || undefined,
         });
       }
 
@@ -127,6 +133,7 @@ export function useFundamentalsController({
         valueNumeric: "",
         currency: "",
         periodId: "",
+        annotation: "",
       });
       setSelectedFinancialFactId(null);
       setIsFinancialFactEditMode(false);
@@ -162,6 +169,7 @@ export function useFundamentalsController({
         valueNumeric: fact.valueNumeric,
         currency: fact.currency || "",
         periodId: fact.periodId,
+        annotation: fact.annotation || "",
       });
     }
   }
@@ -178,6 +186,7 @@ export function useFundamentalsController({
       valueNumeric: "",
       currency: "",
       periodId: "",
+      annotation: "",
     });
   }
 

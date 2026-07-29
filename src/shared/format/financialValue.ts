@@ -22,7 +22,23 @@ export type FormattableValue = {
   valueKind?: string | null;
   // unit from the KPI definition: per_share | shares | ... (null for plain monetary).
   unit?: string | null;
+  // metric_key from the KPI definition — lets the format layer apply per-metric
+  // display conventions (see OUTFLOW_DISPLAY_METRIC_KEYS).
+  metricKey?: string | null;
 };
+
+// Display sign convention (#156, decided ONCE here per ADR 0076's one
+// formatting layer — never per panel): metric keys stored POSITIVE by catalog
+// convention (fcf = ocf - capex) but conventionally read as cash OUTFLOWS
+// render with a leading minus in the numeric fallback path, so a cash-flow
+// context reads naturally. The as-reported path is exempt on purpose: it
+// renders the figure exactly as the filing printed it.
+export const OUTFLOW_DISPLAY_METRIC_KEYS: ReadonlySet<string> = new Set(["capex"]);
+
+function outflowDisplaySign(value: FormattableValue, num: number): number {
+  if (!value.metricKey || !OUTFLOW_DISPLAY_METRIC_KEYS.has(value.metricKey)) return num;
+  return num > 0 ? -num : num;
+}
 
 const LOCALE_TAGS: Record<LocaleCode, string> = {
   en: "en-US",
@@ -104,11 +120,12 @@ function formatAsReported(value: FormattableValue): string | null {
 }
 
 function formatFallback(value: FormattableValue, locale: LocaleCode): string {
-  const num = Number(value.valueNumeric);
-  if (!Number.isFinite(num)) {
+  const raw = Number(value.valueNumeric);
+  if (!Number.isFinite(raw)) {
     // Not parseable as a number — show the raw stored string rather than "NaN".
     return value.valueNumeric;
   }
+  const num = outflowDisplaySign(value, raw);
 
   const kind = value.valueKind ?? "monetary";
 

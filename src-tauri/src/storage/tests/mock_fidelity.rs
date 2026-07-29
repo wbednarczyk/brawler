@@ -19,9 +19,10 @@ use crate::storage::{
     WatchlistUpdate,
 };
 
-// Path resolved by build.rs into BRAWLER_FIDELITY_CORPUS: the normal relative
-// location by default, or an absolute override so `cargo-mutants`' scratch-tree
-// copy (which excludes anything above the workspace root) still finds the file.
+// Path resolved by build.rs into BRAWLER_FIDELITY_CORPUS (derived from
+// BRAWLER_SCENARIOS_DIR): the normal relative location by default, or an
+// absolute override so `cargo-mutants`' scratch-tree copy (which excludes
+// anything above the workspace root) still finds the file.
 const CORPUS: &str = include_str!(env!("BRAWLER_FIDELITY_CORPUS"));
 
 /// Replace any `"$name"` leaf with the captured value of `name`.
@@ -430,6 +431,17 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
                     .financials()
                     .create_financial_fact(new)
                     .expect("create_financial_fact"),
+            )
+            .unwrap()
+        }
+        "update_financial_fact" => {
+            let update: crate::storage::UpdateFinancialFact =
+                serde_json::from_value(inner).expect("UpdateFinancialFact");
+            serde_json::to_value(
+                state
+                    .financials()
+                    .update_financial_fact(update)
+                    .expect("update_financial_fact"),
             )
             .unwrap()
         }

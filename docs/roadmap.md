@@ -187,31 +187,13 @@ Intent:
 
 - provide access to watchlists, inbox, notes, claims, and transcripts on mobile devices
 - preserve offline-first behavior where practical
-- design sync, encryption, conflict resolution, account model, and privacy guarantees before implementation
+- design sync ownership/hosting, encryption, conflict resolution, account model, and privacy guarantees before implementation — plus the product/distribution implications (stores, updates, platform policies)
 
 Not in scope for v1. Cloud backup/sync remains a separate design discussion.
 
-## Future Study: Google Finance Source Value
+## Resolved Study: Google Finance Source Value
 
-Goal: is Google Finance legally/reliably worth adding to source scope?
-
-Questions:
-
-- Value beyond existing official/RSS/registry sources + future AI analysis?
-- Official permitted access path, or only fragile scraping?
-- Useful data if permitted: price snapshots, news, related companies, financials, watchlist enrichment, identity matching?
-- Worth the adapter complexity for GPW, or more useful for later US/EU expansion?
-- How do attribution, cadence, rate limits, freshness, diagnostics fit the adapter model?
-- Better alternatives with clearer terms?
-
-Decision criteria:
-
-- Only with acceptable usage terms/access path.
-- Adapter integration only via a stable, allowed fetch + durable attribution.
-- Manual-link-only value → external-link affordance, not ingestion.
-- If recommended: record policy/design in Source Strategy or a source ADR first.
-
-Not in scope for v1 unless the study finds a low-risk, permitted, high-value path.
+Resolved 2026-07-29 (owner decision, issue #107): **product-reference only, never a source.** Google Finance exposes no official public data API (deprecated 2012), so any ingest path would be scraping, which the source policy rejects. Its UX (watchlist-centric company pages, news grouping) may inform future design work without a standing card.
 
 ## Resolved Study: Analyst Recommendations Usage
 

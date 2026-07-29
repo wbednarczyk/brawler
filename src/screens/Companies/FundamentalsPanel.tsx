@@ -400,9 +400,19 @@ export function FundamentalsPanel({
                                   asReportedScale: fact.asReportedScale,
                                   valueKind: row.definition.valueKind,
                                   unit: row.definition.unit,
+                                  metricKey: row.definition.metricKey,
                                 },
                                 locale,
                               )}
+                              {fact.annotation ? (
+                                <span
+                                  className="fact-annotation-marker"
+                                  title={fact.annotation}
+                                  aria-label={`${text("Annotation")}: ${fact.annotation}`}
+                                >
+                                  *
+                                </span>
+                              ) : null}
                             </button>
                           </td>
                         );
@@ -482,6 +492,15 @@ export function FundamentalsPanel({
                       }
                       placeholder="USD"
                     />
+                    <TextField
+                      label={text("Annotation")}
+                      aria-label={text("Annotation")}
+                      value={financialFactForm.annotation}
+                      onChange={(event) =>
+                        updateFinancialFactForm("annotation", event.target.value)
+                      }
+                      placeholder={text("One-off event note")}
+                    />
                   </div>
                 </>
               ) : (
@@ -545,6 +564,14 @@ export function FundamentalsPanel({
                         label: text("As stored"),
                         value: `${selectedFact.valueNumeric}${selectedFact.currency ? ` ${selectedFact.currency}` : ""}`,
                       },
+                      ...(selectedFact.annotation
+                        ? [
+                            {
+                              label: text("Annotation"),
+                              value: `* ${selectedFact.annotation}`,
+                            },
+                          ]
+                        : []),
                       {
                         label: text("Currency"),
                         value: selectedFact.currency || text("Not set"),

@@ -43,7 +43,11 @@ persisted from v0.61.
    keyless; chosen over ECB reference rates because NBP is PLN-based — the app's comparison
    currency — and is the official Polish source). Full-history backfill on first need, then a daily
    pull job on the durable queue sharing the market-data lane (deliberate lane assignment per
-   ADR 0059 — both are small, latency-tolerant external pulls). Conversion rule, deterministic and
+   ADR 0059 — both are small, latency-tolerant external pulls). *(Amended 2026-07-29, #159: the
+   synchronous first-need entry point `ensure_fx_backfilled` was removed unused — the daily job
+   already backfills full history for any needed currency with no stored rows, so a new currency's
+   history lands on the next daily run; a true first-need hook re-enters deliberately with the
+   first non-PLN adapter.)* Conversion rule, deterministic and
    labeled in the cell's provenance: **flow** KPIs (`measure_window = flow`) convert at the
    period-average mid; **stock** KPIs at the last mid ≤ period end. Ratios/percentages are never
    converted. A missing rate or NULL fact currency renders an explicit per-cell flag — never a
