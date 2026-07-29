@@ -33,6 +33,12 @@ const STAGE_DIFF: &str = "diff";
 const STAGE_CROSS_REFERENCE: &str = "cross_reference";
 const STAGE_NOTIFY: &str = "notify";
 
+/// Queue attempts per stage (ADR 0055 dec. 2: "each stage retries with backoff
+/// independently"). Only a **transient** stage failure (a network-level fetch
+/// error) consumes retries by returning `Err` to the queue; a fatal domain
+/// failure still finalizes the run on the first attempt (#189).
+const STAGE_MAX_ATTEMPTS: i64 = 3;
+
 /// Payload for an `autopilot_stage` job: which run, which stage.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StagePayload {
@@ -79,7 +85,7 @@ fn enqueue_stage(state: &AppState, run_id: &str, stage: &str) {
     // row untouched so an in-flight stage is never disturbed or double-run.
     match state
         .jobs()
-        .reschedule(&job_id, AUTOPILOT_STAGE_KIND, &payload, 1)
+        .reschedule(&job_id, AUTOPILOT_STAGE_KIND, &payload, STAGE_MAX_ATTEMPTS)
     {
         Ok(true) => {}
         Ok(false) => {
@@ -96,11 +102,50 @@ fn enqueue_stage(state: &AppState, run_id: &str, stage: &str) {
     }
 }
 
+/// A stage failure, split by whether the queue should retry it. Only the fetch
+/// stage produces `transient` failures today (network-level errors); every
+/// other stage failure is a domain verdict and stays `fatal`.
+struct StageFailure {
+    transient: bool,
+    message: String,
+}
+
+impl StageFailure {
+    fn fatal(message: impl Into<String>) -> Self {
+        Self {
+            transient: false,
+            message: message.into(),
+        }
+    }
+}
+
+/// Whether a transient failure should still finalize the run: it is the stage
+/// job's **last** allowed attempt, so returning `Err` would strand the run
+/// `running` forever with a terminally-failed job under it.
+fn last_attempt_exhausted(attempts: i64, max_attempts: i64) -> bool {
+    attempts >= max_attempts
+}
+
 /// Run one pipeline stage (the `autopilot_stage` handler entry point). On success
 /// enqueues the next stage; on a fatal domain failure finalizes the run as
-/// `failed` (still notified). Returns `Err` only for an infra/serialization error
-/// the queue should retry.
+/// `failed` (still notified). A **transient** failure (network blip in the fetch
+/// stage, #189 / ADR 0055 dec. 2) returns `Err` so the durable queue retries it
+/// with backoff — until the stage job's last attempt, which finalizes like a
+/// fatal failure so no run is left dangling.
 pub fn run_stage(state: &AppState, payload: &str) -> Result<(), String> {
+    run_stage_with_fetcher(
+        state,
+        payload,
+        &crate::document_fetcher::HttpDocumentFetcher::new(),
+    )
+}
+
+/// [`run_stage`] with the fetch stage's document fetcher injectable for tests.
+fn run_stage_with_fetcher(
+    state: &AppState,
+    payload: &str,
+    fetcher: &dyn crate::document_fetcher::DocumentFetcher,
+) -> Result<(), String> {
     let payload: StagePayload = serde_json::from_str(payload).map_err(|e| e.to_string())?;
     let run = state
         .autopilot()
@@ -117,12 +162,14 @@ pub fn run_stage(state: &AppState, payload: &str) -> Result<(), String> {
         .set_run_stage(&run.id, &payload.stage, "running");
 
     let outcome = match payload.stage.as_str() {
-        STAGE_FETCH => stage_fetch(state, &run),
-        STAGE_EXTRACT => stage_extract(state, &run),
-        STAGE_DIFF => stage_diff(state, &run),
-        STAGE_CROSS_REFERENCE => stage_cross_reference(state, &run),
+        STAGE_FETCH => stage_fetch(state, fetcher, &run),
+        STAGE_EXTRACT => stage_extract(state, &run).map_err(StageFailure::fatal),
+        STAGE_DIFF => stage_diff(state, &run).map_err(StageFailure::fatal),
+        STAGE_CROSS_REFERENCE => stage_cross_reference(state, &run).map_err(StageFailure::fatal),
         STAGE_NOTIFY => return finalize_notify(state, &run),
-        other => Err(format!("unknown autopilot stage: {other}")),
+        other => Err(StageFailure::fatal(format!(
+            "unknown autopilot stage: {other}"
+        ))),
     };
 
     match outcome {
@@ -132,21 +179,45 @@ pub fn run_stage(state: &AppState, payload: &str) -> Result<(), String> {
             }
             Ok(())
         }
-        Err(message) => {
-            // Fatal for this run: finalize as failed, but still surface a
-            // notification describing how far it got. No queue retry (the user can
-            // re-trigger); returning Ok keeps the job from looping.
+        Err(failure) => {
+            if failure.transient {
+                // Let the durable queue retry with backoff — unless this was the
+                // stage job's last attempt (the claim already incremented
+                // `attempts`), in which case fall through to finalize so the run
+                // never dangles `running` over a terminally-failed job. A missing
+                // job row (should not happen) also falls through — finalizing is
+                // the safe end state.
+                let job_id = stage_job_id(&run.id, &payload.stage);
+                let job = state.jobs().status(&job_id).ok().flatten();
+                let exhausted = job
+                    .map(|row| last_attempt_exhausted(row.attempts, row.max_attempts))
+                    .unwrap_or(true);
+                if !exhausted {
+                    log::warn!(
+                        "autopilot run {} stage {} transient failure, queue will retry: {}",
+                        run.id,
+                        payload.stage,
+                        failure.message
+                    );
+                    return Err(failure.message);
+                }
+            }
+            // Fatal for this run (or transient with attempts exhausted): finalize
+            // as failed, but still surface a notification describing how far it
+            // got. Returning Ok keeps the job from looping; the user can
+            // re-trigger.
             let _ = state.autopilot().finalize_run(
                 &run.id,
                 "failed",
                 &payload.stage,
                 Some(&format!("Autopilot stopped at {} stage.", payload.stage)),
-                Some(&message),
+                Some(&failure.message),
             );
             log::warn!(
-                "autopilot run {} failed at {} stage: {message}",
+                "autopilot run {} failed at {} stage: {}",
                 run.id,
-                payload.stage
+                payload.stage,
+                failure.message
             );
             Ok(())
         }
@@ -154,14 +225,18 @@ pub fn run_stage(state: &AppState, payload: &str) -> Result<(), String> {
 }
 
 /// Stage 1 — ensure the detected report document's file is downloaded. Idempotent
-/// (an already-fetched document is a no-op). Reuses the shared fetch path.
-fn stage_fetch(state: &AppState, run: &storage::AutopilotRun) -> Result<(), String> {
-    let fetcher = crate::document_fetcher::HttpDocumentFetcher::new();
-    crate::report_documents_capture::fetch_report_document(
-        state,
-        &fetcher,
-        &run.report_document_id,
-    )?;
+/// (an already-fetched document is a no-op). Reuses the shared fetch path; a
+/// network-level error is transient (the queue retries it, #189).
+fn stage_fetch(
+    state: &AppState,
+    fetcher: &dyn crate::document_fetcher::DocumentFetcher,
+    run: &storage::AutopilotRun,
+) -> Result<(), StageFailure> {
+    crate::report_documents_capture::fetch_report_document(state, fetcher, &run.report_document_id)
+        .map_err(|error| StageFailure {
+            transient: error.transient,
+            message: error.message,
+        })?;
     Ok(())
 }
 
@@ -960,6 +1035,162 @@ mod tests {
       <ix:nonFraction name="ifrs-full:Liabilities" contextRef="c" unitRef="pln" scale="3">20 000</ix:nonFraction>
       <ix:nonFraction name="ifrs-full:Equity" contextRef="c" unitRef="pln" scale="3">25 000</ix:nonFraction>
     </html>"#;
+
+    /// A fetcher failing with a **real** `reqwest` network error (the only way
+    /// to construct the `Request` variant): an instant local connection
+    /// failure — hermetic, no external network.
+    struct TransientFailingFetcher;
+
+    impl crate::document_fetcher::DocumentFetcher for TransientFailingFetcher {
+        fn fetch(
+            &self,
+            _url: &str,
+        ) -> Result<
+            crate::document_fetcher::FetchedDocument,
+            crate::document_fetcher::DocumentFetcherError,
+        > {
+            let error = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_millis(250))
+                .build()
+                .expect("client builds")
+                .get("http://127.0.0.1:9/refused")
+                .send()
+                .expect_err("nothing listens on the discard port");
+            Err(crate::document_fetcher::DocumentFetcherError::Request(
+                error,
+            ))
+        }
+    }
+
+    /// A run whose document is still pending fetch (no stored file), so the
+    /// fetch stage must go through the injected fetcher.
+    fn pending_fetch_run(state: &AppState, run_id: &str) {
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "TST".to_owned(),
+                display_name: "Transient Test S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: "https://example.com/report.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Pending report".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        state
+            .autopilot()
+            .create_run_if_absent(
+                run_id,
+                &company.id,
+                &document.id,
+                "manual",
+                MODE_AUTOPILOT,
+                None,
+            )
+            .expect("create run")
+            .expect("run created");
+    }
+
+    fn fetch_payload(run_id: &str) -> String {
+        format!(r#"{{"run_id":"{run_id}","stage":"{STAGE_FETCH}"}}"#)
+    }
+
+    /// #189 / ADR 0055 dec. 2: a network-level fetch failure with attempts left
+    /// returns `Err` (the durable queue retries with backoff) and does NOT
+    /// finalize the run — and the stage job is armed with retries at all.
+    #[test]
+    fn transient_fetch_failure_goes_back_to_the_queue_and_keeps_the_run_alive() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let run_id = "run_transient";
+        pending_fetch_run(&state, run_id);
+        enqueue_stage(&state, run_id, STAGE_FETCH);
+        let job = state.jobs().claim_next().expect("claim").expect("a job");
+        assert_eq!(job.kind, AUTOPILOT_STAGE_KIND);
+        let row = state
+            .jobs()
+            .status(&stage_job_id(run_id, STAGE_FETCH))
+            .expect("status")
+            .expect("job row");
+        assert_eq!(
+            row.max_attempts, STAGE_MAX_ATTEMPTS,
+            "stage jobs must arm queue retries (reddens on a revert to 1)"
+        );
+
+        let result =
+            run_stage_with_fetcher(&state, &fetch_payload(run_id), &TransientFailingFetcher);
+
+        assert!(
+            result.is_err(),
+            "transient failure must go back to the queue"
+        );
+        let run = state.autopilot().get_run(run_id).expect("run");
+        assert_ne!(run.status, "failed", "run must stay alive for the retry");
+    }
+
+    /// #189: the last allowed attempt of a transient failure finalizes the run
+    /// as failed (still notified) instead of stranding it over a dead job.
+    #[test]
+    fn transient_fetch_failure_on_the_last_attempt_finalizes_the_run() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let run_id = "run_exhausted";
+        pending_fetch_run(&state, run_id);
+        enqueue_stage(&state, run_id, STAGE_FETCH);
+        // Burn all but the last attempt the way the worker would.
+        for _ in 0..(STAGE_MAX_ATTEMPTS - 1) {
+            let job = state.jobs().claim_next().expect("claim").expect("a job");
+            assert!(
+                state
+                    .jobs()
+                    .mark_failed(&job.id, "transient blip", 0)
+                    .expect("mark failed"),
+                "non-final attempts stay retryable"
+            );
+        }
+        let _last = state.jobs().claim_next().expect("claim").expect("a job");
+
+        let result =
+            run_stage_with_fetcher(&state, &fetch_payload(run_id), &TransientFailingFetcher);
+
+        assert!(result.is_ok(), "exhausted attempt must not loop the job");
+        let run = state.autopilot().get_run(run_id).expect("run");
+        assert_eq!(run.status, "failed", "the run is honestly finalized");
+    }
+
+    /// #189: a fatal (non-network) fetch failure still finalizes immediately,
+    /// even with queue attempts remaining — retrying a domain failure is waste.
+    #[test]
+    fn fatal_fetch_failure_finalizes_immediately_despite_remaining_attempts() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let run_id = "run_fatal";
+        pending_fetch_run(&state, run_id);
+        enqueue_stage(&state, run_id, STAGE_FETCH);
+        let _job = state.jobs().claim_next().expect("claim").expect("a job");
+
+        let fetcher = crate::document_fetcher::FakeDocumentFetcher::new_error(
+            crate::document_fetcher::DocumentFetcherError::InvalidContentType("boom".to_owned()),
+        );
+        let result = run_stage_with_fetcher(&state, &fetch_payload(run_id), &fetcher);
+
+        assert!(result.is_ok(), "fatal failure must not be retried");
+        let run = state.autopilot().get_run(run_id).expect("run");
+        assert_eq!(run.status, "failed");
+    }
+
+    #[test]
+    fn last_attempt_exhaustion_matrix() {
+        assert!(!last_attempt_exhausted(1, STAGE_MAX_ATTEMPTS));
+        assert!(!last_attempt_exhausted(2, STAGE_MAX_ATTEMPTS));
+        assert!(last_attempt_exhausted(3, STAGE_MAX_ATTEMPTS));
+    }
 
     /// ADR 0061: in autopilot mode a tagged ESEF filing is extracted
     /// deterministically before AI — facts land `confirmed` (review-free, ADR

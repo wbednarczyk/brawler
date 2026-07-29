@@ -112,7 +112,9 @@ impl JobHandler for ManagementExtractionHandler {
 /// One stage of an autopilot run. The handler runs the stage (reusing existing
 /// services) and chains the next on success; a fatal stage failure finalizes the
 /// run inside [`run_stage`] (still notified), so the handler returns Ok and the
-/// job is not retried-looped.
+/// job is not retried-looped. A **transient** fetch failure returns `Err` so the
+/// queue retries it with backoff (#189, ADR 0055 dec. 2); the last allowed
+/// attempt finalizes instead, so a run never dangles over a dead job.
 struct AutopilotStageHandler;
 
 impl JobHandler for AutopilotStageHandler {
