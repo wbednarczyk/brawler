@@ -349,6 +349,11 @@ jobs:
           Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $installer
           Start-Process -FilePath $installer -ArgumentList "/silent","/install" -Wait
       - shell: bash
+        # --disable-gpu: server images have no GPU; without it the WebView2 browser
+        # process can die at startup (run 3: runtime installed, backend alive, no
+        # msedgewebview2 → no CDP). Extra args are CI-only via this env seam.
+        env:
+          BRAWLER_EXTRA_BROWSER_ARGS: --disable-gpu
         run: make live-smoke EXE="$(ls windows-out/brawler-*-windows-x64-portable.exe | head -1)"
       - uses: actions/upload-artifact@v7
         if: always()
@@ -357,5 +362,6 @@ jobs:
           path: |
             test-results/live/
             windows-out/data/logs/
+            windows-out/live-capture/
           retention-days: 3
           if-no-files-found: ignore

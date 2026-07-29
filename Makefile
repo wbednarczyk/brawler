@@ -641,7 +641,11 @@ live-smoke:
 	SCRIPT_PATH="scripts/windows/dev-live.ps1"; \
 	if command -v wslpath >/dev/null 2>&1; then SCRIPT_PATH="$$(wslpath -w "$$SCRIPT_PATH")"; \
 	elif command -v cygpath >/dev/null 2>&1; then SCRIPT_PATH="$$(cygpath -w "$$SCRIPT_PATH")"; fi; \
-	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$$SCRIPT_PATH" -Port $(LIVE_CDP_PORT) -ExePath "$$EXE_WIN"; \
+	EXE_DIR="$$(dirname "$(EXE)")"; CAP_DIR="$$EXE_DIR/live-capture"; \
+	if command -v wslpath >/dev/null 2>&1; then CAP_WIN="$$(wslpath -w "$$CAP_DIR")"; \
+	elif command -v cygpath >/dev/null 2>&1; then CAP_WIN="$$(cygpath -w "$$CAP_DIR")"; \
+	else CAP_WIN="$$CAP_DIR"; fi; \
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$$SCRIPT_PATH" -Port $(LIVE_CDP_PORT) -ExePath "$$EXE_WIN" -CaptureDir "$$CAP_WIN"; \
 	deadline=$$((SECONDS + 120)); up=""; \
 	while [ $$SECONDS -lt $$deadline ]; do \
 	  if curl -fsS "http://localhost:$(LIVE_CDP_PORT)/json/version" >/dev/null 2>&1; then up=1; break; fi; \
@@ -652,7 +656,13 @@ live-smoke:
 	  powershell.exe -NoProfile -Command "Get-Process brawler* -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,StartTime" >&2 || true; \
 	  printf "WebView2 runtime version (empty = runtime absent):\n" >&2; \
 	  powershell.exe -NoProfile -Command "(Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv" >&2 || true; \
-	  EXE_DIR="$$(dirname "$(EXE)")"; \
+	  printf "msedgewebview2 child processes (empty = the webview never spawned):\n" >&2; \
+	  powershell.exe -NoProfile -Command "Get-Process msedgewebview2* -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,StartTime" >&2 || true; \
+	  printf "Listeners on the CDP port:\n" >&2; \
+	  powershell.exe -NoProfile -Command "Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object LocalPort -eq $(LIVE_CDP_PORT) | Format-Table LocalAddress,LocalPort,OwningProcess" >&2 || true; \
+	  for f in "$$CAP_DIR"/*; do [ -s "$$f" ] && { printf -- "--- %s\n" "$$f" >&2; tail -40 "$$f" >&2; }; done || true; \
+	  printf "WebView2 user-data traces near the exe (EBWebView/crash dumps):\n" >&2; \
+	  find "$$EXE_DIR" -maxdepth 5 \( -name "EBWebView" -o -name "*.dmp" \) 2>/dev/null >&2 || true; \
 	  for f in "$$EXE_DIR"/data/logs/*; do [ -f "$$f" ] && { printf -- "--- %s (tail)\n" "$$f" >&2; tail -60 "$$f" >&2; }; done || true; \
 	  exit 1; \
 	fi; \

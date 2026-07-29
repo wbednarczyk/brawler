@@ -2,7 +2,8 @@
 param(
     [int] $Port = 9222,
     [string] $ExePath,
-    [string] $OutputDir = $env:BRAWLER_WINDOWS_OUT
+    [string] $OutputDir = $env:BRAWLER_WINDOWS_OUT,
+    [string] $CaptureDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,10 +87,25 @@ Write-Host ""
 # scoped to this process's environment only (not machine/user-wide), and the port is
 # never opened on a non-localhost interface - Chromium's remote-debugging server binds
 # 127.0.0.1 by default and this script does not override that.
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"
+$browserArgs = "--remote-debugging-port=$Port"
+# Extra Chromium args opt-in (CI: GitHub server images have no GPU, so the boot
+# smoke passes --disable-gpu here). Never set implicitly for local live-drive.
+if (-not [string]::IsNullOrWhiteSpace($env:BRAWLER_EXTRA_BROWSER_ARGS)) {
+    $browserArgs = "$browserArgs $($env:BRAWLER_EXTRA_BROWSER_ARGS)"
+}
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $browserArgs
 
 Write-Host "Launching..." -ForegroundColor Green
-$process = Start-Process -FilePath $exe -PassThru
+# CaptureDir (CI diagnostics): a WebView2Environment creation failure surfaces on
+# the exe's stderr, which Start-Process discards unless redirected.
+if (-not [string]::IsNullOrWhiteSpace($CaptureDir)) {
+    New-Item -ItemType Directory -Force -Path $CaptureDir | Out-Null
+    $process = Start-Process -FilePath $exe -PassThru `
+        -RedirectStandardOutput (Join-Path $CaptureDir "brawler-stdout.log") `
+        -RedirectStandardError (Join-Path $CaptureDir "brawler-stderr.log")
+} else {
+    $process = Start-Process -FilePath $exe -PassThru
+}
 
 Write-Host ""
 Write-Host "Brawler is starting with WebView2 remote debugging enabled." -ForegroundColor Green
