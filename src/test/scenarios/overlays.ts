@@ -43,7 +43,8 @@ export type ScenarioOverlayName =
   | "orphaned-evidence"
   | "pruned-feed"
   | "degraded-sources"
-  | "failed-autopilot-run";
+  | "failed-autopilot-run"
+  | "job-failed-event";
 
 // One fixed, distinct `CompanySpec` per overlay so simultaneous overlays never
 // collide on IDs and each overlay's content is independently identifiable.
@@ -609,6 +610,66 @@ function applyDegradedSources(data: ScenarioData): ScenarioData {
   return { ...data, sourceAdapters: [reports, media, ...data.sourceAdapters] };
 }
 
+const JOB_FAILED_SPEC: CompanySpec = {
+  key: "jobFailed",
+  ticker: "ZZZJ",
+  name: "Failed Job Test S.A.",
+  sector: "Energy",
+};
+
+/** The company-scoped failure's subject — the report the extraction died on. */
+export const JOB_FAILED_SUBJECT = "Skonsolidowany raport kwartalny Q3 2026 — Failed Job Test S.A.";
+/** The kind of the company-scoped failed job (raw backend token). */
+export const JOB_FAILED_KIND = "ownership_extraction";
+/** The workspace-wide failure's statement — a job with no subject falls back to
+ * the queue's own `last_error`, which the read model then supplies. */
+export const JOB_FAILED_SYSTEM_ERROR =
+  "HTTP 503 from biznesradar.pl (retries exhausted after 3 attempts)";
+/** The kind of the workspace-wide failed job (raw backend token). */
+export const JOB_FAILED_SYSTEM_KIND = "aggregator_fundamentals_pull";
+
+/**
+ * Terminally failed background jobs (epic #40 S3, ADR 0091 dec. 1) — the generic
+ * failure surface, in BOTH scopes the backend can emit:
+ *
+ *   - company-scoped: the handler named the company (`company_scope`) and the
+ *     report it died on (`failure_subject`), so the row reads
+ *     "<task> failed — <report>" under the company's ticker;
+ *   - workspace-wide: `companyId: null` (nullable since migration 0118) with no
+ *     subject, so the read model states the job's own `last_error` instead.
+ *
+ * Both are SYSTEM events: `ruleId: null` (no user rule can fire a job failure),
+ * `evidenceType: "job"` pointing at the `job_queue` row, `evidenceDetail` = the
+ * RAW job kind the frontend translates, and `notable` for every kind. A background
+ * job that dies in silence is the exact defect class this epic exists to catch.
+ */
+function applyJobFailedEvent(data: ScenarioData): ScenarioData {
+  const company = makeCompany(JOB_FAILED_SPEC);
+  const scoped = {
+    ...makeAttentionEvent("attn_overlay_job_failed", "", company.id, "notable" as const),
+    ruleId: null,
+    triggerType: "job_failed" as const,
+    evidenceType: "job" as const,
+    evidenceRef: "job_overlay_failed_1",
+    evidenceTitle: JOB_FAILED_SUBJECT,
+    evidenceDetail: JOB_FAILED_KIND,
+    firedAt: SAMPLE_NOW,
+  };
+  const systemWide = {
+    ...scoped,
+    id: "attn_overlay_job_failed_system",
+    companyId: null,
+    evidenceRef: "job_overlay_failed_2",
+    evidenceTitle: JOB_FAILED_SYSTEM_ERROR,
+    evidenceDetail: JOB_FAILED_SYSTEM_KIND,
+  };
+  return {
+    ...data,
+    companies: [company, ...data.companies],
+    attentionEvents: [scoped, systemWide, ...data.attentionEvents],
+  };
+}
+
 const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData> = {
   "partial-data": applyPartialData,
   "stale-processing": applyStaleProcessing,
@@ -625,6 +686,7 @@ const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData
   "pruned-feed": applyPrunedFeed,
   "degraded-sources": applyDegradedSources,
   "failed-autopilot-run": applyFailedAutopilotRun,
+  "job-failed-event": applyJobFailedEvent,
 };
 
 /**
@@ -653,6 +715,9 @@ export const SCENARIO_OVERLAY_NAMES: readonly ScenarioOverlayName[] = [
   // compose. Applying last makes every combination keep the poor state.
   "degraded-sources",
   "failed-autopilot-run",
+  // Same reasoning as the two above: the job-failure seeds are additive and must
+  // survive whichever attention overlay composed before them.
+  "job-failed-event",
 ];
 
 /**

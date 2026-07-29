@@ -593,6 +593,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "financial_facts_annotation",
         sql: include_str!("../../migrations/0117_financial_facts_annotation.sql"),
     },
+    Migration {
+        version: 118,
+        name: "attention_events_nullable_company",
+        sql: include_str!("../../migrations/0118_attention_events_nullable_company.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

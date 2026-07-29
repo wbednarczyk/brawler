@@ -62,6 +62,33 @@ impl JobHandler for MorningBriefingHandler {
     }
 }
 
+/// Extract `companyId` from a job payload — the company a failed job's attention
+/// event is scoped to (ADR 0091 dec. 1). Mirrors [`payload_adapter_id`]: the
+/// payload is the handler's own contract, so reading one field from it needs no
+/// storage round-trip.
+fn payload_company_id(payload: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(payload)
+        .ok()?
+        .get("companyId")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+}
+
+/// The stored report document a failed extraction job was working on, by title —
+/// the raw specific that makes the failure event state WHICH report failed
+/// (ADR 0087 dec. 4: raw source data, never prose). `None` when the payload names
+/// no document or the document is gone.
+fn payload_report_document_title(payload: &str, state: &AppState) -> Option<String> {
+    let document_id = serde_json::from_str::<serde_json::Value>(payload)
+        .ok()?
+        .get("reportDocumentId")
+        .and_then(|value| value.as_str())?
+        .to_owned();
+    let title = state.get_report_document(&document_id).ok()?.title?;
+    let title = title.trim();
+    (!title.is_empty()).then(|| title.to_owned())
+}
+
 /// A history sweep (ADR 0077 §3). Runs the sweep directly and returns its Result:
 /// a storage-level abort returns `Err` so the queue retries with backoff, while
 /// domain outcomes (off-mode skip, per-candidate counts including runs that could
@@ -93,6 +120,14 @@ impl JobHandler for OwnershipExtractionHandler {
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
         crate::jobs::ownership_extraction::run_ownership_extraction_job(state, payload)
     }
+
+    fn company_scope(&self, payload: &str) -> Option<String> {
+        payload_company_id(payload)
+    }
+
+    fn failure_subject(&self, payload: &str, state: &AppState) -> Option<String> {
+        payload_report_document_title(payload, state)
+    }
 }
 
 /// Management-holdings extraction (ADR 0083 D6, v0.57 T5). Deterministic sibling of
@@ -106,6 +141,14 @@ impl JobHandler for ManagementExtractionHandler {
 
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
         crate::jobs::management_holdings_extraction::run_management_extraction_job(state, payload)
+    }
+
+    fn company_scope(&self, payload: &str) -> Option<String> {
+        payload_company_id(payload)
+    }
+
+    fn failure_subject(&self, payload: &str, state: &AppState) -> Option<String> {
+        payload_report_document_title(payload, state)
     }
 }
 
@@ -207,6 +250,10 @@ impl JobHandler for QuoteBackfillHandler {
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
         crate::jobs::quote_backfill::run_quote_backfill_job(state, payload)
     }
+
+    fn company_scope(&self, payload: &str) -> Option<String> {
+        payload_company_id(payload)
+    }
 }
 
 /// An automatic per-company report-history backfill (v0.57 catch-up, ADR 0077
@@ -229,6 +276,10 @@ impl JobHandler for CompanyBackfillHandler {
 
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
         crate::jobs::backfill::run_company_backfill_job(state, payload)
+    }
+
+    fn company_scope(&self, payload: &str) -> Option<String> {
+        payload_company_id(payload)
     }
 }
 
@@ -385,6 +436,67 @@ mod tests {
             unique_lane_kinds.contains(MORNING_BRIEFING_KIND),
             "morning_briefing must be assigned to a lane"
         );
+    }
+
+    #[test]
+    fn extraction_handlers_name_the_document_and_company_a_failure_was_about() {
+        // ADR 0091 dec. 1: a failure event states RAW specifics. The extraction
+        // handlers' payload carries only ids, so `failure_subject` resolves the
+        // stored document's own title (never composed prose) and `company_scope`
+        // reads the payload's company — the two data the Today row renders as
+        // "<ticker> — <report title>".
+        use crate::storage::{CaptureReportDocumentInput, NewCompany};
+
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "official_report".to_owned(),
+                url: "https://example.test/raport-q2-2026.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Skonsolidowany raport kwartalny Q2 2026".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        let payload = format!(
+            "{{\"companyId\":\"{}\",\"reportDocumentId\":\"{}\"}}",
+            company.id, document.id
+        );
+
+        for handler in [
+            Box::new(OwnershipExtractionHandler) as Box<dyn JobHandler>,
+            Box::new(ManagementExtractionHandler) as Box<dyn JobHandler>,
+        ] {
+            assert_eq!(
+                handler.company_scope(&payload).as_deref(),
+                Some(company.id.as_str()),
+                "{} scopes its failure to the payload's company",
+                handler.kind()
+            );
+            assert_eq!(
+                handler.failure_subject(&payload, &state).as_deref(),
+                Some("Skonsolidowany raport kwartalny Q2 2026"),
+                "{} names the report it failed on",
+                handler.kind()
+            );
+            // A payload with no document (or a pruned one) degrades to no subject —
+            // the read model then states the job's own last_error.
+            assert_eq!(
+                handler.failure_subject("{\"companyId\":\"c1\"}", &state),
+                None
+            );
+        }
     }
 
     #[test]

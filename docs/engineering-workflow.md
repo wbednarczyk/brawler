@@ -99,7 +99,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] Rust gate validated **under Nix** specifically (host clippy/fmt can differ — this is where lints like `is_multiple_of` / `zip(into_iter())` hide).
 - [ ] New command / read model / migration / adapter / mapping has automated tests. Migrations are append-only, idempotent, self-healing; reads of new columns/settings tolerate a missing row with a safe default.
 - [ ] **A new category of durable-queue work gets its own worker lane** (or a deliberate lane assignment), and — if it shares an external resource (a host, an AI provider) — the matching lock/limit (per-source serialization, per-provider concurrency). Prevents a slow kind starving a latency-sensitive one ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md)).
-- [ ] **A job kind's failure is user-visible** — poor-state overlay + walk assert it is NAMED on-surface (ADR 0091; gate: epic #40 S3).
+- [ ] **A job kind's failure is user-visible** — classified in `jobs::failure_surface` + a visibility test it reaches that surface (ADR 0091 dec. 3).
 - [ ] **"Newest/latest" selection orders by the domain date, never `created_at`** (backfill makes them diverge); ships a test where `created_at` order ≠ domain-date order. Rationale: [data-model.md](data-model.md#model-principles) (guardrail `d60305c`).
 - [ ] Non-trivial CPU/inference/IO work runs **off the UI thread** (`async fn` + `spawn_blocking`) and reads the persisted derived index rather than recomputing the corpus per call.
 - [ ] **A new refresh/ingest path calls `record_source_outcome`** + a test that `last_success_at` gets set — else Sources shows "never refreshed" (harvest 2026-07-15).

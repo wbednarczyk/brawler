@@ -57,6 +57,13 @@ const VERIFY_CAP = 8;
 const CHANGED_CAP = 8;
 const UPCOMING_CAP = 6;
 
+// The stream groups by company, but a SYSTEM attention event can have no company
+// at all (a workspace-wide background job that failed, ADR 0091 dec. 2). Such
+// rows share this synthetic scope key, so they group with each other rather than
+// being scattered under a blank ticker — and they never collide with a real
+// company id (no company id contains a space).
+const SYSTEM_SCOPE_KEY = "system scope";
+
 /** A counter-tile selection: a category filter, or the cross-category `urgent` filter. */
 type StreamFilter = StreamCategory | "urgent";
 
@@ -137,7 +144,10 @@ export function TodayScreen({
   // Fired alerts (ADR 0068 T4): grouped by company (contiguous by ticker),
   // newest-fired first within a company — the same order the toast effect walks.
   const attentionRows = useMemo(() => {
-    const tickerOf = (companyId: string) => companyById.get(companyId)?.qualifiedTicker ?? companyId;
+    const tickerOf = (companyId: string | null) =>
+      (companyId ? companyById.get(companyId)?.qualifiedTicker : null) ??
+      companyId ??
+      SYSTEM_SCOPE_KEY;
     return [...attentionEvents].sort((a, b) => {
       const tickerCompare = tickerOf(a.companyId).localeCompare(tickerOf(b.companyId));
       return tickerCompare !== 0 ? tickerCompare : b.firedAt.localeCompare(a.firedAt);
@@ -181,7 +191,9 @@ export function TodayScreen({
     ...attentionRows.map<StreamItem<StreamPayload>>((event) => ({
       id: event.id,
       category: "attention",
-      companyId: event.companyId,
+      // A company-less system event (a failed workspace-wide job) groups under the
+      // synthetic system scope instead of an empty key.
+      companyId: event.companyId ?? SYSTEM_SCOPE_KEY,
       severity: event.severity,
       // The systemic-cause key for the urgent cross-company aggregate (ADR 0087
       // amendment 2026-07-23): the trigger, refined to the signal category for a

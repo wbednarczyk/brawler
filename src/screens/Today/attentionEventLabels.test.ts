@@ -89,6 +89,61 @@ describe("attentionEventLabels — concrete statements (v0.60 D6)", () => {
   });
 });
 
+describe("attentionEventLabels — job_failed (epic #40 S3, ADR 0091 dec. 1)", () => {
+  function jobFailure(overrides: Partial<AttentionEvent> = {}): AttentionEvent {
+    return event({
+      triggerType: "job_failed",
+      evidenceType: "job",
+      evidenceRef: "job_1",
+      companyId: null,
+      ...overrides,
+    });
+  }
+
+  it("labels the background-task badge", () => {
+    expect(attentionEventBadgeText(jobFailure(), text)).toBe("Background task");
+  });
+
+  it("names WHICH task failed and WHAT it failed on", () => {
+    // detail = the raw job kind (translated here, never by the backend), title =
+    // the failure subject snapshot the handler supplied.
+    const failure = jobFailure({
+      evidenceDetail: "ownership_extraction",
+      evidenceTitle: "Skonsolidowany raport kwartalny Q2 2026",
+    });
+    expect(attentionEventTitleText(failure, undefined, text)).toBe(
+      "Shareholder extraction failed — Skonsolidowany raport kwartalny Q2 2026",
+    );
+  });
+
+  it("falls back to the job's own error text when there is no subject", () => {
+    const failure = jobFailure({
+      evidenceDetail: "quote_backfill",
+      evidenceTitle: "HTTP 503 from query1.finance.yahoo.com",
+    });
+    expect(attentionEventTitleText(failure, undefined, text)).toBe(
+      "Price history backfill failed — HTTP 503 from query1.finance.yahoo.com",
+    );
+  });
+
+  it("still names the task when neither subject nor error survived", () => {
+    expect(
+      attentionEventTitleText(jobFailure({ evidenceDetail: "history_sweep" }), undefined, text),
+    ).toBe("Report history sweep failed");
+  });
+
+  it("never leaks a raw enum token for an unknown kind", () => {
+    const failure = jobFailure({ evidenceDetail: "brand_new_kind" });
+    expect(attentionEventTitleText(failure, undefined, text)).toBe("Brand New Kind failed");
+  });
+
+  it("degrades to generic copy when the job row is gone", () => {
+    expect(attentionEventTitleText(jobFailure(), undefined, text)).toBe(
+      "A background task failed",
+    );
+  });
+});
+
 function rule(overrides: Partial<AlertRule>): AlertRule {
   return {
     id: "rule_1",

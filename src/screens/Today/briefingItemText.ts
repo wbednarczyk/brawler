@@ -25,6 +25,10 @@ const ATTENTION_TRIGGER_LABEL: Record<string, string> = {
   price_enters_range: "Price range",
   price_week52_low: "52-week low",
   source_reconciliation: "Reconciliation",
+  // A company-scoped background job that failed terminally (ADR 0091 dec. 1).
+  // Workspace-wide failures carry no company, so the composer skips them — a
+  // briefing item always renders under a ticker.
+  job_failed: "Background task",
 };
 
 function hasText(detail: string | null): detail is string {

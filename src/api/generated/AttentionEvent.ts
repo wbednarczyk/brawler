@@ -10,7 +10,14 @@ export type AttentionEvent = { id: string,
  * The owning alert rule, or `None` for a SYSTEM event (e.g. a reconciliation
  * `source_reconciliation` event, raised without a user rule — ADR 0069 D2).
  */
-ruleId: string | null, triggerType: "signal_category" | "autopilot_run_completed" | "price_enters_range" | "price_week52_low" | "source_reconciliation", companyId: string, evidenceType: "company_signal" | "autopilot_run" | "daily_quote" | "source_reconciliation", evidenceRef: string, firedAt: string, seen: boolean, dismissed: boolean, 
+ruleId: string | null, triggerType: "signal_category" | "autopilot_run_completed" | "price_enters_range" | "price_week52_low" | "source_reconciliation" | "job_failed", 
+/**
+ * The company this event is about, or `None` for a SYSTEM event with no
+ * company scope — a workspace-wide background job (morning briefing, history
+ * sweep, aggregator pull) that failed terminally (ADR 0091 dec. 1/2, nullable
+ * since migration 0118). Company-scoped events always carry their company.
+ */
+companyId: string | null, evidenceType: "company_signal" | "autopilot_run" | "daily_quote" | "source_reconciliation" | "job", evidenceRef: string, firedAt: string, seen: boolean, dismissed: boolean, 
 /**
  * Typed importance (ADR 0087 dec. 2), **computed at read** from
  * `trigger_type` + the signal's category (for `signal_category` events) by

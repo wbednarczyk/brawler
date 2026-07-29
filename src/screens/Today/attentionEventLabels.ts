@@ -1,5 +1,8 @@
 import type { AlertRule, AttentionEvent } from "../../api/attention";
-import { formatSignalCategoryDisplayName } from "../../shared/formatting/labels";
+import {
+  formatJobKindDisplayName,
+  formatSignalCategoryDisplayName,
+} from "../../shared/formatting/labels";
 
 /**
  * Today attention list + toast wiring (ADR 0068 T4): composes the badge/title
@@ -28,6 +31,11 @@ export function attentionEventBadgeText(event: AttentionEvent, text: Translate):
       // System event (no user rule): the primary channel missed an official
       // report the ESPI/EBI witness saw (ADR 0069 D2).
       return text("Reconciliation");
+    case "job_failed":
+      // System event (no user rule): a background task exhausted its retries and
+      // will not run again (ADR 0091 dec. 1) — work the app promised silently did
+      // not happen.
+      return text("Background task");
     default:
       return event.triggerType;
   }
@@ -102,6 +110,22 @@ export function attentionEventTitleText(
           .replace("{source}", source);
       }
       return text("Official report missed by the primary source");
+    case "job_failed":
+      // WHICH background task died and WHAT it died on (epic #40 S3). Both parts
+      // are raw backend data: `evidenceDetail` is the job's `kind` (translated
+      // here — the backend never composes prose, ADR 0087 dec. 4), `evidenceTitle`
+      // is the handler's failure subject, falling back to the job's own
+      // `last_error`. A pruned job row leaves neither → generic copy, never a bare
+      // enum token (the #119 class).
+      if (event.evidenceDetail) {
+        const task = text(formatJobKindDisplayName(event.evidenceDetail));
+        return event.evidenceTitle
+          ? text("{task} failed — {detail}")
+              .replace("{task}", task)
+              .replace("{detail}", event.evidenceTitle)
+          : text("{task} failed").replace("{task}", task);
+      }
+      return text("A background task failed");
     default:
       // Same #119 class: prefer the badge's localized copy over a raw enum
       // token (the badge only passes an unknown trigger through verbatim).

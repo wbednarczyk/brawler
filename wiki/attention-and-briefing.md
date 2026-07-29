@@ -73,6 +73,20 @@ low), a **scope** (company or watchlist), and an on/off switch. Preset chips
 cover the common cases. A rule never fires twice for the same thing and alerts
 at most once a day.
 
+## When Brawler's own work fails
+
+Brawler runs background tasks for you — fetching price history, sweeping report
+history, extracting a shareholder table, composing the briefing. If one of them
+**gives up** (it retried and still could not finish), it now appears in the
+stream as **UWAGA** with the **Zadanie w tle** badge, naming the task and what
+it choked on ("Uzupełnianie historii cen: niepowodzenie — HTTP 503 …"). Some
+tasks report themselves somewhere better and stay out of the stream: a source
+that fails shows on **Źródła** with its own error, and a failed autopilot run
+shows on its run card — so one failure is never announced twice. A task that is
+still retrying stays quiet until it truly gives up. Tasks that concern one
+company appear under its ticker; workspace-wide ones (like the briefing) appear
+without a ticker.
+
 ## Pop-ups (toasts) are pointers, not the inbox
 
 The stream is the system of record. A corner pop-up only announces that

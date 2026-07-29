@@ -7,6 +7,10 @@ import {
   DEGRADED_REPORTS_LAST_ERROR,
   FAILED_RUN_LAST_ERROR,
   FAILED_RUN_REPORT_TITLE,
+  JOB_FAILED_KIND,
+  JOB_FAILED_SUBJECT,
+  JOB_FAILED_SYSTEM_ERROR,
+  JOB_FAILED_SYSTEM_KIND,
   PRUNED_CLEAN_SNAPSHOT,
   PRUNED_GLUED_SNAPSHOT,
   SCENARIO_OVERLAY_NAMES,
@@ -220,6 +224,41 @@ describe("scenario overlays — required content", () => {
     expect(rule?.scopeRef).toBe(run!.companyId);
     // ...and the company it happened to is in the store, so the row has a ticker.
     expect(data.companies.some((c) => c.id === run!.companyId)).toBe(true);
+  });
+
+  it("job-failed-event: both scopes a terminal job failure can have are coherent system events", () => {
+    const data = buildScenario({ base: "rich", overlays: ["job-failed-event"] });
+    const scoped = data.attentionEvents.find((e) => e.id === "attn_overlay_job_failed");
+    const systemWide = data.attentionEvents.find(
+      (e) => e.id === "attn_overlay_job_failed_system",
+    );
+
+    for (const event of [scoped, systemWide]) {
+      // A job failure is ALWAYS a system event (no user rule can fire one) whose
+      // evidence is the job row, notable for every kind (ADR 0091 dec. 1).
+      expect(event?.triggerType).toBe("job_failed");
+      expect(event?.evidenceType).toBe("job");
+      expect(event?.ruleId).toBeNull();
+      expect(event?.severity).toBe("notable");
+      expect(event?.seen).toBe(false);
+      expect(event?.dismissed).toBe(false);
+      // The raw kind travels as the detail; the statement is never empty, so the
+      // row can NAME the failure instead of rendering a bare category.
+      expect(event?.evidenceDetail).toBeTruthy();
+      expect(event?.evidenceTitle).toBeTruthy();
+    }
+
+    // Company-scoped: the handler named the company + the report it died on, and
+    // that company is in the store so the row has a ticker.
+    expect(scoped?.evidenceDetail).toBe(JOB_FAILED_KIND);
+    expect(scoped?.evidenceTitle).toBe(JOB_FAILED_SUBJECT);
+    expect(data.companies.some((c) => c.id === scoped!.companyId)).toBe(true);
+
+    // Workspace-wide: no company at all (nullable since migration 0118), and with
+    // no subject the statement is the job's own error text.
+    expect(systemWide?.companyId).toBeNull();
+    expect(systemWide?.evidenceDetail).toBe(JOB_FAILED_SYSTEM_KIND);
+    expect(systemWide?.evidenceTitle).toBe(JOB_FAILED_SYSTEM_ERROR);
   });
 
   it("degraded-sources: adapters report attention WITH a concrete last error", () => {

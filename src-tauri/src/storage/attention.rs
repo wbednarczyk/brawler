@@ -58,6 +58,13 @@ pub const TRIGGER_PRICE_WEEK52_LOW: &str = "price_week52_low";
 /// amendment, plan v0.55 T3). Not user-creatable, so it is deliberately absent
 /// from [`TRIGGER_TYPES`] (which validates user-owned alert rules).
 pub const TRIGGER_SOURCE_RECONCILIATION: &str = "source_reconciliation";
+/// System trigger (no user rule) for a background job that failed TERMINALLY —
+/// its retries are exhausted and it will not run again (ADR 0091 dec. 1, epic #40
+/// S3). One generic, always-on failure surface for the job kinds that have no
+/// richer domain surface of their own (`jobs::failure_surface`); transient
+/// hiccups (a retry still pending) never fire. Not user-creatable, so it is
+/// deliberately absent from [`TRIGGER_TYPES`].
+pub const TRIGGER_JOB_FAILED: &str = "job_failed";
 
 /// The user-creatable trigger types (validates user-owned alert rules). The
 /// system [`TRIGGER_SOURCE_RECONCILIATION`] is deliberately absent (not
@@ -83,6 +90,10 @@ pub const EVIDENCE_DAILY_QUOTE: &str = "daily_quote";
 /// `source_reconciliation_results.id`, so Today click-through / the diagnostics
 /// ledger resolve the missed report (witness title + GPW URL).
 pub const EVIDENCE_SOURCE_RECONCILIATION: &str = "source_reconciliation";
+/// Evidence tag for a terminally failed background job — `evidence_ref` is the
+/// `job_queue.id`, so the read model resolves the job's `kind` and `last_error`
+/// (ADR 0091 dec. 1). The job row is the durable record of WHAT failed.
+pub const EVIDENCE_JOB: &str = "job";
 
 /// 52 weeks expressed in days — the trailing window for the `price_week52_low`
 /// trigger. Bars are scanned by domain `date`, never `fetched_at`/`created_at`.
@@ -189,15 +200,20 @@ pub struct AttentionEvent {
     #[cfg_attr(
         feature = "ts-export",
         ts(
-            type = "\"signal_category\" | \"autopilot_run_completed\" | \"price_enters_range\" | \"price_week52_low\" | \"source_reconciliation\""
+            type = "\"signal_category\" | \"autopilot_run_completed\" | \"price_enters_range\" | \"price_week52_low\" | \"source_reconciliation\" | \"job_failed\""
         )
     )]
     pub trigger_type: String,
-    pub company_id: String,
+    /// The company this event is about, or `None` for a SYSTEM event with no
+    /// company scope — a workspace-wide background job (morning briefing, history
+    /// sweep, aggregator pull) that failed terminally (ADR 0091 dec. 1/2, nullable
+    /// since migration 0118). Company-scoped events always carry their company.
+    #[cfg_attr(feature = "ts-export", ts(type = "string | null"))]
+    pub company_id: Option<String>,
     #[cfg_attr(
         feature = "ts-export",
         ts(
-            type = "\"company_signal\" | \"autopilot_run\" | \"daily_quote\" | \"source_reconciliation\""
+            type = "\"company_signal\" | \"autopilot_run\" | \"daily_quote\" | \"source_reconciliation\" | \"job\""
         )
     )]
     pub evidence_type: String,
@@ -213,17 +229,19 @@ pub struct AttentionEvent {
     /// The specific title of the event's evidence, resolved by LEFT JOIN at read
     /// (ADR 0087 dec. 4 — a raw source datum, never composed prose): the filing
     /// title (`company_signal` → `feed_items.title`), the missed report's witness
-    /// title (`source_reconciliation` → `witness_title`), or the processed
-    /// report's document title (`autopilot_run` → `report_documents.title`).
-    /// `None` for a legacy row or pruned evidence — the frontend falls back to
+    /// title (`source_reconciliation` → `witness_title`), the processed report's
+    /// document title (`autopilot_run` → `report_documents.title`), or a failed
+    /// job's subject — its fire-time snapshot, else the job's own `last_error`
+    /// (`job` → `job_queue.last_error`). `None` for a legacy row or pruned evidence — the frontend falls back to
     /// generic copy. So a stream row can state WHAT concretely happened, never a
     /// bare category (v0.60 D6, owner dogfooding 2026-07-23).
     pub evidence_title: Option<String>,
     /// A secondary raw datum whose meaning depends on `evidence_type`: for a
     /// `source_reconciliation` event, the display name of the source that missed
     /// the report (adapter id → its registry display name); for an `autopilot_run`
-    /// event, the run's raw status (the frontend translates it). `None` otherwise
-    /// or when the evidence row is gone.
+    /// event, the run's raw status; for a `job` event, the failed job's raw `kind`
+    /// (all translated by the frontend). `None` otherwise or when the evidence row
+    /// is gone.
     pub evidence_detail: Option<String>,
 }
 
@@ -541,7 +559,12 @@ pub(super) fn list_attention_events(
             -- Durable fire-time title snapshot (v0.60 D7): preferred over the live
             -- join so a `company_signal` title survives the feed prune that
             -- cascade-deletes its signal row. NULL on legacy rows → live join.
-            attention_events.evidence_title AS snapshot_title
+            attention_events.evidence_title AS snapshot_title,
+            -- The terminally failed job behind a `job_failed` event (ADR 0091
+            -- dec. 1): its kind (the enum token the frontend translates) and the
+            -- queue's own last_error, so the row states WHICH job failed and HOW.
+            failed_job.kind AS job_kind,
+            failed_job.last_error AS job_last_error
         FROM attention_events
         LEFT JOIN alert_rules ON alert_rules.id = attention_events.rule_id
         -- Resolve the signal category for `signal_category` events (evidence_ref
@@ -563,6 +586,11 @@ pub(super) fn list_attention_events(
             ON autopilot_run.id = attention_events.evidence_ref
             AND attention_events.evidence_type = 'autopilot_run'
         LEFT JOIN report_documents ON report_documents.id = autopilot_run.report_document_id
+        -- The job row behind a `job_failed` event (evidence_ref is the job id); the
+        -- evidence_type guard keeps other refs from spuriously joining.
+        LEFT JOIN job_queue failed_job
+            ON failed_job.id = attention_events.evidence_ref
+            AND attention_events.evidence_type = 'job'
         WHERE (?1 IS NULL OR attention_events.company_id = ?1)
           AND (?2 = 1 OR attention_events.dismissed = 0)
         ORDER BY attention_events.fired_at DESC, attention_events.id DESC
@@ -627,6 +655,16 @@ fn attention_event_from_row(
         EVIDENCE_AUTOPILOT_RUN => (
             snapshot_title.or(row.get::<_, Option<String>>(13)?),
             row.get(14)?,
+        ),
+        // A terminally failed background job (ADR 0091 dec. 1). The statement is
+        // the fire-time SUBJECT snapshot when the handler had one (a document
+        // title, a ticker — `JobHandler::failure_subject`), otherwise the queue's
+        // own `last_error`: both are raw source data, so the row always states
+        // something concrete instead of "a job failed". The detail carries the raw
+        // job `kind` for the frontend to translate (the autopilot-status pattern).
+        EVIDENCE_JOB => (
+            snapshot_title.or(row.get::<_, Option<String>>(17)?),
+            row.get(16)?,
         ),
         _ => (None, None),
     };
@@ -740,14 +778,20 @@ pub(super) fn insert_attention_event(
 pub(super) fn insert_system_attention_event(
     connection: &Connection,
     trigger_type: &str,
-    company_id: &str,
+    // `None` for a system event with no company scope (ADR 0091 dec. 2, migration
+    // 0118): a workspace-wide background job failure belongs to no single issuer.
+    company_id: Option<&str>,
     evidence_type: &str,
     evidence_ref: &str,
     // Fire-time title snapshot (v0.60 D7) — for reconciliation the missed report's
     // witness title is trivially in scope at the insert site. See
     // `insert_attention_event` for the durability rationale.
     evidence_title: Option<&str>,
-    fire_date: &str,
+    // Full RFC-3339 firing instant. Evidence-dated events (reconciliation) pass
+    // their disclosure day at midnight; a job failure passes wall-clock now, so the
+    // stream orders it against the rest of the day (ADR 0068: `fired_at` is when
+    // the event fired).
+    fired_at: &str,
 ) -> StorageResult<bool> {
     let evidence_title = evidence_title
         .map(str::trim)
@@ -758,7 +802,6 @@ pub(super) fn insert_system_attention_event(
         slug_part(evidence_type),
         slug_part(evidence_ref)
     );
-    let fired_at = format!("{fire_date}T00:00:00Z");
     let affected = connection.execute(
         "
         INSERT OR IGNORE INTO attention_events
@@ -1111,6 +1154,37 @@ impl AttentionStore {
     ) -> StorageResult<usize> {
         let connection = self.db.checkout()?;
         evaluate_autopilot_completion(&connection, company_id, run_id)
+    }
+
+    /// Raise the system `job_failed` event for a background job that exhausted its
+    /// retries (ADR 0091 dec. 1). Called from the ONE terminal point in the queue
+    /// dispatch, and only for kinds classified `FailureSurface::TodayAttention` —
+    /// kinds with a richer domain surface keep it exclusively, so a failure never
+    /// fires twice.
+    ///
+    /// `job_id` is the `job_queue.id`: it is the event's `evidence_ref`, which the
+    /// read model joins back for the job's kind + `last_error`, and the dedup key
+    /// of the system partial index (one event per failed job row, however often it
+    /// is reclaimed). `company_id` is `None` for workspace-wide work (nullable
+    /// since migration 0118); `subject` is the handler's raw specific (a document
+    /// title, a ticker), snapshotted at fire time. Returns `true` when a new event
+    /// row was created.
+    pub fn record_job_failure(
+        &self,
+        job_id: &str,
+        company_id: Option<&str>,
+        subject: Option<&str>,
+    ) -> StorageResult<bool> {
+        let connection = self.db.checkout()?;
+        insert_system_attention_event(
+            &connection,
+            TRIGGER_JOB_FAILED,
+            company_id,
+            EVIDENCE_JOB,
+            job_id,
+            subject,
+            &now_rfc3339(),
+        )
     }
 
     /// Evaluate price rules for a company after a fresh EOD bar (job hook).

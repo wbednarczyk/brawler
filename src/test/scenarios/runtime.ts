@@ -1496,6 +1496,44 @@ function buildHandlers(): Record<string, Handler> {
       return firstEvent ?? null;
     },
 
+    // Corpus-only setup bridge (epic #40 S3, ADR 0091 dec. 1): a background job
+    // that exhausted its retries raises a SYSTEM `job_failed` event. There is no
+    // user command to mint one — the real backend hook lives at the queue's single
+    // terminal-failure point — so the bridge mirrors what that hook + the read
+    // model produce: the failed job's kind as the detail, and the handler's
+    // failure subject as the statement, falling back to the job's own error text.
+    record_job_failure: (d, a, ctx) => {
+      const input = unwrap(a);
+      const jobId = str(input.jobId) ?? "job_fidelity";
+      const kind = str(input.kind) ?? "history_sweep";
+      const companyId = str(input.companyId) ?? null;
+      const subject = str(input.subject) ?? null;
+      const error = str(input.error) ?? "corpus failure";
+      const existing = d.attentionEvents.find(
+        (e) => e.triggerType === "job_failed" && e.evidenceRef === jobId,
+      );
+      // Dedup on (trigger, evidence) exactly like the backend's system partial
+      // index: the same failed job never fires twice.
+      if (existing) return existing;
+      const event: ScenarioData["attentionEvents"][number] = {
+        id: ctx.nextId("attn"),
+        ruleId: null,
+        triggerType: "job_failed",
+        companyId,
+        evidenceType: "job",
+        evidenceRef: jobId,
+        firedAt: SAMPLE_NOW,
+        seen: false,
+        dismissed: false,
+        // Notable for every job kind (ADR 0091 dec. 1, owner decision).
+        severity: "notable",
+        evidenceTitle: subject ?? error,
+        evidenceDetail: kind,
+      };
+      d.attentionEvents = [...d.attentionEvents, event];
+      return event;
+    },
+
     // --- Morning briefing (ADR 0068 decision 4, §T5) ---
     // `generate` enqueues an async compose job on the durable queue; the real
     // backend job runs on the worker, not the mock. So the Today card's
