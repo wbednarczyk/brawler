@@ -24,8 +24,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::attention::{
-    TRIGGER_AUTOPILOT_RUN_COMPLETED, TRIGGER_PRICE_ENTERS_RANGE, TRIGGER_PRICE_WEEK52_LOW,
-    TRIGGER_SIGNAL_CATEGORY, TRIGGER_SOURCE_RECONCILIATION,
+    TRIGGER_AUTOPILOT_RUN_COMPLETED, TRIGGER_JOB_FAILED, TRIGGER_PRICE_ENTERS_RANGE,
+    TRIGGER_PRICE_WEEK52_LOW, TRIGGER_SIGNAL_CATEGORY, TRIGGER_SOURCE_RECONCILIATION,
 };
 
 /// The typed severity of an attention/stream item (ADR 0087 dec. 2). Serialized
@@ -157,6 +157,10 @@ pub(crate) fn severity_for_trigger(trigger_type: &str) -> Option<AttentionSeveri
         // An autopilot run completed: notable at the event level (the run's own
         // outcome severity is `severity_for_autopilot_run`).
         TRIGGER_AUTOPILOT_RUN_COMPLETED => AttentionSeverity::Notable,
+        // A background job died with its retries exhausted (ADR 0091 dec. 1):
+        // Notable for EVERY job kind (owner decision) — the work silently did not
+        // happen, which is worth stating, but it is not an act-now alarm.
+        TRIGGER_JOB_FAILED => AttentionSeverity::Notable,
         _ => return None,
     })
 }

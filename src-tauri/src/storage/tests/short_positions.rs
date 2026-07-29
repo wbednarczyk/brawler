@@ -356,7 +356,7 @@ fn signal_category_rule_fires_on_entered_position() {
     assert_eq!(events.len(), 1, "matching signal fires one attention event");
     assert_eq!(events[0].trigger_type, "signal_category");
     assert_eq!(events[0].evidence_type, "company_signal");
-    assert_eq!(events[0].company_id, company.id);
+    assert_eq!(events[0].company_id.as_deref(), Some(company.id.as_str()));
 }
 
 #[test]

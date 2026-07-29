@@ -4,6 +4,7 @@ use tauri::Manager;
 pub mod app_state;
 pub mod data_directory;
 pub mod document_fetcher;
+pub mod effects_honesty;
 pub mod fundamentals;
 pub mod fx;
 pub mod interpretation;

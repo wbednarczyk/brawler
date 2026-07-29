@@ -1235,6 +1235,105 @@
       ]
     },
     {
+      "name": "a terminally failed background job surfaces as a system attention event (epic #40 S3, ADR 0091 dec. 1)",
+      "_comment": "The generic failure surface: a job whose retries are exhausted raises a SYSTEM event (no rule) whose evidence is the job row itself. `record_job_failure` is the corpus-only setup bridge for the queue's single terminal-failure point (there is no user command to mint one), mirroring `evaluate_autopilot_completion`. Both sides must agree that the event carries the raw job kind as its detail and the handler's failure subject as its statement, is Notable for every kind, is company-less when the work is workspace-wide (nullable since migration 0118), and answers seen/dismiss like any other event.",
+      "steps": [
+        {
+          "command": "record_job_failure",
+          "input": {
+            "input": {
+              "jobId": "job_fidelity",
+              "kind": "ownership_extraction",
+              "subject": "Skonsolidowany raport kwartalny Q2 2026",
+              "error": "corpus failure"
+            }
+          },
+          "capture": "jid",
+          "expectField": {
+            "triggerType": "job_failed",
+            "evidenceType": "job",
+            "evidenceRef": "job_fidelity",
+            "ruleId": null,
+            "companyId": null,
+            "severity": "notable",
+            "evidenceTitle": "Skonsolidowany raport kwartalny Q2 2026",
+            "evidenceDetail": "ownership_extraction",
+            "seen": false,
+            "dismissed": false
+          }
+        },
+        {
+          "command": "record_job_failure",
+          "input": {
+            "input": {
+              "jobId": "job_fidelity",
+              "kind": "ownership_extraction",
+              "subject": "Skonsolidowany raport kwartalny Q2 2026",
+              "error": "corpus failure"
+            }
+          },
+          "expectField": {
+            "evidenceRef": "job_fidelity"
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {},
+          "expectContains": {
+            "evidenceRef": "job_fidelity",
+            "triggerType": "job_failed",
+            "evidenceDetail": "ownership_extraction",
+            "severity": "notable",
+            "seen": false
+          }
+        },
+        {
+          "command": "mark_attention_event_seen",
+          "input": {
+            "input": {
+              "id": "$jid"
+            }
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {},
+          "expectContains": {
+            "evidenceRef": "job_fidelity",
+            "seen": true,
+            "dismissed": false
+          }
+        },
+        {
+          "command": "dismiss_attention_event",
+          "input": {
+            "input": {
+              "id": "$jid"
+            }
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {},
+          "expectAbsent": {
+            "evidenceRef": "job_fidelity"
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {
+            "input": {
+              "includeDismissed": true
+            }
+          },
+          "expectContains": {
+            "evidenceRef": "job_fidelity",
+            "dismissed": true
+          }
+        }
+      ]
+    },
+    {
       "name": "morning briefing latest is empty until composed (ADR 0068 T5)",
       "steps": [
         {

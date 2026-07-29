@@ -53,6 +53,44 @@ pub struct InsiderAttachmentSummary {
     pub conflicts: usize,
 }
 
+/// Named zero-effect reasons an attachment sweep can state (epic #40 S5).
+pub(crate) mod insider_effect_reason {
+    /// The filings carried no fetchable attachment.
+    pub const NO_ATTACHMENT: &str = "no_attachment";
+    /// The attachments are scans with no text layer — nothing to read.
+    pub const NO_TEXT_LAYER: &str = "no_text_layer";
+    /// The attachment documents were not found at their link.
+    pub const NOT_FOUND: &str = "not_found";
+    /// A transient fetch failure left the filings un-terminated (retried next
+    /// sweep) — nothing merged YET, and the sweep says so.
+    pub const FETCH_RETRY: &str = "fetch_retry";
+    /// The parse disagreed with the stored filing — recorded, never merged.
+    pub const CONFLICTS: &str = "conflicts";
+    /// The attachments parsed, but every field they carry was already filled.
+    pub const ALREADY_COMPLETE: &str = "already_complete";
+}
+
+impl crate::effects_honesty::ExplainsEffect for InsiderAttachmentSummary {
+    fn effect_verdict(&self) -> crate::effects_honesty::EffectVerdict {
+        use crate::effects_honesty::{first_named, verdict};
+        use insider_effect_reason as reason;
+
+        let reason = first_named([
+            (reason::CONFLICTS, self.conflicts > 0),
+            (reason::NO_ATTACHMENT, self.no_attachment > 0),
+            (reason::NO_TEXT_LAYER, self.no_text_layer > 0),
+            (reason::NOT_FOUND, self.not_found > 0),
+            (reason::FETCH_RETRY, self.fetch_retry > 0),
+            (reason::ALREADY_COMPLETE, self.parsed > 0),
+        ]);
+        verdict(
+            self.filled > 0 || self.appended > 0,
+            self.filings_attempted > 0,
+            reason,
+        )
+    }
+}
+
 /// Sweep every classified insider filing still needing the attachment tier
 /// (after-refresh seam). Best-effort per filing; a storage abort surfaces as `Err`.
 pub fn fetch_and_parse_insider_attachments(
@@ -576,5 +614,78 @@ mod tests {
         let rows = s.insider().list_by_company(&c).expect("list");
         assert_eq!(rows.len(), 1, "no duplicate row after re-attempt");
         assert_eq!(rows[0].volume.as_deref(), Some("1000"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Zero-effects invariant (epic #40 S5, ADR 0091)
+    // -----------------------------------------------------------------------
+
+    /// A sweep that attempted filings and merged nothing must NAME why. Every
+    /// terminal outcome the sweep can reach has a counter that says it; a new
+    /// one without a counter falls through to `Unexplained` and reddens here.
+    #[test]
+    fn every_zero_effect_insider_sweep_state_names_a_reason() {
+        use crate::effects_honesty::{EffectVerdict, ExplainsEffect};
+        use insider_effect_reason as reason;
+
+        let with = |mutate: fn(&mut InsiderAttachmentSummary)| {
+            let mut summary = InsiderAttachmentSummary {
+                filings_attempted: 7,
+                ..InsiderAttachmentSummary::default()
+            };
+            mutate(&mut summary);
+            summary.effect_verdict()
+        };
+
+        assert_eq!(
+            with(|s| s.no_attachment = 7),
+            EffectVerdict::NothingProduced {
+                reason: reason::NO_ATTACHMENT
+            }
+        );
+        assert_eq!(
+            with(|s| s.no_text_layer = 7),
+            EffectVerdict::NothingProduced {
+                reason: reason::NO_TEXT_LAYER
+            }
+        );
+        assert_eq!(
+            with(|s| s.not_found = 7),
+            EffectVerdict::NothingProduced {
+                reason: reason::NOT_FOUND
+            }
+        );
+        assert_eq!(
+            with(|s| s.fetch_retry = 7),
+            EffectVerdict::NothingProduced {
+                reason: reason::FETCH_RETRY
+            }
+        );
+        // The parse disagreed with the stored filing: recorded, never merged —
+        // the most actionable reason, so it outranks the others.
+        assert_eq!(
+            with(|s| {
+                s.parsed = 7;
+                s.conflicts = 7;
+            }),
+            EffectVerdict::NothingProduced {
+                reason: reason::CONFLICTS
+            }
+        );
+        // Parsed cleanly and filled nothing: every field was already populated
+        // (the merge only fills NULLs) — "already complete", not a mute zero.
+        assert_eq!(
+            with(|s| s.parsed = 7),
+            EffectVerdict::NothingProduced {
+                reason: reason::ALREADY_COMPLETE
+            }
+        );
+
+        assert_eq!(with(|s| s.filled = 1), EffectVerdict::Produced);
+        assert_eq!(with(|s| s.appended = 1), EffectVerdict::Produced);
+        assert_eq!(
+            InsiderAttachmentSummary::default().effect_verdict(),
+            EffectVerdict::NoInputs
+        );
     }
 }

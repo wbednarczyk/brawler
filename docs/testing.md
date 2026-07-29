@@ -335,6 +335,126 @@ shipped gates:
 - The diff transform also carries the property/invariant gates below
   (idempotence, order-stability).
 
+### Real-data honesty harness + ratchet (epic #40 S4/S5)
+
+Does the app tell the owner the truth about what happened? The classes only the owner was
+catching — a row that states a bare category instead of the event, evidence that resolves to
+nothing, a filename standing in for prose, a success that produced nothing and cannot say why —
+are measured on the **real** database and ratcheted
+([ADR 0091](adr/0091-failure-path-and-real-state-testing.md) decisions 4–5).
+
+**Privacy boundary (hard).** The real DB never enters the repo or default CI. The only committed
+artifact is `realdata-honesty-baseline.json` — aggregate counts/percentages, never a title,
+ticker, or id. Nothing in the harness prints or serializes row content; keep it that way. Public
+CI covers the same invariant class through the synthetic shape corpus (epic #40 S6).
+
+- **Harness** — `storage::tests::real_data_honesty::real_data_honesty_metrics`, `#[ignore]`, keyed
+  on `BRAWLER_REAL_DB` (a throwaway copy; `BRAWLER_REAL_DATA_DIR` optional). It **refuses** the
+  master snapshot and the live app DB — opening a database applies migrations. Metrics come from
+  the real read model (`list_attention_events`, `includeDismissed: true`) and the real frontend
+  statement rule, never a parallel SQL path, so a number moves exactly when the owner's app moves.
+  Emits `src-tauri/target/realdata-honesty-metrics.json`.
+- **Statement rule** — a row's statement is `splitDocumentTitle(evidenceTitle).statement`
+  (`AttentionRow.tsx`), so a filename glued to a human title counts as concrete and a
+  filename-only title counts as generic, exactly as rendered.
+- **Metrics**
+
+  | metric | definition | bound |
+  |---|---|---|
+  | `specificity_pct` | events with a concrete statement / events whose trigger can carry one (price triggers excluded by definition — their range/52-week-low copy *is* the honest statement, mirroring the price entries of `GENERIC_FALLBACK_KEYS` in `tests/live/ux-checkpoint.live.spec.ts`) | ratcheted floor |
+  | `orphaned_evidence` | events on a joined evidence type (`company_signal`, `source_reconciliation`, `autopilot_run`, `job`) whose fire-time snapshot is NULL **and** whose join resolves nothing | ratcheted ceiling |
+  | `filename_as_statement` | rendered statements still carrying a document extension | hard `0`, asserted in the harness |
+  | `zero_effect_successes` | recorded extraction outcomes (`list_extraction_outcomes`) whose acceptance succeeded, whose `fact_count` is `0`, and whose `reason_code` claims production (`emitted`/`witness_fallback`) instead of naming a why | ratcheted ceiling |
+  | `silent_missing_metrics` | health read-model outputs (`compute_company_health`) that report a number as missing without naming what: `InsufficientData` with an empty `missing` list, `NotApplicable` with a blank reason, or a company with no scored FY period at all | ratcheted ceiling |
+
+- **Effects honesty has two layers** (epic #40 S5). The hard invariant is a **unit** one and runs
+  in `make check` with no real data: every run-summary shape implements
+  `effects_honesty::ExplainsEffect`, and a per-shape test enumerates every zero-effect state the
+  producing code can build, asserting each names a reason (`EffectVerdict::Unexplained` is the
+  dishonest state). Add a summary → implement the trait beside it and enumerate its states, or the
+  shape can ship a mute success. The real-DB pair above measures the same class in the **stored**
+  record, where a fixed defect leaves a decaying residue a unit test cannot see.
+  - `zero_effect_successes` landed as a ratcheted ceiling, not ADR 0091's hard `0`: the first
+    measurement found the bound already broken by stored rows, so a hard bound would have been
+    permanently red rather than a gate. The producing defect is fixed forward (an outcome row now
+    records the facts **at** the slot — produced plus re-observed — instead of letting a re-run
+    overwrite a healthy count with `0` beside `reason_code = "emitted"`), so the ceiling falls as
+    the owner re-extracts, and becomes the hard `0` on the run that first measures it.
+- **One filename pattern across languages** (ADR 0091 dec. 5) — canonical TS
+  `src/screens/Today/documentTitle.ts`; the Rust mirror (`FILENAME_EXTENSION_PATTERN`,
+  `LEADING_SEPARATORS_PATTERN`) is held to it by an `include_str!` parity gate that runs in
+  `make check` with no real data. Change the TS source; the gate then tells Rust to follow.
+- **Ratchet** — `scripts/check/realdata-ratchet.mjs` (sibling of the coverage ratchet): committed
+  baseline, tolerance for measurement noise, raises **printed, never written**. Exit `1` =
+  honesty regressed; exit `2` = the check could not conclude — unreadable/incomplete metrics, or
+  a stale baseline because honesty **improved** and the tighter bound was never committed (a
+  silent raise leaves the ratchet judging an old, looser app). Its verdicts are themselves tested
+  by `scripts/check/check-realdata-ratchet.sh` (synthetic JSON, no real data), which runs on
+  every invocation of the target below.
+
+```bash
+make realdata-honesty-check   # self-test, refresh throwaway copy, measure, judge
+```
+
+Local only, and **never part of `make check`**: it runs as a step of `check-epic`, printing a loud
+SKIP on any machine without the maintainer's snapshot (`HONESTY_MASTER_DB`, refreshed per
+`private/realdata/README.md`). Baseline numbers move only with the run that earned them.
+
+### Synthetic shape corpus (epic #40 S6) — the public half
+
+Public CI cannot see the real database, so it gets a **corpus of seed data reproducing every
+data-state SHAPE the real database exhibits**, and the honesty invariants above run over it —
+through the same read models and the same measurement functions — as **hard asserts, no ratchet,
+no secrets** ([ADR 0091](adr/0091-failure-path-and-real-state-testing.md) decision 4). The real DB
+contributes exactly one artifact to the public repo: the anonymized shape inventory.
+
+| artifact | what it is |
+|---|---|
+| `src/test/scenarios/shape-inventory.json` | the committed inventory: `{key, domain, description}` per shape, key-sorted. Generated, reviewed, then committed |
+| `src/test/scenarios/shape-inventory-missing.json` | shapes the corpus deliberately does not reach, each with a reason (the no-silent-caps record) |
+| `storage::tests::real_data_shape_inventory` | the `#[ignore]`d scan that produces the inventory from a throwaway real-DB copy |
+| `storage::tests::shape_corpus` | the named seed cases + both CI gates |
+| `src/test/scenarios/shapeInventory.test.ts` | the privacy/structure guard on the committed file |
+
+- **Anonymized descriptors only (hard boundary).** A descriptor is a key plus its domain
+  (`attention`, `company`, `extraction`, `health`, `source`) — built from machine vocabularies
+  (`trigger_type`, `acceptance`, `reason_code`, tier, statement type, health status). Titles,
+  tickers, names, URLs, ids and dates never reach it: the scan routes every value through a
+  machine-token filter that collapses anything else to `other`, and the Vitest guard reddens on an
+  uppercase run, a digit, a URL, an extension, an id-shaped token or a quotation in any committed
+  key or description. Counts stay on stderr — the shape SET is the contract, not the volume.
+- **Generative, not a checklist.** Keys are built from the values actually observed, so a new
+  trigger type / acceptance / reason code in the real data becomes a new inventory key on the next
+  scan, which then reddens the coverage gate until the corpus grows a case for it.
+- **Coverage gate is observational** (`synthetic_corpus_covers_every_real_data_shape`): it seeds
+  the corpus case by case, re-runs the very scan that produced the inventory, and compares shape
+  sets. A case cannot claim coverage it does not produce; the report attributes each shape to the
+  case that first realized it and names every uncovered key. A shape the corpus cannot reach goes
+  on the missing-list with a reason — and the gate also reddens on a **stale** excuse (the corpus
+  now reaches it) or a **phantom** one (the key is not in the inventory).
+- **Growing the corpus:** add a named case to `CASES` in `shape_corpus.rs`, run the gate, read the
+  attribution table. Cases seed through the real write paths, dropping to raw SQL only for shapes
+  no current write path produces (a pruned-evidence legacy row, a classifier outcome with no
+  runtime setter) — the migration-test idiom.
+- **CI invariants** (`synthetic_corpus_holds_the_honesty_invariants`, default `make check`): a raw
+  filename is never a statement; a title-capable row only falls back to generic copy when its
+  evidence is genuinely gone; `zero_effect_successes == 0`; `silent_missing_metrics == 0`. Plus
+  `synthetic_corpus_run_summaries_explain_their_effect`, which reads every corpus outcome under
+  both compatible readings (facts newly produced / facts re-observed) and asserts neither reaches
+  `EffectVerdict::Unexplained`. All four carry the same false-green guard as the real-data harness:
+  a measurement over an empty corpus certifies nothing.
+
+```bash
+make shape-inventory-scan   # local only: refresh the copy, rescan, rewrite the inventory
+```
+
+Not a `check` step — the inventory changes only when the real data grows a state it never had. Run
+it when that is plausible (a large ingestion, a new job kind, a new reason code), **review the
+diff**, then commit. The one accepted gap today is
+`extraction-zero-facts-claiming-emission`: reproducing the dishonest state would make the
+invariant that forbids it unenforceable, so the corpus never seeds it (stored residue: ratcheted
+locally, repaired forward in #243).
+
 ## Data-transform correctness (property, golden, scale, fuzz, fidelity, pipeline)
 
 Brawler's roadmap is about munching a lot of structured data from many sources
@@ -632,7 +752,20 @@ Canonical home for the loop's test mechanics ([ADR 0081](adr/0081-ux-quality-loo
 
 ### Minimal failure-injection seam (epic `0db7a7a`, Radicle `5be14c9`)
 
-`src/test/scenarios/runtime.ts`'s `MockRuntime.failNext(command, error)` queues a **one-shot** rejection for the NEXT invocation of `command`: instead of running its handler, `invoke` settles with `error` (a plain `{code, message}` object, the ADR 0070 envelope) UNCHANGED — the same shape a real typed backend rejection uses, so `isCommandError`/`CommandInvocationError` on the frontend fire identically to a real failure. `reset()` clears every queued failure. This is the ONLY scope of the seam — no chaos flag, no poor-state seeds, no real-DB evaluator (those stay in epic `0db7a7a`). Q2's `controls.reject(id, error)` (below) delegates to this seam for a `before-handler` hold rather than reproducing the envelope mapping.
+`src/test/scenarios/runtime.ts`'s `MockRuntime.failNext(command, error)` queues a **one-shot** rejection for the NEXT invocation of `command`: instead of running its handler, `invoke` settles with `error` (a plain `{code, message}` object, the ADR 0070 envelope) UNCHANGED — the same shape a real typed backend rejection uses, so `isCommandError`/`CommandInvocationError` on the frontend fire identically to a real failure. `reset()` clears every queued failure. Persistent failures are the chaos seam below (epic #40 S1); poor-state seeds and the real-DB evaluator remain separate slices. Q2's `controls.reject(id, error)` (below) delegates to this seam for a `before-handler` hold rather than reproducing the envelope mapping.
+
+### Chaos seam — persistent failures (epic #40 S1, ADR 0091)
+
+`failNext` above is one-shot; `MockRuntime.chaos(command, error)` is its persistent twin: while the rule is installed, EVERY invocation of `command` settles with the same untouched ADR 0070 envelope — the "this read is broken for the whole session" state a one-shot queue cannot express. A queued `failNext` for that command still wins first and is consumed; `clearChaos()` drops every rule, and `reset()` clears both seams.
+
+In the browser the rule must exist **before** the app's once-at-bootstrap reads. Two equivalent entry points, both installed pre-boot: the URL param `?chaos=<command>[:<code>]` (code defaults to `internal`, message names the command; an unknown code falls back to `internal`), and `primeChaos(page, rules)` from `tests/browser/helpers/mockRuntime.ts` when the spec wants its own message or several rules. `failNext`/`chaos`/`clearChaos` are also on the `window.__brawlerMock` bridge for mid-test use.
+
+```ts
+await openApp(page, "/?chaos=list_companies"); // or: await primeChaos(page, [{ command: "list_companies", error: { code: "network", message: "…" } }])
+await expect(page.getByText(/Companies command failed/)).toContainText("list_companies");
+```
+
+The assertion that matters is that the failure is **NAMED** on screen — a broken read must never degrade into an indistinguishable empty state (`tests/browser/chaos-seam.spec.ts`). `primeMockScenario(page, spec)` lives beside `primeChaos` in the same helper (scenario seeding is applied before chaos rules regardless of call order, since `reset()` clears chaos).
 
 ### Scenario overlays and controlled async (plan Q2, Radicle `a9992e2`)
 
@@ -648,6 +781,11 @@ Composable, deterministic adversarial data and async-ordering controls on the ON
 | `stale-processing` | an old visible research-evidence result plus a `running` brief job for the same scope |
 | `conflicting-statuses` | a source adapter reporting `attention` while its latest ingestion result shows a clean run — two independent reads deliberately disagree |
 | `mixed-locale` | realistic Polish + English feed items — real source content, never a planted UI-translation literal |
+| `failed-autopilot-run` | a coherent FAILED overnight run — `status: "failed"` + a concrete `lastError` + the `notable` severity the backend derives, plus its `autopilot_run_completed` event and the rule it fired from |
+| `degraded-sources` | source adapters whose last fetch failed — `lastError`/`lastErrorAt` + `healthStatus: "attention"` + the failed-detail counters and warning text |
+| `job-failed-event` | terminally failed background jobs as system `job_failed` events, in BOTH scopes the backend emits — company-scoped (handler subject + company) and workspace-wide (`companyId: null`, statement = the job's own `last_error`) |
+
+The last three are the **poor-state seeds** (epic #40 S2/S3, [ADR 0091](adr/0091-failure-path-and-real-state-testing.md)): they apply LAST in the fixed order (the attention-set-owning overlays would otherwise drop the seeded event) and back the flow walks in `tests/browser/poor-state-*.spec.ts` + `tests/browser/job-failure-reachable.spec.ts`, which walk Today / Sources / the company cockpit on poor state and assert the failure is **named** on screen. `SCENARIO_OVERLAY_NAMES` (exported from `overlays.ts`) is the one enumeration of the overlay set — an unknown name throws instead of being silently skipped.
 
 Each overlay reassigns the collections it touches (never mutates an entity in place — the same store-mutation contract handlers follow) and uses a fixed, overlay-dedicated `CompanySpec` so simultaneous overlays never collide. Application order is fixed internally, independent of the order the caller lists overlay names, and a repeated name is idempotent. `applyScenarioOverlays` is pure.
 
@@ -659,7 +797,7 @@ Each overlay reassigns the collections it touches (never mutates an entity in pl
 - `reject(id, error)`: a `CommandError` on a `before-handler` hold delegates through `failNext` (above); a bare `Error`, or any `after-handler` reject, settles directly — nothing to delegate to since the handler already ran or the caller opted out of the typed envelope.
 - `reset()`/`releaseAll()` clear every held invocation so no promise leaks across tests.
 
-The typed test-only `window.__brawlerMock` bridge (`src/test/browserSmokeRuntime.ts`) exposes `reset(spec)`, `hold`, `pending`, `release`, `reject`, `releaseAll` to Playwright via `tests/browser/helpers/mockRuntime.ts`. **Setup order is always base scenario → `seedBrowserStore` (this file's browser-specific projection) → overlays**, on both initial install and every `reset()` — overlays run LAST so the projection can never silently clobber hostile/dense/partial/stale/conflicting/mixed-locale data.
+The typed test-only `window.__brawlerMock` bridge (`src/test/browserSmokeRuntime.ts`) exposes `reset(spec)`, `hold`, `pending`, `release`, `reject`, `releaseAll` (plus the chaos-seam trio `failNext`/`chaos`/`clearChaos` above) to Playwright via `tests/browser/helpers/mockRuntime.ts`. **Setup order is always base scenario → `seedBrowserStore` (this file's browser-specific projection) → overlays**, on both initial install and every `reset()` — overlays run LAST so the projection can never silently clobber hostile/dense/partial/stale/conflicting/mixed-locale data.
 
 `tests/browser/research-controlled-async.spec.ts` is the canonical controlled-async proof: it holds two `list_research_evidence` responses for different company intents, releases newest-then-oldest, and asserts the OLDER response cannot replace the newer state — `useResearchController`'s `requestVersionRef` "last-intent-wins" seam.
 

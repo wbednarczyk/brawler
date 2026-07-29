@@ -289,6 +289,62 @@ describe("mock runtime — failure-injection seam (Radicle 5be14c9)", () => {
   });
 });
 
+// Epic #40 S1 (ADR 0091) — persistent chaos rules beside the one-shot queue.
+describe("mock runtime — persistent chaos rules (epic #40 S1)", () => {
+  it("chaos(command, error) fails the command EVERY time, not once", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.chaos("list_companies", { code: "internal", message: "chaos rule" });
+    await expect(runtime.invoke("list_companies", {})).rejects.toMatchObject({
+      code: "internal",
+      message: "chaos rule",
+    });
+    await expect(runtime.invoke("list_companies", {})).rejects.toMatchObject({
+      code: "internal",
+      message: "chaos rule",
+    });
+  });
+
+  it("chaos only fails the SELECTED command, not others", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.chaos("list_companies", { code: "internal", message: "chaos rule" });
+    const watchlists = await runtime.invoke("list_watchlists", {});
+    expect(Array.isArray(watchlists)).toBe(true);
+  });
+
+  it("a one-shot failNext wins over an active chaos rule and is consumed; the chaos rule keeps failing after", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.chaos("list_companies", { code: "internal", message: "chaos rule" });
+    runtime.failNext("list_companies", { code: "conflict", message: "one-shot first" });
+    await expect(runtime.invoke("list_companies", {})).rejects.toMatchObject({
+      code: "conflict",
+      message: "one-shot first",
+    });
+    await expect(runtime.invoke("list_companies", {})).rejects.toMatchObject({
+      code: "internal",
+      message: "chaos rule",
+    });
+  });
+
+  it("clearChaos() restores normal behavior without touching the store", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.chaos("list_companies", { code: "internal", message: "chaos rule" });
+    await expect(runtime.invoke("list_companies", {})).rejects.toBeTruthy();
+    runtime.clearChaos();
+    const companies = await runtime.invoke("list_companies", {});
+    expect(Array.isArray(companies)).toBe(true);
+    expect((companies as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("reset() clears chaos rules too — no failure leaks across tests", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.chaos("list_companies", { code: "internal", message: "chaos rule" });
+    runtime.reset();
+    const companies = await runtime.invoke("list_companies", {});
+    expect(Array.isArray(companies)).toBe(true);
+    expect((companies as unknown[]).length).toBeGreaterThan(0);
+  });
+});
+
 // Q2 controlled-async wired end-to-end on a real MockRuntime (Radicle a9992e2).
 describe("mock runtime — controlled async (Radicle a9992e2)", () => {
   it("holds a real read command, then releases it with the real handler result", async () => {

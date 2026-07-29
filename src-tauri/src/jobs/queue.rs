@@ -36,6 +36,27 @@ pub trait JobHandler: Send + Sync {
     fn serialization_key(&self, _payload: &str) -> Option<String> {
         None
     }
+
+    /// The company this job's work belongs to, from its payload (ADR 0091 dec. 1;
+    /// same payload-reading pattern as [`JobHandler::serialization_key`]). Used to
+    /// scope the `job_failed` attention event, so a failed per-company job lands on
+    /// that company's row in the stream. Default `None` — workspace-wide work
+    /// (a briefing, the aggregator pull) belongs to no single issuer and stores a
+    /// NULL company scope (migration 0118).
+    fn company_scope(&self, _payload: &str) -> Option<String> {
+        None
+    }
+
+    /// The raw specific this job failed ON — a document title, a ticker (ADR 0091
+    /// dec. 1 / ADR 0087 dec. 4: raw source data, NEVER composed prose). Snapshotted
+    /// onto the failure event at fire time so the stream states WHAT failed even
+    /// after the underlying row is pruned. `state` is available because the payload
+    /// usually carries only ids; resolve the human specific from storage, and return
+    /// `None` when there is none (the read model then states the job's own
+    /// `last_error`).
+    fn failure_subject(&self, _payload: &str, _state: &AppState) -> Option<String> {
+        None
+    }
 }
 
 /// Poll interval when the queue is idle.
@@ -110,7 +131,7 @@ impl JobWorker {
             None => None,
         };
 
-        let outcome = match handler {
+        let outcome = match handler.as_ref() {
             Some(handler) => handler.run(&job.payload, &self.state),
             None => Err(format!("no handler registered for job kind {}", job.kind)),
         };
@@ -121,12 +142,47 @@ impl JobWorker {
                 .map_err(|error| error.to_string())?,
             Err(error) => {
                 let backoff = retry_backoff_seconds(job.attempts);
-                store
+                let will_retry = store
                     .mark_failed(&job.id, &error, backoff)
                     .map_err(|error| error.to_string())?;
+                if !will_retry {
+                    self.surface_terminal_failure(&job, handler.as_deref());
+                }
             }
         }
         Ok(())
+    }
+
+    /// THE single terminal-failure point (ADR 0091 dec. 1): the job has exhausted
+    /// its retries and will not run again. Kinds whose failure surface is
+    /// [`FailureSurface::TodayAttention`] raise the generic system `job_failed`
+    /// attention event here; kinds with a richer domain surface (Sources adapter
+    /// health, the autopilot run card) keep it EXCLUSIVELY, so nothing double-fires.
+    /// An unclassified kind surfaces nothing and is caught by the enumeration gate
+    /// (`jobs::failure_surface::tests`), never silently defaulted here.
+    ///
+    /// Best-effort: raising the event must never turn a recorded failure into a
+    /// worker error (the queue row is already the durable record).
+    fn surface_terminal_failure(&self, job: &ClaimedJob, handler: Option<&dyn JobHandler>) {
+        use crate::jobs::failure_surface::{failure_surface, FailureSurface};
+
+        if failure_surface(&job.kind) != Some(FailureSurface::TodayAttention) {
+            return;
+        }
+        let company = handler.and_then(|handler| handler.company_scope(&job.payload));
+        let subject =
+            handler.and_then(|handler| handler.failure_subject(&job.payload, &self.state));
+        if let Err(error) = self.state.attention().record_job_failure(
+            &job.id,
+            company.as_deref(),
+            subject.as_deref(),
+        ) {
+            log::warn!(
+                "job queue: could not raise the failure event for job {} ({}): {error}",
+                job.id,
+                job.kind
+            );
+        }
     }
 
     /// Claim and process at most one job (any kind). Returns `true` if a job was

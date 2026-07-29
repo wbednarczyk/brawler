@@ -22,6 +22,7 @@ import {
   makeFeedItem,
   makeFinancialPeriod,
   makeResearchEvidenceItem,
+  makeSourceAdapter,
   makeSourceIngestionResult,
   type CompanySpec,
 } from "./entities";
@@ -40,7 +41,10 @@ export type ScenarioOverlayName =
   | "morning-review"
   | "today-dense"
   | "orphaned-evidence"
-  | "pruned-feed";
+  | "pruned-feed"
+  | "degraded-sources"
+  | "failed-autopilot-run"
+  | "job-failed-event";
 
 // One fixed, distinct `CompanySpec` per overlay so simultaneous overlays never
 // collide on IDs and each overlay's content is independently identifiable.
@@ -449,6 +453,223 @@ function applyPrunedFeed(data: ScenarioData): ScenarioData {
   };
 }
 
+// Poor-state seeds (epic #40 S2, ADR 0091). The two states a failure-path walk
+// needs: the automation FAILED overnight, and a source is DEGRADED. Both are
+// additive with fixed `*_overlay_*` ids so they compose with every existing
+// overlay, and both seed a COHERENT set of rows — the same triple/tuple the real
+// read models produce — so a walk asserts on the app's rendering, never on a
+// state the backend could never emit.
+
+const FAILED_RUN_SPEC: CompanySpec = {
+  key: "failedRun",
+  ticker: "ZZZA",
+  name: "Failed Autopilot Test S.A.",
+  sector: "Technology",
+};
+
+/** The processed report's document title (`report_documents.title`, joined at read). */
+export const FAILED_RUN_REPORT_TITLE =
+  "Skonsolidowany raport roczny 2026 — Failed Autopilot Test S.A.";
+/** The run's raw `last_error` — a concrete cause, never a bare "failed". */
+export const FAILED_RUN_LAST_ERROR =
+  "stage extract failed: report parser returned no periods (stored document unreadable)";
+
+/**
+ * A coherent FAILED autopilot run (epic #40 S2). The three rows a real terminal
+ * failure leaves behind, consistent with the backend read models:
+ *
+ *   - the run: `status: "failed"` + a concrete `lastError` + `severity: "notable"`
+ *     (`storage::severity::severity_for_autopilot_run` — `failed`/`partial` are
+ *     notable, never routine), still `unread` so Today reads it;
+ *   - its completion attention event: `autopilot_run_completed` (also `notable`,
+ *     `severity_for_trigger`), `evidenceType: "autopilot_run"` pointing at the run,
+ *     `evidenceTitle` = the report's document title and `evidenceDetail` = the run's
+ *     RAW status (`attention.rs` read model — the frontend translates it, so the row
+ *     states "<report> — Failed");
+ *   - the user rule it fired from: an `autopilot_run_completed` event is never a
+ *     system event (`evaluate_autopilot_completion` fires enabled rules only), so a
+ *     matching enabled rule must exist or the event would be unreachable.
+ *
+ * The failure must be NAMED on Today — a failed overnight run that reads like a
+ * quiet morning is the defect class ADR 0091 exists to catch.
+ */
+function applyFailedAutopilotRun(data: ScenarioData): ScenarioData {
+  const company = makeCompany(FAILED_RUN_SPEC);
+  const rule = makeAlertRule("alert_rule_overlay_failed_run", "autopilot_run_completed", company.id);
+  const run: ScenarioData["autopilotRuns"][number] = {
+    id: "run_overlay_failed_1",
+    companyId: company.id,
+    reportDocumentId: "doc_overlay_failed_1",
+    trigger: "scheduled",
+    sweepId: null,
+    mode: "autopilot",
+    status: "failed",
+    // The stage it died in — the run stopped short of `notify`.
+    stage: "extract",
+    summaryText: null,
+    kpiDeltaJson: null,
+    reportDiffRef: null,
+    crossRefsJson: null,
+    producedFactIds: [],
+    notificationState: "unread",
+    lastError: FAILED_RUN_LAST_ERROR,
+    severity: "notable",
+    reportDocumentTitle: FAILED_RUN_REPORT_TITLE,
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  };
+  const event = {
+    ...makeAttentionEvent("attn_overlay_failed_run", rule.id, company.id, "notable" as const),
+    triggerType: "autopilot_run_completed" as const,
+    evidenceType: "autopilot_run" as const,
+    evidenceRef: run.id,
+    evidenceTitle: FAILED_RUN_REPORT_TITLE,
+    // For an autopilot event `evidenceDetail` carries the run's raw status.
+    evidenceDetail: run.status,
+    firedAt: SAMPLE_NOW,
+  };
+  return {
+    ...data,
+    companies: [company, ...data.companies],
+    alertRules: [rule, ...data.alertRules],
+    autopilotRuns: [run, ...data.autopilotRuns],
+    attentionEvents: [event, ...data.attentionEvents],
+  };
+}
+
+/** The degraded PRIMARY source — the one a triage flow must land on first. */
+export const DEGRADED_REPORTS_SOURCE_NAME = "ZZZ Official Reports Feed";
+export const DEGRADED_REPORTS_LAST_ERROR =
+  "HTTP 503 Service Unavailable from https://example.test/zzz/espi";
+/** The only concrete failure string the Sources screen renders today (detail panel). */
+export const DEGRADED_REPORTS_DETAIL_WARNING =
+  "3 of 12 report details could not be fetched (HTTP 503 from the publisher)";
+export const DEGRADED_MEDIA_LAST_ERROR = "RSS feed returned HTTP 429 (rate limited)";
+
+/**
+ * Degraded source adapters (epic #40 S2): two adapters whose last fetch FAILED —
+ * `lastError` + `lastErrorAt` set and `healthStatus: "attention"`, the pairing the
+ * backend produces (`record_source_adapter_error`). Additive synthetic adapters
+ * (fixed `zzz-degraded-*` ids), never a rewrite of a base adapter, so this never
+ * fights `conflicting-statuses` (which owns `bankier-company-komunikaty`) and works
+ * on every base — `minimal` seeds a different adapter set than `rich`.
+ *
+ * The reports adapter is PREPENDED first because the triage entry point
+ * (`openSourceStatus`) selects the first adapter carrying a `lastError`; it also
+ * carries the failed-detail counters + `lastDetailWarning`, the concrete failure
+ * text the Sources detail panel actually renders.
+ */
+function applyDegradedSources(data: ScenarioData): ScenarioData {
+  const reports = {
+    ...makeSourceAdapter({
+      id: "zzz-degraded-official-reports",
+      displayName: DEGRADED_REPORTS_SOURCE_NAME,
+      sourceType: "official_report",
+      fetchMode: "public_json",
+      visibility: "optional",
+      userConfigurable: true,
+      healthStatus: "attention",
+      enabled: true,
+      sourceUrl: "https://example.test/zzz/espi",
+      markets: ["GPW"],
+    }),
+    lastError: DEGRADED_REPORTS_LAST_ERROR,
+    lastErrorAt: SAMPLE_NOW,
+    // The listing succeeded, the detail fetches did not — a partially degraded
+    // run, the realistic shape (a total outage would fetch nothing at all).
+    lastItemsFetched: 12,
+    lastItemsCreated: 12,
+    lastItemsMatched: 9,
+    lastItemsUnmatched: 3,
+    lastDetailItemsAttempted: 12,
+    lastDetailItemsStored: 9,
+    lastDetailItemsFailed: 3,
+    lastDetailWarning: DEGRADED_REPORTS_DETAIL_WARNING,
+  };
+  const media = {
+    ...makeSourceAdapter({
+      id: "zzz-degraded-media-rss",
+      displayName: "ZZZ Market Media RSS",
+      sourceType: "public_media",
+      fetchMode: "rss",
+      visibility: "optional",
+      userConfigurable: true,
+      healthStatus: "attention",
+      enabled: true,
+      sourceUrl: "https://example.test/zzz/rss.xml",
+      markets: ["GPW"],
+    }),
+    lastError: DEGRADED_MEDIA_LAST_ERROR,
+    lastErrorAt: SAMPLE_NOW,
+    // Rate-limited before anything was read: nothing fetched at all.
+    lastItemsFetched: 0,
+    lastItemsCreated: 0,
+    lastItemsMatched: 0,
+    lastItemsUnmatched: 0,
+  };
+  return { ...data, sourceAdapters: [reports, media, ...data.sourceAdapters] };
+}
+
+const JOB_FAILED_SPEC: CompanySpec = {
+  key: "jobFailed",
+  ticker: "ZZZJ",
+  name: "Failed Job Test S.A.",
+  sector: "Energy",
+};
+
+/** The company-scoped failure's subject — the report the extraction died on. */
+export const JOB_FAILED_SUBJECT = "Skonsolidowany raport kwartalny Q3 2026 — Failed Job Test S.A.";
+/** The kind of the company-scoped failed job (raw backend token). */
+export const JOB_FAILED_KIND = "ownership_extraction";
+/** The workspace-wide failure's statement — a job with no subject falls back to
+ * the queue's own `last_error`, which the read model then supplies. */
+export const JOB_FAILED_SYSTEM_ERROR =
+  "HTTP 503 from biznesradar.pl (retries exhausted after 3 attempts)";
+/** The kind of the workspace-wide failed job (raw backend token). */
+export const JOB_FAILED_SYSTEM_KIND = "aggregator_fundamentals_pull";
+
+/**
+ * Terminally failed background jobs (epic #40 S3, ADR 0091 dec. 1) — the generic
+ * failure surface, in BOTH scopes the backend can emit:
+ *
+ *   - company-scoped: the handler named the company (`company_scope`) and the
+ *     report it died on (`failure_subject`), so the row reads
+ *     "<task> failed — <report>" under the company's ticker;
+ *   - workspace-wide: `companyId: null` (nullable since migration 0118) with no
+ *     subject, so the read model states the job's own `last_error` instead.
+ *
+ * Both are SYSTEM events: `ruleId: null` (no user rule can fire a job failure),
+ * `evidenceType: "job"` pointing at the `job_queue` row, `evidenceDetail` = the
+ * RAW job kind the frontend translates, and `notable` for every kind. A background
+ * job that dies in silence is the exact defect class this epic exists to catch.
+ */
+function applyJobFailedEvent(data: ScenarioData): ScenarioData {
+  const company = makeCompany(JOB_FAILED_SPEC);
+  const scoped = {
+    ...makeAttentionEvent("attn_overlay_job_failed", "", company.id, "notable" as const),
+    ruleId: null,
+    triggerType: "job_failed" as const,
+    evidenceType: "job" as const,
+    evidenceRef: "job_overlay_failed_1",
+    evidenceTitle: JOB_FAILED_SUBJECT,
+    evidenceDetail: JOB_FAILED_KIND,
+    firedAt: SAMPLE_NOW,
+  };
+  const systemWide = {
+    ...scoped,
+    id: "attn_overlay_job_failed_system",
+    companyId: null,
+    evidenceRef: "job_overlay_failed_2",
+    evidenceTitle: JOB_FAILED_SYSTEM_ERROR,
+    evidenceDetail: JOB_FAILED_SYSTEM_KIND,
+  };
+  return {
+    ...data,
+    companies: [company, ...data.companies],
+    attentionEvents: [scoped, systemWide, ...data.attentionEvents],
+  };
+}
+
 const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData> = {
   "partial-data": applyPartialData,
   "stale-processing": applyStaleProcessing,
@@ -463,10 +684,18 @@ const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData
   "today-dense": applyTodayDense,
   "orphaned-evidence": applyOrphanedEvidence,
   "pruned-feed": applyPrunedFeed,
+  "degraded-sources": applyDegradedSources,
+  "failed-autopilot-run": applyFailedAutopilotRun,
+  "job-failed-event": applyJobFailedEvent,
 };
 
-/** Fixed application order — independent of the order the caller supplies. */
-const OVERLAY_ORDER: readonly ScenarioOverlayName[] = [
+/**
+ * Fixed application order — independent of the order the caller supplies.
+ * Exported so every enumeration of the overlay set (unit tests, docs checks)
+ * reads the ONE list instead of hand-copying it (the drift class epic #40 S1
+ * killed for `ScenarioOverlayName`).
+ */
+export const SCENARIO_OVERLAY_NAMES: readonly ScenarioOverlayName[] = [
   "partial-data",
   "stale-processing",
   "conflicting-statuses",
@@ -480,20 +709,39 @@ const OVERLAY_ORDER: readonly ScenarioOverlayName[] = [
   "today-dense",
   "orphaned-evidence",
   "pruned-feed",
+  // The poor-state seeds apply LAST: both are additive, and `attention-mixed-
+  // severity` / `attention-notable-only` REPLACE the attention set, so a
+  // failed-run event seeded before them would be silently dropped whenever they
+  // compose. Applying last makes every combination keep the poor state.
+  "degraded-sources",
+  "failed-autopilot-run",
+  // Same reasoning as the two above: the job-failure seeds are additive and must
+  // survive whichever attention overlay composed before them.
+  "job-failed-event",
 ];
 
 /**
  * Apply the named overlays to `data` in the fixed canonical order, regardless
  * of the order `overlays` lists them. A repeated name is idempotent (applied
  * once). Pure: `data` itself is never mutated.
+ *
+ * An overlay name missing from `SCENARIO_OVERLAY_NAMES` THROWS: a registered
+ * overlay left out of the order list would otherwise be silently skipped, and a
+ * spec asking for it would fail far from the cause (epic #40 S2 hit exactly this
+ * while the seeds were still being written).
  */
 export function applyScenarioOverlays(
   data: ScenarioData,
   overlays: readonly ScenarioOverlayName[],
 ): ScenarioData {
   const requested = new Set(overlays);
+  for (const name of requested) {
+    if (!SCENARIO_OVERLAY_NAMES.includes(name)) {
+      throw new Error(`Unknown scenario overlay: ${name} (missing from SCENARIO_OVERLAY_NAMES)`);
+    }
+  }
   let next = data;
-  for (const name of OVERLAY_ORDER) {
+  for (const name of SCENARIO_OVERLAY_NAMES) {
     if (requested.has(name)) {
       next = OVERLAYS[name](next);
     }

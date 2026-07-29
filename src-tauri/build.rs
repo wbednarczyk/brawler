@@ -20,6 +20,11 @@ fn main() {
     });
     println!("cargo:rustc-env=BRAWLER_SCENARIOS_DIR={scenarios_dir}");
     println!("cargo:rustc-env=BRAWLER_FIDELITY_CORPUS={scenarios_dir}/fidelity-corpus.json");
+    // Canonical filename-pattern source for the TS↔Rust parity gate (ADR 0091
+    // dec. 5) — derived from the same override so mutants sweeps resolve it.
+    println!(
+        "cargo:rustc-env=BRAWLER_DOCUMENT_TITLE_TS={scenarios_dir}/../../screens/Today/documentTitle.ts"
+    );
     println!("cargo:rerun-if-env-changed=BRAWLER_SCENARIOS_DIR");
     println!("cargo:rerun-if-changed={scenarios_dir}");
 }

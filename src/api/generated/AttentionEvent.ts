@@ -10,7 +10,14 @@ export type AttentionEvent = { id: string,
  * The owning alert rule, or `None` for a SYSTEM event (e.g. a reconciliation
  * `source_reconciliation` event, raised without a user rule — ADR 0069 D2).
  */
-ruleId: string | null, triggerType: "signal_category" | "autopilot_run_completed" | "price_enters_range" | "price_week52_low" | "source_reconciliation", companyId: string, evidenceType: "company_signal" | "autopilot_run" | "daily_quote" | "source_reconciliation", evidenceRef: string, firedAt: string, seen: boolean, dismissed: boolean, 
+ruleId: string | null, triggerType: "signal_category" | "autopilot_run_completed" | "price_enters_range" | "price_week52_low" | "source_reconciliation" | "job_failed", 
+/**
+ * The company this event is about, or `None` for a SYSTEM event with no
+ * company scope — a workspace-wide background job (morning briefing, history
+ * sweep, aggregator pull) that failed terminally (ADR 0091 dec. 1/2, nullable
+ * since migration 0118). Company-scoped events always carry their company.
+ */
+companyId: string | null, evidenceType: "company_signal" | "autopilot_run" | "daily_quote" | "source_reconciliation" | "job", evidenceRef: string, firedAt: string, seen: boolean, dismissed: boolean, 
 /**
  * Typed importance (ADR 0087 dec. 2), **computed at read** from
  * `trigger_type` + the signal's category (for `signal_category` events) by
@@ -22,9 +29,10 @@ severity: AttentionSeverity,
  * The specific title of the event's evidence, resolved by LEFT JOIN at read
  * (ADR 0087 dec. 4 — a raw source datum, never composed prose): the filing
  * title (`company_signal` → `feed_items.title`), the missed report's witness
- * title (`source_reconciliation` → `witness_title`), or the processed
- * report's document title (`autopilot_run` → `report_documents.title`).
- * `None` for a legacy row or pruned evidence — the frontend falls back to
+ * title (`source_reconciliation` → `witness_title`), the processed report's
+ * document title (`autopilot_run` → `report_documents.title`), or a failed
+ * job's subject — its fire-time snapshot, else the job's own `last_error`
+ * (`job` → `job_queue.last_error`). `None` for a legacy row or pruned evidence — the frontend falls back to
  * generic copy. So a stream row can state WHAT concretely happened, never a
  * bare category (v0.60 D6, owner dogfooding 2026-07-23).
  */
@@ -33,7 +41,8 @@ evidenceTitle: string | null,
  * A secondary raw datum whose meaning depends on `evidence_type`: for a
  * `source_reconciliation` event, the display name of the source that missed
  * the report (adapter id → its registry display name); for an `autopilot_run`
- * event, the run's raw status (the frontend translates it). `None` otherwise
- * or when the evidence row is gone.
+ * event, the run's raw status; for a `job` event, the failed job's raw `kind`
+ * (all translated by the frontend). `None` otherwise or when the evidence row
+ * is gone.
  */
 evidenceDetail: string | null, };

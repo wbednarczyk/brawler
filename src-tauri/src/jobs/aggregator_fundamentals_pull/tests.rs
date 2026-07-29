@@ -534,3 +534,99 @@ fn on_demand_pull_defers_to_an_in_flight_biznesradar_run() {
     drop(guard);
     run_aggregator_fundamentals_pull_serialized(&state).expect("runs once the lock is free");
 }
+
+// ---------------------------------------------------------------------------
+// Zero-effects invariant (epic #40 S5, ADR 0091)
+// ---------------------------------------------------------------------------
+
+/// A pull that iterated companies and wrote nothing must NAME why. Each state
+/// below is one the pull's own counters can reach; a future state that cannot
+/// explain itself falls through to `Unexplained` and reddens here.
+#[test]
+fn every_zero_effect_aggregator_state_names_a_reason() {
+    use crate::effects_honesty::{EffectVerdict, ExplainsEffect};
+    use aggregator_effect_reason as reason;
+
+    let with = |mutate: fn(&mut AggregatorPullSummary)| {
+        let mut summary = AggregatorPullSummary {
+            companies: 12,
+            ..AggregatorPullSummary::default()
+        };
+        mutate(&mut summary);
+        summary.effect_verdict()
+    };
+
+    assert_eq!(
+        with(|s| s.pages_unavailable = 24),
+        EffectVerdict::NothingProduced {
+            reason: reason::PAGES_UNAVAILABLE
+        }
+    );
+    assert_eq!(
+        with(|s| {
+            s.pages_resolved = 24;
+            s.slots_skipped_higher_tier = 40;
+        }),
+        EffectVerdict::NothingProduced {
+            reason: reason::HIGHER_TIER_HOLDS_SLOT
+        }
+    );
+    assert_eq!(
+        with(|s| {
+            s.pages_resolved = 24;
+            s.facts_reobserved = 40;
+        }),
+        EffectVerdict::NothingProduced {
+            reason: reason::ALREADY_RECORDED
+        }
+    );
+    assert_eq!(
+        with(|s| {
+            s.pages_resolved = 24;
+            s.zero_cells_skipped = 40;
+        }),
+        EffectVerdict::NothingProduced {
+            reason: reason::ZERO_CELLS
+        }
+    );
+    assert_eq!(
+        with(|s| {
+            s.pages_resolved = 24;
+            s.no_definition = 40;
+        }),
+        EffectVerdict::NothingProduced {
+            reason: reason::NO_KPI_DEFINITION
+        }
+    );
+    // Effects, not gaps: a written/updated fact, and a recorded reversed-
+    // witnessing disagreement (no fact written, but a finding persisted).
+    assert_eq!(with(|s| s.facts_written = 1), EffectVerdict::Produced);
+    assert_eq!(with(|s| s.facts_updated = 1), EffectVerdict::Produced);
+    assert_eq!(
+        with(|s| s.witness_disagreements = 1),
+        EffectVerdict::Produced
+    );
+    // No tracked companies: nothing was asked of the pull.
+    assert_eq!(
+        AggregatorPullSummary::default().effect_verdict(),
+        EffectVerdict::NoInputs
+    );
+}
+
+/// The gap this shape still has (epic #40 S5 finding): a page that RESOLVED but
+/// whose parse yielded no cells at all moves no counter — `pages_resolved` says
+/// the page was read, and nothing says the table was empty. Closing it needs a
+/// new counter on this `ts-rs`-exported contract type (an IPC contract
+/// addition), so S5 pins the state instead of inventing the field. Delete this
+/// test and fold the state into the suite above when the counter lands.
+#[test]
+fn a_resolved_page_with_no_cells_is_the_one_unexplained_aggregator_state() {
+    use crate::effects_honesty::ExplainsEffect;
+
+    let summary = AggregatorPullSummary {
+        companies: 12,
+        pages_resolved: 24,
+        ..AggregatorPullSummary::default()
+    };
+    assert!(summary.effect_verdict().is_unexplained());
+}

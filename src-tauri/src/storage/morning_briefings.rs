@@ -197,9 +197,15 @@ pub fn compose_briefing(sources: &BriefingSources, since: &str, today: &str) -> 
         if date <= since10 {
             continue;
         }
+        // A briefing item is per-company (it renders under a ticker), so a SYSTEM
+        // event with no company scope — a workspace-wide job failure (ADR 0091
+        // dec. 2) — has no place here. Its surface is the Today attention stream.
+        let Some(company_id) = event.company_id.clone() else {
+            continue;
+        };
         items.push(ComposedBriefingItem {
             item_type: BRIEFING_ITEM_ATTENTION_EVENT,
-            company_id: event.company_id.clone(),
+            company_id,
             domain_date: date,
             citation_key: String::new(),
             evidence_type: "attention_event".to_owned(),
@@ -579,7 +585,7 @@ mod tests {
             id: id.to_owned(),
             rule_id: Some("rule_1".to_owned()),
             trigger_type: "signal_category".to_owned(),
-            company_id: company.to_owned(),
+            company_id: Some(company.to_owned()),
             evidence_type: "company_signal".to_owned(),
             evidence_ref: "sig_ref".to_owned(),
             fired_at: fired.to_owned(),

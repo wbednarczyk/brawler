@@ -321,8 +321,15 @@ export function AlertsScreen() {
     }
   };
 
+  // A system event may carry no company at all (a failed workspace-wide job,
+  // ADR 0091 dec. 2) — it is scoped to the workspace, not to an issuer.
+  const eventScope = (event: AttentionEvent): string =>
+    (event.companyId ? companyName.get(event.companyId) : null) ??
+    event.companyId ??
+    text("System");
+
   const eventDescription = (event: AttentionEvent): string =>
-    `${companyName.get(event.companyId) ?? event.companyId} · ${event.evidenceType}`;
+    `${eventScope(event)} · ${event.evidenceType}`;
 
   // Fired-at renders like every other list timestamp in the app ("today 09:12",
   // "yesterday 14:03", …) — via the shared format layer, per its contract test.
@@ -608,7 +615,7 @@ export function AlertsScreen() {
               {events.map((event) => {
                 const description = eventDescription(event);
                 const ruleForEvent = rules.find((r) => r.id === event.ruleId);
-                const ticker = companyName.get(event.companyId) ?? event.companyId;
+                const ticker = eventScope(event);
                 return (
                   <li key={event.id} aria-label={`${text("Fired alert")}: ${description}`} className="alerts-row alerts-fired">
                     <span

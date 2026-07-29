@@ -874,6 +874,67 @@ mod tests {
     }
 
     #[test]
+    fn a_failing_source_refresh_records_the_adapter_error_on_its_row() {
+        // Per-surface VISIBILITY test for `FailureSurface::SourcesAdapterHealth`
+        // (ADR 0091 dec. 3, epic #40 S3): the source-refresh family is classified as
+        // owning its failure surface exclusively, which is only legitimate if a
+        // failed refresh really does state itself on the Sources screen. A scripted
+        // failing fetcher for a REAL registered adapter must leave `last_error` +
+        // `last_error_at` on that adapter's row — the datum the Sources screen reads.
+        use super::{sweep_adapters, Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome};
+        use crate::app_state::AppState;
+        use crate::jobs::failure_surface::{failure_surface, FailureSurface};
+        use crate::jobs::scheduler::SOURCE_REFRESH_KIND;
+        use crate::storage::open_in_memory_database;
+
+        struct FailingFetcher;
+
+        impl Fetcher for FailingFetcher {
+            fn refresh(
+                &self,
+                _state: &AppState,
+                _ctx: &RefreshContext,
+            ) -> Result<RefreshOutcome, String> {
+                Err("HTTP 503 from the publisher".to_owned())
+            }
+        }
+
+        assert_eq!(
+            failure_surface(SOURCE_REFRESH_KIND),
+            Some(FailureSurface::SourcesAdapterHealth),
+            "the scheduled refresh is classified onto the Sources surface"
+        );
+
+        let adapter = super::RuntimeAdapter {
+            id: crate::source_adapters::bankier_rss::ADAPTER_ID,
+            behavior: RefreshBehavior::Fetcher(&FailingFetcher),
+        };
+        let state = AppState::new(open_in_memory_database().expect("db"));
+
+        let swept = sweep_adapters(&state, std::slice::from_ref(&adapter), "scheduler");
+        assert!(
+            swept.is_err(),
+            "every attempted source failed → the sweep errs"
+        );
+
+        let row = state
+            .list_source_adapters()
+            .expect("adapters")
+            .into_iter()
+            .find(|entry| entry.id == crate::source_adapters::bankier_rss::ADAPTER_ID)
+            .expect("the adapter is registered");
+        assert_eq!(
+            row.last_error.as_deref(),
+            Some("HTTP 503 from the publisher"),
+            "the failure is stated on the source's own row (the Sources surface)"
+        );
+        assert!(
+            row.last_error_at.is_some(),
+            "and stamped, so the screen can show when it broke"
+        );
+    }
+
+    #[test]
     fn full_refresh_sweep_membership_is_pinned() {
         // ADR 0069 T2 tripwire: the strangler migration must not change which sources
         // join the "refresh all" sweep (feed/calendar-style join; directory and

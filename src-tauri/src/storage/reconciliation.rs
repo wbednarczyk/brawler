@@ -235,14 +235,16 @@ pub(super) fn reconcile_gpw_espi_witness(
             attention::insert_system_attention_event(
                 &transaction,
                 attention::TRIGGER_SOURCE_RECONCILIATION,
-                &company.id,
+                Some(company.id.as_str()),
                 attention::EVIDENCE_SOURCE_RECONCILIATION,
                 &id,
                 // The missed report's witness title is in scope at the insert site,
                 // so snapshot it (v0.60 D7 uniform posture). Empty title → None →
                 // the read model's report_type/number join fallback still applies.
                 Some(listing.title.as_str()),
-                &date,
+                // The disclosure day at midnight — a reconciliation event is dated
+                // by its evidence, not by when the sweep noticed it.
+                &format!("{date}T00:00:00Z"),
             )?;
         }
     }
@@ -645,7 +647,7 @@ mod tests {
             "espi_only raises one system attention event"
         );
         assert_eq!(events[0].trigger_type, "source_reconciliation");
-        assert_eq!(events[0].company_id, company_id);
+        assert_eq!(events[0].company_id.as_deref(), Some(company_id.as_str()));
         assert!(
             events[0].rule_id.is_none(),
             "system event has no owning rule"

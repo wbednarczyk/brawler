@@ -55,6 +55,38 @@ pub struct StructuredExtractionSummary {
     pub divergent_count: i64,
 }
 
+/// Named zero-effect reasons this summary can state (epic #40 S5). Machine
+/// tokens, never prose — the UI translates them.
+pub(crate) mod extraction_effect_reason {
+    /// The validation gate found a contradiction and refused to emit.
+    pub const FLAGGED: &str = "flagged";
+    /// No deterministic tier produced a tracked fact from this document.
+    pub const EMPTY: &str = "empty";
+    /// Every slot this run read was already recorded (re-observations) — the
+    /// honest "already recorded" answer, not a bare "no new values".
+    pub const ALREADY_RECORDED: &str = "already_recorded";
+}
+
+impl crate::effects_honesty::ExplainsEffect for StructuredExtractionSummary {
+    /// A structured extraction always has exactly one input (the report
+    /// document), so `had_inputs` is unconditionally true: this summary must
+    /// always be able to say why it produced nothing.
+    fn effect_verdict(&self) -> crate::effects_honesty::EffectVerdict {
+        use crate::effects_honesty::{first_named, verdict};
+        use extraction_effect_reason as reason;
+
+        let reason = first_named([
+            (reason::FLAGGED, self.acceptance == "flagged"),
+            (reason::EMPTY, self.acceptance == "empty"),
+            (
+                reason::ALREADY_RECORDED,
+                !self.skipped_fact_ids.is_empty() || self.divergent_count > 0,
+            ),
+        ]);
+        verdict(!self.produced_fact_ids.is_empty(), true, reason)
+    }
+}
+
 /// Normalizes the optional trust-ladder `mode` input (default `autopilot`;
 /// rejects anything other than `autopilot`/`assist`) — shared by both extraction
 /// entry points so they validate identically.
@@ -549,10 +581,96 @@ pub async fn rerun_extraction_outcome(
 
 #[cfg(test)]
 mod tests {
+    use crate::effects_honesty::{EffectVerdict, ExplainsEffect};
     use crate::storage::{open_in_memory_database, CaptureReportDocumentInput, NewCompany};
+
+    use super::{extraction_effect_reason as reason, StructuredExtractionSummary};
 
     /// This module's own source, for the structural offloading guard below.
     const SOURCE: &str = include_str!("fundamentals_extraction.rs");
+
+    /// A summary with nothing produced — the base each zero-effect state below
+    /// varies one field of.
+    fn zero_effect(acceptance: &str) -> StructuredExtractionSummary {
+        StructuredExtractionSummary {
+            acceptance: acceptance.to_owned(),
+            tier: Some("esef".to_owned()),
+            emitted: false,
+            produced_fact_ids: Vec::new(),
+            skipped_fact_ids: Vec::new(),
+            divergent_count: 0,
+        }
+    }
+
+    /// **Zero-effects invariant** (epic #40 S5, ADR 0091): a run over a real
+    /// report document that produced no fact must NAME why. Every zero-effect
+    /// state the pipeline can build is enumerated here; a new one that cannot
+    /// explain itself reddens.
+    #[test]
+    fn every_zero_effect_extraction_state_names_a_reason() {
+        // The gate refused to emit.
+        assert_eq!(
+            zero_effect("flagged").effect_verdict(),
+            EffectVerdict::NothingProduced {
+                reason: reason::FLAGGED
+            }
+        );
+        // No deterministic tier produced a tracked fact.
+        assert_eq!(
+            zero_effect("empty").effect_verdict(),
+            EffectVerdict::NothingProduced {
+                reason: reason::EMPTY
+            }
+        );
+        // A re-extraction of a landed period: nothing NEW, but every slot was
+        // re-observed — "already recorded", not a bare "no new values".
+        let mut reobserved = zero_effect("accepted");
+        reobserved.skipped_fact_ids = vec!["fact_1".to_owned()];
+        assert_eq!(
+            reobserved.effect_verdict(),
+            EffectVerdict::NothingProduced {
+                reason: reason::ALREADY_RECORDED
+            }
+        );
+        // A re-observation that DISAGREED still counts as an effect worth
+        // naming (the divergence is the finding).
+        let mut divergent = zero_effect("accepted_unreviewed");
+        divergent.divergent_count = 2;
+        assert_eq!(
+            divergent.effect_verdict(),
+            EffectVerdict::NothingProduced {
+                reason: reason::ALREADY_RECORDED
+            }
+        );
+        // A run that emitted facts has nothing to explain.
+        let mut produced = zero_effect("accepted");
+        produced.emitted = true;
+        produced.produced_fact_ids = vec!["fact_2".to_owned()];
+        assert_eq!(produced.effect_verdict(), EffectVerdict::Produced);
+    }
+
+    /// The one zero-effect state this shape CANNOT explain: an emitting
+    /// acceptance with neither a produced nor a re-observed fact. The pipeline
+    /// never builds it — `Acceptance::Empty` is chosen when no tier produced a
+    /// tracked fact, so `accepted*` implies facts existed — but the SHAPE
+    /// permits it, and a summary that permits a mute success is one refactor
+    /// away from shipping one.
+    ///
+    /// Closing it needs a field this contract type does not have (a typed
+    /// reason code beside `acceptance`, mirroring
+    /// `ExtractionOutcome.reason_code`) — an IPC contract change, out of scope
+    /// for S5. This test pins the gap so it stays visible and reddens the day
+    /// the shape gains a home for the reason.
+    #[test]
+    fn accepted_with_no_facts_at_all_is_the_one_unexplained_state() {
+        for acceptance in ["accepted", "accepted_via_witness", "accepted_unreviewed"] {
+            assert!(
+                zero_effect(acceptance).effect_verdict().is_unexplained(),
+                "if {acceptance} with no facts gained a named reason, delete this test and \
+                 fold the state into every_zero_effect_extraction_state_names_a_reason"
+            );
+        }
+    }
 
     /// Every extraction command reads a stored file, parses it, and writes to
     /// the database — meaningful blocking IO that must never run on the UI

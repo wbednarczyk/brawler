@@ -8,7 +8,7 @@
 use super::*;
 use crate::source_adapters::yahoo_eod::DailyQuote;
 use crate::storage::attention::{
-    TRIGGER_SIGNAL_CATEGORY, TRIGGER_SOURCE_RECONCILIATION, TRIGGER_TYPES,
+    TRIGGER_JOB_FAILED, TRIGGER_SIGNAL_CATEGORY, TRIGGER_SOURCE_RECONCILIATION, TRIGGER_TYPES,
 };
 use crate::storage::severity::{
     aged_attention_severity, classify_signal_category, severity_for_trigger, URGENT_AGING_THRESHOLD,
@@ -19,13 +19,14 @@ use crate::storage::severity::{
 #[test]
 fn every_trigger_type_is_classified() {
     // The full trigger inventory: the user-creatable triggers plus the system
-    // reconciliation trigger. `signal_category` is category-dependent (covered by
-    // `every_seeded_signal_category_is_classified`); every other trigger must have
-    // an explicit severity arm, so a NEW trigger reddens until it is classified.
+    // triggers (reconciliation, terminal job failure). `signal_category` is
+    // category-dependent (covered by `every_seeded_signal_category_is_classified`);
+    // every other trigger must have an explicit severity arm, so a NEW trigger
+    // reddens until it is classified.
     let triggers: Vec<&str> = TRIGGER_TYPES
         .iter()
         .copied()
-        .chain(std::iter::once(TRIGGER_SOURCE_RECONCILIATION))
+        .chain([TRIGGER_SOURCE_RECONCILIATION, TRIGGER_JOB_FAILED])
         .collect();
 
     let unclassified: Vec<&str> = triggers
@@ -139,6 +140,13 @@ fn non_signal_trigger_severities_match_the_taxonomy() {
     assert_eq!(
         severity_for_attention_event("autopilot_run_completed", None),
         Notable
+    );
+    // A terminally failed background job is Notable for EVERY kind (ADR 0091 dec. 1,
+    // owner decision): worth surfacing in the stream, never a persistent alarm.
+    assert_eq!(
+        severity_for_attention_event(TRIGGER_JOB_FAILED, None),
+        Notable,
+        "a terminal job failure is notable for every job kind"
     );
 }
 

@@ -102,6 +102,18 @@ export interface MockRuntime {
    */
   failNext(command: string, error: CommandError): void;
   /**
+   * Persistent counterpart of `failNext` (epic #40 S1, ADR 0091): while a chaos
+   * rule is installed for `command`, EVERY invocation of it settles with
+   * `error` (the same untouched ADR 0070 envelope) instead of running its
+   * handler — the "this read is broken for the whole session" state a
+   * one-shot queue cannot express. A queued `failNext` for the same command
+   * still wins (and is consumed) first. `clearChaos()` and `reset()` remove
+   * every rule.
+   */
+  chaos(command: string, error: CommandError): void;
+  /** Drop every persistent chaos rule; queued one-shot failures survive. */
+  clearChaos(): void;
+  /**
    * Controlled-async invocation control (ADR 0081 Q2, Radicle a9992e2):
    * hold/pending/release/reject around `invoke`. Wired ONCE here — never
    * inside individual handlers. See `controlledAsync.ts`.
@@ -1482,6 +1494,44 @@ function buildHandlers(): Record<string, Handler> {
         firstEvent ??= event;
       }
       return firstEvent ?? null;
+    },
+
+    // Corpus-only setup bridge (epic #40 S3, ADR 0091 dec. 1): a background job
+    // that exhausted its retries raises a SYSTEM `job_failed` event. There is no
+    // user command to mint one — the real backend hook lives at the queue's single
+    // terminal-failure point — so the bridge mirrors what that hook + the read
+    // model produce: the failed job's kind as the detail, and the handler's
+    // failure subject as the statement, falling back to the job's own error text.
+    record_job_failure: (d, a, ctx) => {
+      const input = unwrap(a);
+      const jobId = str(input.jobId) ?? "job_fidelity";
+      const kind = str(input.kind) ?? "history_sweep";
+      const companyId = str(input.companyId) ?? null;
+      const subject = str(input.subject) ?? null;
+      const error = str(input.error) ?? "corpus failure";
+      const existing = d.attentionEvents.find(
+        (e) => e.triggerType === "job_failed" && e.evidenceRef === jobId,
+      );
+      // Dedup on (trigger, evidence) exactly like the backend's system partial
+      // index: the same failed job never fires twice.
+      if (existing) return existing;
+      const event: ScenarioData["attentionEvents"][number] = {
+        id: ctx.nextId("attn"),
+        ruleId: null,
+        triggerType: "job_failed",
+        companyId,
+        evidenceType: "job",
+        evidenceRef: jobId,
+        firedAt: SAMPLE_NOW,
+        seen: false,
+        dismissed: false,
+        // Notable for every job kind (ADR 0091 dec. 1, owner decision).
+        severity: "notable",
+        evidenceTitle: subject ?? error,
+        evidenceDetail: kind,
+      };
+      d.attentionEvents = [...d.attentionEvents, event];
+      return event;
     },
 
     // --- Morning briefing (ADR 0068 decision 4, §T5) ---
@@ -3624,6 +3674,9 @@ export function createMockRuntime(
   let counter = 0;
   // Deliverable A seam (5be14c9): one-shot rejections queued per command name.
   const queuedFailures = new Map<string, CommandError[]>();
+  // Epic #40 S1 seam (ADR 0091): persistent rejections per command name. Same
+  // envelope, no consumption — the one-shot queue is checked first.
+  const chaosRules = new Map<string, CommandError>();
   const ctx: RuntimeContext = {
     nextId: (prefix) => {
       counter += 1;
@@ -3646,6 +3699,10 @@ export function createMockRuntime(
       if (queue.length === 0) queuedFailures.delete(command);
       return Promise.reject(error);
     }
+    const chaosRule = chaosRules.get(command);
+    if (chaosRule) {
+      return Promise.reject(chaosRule);
+    }
     const handler = HANDLERS[command];
     if (!handler) {
       return Promise.reject(new Error(`Unhandled mock command: ${command}`));
@@ -3665,6 +3722,14 @@ export function createMockRuntime(
     queuedFailures.set(command, queue);
   }
 
+  function chaos(command: string, error: CommandError): void {
+    chaosRules.set(command, error);
+  }
+
+  function clearChaos(): void {
+    chaosRules.clear();
+  }
+
   // Wired ONCE around the raw settlement layer (ADR 0081 Q2) — never inside
   // individual handlers. `runtime.invoke` below IS the controlled invoke.
   const controlledAsync = createControlledAsync(rawInvoke, failNext);
@@ -3678,6 +3743,8 @@ export function createMockRuntime(
     },
     scenario,
     failNext,
+    chaos,
+    clearChaos,
     invoke: controlledAsync.invoke,
     controls: controlledAsync.controls,
     reset(nextScenario) {
@@ -3688,6 +3755,7 @@ export function createMockRuntime(
       }
       counter = 0;
       queuedFailures.clear();
+      chaosRules.clear();
       controlledAsync.reset();
       ctx.irReportUrls.clear();
       ctx.companySectors.clear();

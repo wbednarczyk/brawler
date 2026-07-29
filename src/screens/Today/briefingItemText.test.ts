@@ -28,6 +28,7 @@ const dict: Record<string, string> = {
   "report diff vs the previous statement available":
     "różnica raportu względem poprzedniego dostępna",
   Signal: "Sygnał",
+  "Background task": "Zadanie w tle",
   "Due {period} {year}": "Termin: {period} {year}",
   succeeded: "ukończone",
   "Profit warning / estimate": "Ostrzeżenie o wynikach / szacunki",
@@ -55,6 +56,18 @@ describe("briefingItemText — the translation seam (ADR 0087 dec. 4)", () => {
     expect(out).toContain("Sygnał");
     expect(out).not.toContain("signal_category");
     expect(out).not.toContain("company_signal");
+  });
+
+  it("renders a job-failure briefing item as a label, never the raw trigger code", () => {
+    // Epic #40 S3: a company-scoped `job_failed` event reaches the briefing the
+    // same way every other attention event does — as a translated label.
+    const out = briefingItemText(
+      item({ itemType: "attention_event", title: "job_failed", detail: "job" }),
+      pl,
+      "pl",
+    );
+    expect(out).toBe("Zadanie w tle");
+    expect(out).not.toContain("job_failed");
   });
 
   it("passes a legacy English-prose autopilot title through verbatim (tolerant read)", () => {

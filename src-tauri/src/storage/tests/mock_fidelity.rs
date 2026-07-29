@@ -725,6 +725,41 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
                 .expect("list_attention_events");
             serde_json::to_value(events.into_iter().next()).unwrap()
         }
+        // Corpus-only setup bridge (epic #40 S3, ADR 0091 dec. 1): a background job
+        // that exhausted its retries raises a SYSTEM `job_failed` event. Drives the
+        // REAL queue store + the real `record_job_failure` write, so the read model
+        // resolves the job's kind + last_error exactly as it does in production
+        // (the mock runtime seeds an equivalent event in its handler).
+        "record_job_failure" => {
+            let job_id = inner["jobId"].as_str().expect("jobId");
+            let kind = inner["kind"].as_str().expect("kind");
+            let error = inner["error"].as_str().unwrap_or("corpus failure");
+            let jobs = state.jobs();
+            jobs.enqueue(job_id, kind, "{}", 1).expect("enqueue");
+            jobs.claim_next_for_kinds(&[kind]).expect("claim");
+            jobs.mark_failed(job_id, error, 0).expect("mark_failed");
+            state
+                .attention()
+                .record_job_failure(
+                    job_id,
+                    inner["companyId"].as_str(),
+                    inner["subject"].as_str(),
+                )
+                .expect("record_job_failure");
+            let events = state
+                .attention()
+                .list_attention_events(crate::storage::AttentionEventListInput {
+                    company_id: None,
+                    include_dismissed: true,
+                })
+                .expect("list_attention_events");
+            serde_json::to_value(
+                events
+                    .into_iter()
+                    .find(|event| event.evidence_ref == job_id),
+            )
+            .unwrap()
+        }
         // Morning briefing (ADR 0068 decision 4, §T5). `generate` enqueues an
         // async compose job (no synchronous result); `get_latest` returns the most
         // recent briefing or null. The replayer does not drain the worker, so no

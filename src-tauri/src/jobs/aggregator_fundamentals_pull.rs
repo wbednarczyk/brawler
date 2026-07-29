@@ -116,6 +116,43 @@ pub struct AggregatorPullSummary {
     pub mapping_suspects: Vec<String>,
 }
 
+/// Named zero-effect reasons an aggregator pull can state (epic #40 S5).
+pub(crate) mod aggregator_effect_reason {
+    /// No report page could be resolved (no coverage / fetch failed / no slug).
+    pub const PAGES_UNAVAILABLE: &str = "pages_unavailable";
+    /// A manual or issuer tier already owns every slot the pull could write.
+    pub const HIGHER_TIER_HOLDS_SLOT: &str = "higher_tier_holds_slot";
+    /// Every value the aggregator read was already its own stored value.
+    pub const ALREADY_RECORDED: &str = "already_recorded";
+    /// Every cell read was empty/zero — never a filed value (the zero rule).
+    pub const ZERO_CELLS: &str = "zero_cells";
+    /// The metric cells read have no catalog KPI definition.
+    pub const NO_KPI_DEFINITION: &str = "no_kpi_definition";
+}
+
+impl crate::effects_honesty::ExplainsEffect for AggregatorPullSummary {
+    fn effect_verdict(&self) -> crate::effects_honesty::EffectVerdict {
+        use crate::effects_honesty::{first_named, verdict};
+        use aggregator_effect_reason as reason;
+
+        // A recorded reversed-witnessing disagreement IS an effect: the run
+        // wrote no fact but persisted a finding against an issuer-held slot.
+        let produced =
+            self.facts_written > 0 || self.facts_updated > 0 || self.witness_disagreements > 0;
+        let reason = first_named([
+            (reason::PAGES_UNAVAILABLE, self.pages_unavailable > 0),
+            (
+                reason::HIGHER_TIER_HOLDS_SLOT,
+                self.slots_skipped_higher_tier > 0,
+            ),
+            (reason::ALREADY_RECORDED, self.facts_reobserved > 0),
+            (reason::ZERO_CELLS, self.zero_cells_skipped > 0),
+            (reason::NO_KPI_DEFINITION, self.no_definition > 0),
+        ]);
+        verdict(produced, self.companies > 0, reason)
+    }
+}
+
 /// G3 threshold: the same metric disagreeing at this many distinct companies in
 /// one pull run flags a `mapping_suspect` (logged + diagnostic + summary), while
 /// scattered per-company disagreements stay informational.

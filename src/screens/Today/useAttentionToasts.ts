@@ -62,7 +62,12 @@ export function useAttentionToasts({
       if (toastedAttentionEventIds.has(event.id)) continue;
       toastedAttentionEventIds.add(event.id);
       const rule = event.ruleId ? attentionRulesById.get(event.ruleId) : undefined;
-      const ticker = companyById.get(event.companyId)?.qualifiedTicker ?? event.companyId;
+      // A company-less system event (a failed workspace-wide job, ADR 0091 dec. 2)
+      // announces itself under the system scope rather than a blank ticker.
+      const ticker =
+        (event.companyId ? companyById.get(event.companyId)?.qualifiedTicker : null) ??
+        event.companyId ??
+        text("System");
       const detail = attentionEventTitleText(event, rule, text);
       if (event.severity === "urgent") {
         // Urgent: a persistent pointer to the top of the stream, synced to the row.

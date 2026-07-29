@@ -1004,6 +1004,29 @@ export const plText: Record<string, string> = {
   "{title} — missed by the primary source, backfilled from {source}":
     "{title} — pominięty przez źródło główne, dociągnięty z {source}",
   "the official registry": "oficjalnego rejestru",
+  // Epic #40 S3 (ADR 0091 dec. 1) — a background task that exhausted its retries
+  // states itself in the Today stream: WHICH task, and what it failed on (its
+  // subject snapshot, else the queue's own error text).
+  "Background task": "Zadanie w tle",
+  // The scope label for an event that belongs to the whole workspace, not a company.
+  "System": "System",
+  "A background task failed": "Zadanie w tle nie powiodło się",
+  "{task} failed": "{task}: niepowodzenie",
+  "{task} failed — {detail}": "{task}: niepowodzenie — {detail}",
+  // Job-kind display names (`formatJobKindDisplayName`) — resolved through the
+  // same `text()` lookup, so the Polish UI names the task, never an enum token.
+  // ("Morning briefing" is already translated above, with the briefing strip.)
+  "Report history sweep": "Przegląd historii raportów",
+  "Shareholder extraction": "Ekstrakcja akcjonariatu",
+  "Management holdings extraction": "Ekstrakcja udziałów zarządu",
+  "Price history backfill": "Uzupełnianie historii cen",
+  "Report history backfill": "Uzupełnianie historii raportów",
+  "Fundamentals pull": "Pobranie danych fundamentalnych",
+  "Autopilot stage": "Etap autopilota",
+  "Source refresh": "Odświeżanie źródła",
+  "Company source refresh": "Odświeżanie źródła spółki",
+  "Company registry refresh": "Odświeżanie rejestru spółek",
+  "Exchange-rate pull": "Pobranie kursów walut",
   "Succeeded": "Powodzenie",
   "Pending": "Oczekuje",
   "Finished": "Zakończony",

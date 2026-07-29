@@ -113,6 +113,157 @@ fn migration_0114_adds_evidence_title_column_tolerant_of_legacy_rows() {
 }
 
 #[test]
+fn migration_0118_makes_attention_events_company_nullable_and_preserves_rows() {
+    // Epic #40 S3 / ADR 0091 dec. 2: 0118 REBUILDS `attention_events` so a system
+    // event with no company scope (a terminally failed workspace-wide job) can be
+    // stored. Guards the whole rebuild class (data-model.md): pre-existing rows —
+    // rule-owned and system — survive with every column intact, the schema
+    // constraints (system dedup, rule-scoped UNIQUE, cascade) still hold, and the
+    // NULL company insert that the pre-0118 schema REJECTED now succeeds.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 117).expect("apply schema up to pre-0118");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO alert_rules (id, trigger_type, signal_category, scope_type, scope_ref)
+             VALUES ('rule1', 'signal_category', 'profit_warning', 'company', 'c1')",
+            [],
+        )
+        .expect("seed alert rule");
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at,
+                 seen, dismissed, evidence_title)
+             VALUES ('evt_rule', 'rule1', 'signal_category', 'c1', 'company_signal', 'sig1',
+                     '2026-07-20T09:00:00Z', 1, 0, 'Raport bieżący 12/2026')",
+            [],
+        )
+        .expect("seed a rule-owned event");
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('evt_sys', NULL, 'source_reconciliation', 'c1', 'source_reconciliation',
+                     'recon1', '2026-07-21T00:00:00Z')",
+            [],
+        )
+        .expect("seed a system event");
+
+    // The pre-0118 schema refuses a company-less event — the exact constraint the
+    // rebuild exists to drop.
+    let before = connection.execute(
+        "INSERT INTO attention_events
+            (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+         VALUES ('evt_job_early', NULL, 'job_failed', NULL, 'job', 'job1', '2026-07-22T10:00:00Z')",
+        [],
+    );
+    assert!(
+        before.is_err(),
+        "pre-0118 `company_id` is NOT NULL — a system-scoped event cannot be stored"
+    );
+
+    apply_migrations(&mut connection).expect("upgrade to latest");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "upgrade should reach the latest migration",
+    );
+
+    // 1. Every pre-existing row survived the rebuild with its columns intact.
+    let (rule_id, trigger, company, evidence_title, seen): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        i64,
+    ) = connection
+        .query_row(
+            "SELECT rule_id, trigger_type, company_id, evidence_title, seen
+             FROM attention_events WHERE id = 'evt_rule'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .expect("the rule-owned event survived");
+    assert_eq!(rule_id.as_deref(), Some("rule1"));
+    assert_eq!(trigger.as_deref(), Some("signal_category"));
+    assert_eq!(company.as_deref(), Some("c1"));
+    assert_eq!(
+        evidence_title.as_deref(),
+        Some("Raport bieżący 12/2026"),
+        "the 0114 title snapshot is carried through the rebuild"
+    );
+    assert_eq!(seen, 1, "seen/dismissed flags survive");
+    assert_eq!(
+        count_rows(&connection, "attention_events").expect("count events"),
+        2,
+        "both pre-existing events survived, nothing was duplicated"
+    );
+
+    // 2. A company-less system event now stores.
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('evt_job', NULL, 'job_failed', NULL, 'job', 'job1', '2026-07-22T10:00:00Z')",
+            [],
+        )
+        .expect("a system-scoped event with no company is storable after 0118");
+
+    // 3. The system dedup index came back with the table: the same
+    //    (trigger, evidence_type, evidence_ref) cannot fire twice.
+    let duplicate = connection.execute(
+        "INSERT INTO attention_events
+            (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+         VALUES ('evt_job_dup', NULL, 'job_failed', NULL, 'job', 'job1', '2026-07-22T11:00:00Z')",
+        [],
+    );
+    assert!(
+        duplicate.is_err(),
+        "the system dedup partial index survives the rebuild"
+    );
+
+    // 4. The company cascade still works — deleting the company clears its events
+    //    while the company-less system event stays.
+    connection
+        .execute("PRAGMA foreign_keys = ON", [])
+        .expect("enable FK enforcement");
+    connection
+        .execute("DELETE FROM companies WHERE id = 'c1'", [])
+        .expect("delete the company");
+    let remaining: Vec<String> = {
+        let mut statement = connection
+            .prepare("SELECT id FROM attention_events ORDER BY id")
+            .expect("prepare");
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect");
+        rows
+    };
+    assert_eq!(
+        remaining,
+        vec!["evt_job".to_owned()],
+        "company-scoped events cascade with their company; the system event survives"
+    );
+}
+
+#[test]
 fn upgrades_committed_v1_snapshot_to_latest() {
     // A REAL historical-schema snapshot captured at migration v1 (see
     // corpus/legacy_v1.sqlite, generated with sqlite3 from 0001_initial.sql +

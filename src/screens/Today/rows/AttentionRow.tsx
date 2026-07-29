@@ -17,7 +17,10 @@ import { StreamRow, type RowDescriptor } from "./streamRowKit";
  */
 export function openAttentionEvidence(event: AttentionEvent, ctx: RowContext) {
   ctx.attention.markAttentionEventSeenRow(event.id);
-  const company = ctx.companyById.get(event.companyId);
+  // A system event may carry NO company at all (a workspace-wide background job
+  // that failed, ADR 0091 dec. 2) — there is no company workspace to open, so it
+  // resolves like an out-of-registry evidence company: the Inbox.
+  const company = event.companyId ? ctx.companyById.get(event.companyId) : undefined;
   if (!company) {
     ctx.openInbox();
     return;
@@ -49,7 +52,7 @@ export function attentionDescriptor(
   options?: { readOnly?: boolean },
 ): RowDescriptor {
   const rule = event.ruleId ? ctx.attention.attentionRulesById.get(event.ruleId) : undefined;
-  const company = ctx.companyById.get(event.companyId);
+  const company = event.companyId ? ctx.companyById.get(event.companyId) : undefined;
   // A report-document evidence title may be a filename glued onto the human title
   // (owner dogfooding 2026-07-23). Split it: the human statement flows into the
   // composed sentence; the filename moves to a quiet secondary link line. A

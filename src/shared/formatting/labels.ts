@@ -30,6 +30,31 @@ export function formatSignalCategoryDisplayName(category: string) {
   return labels[category] ?? formatEnumLabel(category);
 }
 
+// Background-job kind → the human name of the work it does (epic #40 S3, ADR
+// 0091 dec. 1). The backend ships the RAW `job_queue.kind` on a `job_failed`
+// attention event (ADR 0087 dec. 4 — it never composes prose); this is the ONE
+// place that turns it into a user-facing name, so the stream can say WHICH task
+// failed instead of leaking an enum token. An unknown/new kind degrades to its
+// prettified token rather than disappearing.
+export function formatJobKindDisplayName(kind: string) {
+  const labels: Record<string, string> = {
+    morning_briefing: "Morning briefing",
+    history_sweep: "Report history sweep",
+    ownership_extraction: "Shareholder extraction",
+    management_holdings_extraction: "Management holdings extraction",
+    quote_backfill: "Price history backfill",
+    company_backfill: "Report history backfill",
+    aggregator_fundamentals_pull: "Fundamentals pull",
+    autopilot_stage: "Autopilot stage",
+    scheduled_source_refresh: "Source refresh",
+    source_company_refresh: "Company source refresh",
+    scheduled_registry_refresh: "Company registry refresh",
+    fx_daily_pull: "Exchange-rate pull",
+  };
+
+  return labels[kind] ?? formatEnumLabel(kind);
+}
+
 export function formatEnumLabel(value: string) {
   return value
     .split("_")

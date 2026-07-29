@@ -1,0 +1,372 @@
+{
+  "$comment": "ANONYMIZED SHAPE DESCRIPTORS ONLY (ADR 0091 dec. 4, epic #40 S6). Which data-state shapes the maintainer's real database exhibits — never titles, tickers, names, ids, dates or any row content. Regenerate with `make shape-inventory-scan`; the coverage gate over the synthetic corpus lives in src-tauri/src/storage/tests/shape_corpus.rs.",
+  "domains": [
+    "attention",
+    "company",
+    "extraction",
+    "health",
+    "source"
+  ],
+  "shapes": [
+    {
+      "description": "attention event in this lifecycle/origin state",
+      "domain": "attention",
+      "key": "attention-dismissed"
+    },
+    {
+      "description": "attention event carrying this evidence type",
+      "domain": "attention",
+      "key": "attention-evidence-autopilot-run"
+    },
+    {
+      "description": "attention event carrying this evidence type",
+      "domain": "attention",
+      "key": "attention-evidence-company-signal"
+    },
+    {
+      "description": "attention event with/without a secondary evidence datum",
+      "domain": "attention",
+      "key": "attention-evidence-detail-absent"
+    },
+    {
+      "description": "attention event with/without a secondary evidence datum",
+      "domain": "attention",
+      "key": "attention-evidence-detail-present"
+    },
+    {
+      "description": "attention event whose joined evidence does/does not resolve",
+      "domain": "attention",
+      "key": "attention-evidence-orphaned"
+    },
+    {
+      "description": "attention event whose joined evidence does/does not resolve",
+      "domain": "attention",
+      "key": "attention-evidence-resolved"
+    },
+    {
+      "description": "attention event carrying this evidence type",
+      "domain": "attention",
+      "key": "attention-evidence-source-reconciliation"
+    },
+    {
+      "description": "attention event in this lifecycle/origin state",
+      "domain": "attention",
+      "key": "attention-from-user-rule"
+    },
+    {
+      "description": "attention event at this scope",
+      "domain": "attention",
+      "key": "attention-scope-company"
+    },
+    {
+      "description": "attention event in this lifecycle/origin state",
+      "domain": "attention",
+      "key": "attention-seen-not-dismissed"
+    },
+    {
+      "description": "attention event at this computed severity",
+      "domain": "attention",
+      "key": "attention-severity-notable"
+    },
+    {
+      "description": "attention event at this computed severity",
+      "domain": "attention",
+      "key": "attention-severity-urgent"
+    },
+    {
+      "description": "attention row rendering in this form",
+      "domain": "attention",
+      "key": "attention-statement-concrete"
+    },
+    {
+      "description": "attention row rendering in this form",
+      "domain": "attention",
+      "key": "attention-statement-generic-fallback"
+    },
+    {
+      "description": "attention event in this lifecycle/origin state",
+      "domain": "attention",
+      "key": "attention-system-raised"
+    },
+    {
+      "description": "attention event evidence title in this form",
+      "domain": "attention",
+      "key": "attention-title-absent"
+    },
+    {
+      "description": "attention event evidence title in this form",
+      "domain": "attention",
+      "key": "attention-title-filename-prefixed"
+    },
+    {
+      "description": "attention event evidence title in this form",
+      "domain": "attention",
+      "key": "attention-title-plain-prose"
+    },
+    {
+      "description": "attention event fired by this trigger type",
+      "domain": "attention",
+      "key": "attention-trigger-autopilot-run-completed"
+    },
+    {
+      "description": "attention event fired by this trigger type",
+      "domain": "attention",
+      "key": "attention-trigger-signal-category"
+    },
+    {
+      "description": "attention event fired by this trigger type",
+      "domain": "attention",
+      "key": "attention-trigger-source-reconciliation"
+    },
+    {
+      "description": "attention event in this lifecycle/origin state",
+      "domain": "attention",
+      "key": "attention-unseen"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-with-attention-events"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-with-extraction-outcomes"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-with-financial-facts"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-with-financial-periods"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-with-report-documents"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-without-attention-events"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-without-extraction-outcomes"
+    },
+    {
+      "description": "company with this document/fact/event coverage",
+      "domain": "company",
+      "key": "company-without-report-documents"
+    },
+    {
+      "description": "extraction outcome recorded with this acceptance",
+      "domain": "extraction",
+      "key": "extraction-acceptance-accepted"
+    },
+    {
+      "description": "extraction outcome recorded with this acceptance",
+      "domain": "extraction",
+      "key": "extraction-acceptance-accepted-unreviewed"
+    },
+    {
+      "description": "extraction outcome recorded with this acceptance",
+      "domain": "extraction",
+      "key": "extraction-acceptance-empty"
+    },
+    {
+      "description": "extraction outcome recorded with this acceptance",
+      "domain": "extraction",
+      "key": "extraction-acceptance-flagged"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-detail-present"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-drift-report-present"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-facts-recorded"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-facts-zero-not-accepted"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-first-attempt"
+    },
+    {
+      "description": "extraction outcome with this typed reason code",
+      "domain": "extraction",
+      "key": "extraction-reason-emitted"
+    },
+    {
+      "description": "extraction outcome with this typed reason code",
+      "domain": "extraction",
+      "key": "extraction-reason-no-deterministic-tier"
+    },
+    {
+      "description": "extraction outcome with this typed reason code",
+      "domain": "extraction",
+      "key": "extraction-reason-structure-drift"
+    },
+    {
+      "description": "extraction outcome with this typed reason code",
+      "domain": "extraction",
+      "key": "extraction-reason-validation-failed"
+    },
+    {
+      "description": "extraction outcome with this typed reason code",
+      "domain": "extraction",
+      "key": "extraction-reason-witness-disagreement"
+    },
+    {
+      "description": "extraction outcome with this typed reason code",
+      "domain": "extraction",
+      "key": "extraction-reason-witness-fallback"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-retried"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-structure-changed"
+    },
+    {
+      "description": "extraction outcome produced by this tier",
+      "domain": "extraction",
+      "key": "extraction-tier-absent"
+    },
+    {
+      "description": "extraction outcome produced by this tier",
+      "domain": "extraction",
+      "key": "extraction-tier-esef"
+    },
+    {
+      "description": "extraction outcome produced by this tier",
+      "domain": "extraction",
+      "key": "extraction-tier-html-aggregator"
+    },
+    {
+      "description": "extraction outcome produced by this tier",
+      "domain": "extraction",
+      "key": "extraction-tier-pdf"
+    },
+    {
+      "description": "extraction outcome in this effect/attempt state",
+      "domain": "extraction",
+      "key": "extraction-zero-facts-claiming-emission"
+    },
+    {
+      "description": "health period score in this state",
+      "domain": "health",
+      "key": "health-altman-headline"
+    },
+    {
+      "description": "health period score in this state",
+      "domain": "health",
+      "key": "health-altman-insufficient-named"
+    },
+    {
+      "description": "health period score in this state",
+      "domain": "health",
+      "key": "health-altman-not-applicable-reasoned"
+    },
+    {
+      "description": "health read model with this period coverage",
+      "domain": "health",
+      "key": "health-history-multi-period"
+    },
+    {
+      "description": "health read model with this period coverage",
+      "domain": "health",
+      "key": "health-latest-period-present"
+    },
+    {
+      "description": "health period score in this state",
+      "domain": "health",
+      "key": "health-piotroski-insufficient-named"
+    },
+    {
+      "description": "health period score in this state",
+      "domain": "health",
+      "key": "health-piotroski-not-applicable-reasoned"
+    },
+    {
+      "description": "health read model for a company of this statement type",
+      "domain": "health",
+      "key": "health-statement-type-banking"
+    },
+    {
+      "description": "health read model for a company of this statement type",
+      "domain": "health",
+      "key": "health-statement-type-industrial"
+    },
+    {
+      "description": "health read model for a company of this statement type",
+      "domain": "health",
+      "key": "health-statement-type-insurance"
+    },
+    {
+      "description": "health read model for a company of this statement type",
+      "domain": "health",
+      "key": "health-statement-type-specialty-finance"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-enabled"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-fetched-successfully-before"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-health-attention"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-health-healthy"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-last-error-absent"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-last-error-present"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-role-primary"
+    },
+    {
+      "description": "source adapter in this health/liveness state",
+      "domain": "source",
+      "key": "source-role-witness"
+    }
+  ]
+}

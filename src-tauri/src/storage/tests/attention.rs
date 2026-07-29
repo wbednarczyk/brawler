@@ -123,7 +123,7 @@ fn signal_category_rule_fires_on_matching_confirmed_signal() {
     assert_eq!(events.len(), 1, "matching signal fires one attention event");
     assert_eq!(events[0].trigger_type, "signal_category");
     assert_eq!(events[0].evidence_type, "company_signal");
-    assert_eq!(events[0].company_id, company.id);
+    assert_eq!(events[0].company_id.as_deref(), Some(company.id.as_str()));
     assert!(!events[0].dismissed);
 }
 
@@ -852,6 +852,108 @@ fn list_attention_events_carries_autopilot_run_document_title_and_status() {
         events[0].evidence_detail.as_deref(),
         Some("succeeded"),
         "an autopilot event carries the run's raw status for the frontend to translate"
+    );
+}
+
+#[test]
+fn list_attention_events_resolves_a_failed_jobs_kind_and_error() {
+    // Epic #40 S3 / ADR 0091 dec. 1: a `job_failed` event's evidence_ref is the
+    // `job_queue.id`, and the guarded LEFT JOIN resolves the job row so the stream
+    // can state WHICH job failed and HOW. Raw source data only (ADR 0087 dec. 4):
+    // the kind is the enum token the frontend translates, the failure text is the
+    // queue's own `last_error`.
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO job_queue (id, kind, payload, status, attempts, max_attempts, last_error)
+             VALUES ('job1', 'quote_backfill', '{\"companyId\":\"c1\"}', 'failed', 3, 3,
+                     'HTTP 503 from query1.finance.yahoo.com')",
+            [],
+        )
+        .expect("seed terminally failed job");
+    let fired_at = fresh_fired_at();
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES ('attn_job', NULL, 'job_failed', 'c1', 'job', 'job1', ?1)",
+            [&fired_at],
+        )
+        .expect("seed job-failure event");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].severity,
+        AttentionSeverity::Notable,
+        "a terminal job failure is notable"
+    );
+    assert_eq!(
+        events[0].evidence_title.as_deref(),
+        Some("HTTP 503 from query1.finance.yahoo.com"),
+        "with no fire-time subject, the job's own last_error is the statement"
+    );
+    assert_eq!(
+        events[0].evidence_detail.as_deref(),
+        Some("quote_backfill"),
+        "the raw job kind travels as the detail for the frontend to translate"
+    );
+}
+
+#[test]
+fn list_attention_events_prefers_the_failure_subject_over_the_raw_error() {
+    // The fire-time subject snapshot (`JobHandler::failure_subject`) is the better
+    // statement when the job had one — a document title / ticker beats a transport
+    // error string. The error stays reachable through the job row itself.
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO job_queue (id, kind, payload, status, attempts, max_attempts, last_error)
+             VALUES ('job2', 'ownership_extraction', '{}', 'failed', 3, 3, 'pdf parse failed')",
+            [],
+        )
+        .expect("seed job");
+    let fired_at = fresh_fired_at();
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at,
+                 evidence_title)
+             VALUES ('attn_job2', NULL, 'job_failed', NULL, 'job', 'job2', ?1,
+                     'Skonsolidowany raport kwartalny Q2 2026')",
+            [&fired_at],
+        )
+        .expect("seed job-failure event with a subject");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].company_id, None,
+        "a system-scoped job failure carries no company (migration 0118)"
+    );
+    assert_eq!(
+        events[0].evidence_title.as_deref(),
+        Some("Skonsolidowany raport kwartalny Q2 2026"),
+        "the fire-time subject wins over the raw error"
+    );
+    assert_eq!(
+        events[0].evidence_detail.as_deref(),
+        Some("ownership_extraction")
     );
 }
 

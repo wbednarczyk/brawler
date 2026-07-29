@@ -93,7 +93,7 @@ pub use analyst_recommendations::{
 };
 pub use attention::{
     AlertRule, AlertRuleUpdate, AttentionEvent, AttentionEventListInput, AttentionStore,
-    NewAlertRule,
+    NewAlertRule, EVIDENCE_JOB, TRIGGER_JOB_FAILED,
 };
 pub use autopilot::{
     is_valid_mode as is_valid_autopilot_mode, AutopilotRun, AutopilotStore, CompanyAutopilot,
