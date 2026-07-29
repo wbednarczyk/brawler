@@ -82,10 +82,13 @@
           shellHook = ''
             export RUST_BACKTRACE=1
             export LD_LIBRARY_PATH="${linuxLibraryPath}:''${LD_LIBRARY_PATH:-}"
-            echo "Brawler dev shell"
-            echo "  npm install       # after scaffold dependency changes"
-            echo "  npm run dev       # start Tauri dev app"
-            echo "  npm run check     # run local frontend/Rust checks when dependencies are installed"
+            # Greeting goes to STDERR: `nix develop -c cmd > file` captures
+            # stdout, and the greeting polluted every such capture (the
+            # v0.61.6/v0.61.7 release notes shipped this banner as their body).
+            echo "Brawler dev shell" >&2
+            echo "  npm install       # after scaffold dependency changes" >&2
+            echo "  npm run dev       # start Tauri dev app" >&2
+            echo "  npm run check     # run local frontend/Rust checks when dependencies are installed" >&2
           '';
         };
 
@@ -108,8 +111,8 @@
             export RUST_BACKTRACE=1
             export XWIN_CACHE_DIR="$PWD/.xwin-cache"
             export PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v -x "$HOME/.local/bin" | grep -v -x "$HOME/.cargo/bin" | paste -sd: -)"
-            echo "Brawler Windows-from-Linux packaging shell"
-            echo "  npm run tauri -- build --runner cargo-xwin --target x86_64-pc-windows-msvc"
+            echo "Brawler Windows-from-Linux packaging shell" >&2
+            echo "  npm run tauri -- build --runner cargo-xwin --target x86_64-pc-windows-msvc" >&2
           '';
         };
       });
