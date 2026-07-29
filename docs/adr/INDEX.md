@@ -90,3 +90,4 @@
 - [0088](0088-mcp-surface-v2-ui-parity.md) — MCP surface v2 — UI-parity tool registry, capability tiers, provenance-mandatory writes — Accepted (2026-07-22, owner sign-off at v0.60 planning)
 - [0089](0089-cross-company-comparison-and-valuation-l1.md) — Cross-company comparison + comparative valuation level 1 — Accepted (2026-07-27, owner sign-off at v0.61 planning
 - [0090](0090-github-canonical-forge-and-continuous-release.md) — GitHub as the Canonical Forge for Everything; Radicle as the Second Path; Continuous Release — Accepted (2026-07-27, owner sign-off at CI/forge-migration planning; amended 202
+- [0091](0091-failure-path-and-real-state-testing.md) — Failure-Path & Real-State Test Layer — chaos seam, job-failure visibility, honesty harness — Accepted (2026-07-29, owner sign-off at epic #40 planning
