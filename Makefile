@@ -647,7 +647,15 @@ live-smoke:
 	  if curl -fsS "http://localhost:$(LIVE_CDP_PORT)/json/version" >/dev/null 2>&1; then up=1; break; fi; \
 	  sleep 2; \
 	done; \
-	if [ -z "$$up" ]; then printf "live-smoke: CDP endpoint never came up — the exe did not boot.\n" >&2; exit 1; fi; \
+	if [ -z "$$up" ]; then \
+	  printf "live-smoke: CDP endpoint never came up — the exe did not boot. Diagnostics:\n" >&2; \
+	  powershell.exe -NoProfile -Command "Get-Process brawler* -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,StartTime" >&2 || true; \
+	  printf "WebView2 runtime version (empty = runtime absent):\n" >&2; \
+	  powershell.exe -NoProfile -Command "(Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv" >&2 || true; \
+	  EXE_DIR="$$(dirname "$(EXE)")"; \
+	  for f in "$$EXE_DIR"/data/logs/*; do [ -f "$$f" ] && { printf -- "--- %s (tail)\n" "$$f" >&2; tail -60 "$$f" >&2; }; done || true; \
+	  exit 1; \
+	fi; \
 	BRAWLER_CDP_URL="http://localhost:$(LIVE_CDP_PORT)" $$RUN npx playwright test --config playwright.live.config.ts tests/live/boot-smoke.live.spec.ts
 
 flake-check:
