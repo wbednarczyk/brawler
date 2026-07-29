@@ -50,6 +50,11 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # every = a file counts as code only when it matches ALL patterns
+          # (matches '**' AND is not docs/wiki/markdown). The default 'some'
+          # OR-s the list, so '**' alone made EVERY changeset "code" and the
+          # docs-only fast path never fired (found live on PR #233, 2026-07-29).
+          predicate-quantifier: 'every'
           filters: |
             code:
               - '**'
@@ -339,6 +344,8 @@ jobs:
         if: always()
         with:
           name: boot-smoke-screenshots
-          path: test-results/live/
+          path: |
+            test-results/live/
+            windows-out/data/logs/
           retention-days: 3
           if-no-files-found: ignore
