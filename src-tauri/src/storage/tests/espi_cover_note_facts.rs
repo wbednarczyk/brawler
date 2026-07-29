@@ -609,3 +609,172 @@ fn also_derives_the_qsr_form_the_derivation_used_to_miss() {
         "a QSr title now derives Q1 2026 and the cover note is read"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Zero-effects invariant (epic #40 S5, ADR 0091)
+// ---------------------------------------------------------------------------
+
+/// An ingest sweep that attempted periodic-report items and persisted no fact
+/// must NAME why. Every non-emitting path inside `extract_one` lands on one of
+/// these counters; a new path without one falls through to `Unexplained`.
+#[test]
+fn every_zero_effect_cover_note_state_names_a_reason() {
+    use crate::effects_honesty::{EffectVerdict, ExplainsEffect};
+    use crate::storage::espi_cover_note_facts::{
+        cover_note_effect_reason as reason, CoverNoteExtractionSummary,
+    };
+
+    let with = |mutate: fn(&mut CoverNoteExtractionSummary)| {
+        let mut summary = CoverNoteExtractionSummary {
+            attempted: 5,
+            ..CoverNoteExtractionSummary::default()
+        };
+        mutate(&mut summary);
+        summary.effect_verdict()
+    };
+
+    assert_eq!(
+        with(|s| s.no_period = 5),
+        EffectVerdict::NothingProduced {
+            reason: reason::NO_PERIOD
+        }
+    );
+    assert_eq!(
+        with(|s| s.empty = 5),
+        EffectVerdict::NothingProduced {
+            reason: reason::NO_TABLE
+        }
+    );
+    assert_eq!(
+        with(|s| s.flagged = 5),
+        EffectVerdict::NothingProduced {
+            reason: reason::FLAGGED
+        }
+    );
+    assert_eq!(
+        with(|s| s.deferred = 5),
+        EffectVerdict::NothingProduced {
+            reason: reason::HIGHER_TIER_HOLDS_SLOT
+        }
+    );
+    assert_eq!(
+        with(|s| s.abstained = 5),
+        EffectVerdict::NothingProduced {
+            reason: reason::ABSTAINED
+        }
+    );
+    assert_eq!(
+        with(|s| s.errors = 5),
+        EffectVerdict::NothingProduced {
+            reason: reason::ITEM_ERRORS
+        }
+    );
+    assert_eq!(with(|s| s.created = 1), EffectVerdict::Produced);
+    assert_eq!(with(|s| s.upgraded = 1), EffectVerdict::Produced);
+    assert_eq!(
+        CoverNoteExtractionSummary::default().effect_verdict(),
+        EffectVerdict::NoInputs
+    );
+}
+
+/// The re-scan verdict must be able to say why too. It used to reduce every
+/// inner outcome to `carriers_scanned` / `facts_written` / `errors`, so a
+/// rebuild that re-read hundreds of stored komunikaty and wrote nothing
+/// reported a bare zero — the zero-effect-success class (epic #40 S5).
+#[test]
+fn every_zero_effect_cover_note_rescan_state_names_a_reason() {
+    use crate::effects_honesty::{EffectVerdict, ExplainsEffect};
+    use crate::storage::espi_cover_note_facts::{
+        cover_note_effect_reason as reason, CoverNoteRescanSummary,
+    };
+
+    let with = |mutate: fn(&mut CoverNoteRescanSummary)| {
+        let mut summary = CoverNoteRescanSummary {
+            carriers_scanned: 450,
+            ..CoverNoteRescanSummary::default()
+        };
+        mutate(&mut summary);
+        summary.effect_verdict()
+    };
+
+    assert_eq!(
+        with(|s| s.no_period = 450),
+        EffectVerdict::NothingProduced {
+            reason: reason::NO_PERIOD
+        }
+    );
+    assert_eq!(
+        with(|s| s.no_table = 450),
+        EffectVerdict::NothingProduced {
+            reason: reason::NO_TABLE
+        }
+    );
+    assert_eq!(
+        with(|s| s.flagged = 450),
+        EffectVerdict::NothingProduced {
+            reason: reason::FLAGGED
+        }
+    );
+    assert_eq!(
+        with(|s| s.deferred = 450),
+        EffectVerdict::NothingProduced {
+            reason: reason::HIGHER_TIER_HOLDS_SLOT
+        }
+    );
+    assert_eq!(
+        with(|s| s.abstained = 450),
+        EffectVerdict::NothingProduced {
+            reason: reason::ABSTAINED
+        }
+    );
+    // Bodies pruned by the feed: nothing scanned, but the reason is stated.
+    assert_eq!(
+        CoverNoteRescanSummary {
+            skipped_no_body: 448,
+            ..CoverNoteRescanSummary::default()
+        }
+        .effect_verdict(),
+        EffectVerdict::NothingProduced {
+            reason: reason::BODY_PRUNED
+        }
+    );
+    assert_eq!(with(|s| s.facts_written = 1), EffectVerdict::Produced);
+    assert_eq!(
+        CoverNoteRescanSummary::default().effect_verdict(),
+        EffectVerdict::NoInputs
+    );
+}
+
+/// The re-scan must CARRY the inner per-item reasons, not just count carriers:
+/// re-scanning a stored komunikat whose body has no cover table has to surface
+/// `no_table`, otherwise the verdict above has nothing to read (epic #40 S5).
+#[test]
+fn rescan_carries_the_per_item_reason_out_of_the_inner_sweep() {
+    use crate::effects_honesty::{EffectVerdict, ExplainsEffect};
+    use crate::storage::espi_cover_note_facts::cover_note_effect_reason as reason;
+
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = company(&state, "ZZZNT");
+    // A periodic-report komunikat whose body carries prose but no cover table.
+    state
+        .ingest_bankier_company_items(&[q1_item(&company, "9100090", NO_TABLE_BODY)])
+        .expect("ingest");
+
+    let summary = state.rescan_stored_cover_note_facts().expect("rescan");
+
+    assert_eq!(
+        summary.facts_written, 0,
+        "no table -> no facts: {summary:?}"
+    );
+    assert!(
+        summary.no_table > 0,
+        "the re-scan must carry the inner `empty` (no parseable cover table) \
+         reason out, otherwise a zero-fact rebuild cannot say why: {summary:?}"
+    );
+    assert_eq!(
+        summary.effect_verdict(),
+        EffectVerdict::NothingProduced {
+            reason: reason::NO_TABLE
+        }
+    );
+}

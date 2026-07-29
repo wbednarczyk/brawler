@@ -87,6 +87,47 @@ pub struct RebuildFundamentalsSummary {
     pub errors: Vec<String>,
 }
 
+/// Named zero-effect reasons a full rebuild can state (epic #40 S5).
+pub(crate) mod rebuild_effect_reason {
+    /// A pass raised errors — collected, never aborting; they are the reason.
+    pub const PASS_ERRORS: &str = "pass_errors";
+    /// Every ESEF slot re-extracted was already recorded (re-observations).
+    pub const ALREADY_RECORDED: &str = "already_recorded";
+    /// The WDF carriers' bodies were pruned — lost by design, unrecoverable.
+    pub const WDF_BODY_PRUNED: &str = "wdf_body_pruned";
+}
+
+impl crate::effects_honesty::ExplainsEffect for RebuildFundamentalsSummary {
+    /// A rebuild's zero-effect reason is its own, or — when the rebuild itself
+    /// has nothing to add — the embedded pass-1 pull's. Delegating keeps ONE
+    /// reason vocabulary per pass instead of restating the aggregator's.
+    fn effect_verdict(&self) -> crate::effects_honesty::EffectVerdict {
+        use crate::effects_honesty::{first_named, verdict, EffectVerdict};
+        use rebuild_effect_reason as reason;
+
+        let aggregator = self.aggregator.effect_verdict();
+        let produced = matches!(aggregator, EffectVerdict::Produced)
+            || self.esef_facts_emitted > 0
+            || self.wdf_facts_written > 0;
+        let had_inputs = !matches!(aggregator, EffectVerdict::NoInputs)
+            || self.esef_documents_processed > 0
+            || self.wdf_carriers_scanned > 0;
+        let reason = first_named([
+            (
+                reason::PASS_ERRORS,
+                !self.errors.is_empty() || self.esef_errors > 0,
+            ),
+            (
+                reason::ALREADY_RECORDED,
+                self.esef_facts_reobserved > 0 || self.esef_divergences > 0,
+            ),
+            (reason::WDF_BODY_PRUNED, self.wdf_skipped_no_body > 0),
+        ])
+        .or_else(|| aggregator.reason());
+        verdict(produced, had_inputs, reason)
+    }
+}
+
 /// Run the full three-pass rebuild over every tracked company. Synchronous and
 /// offloaded by the caller (the command via `run_blocking_task`). Sequential,
 /// and tolerant of per-item failure: an error on one company/document is

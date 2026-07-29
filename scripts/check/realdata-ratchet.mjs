@@ -55,6 +55,30 @@ const METRICS = [
     tolerance: 0,
     raiseBy: null,
   },
+  // Epic #40 S5. ADR 0091 specified a HARD zero here; the first real
+  // measurement (2026-07-29) found 82 stored rows already in the dishonest
+  // state, written by a defect S5 fixes forward (an outcome row re-upserted by a
+  // re-run overwrote its fact count with 0 while keeping `reason_code =
+  // "emitted"`). A hard bound seeded above zero is not a bound, so this lands as
+  // a ratcheted CEILING that decays as the owner re-extracts, and becomes the
+  // hard zero the ADR asks for once it reaches 0. Same instrument, same
+  // precedent as `orphaned_evidence` (seeded at a known defect class, #119).
+  {
+    key: "zero_effect_successes",
+    bound: "ceiling",
+    label: "successes recording no fact while claiming an emission",
+    unit: " outcomes",
+    tolerance: 0,
+    raiseBy: 1,
+  },
+  {
+    key: "silent_missing_metrics",
+    bound: "ceiling",
+    label: "health read-model outputs missing without naming what is missing",
+    unit: " outputs",
+    tolerance: 0,
+    raiseBy: 1,
+  },
 ];
 
 function argValue(flag, fallback) {

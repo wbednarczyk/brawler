@@ -211,6 +211,21 @@ fn record_outcome(
     }
 }
 
+/// The `fact_count` an outcome row records: the facts this run ESTABLISHED at
+/// the slot — newly produced **plus** re-observed.
+///
+/// Recording only the produced count was the zero-effect-success defect epic #40
+/// S5 hunts (ADR 0091): the outcome row upserts in place, so re-running a landed
+/// period (every slot re-observed, nothing new) overwrote a healthy
+/// `fact_count = 12` with `0` while keeping `reason_code = "emitted"`. The row
+/// then claimed an emission it could not evidence, and the #155 report-documents
+/// indicator rendered `has_data` with `0 facts` — a success that produced
+/// nothing and could not say why. Counting re-observations makes the row state
+/// what is actually AT the slot, which is also what that indicator asks.
+fn slot_fact_count(produced_fact_ids: &[String], skipped_fact_ids: &[String]) -> i64 {
+    (produced_fact_ids.len() + skipped_fact_ids.len()) as i64
+}
+
 /// Record a `tier_upgrade` diagnostic when an issuer tier OVERWROTE a lower-tier
 /// slot's VALUE (ADR 0086 dec. 3) — the same upgrade evidence the WDF cover-note
 /// seam records ([`crate::storage::espi_cover_note_facts`]). A label-only upgrade
@@ -1012,7 +1027,7 @@ pub(crate) fn run_structured_extraction(
         reason_code,
         detail_json.as_deref(),
         drift_json.as_deref(),
-        produced_fact_ids.len() as i64,
+        slot_fact_count(&produced_fact_ids, &skipped_fact_ids),
     );
 
     Ok(StructuredExtractionResult {
@@ -1241,7 +1256,7 @@ fn run_positional_extraction(
         reason_code,
         detail_json.as_deref(),
         None,
-        produced_fact_ids.len() as i64,
+        slot_fact_count(&produced_fact_ids, &skipped_fact_ids),
     );
 
     Ok(StructuredExtractionResult {
@@ -1264,6 +1279,28 @@ mod tests {
         open_in_memory_database, CaptureReportDocumentInput, ListKpiDefinitionsInput, NewCompany,
         NewFinancialFact, NewFinancialPeriod, MODE_ASSIST, MODE_AUTOPILOT,
     };
+
+    /// Zero-effects honesty (epic #40 S5, ADR 0091): the outcome row records the
+    /// facts AT the slot, so a re-run that re-observed everything cannot
+    /// overwrite a healthy count with `0` while still claiming `emitted`. That
+    /// row is what the #155 report-documents indicator reads — it used to render
+    /// "contains extractable data" beside "0 facts".
+    #[test]
+    fn slot_fact_count_counts_reobservations_not_only_new_facts() {
+        let produced = vec!["fact_1".to_owned(), "fact_2".to_owned()];
+        let reobserved = vec![
+            "fact_3".to_owned(),
+            "fact_4".to_owned(),
+            "fact_5".to_owned(),
+        ];
+
+        assert_eq!(slot_fact_count(&produced, &[]), 2);
+        // The re-run of a landed period: nothing new, five facts at the slot.
+        assert_eq!(slot_fact_count(&[], &reobserved), 3);
+        assert_eq!(slot_fact_count(&produced, &reobserved), 5);
+        // A genuinely empty slot still records zero — the honest zero.
+        assert_eq!(slot_fact_count(&[], &[]), 0);
+    }
 
     /// A minimal ZIP archive holding one named entry — enough for
     /// [`detect_container`] to see the `PK\x03\x04` magic and for

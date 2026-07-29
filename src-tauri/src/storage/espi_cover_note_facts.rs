@@ -65,7 +65,7 @@ pub(super) struct CoverNoteCarrier<'a> {
 /// What one sweep did, for the structured ingest log and for tests to assert
 /// against. Every counter here is also visible per item as a diagnostic event.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(super) struct CoverNoteExtractionSummary {
+pub(crate) struct CoverNoteExtractionSummary {
     /// Periodic-report items with a non-empty body that were attempted.
     pub attempted: usize,
     /// Items whose reporting period could not be derived — nothing extracted.
@@ -94,6 +94,70 @@ pub(super) struct CoverNoteExtractionSummary {
     /// DEFERRED (no ingest-time fetch, ADR 0085 decision 3), never a false
     /// agreement.
     pub witness_pending: usize,
+}
+
+/// Named zero-effect reasons the cover-note tier can state (epic #40 S5). The
+/// SAME vocabulary serves the ingest sweep and the rebuild re-scan, which is
+/// why the re-scan carries the per-item counters through instead of reducing
+/// them to a bare `facts_written = 0`.
+pub(crate) mod cover_note_effect_reason {
+    /// The reporting period could not be derived — nothing to attribute facts to.
+    pub const NO_PERIOD: &str = "no_period";
+    /// The body carried no parseable cover table.
+    pub const NO_TABLE: &str = "no_table";
+    /// The validation gate refused the parsed set.
+    pub const FLAGGED: &str = "flagged";
+    /// An equal-or-higher tier already owns every slot.
+    pub const HIGHER_TIER_HOLDS_SLOT: &str = "higher_tier_holds_slot";
+    /// The PLN↔EUR cross-check refused the monetary rows (never guessed).
+    pub const ABSTAINED: &str = "abstained";
+    /// Per-item errors — recorded, never propagated; they are the reason.
+    pub const ITEM_ERRORS: &str = "item_errors";
+    /// The carriers' bodies were pruned — lost by design, unrecoverable.
+    pub const BODY_PRUNED: &str = "body_pruned";
+}
+
+impl crate::effects_honesty::ExplainsEffect for CoverNoteExtractionSummary {
+    fn effect_verdict(&self) -> crate::effects_honesty::EffectVerdict {
+        use crate::effects_honesty::{first_named, verdict};
+        use cover_note_effect_reason as reason;
+
+        let reason = first_named([
+            (reason::ITEM_ERRORS, self.errors > 0),
+            (reason::FLAGGED, self.flagged > 0),
+            (reason::NO_PERIOD, self.no_period > 0),
+            (reason::NO_TABLE, self.empty > 0),
+            (reason::HIGHER_TIER_HOLDS_SLOT, self.deferred > 0),
+            (reason::ABSTAINED, self.abstained > 0),
+        ]);
+        verdict(
+            self.created > 0 || self.upgraded > 0,
+            self.attempted > 0,
+            reason,
+        )
+    }
+}
+
+impl crate::effects_honesty::ExplainsEffect for CoverNoteRescanSummary {
+    fn effect_verdict(&self) -> crate::effects_honesty::EffectVerdict {
+        use crate::effects_honesty::{first_named, verdict};
+        use cover_note_effect_reason as reason;
+
+        let reason = first_named([
+            (reason::ITEM_ERRORS, self.errors > 0),
+            (reason::FLAGGED, self.flagged > 0),
+            (reason::NO_PERIOD, self.no_period > 0),
+            (reason::NO_TABLE, self.no_table > 0),
+            (reason::HIGHER_TIER_HOLDS_SLOT, self.deferred > 0),
+            (reason::ABSTAINED, self.abstained > 0),
+            (reason::BODY_PRUNED, self.skipped_no_body > 0),
+        ]);
+        verdict(
+            self.facts_written > 0,
+            self.carriers_scanned > 0 || self.skipped_no_body > 0,
+            reason,
+        )
+    }
 }
 
 /// Runs the cover-note tier over the komunikaty this ingest just committed.
@@ -156,6 +220,22 @@ pub struct CoverNoteRescanSummary {
     pub skipped_no_body: usize,
     /// Per-item errors — recorded, never propagated (the scan never aborts on one).
     pub errors: usize,
+    // The per-item WHY counters, carried through from the inner
+    // [`CoverNoteExtractionSummary`] (epic #40 S5). Without them a re-scan that
+    // read 450 stored komunikaty and wrote nothing reported
+    // `carriers_scanned = 450, facts_written = 0` and could not say why — the
+    // zero-effect-success class ADR 0091 exists to kill. Aggregate counts, so
+    // the rebuild verdict names the cause without re-reading the diagnostics.
+    /// Items whose reporting period could not be derived.
+    pub no_period: usize,
+    /// Items whose body carried no parseable cover table.
+    pub no_table: usize,
+    /// Items whose parsed set the validation gate refused to emit.
+    pub flagged: usize,
+    /// Slots left alone because an equal-or-higher tier already owns them.
+    pub deferred: usize,
+    /// Monetary rows the PLN↔EUR cross-check refused (never guessed).
+    pub abstained: usize,
 }
 
 /// Re-run the cover-note (WDF) tier over every STORED Bankier-company komunikat
@@ -248,6 +328,13 @@ pub fn rescan_stored_cover_note_facts(
         totals.carriers_scanned += summary.attempted;
         totals.facts_written += summary.created + summary.upgraded;
         totals.errors += summary.errors;
+        // Carry the per-item WHY through (epic #40 S5) — a re-scan that writes
+        // nothing must be able to name the cause, not just report a zero.
+        totals.no_period += summary.no_period;
+        totals.no_table += summary.empty;
+        totals.flagged += summary.flagged;
+        totals.deferred += summary.deferred;
+        totals.abstained += summary.abstained;
     }
 
     totals.skipped_no_body = skipped_no_body;

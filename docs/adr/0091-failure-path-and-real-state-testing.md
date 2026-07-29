@@ -63,3 +63,16 @@ has no read model, no IPC command, no frontend surface. `attention_events.compan
 - Delivery is six slices, one PR each (S1 chaos seam → S2 poor states → S3 job-failure visibility →
   S4 real-DB harness → S5 effects honesty → S6 synthetic corpus); cards #105, #74, #234–#237 under
   epic #40. Follow-ons feed #139, #151, #181, #182, #201.
+
+**Amendment (2026-07-29, S5 as-built).** `zero_effect_successes` ships as a **ratcheted ceiling**,
+not the hard zero above. The first real measurement found 82 of 334 recorded extraction outcomes
+already in the dishonest state — a success recording `fact_count = 0` beside
+`reason_code = "emitted"` — because a re-run upserts the outcome row and overwrote a healthy count
+with the *newly produced* count. S5 fixes the producing path (the row now records the facts **at**
+the slot: produced plus re-observed) and the invariant is enforced hard where it belongs — a
+`make check` unit gate over every run-summary shape (`effects_honesty::ExplainsEffect`). A hard
+bound seeded above zero is not a bound, so the stored residue is ratcheted down instead and the
+metric becomes the hard zero this ADR asks for on the run that first measures it. Repairing the
+stored rows needs a forward migration and is tracked separately (#243), not smuggled into a test slice.
+`silent_missing_metrics` measured `0` on the first run — the health read model already names every
+missing input — so it is a ceiling at zero and no read-model field had to be added.

@@ -276,3 +276,90 @@ fn per_tier_counts_are_the_sum_across_passes() {
     );
     assert!(summary.errors.is_empty(), "no pass errored: {summary:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Zero-effects invariant (epic #40 S5, ADR 0091)
+// ---------------------------------------------------------------------------
+
+/// A rebuild that walked passes and wrote no fact must NAME why — from its own
+/// counters, or by delegating to the embedded pass-1 pull's reason. A rebuild
+/// verdict reading "0 facts" with nothing beside it is the dishonest-success
+/// class ADR 0091 exists to kill.
+#[test]
+fn every_zero_effect_rebuild_state_names_a_reason() {
+    use crate::effects_honesty::{EffectVerdict, ExplainsEffect};
+    use crate::jobs::aggregator_fundamentals_pull::{
+        aggregator_effect_reason, AggregatorPullSummary,
+    };
+    use rebuild_effect_reason as reason;
+
+    let with = |mutate: fn(&mut RebuildFundamentalsSummary)| {
+        let mut summary = RebuildFundamentalsSummary {
+            esef_documents_processed: 8,
+            ..RebuildFundamentalsSummary::default()
+        };
+        mutate(&mut summary);
+        summary.effect_verdict()
+    };
+
+    assert_eq!(
+        with(|s| s.errors.push("aggregator pull failed: locked".to_owned())),
+        EffectVerdict::NothingProduced {
+            reason: reason::PASS_ERRORS
+        }
+    );
+    assert_eq!(
+        with(|s| s.esef_errors = 3),
+        EffectVerdict::NothingProduced {
+            reason: reason::PASS_ERRORS
+        }
+    );
+    assert_eq!(
+        with(|s| s.esef_facts_reobserved = 40),
+        EffectVerdict::NothingProduced {
+            reason: reason::ALREADY_RECORDED
+        }
+    );
+    assert_eq!(
+        with(|s| s.esef_divergences = 2),
+        EffectVerdict::NothingProduced {
+            reason: reason::ALREADY_RECORDED
+        }
+    );
+    assert_eq!(
+        with(|s| {
+            s.wdf_carriers_scanned = 450;
+            s.wdf_skipped_no_body = 448;
+        }),
+        EffectVerdict::NothingProduced {
+            reason: reason::WDF_BODY_PRUNED
+        }
+    );
+
+    // Pass 1 owns the only reason: the rebuild delegates rather than restating
+    // the aggregator's vocabulary in its own words.
+    let delegated = RebuildFundamentalsSummary {
+        aggregator: AggregatorPullSummary {
+            companies: 12,
+            pages_unavailable: 24,
+            ..AggregatorPullSummary::default()
+        },
+        ..RebuildFundamentalsSummary::default()
+    };
+    assert_eq!(
+        delegated.effect_verdict(),
+        EffectVerdict::NothingProduced {
+            reason: aggregator_effect_reason::PAGES_UNAVAILABLE
+        }
+    );
+
+    // Effects from any pass.
+    assert_eq!(with(|s| s.esef_facts_emitted = 1), EffectVerdict::Produced);
+    assert_eq!(with(|s| s.wdf_facts_written = 1), EffectVerdict::Produced);
+
+    // Nothing anywhere to rebuild.
+    assert_eq!(
+        RebuildFundamentalsSummary::default().effect_verdict(),
+        EffectVerdict::NoInputs
+    );
+}

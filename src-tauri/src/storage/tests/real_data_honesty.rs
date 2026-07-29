@@ -1,8 +1,10 @@
-//! Real-data **honesty** harness (epic #40 S4; ADR 0091 decisions 4-5).
+//! Real-data **honesty** harness (epic #40 S4/S5; ADR 0091 decisions 4-5).
 //!
-//! Measures, on the maintainer's real database, how honest the Today stream is
-//! about what actually happened: does a row state something CONCRETE, does its
-//! evidence still resolve, and does a raw filename ever stand in for prose.
+//! Measures, on the maintainer's real database, how honest the app is about what
+//! actually happened: does a Today row state something CONCRETE, does its
+//! evidence still resolve, does a raw filename ever stand in for prose — and
+//! (S5) does a recorded SUCCESS admit it produced nothing, does a missing number
+//! say what is missing.
 //!
 //! **Inert in CI** — like [`super::real_data_extraction`] it skips unless
 //! `BRAWLER_REAL_DB` points at a THROWAWAY copy of the real DB, so `make check`
@@ -12,16 +14,25 @@
 //! a title, a ticker, or any other row content. Nothing in this file prints or
 //! serializes row content; keep it that way.
 //!
-//! Metrics are computed **through the real read model**
-//! ([`AttentionStore::list_attention_events`]) and the real frontend statement
-//! rule — never a parallel SQL path — so the numbers move exactly when the app
-//! the owner uses moves:
+//! Metrics are computed **through the real read models**
+//! ([`AttentionStore::list_attention_events`],
+//! [`FundamentalsProvenanceStore::list_extraction_outcomes`],
+//! [`crate::commands::company_health::compute_company_health`]) and the real
+//! frontend statement rule — never a parallel SQL path — so the numbers move
+//! exactly when the app the owner uses moves:
 //!
 //! | metric | meaning | gate |
 //! |---|---|---|
 //! | `specificity_pct` | share of title-capable events whose row states something concrete | ratcheted floor |
 //! | `orphaned_evidence` | events whose evidence resolves to nothing (snapshot NULL ∧ join empty) | ratcheted ceiling |
 //! | `filename_as_statement` | rendered statements that are a raw filename | hard `0` |
+//! | `zero_effect_successes` | outcome rows that succeeded, recorded zero facts, and claim an emission instead of naming a why | ratcheted ceiling |
+//! | `silent_missing_metrics` | health read-model outputs reporting a number as missing without naming what | ratcheted ceiling |
+//!
+//! The S5 pair measures the STORED record. The same class is enforced hard, in
+//! `make check` and with no real data, by the per-shape zero-effects invariants
+//! over [`crate::effects_honesty::ExplainsEffect`] — a fixed defect still leaves
+//! a residue in old rows that only this harness can see.
 //!
 //! The floors/ceilings live in the committed baseline and are enforced by
 //! `scripts/check/realdata-ratchet.mjs` (run by `make realdata-honesty-check`),
@@ -111,6 +122,23 @@ const JOINED_EVIDENCE_TYPES: [&str; 4] = [
     EVIDENCE_AUTOPILOT_RUN,
     EVIDENCE_JOB,
 ];
+
+// ---------------------------------------------------------------------------
+// Effects honesty (epic #40 S5) — the stored vocabulary
+// ---------------------------------------------------------------------------
+
+/// The `fundamentals_extraction_outcomes.acceptance` values that mean the run
+/// SUCCEEDED — it accepted a set and persisted it. Mirrors
+/// [`crate::fundamentals::extraction::pipeline::Acceptance::emits`]; the CHECK
+/// in migration `0105` is the authoritative vocabulary.
+const EMITTING_ACCEPTANCES: [&str; 3] = ["accepted", "accepted_via_witness", "accepted_unreviewed"];
+
+/// The `reason_code` values that CLAIM production rather than explain its
+/// absence. Every other code in the vocabulary (`validation_failed`,
+/// `structure_drift`, `witness_disagreement`, `no_deterministic_tier`,
+/// `no_period_derived`, `document_unreadable`) names a why, so a zero-fact row
+/// carrying one of those is honest — it says what stopped it.
+const PRODUCTION_CLAIMING_REASONS: [&str; 2] = ["emitted", "witness_fallback"];
 
 /// Triggers excluded from the specificity denominator **by definition**: a price
 /// event's statement IS its rule's range / the 52-week-low label — generic copy
@@ -236,6 +264,114 @@ struct HonestyTally {
     by_trigger: BTreeMap<String, (usize, usize)>,
     /// Per-evidence-type `(total, orphaned)` — counts only, never content.
     by_evidence_type: BTreeMap<String, (usize, usize)>,
+}
+
+/// The epic #40 S5 half: does a **success** admit it produced nothing, and does
+/// a **missing** number say what is missing?
+#[derive(Default)]
+struct EffectsTally {
+    /// Extraction outcome rows read (the zero-effect denominator).
+    outcomes_total: usize,
+    /// Rows whose acceptance succeeded, whose fact count is zero, and whose
+    /// typed reason claims production instead of explaining its absence.
+    zero_effect_successes: usize,
+    /// Companies whose health read model was computed.
+    companies_scored: usize,
+    /// Health read-model outputs that report a number as missing without saying
+    /// WHAT is missing (or why it does not apply).
+    silent_missing_metrics: usize,
+    /// Per-`reason_code` `(zero-fact successes, total successes)` — counts only.
+    by_reason_code: BTreeMap<String, (usize, usize)>,
+    /// Per-silence-kind counts, so the ratchet's number is traceable to a shape.
+    by_silence_kind: BTreeMap<&'static str, usize>,
+}
+
+/// Silence kinds, for the per-shape breakdown. Machine tokens, counts only.
+mod silence {
+    /// A company with no scored FY period at all — `CompanyHealth.latest` is
+    /// `None` and the shape carries no field saying why (no annual period? no
+    /// facts? not applicable?). The one gap the S5 measurement found in the
+    /// health contract itself.
+    pub const NO_SCORED_PERIOD: &str = "no_scored_period";
+    /// `InsufficientData` whose `missing` list is empty — the read model knows
+    /// it could not score and does not name a single missing input.
+    pub const PIOTROSKI_MISSING_UNNAMED: &str = "piotroski_insufficient_without_missing_list";
+    pub const ALTMAN_MISSING_UNNAMED: &str = "altman_insufficient_without_missing_list";
+    /// `NotApplicable` with a blank reason.
+    pub const PIOTROSKI_NOT_APPLICABLE_UNREASONED: &str = "piotroski_not_applicable_without_reason";
+    pub const ALTMAN_NOT_APPLICABLE_UNREASONED: &str = "altman_not_applicable_without_reason";
+}
+
+/// Measure the S5 effects-honesty pair through the real read models
+/// ([`FundamentalsProvenanceStore::list_extraction_outcomes`] and
+/// [`compute_company_health`]) — never a parallel SQL path, so both numbers move
+/// exactly when the app the owner runs moves.
+fn measure_effects(state: &AppState) -> EffectsTally {
+    use crate::commands::company_health::compute_company_health;
+    use crate::fundamentals::health::{AltmanScore, PiotroskiScore};
+
+    let mut tally = EffectsTally::default();
+    let companies = state.list_companies().expect("list companies");
+
+    for company in &companies {
+        // --- zero-effect successes -----------------------------------------
+        let outcomes = state
+            .fundamentals_provenance()
+            .list_extraction_outcomes(&company.id)
+            .expect("list extraction outcomes");
+        tally.outcomes_total += outcomes.len();
+        for outcome in &outcomes {
+            if !EMITTING_ACCEPTANCES.contains(&outcome.acceptance.as_str()) {
+                continue;
+            }
+            let entry = tally
+                .by_reason_code
+                .entry(outcome.reason_code.clone())
+                .or_default();
+            entry.1 += 1;
+            if outcome.fact_count == 0
+                && PRODUCTION_CLAIMING_REASONS.contains(&outcome.reason_code.as_str())
+            {
+                tally.zero_effect_successes += 1;
+                entry.0 += 1;
+            }
+        }
+
+        // --- silent missing metrics ----------------------------------------
+        let Ok(health) = compute_company_health(state, &company.id) else {
+            continue;
+        };
+        tally.companies_scored += 1;
+        let mut silent = |kind: &'static str| {
+            tally.silent_missing_metrics += 1;
+            *tally.by_silence_kind.entry(kind).or_default() += 1;
+        };
+        if health.latest.is_none() {
+            silent(silence::NO_SCORED_PERIOD);
+        }
+        for period in &health.history {
+            match &period.piotroski {
+                PiotroskiScore::InsufficientData { missing, .. } if missing.is_empty() => {
+                    silent(silence::PIOTROSKI_MISSING_UNNAMED)
+                }
+                PiotroskiScore::NotApplicable { reason } if reason.trim().is_empty() => {
+                    silent(silence::PIOTROSKI_NOT_APPLICABLE_UNREASONED)
+                }
+                _ => {}
+            }
+            match &period.altman {
+                AltmanScore::InsufficientData { missing, .. } if missing.is_empty() => {
+                    silent(silence::ALTMAN_MISSING_UNNAMED)
+                }
+                AltmanScore::NotApplicable { reason } if reason.trim().is_empty() => {
+                    silent(silence::ALTMAN_NOT_APPLICABLE_UNREASONED)
+                }
+                _ => {}
+            }
+        }
+    }
+
+    tally
 }
 
 #[test]
@@ -368,17 +504,41 @@ fn real_data_honesty_metrics() {
         eprintln!("   {evidence_type:<24} {total:>5} / {orphaned:>5}");
     }
 
+    // --- S5: effects honesty ------------------------------------------------
+    let effects = measure_effects(&state);
+    eprintln!("== S5 effects honesty (aggregate counts only) ==");
+    eprintln!(
+        "zero_effect_successes  = {}  (of {} recorded extraction outcomes)",
+        effects.zero_effect_successes, effects.outcomes_total
+    );
+    eprintln!(
+        "silent_missing_metrics = {}  (over {} scored companies)",
+        effects.silent_missing_metrics, effects.companies_scored
+    );
+    eprintln!("-- successful outcomes by reason code: zero-fact / total --");
+    for (reason_code, (zero, total)) in &effects.by_reason_code {
+        eprintln!("   {reason_code:<24} {zero:>5} / {total:>5}");
+    }
+    eprintln!("-- silence by kind --");
+    for (kind, count) in &effects.by_silence_kind {
+        eprintln!("   {kind:<44} {count:>5}");
+    }
+
     // Aggregates ONLY (ADR 0091 dec. 4) — this file is read by the ratchet and
     // may be pasted into a PR; it must never carry a title, ticker, or id.
     let metrics = serde_json::json!({
         "specificity_pct": (specificity_pct * 10.0).round() / 10.0,
         "orphaned_evidence": tally.orphaned_evidence,
         "filename_as_statement": tally.filename_as_statement,
+        "zero_effect_successes": effects.zero_effect_successes,
+        "silent_missing_metrics": effects.silent_missing_metrics,
         "context": {
             "events_total": tally.events_total,
             "specificity_numerator": tally.specificity_numerator,
             "specificity_denominator": tally.specificity_denominator,
             "orphan_denominator": tally.orphan_denominator,
+            "outcomes_total": effects.outcomes_total,
+            "companies_scored": effects.companies_scored,
         }
     });
     let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
@@ -406,5 +566,12 @@ fn real_data_honesty_metrics() {
     assert_eq!(
         tally.filename_as_statement, 0,
         "a Today row statement is a raw filename on real data — a filename is metadata, not prose"
+    );
+    // Same sanity rule as above for the S5 half: an effects measurement over an
+    // empty corpus certifies nothing.
+    assert!(
+        effects.outcomes_total > 0 && effects.companies_scored > 0,
+        "expected recorded extraction outcomes and at least one scored company — the effects \
+         half measured nothing (wrong copy?)"
     );
 }

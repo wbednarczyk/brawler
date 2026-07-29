@@ -335,11 +335,12 @@ shipped gates:
 - The diff transform also carries the property/invariant gates below
   (idempotence, order-stability).
 
-### Real-data honesty harness + ratchet (epic #40 S4)
+### Real-data honesty harness + ratchet (epic #40 S4/S5)
 
 Does the app tell the owner the truth about what happened? The classes only the owner was
 catching — a row that states a bare category instead of the event, evidence that resolves to
-nothing, a filename standing in for prose — are measured on the **real** database and ratcheted
+nothing, a filename standing in for prose, a success that produced nothing and cannot say why —
+are measured on the **real** database and ratcheted
 ([ADR 0091](adr/0091-failure-path-and-real-state-testing.md) decisions 4–5).
 
 **Privacy boundary (hard).** The real DB never enters the repo or default CI. The only committed
@@ -363,7 +364,22 @@ CI covers the same invariant class through the synthetic shape corpus (epic #40 
   | `specificity_pct` | events with a concrete statement / events whose trigger can carry one (price triggers excluded by definition — their range/52-week-low copy *is* the honest statement, mirroring the price entries of `GENERIC_FALLBACK_KEYS` in `tests/live/ux-checkpoint.live.spec.ts`) | ratcheted floor |
   | `orphaned_evidence` | events on a joined evidence type (`company_signal`, `source_reconciliation`, `autopilot_run`, `job`) whose fire-time snapshot is NULL **and** whose join resolves nothing | ratcheted ceiling |
   | `filename_as_statement` | rendered statements still carrying a document extension | hard `0`, asserted in the harness |
+  | `zero_effect_successes` | recorded extraction outcomes (`list_extraction_outcomes`) whose acceptance succeeded, whose `fact_count` is `0`, and whose `reason_code` claims production (`emitted`/`witness_fallback`) instead of naming a why | ratcheted ceiling |
+  | `silent_missing_metrics` | health read-model outputs (`compute_company_health`) that report a number as missing without naming what: `InsufficientData` with an empty `missing` list, `NotApplicable` with a blank reason, or a company with no scored FY period at all | ratcheted ceiling |
 
+- **Effects honesty has two layers** (epic #40 S5). The hard invariant is a **unit** one and runs
+  in `make check` with no real data: every run-summary shape implements
+  `effects_honesty::ExplainsEffect`, and a per-shape test enumerates every zero-effect state the
+  producing code can build, asserting each names a reason (`EffectVerdict::Unexplained` is the
+  dishonest state). Add a summary → implement the trait beside it and enumerate its states, or the
+  shape can ship a mute success. The real-DB pair above measures the same class in the **stored**
+  record, where a fixed defect leaves a decaying residue a unit test cannot see.
+  - `zero_effect_successes` landed as a ratcheted ceiling, not ADR 0091's hard `0`: the first
+    measurement found the bound already broken by stored rows, so a hard bound would have been
+    permanently red rather than a gate. The producing defect is fixed forward (an outcome row now
+    records the facts **at** the slot — produced plus re-observed — instead of letting a re-run
+    overwrite a healthy count with `0` beside `reason_code = "emitted"`), so the ceiling falls as
+    the owner re-extracts, and becomes the hard `0` on the run that first measures it.
 - **One filename pattern across languages** (ADR 0091 dec. 5) — canonical TS
   `src/screens/Today/documentTitle.ts`; the Rust mirror (`FILENAME_EXTENSION_PATTERN`,
   `LEADING_SEPARATORS_PATTERN`) is held to it by an `include_str!` parity gate that runs in
