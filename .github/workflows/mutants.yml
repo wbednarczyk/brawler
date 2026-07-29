@@ -17,8 +17,11 @@ on:
         required: false
         default: "4"
 
+# Per-shard group: a full sweep dispatches all 8 shards AT ONCE and they run in
+# parallel (~1h wall instead of ~6h sequential); duplicate dispatches of the
+# SAME shard still cancel each other (#241, 2026-07-29).
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ inputs.shard || 'full' }}
   cancel-in-progress: true
 
 jobs:
