@@ -338,6 +338,16 @@ jobs:
         with:
           name: windows-build
           path: windows-out
+      - name: Install WebView2 runtime
+        # Server images ship no WebView2 runtime (proven by run 2's diagnostics:
+        # process alive, backend logging, registry version EMPTY) — without it the
+        # Tauri webview never starts and CDP stays silent. Evergreen Bootstrapper,
+        # silent install. Infra step (gate-integrity INFRA_RUN_STEP_NAMES).
+        shell: pwsh
+        run: |
+          $installer = "$env:TEMP\MicrosoftEdgeWebview2Setup.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "/silent","/install" -Wait
       - shell: bash
         run: make live-smoke EXE="$(ls windows-out/brawler-*-windows-x64-portable.exe | head -1)"
       - uses: actions/upload-artifact@v7
