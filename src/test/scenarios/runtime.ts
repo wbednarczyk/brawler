@@ -102,6 +102,18 @@ export interface MockRuntime {
    */
   failNext(command: string, error: CommandError): void;
   /**
+   * Persistent counterpart of `failNext` (epic #40 S1, ADR 0091): while a chaos
+   * rule is installed for `command`, EVERY invocation of it settles with
+   * `error` (the same untouched ADR 0070 envelope) instead of running its
+   * handler — the "this read is broken for the whole session" state a
+   * one-shot queue cannot express. A queued `failNext` for the same command
+   * still wins (and is consumed) first. `clearChaos()` and `reset()` remove
+   * every rule.
+   */
+  chaos(command: string, error: CommandError): void;
+  /** Drop every persistent chaos rule; queued one-shot failures survive. */
+  clearChaos(): void;
+  /**
    * Controlled-async invocation control (ADR 0081 Q2, Radicle a9992e2):
    * hold/pending/release/reject around `invoke`. Wired ONCE here — never
    * inside individual handlers. See `controlledAsync.ts`.
@@ -3624,6 +3636,9 @@ export function createMockRuntime(
   let counter = 0;
   // Deliverable A seam (5be14c9): one-shot rejections queued per command name.
   const queuedFailures = new Map<string, CommandError[]>();
+  // Epic #40 S1 seam (ADR 0091): persistent rejections per command name. Same
+  // envelope, no consumption — the one-shot queue is checked first.
+  const chaosRules = new Map<string, CommandError>();
   const ctx: RuntimeContext = {
     nextId: (prefix) => {
       counter += 1;
@@ -3646,6 +3661,10 @@ export function createMockRuntime(
       if (queue.length === 0) queuedFailures.delete(command);
       return Promise.reject(error);
     }
+    const chaosRule = chaosRules.get(command);
+    if (chaosRule) {
+      return Promise.reject(chaosRule);
+    }
     const handler = HANDLERS[command];
     if (!handler) {
       return Promise.reject(new Error(`Unhandled mock command: ${command}`));
@@ -3665,6 +3684,14 @@ export function createMockRuntime(
     queuedFailures.set(command, queue);
   }
 
+  function chaos(command: string, error: CommandError): void {
+    chaosRules.set(command, error);
+  }
+
+  function clearChaos(): void {
+    chaosRules.clear();
+  }
+
   // Wired ONCE around the raw settlement layer (ADR 0081 Q2) — never inside
   // individual handlers. `runtime.invoke` below IS the controlled invoke.
   const controlledAsync = createControlledAsync(rawInvoke, failNext);
@@ -3678,6 +3705,8 @@ export function createMockRuntime(
     },
     scenario,
     failNext,
+    chaos,
+    clearChaos,
     invoke: controlledAsync.invoke,
     controls: controlledAsync.controls,
     reset(nextScenario) {
@@ -3688,6 +3717,7 @@ export function createMockRuntime(
       }
       counter = 0;
       queuedFailures.clear();
+      chaosRules.clear();
       controlledAsync.reset();
       ctx.irReportUrls.clear();
       ctx.companySectors.clear();

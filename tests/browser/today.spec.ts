@@ -1,35 +1,14 @@
 import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 import {
   holdInvocation,
+  primeMockScenario,
   rejectInvocation,
-  type ScenarioSpec,
 } from "./helpers/mockRuntime";
-import type { Page } from "@playwright/test";
 import {
   PRUNED_CLEAN_SNAPSHOT,
   PRUNED_GLUED_FILENAME,
   PRUNED_GLUED_HUMAN,
 } from "../../src/test/scenarios/overlays";
-
-// Seeds a scenario BEFORE the app boots (attention/autopilot reads happen once
-// at bootstrap, so a post-mount reset is too late for them) by trapping the
-// `window.__brawlerMock` assignment and applying the reset in the same tick —
-// the same technique the J1 journey spec uses.
-async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> {
-  await page.addInitScript((s) => {
-    let installed: unknown;
-    Object.defineProperty(window, "__brawlerMock", {
-      configurable: true,
-      get() {
-        return installed;
-      },
-      set(bridge) {
-        (bridge as { reset: (spec: unknown) => void }).reset(s);
-        installed = bridge;
-      },
-    });
-  }, spec);
-}
 
 // Today/Pulse redesigned to journey J1 (ADR 0076 U-Rb): a single prioritized
 // stream with roving j/k navigation plus a counters column that filters the

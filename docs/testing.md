@@ -632,7 +632,20 @@ Canonical home for the loop's test mechanics ([ADR 0081](adr/0081-ux-quality-loo
 
 ### Minimal failure-injection seam (epic `0db7a7a`, Radicle `5be14c9`)
 
-`src/test/scenarios/runtime.ts`'s `MockRuntime.failNext(command, error)` queues a **one-shot** rejection for the NEXT invocation of `command`: instead of running its handler, `invoke` settles with `error` (a plain `{code, message}` object, the ADR 0070 envelope) UNCHANGED — the same shape a real typed backend rejection uses, so `isCommandError`/`CommandInvocationError` on the frontend fire identically to a real failure. `reset()` clears every queued failure. This is the ONLY scope of the seam — no chaos flag, no poor-state seeds, no real-DB evaluator (those stay in epic `0db7a7a`). Q2's `controls.reject(id, error)` (below) delegates to this seam for a `before-handler` hold rather than reproducing the envelope mapping.
+`src/test/scenarios/runtime.ts`'s `MockRuntime.failNext(command, error)` queues a **one-shot** rejection for the NEXT invocation of `command`: instead of running its handler, `invoke` settles with `error` (a plain `{code, message}` object, the ADR 0070 envelope) UNCHANGED — the same shape a real typed backend rejection uses, so `isCommandError`/`CommandInvocationError` on the frontend fire identically to a real failure. `reset()` clears every queued failure. Persistent failures are the chaos seam below (epic #40 S1); poor-state seeds and the real-DB evaluator remain separate slices. Q2's `controls.reject(id, error)` (below) delegates to this seam for a `before-handler` hold rather than reproducing the envelope mapping.
+
+### Chaos seam — persistent failures (epic #40 S1, ADR 0091)
+
+`failNext` above is one-shot; `MockRuntime.chaos(command, error)` is its persistent twin: while the rule is installed, EVERY invocation of `command` settles with the same untouched ADR 0070 envelope — the "this read is broken for the whole session" state a one-shot queue cannot express. A queued `failNext` for that command still wins first and is consumed; `clearChaos()` drops every rule, and `reset()` clears both seams.
+
+In the browser the rule must exist **before** the app's once-at-bootstrap reads. Two equivalent entry points, both installed pre-boot: the URL param `?chaos=<command>[:<code>]` (code defaults to `internal`, message names the command; an unknown code falls back to `internal`), and `primeChaos(page, rules)` from `tests/browser/helpers/mockRuntime.ts` when the spec wants its own message or several rules. `failNext`/`chaos`/`clearChaos` are also on the `window.__brawlerMock` bridge for mid-test use.
+
+```ts
+await openApp(page, "/?chaos=list_companies"); // or: await primeChaos(page, [{ command: "list_companies", error: { code: "network", message: "…" } }])
+await expect(page.getByText(/Companies command failed/)).toContainText("list_companies");
+```
+
+The assertion that matters is that the failure is **NAMED** on screen — a broken read must never degrade into an indistinguishable empty state (`tests/browser/chaos-seam.spec.ts`). `primeMockScenario(page, spec)` lives beside `primeChaos` in the same helper (scenario seeding is applied before chaos rules regardless of call order, since `reset()` clears chaos).
 
 ### Scenario overlays and controlled async (plan Q2, Radicle `a9992e2`)
 
@@ -659,7 +672,7 @@ Each overlay reassigns the collections it touches (never mutates an entity in pl
 - `reject(id, error)`: a `CommandError` on a `before-handler` hold delegates through `failNext` (above); a bare `Error`, or any `after-handler` reject, settles directly — nothing to delegate to since the handler already ran or the caller opted out of the typed envelope.
 - `reset()`/`releaseAll()` clear every held invocation so no promise leaks across tests.
 
-The typed test-only `window.__brawlerMock` bridge (`src/test/browserSmokeRuntime.ts`) exposes `reset(spec)`, `hold`, `pending`, `release`, `reject`, `releaseAll` to Playwright via `tests/browser/helpers/mockRuntime.ts`. **Setup order is always base scenario → `seedBrowserStore` (this file's browser-specific projection) → overlays**, on both initial install and every `reset()` — overlays run LAST so the projection can never silently clobber hostile/dense/partial/stale/conflicting/mixed-locale data.
+The typed test-only `window.__brawlerMock` bridge (`src/test/browserSmokeRuntime.ts`) exposes `reset(spec)`, `hold`, `pending`, `release`, `reject`, `releaseAll` (plus the chaos-seam trio `failNext`/`chaos`/`clearChaos` above) to Playwright via `tests/browser/helpers/mockRuntime.ts`. **Setup order is always base scenario → `seedBrowserStore` (this file's browser-specific projection) → overlays**, on both initial install and every `reset()` — overlays run LAST so the projection can never silently clobber hostile/dense/partial/stale/conflicting/mixed-locale data.
 
 `tests/browser/research-controlled-async.spec.ts` is the canonical controlled-async proof: it holds two `list_research_evidence` responses for different company intents, releases newest-then-oldest, and asserts the OLDER response cannot replace the newer state — `useResearchController`'s `requestVersionRef` "last-intent-wins" seam.
 

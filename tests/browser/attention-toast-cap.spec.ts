@@ -1,29 +1,10 @@
 import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
-import { resetMockScenario, type ScenarioSpec } from "./helpers/mockRuntime";
-import type { Page } from "@playwright/test";
+import { primeMockScenario, resetMockScenario } from "./helpers/mockRuntime";
 
-// Seeds a scenario BEFORE the app boots (attention reads happen once at
-// bootstrap, so the very first mount already carries the seeded events and the
-// toast effect fires against them) by trapping the `window.__brawlerMock`
-// assignment — the same technique the J1 journey spec uses. Preferred over
+// `primeMockScenario` (helpers/mockRuntime) seeds BEFORE boot — preferred over
 // `openApp` + `resetMockScenario` when the assertion is about which toasts the
 // FIRST mount raises: the latter would first boot the base scenario (whose own
 // unseen urgent event raises a persistent toast) before the reset lands.
-async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> {
-  await page.addInitScript((s) => {
-    let installed: unknown;
-    Object.defineProperty(window, "__brawlerMock", {
-      configurable: true,
-      get() {
-        return installed;
-      },
-      set(bridge) {
-        (bridge as { reset: (spec: unknown) => void }).reset(s);
-        installed = bridge;
-      },
-    });
-  }, spec);
-}
 
 // Regression coverage for the live-defect fix (v0.57 fix wave 2, W3): unbounded
 // persistent (attention-event) toasts piled up in the bottom-left viewport and

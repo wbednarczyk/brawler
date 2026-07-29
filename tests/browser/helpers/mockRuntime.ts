@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import type { ScenarioOverlayName } from "../../../src/test/scenarios/overlays";
 
 // Typed Playwright bridge onto `window.__brawlerMock` (ADR 0081 Q2, Radicle
 // a9992e2 / src/test/browserSmokeRuntime.ts). Every call crosses via
@@ -7,14 +8,9 @@ import type { Page } from "@playwright/test";
 
 export type ScenarioName = "empty" | "minimal" | "rich";
 
-export type ScenarioOverlayName =
-  | "hostile-content"
-  | "dense-history"
-  | "partial-data"
-  | "stale-processing"
-  | "conflicting-statuses"
-  | "mixed-locale"
-  | "attention-overflow";
+// Re-exported from the runtime's own definition, never hand-copied: a local
+// copy silently drifted behind six overlays before epic #40 S1 caught it.
+export type { ScenarioOverlayName };
 
 export type ScenarioSpec = {
   base: ScenarioName;
@@ -38,6 +34,9 @@ export type PendingInvocation = {
 
 export type MockCommandError = { code: string; message: string };
 
+/** A persistent failure rule: `command` rejects with `error` on EVERY call. */
+export type ChaosRule = { command: string; error: MockCommandError };
+
 interface BrawlerMockBridge {
   reset(spec?: ScenarioName | ScenarioSpec): void;
   hold(match: InvocationMatch): string;
@@ -45,12 +44,80 @@ interface BrawlerMockBridge {
   release(id: string): void;
   reject(id: string, error: MockCommandError): void;
   releaseAll(): void;
+  failNext(command: string, error: MockCommandError): void;
+  chaos(command: string, error: MockCommandError): void;
+  clearChaos(): void;
 }
 
 declare global {
   interface Window {
     __brawlerMock?: BrawlerMockBridge;
   }
+}
+
+type PrimingAction =
+  | { kind: "scenario"; spec: ScenarioName | ScenarioSpec }
+  | { kind: "chaos"; rules: readonly ChaosRule[] };
+
+/**
+ * Applies a priming action to the bridge BEFORE the app boots. Bootstrap reads
+ * (companies/feed/attention/autopilot) happen once at mount, so a post-`openApp`
+ * `page.evaluate` is too late for them and races under worker load.
+ * `page.addInitScript` runs synchronously as the FIRST script on the page: it
+ * traps the `window.__brawlerMock` assignment `installBrowserSmokeRuntime`
+ * performs and applies every queued action in that same synchronous tick,
+ * strictly before React mounts.
+ */
+async function primeBeforeBoot(page: Page, action: PrimingAction): Promise<void> {
+  await page.addInitScript((next) => {
+    type Action = typeof next;
+    const carrier = window as unknown as { __brawlerPriming?: Action[] };
+    const queue: Action[] = (carrier.__brawlerPriming ??= []);
+    queue.push(next);
+    // The first call owns the trap; later calls just extend the queue.
+    if (queue.length > 1) return;
+    let installed: unknown;
+    Object.defineProperty(window, "__brawlerMock", {
+      configurable: true,
+      get() {
+        return installed;
+      },
+      set(bridge) {
+        const mock = bridge as {
+          reset: (spec: unknown) => void;
+          chaos: (command: string, error: unknown) => void;
+        };
+        // Scenario resets run BEFORE chaos rules regardless of call order:
+        // `reset()` clears chaos, so the reverse order would drop the rules.
+        for (const item of queue) {
+          if (item.kind === "scenario") mock.reset(item.spec);
+        }
+        for (const item of queue) {
+          if (item.kind !== "chaos") continue;
+          for (const rule of item.rules) mock.chaos(rule.command, rule.error);
+        }
+        installed = bridge;
+      },
+    });
+  }, action);
+}
+
+/** Seed a scenario (optionally with overlays) BEFORE the app boots. Use over
+ * `openApp` + `resetMockScenario` whenever the assertion depends on what the
+ * FIRST mount read. */
+export async function primeMockScenario(
+  page: Page,
+  spec: ScenarioName | ScenarioSpec,
+): Promise<void> {
+  await primeBeforeBoot(page, { kind: "scenario", spec });
+}
+
+/** Install persistent failure rules BEFORE the app boots (epic #40 S1): each
+ * listed command rejects with its ADR 0070 envelope on EVERY call, including
+ * the bootstrap read. The URL equivalent for a single command is
+ * `?chaos=<command>[:<code>]`. */
+export async function primeChaos(page: Page, rules: readonly ChaosRule[]): Promise<void> {
+  await primeBeforeBoot(page, { kind: "chaos", rules });
 }
 
 /** Re-seed the mock store (optionally with Q2 overlays). Setup order inside

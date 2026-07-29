@@ -9,37 +9,15 @@ import {
 import { expectPrimaryActionCount, expectActionBeforeScroll } from "../helpers/interactionContracts";
 import {
   holdInvocation,
+  primeMockScenario,
   releaseInvocation,
   rejectInvocation,
-  type ScenarioSpec,
 } from "../helpers/mockRuntime";
-import type { Page } from "@playwright/test";
 
-// `recentFeedItems`/`companies` are fetched exactly once at app bootstrap
-// (not re-fetched on in-app navigation), so seeding overlay content AFTER
-// `openApp` is too late for it to appear in those reads —
-// the app's own bootstrap fetch has already resolved with the pre-overlay
-// seed by the time a post-navigation `page.evaluate` reset lands (this raced
-// and was observed flaky under worker load). `page.addInitScript` runs
-// synchronously as the FIRST script on the page, before the app bundle: it
-// traps the `window.__brawlerMock` assignment `installBrowserSmokeRuntime`
-// performs and applies the reset in that same synchronous tick, strictly
-// before React ever mounts — no timing race.
-async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> {
-  await page.addInitScript((s) => {
-    let installed: unknown;
-    Object.defineProperty(window, "__brawlerMock", {
-      configurable: true,
-      get() {
-        return installed;
-      },
-      set(bridge) {
-        (bridge as { reset: (spec: unknown) => void }).reset(s);
-        installed = bridge;
-      },
-    });
-  }, spec);
-}
+// `recentFeedItems`/`companies` are fetched exactly once at app bootstrap (not
+// re-fetched on in-app navigation), so overlay content must be seeded BEFORE
+// boot via `primeMockScenario` (helpers/mockRuntime) — a post-`openApp` reset
+// raced and was observed flaky under worker load.
 
 // J1 — Morning review (docs/ux-journeys.md, ADR 0074/0087). Trigger: opening the
 // app at the start of the day with ~10 overnight items. The redesigned Today

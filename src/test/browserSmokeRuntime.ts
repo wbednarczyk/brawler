@@ -1331,6 +1331,12 @@ export interface BrawlerMockBridge {
    * envelope crosses the bridge — never an `Error` instance. */
   reject(id: string, error: CommandError): void;
   releaseAll(): void;
+  /** One-shot rejection of the NEXT invocation of `command` (Radicle 5be14c9). */
+  failNext(command: string, error: CommandError): void;
+  /** Persistent rejection of EVERY invocation of `command` (epic #40 S1). */
+  chaos(command: string, error: CommandError): void;
+  /** Drop every persistent chaos rule. */
+  clearChaos(): void;
 }
 
 declare global {
@@ -1347,6 +1353,42 @@ function readSmokeOverride(key: string): string | null {
   } catch {
     return null;
   }
+}
+
+// The closed ADR 0070 code set, as a runtime guard for the `?chaos=` param
+// (a URL carries arbitrary text; an unknown code falls back to `internal`).
+const COMMAND_ERROR_CODES: readonly CommandError["code"][] = [
+  "not_found",
+  "invalid_input",
+  "missing_credential",
+  "network",
+  "provider",
+  "conflict",
+  "writes_disabled",
+  "provenance_required",
+  "internal",
+];
+
+/**
+ * `?chaos=<command>[:<code>]` → the persistent rule to install (epic #40 S1).
+ * The message NAMES the failing command so a broken read surfaces as a named
+ * failure on screen rather than an indistinguishable empty state.
+ */
+function parseChaosParam(
+  raw: string | null,
+): { command: string; error: CommandError } | null {
+  if (!raw) return null;
+  const separator = raw.indexOf(":");
+  const command = (separator === -1 ? raw : raw.slice(0, separator)).trim();
+  if (!command) return null;
+  const requested = separator === -1 ? "" : raw.slice(separator + 1).trim();
+  const code = (COMMAND_ERROR_CODES as readonly string[]).includes(requested)
+    ? (requested as CommandError["code"])
+    : "internal";
+  return {
+    command,
+    error: { code, message: `chaos seam: ${command} fails on every call` },
+  };
 }
 
 export function installBrowserSmokeRuntime() {
@@ -1387,8 +1429,16 @@ export function installBrowserSmokeRuntime() {
   ) {
     settings.accentPalette = requestedPalette;
   }
+  // Allow `?chaos=<command>[:<code>]` to break a command for the WHOLE session
+  // (epic #40 S1, ADR 0091) — parsed with its sibling params, installed below
+  // once the runtime exists but strictly before the app's bootstrap reads, so
+  // even a once-at-boot fetch sees the failure.
+  const chaosRule = parseChaosParam(params.get("chaos"));
   const runtime = createMockRuntime("rich");
   seedAndOverlay(runtime, []);
+  if (chaosRule) {
+    runtime.chaos(chaosRule.command, chaosRule.error);
+  }
   activeRuntime = runtime;
   window.__brawlerMock = {
     reset(spec) {
@@ -1410,6 +1460,9 @@ export function installBrowserSmokeRuntime() {
     release: (id) => runtime.controls.release(id),
     reject: (id, error) => runtime.controls.reject(id, error),
     releaseAll: () => runtime.controls.releaseAll(),
+    failNext: (command, error) => runtime.failNext(command, error),
+    chaos: (command, error) => runtime.chaos(command, error),
+    clearChaos: () => runtime.clearChaos(),
   };
   mockIPC((command, args) => dispatch(command, args as InvokeArgs), {
     shouldMockEvents: true,
