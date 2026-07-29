@@ -209,7 +209,13 @@ check-release-label:
 		printf "✖ PR #$(PR) must carry exactly one release:{major,minor,patch,skip} label (found %s: %s)\n" "$$count" "$$(printf '%s ' $$labels)" >&2; \
 		exit 1; \
 	fi; \
-	printf "✓ release-label: PR #$(PR) → %s\n" "$$labels"
+	title="$$(gh pr view $(PR) --json title --jq .title)"; \
+	if ! scripts/release/validate-commit-message.sh --message "$$title" >/dev/null 2>&1; then \
+		printf "✖ PR #$(PR) title is not Conventional: %s\n" "$$title" >&2; \
+		printf "  The title is the squash-merge subject candidate — a non-Conventional squash silently drops the release from the changelog (v0.61.6 hole, 2026-07-29).\n" >&2; \
+		exit 1; \
+	fi; \
+	printf "✓ release-label: PR #$(PR) → %s; title Conventional\n" "$$labels"
 
 # Docs-only pre-commit gate (ADR 0062): the meta-guards a *documentation* change
 # can actually break — the mandatory-read byte budgets + parity (gate-integrity,

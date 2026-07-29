@@ -9,9 +9,12 @@
 # heavy contexts with "skipped", which SATISFIES required checks — a gate hole.)
 name: Release label
 
+# `edited` is in the trigger list because this job also validates the PR TITLE
+# (the squash-merge subject candidate) against Conventional Commits — a title
+# fix must re-run the ~4s gate (v0.61.6 changelog hole, 2026-07-29).
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
 
 permissions:
   contents: read
