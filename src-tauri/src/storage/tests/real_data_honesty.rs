@@ -79,7 +79,7 @@ pub(crate) const FILENAME_EXTENSION_PATTERN: &str = r"(?i)\.(?:xhtml|html|htm|pd
 /// glue trimmed off the front of the human remainder after a split.
 const LEADING_SEPARATORS_PATTERN: &str = r"^[\s–—:;,.-]+";
 
-fn filename_extension() -> &'static Regex {
+pub(super) fn filename_extension() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(FILENAME_EXTENSION_PATTERN).expect("valid filename pattern"))
 }
@@ -98,7 +98,7 @@ fn leading_separators() -> &'static Regex {
 /// glued `"…​.xhtmlJednostkowe Sprawozdanie…"` renders CLEAN prose (so it is not
 /// a filename-as-statement), and a filename-only title renders generic copy (so
 /// it is not specific).
-fn rendered_statement(evidence_title: Option<&str>) -> Option<String> {
+pub(super) fn rendered_statement(evidence_title: Option<&str>) -> Option<String> {
     let trimmed = evidence_title.unwrap_or_default().trim();
     if trimmed.is_empty() {
         return None;
@@ -116,7 +116,7 @@ fn rendered_statement(evidence_title: Option<&str>) -> Option<String> {
 /// [`list_attention_events`] — the only rows for which "the evidence resolved to
 /// nothing" is a meaningful statement. `daily_quote` has no join (a price event
 /// states its rule's range), so it is not orphanable.
-const JOINED_EVIDENCE_TYPES: [&str; 4] = [
+pub(super) const JOINED_EVIDENCE_TYPES: [&str; 4] = [
     EVIDENCE_COMPANY_SIGNAL,
     EVIDENCE_SOURCE_RECONCILIATION,
     EVIDENCE_AUTOPILOT_RUN,
@@ -131,21 +131,23 @@ const JOINED_EVIDENCE_TYPES: [&str; 4] = [
 /// SUCCEEDED — it accepted a set and persisted it. Mirrors
 /// [`crate::fundamentals::extraction::pipeline::Acceptance::emits`]; the CHECK
 /// in migration `0105` is the authoritative vocabulary.
-const EMITTING_ACCEPTANCES: [&str; 3] = ["accepted", "accepted_via_witness", "accepted_unreviewed"];
+pub(super) const EMITTING_ACCEPTANCES: [&str; 3] =
+    ["accepted", "accepted_via_witness", "accepted_unreviewed"];
 
 /// The `reason_code` values that CLAIM production rather than explain its
 /// absence. Every other code in the vocabulary (`validation_failed`,
 /// `structure_drift`, `witness_disagreement`, `no_deterministic_tier`,
 /// `no_period_derived`, `document_unreadable`) names a why, so a zero-fact row
 /// carrying one of those is honest — it says what stopped it.
-const PRODUCTION_CLAIMING_REASONS: [&str; 2] = ["emitted", "witness_fallback"];
+pub(super) const PRODUCTION_CLAIMING_REASONS: [&str; 2] = ["emitted", "witness_fallback"];
 
 /// Triggers excluded from the specificity denominator **by definition**: a price
 /// event's statement IS its rule's range / the 52-week-low label — generic copy
 /// is the correct, honest rendering, not a failure to be specific. Mirrors the
 /// price entries of `GENERIC_FALLBACK_KEYS` in
 /// `tests/live/ux-checkpoint.live.spec.ts` ("Price range", "52-week low").
-const NON_TITLE_TRIGGERS: [&str; 2] = [TRIGGER_PRICE_ENTERS_RANGE, TRIGGER_PRICE_WEEK52_LOW];
+pub(super) const NON_TITLE_TRIGGERS: [&str; 2] =
+    [TRIGGER_PRICE_ENTERS_RANGE, TRIGGER_PRICE_WEEK52_LOW];
 
 // ---------------------------------------------------------------------------
 // Parity + port gates (these run in `make check` — no real data needed)
@@ -248,46 +250,59 @@ fn rendered_statement_mirrors_split_document_title() {
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
-struct HonestyTally {
-    events_total: usize,
+pub(super) struct HonestyTally {
+    pub(super) events_total: usize,
     /// Events whose trigger can carry an evidence title (specificity denominator).
-    specificity_denominator: usize,
+    pub(super) specificity_denominator: usize,
     /// …of those, the ones whose rendered statement says something concrete.
-    specificity_numerator: usize,
+    pub(super) specificity_numerator: usize,
     /// Events whose evidence type resolves through a guarded join (orphan denominator).
-    orphan_denominator: usize,
+    pub(super) orphan_denominator: usize,
     /// …of those, the ones whose evidence resolved to nothing at all.
-    orphaned_evidence: usize,
+    pub(super) orphaned_evidence: usize,
     /// Rendered statements that are still a raw filename. Must be zero.
-    filename_as_statement: usize,
+    pub(super) filename_as_statement: usize,
     /// Per-trigger `(total, without a concrete statement)` — counts only, never content.
-    by_trigger: BTreeMap<String, (usize, usize)>,
+    pub(super) by_trigger: BTreeMap<String, (usize, usize)>,
     /// Per-evidence-type `(total, orphaned)` — counts only, never content.
-    by_evidence_type: BTreeMap<String, (usize, usize)>,
+    pub(super) by_evidence_type: BTreeMap<String, (usize, usize)>,
+}
+
+impl HonestyTally {
+    /// Share of title-capable events whose row states something concrete.
+    /// An empty denominator is 100% by definition (nothing could have been
+    /// vague) — callers guard the degenerate-corpus case separately.
+    pub(super) fn specificity_pct(&self) -> f64 {
+        if self.specificity_denominator == 0 {
+            100.0
+        } else {
+            (self.specificity_numerator as f64 / self.specificity_denominator as f64) * 100.0
+        }
+    }
 }
 
 /// The epic #40 S5 half: does a **success** admit it produced nothing, and does
 /// a **missing** number say what is missing?
 #[derive(Default)]
-struct EffectsTally {
+pub(super) struct EffectsTally {
     /// Extraction outcome rows read (the zero-effect denominator).
-    outcomes_total: usize,
+    pub(super) outcomes_total: usize,
     /// Rows whose acceptance succeeded, whose fact count is zero, and whose
     /// typed reason claims production instead of explaining its absence.
-    zero_effect_successes: usize,
+    pub(super) zero_effect_successes: usize,
     /// Companies whose health read model was computed.
-    companies_scored: usize,
+    pub(super) companies_scored: usize,
     /// Health read-model outputs that report a number as missing without saying
     /// WHAT is missing (or why it does not apply).
-    silent_missing_metrics: usize,
+    pub(super) silent_missing_metrics: usize,
     /// Per-`reason_code` `(zero-fact successes, total successes)` — counts only.
-    by_reason_code: BTreeMap<String, (usize, usize)>,
+    pub(super) by_reason_code: BTreeMap<String, (usize, usize)>,
     /// Per-silence-kind counts, so the ratchet's number is traceable to a shape.
-    by_silence_kind: BTreeMap<&'static str, usize>,
+    pub(super) by_silence_kind: BTreeMap<&'static str, usize>,
 }
 
 /// Silence kinds, for the per-shape breakdown. Machine tokens, counts only.
-mod silence {
+pub(super) mod silence {
     /// A company with no scored FY period at all — `CompanyHealth.latest` is
     /// `None` and the shape carries no field saying why (no annual period? no
     /// facts? not applicable?). The one gap the S5 measurement found in the
@@ -302,11 +317,83 @@ mod silence {
     pub const ALTMAN_NOT_APPLICABLE_UNREASONED: &str = "altman_not_applicable_without_reason";
 }
 
+/// Measure the S4 attention-honesty trio through THE read model the Today
+/// stream uses ([`AttentionStore::list_attention_events`]) and the real frontend
+/// statement rule — never a parallel query (ADR 0091 dec. 4). Dismissed rows are
+/// included so the measurement covers the whole fired corpus rather than only
+/// what the owner has not cleared yet.
+///
+/// Shared with the **synthetic shape corpus** (epic #40 S6,
+/// [`super::shape_corpus`]), which runs these exact invariants in default CI
+/// with no real data: one measurement implementation, two datasets — otherwise
+/// the public gate could certify an honesty the local ratchet does not measure.
+pub(super) fn measure_attention(state: &AppState) -> HonestyTally {
+    let events = state
+        .attention()
+        .list_attention_events(AttentionEventListInput {
+            company_id: None,
+            include_dismissed: true,
+        })
+        .expect("list attention events");
+
+    let mut tally = HonestyTally {
+        events_total: events.len(),
+        ..HonestyTally::default()
+    };
+
+    for event in &events {
+        let statement = rendered_statement(event.evidence_title.as_deref());
+        let concrete = statement.is_some();
+
+        let trigger_entry = tally
+            .by_trigger
+            .entry(event.trigger_type.clone())
+            .or_default();
+        trigger_entry.0 += 1;
+        if !concrete {
+            trigger_entry.1 += 1;
+        }
+
+        if !NON_TITLE_TRIGGERS.contains(&event.trigger_type.as_str()) {
+            tally.specificity_denominator += 1;
+            if concrete {
+                tally.specificity_numerator += 1;
+            }
+        }
+
+        if JOINED_EVIDENCE_TYPES.contains(&event.evidence_type.as_str()) {
+            tally.orphan_denominator += 1;
+            let evidence_entry = tally
+                .by_evidence_type
+                .entry(event.evidence_type.clone())
+                .or_default();
+            evidence_entry.0 += 1;
+            // `evidence_title` is `snapshot.or(join)`, so `None` on a joined
+            // evidence type means BOTH resolved to nothing: the fire-time
+            // snapshot is absent (legacy row) and the evidence row is gone.
+            if event.evidence_title.is_none() {
+                tally.orphaned_evidence += 1;
+                evidence_entry.1 += 1;
+            }
+        }
+
+        if statement
+            .as_deref()
+            .is_some_and(|s| filename_extension().is_match(s))
+        {
+            tally.filename_as_statement += 1;
+        }
+    }
+
+    tally
+}
+
 /// Measure the S5 effects-honesty pair through the real read models
 /// ([`FundamentalsProvenanceStore::list_extraction_outcomes`] and
 /// [`compute_company_health`]) — never a parallel SQL path, so both numbers move
-/// exactly when the app the owner runs moves.
-fn measure_effects(state: &AppState) -> EffectsTally {
+/// exactly when the app the owner runs moves. Shared with the synthetic shape
+/// corpus for the same reason as [`measure_attention`].
+pub(super) fn measure_effects(state: &AppState) -> EffectsTally {
     use crate::commands::company_health::compute_company_health;
     use crate::fundamentals::health::{AltmanScore, PiotroskiScore};
 
@@ -410,71 +497,11 @@ fn real_data_honesty_metrics() {
         Err(_) => AppState::new(connection),
     };
 
-    // THE read model the Today stream uses — not a parallel query (ADR 0091
-    // dec. 4). Dismissed rows are included so the measurement covers the whole
-    // fired corpus rather than only what the owner has not cleared yet.
-    let events = state
-        .attention()
-        .list_attention_events(AttentionEventListInput {
-            company_id: None,
-            include_dismissed: true,
-        })
-        .expect("list attention events");
-
-    let mut tally = HonestyTally {
-        events_total: events.len(),
-        ..HonestyTally::default()
-    };
-
-    for event in &events {
-        let statement = rendered_statement(event.evidence_title.as_deref());
-        let concrete = statement.is_some();
-
-        let trigger_entry = tally
-            .by_trigger
-            .entry(event.trigger_type.clone())
-            .or_default();
-        trigger_entry.0 += 1;
-        if !concrete {
-            trigger_entry.1 += 1;
-        }
-
-        if !NON_TITLE_TRIGGERS.contains(&event.trigger_type.as_str()) {
-            tally.specificity_denominator += 1;
-            if concrete {
-                tally.specificity_numerator += 1;
-            }
-        }
-
-        if JOINED_EVIDENCE_TYPES.contains(&event.evidence_type.as_str()) {
-            tally.orphan_denominator += 1;
-            let evidence_entry = tally
-                .by_evidence_type
-                .entry(event.evidence_type.clone())
-                .or_default();
-            evidence_entry.0 += 1;
-            // `evidence_title` is `snapshot.or(join)`, so `None` on a joined
-            // evidence type means BOTH resolved to nothing: the fire-time
-            // snapshot is absent (legacy row) and the evidence row is gone.
-            if event.evidence_title.is_none() {
-                tally.orphaned_evidence += 1;
-                evidence_entry.1 += 1;
-            }
-        }
-
-        if statement
-            .as_deref()
-            .is_some_and(|s| filename_extension().is_match(s))
-        {
-            tally.filename_as_statement += 1;
-        }
-    }
-
-    let specificity_pct = if tally.specificity_denominator == 0 {
-        100.0
-    } else {
-        (tally.specificity_numerator as f64 / tally.specificity_denominator as f64) * 100.0
-    };
+    // The SHARED measurement (see [`measure_attention`]) — the same code the
+    // synthetic shape corpus runs in public CI, so neither dataset can be judged
+    // by a rule the other has not seen.
+    let tally = measure_attention(&state);
+    let specificity_pct = tally.specificity_pct();
 
     eprintln!("== S4 real-data honesty metrics (aggregate counts only) ==");
     eprintln!("db={db_path}");

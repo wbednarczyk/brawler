@@ -24,7 +24,7 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic realdata-honesty-check test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -47,6 +47,8 @@ help:
 	@printf "  make check-epic          Closure suite: the full gate + heavy periodic suites (coverage ratchet, real-data honesty ratchet)\n"
 	@printf "  make realdata-honesty-check\n"
 	@printf "                            Real-data honesty ratchet on the maintainer's own DB copy (ADR 0091); loud SKIP without it, never in \`make check\`\n"
+	@printf "  make shape-inventory-scan\n"
+	@printf "                            Regenerate the anonymized shape inventory from the maintainer's DB copy (ADR 0091 dec. 4, epic #40 S6)\n"
 	@printf "  make report-escaped-defects\n"
 	@printf "                            Advisory escaped-defect taxonomy trend report (ADR 0081 Q7), never part of check\n"
 	@printf "  make ux-contact-sheet SCREENS=\"a,b\" (or CHANGED=1)\n"
@@ -574,6 +576,27 @@ realdata-honesty-check:
 		$(NIX) node scripts/check/realdata-ratchet.mjs; \
 	else \
 		printf "\n!! SKIP realdata-honesty-check: no real database at %s.\n!! The honesty ratchet measures the maintainer's OWN data and runs on the maintainer's machine only (ADR 0091 dec. 4);\n!! public CI covers the same invariants via the synthetic shape corpus. Refresh the snapshot per private/realdata/README.md to enable it.\n\n" "$(HONESTY_MASTER_DB)"; \
+	fi
+
+# Shape-inventory scan (epic #40 S6, ADR 0091 dec. 4; docs/testing.md § Synthetic
+# shape corpus): rewrites src/test/scenarios/shape-inventory.json from the
+# maintainer's database — ANONYMIZED SHAPE DESCRIPTORS ONLY, never row content.
+#
+# LOCAL ONLY and NOT a `check` step: the inventory changes only when the real
+# data grows a state it never had. Run it when that is plausible (after a big
+# ingestion, a new job kind, a new reason code) and REVIEW THE DIFF before
+# committing. The coverage gate over the synthetic corpus then runs in normal CI
+# and reddens on any newly appeared shape the corpus does not reach.
+#
+# Reuses the honesty throwaway copy (the harness migrates what it opens and
+# refuses the master snapshot / the live application DB).
+shape-inventory-scan:
+	@if [ -f $(HONESTY_MASTER_DB) ]; then \
+		printf "shape-inventory-scan: refreshing the throwaway copy %s\n" "$(HONESTY_DB)"; \
+		cp $(HONESTY_MASTER_DB) $(HONESTY_DB) && \
+		$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(HONESTY_DB)) cargo test real_data_shape_inventory_scan -- --ignored --nocapture'; \
+	else \
+		printf "\n!! SKIP shape-inventory-scan: no real database at %s.\n!! The scan reads the maintainer's OWN data and runs on the maintainer's machine only (ADR 0091 dec. 4);\n!! the committed src/test/scenarios/shape-inventory.json is the public artefact. Refresh the snapshot per private/realdata/README.md to enable it.\n\n" "$(HONESTY_MASTER_DB)"; \
 	fi
 
 # Live-drive (ADR 0066, docs/testing.md § Live drive): drives the REAL packaged

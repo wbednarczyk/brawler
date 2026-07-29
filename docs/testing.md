@@ -400,6 +400,61 @@ Local only, and **never part of `make check`**: it runs as a step of `check-epic
 SKIP on any machine without the maintainer's snapshot (`HONESTY_MASTER_DB`, refreshed per
 `private/realdata/README.md`). Baseline numbers move only with the run that earned them.
 
+### Synthetic shape corpus (epic #40 S6) — the public half
+
+Public CI cannot see the real database, so it gets a **corpus of seed data reproducing every
+data-state SHAPE the real database exhibits**, and the honesty invariants above run over it —
+through the same read models and the same measurement functions — as **hard asserts, no ratchet,
+no secrets** ([ADR 0091](adr/0091-failure-path-and-real-state-testing.md) decision 4). The real DB
+contributes exactly one artifact to the public repo: the anonymized shape inventory.
+
+| artifact | what it is |
+|---|---|
+| `src/test/scenarios/shape-inventory.json` | the committed inventory: `{key, domain, description}` per shape, key-sorted. Generated, reviewed, then committed |
+| `src/test/scenarios/shape-inventory-missing.json` | shapes the corpus deliberately does not reach, each with a reason (the no-silent-caps record) |
+| `storage::tests::real_data_shape_inventory` | the `#[ignore]`d scan that produces the inventory from a throwaway real-DB copy |
+| `storage::tests::shape_corpus` | the named seed cases + both CI gates |
+| `src/test/scenarios/shapeInventory.test.ts` | the privacy/structure guard on the committed file |
+
+- **Anonymized descriptors only (hard boundary).** A descriptor is a key plus its domain
+  (`attention`, `company`, `extraction`, `health`, `source`) — built from machine vocabularies
+  (`trigger_type`, `acceptance`, `reason_code`, tier, statement type, health status). Titles,
+  tickers, names, URLs, ids and dates never reach it: the scan routes every value through a
+  machine-token filter that collapses anything else to `other`, and the Vitest guard reddens on an
+  uppercase run, a digit, a URL, an extension, an id-shaped token or a quotation in any committed
+  key or description. Counts stay on stderr — the shape SET is the contract, not the volume.
+- **Generative, not a checklist.** Keys are built from the values actually observed, so a new
+  trigger type / acceptance / reason code in the real data becomes a new inventory key on the next
+  scan, which then reddens the coverage gate until the corpus grows a case for it.
+- **Coverage gate is observational** (`synthetic_corpus_covers_every_real_data_shape`): it seeds
+  the corpus case by case, re-runs the very scan that produced the inventory, and compares shape
+  sets. A case cannot claim coverage it does not produce; the report attributes each shape to the
+  case that first realized it and names every uncovered key. A shape the corpus cannot reach goes
+  on the missing-list with a reason — and the gate also reddens on a **stale** excuse (the corpus
+  now reaches it) or a **phantom** one (the key is not in the inventory).
+- **Growing the corpus:** add a named case to `CASES` in `shape_corpus.rs`, run the gate, read the
+  attribution table. Cases seed through the real write paths, dropping to raw SQL only for shapes
+  no current write path produces (a pruned-evidence legacy row, a classifier outcome with no
+  runtime setter) — the migration-test idiom.
+- **CI invariants** (`synthetic_corpus_holds_the_honesty_invariants`, default `make check`): a raw
+  filename is never a statement; a title-capable row only falls back to generic copy when its
+  evidence is genuinely gone; `zero_effect_successes == 0`; `silent_missing_metrics == 0`. Plus
+  `synthetic_corpus_run_summaries_explain_their_effect`, which reads every corpus outcome under
+  both compatible readings (facts newly produced / facts re-observed) and asserts neither reaches
+  `EffectVerdict::Unexplained`. All four carry the same false-green guard as the real-data harness:
+  a measurement over an empty corpus certifies nothing.
+
+```bash
+make shape-inventory-scan   # local only: refresh the copy, rescan, rewrite the inventory
+```
+
+Not a `check` step — the inventory changes only when the real data grows a state it never had. Run
+it when that is plausible (a large ingestion, a new job kind, a new reason code), **review the
+diff**, then commit. The one accepted gap today is
+`extraction-zero-facts-claiming-emission`: reproducing the dishonest state would make the
+invariant that forbids it unenforceable, so the corpus never seeds it (stored residue: ratcheted
+locally, repaired forward in #243).
+
 ## Data-transform correctness (property, golden, scale, fuzz, fidelity, pipeline)
 
 Brawler's roadmap is about munching a lot of structured data from many sources

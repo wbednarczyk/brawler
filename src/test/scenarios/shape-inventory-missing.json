@@ -1,0 +1,6 @@
+{
+  "$comment": "Shapes in shape-inventory.json that the synthetic corpus deliberately does NOT reach, each with an honest reason (epic #40 S6, ADR 0091 dec. 4). No silent caps: an entry here is a recorded gap, not a mute allowlist. The coverage gate in src-tauri/src/storage/tests/shape_corpus.rs reddens when an entry is stale (the corpus now reaches it) or phantom (the key is not in the inventory).",
+  "missing": {
+    "extraction-zero-facts-claiming-emission": "The dishonest state itself: a stored outcome that succeeded, recorded zero facts, and claims an emission instead of naming a why. Reproducing it in the corpus would make the CI invariant it exists to enforce (zero_effect_successes == 0) unenforceable — a bound seeded above zero is not a bound. The producing defect is fixed forward (slot_fact_count, epic #40 S5); the residue in the owner's stored rows is ratcheted down by the local harness and repaired by a forward migration in #243."
+  }
+}

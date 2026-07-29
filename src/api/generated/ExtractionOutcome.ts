@@ -40,4 +40,12 @@ detailJson: string | null,
  * The serialized `DriftReport` when layout drift was detected. Persisted
  * even on a non-emitting run (ADR 0061 decision 3's learning loop reads it).
  */
-driftJson: string | null, structureChanged: boolean, factCount: number, attemptCount: number, firstAttemptedAt: string, lastAttemptedAt: string, };
+driftJson: string | null, structureChanged: boolean, 
+/**
+ * The facts this run ESTABLISHED at the slot — newly produced plus
+ * re-observed (`jobs::structured_extraction::slot_fact_count`). Counting
+ * only the new ones let a re-run of a landed period overwrite a healthy
+ * count with `0` beside `reason_code = "emitted"` — a success claiming an
+ * emission it could not evidence (epic #40 S5, ADR 0091).
+ */
+factCount: number, attemptCount: number, firstAttemptedAt: string, lastAttemptedAt: string, };
