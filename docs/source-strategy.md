@@ -277,7 +277,7 @@ Initial candidate sources:
   - `https://www.bankier.pl/rss/gielda.xml` for market/company news.
   - `https://www.bankier.pl/rss/wiadomosci.xml` for broader financial news.
   - `https://www.bankier.pl/rss/espi.xml` remains classified as secondary ESPI/EBI, not media analysis.
-- Investing.com Poland RSS directory, especially company news, stock-market news, analyst ratings, earnings-related news, and analysis categories. Exact feed URLs need discovery from the RSS directory before implementation.
+- Investing.com Poland RSS directory — **reviewed and rejected for ingestion (2026-07-29, issue #73)**: the feeds are reachable and well-formed (`https://pl.investing.com/rss/news_25.rss` etc.), but the site terms explicitly prohibit storing/reproducing site data without Fusion Media's written consent (fatal for an ingest-and-persist adapter in a public open-core repo), items carry no `<guid>`/`<description>` (headline+link only; article pages are Cloudflare-403 to bots), and GPW companies appear only incidentally inside global categories (1/15 sampled items; the Company News category had zero GPW hits) — strictly weaker signal than the already-live Bankier channels. Revisit only with written permission from Fusion Media.
 - Stooq ticker news and company pages.
 - XTB market news/analysis pages, including `https://www.xtb.com/pl/analizy-rynkowe/wiadomosci-rynkowe`.
 - Bankier article/news pages as a possible secondary source or cross-check.
@@ -306,7 +306,7 @@ M8 public-source ranking:
 3. Bankier Firma RSS. Keep as a reviewed follow-up candidate. It is public and RSS-native, but the current feed is broader business news with weaker listed-company signal than Giełda; do not enable by default until matching quality is proven against tracked GPW companies.
 4. Bankier Wiadomości RSS. Keep as a low-priority follow-up candidate. It is public and RSS-native, but it mixes broad national/world/personal-finance coverage, includes stale backfill in the live feed, and would likely create noisy unmatched diagnostics.
 5. Bankier ESPI RSS and Parkiet ESPI/EBI RSS. Keep as secondary official-report cross-check candidates only. They must not replace canonical GPW ingestion and need reconciliation rules before runtime ingestion.
-6. Investing.com Poland RSS, Stooq ticker news, XTB analysis, BiznesRadar, StockWatch, ISBnews-style providers, and Portal Analiz. Keep behind source-specific review. Do not implement scraping, paywalled access, authenticated access, or commercial-provider assumptions without a later ADR or explicit source-policy decision.
+6. Stooq ticker news, XTB analysis, BiznesRadar, StockWatch, and ISBnews-style providers. Keep behind source-specific review. Do not implement scraping, paywalled access, authenticated access, or commercial-provider assumptions without a later ADR or explicit source-policy decision. (Investing.com Poland RSS: reviewed and rejected 2026-07-29 — see the candidate list above. Portal Analiz: blocked on explicit publisher permission — see Authenticated Private Sources.)
 
 Current implementation posture:
 
@@ -436,8 +436,11 @@ Authenticated private sources are in v1 scope only as explicitly named adapters 
 
 Decision: [ADR 0014: Portal Analiz Authenticated Source Policy](adr/0014-portal-analiz-authenticated-source-policy.md) accepts Portal Analiz as a v1 authenticated private research source candidate only under a dedicated adapter with strict local credential, attribution, scope, and rate-limit boundaries. The ADR does not approve generic scraping infrastructure or bypassing access controls.
 
+**Source research update (2026-07-29, issue #116): blocked on explicit publisher permission.** Live probing found `portalanaliz.pl/robots.txt` disallowing named AI/scraper agents site-wide (ClaudeBot, GPTBot, CCBot, …) **and** `Disallow: /feed/` for *every* user agent, with Cloudflare returning 403 to all non-browser fetches (homepage, terms, articles — only robots.txt was servable). No public RSS/API/sitemap exists; the analytical content sits behind the paid membership (~299 PLN/yr). Building even the conservative user-authenticated adapter ADR 0014 sketched would mean defeating active anti-bot defenses — the "hidden full-session browser automation" ADR 0014 lists as a non-goal. Verdict: the disabled-placeholder posture stays; the next step is the **owner asking Portal Analiz for explicit written permission** for a personal, low-volume, authenticated desktop client (no redistribution, no AI training). The license-gated-premium product angle is moot until that permission exists.
+
 Portal Analiz requirements before implementation:
 
+- explicit written permission from the publisher for personal authenticated client access (2026-07-29 finding, above),
 - source research confirming an acceptable user-account usage path under ADR 0014,
 - OS keychain storage for credentials or session secrets,
 - no credential export through YAML, backup, logs, screenshots, or test samples,
