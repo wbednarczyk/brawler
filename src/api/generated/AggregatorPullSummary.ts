@@ -41,6 +41,12 @@ witnessDisagreements: number,
  */
 zeroCellsSkipped: number, 
 /**
+ * Report pages that resolved but parsed to ZERO cells (issue #244) — a
+ * layout change or an empty table, distinct from `pages_unavailable`
+ * (never fetched) and from `zero_cells_skipped` (cells read, all zero).
+ */
+pagesEmpty: number, 
+/**
  * Metric cells with no catalog KPI definition (defensive skip).
  */
 noDefinition: number, 

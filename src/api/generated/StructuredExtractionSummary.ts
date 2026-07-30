@@ -22,4 +22,11 @@ skippedFactIds: Array<string>,
  * How many re-observed slots carried a value that disagrees with the stored
  * fact (never silently overwritten — surfaced for ratification).
  */
-divergentCount: number, };
+divergentCount: number, 
+/**
+ * The typed `reason_code` this run recorded on its outcome row (mirrors
+ * `ExtractionOutcome.reason_code`, ADR 0084 §6 vocabulary; issue #244) —
+ * the summary's home for "why nothing was produced". `None` only for the
+ * benign PDF route, which records no outcome (ADR 0086 dec. 1).
+ */
+reasonCode: string | null, };

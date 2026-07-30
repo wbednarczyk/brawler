@@ -131,8 +131,13 @@ export function resolveChangedFiles(files) {
  * include M (none currently, but kept honest rather than assumed). `theme`
  * narrows to just "dark" or "light" cells (matching a `--theme` CLI filter
  * that only ran one project); omitted/undefined expects both.
+ *
+ * @param {string[]} screens
+ * @param {string} [state]
+ * @param {"dark" | "light"} [theme]
  */
 export function expectedCells(screens, state = "default", theme = undefined) {
+  /** @type {{ screen: string, state: string, tier: *, theme: "dark" | "light" }[]} */
   const cells = [];
   for (const screen of screens) {
     const entry = assertCataloged(screen, state);

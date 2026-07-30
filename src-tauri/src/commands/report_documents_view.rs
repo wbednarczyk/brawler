@@ -125,11 +125,15 @@ pub fn compute_report_documents_view(
                 fact_count: 0,
             });
         entry.fact_count += outcome.fact_count.max(0);
+        // `facts_superseded` (repair migration 0119, issue #243): the recorded
+        // emission's facts are no longer at the slot — an emitting acceptance
+        // alone must not render "contains data" beside a zero count.
         let emitted = outcome.fact_count > 0
-            || matches!(
-                outcome.acceptance.as_str(),
-                "accepted" | "accepted_via_witness" | "accepted_unreviewed"
-            );
+            || (outcome.reason_code != "facts_superseded"
+                && matches!(
+                    outcome.acceptance.as_str(),
+                    "accepted" | "accepted_via_witness" | "accepted_unreviewed"
+                ));
         if emitted {
             entry.status = "has_data".to_owned();
         } else if outcome.acceptance == "flagged" && entry.status != "has_data" {
@@ -449,6 +453,47 @@ mod tests {
         let view = compute_report_documents_view(&s, &c).expect("view");
         let status = row(&view, &doc).extraction.as_ref().expect("indicator");
         assert_eq!(status.status, "flagged");
+        assert_eq!(status.fact_count, 0);
+    }
+
+    /// Issue #243: a `facts_superseded` row (repair migration 0119 — recorded
+    /// emission whose facts are no longer at the slot) must not render
+    /// "contains data" beside a zero count; without another emitting outcome
+    /// the document reads `empty`.
+    #[test]
+    fn extraction_indicator_does_not_claim_data_for_superseded_facts() {
+        let s = state();
+        let c = company(&s);
+        let doc = document(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "x/ssf-2025.pdf",
+            true,
+        );
+        s.fundamentals_provenance()
+            .record_extraction_outcome(crate::storage::NewExtractionOutcome {
+                company_id: &c,
+                report_document_id: &doc,
+                fiscal_year: 2025,
+                period_type: "FY",
+                period_end: "2025-12-31",
+                tier: Some("pdf"),
+                acceptance: "accepted",
+                reason_code: "facts_superseded",
+                detail_json: None,
+                drift_json: None,
+                structure_changed: false,
+                fact_count: 0,
+            })
+            .expect("superseded outcome");
+
+        let view = compute_report_documents_view(&s, &c).expect("view");
+        let status = row(&view, &doc).extraction.as_ref().expect("indicator");
+        assert_eq!(
+            status.status, "empty",
+            "an emitting acceptance with superseded facts is not data"
+        );
         assert_eq!(status.fact_count, 0);
     }
 

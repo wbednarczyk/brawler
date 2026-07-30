@@ -98,6 +98,7 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: ["fact_1"],
       skippedFactIds: [],
       divergentCount: 0,
+      reasonCode: "emitted",
     });
   });
 
@@ -309,6 +310,7 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: ["fact_1", "fact_2", "fact_3"],
       skippedFactIds: [],
       divergentCount: 0,
+      reasonCode: "emitted",
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -337,6 +339,7 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: [],
       divergentCount: 0,
+      reasonCode: "emitted",
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -360,6 +363,7 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: [],
       divergentCount: 0,
+      reasonCode: "emitted",
     });
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 
@@ -379,6 +383,7 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: ["fact_1", "fact_2"],
       divergentCount: 0,
+      reasonCode: "emitted",
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -402,6 +407,7 @@ describe("CompanyReportDocumentsPanel", () => {
       producedFactIds: [],
       skippedFactIds: ["fact_1"],
       divergentCount: 1,
+      reasonCode: "emitted",
     });
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 

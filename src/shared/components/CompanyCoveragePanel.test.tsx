@@ -140,6 +140,7 @@ describe("CompanyCoveragePanel", () => {
       producedFactIds: [],
       skippedFactIds: [],
       divergentCount: 0,
+      reasonCode: "emitted",
     });
   });
 

@@ -22,13 +22,16 @@ acceptance: string,
  * The TYPED reason this run landed where it did (never prose, ADR 0084 §6):
  * `emitted` | `validation_failed` | `structure_drift` |
  * `witness_disagreement` | `witness_fallback` | `no_deterministic_tier` |
- * `no_period_derived` | `document_unreadable`.
+ * `no_period_derived` | `document_unreadable` | `facts_superseded`.
  *
  * `witness_fallback` (ADR 0085 amendment, 2026-07-21) means at least one
  * value was SOURCED from the aggregator because no deterministic tier read
  * it — distinct from `emitted` (the filing was parsed) and from
  * `witness_disagreement` (the filing was parsed and the witness differed).
- * The authoritative vocabulary is the CHECK in migration `0105`.
+ * `facts_superseded` (repair migration `0119`, issue #243) marks a recorded
+ * emission whose facts are no longer at the slot (removed or superseded by
+ * a better document) — written only by the repair, never by a live run.
+ * The authoritative vocabulary is the CHECK in migration `0119`.
  */
 reasonCode: string, 
 /**

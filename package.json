@@ -13,7 +13,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
     "stylelint": "stylelint \"src/**/*.css\"",
     "knip": "knip && node scripts/check/api-surface-guard.mjs",

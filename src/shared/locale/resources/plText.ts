@@ -1872,6 +1872,8 @@ export const plText: Record<string, string> = {
   "A second source reported different figures": "Drugie źródło podało inne liczby",
   "Figures taken from a third-party source (no reader could read the filing)":
     "Liczby wzięte z zewnętrznego serwisu (żaden czytnik nie odczytał raportu)",
+  "Recorded earlier, but the figures were since replaced or removed":
+    "Zapisane wcześniej, ale liczby zostały od tego czasu zastąpione lub usunięte",
   "PDF report — core figures arrive from the aggregator source":
     "Raport PDF — podstawowe liczby przychodzą ze źródła agregatora",
   "No reader could handle this document": "Żaden czytnik nie poradził sobie z tym dokumentem",

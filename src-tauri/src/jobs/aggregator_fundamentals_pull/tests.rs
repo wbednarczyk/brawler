@@ -598,6 +598,17 @@ fn every_zero_effect_aggregator_state_names_a_reason() {
             reason: reason::NO_KPI_DEFINITION
         }
     );
+    // A page that resolved but parsed to zero cells (issue #244 — formerly the
+    // pinned unexplained state): layout change or empty table, now counted.
+    assert_eq!(
+        with(|s| {
+            s.pages_resolved = 24;
+            s.pages_empty = 24;
+        }),
+        EffectVerdict::NothingProduced {
+            reason: reason::PAGES_EMPTY
+        }
+    );
     // Effects, not gaps: a written/updated fact, and a recorded reversed-
     // witnessing disagreement (no fact written, but a finding persisted).
     assert_eq!(with(|s| s.facts_written = 1), EffectVerdict::Produced);
@@ -613,20 +624,36 @@ fn every_zero_effect_aggregator_state_names_a_reason() {
     );
 }
 
-/// The gap this shape still has (epic #40 S5 finding): a page that RESOLVED but
-/// whose parse yielded no cells at all moves no counter — `pages_resolved` says
-/// the page was read, and nothing says the table was empty. Closing it needs a
-/// new counter on this `ts-rs`-exported contract type (an IPC contract
-/// addition), so S5 pins the state instead of inventing the field. Delete this
-/// test and fold the state into the suite above when the counter lands.
+/// Behavioral pin for the counter itself (issue #244): a resolved page whose
+/// parse yields no cells increments `pages_empty` — without it the run reads
+/// "resolved, did nothing, says nothing" (the S5 pinned gap, now closed).
 #[test]
-fn a_resolved_page_with_no_cells_is_the_one_unexplained_aggregator_state() {
-    use crate::effects_honesty::ExplainsEffect;
+fn a_resolved_page_with_no_cells_counts_pages_empty() {
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company");
+    let mut summary = AggregatorPullSummary::default();
+    let mut ledger = std::collections::BTreeMap::new();
 
-    let summary = AggregatorPullSummary {
-        companies: 12,
-        pages_resolved: 24,
-        ..AggregatorPullSummary::default()
-    };
-    assert!(summary.effect_verdict().is_unexplained());
+    pull_one_page(
+        &state,
+        &company.id,
+        "<html><body><p>strona bez tabeli finansowej</p></body></html>",
+        "https://www.biznesradar.pl/raporty-finansowe-bilans/CDR",
+        &Tolerance::default(),
+        &mut summary,
+        &mut ledger,
+    )
+    .expect("pull over a cell-less page");
+
+    assert_eq!(summary.pages_empty, 1, "the empty parse must be counted");
+    assert_eq!(summary.facts_written, 0);
 }

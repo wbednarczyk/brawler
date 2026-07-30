@@ -2205,6 +2205,7 @@ function buildHandlers(): Record<string, Handler> {
         producedFactIds: [],
         skippedFactIds: [],
         divergentCount: 0,
+        reasonCode: "emitted",
         driftJson: null,
       };
     },
@@ -2215,6 +2216,7 @@ function buildHandlers(): Record<string, Handler> {
       producedFactIds: [],
       skippedFactIds: [],
       divergentCount: 0,
+      reasonCode: "emitted",
       driftJson: null,
       tier4: null,
     }),
@@ -2227,6 +2229,7 @@ function buildHandlers(): Record<string, Handler> {
       producedFactIds: [],
       skippedFactIds: [],
       divergentCount: 0,
+      reasonCode: "emitted",
       driftJson: null,
       tier4: null,
     }),

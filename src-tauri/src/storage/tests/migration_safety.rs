@@ -3200,3 +3200,123 @@ fn migration_0116_creates_valuation_runs_idempotently() {
         "re-run must reach exactly the expected migration count",
     );
 }
+
+/// Issue #243 (epic #40 S5 residue): migration 0119 rebuilds
+/// `fundamentals_extraction_outcomes` to admit `facts_superseded`, recounts
+/// `fact_count` from the facts actually AT the slot for the pre-S5 zero-effect
+/// rows, and renames the still-zero survivors' claimed emission to
+/// `facts_superseded`. A rebuild can silently lose rows, so row survival is
+/// asserted alongside the repair semantics.
+#[test]
+fn migration_0119_recounts_zero_effect_rows_and_names_superseded() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 118).expect("apply schema through 0118");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    seed_period(&connection, "p1", "c1", 2025, "FY");
+    // Two facts AT the doc1 slot (distinct definitions satisfy the fact slot
+    // unique index) — the recount source for the lying row below.
+    for (id, def) in [("f1", "kpidef_net_profit"), ("f2", "kpidef_total_assets")] {
+        connection
+            .execute(
+                "INSERT INTO financial_facts
+                    (id, company_id, period_id, definition_id, value_numeric, source_document_ref)
+                 VALUES (?1, 'c1', 'p1', ?2, '100', 'doc1')",
+                params![id, def],
+            )
+            .expect("seed a fact at the doc1 slot");
+    }
+
+    let outcome = |id: &str, doc: &str, acceptance: &str, reason: &str, fact_count: i64| {
+        connection
+            .execute(
+                "INSERT INTO fundamentals_extraction_outcomes
+                    (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                     tier, acceptance, reason_code, fact_count)
+                 VALUES (?1, 'c1', ?2, 2025, 'FY', '2025-12-31', 'esef', ?3, ?4, ?5)",
+                params![id, doc, acceptance, reason, fact_count],
+            )
+            .expect("seed a pre-0119 outcome");
+    };
+    // The pre-S5 lying state: emitting acceptance, zero count, claims emission.
+    outcome("fxo_recover", "doc1", "accepted", "emitted", 0); // facts still at the slot
+    outcome("fxo_super", "doc2", "accepted_unreviewed", "emitted", 0); // facts gone
+    outcome("fxo_legacy", "doc3", "accepted", "witness_fallback", 0); // retired gap-fill
+                                                                      // Untouchable bystanders: a healthy count and a non-emitting acceptance
+                                                                      // (doc5 — the slot index is unique per document).
+    outcome("fxo_healthy", "doc5", "accepted", "emitted", 5);
+    outcome("fxo_flagged", "doc4", "flagged", "validation_failed", 0);
+
+    // The pre-0119 CHECK must reject the new code — otherwise this test would
+    // pass vacuously and prove nothing about the widening.
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO fundamentals_extraction_outcomes
+                    (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                     acceptance, reason_code)
+                 VALUES ('fxo_pre', 'c1', 'doc9', 2025, 'FY', '2025-12-31',
+                     'accepted', 'facts_superseded')",
+                [],
+            )
+            .is_err(),
+        "the pre-0119 CHECK should not admit facts_superseded"
+    );
+
+    apply_migrations(&mut connection).expect("apply migration 0119");
+
+    fn row(connection: &Connection, id: &str) -> (String, i64) {
+        connection
+            .query_row(
+                "SELECT reason_code, fact_count
+                 FROM fundamentals_extraction_outcomes WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or_else(|error| panic!("outcome {id} must survive the rebuild: {error}"))
+    }
+
+    // Recovered: the two facts at the doc1 slot become the honest count.
+    assert_eq!(row(&connection, "fxo_recover"), ("emitted".to_owned(), 2));
+    // Still zero after the recount: the claim is renamed, acceptance history kept.
+    assert_eq!(
+        row(&connection, "fxo_super"),
+        ("facts_superseded".to_owned(), 0)
+    );
+    assert_eq!(
+        row(&connection, "fxo_legacy"),
+        ("facts_superseded".to_owned(), 0)
+    );
+    // Bystanders untouched.
+    assert_eq!(row(&connection, "fxo_healthy"), ("emitted".to_owned(), 5));
+    assert_eq!(
+        row(&connection, "fxo_flagged"),
+        ("validation_failed".to_owned(), 0)
+    );
+
+    // The widened CHECK now admits the repair code.
+    connection
+        .execute(
+            "INSERT INTO fundamentals_extraction_outcomes
+                (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                 acceptance, reason_code)
+             VALUES ('fxo_post', 'c1', 'doc9', 2025, 'FY', '2025-12-31',
+                 'accepted', 'facts_superseded')",
+            [],
+        )
+        .expect("facts_superseded must be admitted after 0119");
+
+    // Re-running the runner is a safe no-op (the healed rows match no predicate).
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    assert_eq!(row(&connection, "fxo_recover"), ("emitted".to_owned(), 2));
+    assert_eq!(
+        row(&connection, "fxo_super"),
+        ("facts_superseded".to_owned(), 0)
+    );
+}

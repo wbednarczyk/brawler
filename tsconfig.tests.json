@@ -1,0 +1,16 @@
+{
+  // Guardrail (issue #240): `tsconfig.json` includes only `src`, and Playwright
+  // transpiles specs WITHOUT type checking — so type drift inside `tests/**`
+  // (e.g. a stale ScenarioOverlayName) used to pass CI silently. This project
+  // covers `tests/` with the same strict settings; `npm run typecheck` runs
+  // both projects, so spec-level drift reddens like src-level drift.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    // `catalog.core.mjs` (plain-JS catalog core, see its header) enters the
+    // program with inferred types; nothing else in tests/ is JS.
+    "allowJs": true
+  },
+  "include": ["tests"]
+}
