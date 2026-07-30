@@ -1035,6 +1035,7 @@ fn synthetic_corpus_run_summaries_explain_their_effect() {
                 produced_fact_ids: ids(outcome.fact_count),
                 skipped_fact_ids: Vec::new(),
                 divergent_count: 0,
+                reason_code: Some(outcome.reason_code.clone()),
             };
             let as_reobserved = StructuredExtractionSummary {
                 acceptance: outcome.acceptance.clone(),
@@ -1043,6 +1044,7 @@ fn synthetic_corpus_run_summaries_explain_their_effect() {
                 produced_fact_ids: Vec::new(),
                 skipped_fact_ids: ids(outcome.fact_count),
                 divergent_count: 0,
+                reason_code: Some(outcome.reason_code.clone()),
             };
             checked += 1;
             for (reading, summary) in [

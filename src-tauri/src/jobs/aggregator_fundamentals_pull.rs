@@ -107,6 +107,10 @@ pub struct AggregatorPullSummary {
     pub witness_disagreements: i64,
     /// Empty / zero aggregator cells skipped (the zero rule) — never written.
     pub zero_cells_skipped: i64,
+    /// Report pages that resolved but parsed to ZERO cells (issue #244) — a
+    /// layout change or an empty table, distinct from `pages_unavailable`
+    /// (never fetched) and from `zero_cells_skipped` (cells read, all zero).
+    pub pages_empty: i64,
     /// Metric cells with no catalog KPI definition (defensive skip).
     pub no_definition: i64,
     /// Guardrail G3 (review 2026-07-22): metrics whose aggregator value disagreed
@@ -128,6 +132,9 @@ pub(crate) mod aggregator_effect_reason {
     pub const ZERO_CELLS: &str = "zero_cells";
     /// The metric cells read have no catalog KPI definition.
     pub const NO_KPI_DEFINITION: &str = "no_kpi_definition";
+    /// A page resolved but parsed to zero cells — layout change or empty table
+    /// (issue #244).
+    pub const PAGES_EMPTY: &str = "pages_empty";
 }
 
 impl crate::effects_honesty::ExplainsEffect for AggregatorPullSummary {
@@ -148,6 +155,7 @@ impl crate::effects_honesty::ExplainsEffect for AggregatorPullSummary {
             (reason::ALREADY_RECORDED, self.facts_reobserved > 0),
             (reason::ZERO_CELLS, self.zero_cells_skipped > 0),
             (reason::NO_KPI_DEFINITION, self.no_definition > 0),
+            (reason::PAGES_EMPTY, self.pages_empty > 0),
         ]);
         verdict(produced, self.companies > 0, reason)
     }
@@ -289,6 +297,12 @@ fn pull_one_page(
     >,
 ) -> Result<(), String> {
     let parsed = parse_all_financials(html);
+    // A resolved page with NO parsed cells is its own honest state (issue
+    // #244): a layout change (parser mismatch) or an empty table — without a
+    // counter this run reads as "resolved, did nothing, says nothing".
+    if parsed.iter().all(|(_, facts)| facts.is_empty()) {
+        summary.pages_empty += 1;
+    }
 
     // Collect every non-zero cell, applying the zero rule up front (ADR 0085
     // amendment): an empty/zero aggregator cell is never a filed value — never

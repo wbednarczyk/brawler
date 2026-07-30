@@ -53,6 +53,11 @@ pub struct StructuredExtractionSummary {
     /// How many re-observed slots carried a value that disagrees with the stored
     /// fact (never silently overwritten — surfaced for ratification).
     pub divergent_count: i64,
+    /// The typed `reason_code` this run recorded on its outcome row (mirrors
+    /// `ExtractionOutcome.reason_code`, ADR 0084 §6 vocabulary; issue #244) —
+    /// the summary's home for "why nothing was produced". `None` only for the
+    /// benign PDF route, which records no outcome (ADR 0086 dec. 1).
+    pub reason_code: Option<String>,
 }
 
 /// Named zero-effect reasons this summary can state (epic #40 S5). Machine
@@ -65,6 +70,29 @@ pub(crate) mod extraction_effect_reason {
     /// Every slot this run read was already recorded (re-observations) — the
     /// honest "already recorded" answer, not a bare "no new values".
     pub const ALREADY_RECORDED: &str = "already_recorded";
+}
+
+impl StructuredExtractionSummary {
+    /// The stored `reason_code` as a static effect token — only codes that
+    /// EXPLAIN an absence qualify; `emitted` claims production and cannot
+    /// explain producing nothing (issue #244).
+    fn stored_reason(&self) -> Option<&'static str> {
+        const EXPLAINING_CODES: &[&str] = &[
+            "validation_failed",
+            "structure_drift",
+            "witness_disagreement",
+            "witness_fallback",
+            "no_deterministic_tier",
+            "no_period_derived",
+            "document_unreadable",
+            "facts_superseded",
+        ];
+        let code = self.reason_code.as_deref()?;
+        EXPLAINING_CODES
+            .iter()
+            .find(|known| **known == code)
+            .copied()
+    }
 }
 
 impl crate::effects_honesty::ExplainsEffect for StructuredExtractionSummary {
@@ -82,7 +110,11 @@ impl crate::effects_honesty::ExplainsEffect for StructuredExtractionSummary {
                 reason::ALREADY_RECORDED,
                 !self.skipped_fact_ids.is_empty() || self.divergent_count > 0,
             ),
-        ]);
+        ])
+        // The typed outcome reason is the fallback home (issue #244): an
+        // emitting acceptance with nothing at the slot stays Unexplained
+        // unless the stored code explains the absence.
+        .or_else(|| self.stored_reason());
         verdict(!self.produced_fact_ids.is_empty(), true, reason)
     }
 }
@@ -113,6 +145,7 @@ pub(crate) fn summarize(
         produced_fact_ids: result.produced_fact_ids,
         skipped_fact_ids: result.skipped_fact_ids,
         divergent_count: result.divergences.len() as i64,
+        reason_code: result.reason_code.map(str::to_owned),
     }
 }
 
@@ -599,6 +632,7 @@ mod tests {
             produced_fact_ids: Vec::new(),
             skipped_fact_ids: Vec::new(),
             divergent_count: 0,
+            reason_code: None,
         }
     }
 
@@ -647,28 +681,39 @@ mod tests {
         produced.emitted = true;
         produced.produced_fact_ids = vec!["fact_2".to_owned()];
         assert_eq!(produced.effect_verdict(), EffectVerdict::Produced);
+        // The stored reason code is the fallback home (issue #244, the field
+        // the S5 pinned-gap test asked for): an emitting acceptance with
+        // nothing at the slot names the outcome row's explaining code.
+        let mut superseded = zero_effect("accepted");
+        superseded.reason_code = Some("facts_superseded".to_owned());
+        assert_eq!(
+            superseded.effect_verdict(),
+            EffectVerdict::NothingProduced {
+                reason: "facts_superseded"
+            }
+        );
     }
 
-    /// The one zero-effect state this shape CANNOT explain: an emitting
-    /// acceptance with neither a produced nor a re-observed fact. The pipeline
-    /// never builds it — `Acceptance::Empty` is chosen when no tier produced a
-    /// tracked fact, so `accepted*` implies facts existed — but the SHAPE
-    /// permits it, and a summary that permits a mute success is one refactor
-    /// away from shipping one.
-    ///
-    /// Closing it needs a field this contract type does not have (a typed
-    /// reason code beside `acceptance`, mirroring
-    /// `ExtractionOutcome.reason_code`) — an IPC contract change, out of scope
-    /// for S5. This test pins the gap so it stays visible and reddens the day
-    /// the shape gains a home for the reason.
+    /// The residual zero-effect state this shape cannot explain — an emitting
+    /// acceptance, nothing at the slot, and a reason code that CLAIMS
+    /// production (`emitted`) or is absent. The pipeline never builds it
+    /// (`accepted*` implies facts existed; migration 0119 repaired the stored
+    /// rows), but the shape permits it, and a summary that permits a mute
+    /// success is one refactor away from shipping one. Unexplained is the
+    /// honest verdict there — the per-shape invariant suites treat it as the
+    /// defect signal, never a state to paper over with a fabricated reason.
     #[test]
-    fn accepted_with_no_facts_at_all_is_the_one_unexplained_state() {
+    fn accepted_with_no_facts_and_no_explaining_code_stays_unexplained() {
         for acceptance in ["accepted", "accepted_via_witness", "accepted_unreviewed"] {
-            assert!(
-                zero_effect(acceptance).effect_verdict().is_unexplained(),
-                "if {acceptance} with no facts gained a named reason, delete this test and \
-                 fold the state into every_zero_effect_extraction_state_names_a_reason"
-            );
+            for reason_code in [None, Some("emitted".to_owned())] {
+                let mut summary = zero_effect(acceptance);
+                summary.reason_code = reason_code.clone();
+                assert!(
+                    summary.effect_verdict().is_unexplained(),
+                    "{acceptance} with no facts and reason {reason_code:?} must stay the \
+                     visible defect signal, not gain a fabricated reason"
+                );
+            }
         }
     }
 

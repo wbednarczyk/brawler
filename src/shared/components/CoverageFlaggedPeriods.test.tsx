@@ -48,6 +48,7 @@ function summary(): StructuredExtractionSummary {
     producedFactIds: ["fact_1"],
     skippedFactIds: [],
     divergentCount: 0,
+    reasonCode: "emitted",
   };
 }
 

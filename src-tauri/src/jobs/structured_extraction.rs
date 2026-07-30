@@ -284,6 +284,10 @@ pub struct StructuredExtractionResult {
     /// BiznesRadar sources facts through its own primary pull; stored
     /// `witness_fallback` outcome rows remain readable as legacy.)
     pub emitted: bool,
+    /// The typed `reason_code` this run recorded on its outcome row (the
+    /// `reason` vocabulary; issue #244) — `None` only for the benign PDF route,
+    /// which records no outcome (ADR 0086 dec. 1).
+    pub reason_code: Option<&'static str>,
 }
 
 /// The per-fact `confirmation_state` for an accepted outcome. Facts are
@@ -809,6 +813,7 @@ pub(crate) fn run_structured_extraction(
                 skipped_fact_ids: Vec::new(),
                 divergences: Vec::new(),
                 emitted: false,
+                reason_code: None,
             });
         }
         // Not a container the pipeline can act on (e.g. garbage bytes under a
@@ -1037,6 +1042,7 @@ pub(crate) fn run_structured_extraction(
         produced_fact_ids,
         skipped_fact_ids,
         divergences,
+        reason_code: Some(reason_code),
     })
 }
 
@@ -1266,6 +1272,7 @@ fn run_positional_extraction(
         produced_fact_ids,
         skipped_fact_ids,
         divergences,
+        reason_code: Some(reason_code),
     })
 }
 
