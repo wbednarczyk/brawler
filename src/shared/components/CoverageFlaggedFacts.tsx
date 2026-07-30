@@ -106,7 +106,7 @@ export function CoverageFlaggedFacts({ companyId, reloadKey = 0 }: CoverageFlagg
       );
     }
     return (
-      <ul className="coverage-flagged-list">
+      <ul className="ui-list-rows coverage-flagged-list">
         {facts.map((fact) => {
           const metric = localizedKpiLabel({ metricKey: fact.metricKey, label: fact.label }, locale);
           const value = formatFinancialValue(
@@ -115,16 +115,15 @@ export function CoverageFlaggedFacts({ companyId, reloadKey = 0 }: CoverageFlagg
           );
           const citation = fact.citation?.trim();
           return (
-            <li key={fact.factId}>
-              <ListRow
-                title={`${periodLabel(fact)} · ${metric} — ${value}`}
-                titleAttr={`${periodLabel(fact)} · ${metric} — ${value}`}
-                meta={citation === undefined || citation === "" ? undefined : citation}
-                // Fixed trailing slot: the reader chip lands at the same x on
-                // every row (ui-authoring styling rules).
-                trailing={<StatusChip tone="warn">{tierLabel(fact.sourceTier, text)}</StatusChip>}
-              />
-            </li>
+            <ListRow
+              key={fact.factId}
+              title={`${periodLabel(fact)} · ${metric} — ${value}`}
+              titleAttr={`${periodLabel(fact)} · ${metric} — ${value}`}
+              meta={citation === undefined || citation === "" ? undefined : citation}
+              // Fixed trailing slot: the reader chip lands at the same x on
+              // every row (ui-authoring styling rules).
+              trailing={<StatusChip tone="warn">{tierLabel(fact.sourceTier, text)}</StatusChip>}
+            />
           );
         })}
       </ul>
