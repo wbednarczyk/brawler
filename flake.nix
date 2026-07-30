@@ -3,9 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
-    # Unstable channel solely for fast-moving dev tools absent from 24.11
-    # (claude-code — the MCP real-client verification, ADR 0078). Not used for
-    # anything shipped.
+    # Unstable channel for fast-moving dev tools absent from (or too old in)
+    # 24.11: claude-code (the MCP real-client verification, ADR 0078) and
+    # nodejs_22 (jsdom 30 requires >=22.22.2; 24.11 stalls at 22.16.0). Not
+    # used for anything shipped.
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
@@ -55,7 +56,14 @@
           pango
           webkitgtk_4_1
         ];
-        linuxLibraryPath = pkgs.lib.makeLibraryPath linuxNativeLibraries;
+        # LD_LIBRARY_PATH deliberately omits openssl: in-shell Rust builds get
+        # an rpath to it already, and force-loading 24.11's OpenSSL 3.3 would
+        # shadow the unstable Node's own 3.4+ (missing OPENSSL_3.4.0 symbols).
+        # Do NOT swap openssl to pkgsUnstable instead — mixing nixpkgs
+        # generations in buildInputs links against two glibcs and the test
+        # binaries fail to load (GLIBC_ABI_DT_X86_64_PLT).
+        linuxLibraryPath = pkgs.lib.makeLibraryPath
+          (builtins.filter (p: p != pkgs.openssl) linuxNativeLibraries);
       in
       {
         devShells.default = pkgs.mkShell {
@@ -67,7 +75,7 @@
             dpkg
             file
             git-cliff
-            nodejs_22
+            pkgsUnstable.nodejs_22
             pkg-config
             rpm
             rustToolchain
@@ -100,7 +108,7 @@
             imagemagick
             lld
             llvm
-            nodejs_22
+            pkgsUnstable.nodejs_22
             nsis
             pkg-config
             rustWindowsToolchain
