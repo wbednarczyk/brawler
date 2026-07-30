@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "brawler"
-version = "0.62.2"
+version = "0.62.3"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
