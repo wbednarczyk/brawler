@@ -382,8 +382,10 @@ impl MetricsContext {
         }
     }
 
-    /// TTM: for an annual period, the value itself; otherwise the sum of the four
-    /// most recent periods, degrading to the latest value when fewer exist.
+    /// TTM: for an annual period, that period's own figure; otherwise the sum of
+    /// the four most recent periods — `None` when fewer than four are present
+    /// (#62). A partial window is not a trailing twelve months, and reporting one
+    /// quarter under a TTM label is worse than reporting nothing.
     fn ttm_at(
         &self,
         key: &str,
@@ -395,21 +397,10 @@ impl MetricsContext {
             return self.value_at(key, idx, visiting);
         }
         let mut sum = Decimal::ZERO;
-        let mut count = 0usize;
         for k in 0..4 {
-            if let Some(v) = self.value_at(key, idx + k, visiting) {
-                sum += v;
-                count += 1;
-            }
+            sum += self.value_at(key, idx + k, visiting)?;
         }
-        if count == 0 {
-            None
-        } else if count < 4 {
-            // Not enough quarters for a true TTM; degrade to the latest value.
-            self.value_at(key, idx, visiting)
-        } else {
-            Some(sum)
-        }
+        Some(sum)
     }
 
     /// Two-point average of the current and prior period (balance-sheet averaging),
@@ -633,6 +624,117 @@ mod tests {
         // cagr(revenue, 5): (1610/1000)^(1/5) - 1 ≈ 0.0999 → > 9%
         let v = ctx.resolver().window(Func::Cagr, "revenue", 5).unwrap();
         assert!(v > dec(9, 2) && v < dec(11, 2));
+    }
+
+    /// T6 (#62) — honest metric windows. Every other test in this module runs
+    /// on annual periods; production sets `is_annual = (period_type == "FY")`
+    /// (`storage/quality_frameworks.rs`), so these pin the quarterly branch and
+    /// the documented degradations of `_avg` / `cagr`.
+    mod window_semantics {
+        use super::*;
+
+        fn quarter(year: i64, seq: u32, facts: &[(&str, Decimal)]) -> PeriodFacts {
+            PeriodFacts {
+                period_id: format!("p{year}q{seq}"),
+                fiscal_year: year,
+                is_annual: false,
+                reported: facts.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+            }
+        }
+
+        #[test]
+        fn ttm_sums_four_present_quarters() {
+            let ctx = ctx_with(vec![
+                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
+                quarter(2025, 3, &[("net_profit", dec(30, 0))]),
+                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
+                quarter(2025, 1, &[("net_profit", dec(10, 0))]),
+            ]);
+            assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(100, 0)));
+        }
+
+        #[test]
+        fn ttm_is_none_when_only_three_quarters_exist() {
+            // Three quarters are not a trailing twelve months. Before #62 this
+            // degraded to the latest single quarter (40) and labeled it TTM.
+            let ctx = ctx_with(vec![
+                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
+                quarter(2025, 3, &[("net_profit", dec(30, 0))]),
+                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
+            ]);
+            assert_eq!(ctx.resolver().value("net_profit_ttm"), None);
+        }
+
+        #[test]
+        fn ttm_is_none_when_a_quarter_inside_the_window_lacks_the_fact() {
+            let ctx = ctx_with(vec![
+                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
+                quarter(2025, 3, &[("revenue", dec(300, 0))]), // no net_profit
+                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
+                quarter(2025, 1, &[("net_profit", dec(10, 0))]),
+            ]);
+            assert_eq!(ctx.resolver().value("net_profit_ttm"), None);
+        }
+
+        #[test]
+        fn ttm_on_an_annual_period_is_that_periods_own_figure() {
+            // Mixed series: the annual branch never sums, even when quarters
+            // follow the annual period in the series.
+            let ctx = ctx_with(vec![
+                period(2025, &[("net_profit", dec(100, 0))]),
+                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
+                quarter(2025, 3, &[("net_profit", dec(30, 0))]),
+                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
+            ]);
+            assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(100, 0)));
+        }
+
+        /// Characterization, not endorsement: the four-slot window walks the
+        /// series by index, so a quarterly latest period followed by annual
+        /// periods (the real GPW shape — one interim quarter on top of an
+        /// FY history) sums across period types. Out of T6's scope (T6 only
+        /// removes the `count < 4` degradation); this test exists so the
+        /// behavior cannot change silently.
+        #[test]
+        fn ttm_window_walks_the_series_by_index_across_period_types() {
+            let ctx = ctx_with(vec![
+                quarter(2026, 1, &[("net_profit", dec(10, 0))]),
+                period(2025, &[("net_profit", dec(400, 0))]),
+                period(2024, &[("net_profit", dec(380, 0))]),
+                period(2023, &[("net_profit", dec(360, 0))]),
+            ]);
+            assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(1150, 0)));
+        }
+
+        #[test]
+        fn avg2_degrades_to_the_current_value_when_the_prior_period_lacks_the_fact() {
+            // Documented degradation (balance-sheet averaging): a two-point
+            // average with no prior point is the current point, not missing.
+            let ctx = ctx_with(vec![
+                quarter(2025, 4, &[("total_equity", dec(600, 0))]),
+                quarter(2025, 3, &[("revenue", dec(300, 0))]), // no total_equity
+            ]);
+            assert_eq!(ctx.resolver().value("total_equity_avg"), Some(dec(600, 0)));
+        }
+
+        #[test]
+        fn cagr_is_none_when_the_target_fiscal_year_is_absent() {
+            // Fiscal-year-label lookup: no period labeled 2020 → no baseline.
+            let ctx = ctx_with(vec![
+                period(2025, &[("revenue", dec(1610, 0))]),
+                period(2024, &[("revenue", dec(1400, 0))]),
+            ]);
+            assert_eq!(ctx.resolver().window(Func::Cagr, "revenue", 5), None);
+        }
+
+        #[test]
+        fn cagr_is_none_when_an_endpoint_is_not_positive() {
+            let ctx = ctx_with(vec![
+                period(2025, &[("net_profit", dec(500, 0))]),
+                period(2020, &[("net_profit", dec(-100, 0))]),
+            ]);
+            assert_eq!(ctx.resolver().window(Func::Cagr, "net_profit", 5), None);
+        }
     }
 
     /// v0.53 T4 (ADR 0067 Decision 4): level-0 market ratios + market cap,
