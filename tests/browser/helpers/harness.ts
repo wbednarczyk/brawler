@@ -1,6 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
+// Re-exported so specs/helpers importing the harness (the required entry
+// point) can type against Playwright without a second direct import.
+export type { Locator, Page };
+
 // Shared browser-test harness. Import `test`/`expect` from here (not directly
 // from @playwright/test) to get:
 //   - a console-error gate: any console.error / uncaught page error fails the
