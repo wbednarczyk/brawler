@@ -888,6 +888,17 @@ fn synthetic_trust_audit_finds_seeded_defects() {
         })
         .expect("foreign company should create");
 
+    // Defect (7) has to be SEEDED now, not inherited: since T7 closed the #203
+    // residual, `create_company` seeds the core `kpi_relevance` set, so a fresh
+    // company no longer has the gap by accident. Stripping the rows keeps the
+    // detector under test — a company can still reach this state (deleted
+    // curation, a pre-0106 row the healing migration could not resolve).
+    state
+        .checkout_for_tests()
+        .expect("connection should check out")
+        .execute("DELETE FROM kpi_relevance", [])
+        .expect("strip the seeded core set to recreate the audited defect");
+
     let watchlist = state
         .create_watchlist(NewWatchlist {
             name: "Trust audit".to_owned(),

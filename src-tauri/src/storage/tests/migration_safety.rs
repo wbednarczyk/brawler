@@ -3662,3 +3662,218 @@ fn migration_0123_admits_value_divergence_and_loses_no_outcome_row() {
 
     apply_migrations(&mut connection).expect("re-running migrations should be safe");
 }
+
+#[test]
+fn migration_0124_heals_companies_missing_core_kpi_relevance() {
+    // #203 residual (epic #229 T7): migration 0106 seeded the IFRS core set for
+    // the companies that existed WHEN IT APPLIED. Two companies on the owner's
+    // database were created afterwards and hold ZERO kpi_relevance rows, so
+    // `expected_primary_metric_keys` returns None and the completeness check
+    // never fires for them. 0124 re-runs 0106's statement, curated rows intact.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 123).expect("apply schema through 0123");
+
+    let def_id = |conn: &rusqlite::Connection, key: &str| -> String {
+        conn.query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'canonical'",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("seeded canonical definition for {key}"))
+    };
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('gap', 'GPW', 'ALE', 'GPW:ALE', 'Allegro'),
+                       ('curated', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.');",
+        )
+        .expect("seed the gap company and the curated one");
+
+    // The curated company already holds a hand-ranked `revenue` row: the seed
+    // must fill the OTHER four around it and leave this one exactly as it is.
+    connection
+        .execute(
+            "INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+             VALUES ('kpirel_user_curated_revenue', 'curated', ?1, 'retired', 'user', 'secondary')",
+            [def_id(&connection, "revenue")],
+        )
+        .expect("seed the curated row");
+
+    apply_migrations(&mut connection).expect("apply migration 0124");
+
+    let core_keys = |conn: &rusqlite::Connection, company: &str| -> Vec<String> {
+        let mut statement = conn
+            .prepare(
+                "SELECT d.metric_key
+                 FROM kpi_relevance r
+                 JOIN kpi_definitions d ON d.id = r.definition_id
+                 WHERE r.company_id = ?1 AND r.source = 'core'
+                 ORDER BY d.metric_key",
+            )
+            .expect("prepare");
+        let rows = statement
+            .query_map([company], |row| row.get::<_, String>(0))
+            .expect("query");
+        rows.collect::<Result<Vec<_>, _>>().expect("collect")
+    };
+
+    assert_eq!(
+        core_keys(&connection, "gap"),
+        vec![
+            "net_profit".to_owned(),
+            "operating_profit".to_owned(),
+            "revenue".to_owned(),
+            "total_assets".to_owned(),
+            "total_equity".to_owned(),
+        ],
+        "the gap company gets the full 0106 core set"
+    );
+
+    assert_eq!(
+        core_keys(&connection, "curated"),
+        vec![
+            "net_profit".to_owned(),
+            "operating_profit".to_owned(),
+            "total_assets".to_owned(),
+            "total_equity".to_owned(),
+        ],
+        "the curated metric is filled around, never re-seeded"
+    );
+
+    let curated: (String, String, Option<String>) = connection
+        .query_row(
+            "SELECT status, source, rank FROM kpi_relevance WHERE id = 'kpirel_user_curated_revenue'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the curated row must survive");
+    assert_eq!(curated.0, "retired");
+    assert_eq!(curated.1, "user");
+    assert_eq!(curated.2.as_deref(), Some("secondary"));
+
+    // Deterministic 0106-shaped ids, so re-applying converges.
+    let seeded_id: String = connection
+        .query_row(
+            "SELECT id FROM kpi_relevance WHERE company_id = 'gap' AND source = 'core'
+             AND definition_id = (SELECT id FROM kpi_definitions
+                                  WHERE metric_key = 'revenue' AND scope = 'canonical')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("seeded id");
+    assert_eq!(seeded_id, "kpirel_core_gap_revenue");
+
+    let before: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    let after: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(before, after, "the seed converges instead of accumulating");
+}
+
+#[test]
+fn migration_0125_rekeys_scope_blind_definition_ids_and_repoints_every_reference() {
+    // #149 (epic #229 T7): `kpi_definition_id` built the PRIMARY KEY from
+    // `metric_key` alone, so a company/sector-scoped definition squatted on the
+    // bare `kpidef_<key>` id that belongs to the canonical concept. 0125 moves
+    // those rows onto scope-discriminated ids and re-points every FK'd child —
+    // with `PRAGMA foreign_keys = ON`, which is how the runner runs.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .expect("enforce foreign keys");
+    apply_migrations_up_to(&mut connection, 123).expect("apply schema through 0123");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.');
+             INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+                VALUES ('per_fy', 'cdr', 2024, 'FY', '2024-12-31');
+             -- The bug class: a company-scoped definition on the bare id, with a
+             -- fact and a relevance row hanging off it.
+             INSERT INTO kpi_definitions (id, scope, company_id, metric_key, label, value_kind)
+                VALUES ('kpidef_backlog', 'company', 'cdr', 'backlog', 'Backlog', 'monetary');
+             INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+                VALUES ('kpirel_backlog', 'cdr', 'kpidef_backlog', 'active', 'user', 'primary');
+             INSERT INTO financial_facts (id, company_id, period_id, definition_id, value_numeric)
+                VALUES ('fact_backlog', 'cdr', 'per_fy', 'kpidef_backlog', '1234');",
+        )
+        .expect("seed the pre-fix state");
+
+    let canonical_revenue: String = connection
+        .query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = 'revenue' AND scope = 'canonical'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("canonical revenue");
+
+    apply_migrations(&mut connection).expect("apply migration 0125");
+
+    // Re-keyed, with the scope discriminator; nothing was dropped.
+    let rekeyed: (String, String, Option<String>) = connection
+        .query_row(
+            "SELECT id, scope, company_id FROM kpi_definitions WHERE metric_key = 'backlog'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the company-scoped definition must survive the re-key");
+    assert_eq!(rekeyed.0, "kpidef_backlog__c_cdr");
+    assert_eq!(rekeyed.1, "company");
+    assert_eq!(rekeyed.2.as_deref(), Some("cdr"));
+
+    // Both children follow the parent — nothing was cascade-deleted.
+    let relevance: String = connection
+        .query_row(
+            "SELECT definition_id FROM kpi_relevance WHERE id = 'kpirel_backlog'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the relevance row must survive and follow the parent");
+    assert_eq!(relevance, "kpidef_backlog__c_cdr");
+    let fact: String = connection
+        .query_row(
+            "SELECT definition_id FROM financial_facts WHERE id = 'fact_backlog'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the fact must survive and follow the parent");
+    assert_eq!(fact, "kpidef_backlog__c_cdr");
+
+    // The canonical rows and the curated sector packs (own id shape) are not touched.
+    assert_eq!(canonical_revenue, "kpidef_revenue");
+    let sector_pack: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM kpi_definitions WHERE id = 'kpidef_bank_nim'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(sector_pack, 1, "curated sector packs keep their ids");
+
+    // The freed bare id is now available to the canonical concept.
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO kpi_definitions (id, scope, metric_key, label, value_kind)
+             VALUES ('kpidef_backlog', 'canonical', 'backlog', 'Backlog', 'monetary')",
+            [],
+        )
+        .expect("insert canonical backlog");
+    let canonical_backlog: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM kpi_definitions WHERE id = 'kpidef_backlog' AND scope = 'canonical'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(
+        canonical_backlog, 1,
+        "a canonical seed for the key is no longer silently ignored"
+    );
+
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+}

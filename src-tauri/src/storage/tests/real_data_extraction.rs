@@ -992,6 +992,8 @@ filled by the pipeline             : {filled_slots}  -> recall {}",
         "no_deterministic_tier",
         "no_period_derived",
         "document_unreadable",
+        "facts_superseded",
+        "value_divergence",
     ];
     for reason in tally.by_reason.keys() {
         assert!(

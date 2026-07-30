@@ -2130,12 +2130,29 @@ function buildHandlers(): Record<string, Handler> {
         ? d.kpiRelevance.filter((r) => r.companyId === companyId)
         : d.kpiRelevance;
     },
+    // Upsert on (companyId, definitionId), mirroring the backend: since company
+    // creation seeds the core KPI set, curating a core metric restates its row
+    // instead of adding a second one (epic #229 T7).
     create_kpi_relevance: (d, a, ctx) => {
-      const base = { ...d.kpiRelevance[0] };
       const input = unwrap(a);
-      base.id = ctx.nextId("kpi_rel");
-      base.companyId = str(input.companyId) ?? base.companyId;
-      d.kpiRelevance = [...d.kpiRelevance, base];
+      const companyId = str(input.companyId) ?? d.kpiRelevance[0]?.companyId;
+      const definitionId =
+        str(input.definitionId) ?? d.kpiRelevance[0]?.definitionId;
+      const existing = d.kpiRelevance.find(
+        (r) => r.companyId === companyId && r.definitionId === definitionId,
+      );
+      const base = {
+        ...(existing ?? d.kpiRelevance[0]),
+        id: existing?.id ?? ctx.nextId("kpi_rel"),
+        companyId,
+        definitionId,
+        status: "active",
+        source: str(input.source) ?? d.kpiRelevance[0]?.source,
+        updatedAt: SAMPLE_NOW,
+      };
+      d.kpiRelevance = existing
+        ? d.kpiRelevance.map((r) => (r.id === existing.id ? base : r))
+        : [...d.kpiRelevance, base];
       return base;
     },
     update_kpi_relevance: (d, a) => {

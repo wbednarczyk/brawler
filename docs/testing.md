@@ -176,12 +176,13 @@ to start against `brawler.sqlite3` or any path under `/mnt/d/` — point it at a
 | Facts by provenance tier, **filing- vs aggregator-sourced** | Required by the [ADR 0085](adr/0085-biznesradar-fundamentals-witness.md) amendment: a coverage number that silently counts third-party fallback values overstates how well filings are read. |
 | Ground-truth-backed precision | Only the hand-labeled espi-wdf cover-note corpus (347 facts). Everything else is printed as a **production count with no precision claim**. |
 
-**Recall caveat, by design:** recall "against the company's expected primary-KPI profile" is
-**not measurable** on the owner's database — `expected_primary_metric_keys` derives that profile
-from `kpi_relevance` rows ranked `primary`, and the table is empty. The harness prints
-`NOT MEASURABLE` with the reason rather than substituting an invented denominator, and falls back
-to document-level recall. The same emptiness means the ADR 0061 dec. 4d completeness downgrade is
-inert in production — a finding, not a harness defect.
+**Recall denominator (measurable since epic #229 T7):** recall "against the company's expected
+primary-KPI profile" derives from `kpi_relevance` rows ranked `primary`. The core floor (five
+IFRS keys, ADR 0092 layer 1) is seeded at company creation and healed by migration 0124, so
+every company carries a profile and the ADR 0061 dec. 4d completeness downgrade is live.
+Measured on the owner's database 2026-07-30: 0 attempted slots without a profile; profile
+recall 100% (35/35 expected slots filled). Were the table ever empty again, the harness prints
+`NOT MEASURABLE` with the reason rather than substituting an invented denominator.
 
 **Env:** `BRAWLER_REAL_DB` + `BRAWLER_REAL_DATA_DIR` as above (absent → skips with a printed
 message, never fails CI), plus:

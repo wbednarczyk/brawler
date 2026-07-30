@@ -484,3 +484,143 @@ fn deletes_company_through_storage_api() {
 
     assert!(companies.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Create-time core `kpi_relevance` seeding (issue #203 residual, T7 slice 1).
+// Migration 0106 seeded the five-key IFRS core set for the companies that
+// existed WHEN IT APPLIED; every company created afterwards had an empty
+// denominator, so the completeness check silently never fired for it. Creation
+// now seeds the same set, with the same INSERT OR IGNORE / NOT EXISTS
+// semantics — a curated row is never overwritten.
+// ---------------------------------------------------------------------------
+
+const CORE_KPI_KEYS: [&str; 5] = [
+    "net_profit",
+    "operating_profit",
+    "revenue",
+    "total_assets",
+    "total_equity",
+];
+
+fn core_relevance_keys(state: &AppState, company_id: &str) -> Vec<(String, String, String)> {
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions should list");
+    let mut rows: Vec<(String, String, String)> = state
+        .list_kpi_relevance(company_id)
+        .expect("relevance should list")
+        .into_iter()
+        .map(|r| {
+            let key = definitions
+                .iter()
+                .find(|d| d.id == r.definition_id)
+                .map(|d| d.metric_key.clone())
+                .unwrap_or_else(|| panic!("dangling definition_id {}", r.definition_id));
+            (key, r.source, r.rank.unwrap_or_default())
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+#[test]
+fn creating_a_company_seeds_the_core_kpi_relevance_set() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: Some("PLOPTTC00011".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    let rows = core_relevance_keys(&state, &created.id);
+    let expected: Vec<(String, String, String)> = CORE_KPI_KEYS
+        .iter()
+        .map(|k| ((*k).to_owned(), "core".to_owned(), "primary".to_owned()))
+        .collect();
+    assert_eq!(rows, expected, "a new company must get the 0106 core set");
+
+    for row in state
+        .list_kpi_relevance(&created.id)
+        .expect("relevance should list")
+    {
+        assert_eq!(row.status, "active");
+        assert!(
+            row.id.starts_with(&format!("kpirel_core_{}_", created.id)),
+            "seeded ids must mirror the 0106 scheme, got {}",
+            row.id
+        );
+    }
+
+    // The seeded denominator is what the completeness check reads.
+    let expected_keys = state
+        .financials()
+        .expected_primary_metric_keys(&created.id)
+        .expect("expected keys should read");
+    assert_eq!(
+        expected_keys.map(|k| k.into_iter().collect::<Vec<_>>()),
+        Some(CORE_KPI_KEYS.iter().map(|k| (*k).to_owned()).collect())
+    );
+}
+
+#[test]
+fn core_kpi_relevance_seeding_never_overwrites_a_curated_row() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    // The owner demotes one core metric for this company.
+    let revenue_row = state
+        .list_kpi_relevance(&created.id)
+        .expect("relevance should list")
+        .into_iter()
+        .find(|r| r.definition_id == "kpidef_revenue")
+        .expect("revenue should be seeded");
+    state
+        .update_kpi_relevance(UpdateKpiRelevance {
+            id: revenue_row.id.clone(),
+            status: Some("retired".to_owned()),
+            rank: Some("secondary".to_owned()),
+            first_seen_period: None,
+            last_seen_period: None,
+        })
+        .expect("curated update should apply");
+
+    // Re-seeding (idempotence: the healing migration, a retried creation) must
+    // converge, not resurrect the row the owner curated.
+    let connection = state.checkout().expect("connection should check out");
+    crate::storage::financials::seed_core_kpi_relevance(&connection, &created.id)
+        .expect("re-seed should be idempotent");
+    drop(connection);
+
+    let rows = core_relevance_keys(&state, &created.id);
+    assert_eq!(rows.len(), 5, "re-seeding must not duplicate rows");
+    let curated = state
+        .list_kpi_relevance(&created.id)
+        .expect("relevance should list")
+        .into_iter()
+        .find(|r| r.id == revenue_row.id)
+        .expect("curated row should survive");
+    assert_eq!(curated.status, "retired");
+    assert_eq!(curated.rank, Some("secondary".to_owned()));
+}

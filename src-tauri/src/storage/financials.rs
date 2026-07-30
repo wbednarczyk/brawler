@@ -340,7 +340,12 @@ pub(super) fn create_kpi_definition(
         });
     }
 
-    let id = kpi_definition_id(&metric_key);
+    let id = kpi_definition_id(
+        &scope,
+        company_id.as_deref(),
+        sector.as_deref(),
+        &metric_key,
+    );
 
     connection.execute(
         "
@@ -560,6 +565,81 @@ pub(super) fn list_kpi_relevance(
         .map_err(StorageError::from)
 }
 
+/// The IFRS core KPI set migration 0106 seeded — the starting denominator for
+/// the completeness check (`expected_primary_metric_keys`). Defensible for any
+/// IFRS reporter; the durable per-sector/per-company selection is studied
+/// separately (issue #81). Keep in lockstep with
+/// `migrations/0106_seed_core_kpi_relevance.sql`.
+pub(super) const CORE_KPI_METRIC_KEYS: [&str; 5] = [
+    "revenue",
+    "operating_profit",
+    "net_profit",
+    "total_assets",
+    "total_equity",
+];
+
+/// Seed the 0106 core `kpi_relevance` set for ONE company — the create-time
+/// half of the fix for issue #203's residual hole: migration 0106 seeded the
+/// companies that existed when it applied, so every company created afterwards
+/// had an empty denominator and the completeness check silently never fired
+/// for it.
+///
+/// Deliberately identical in semantics to 0106 (the migration is the
+/// backfill, this is the forward path — one shape, one behaviour):
+///
+/// * deterministic `kpirel_core_<company>_<metric_key>` ids, so re-seeding
+///   converges instead of accumulating;
+/// * `INSERT OR IGNORE` against `UNIQUE(company_id, definition_id)` plus the
+///   `NOT EXISTS` guard, so a curated (`user`/`agent`/`sector`) row for the
+///   same metric is never overwritten, re-ranked or duplicated;
+/// * a missing canonical definition seeds nothing for that metric rather than
+///   failing.
+pub(super) fn seed_core_kpi_relevance(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<usize> {
+    let placeholders = CORE_KPI_METRIC_KEYS
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("?{}", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "
+        INSERT OR IGNORE INTO kpi_relevance
+            (id, company_id, definition_id, status, source, rank)
+        SELECT
+            'kpirel_core_' || c.id || '_' || d.metric_key,
+            c.id,
+            d.id,
+            'active',
+            'core',
+            'primary'
+        FROM companies c
+        JOIN kpi_definitions d
+          ON d.scope = 'canonical'
+         AND d.metric_key IN ({placeholders})
+        WHERE c.id = ?1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM kpi_relevance existing
+              WHERE existing.company_id = c.id
+                AND existing.definition_id = d.id
+          )
+        "
+    );
+
+    let mut parameters: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(6);
+    parameters.push(&company_id);
+    for key in CORE_KPI_METRIC_KEYS.iter() {
+        parameters.push(key);
+    }
+
+    connection
+        .execute(&sql, parameters.as_slice())
+        .map_err(StorageError::from)
+}
+
 pub(super) fn create_kpi_relevance(
     connection: &Connection,
     input: NewKpiRelevance,
@@ -578,6 +658,12 @@ pub(super) fn create_kpi_relevance(
 
     let id = kpi_relevance_id(&company_id, &definition_id);
 
+    // Curating a KPI that is ALREADY relevant re-states the profile, it does not
+    // fail: since creation seeds the core set (issue #203), the five core
+    // metrics are pre-occupied on every company, and without this upsert the
+    // `create_kpi_relevance` command/act would hard-error on exactly the metrics
+    // an investor curates most. The seed never overwrites curation; curation
+    // always overwrites the seed.
     connection.execute(
         "
         INSERT INTO kpi_relevance (
@@ -590,6 +676,15 @@ pub(super) fn create_kpi_relevance(
             first_seen_period,
             last_seen_period
         ) VALUES (?1, ?2, ?3, 'active', ?4, ?5, ?6, ?7)
+        ON CONFLICT(company_id, definition_id) DO UPDATE SET
+            status = 'active',
+            source = excluded.source,
+            rank = COALESCE(excluded.rank, kpi_relevance.rank),
+            first_seen_period =
+                COALESCE(excluded.first_seen_period, kpi_relevance.first_seen_period),
+            last_seen_period =
+                COALESCE(excluded.last_seen_period, kpi_relevance.last_seen_period),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         ",
         params![
             id,
@@ -602,7 +697,15 @@ pub(super) fn create_kpi_relevance(
         ],
     )?;
 
-    get_kpi_relevance(connection, &id)
+    // Read back by the natural key, not `id`: on conflict the surviving row is
+    // the pre-existing one, whose id may be the seed's (`kpirel_core_*`).
+    let stored_id: String = connection.query_row(
+        "SELECT id FROM kpi_relevance WHERE company_id = ?1 AND definition_id = ?2",
+        params![company_id, definition_id],
+        |row| row.get(0),
+    )?;
+
+    get_kpi_relevance(connection, &stored_id)
 }
 
 pub(super) fn update_kpi_relevance(
@@ -839,10 +942,10 @@ fn stored_fact_set_filtered(
         return Ok(None);
     }
 
-    // `kpi_definitions.id` is derived solely from `metric_key`
-    // (`kpi_definition_id`), so listing the full catalog (no scope filter)
-    // gives a stable id → metric_key map regardless of which scope produced
-    // the definition a fact references.
+    // The map is read out of the CATALOG (not derived from ids), so it stays
+    // correct now that non-canonical ids carry a scope discriminator
+    // (`kpi_definition_id`): listing with no scope filter returns every row,
+    // whichever scope produced the definition a fact references.
     let definitions = list_kpi_definitions(
         connection,
         ListKpiDefinitionsInput {
@@ -989,7 +1092,10 @@ pub(super) fn metric_history(
         ListFinancialFactsInput {
             company_id: Some(company_id.to_owned()),
             period_id: None,
-            definition_id: Some(kpi_definition_id(metric_key)),
+            // Deliberately the CANONICAL id: a company-scoped measure that
+            // merely shares the key is a different measure (ADR 0077 d.8
+            // no-repaint rule) and must not enter the canonical history.
+            definition_id: Some(canonical_kpi_definition_id(metric_key)),
         },
     )?;
 
@@ -1057,11 +1163,13 @@ pub(super) fn metric_histories(
         .map(|p| p.id.clone())
         .collect();
 
-    // `kpi_definition_id` is a 1:1 function of `metric_key`, so this reverse map
-    // is unambiguous — the group a scanned fact belongs to.
+    // `canonical_kpi_definition_id` is a 1:1 function of `metric_key`, so this
+    // reverse map is unambiguous — the group a scanned fact belongs to. Only
+    // canonical ids are mapped, keeping this the exact batched equivalent of
+    // [`metric_history`] (which reads the canonical definition too).
     let def_to_metric: HashMap<String, String> = metric_keys
         .iter()
-        .map(|k| (kpi_definition_id(k), k.clone()))
+        .map(|k| (canonical_kpi_definition_id(k), k.clone()))
         .collect();
 
     // One scan for the whole company (definition_id = None), grouped by the
@@ -1654,8 +1762,51 @@ fn financial_fact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Financia
     })
 }
 
-fn kpi_definition_id(metric_key: &str) -> String {
+/// The CANONICAL catalog id for a metric key. Bare `kpidef_<key>`, and it stays
+/// that way forever: facts, relevance rows, quality-framework criteria and the
+/// metric-history reads all key on it, so re-shaping it would orphan them.
+fn canonical_kpi_definition_id(metric_key: &str) -> String {
     format!("kpidef_{}", slug_part(metric_key))
+}
+
+/// The catalog id for a definition in ANY scope (issue #149).
+///
+/// `kpi_definitions` is unique on `(metric_key, scope, company_id, sector)` —
+/// a metric key legitimately exists once per scope bucket. The PRIMARY KEY has
+/// to carry the same discriminator, otherwise a company-scoped definition whose
+/// reported measure shares a generic catalog key cannot be created at all (PK
+/// conflict with the canonical row), and a company-scoped key with no canonical
+/// twin squats on the id a later canonical seed needs — an `INSERT OR IGNORE`
+/// seed then silently does nothing.
+///
+/// Canonical keeps the bare id; non-canonical scopes get a suffix built from
+/// exactly the columns the unique index uses, so the id is unique wherever the
+/// index is. Curated sector packs seeded with their own hand-written ids
+/// (`kpidef_bank_nim`, migrations 0034/0048/…) are untouched — they never went
+/// through this function.
+fn kpi_definition_id(
+    scope: &str,
+    company_id: Option<&str>,
+    sector: Option<&str>,
+    metric_key: &str,
+) -> String {
+    let base = canonical_kpi_definition_id(metric_key);
+    let scope = scope.trim().to_ascii_lowercase();
+
+    if scope == "canonical" {
+        return base;
+    }
+
+    let (marker, discriminator) = match scope.as_str() {
+        "company" => ("c".to_owned(), slug_part(company_id.unwrap_or_default())),
+        "sector" => ("s".to_owned(), slug_part(sector.unwrap_or_default())),
+        other => (
+            slug_part(other),
+            slug_part(company_id.or(sector).unwrap_or_default()),
+        ),
+    };
+
+    format!("{base}__{marker}_{discriminator}")
 }
 
 fn financial_period_id(company_id: &str, fiscal_year: i64, period_type: &str) -> String {

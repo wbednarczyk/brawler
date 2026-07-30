@@ -261,6 +261,229 @@ fn creates_company_custom_kpi_definition() {
     assert_eq!(custom_kpi.metric_key, "custom_metric");
 }
 
+// ---------------------------------------------------------------------------
+// kpi_definitions id scoping (issue #149, T7 slice 2). The unique INDEX is
+// (metric_key, scope, company_id, sector) — a metric key legitimately exists
+// once per scope bucket. The PRIMARY KEY must therefore carry the same
+// discriminator, otherwise a company-scoped definition whose reported measure
+// happens to share a generic catalog key collides with the canonical row.
+// Canonical ids stay bare (`kpidef_<key>`) — everything references them.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn company_scoped_definition_coexists_with_canonical_same_metric_key() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let canonical = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list")
+        .into_iter()
+        .find(|d| d.metric_key == "revenue")
+        .expect("canonical revenue should be seeded");
+    assert_eq!(canonical.id, "kpidef_revenue");
+
+    // The company reports a measure it CALLS revenue but which is not the
+    // generic concept (ADR 0077 d.8 no-repaint rule): tracked company-scoped.
+    let scoped = state
+        .create_kpi_definition(NewKpiDefinition {
+            scope: "company".to_owned(),
+            company_id: Some(company.id.clone()),
+            sector: None,
+            metric_key: "revenue".to_owned(),
+            label: "Revenue (as the issuer defines it)".to_owned(),
+            value_kind: "monetary".to_owned(),
+            unit: None,
+            computation: "reported".to_owned(),
+            formula: None,
+            display_format: None,
+        })
+        .expect("a company-scoped definition must not collide with the canonical row");
+
+    assert_ne!(scoped.id, canonical.id);
+    assert_eq!(scoped.scope, "company");
+    assert_eq!(scoped.company_id, Some(company.id.clone()));
+    assert_eq!(scoped.metric_key, "revenue");
+
+    // The canonical row is untouched — nothing was upserted onto it.
+    let canonical_after = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list")
+        .into_iter()
+        .find(|d| d.id == canonical.id)
+        .expect("canonical definition should still resolve");
+    assert_eq!(canonical_after.scope, "canonical");
+    assert_eq!(canonical_after.company_id, None);
+    assert_eq!(canonical_after.label, canonical.label);
+
+    // Both are visible to the company's catalog view (CustomKpiManager flow).
+    let visible = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: Some(company.id.clone()),
+        })
+        .expect("company catalog should list");
+    let revenue_rows: Vec<_> = visible
+        .iter()
+        .filter(|d| d.metric_key == "revenue")
+        .collect();
+    assert_eq!(
+        revenue_rows.len(),
+        2,
+        "canonical + company-scoped revenue must coexist, got {revenue_rows:?}"
+    );
+}
+
+#[test]
+fn sector_scoped_definition_coexists_with_canonical_same_metric_key() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let scoped = state
+        .create_kpi_definition(NewKpiDefinition {
+            scope: "sector".to_owned(),
+            company_id: None,
+            sector: Some("banking".to_owned()),
+            metric_key: "revenue".to_owned(),
+            label: "Revenue (banking presentation)".to_owned(),
+            value_kind: "monetary".to_owned(),
+            unit: None,
+            computation: "reported".to_owned(),
+            formula: None,
+            display_format: None,
+        })
+        .expect("a sector-scoped definition must not collide with the canonical row");
+
+    assert_ne!(scoped.id, "kpidef_revenue");
+    assert_eq!(scoped.sector, Some("banking".to_owned()));
+}
+
+#[test]
+fn two_companies_may_each_scope_the_same_metric_key() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let first = tracked_company(&state);
+    let second = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "SCND".to_owned(),
+            display_name: "Second Co.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("second company should create");
+
+    let make = |company_id: &str| NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: Some(company_id.to_owned()),
+        sector: None,
+        metric_key: "backlog".to_owned(),
+        label: "Backlog".to_owned(),
+        value_kind: "monetary".to_owned(),
+        unit: None,
+        computation: "reported".to_owned(),
+        formula: None,
+        display_format: None,
+    };
+
+    let a = state
+        .create_kpi_definition(make(&first.id))
+        .expect("first company-scoped definition should create");
+    let b = state
+        .create_kpi_definition(make(&second.id))
+        .expect("second company-scoped definition must not collide with the first");
+
+    assert_ne!(a.id, b.id);
+}
+
+#[test]
+fn company_scoped_facts_do_not_leak_into_canonical_metric_history() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let scoped = state
+        .create_kpi_definition(NewKpiDefinition {
+            scope: "company".to_owned(),
+            company_id: Some(company.id.clone()),
+            sector: None,
+            metric_key: "revenue".to_owned(),
+            label: "Revenue (issuer definition)".to_owned(),
+            value_kind: "monetary".to_owned(),
+            unit: None,
+            computation: "reported".to_owned(),
+            formula: None,
+            display_format: None,
+        })
+        .expect("company-scoped definition should create");
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2024,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2024-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: scoped.id.clone(),
+            value_numeric: "42".to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("company-scoped fact should create");
+
+    // The canonical `revenue` history is keyed on the canonical definition id,
+    // so the issuer's differently-defined measure never contaminates it.
+    let history = state
+        .financials()
+        .metric_history(&company.id, "revenue", 2999, "FY")
+        .expect("metric history should read");
+    assert!(
+        history.is_empty(),
+        "a company-scoped measure must not be folded into the canonical key, got {history:?}"
+    );
+
+    // But the fact still bridges to its own metric_key for the fact matrix.
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: Some(scoped.id.clone()),
+        })
+        .expect("facts should list");
+    assert_eq!(facts.len(), 1);
+}
+
 #[test]
 fn creates_financial_period() {
     let connection = open_in_memory_database().expect("database should initialize");
@@ -400,6 +623,47 @@ fn creates_and_lists_kpi_relevance() {
     assert!(relevances
         .iter()
         .any(|r| r.definition_id == net_profit_def.id));
+}
+
+#[test]
+fn curating_a_core_seeded_metric_restates_the_profile_instead_of_failing() {
+    // Company creation seeds the core set (issue #203), so the five core
+    // metrics are already relevant on every company. Curating one of them —
+    // the `create_kpi_relevance` command / MCP act — must restate that row, not
+    // hard-fail on the UNIQUE(company_id, definition_id) constraint.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let seeded = state
+        .list_kpi_relevance(&company.id)
+        .expect("relevance should list")
+        .into_iter()
+        .find(|r| r.definition_id == "kpidef_revenue")
+        .expect("revenue is core-seeded at creation");
+    assert_eq!(seeded.source, "core");
+
+    let curated = state
+        .create_kpi_relevance(NewKpiRelevance {
+            company_id: company.id.clone(),
+            definition_id: "kpidef_revenue".to_owned(),
+            source: "user".to_owned(),
+            rank: Some("primary".to_owned()),
+            first_seen_period: Some("2026-Q1".to_owned()),
+            last_seen_period: None,
+        })
+        .expect("curating a core-seeded metric must not fail");
+
+    assert_eq!(curated.source, "user", "curation overwrites the app seed");
+    assert_eq!(curated.first_seen_period, Some("2026-Q1".to_owned()));
+    assert_eq!(
+        state
+            .list_kpi_relevance(&company.id)
+            .expect("relevance should list")
+            .len(),
+        5,
+        "curation restates a row, it never duplicates one"
+    );
 }
 
 #[test]
@@ -1000,14 +1264,18 @@ fn definition_id_for(state: &AppState, metric_key: &str) -> String {
 fn migration_0106_seeds_the_core_kpi_set_idempotently_without_touching_curation() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
-    // The seed runs at migration time, before either company exists, so both
-    // start with an empty relevance profile — the production starting point.
+    // Since T7 the same core set is also seeded at creation time (issue #203
+    // residual), so both companies start WITH it — which makes re-applying
+    // 0106's statement the exact convergence case this test exists to pin.
     let fresh = company_with_ticker(&state, "SEED");
     let curated = company_with_ticker(&state, "CUR");
-    assert!(state
-        .list_kpi_relevance(&fresh.id)
-        .expect("relevance should list")
-        .is_empty());
+    assert_eq!(
+        state
+            .list_kpi_relevance(&fresh.id)
+            .expect("relevance should list")
+            .len(),
+        CORE_KPI_METRIC_KEYS.len()
+    );
 
     // A user-curated row for one of the core metrics, deliberately ranked
     // `secondary`: the seed must leave it exactly as the owner left it.
@@ -1031,7 +1299,7 @@ fn migration_0106_seeds_the_core_kpi_set_idempotently_without_touching_curation(
             .expect("seed should be idempotent");
     }
 
-    // Seeds the whole core set on an empty profile, exactly once.
+    // The whole core set, exactly once, however many times the seed runs.
     let seeded = state
         .list_kpi_relevance(&fresh.id)
         .expect("relevance should list");

@@ -189,7 +189,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `record_expectation_resolution` | Resolve a report expectation after the report lands (resolution note). |
 | `create_company_event` | Add a calendar event (dividend/meeting/report date) for a company. |
 | `create_kpi_definition` | Add a KPI/financial-concept definition to the metric catalog. |
-| `create_kpi_relevance` | Mark a KPI definition relevant to a company (scorecard editor). |
+| `create_kpi_relevance` | Mark a KPI definition relevant to a company (scorecard editor). Every company starts with an app-seeded IFRS core set (`revenue`, `operating_profit`, `net_profit`, `total_assets`, `total_equity`, `source='core'`); calling this for one of them **restates** that row with your `source`/`rank` rather than failing. |
 | `update_kpi_relevance` | Update a company's KPI-relevance row (status/rank) by id. |
 | `create_quality_framework` | Create a quality-scorecard framework. |
 | `update_quality_framework` | Update a quality framework (name/description) by id. |
