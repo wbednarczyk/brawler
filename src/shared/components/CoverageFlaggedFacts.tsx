@@ -131,7 +131,7 @@ export function CoverageFlaggedFacts({ companyId, reloadKey = 0 }: CoverageFlagg
   };
 
   return (
-    <section className="coverage-flagged" aria-label={text("Flagged figures")}>
+    <section className="coverage-flagged-figures" aria-label={text("Flagged figures")}>
       <SectionHeader
         level="h3"
         title={text("Flagged figures")}

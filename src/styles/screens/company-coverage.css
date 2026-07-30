@@ -219,7 +219,11 @@
    coverage is the company's "what do we have / what needs review" surface, and
    the Review queue panel that used to host human review was retired with the
    in-app AI layer. */
-.coverage-flagged {
+/* .coverage-flagged-figures (the T5 flagged-facts section) shares the layout
+   but keeps its own root class — the browser suite targets .coverage-flagged
+   strictly as THE flagged-periods section. */
+.coverage-flagged,
+.coverage-flagged-figures {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
