@@ -964,13 +964,13 @@ fn synthetic_trust_audit_finds_seeded_defects() {
         .iter()
         .find(|definition| definition.metric_key == "eps_basic")
         .expect("eps_basic should exist in the canonical catalog");
-    state
+    let eps_fact = state
         .create_financial_fact(NewFinancialFact {
             company_id: owner.id.clone(),
             period_id: period.id.clone(),
             definition_id: eps.id.clone(),
             value_numeric: "3.21".to_owned(),
-            currency: Some("shares".to_owned()),
+            currency: Some("PLN".to_owned()),
             statement_basis: None,
             attribution: None,
             variant: None,
@@ -987,6 +987,17 @@ fn synthetic_trust_audit_finds_seeded_defects() {
             annotation: None,
         })
         .expect("fact should create");
+    // The non-ISO unit is a LEGACY shape: since #93's write-side guard the store
+    // refuses to persist it, so the audit's detection is proven against a row
+    // forced in behind the API — exactly like the rows already in the real DB.
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "UPDATE financial_facts SET currency = 'shares' WHERE id = ?1",
+            [&eps_fact.id],
+        )
+        .expect("legacy currency should be forced in");
 
     let report = run_trust_audit(&state, Some(&data_dir));
     let rendered = report.render().join("\n");

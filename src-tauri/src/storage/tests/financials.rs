@@ -675,6 +675,199 @@ fn updates_financial_fact() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Currency integrity (#93): a stored currency is NULL or a 3-letter ISO-4217
+// code, normalized to uppercase at the write boundary. The ESEF divide-unit bug
+// wrote "shares" onto every EPS fact; the guard makes that class unstorable.
+// ---------------------------------------------------------------------------
+
+fn canonical_definition_id(state: &AppState, metric_key: &str) -> String {
+    state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list")
+        .iter()
+        .find(|d| d.metric_key == metric_key)
+        .unwrap_or_else(|| panic!("{metric_key} should exist in the canonical catalog"))
+        .id
+        .clone()
+}
+
+/// Seeds a company + FY period and returns `(company_id, period_id, cash
+/// definition id)` for the currency-guard tests.
+fn currency_guard_slot(state: &AppState) -> (String, String, String) {
+    let company = tracked_company(state);
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+    let definition_id = canonical_definition_id(state, "cash");
+    (company.id, period.id, definition_id)
+}
+
+fn new_fact_with_currency(
+    company_id: &str,
+    period_id: &str,
+    definition_id: &str,
+    currency: Option<&str>,
+) -> NewFinancialFact {
+    NewFinancialFact {
+        company_id: company_id.to_owned(),
+        period_id: period_id.to_owned(),
+        definition_id: definition_id.to_owned(),
+        value_numeric: "500000".to_owned(),
+        currency: currency.map(str::to_owned),
+        statement_basis: None,
+        attribution: None,
+        variant: None,
+        measure_window: None,
+        data_quality: None,
+        as_reported_value: None,
+        as_reported_scale: None,
+        reporting_standard: None,
+        extraction_method: None,
+        confidence: None,
+        confirmation_state: None,
+        supersedes_id: None,
+        source_document_ref: None,
+        annotation: None,
+    }
+}
+
+#[test]
+fn create_financial_fact_rejects_a_non_iso_currency() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let error = state
+        .create_financial_fact(new_fact_with_currency(
+            &company_id,
+            &period_id,
+            &definition_id,
+            Some("shares"),
+        ))
+        .expect_err("a unit that is not a currency must never be stored");
+
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "currency",
+                ref value
+            } if value == "shares"
+        ),
+        "expected a typed invalid-currency error, got {error:?}"
+    );
+}
+
+#[test]
+fn create_financial_fact_normalizes_currency_case() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_currency(
+            &company_id,
+            &period_id,
+            &definition_id,
+            Some(" pln "),
+        ))
+        .expect("a lowercase ISO code is normalized, not rejected");
+
+    assert_eq!(fact.currency.as_deref(), Some("PLN"));
+}
+
+#[test]
+fn create_financial_fact_allows_absent_currency() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let none = state
+        .create_financial_fact(new_fact_with_currency(
+            &company_id,
+            &period_id,
+            &definition_id,
+            None,
+        ))
+        .expect("a unit-less ratio fact keeps a NULL currency");
+    assert_eq!(none.currency, None);
+
+    // An empty string is the same absence, not a validation failure.
+    let revenue_id = canonical_definition_id(&state, "revenue");
+    let empty = state
+        .create_financial_fact(new_fact_with_currency(
+            &company_id,
+            &period_id,
+            &revenue_id,
+            Some("   "),
+        ))
+        .expect("an empty currency is absence");
+    assert_eq!(empty.currency, None);
+}
+
+#[test]
+fn update_financial_fact_rejects_a_non_iso_currency_and_normalizes_case() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+    let fact = state
+        .create_financial_fact(new_fact_with_currency(
+            &company_id,
+            &period_id,
+            &definition_id,
+            Some("PLN"),
+        ))
+        .expect("fact should create");
+
+    let error = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: None,
+            currency: Some("shares".to_owned()),
+            data_quality: None,
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect_err("an update must not smuggle in a non-currency unit");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "currency",
+                ref value
+            } if value == "shares"
+        ),
+        "expected a typed invalid-currency error, got {error:?}"
+    );
+
+    let updated = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: None,
+            currency: Some("eur".to_owned()),
+            data_quality: None,
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("a lowercase ISO code is normalized");
+    assert_eq!(updated.currency.as_deref(), Some("EUR"));
+}
+
 #[test]
 fn deletes_financial_period_and_cascades_to_facts() {
     let connection = open_in_memory_database().expect("database should initialize");

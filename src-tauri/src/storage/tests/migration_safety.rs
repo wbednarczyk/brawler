@@ -1304,6 +1304,100 @@ fn migration_0098_maps_debt_collectors_but_not_investment_holdings() {
 }
 
 #[test]
+fn migration_0120_repairs_eps_shares_currency_and_spares_every_other_fact() {
+    // #93 (epic #229 T4): the ESEF divide-unit bug stored 76 EPS facts (38
+    // eps_basic + 38 eps_diluted) with currency = 'shares' — the denominator of
+    // the `iso4217:PLN / xbrli:shares` ratio unit. The repair rewrites exactly
+    // that class to PLN and touches nothing else.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 119).expect("apply schema through 0119");
+
+    let def_id = |conn: &rusqlite::Connection, key: &str| -> String {
+        conn.query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'canonical'",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("seeded canonical definition for {key}"))
+    };
+    let def_basic = def_id(&connection, "eps_basic");
+    let def_diluted = def_id(&connection, "eps_diluted");
+    let def_revenue = def_id(&connection, "revenue");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.');
+             INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+                VALUES ('per_fy', 'cdr', 2024, 'FY', '2024-12-31'),
+                       ('per_fy23', 'cdr', 2023, 'FY', '2023-12-31');",
+        )
+        .expect("seed company + periods");
+
+    connection
+        .execute(
+            "INSERT INTO financial_facts
+                (id, company_id, period_id, definition_id, value_numeric, currency, extraction_method)
+             VALUES
+                -- The bug class: both EPS metrics carrying the shares denominator.
+                ('f_basic',   'cdr', 'per_fy', ?1, '3.21', 'shares', 'esef'),
+                ('f_diluted', 'cdr', 'per_fy', ?2, '3.15', 'shares', 'esef'),
+                -- Controls: an already-correct EPS fact, an EPS fact reported in
+                -- another currency, and a non-EPS fact (whatever its currency).
+                ('f_ok',      'cdr', 'per_fy23', ?1, '3.21', 'PLN',  'esef'),
+                ('f_eur',     'cdr', 'per_fy23', ?2, '0.75', 'EUR',  'esef'),
+                ('f_revenue', 'cdr', 'per_fy', ?3, '1200', 'PLN',    'esef')",
+            rusqlite::params![def_basic, def_diluted, def_revenue],
+        )
+        .expect("seed facts");
+    // A control fact that is NOT an EPS metric yet carries the same non-ISO unit:
+    // the repair is deliberately scoped to the audited class and must skip it.
+    connection
+        .execute(
+            "UPDATE financial_facts SET currency = 'shares' WHERE id = 'f_revenue'",
+            [],
+        )
+        .expect("force the non-EPS control");
+
+    apply_migrations(&mut connection).expect("apply migration 0120");
+
+    fn currency(conn: &rusqlite::Connection, id: &str) -> Option<String> {
+        conn.query_row(
+            "SELECT currency FROM financial_facts WHERE id = ?1",
+            [id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .expect("currency")
+    }
+
+    assert_eq!(currency(&connection, "f_basic").as_deref(), Some("PLN"));
+    assert_eq!(currency(&connection, "f_diluted").as_deref(), Some("PLN"));
+    assert_eq!(
+        currency(&connection, "f_ok").as_deref(),
+        Some("PLN"),
+        "an already-correct EPS fact is untouched"
+    );
+    assert_eq!(
+        currency(&connection, "f_eur").as_deref(),
+        Some("EUR"),
+        "a non-PLN EPS fact must never be rewritten"
+    );
+    assert_eq!(
+        currency(&connection, "f_revenue").as_deref(),
+        Some("shares"),
+        "a non-EPS metric is outside the audited class"
+    );
+
+    // Idempotent: nothing matches 'shares' among the EPS metrics any more.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(currency(&connection, "f_basic").as_deref(), Some("PLN"));
+    assert_eq!(
+        currency(&connection, "f_revenue").as_deref(),
+        Some("shares")
+    );
+}
+
+#[test]
 fn migration_0099_repairs_only_the_misscaled_cdr_q3_2023_facts() {
     // Card e6ebda3: the v0.57 backfill mis-scaled CDR Q3 2023 current_assets /
     // current_liabilities ×1000 (a bare "mln zł" prose token wrongly flipped the

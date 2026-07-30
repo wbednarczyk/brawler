@@ -603,6 +603,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "extraction_outcomes_recount_and_superseded",
         sql: include_str!("../../migrations/0119_extraction_outcomes_recount_and_superseded.sql"),
     },
+    Migration {
+        version: 120,
+        name: "repair_eps_shares_currency",
+        sql: include_str!("../../migrations/0120_repair_eps_shares_currency.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

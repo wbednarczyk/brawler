@@ -1187,6 +1187,27 @@ pub(super) enum FactWriteOutcome {
 /// re-observation instead of raising the slot's UNIQUE violation. Values are
 /// compared decimal-exact (so `25000` and `25000.0` are the same observation),
 /// falling back to a trimmed string compare only when either side is unparseable.
+/// Normalizes a fact currency at the write boundary: trimmed, empty → absent,
+/// otherwise exactly three ASCII letters upper-cased into the ISO-4217 shape the
+/// read side (comparison, valuation, FX) assumes.
+///
+/// #93: the ESEF divide-unit bug resolved every EPS unit to its `xbrli:shares`
+/// denominator and 76 facts were stored with `currency = 'shares'`. The parser
+/// is fixed, but the class only becomes impossible once the store refuses to
+/// persist a non-currency unit — from ANY writer (extraction jobs, MCP, UI).
+fn normalize_currency(currency: Option<String>) -> StorageResult<Option<String>> {
+    let Some(currency) = empty_string_to_none(currency.map(|s| s.trim().to_owned())) else {
+        return Ok(None);
+    };
+    if currency.len() != 3 || !currency.chars().all(|c| c.is_ascii_alphabetic()) {
+        return Err(StorageError::InvalidFinancialsValue {
+            key: "currency",
+            value: currency,
+        });
+    }
+    Ok(Some(currency.to_ascii_uppercase()))
+}
+
 pub(super) fn create_or_reobserve_financial_fact(
     connection: &Connection,
     input: NewFinancialFact,
@@ -1228,7 +1249,7 @@ pub(super) fn create_financial_fact(
         measure_window,
         data_quality,
     } = slot_dims(&input);
-    let currency = empty_string_to_none(input.currency.map(|s| s.trim().to_owned()));
+    let currency = normalize_currency(input.currency)?;
     let as_reported_value =
         empty_string_to_none(input.as_reported_value.map(|s| s.trim().to_owned()));
     let as_reported_scale =
@@ -1343,18 +1364,22 @@ pub(super) fn update_financial_fact(
         .unwrap_or(&current.value_numeric)
         .to_owned();
 
-    let currency = input
-        .currency
-        .as_deref()
-        .map(str::trim)
-        .and_then(|s| {
-            if s.is_empty() {
-                None
-            } else {
-                Some(s.to_owned())
-            }
-        })
-        .or(current.currency);
+    // An absent/empty input keeps the stored currency; whatever ends up written
+    // goes through the same ISO-4217 guard as a create (#93).
+    let currency = normalize_currency(
+        input
+            .currency
+            .as_deref()
+            .map(str::trim)
+            .and_then(|s| {
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.to_owned())
+                }
+            })
+            .or(current.currency),
+    )?;
 
     let data_quality = input
         .data_quality
