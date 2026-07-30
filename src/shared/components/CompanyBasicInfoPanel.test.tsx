@@ -97,7 +97,7 @@ describe("CompanyBasicInfoPanel (owner request 2026-07-14)", () => {
   it("reveals the sector/IR edit fields only behind the panel-level Edit toggle", async () => {
     const user = userEvent.setup();
     renderPanel("company_gpw_cdr");
-    await waitFor(() => expect(screen.getByText("CD PROJEKT S.A.")).toBeInTheDocument());
+    expect(await screen.findByText("CD PROJEKT S.A.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByTestId("sector-field")).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe("CompanyBasicInfoPanel (owner request 2026-07-14)", () => {
     });
     renderPanel("company_gpw_cdr");
 
-    await waitFor(() => expect(screen.getByText("CD PROJEKT S.A.")).toBeInTheDocument());
+    expect(await screen.findByText("CD PROJEKT S.A.")).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
     expect(screen.queryByText("from the registry")).not.toBeInTheDocument();
   });

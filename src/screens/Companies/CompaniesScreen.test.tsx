@@ -355,7 +355,7 @@ describe("Companies screen workflows", () => {
     await user.click(selected().getByRole("button", { name: "Delete" }));
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
-    await waitFor(() => expect(screen.getByText("4/4 companies")).toBeInTheDocument());
+    expect(await screen.findByText("4/4 companies")).toBeInTheDocument();
     expect(screen.getByLabelText("Company watchlist filter")).toHaveValue("all");
     expect(invoke).toHaveBeenCalledWith("delete_watchlist", {
       watchlistId: "watchlist_main_gpw",

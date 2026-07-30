@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
+import testingLibrary from "eslint-plugin-testing-library";
 import globals from "globals";
 
 // Primitive-first authoring contract (ADR 0037, docs/ui-authoring.md).
@@ -152,6 +153,21 @@ export default tseslint.config(
       // epic's scope to drive to zero, so they warn rather than fail the gate.
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+    },
+  },
+  {
+    // Guardrail for the async-flush test class the React 19 migration exposed
+    // (issue #262): a sync query — or an unawaited event/find — racing a render
+    // React 18 used to flush synchronously. These three rules make the racy
+    // idioms unwritable; `prefer-find-by` additionally collapses
+    // waitFor+getBy* into the equivalent findBy*.
+    files: ["src/**/*.test.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
+    plugins: { "testing-library": testingLibrary },
+    rules: {
+      "testing-library/await-async-queries": "error",
+      // userEvent only: React's fireEvent is synchronous by design.
+      "testing-library/await-async-events": ["error", { eventModule: "userEvent" }],
+      "testing-library/prefer-find-by": "error",
     },
   },
   {

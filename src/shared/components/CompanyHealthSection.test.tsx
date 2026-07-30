@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { JSX } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { CompanyHealthSection } from "./CompanyHealthSection";
@@ -226,8 +226,6 @@ describe("CompanyHealthSection", () => {
     getCompanyHealthMock.mockResolvedValue(health({ latest: undefined, history: [] }));
     render(<CompanyHealthSection companyId="company_gpw_cdr" />);
 
-    await waitFor(() =>
-      expect(screen.getByText(/No annual periods yet/)).toBeInTheDocument(),
-    );
+    expect(await screen.findByText(/No annual periods yet/)).toBeInTheDocument();
   });
 });

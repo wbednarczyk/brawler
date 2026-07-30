@@ -144,10 +144,8 @@ describe("Research cockpit shell", () => {
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
     await user.selectOptions(within(cockpit).getByLabelText("Preset"), "earnings-season");
 
-    await waitFor(async () => {
-      const tabs = await within(cockpit).findAllByRole("button", { name: /Report Season/ });
-      expect(tabs.length).toBeGreaterThan(0);
-    });
+    const tabs = await within(cockpit).findAllByRole("button", { name: /Report Season/ });
+    expect(tabs.length).toBeGreaterThan(0);
     expect(
       (await within(cockpit).findAllByRole("button", { name: /Fundamentals/ })).length,
     ).toBeGreaterThan(0);
@@ -173,10 +171,8 @@ describe("Research cockpit shell", () => {
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
     await user.selectOptions(within(cockpit).getByLabelText("Preset"), "evidence");
 
-    await waitFor(async () => {
-      const tabs = await within(cockpit).findAllByRole("button", { name: /Research/ });
-      expect(tabs.length).toBeGreaterThan(0);
-    });
+    const tabs = await within(cockpit).findAllByRole("button", { name: /Research/ });
+    expect(tabs.length).toBeGreaterThan(0);
   });
 
   it("opens a global app screen as a cockpit panel (phase 4c)", async () => {
