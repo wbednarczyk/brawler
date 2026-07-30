@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.62.1 - 2026-07-30
+
+
+### Bug Fixes
+
+- **release**: tag pushes over SSH with the deploy key — a workflow-touching merge racing the build made the App tag push look like a workflow edit (v0.62.0) (#246)
+
+- **release**: republish computes prev — an empty prev degenerated the cliff range to a bare tag, so recovery could never regenerate notes or heal the stamp (#247)
+
+- **mcp**: structuredContent object envelope + create_company parity; mutants kill-tests (#252)
+
 ## v0.62.0 - 2026-07-29
 
 
