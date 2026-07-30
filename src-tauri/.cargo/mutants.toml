@@ -1,0 +1,14 @@
+# cargo-mutants configuration (read from the tree root when `make mutants` /
+# mutants.yml run from src-tauri/).
+#
+# Documented-equivalent mutants (issue #241 triage, 2026-07-29): the Kleene
+# boolean arms in `eval_binary` (`*a && *b` / `*a || *b`) are dominated by the
+# short-circuit arms above them, so each is only reachable with equal operands
+# (`false,false` / `true,true`) — where `&&` and `||` agree. No behavioral test
+# can kill either swap; excluding them is standard mutation-testing hygiene,
+# not gate weakening. These are the only `&&`/`||` in `eval_binary`, so the
+# patterns cannot mask a real gap elsewhere.
+exclude_re = [
+    'replace && with \|\| in eval_binary',
+    'replace \|\| with && in eval_binary',
+]

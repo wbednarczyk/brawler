@@ -281,6 +281,115 @@ pub(super) fn registry_ticker_for_exchange_isin(
 }
 
 #[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::source_adapters::bankier_rss::BankierRssItem;
+
+    fn media_item(title: &str, summary: &str) -> BankierRssItem {
+        BankierRssItem {
+            title: title.to_owned(),
+            link: "https://example.com/article".to_owned(),
+            summary: summary.to_owned(),
+            published_at: None,
+            fetched_at: "2026-07-30T00:00:00Z".to_owned(),
+            dedupe_key: "dedupe-key".to_owned(),
+        }
+    }
+
+    fn company(ticker: &str, display_name: &str) -> MediaMatchCompany {
+        MediaMatchCompany {
+            id: format!("company-{}", ticker.to_lowercase()),
+            ticker: ticker.to_owned(),
+            qualified_ticker: format!("GPW:{ticker}"),
+            display_name: display_name.to_owned(),
+        }
+    }
+
+    #[test]
+    fn three_char_ticker_matches_as_standalone_token_without_a_name_match() {
+        // The display name deliberately never appears in the text, so the
+        // ticker branch alone must carry the match.
+        let companies = [company("CDR", "Zupelnie Inna Nazwa")];
+        let item = media_item("Wyniki kwartalne CDR pozytywnie zaskoczyly", "");
+
+        let matched = find_companies_for_media_item(&companies, &item);
+        assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0].ticker, "CDR");
+    }
+
+    #[test]
+    fn two_char_ticker_never_matches_by_token() {
+        // Below the >= 3 guard a short ticker must not false-match ordinary
+        // words, even when the exact token appears in the text.
+        let companies = [company("XT", "Zupelnie Inna Nazwa")];
+        let item = media_item("Wyniki kwartalne XT pozytywnie zaskoczyly", "");
+
+        assert!(find_companies_for_media_item(&companies, &item).is_empty());
+    }
+
+    #[test]
+    fn empty_phrase_is_never_contained() {
+        // Defensive contract: an empty phrase must early-return false, never
+        // reach windows(0) (which would panic).
+        assert!(!normalized_text_contains_phrase(&["a"], ""));
+    }
+
+    #[test]
+    fn phrase_spanning_all_tokens_matches() {
+        // phrase length == token length is a legitimate match, not too-long.
+        assert!(normalized_text_contains_phrase(
+            &["alior", "bank"],
+            "alior bank"
+        ));
+    }
+
+    #[test]
+    fn company_name_signal_keeps_four_chars_and_drops_three() {
+        // Both sides of the < 4 safety threshold.
+        assert_eq!(normalized_company_name_signal("abc"), "");
+        assert_eq!(normalized_company_name_signal("abcd"), "ABCD");
+    }
+
+    #[test]
+    fn duplicate_signature_requires_matched_companies() {
+        let item = media_item("Notowania na GPW rosna trzecia sesje z rzedu", "");
+        assert_eq!(media_duplicate_signature(&item, &[]), None);
+    }
+
+    #[test]
+    fn duplicate_signatures_differ_between_different_items() {
+        // A constant signature would silently collapse unrelated media items
+        // into one dedup bucket.
+        let companies = [company("CDR", "CD Projekt")];
+        let first = media_duplicate_signature(
+            &media_item("CD Projekt publikuje wyniki kwartalne", ""),
+            &companies,
+        )
+        .expect("long matched title should produce a signature");
+        let second = media_duplicate_signature(
+            &media_item("CD Projekt zapowiada nowa gre na przyszly rok", ""),
+            &companies,
+        )
+        .expect("long matched title should produce a signature");
+
+        assert_ne!(first, second);
+        assert!(!first.is_empty());
+    }
+
+    #[test]
+    fn duplicate_signature_title_length_boundary_is_twelve_chars() {
+        // Both sides of the < 12 normalized-title guard: 11 chars → None,
+        // 12 chars → Some.
+        let companies = [company("CDR", "CD Projekt")];
+        assert_eq!(
+            media_duplicate_signature(&media_item("AAAAAAAAAAA", ""), &companies),
+            None
+        );
+        assert!(media_duplicate_signature(&media_item("AAAAAAAAAAAA", ""), &companies).is_some());
+    }
+}
+
+#[cfg(test)]
 mod proptests {
     use super::*;
     use crate::transform_invariants::{
