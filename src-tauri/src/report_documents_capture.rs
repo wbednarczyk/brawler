@@ -160,7 +160,14 @@ impl std::fmt::Display for FetchDocumentError {
 }
 
 /// Write fetched bytes under `report_documents/`, recording the relative path, content type,
-/// SHA-256 content hash, and byte size on the document. Returns the relative `local_path`.
+/// SHA-256 content hash, byte size, and the **magic-byte container** on the document.
+/// Returns the relative `local_path`.
+///
+/// The server's `content_type` is stored **verbatim** — it is the audit value that
+/// makes the "server said X, bytes are Y" mismatch measurable (epic #229 T1). The
+/// container is recorded alongside it, from the bytes, so nothing downstream has to
+/// trust the extension or the header (T2). If the container write fails the row stays
+/// `NULL` and the startup self-heal repairs it, so a fetch is never lost over it.
 fn store_fetched_document(
     state: &crate::storage::AppState,
     doc_id: &str,
@@ -189,6 +196,15 @@ fn store_fetched_document(
         Some(&content_hash),
         Some(byte_size),
     )?;
+    if let Err(error) = state.set_report_document_detected_container(
+        doc_id,
+        crate::fundamentals::extraction::container::detect_container(&fetched.bytes).as_str(),
+    ) {
+        // Best-effort: the bytes are already on disk and the row already fetched.
+        // Losing the fetch over the stamp would be worse than a NULL the startup
+        // self-heal repairs on the next start.
+        log::warn!("container stamp failed for report document {doc_id}: {error}");
+    }
 
     Ok(local_path)
 }
@@ -286,6 +302,76 @@ mod tests {
         assert_eq!(
             determine_extension(&None, "http://example.com/document"),
             "bin"
+        );
+    }
+
+    /// Epic #229 T2: the fetch path records what the bytes REALLY are. The
+    /// maintainer's corpus stores 38 XML documents under a `.pdf` name served as
+    /// `application/pdf` — name and header agree with each other and both lie.
+    /// The stored `content_type` stays verbatim (it is the audit value); the new
+    /// `detected_container` carries the truth.
+    #[test]
+    fn store_time_sniff_records_the_real_container_not_the_lying_name() {
+        use crate::document_fetcher::FakeDocumentFetcher;
+        use crate::storage::{AppState, CaptureReportDocumentInput};
+
+        let dir = std::env::temp_dir().join(format!(
+            "brawler-capture-sniff-{}-{}",
+            std::process::id(),
+            "xhtml-under-pdf"
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("data dir");
+        let connection = crate::storage::open_in_memory_database().expect("db");
+        connection
+            .execute(
+                "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                 VALUES ('c1', 'gpw', 'ABC', 'GPW:ABC', 'ABC SA')",
+                [],
+            )
+            .expect("company");
+        let state = AppState::with_data_dir(connection, dir);
+
+        // The real pdf2htmlEX shape from the corpus: XHTML bytes, `.pdf` URL,
+        // `application/pdf` header.
+        let fetcher = FakeDocumentFetcher::new_success(
+            b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- Created by pdf2htmlEX -->\n<html></html>"
+                .to_vec(),
+            Some("application/pdf".to_owned()),
+        );
+        let captured = capture_report_document(
+            &state,
+            &fetcher,
+            CaptureReportDocumentInput {
+                company_id: "c1".to_owned(),
+                source_type: "espi_attachment".to_owned(),
+                url: "https://x/raport-okresowy.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Raport okresowy".to_owned()),
+                attribution: None,
+            },
+        )
+        .expect("capture");
+        assert!(captured.success);
+
+        let document = state
+            .get_report_document(&captured.document_id)
+            .expect("document");
+        assert_eq!(
+            document.detected_container,
+            Some("xml".to_owned()),
+            "the fetch path must record the magic-byte container, not the .pdf name"
+        );
+        assert_eq!(
+            document.content_type,
+            Some("application/pdf".to_owned()),
+            "the server's content type stays verbatim — it is the audit value"
+        );
+        assert_eq!(
+            crate::report_documents_container::resolved_source_format(&document),
+            Some(crate::report_diff::extraction::SourceFormat::Xhtml),
+            "container truth must beat the extension for every downstream consumer"
         );
     }
 }

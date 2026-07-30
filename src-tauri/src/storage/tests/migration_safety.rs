@@ -1304,6 +1304,77 @@ fn migration_0098_maps_debt_collectors_but_not_investment_holdings() {
 }
 
 #[test]
+fn migration_0121_adds_detected_container_null_and_leaves_old_rows_untouched() {
+    // Epic #229 T2 (#193): 0121 appends `report_documents.detected_container`.
+    // Append-only + tolerant-read guard — a row stored before the column must
+    // upgrade cleanly, keep every other value, and read back NULL ("not yet
+    // sniffed"), which the resolver falls back from and the startup self-heal
+    // fills. There is deliberately NO SQL backfill: SQL cannot read file bytes.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 120).expect("apply schema through 0120");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO report_documents
+                (id, company_id, source_type, url, local_path, content_type, fetch_status, doc_kind)
+             VALUES ('legacy_doc', 'c1', 'espi_attachment', 'https://x/ssf.pdf',
+                     'report_documents/legacy_doc.pdf', 'application/octet-stream',
+                     'fetched', 'periodic_ssf')",
+            [],
+        )
+        .expect("seed a legacy report document on the pre-0121 schema");
+
+    apply_migrations(&mut connection).expect("upgrade to latest");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "upgrade should reach the latest migration",
+    );
+
+    let (container, local_path, content_type, kind): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = connection
+        .query_row(
+            "SELECT detected_container, local_path, content_type, doc_kind
+             FROM report_documents WHERE id = 'legacy_doc'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("the new column is present and readable on the legacy row");
+    assert_eq!(
+        container, None,
+        "a legacy row is NULL — not yet sniffed, never a guessed value"
+    );
+    assert_eq!(
+        local_path,
+        Some("report_documents/legacy_doc.pdf".to_owned()),
+        "the append must not disturb existing columns",
+    );
+    assert_eq!(content_type, Some("application/octet-stream".to_owned()));
+    assert_eq!(kind, Some("periodic_ssf".to_owned()));
+
+    // Idempotent: re-running the runner neither errors nor rewrites the column.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    let after: Option<String> = connection
+        .query_row(
+            "SELECT detected_container FROM report_documents WHERE id = 'legacy_doc'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read back after re-run");
+    assert_eq!(after, None);
+}
+
+#[test]
 fn migration_0120_repairs_eps_shares_currency_and_spares_every_other_fact() {
     // #93 (epic #229 T4): the ESEF divide-unit bug stored 76 EPS facts (38
     // eps_basic + 38 eps_diluted) with currency = 'shares' — the denominator of

@@ -1110,6 +1110,8 @@ function reportDocument(
     createdAt: NOW,
     updatedAt: NOW,
     docKind: "periodic_ssf",
+    // Migration 0121 (epic #229 T2): NULL = bytes not sniffed yet.
+    detectedContainer: null,
   };
 }
 

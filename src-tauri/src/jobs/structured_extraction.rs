@@ -21,7 +21,6 @@ use crate::fundamentals::extraction::pipeline::{
     run_pipeline, validate_parsed_set_report, Acceptance, PipelineInput,
 };
 use crate::fundamentals::extraction::SourceTier;
-use crate::report_diff::extraction::SourceFormat;
 use crate::storage::StructuredFactInput;
 
 /// The immediately-prior period's end date for `period_end` (`YYYY-MM-DD`),
@@ -457,12 +456,11 @@ fn derive_report_period_uncached(
     use crate::report_diff::classify::period_from_title_url;
 
     let local_path = document.local_path.as_deref()?;
-    let content_type = document.content_type.as_deref();
-    // ESEF tier — a bare `.xhtml` instance OR a `.xbri`/`.zip` report package
-    // (ADR 0061 dec. 1). Read the file only for the formats that self-derive
-    // their period from the iXBRL contexts; a PDF derives it from its title/URL
-    // without a read.
-    if is_esef_route(content_type, local_path) {
+    // ESEF tier — a markup instance OR a ZIP report package (ADR 0061 dec. 1),
+    // decided from the sniffed container (epic #229 T2). Read the file only for
+    // the formats that self-derive their period from the iXBRL contexts; a PDF
+    // derives it from its title/URL without a read.
+    if is_esef_route(document) {
         // ESEF self-derives its period from the iXBRL contexts. A file that is the
         // ESEF route by extension/content-type but is NOT valid iXBRL — an interim
         // XHTML with no `ix:` tags (a pdf2htmlEX render) — yields no period here;
@@ -470,7 +468,7 @@ fn derive_report_period_uncached(
         // None (T-A1), the same fallback the coverage read model already applies.
         let esef_period = (|| {
             let raw = std::fs::read(state.data_dir().join(local_path)).ok()?;
-            let instance = esef_instance_bytes(content_type, local_path, &raw)?;
+            let instance = esef_instance_bytes(&raw)?;
             let facts = parse_esef(&instance).ok()?;
             let period_end = primary_period_end(&facts)?;
             let fiscal_year = period_end.get(0..4).and_then(|y| y.parse::<i64>().ok())?;
@@ -527,7 +525,12 @@ fn period_from_cover_page(
         return None;
     }
     let local_path = document.local_path.as_deref()?;
-    let format = SourceFormat::resolve(document.content_type.as_deref(), local_path);
+    // Container truth (epic #229 T2): a `.pdf` holding markup is read as markup,
+    // where the PDF reader used to return nothing. A ZIP package or an
+    // unrecognised container yields no cover text at all — the ESEF route above
+    // already self-derives a package's period from its iXBRL contexts — so it
+    // stays a measured `no_period_derived` gap rather than a garbage parse.
+    let format = crate::report_documents_container::resolved_source_format(document)?;
     let bytes = std::fs::read(state.data_dir().join(local_path)).ok()?;
     let outcome = extract_report(&bytes, format);
     if outcome.state != ExtractionState::Extracted {
@@ -553,18 +556,19 @@ fn period_from_cover_page(
 }
 
 /// Whether a stored document should be resolved through the ESEF/iXBRL tier
-/// rather than the PDF tier: a bare `.xhtml`/`.html` instance, or an ESEF report
-/// *package* (`.xbri`/`.zip`, ADR 0061 dec. 1). Extension/content-type only —
-/// no byte read — so callers can decide whether to load the file at all. A
-/// mislabeled package (generic `application/octet-stream`, no telltale
-/// extension) is still caught later by the ZIP-magic sniff in
-/// [`esef_instance_bytes`].
-pub(crate) fn is_esef_route(content_type: Option<&str>, local_path: &str) -> bool {
-    if SourceFormat::resolve(content_type, local_path) == SourceFormat::Xhtml {
-        return true;
-    }
-    let lower = local_path.to_ascii_lowercase();
-    lower.ends_with(".xbri") || lower.ends_with(".zip")
+/// rather than the PDF tier: a markup instance, or an ESEF report *package* (a
+/// ZIP, ADR 0061 dec. 1).
+///
+/// Decided from the stored `detected_container` (epic #229 T2) with the old
+/// extension/content-type rule as the fallback for a never-sniffed row — still
+/// **no byte read**, so callers can decide whether to load the file at all. This
+/// is what catches the corpus's mislabeled packages (generic
+/// `application/octet-stream` under a `.pdf` name) up front instead of relying on
+/// the later ZIP-magic sniff in [`esef_instance_bytes`].
+pub(crate) fn is_esef_route(document: &crate::storage::ReportDocument) -> bool {
+    use crate::report_documents_container::{is_markup, is_package};
+
+    is_markup(document) || is_package(document)
 }
 
 /// A fetched periodic (ssf/jsf) document with a stored file — the extractability
@@ -589,11 +593,13 @@ pub(crate) fn find_pdf_sibling(
     state: &AppState,
     document: &crate::storage::ReportDocument,
 ) -> Option<crate::storage::ReportDocument> {
-    let format = SourceFormat::resolve(
-        document.content_type.as_deref(),
-        document.local_path.as_deref().unwrap_or(""),
-    );
-    if format != SourceFormat::Xhtml {
+    use crate::report_documents_container::{is_markup, is_real_pdf};
+
+    // Container truth on both ends (epic #229 T2): the residual must really be
+    // markup, and the sibling must really be a PDF — a ZIP package under a `.pdf`
+    // name has no text layer to fall back to, so choosing it would swap one
+    // unreadable document for another.
+    if !is_markup(document) {
         return None;
     }
     let target_period = derive_report_period(state, document).map(|(_, _, end)| end)?;
@@ -603,10 +609,7 @@ pub(crate) fn find_pdf_sibling(
     siblings.into_iter().find(|sibling| {
         sibling.id != document.id
             && is_fetched_periodic(sibling)
-            && SourceFormat::resolve(
-                sibling.content_type.as_deref(),
-                sibling.local_path.as_deref().unwrap_or(""),
-            ) == SourceFormat::Pdf
+            && is_real_pdf(sibling)
             && derive_report_period(state, sibling).map(|(_, _, end)| end)
                 == Some(target_period.clone())
     })
@@ -615,22 +618,20 @@ pub(crate) fn find_pdf_sibling(
 /// The inline-XBRL **instance** bytes for a stored document, if it is (or
 /// contains) one — the single seam shared by [`derive_report_period`] and
 /// [`run_structured_extraction`] so the on-demand button and autopilot resolve
-/// the ESEF tier identically (ADR 0061 dec. 1). A bare `.xhtml`/`.html` returns
-/// its own bytes; an ESEF report package (`.xbri`/`.zip`, or any ZIP by magic)
-/// is unpacked to its inner `reports/` instance. `None` for a PDF, or a package
-/// with no readable instance.
-fn esef_instance_bytes(
-    content_type: Option<&str>,
-    local_path: &str,
-    bytes: &[u8],
-) -> Option<Vec<u8>> {
+/// the ESEF tier identically (ADR 0061 dec. 1). Markup returns its own bytes; an
+/// ESEF report package (a ZIP) is unpacked to its inner `reports/` instance.
+/// `None` for a PDF, a package with no readable instance, or an unrecognised
+/// container.
+///
+/// The bytes are already in hand here, so this decides from
+/// [`detect_container`] directly — the same sniffer that fills the stored
+/// `detected_container` column (epic #229 T2), never the filename.
+fn esef_instance_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     use crate::fundamentals::extraction::esef_package;
-    if esef_package::is_report_package(local_path, bytes) {
-        return esef_package::extract_instance(bytes);
-    }
-    match SourceFormat::resolve(content_type, local_path) {
-        SourceFormat::Xhtml => Some(bytes.to_vec()),
-        SourceFormat::Pdf => None,
+    match detect_container(bytes) {
+        Container::Zip => esef_package::extract_instance(bytes),
+        Container::Xml | Container::Html => Some(bytes.to_vec()),
+        Container::Pdf | Container::Unknown => None,
     }
 }
 
@@ -1753,6 +1754,198 @@ mod tests {
         assert_eq!(
             derive_report_period(&state, &document),
             Some((2025, "H1", "2025-06-30".to_owned()))
+        );
+    }
+
+    /// Epic #229 T2: `is_esef_route` decides — without reading the file — whether
+    /// a document goes down the ESEF/iXBRL path. It used to answer from the
+    /// extension alone, so the corpus's markup and ZIP packages stored under a
+    /// `.pdf` name were routed to the PDF tier and never reached the structured
+    /// path at all.
+    #[test]
+    fn esef_route_follows_the_sniffed_container_not_the_pdf_name() {
+        let (state, _company_id, document_id) = seed_document_with_bytes(
+            "esef-route-liar",
+            "PKN",
+            "Skonsolidowane sprawozdanie finansowe 2024",
+            "ssf_2024_signed.pdf",
+            POSITIONAL_XHTML.as_bytes(),
+        );
+        // Never sniffed: the `.pdf` name still decides (the pre-T2 fallback), so a
+        // legacy row routes exactly as it did before.
+        let unsniffed = state.get_report_document(&document_id).expect("document");
+        assert!(!is_esef_route(&unsniffed));
+
+        for (container, expected) in [
+            ("xml", true),
+            ("html", true),
+            ("zip", true),
+            ("pdf", false),
+            ("unknown", false),
+        ] {
+            state
+                .set_report_document_detected_container(&document_id, container)
+                .expect("stamp container");
+            let document = state.get_report_document(&document_id).expect("document");
+            assert_eq!(
+                is_esef_route(&document),
+                expected,
+                "a document sniffed as `{container}` under a .pdf name"
+            );
+        }
+    }
+
+    /// Epic #229 T2: the residual→PDF-sibling fallback exists because a pdf2htmlEX
+    /// container has no usable text layer and its real content sits in the
+    /// companion PDF. Both ends must be container truth: a sibling that is a ZIP
+    /// package wearing a `.pdf` name has no text layer either, so choosing it
+    /// swaps one unreadable document for another.
+    #[test]
+    fn pdf_sibling_selection_uses_container_truth_on_both_ends() {
+        let dir = unique_temp_dir("sibling-container");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "SIB".to_owned(),
+                display_name: "Sibling S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        let seed = |file: &str, title: &str, bytes: &[u8], container: &str| -> String {
+            let document = state
+                .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                    company_id: company.id.clone(),
+                    source_type: "espi_attachment".to_owned(),
+                    url: format!("https://example.com/{file}"),
+                    period_id: None,
+                    origin_ref: None,
+                    title: Some(title.to_owned()),
+                    attribution: None,
+                })
+                .expect("document");
+            assert!(
+                matches!(
+                    document.doc_kind.as_deref(),
+                    Some("periodic_ssf") | Some("periodic_jsf")
+                ),
+                "sample title must classify as periodic, got {:?}",
+                document.doc_kind
+            );
+            std::fs::write(dir.join(file), bytes).expect("write bytes");
+            state
+                .mark_report_document_fetched(
+                    &document.id,
+                    Some(file),
+                    Some("application/octet-stream"),
+                    None,
+                    Some(bytes.len() as i64),
+                )
+                .expect("mark fetched");
+            state
+                .set_report_document_detected_container(&document.id, container)
+                .expect("stamp container");
+            document.id
+        };
+
+        // The residual: markup, stored under a `.pdf` name.
+        let residual_id = seed(
+            "raport_q3_2024_render.pdf",
+            "Skonsolidowany raport okresowy Q3 2024 SSF",
+            POSITIONAL_XHTML.as_bytes(),
+            "html",
+        );
+        // The only same-period candidate is an ESEF package wearing `.pdf`.
+        let package_id = seed(
+            "raport_q3_2024_pakiet.pdf",
+            "Skonsolidowany raport okresowy Q3 2024 SSF pakiet",
+            &minimal_zip(&[("reports/instance.xhtml", b"<html></html>")]),
+            "zip",
+        );
+        let residual = state.get_report_document(&residual_id).expect("residual");
+        assert_eq!(
+            find_pdf_sibling(&state, &residual).map(|d| d.id),
+            None,
+            "a ZIP package is not a readable PDF sibling, whatever its name says"
+        );
+
+        // Add a genuine PDF for the same period: now the fallback has a real target.
+        let pdf_id = seed(
+            "raport_q3_2024_ssf.pdf",
+            "Skonsolidowany raport okresowy Q3 2024 SSF podpisany",
+            &minimal_text_pdf(&["Przychody 100"]),
+            "pdf",
+        );
+        assert_eq!(
+            find_pdf_sibling(&state, &residual).map(|d| d.id),
+            Some(pdf_id),
+            "the genuine PDF is the sibling — selected over the same-period package"
+        );
+        assert_ne!(residual_id, package_id);
+    }
+
+    /// Epic #229 T2: the cover-page tier is the last resort for a bare `SSF.pdf`
+    /// whose title and URL name no period. Reading that cover with the PDF reader
+    /// because the name ends `.pdf` returns nothing when the bytes are markup — the
+    /// document then has no period, so it never reaches extraction at all. Container
+    /// truth reads the same cover as markup and the period lands.
+    #[test]
+    fn cover_page_period_reads_markup_stored_under_a_pdf_name() {
+        let dir = unique_temp_dir("cover-container");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CVR".to_owned(),
+                display_name: "Cover S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "espi_attachment".to_owned(),
+                url: "https://example.com/SSF.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("SSF.pdf".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        // A pdf2htmlEX render: the cover text is markup, the name says PDF.
+        let body = format!(
+            "<html><body><h1>SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ CVR</h1>\
+             <p>za okres 6 miesiecy zakonczony 30.06.2025</p><p>{}</p></body></html>",
+            "dane porownawcze oraz komentarz zarzadu. ".repeat(120)
+        );
+        std::fs::write(dir.join("ssf.pdf"), body.as_bytes()).expect("write render");
+        state
+            .mark_report_document_fetched(
+                &document.id,
+                Some("ssf.pdf"),
+                Some("application/pdf"),
+                None,
+                Some(body.len() as i64),
+            )
+            .expect("mark fetched");
+        state
+            .set_report_document_detected_container(&document.id, "html")
+            .expect("stamp container");
+
+        let stored = state.get_report_document(&document.id).expect("document");
+        assert_eq!(
+            derive_report_period(&state, &stored),
+            Some((2025, "H1", "2025-06-30".to_owned())),
+            "the cover page must be read with the reader the BYTES call for"
         );
     }
 

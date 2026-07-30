@@ -673,10 +673,7 @@ fn deterministic_pipeline_real_data_sweep() {
                 continue;
             };
 
-            let route = if is_esef_route(
-                document.content_type.as_deref(),
-                document.local_path.as_deref().unwrap_or(""),
-            ) {
+            let route = if is_esef_route(document) {
                 "esef_route"
             } else {
                 "pdf_route"

@@ -1317,6 +1317,8 @@ export function makeReportDocument(spec: CompanySpec): ReportDocument {
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
     docKind: "periodic_ssf",
+    // Migration 0121 (epic #229 T2): NULL = bytes not sniffed yet.
+    detectedContainer: null,
   };
 }
 

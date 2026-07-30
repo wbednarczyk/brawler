@@ -1512,6 +1512,9 @@ export const plText: Record<string, string> = {
   "Periodic report": "Raport okresowy",
   "No period": "Bez okresu",
   "Show all ({n})": "Pokaż wszystkie ({n})",
+  // T3 — report-documents coverage-totals summary row (#174, epic #229)
+  "Document totals": "Sumy dokumentów",
+  "No periodic report stored": "Brak zapisanego raportu okresowego",
   // T2.2 — fundamentals coverage map panel (ADR 0077 §2)
   // ("Period" and "Validated" are shared keys defined earlier in this map.)
   "Coverage": "Pokrycie",

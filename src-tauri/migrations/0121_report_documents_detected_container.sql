@@ -1,0 +1,15 @@
+-- Container truth for stored report documents (epic #229 T2, closes #193).
+--
+-- The stored filename and the server-sent content-type both lie: the trust audit
+-- (T1) measured 87 of 3807 stored files whose real magic-byte container differs
+-- from the extension/content_type (pdf→xml 38, xhtml→pdf 24, xhtml→zip 18,
+-- pdf→zip 5, pdf→html 2). Only the structured-extraction router sniffed the
+-- bytes; every other consumer trusted the name and mis-routed those documents.
+--
+-- `detected_container` records what the bytes actually are, using exactly the
+-- `Container::as_str` vocabulary: pdf | zip | xml | html | unknown.
+-- NULL = not yet sniffed (rows predating this migration, or a row whose file is
+-- currently missing). SQL cannot read file bytes, so there is no SQL backfill:
+-- the column is stamped at store time by `store_fetched_document` and healed for
+-- legacy rows by the idempotent startup pass in `report_documents_container`.
+ALTER TABLE report_documents ADD COLUMN detected_container TEXT;

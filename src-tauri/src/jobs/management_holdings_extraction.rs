@@ -162,10 +162,17 @@ pub fn run_management_extraction_job(state: &AppState, payload: &str) -> Result<
         return Ok(());
     };
 
-    let format = SourceFormat::resolve(
-        document.content_type.as_deref(),
-        document.local_path.as_deref().unwrap_or(""),
-    );
+    // Container truth (epic #229 T2) — see the ownership tier: markup under a
+    // `.pdf` name is parsed as markup; a ZIP package / unrecognised container has
+    // no text layer, so it is skipped honestly rather than parsed as a PDF.
+    let Some(format) = crate::report_documents_container::resolved_source_format(&document) else {
+        log::warn!(
+            "management extraction: document {} is a {} container, not readable text — skipping",
+            document.id,
+            crate::report_documents_container::resolved_container(&document).as_str()
+        );
+        return Ok(());
+    };
     let extracted = extract_report(&bytes, format);
     let outcome = parse_management_holdings(&extracted.sections, format);
 
@@ -711,6 +718,113 @@ mod tests {
         );
         // Covered now → catch-up enqueues nothing (idempotent, announcement stays out).
         assert_eq!(enqueue_management_extraction_catch_up(&s, None), 0);
+    }
+
+    /// A fetched periodic report stored under a `.pdf` name **and** served
+    /// `application/pdf` — the corpus's mislabeled shape, where nothing but the
+    /// bytes reveals the real container.
+    fn fetched_periodic_report_as_pdf(
+        state: &AppState,
+        company_id: &str,
+        title: &str,
+        url: &str,
+        file_name: &str,
+        content: &str,
+    ) -> String {
+        let doc = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company_id.to_owned(),
+                source_type: "user_url".to_owned(),
+                url: url.to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some(title.to_owned()),
+                attribution: None,
+            })
+            .expect("report document");
+        assert!(
+            matches!(
+                doc.doc_kind.as_deref(),
+                Some("periodic_ssf") | Some("periodic_jsf")
+            ),
+            "sample title must classify as periodic, got {:?}",
+            doc.doc_kind
+        );
+        std::fs::write(state.data_dir().join(file_name), content).expect("write file");
+        state
+            .mark_report_document_fetched(
+                &doc.id,
+                Some(file_name),
+                Some("application/pdf"),
+                Some("hash"),
+                Some(content.len() as i64),
+            )
+            .expect("mark fetched");
+        doc.id
+    }
+
+    /// Epic #229 T2: the holdings table arrives as markup stored under a `.pdf`
+    /// name (24 such files in the maintainer's corpus). The extension used to send
+    /// it to the PDF reader, which produced nothing and left the company with zero
+    /// management-holdings rows; the sniffed container routes it to the markup
+    /// reader and it parses.
+    #[test]
+    fn markup_stored_under_a_pdf_name_parses_management_holdings() {
+        let s = state_with_dir();
+        let c = company(&s);
+        // The server called it a PDF and so does the filename — both lie, so the
+        // document is seeded here rather than through the xhtml-typed helper.
+        let doc = fetched_periodic_report_as_pdf(
+            &s,
+            &c,
+            "Raport półroczny 2025 JSF",
+            "https://example.com/jsf-2025.pdf",
+            "mgmt-liar.pdf",
+            &holdings_xhtml(),
+        );
+        s.set_report_document_detected_container(&doc, "html")
+            .expect("stamp container");
+
+        run_job(&s, &c, &doc);
+        let rows = s.management_holdings().list_by_company(&c).expect("rows");
+        assert!(
+            !rows.is_empty(),
+            "container truth must route the markup to the markup reader, \
+             not the PDF reader the .pdf name implies"
+        );
+    }
+
+    /// A ZIP report package stored under a `.pdf` name has no text layer this tier
+    /// can read. It must be skipped honestly — never fed to the PDF reader, and
+    /// never parked as a "glyph-encoded" residual it is not.
+    #[test]
+    fn a_zip_package_under_a_pdf_name_is_skipped_not_parsed() {
+        let s = state_with_dir();
+        let c = company(&s);
+        let doc = fetched_periodic_report_as_pdf(
+            &s,
+            &c,
+            "Raport półroczny 2025 JSF",
+            "https://example.com/jsf-2025-pkg.pdf",
+            "mgmt-pkg.pdf",
+            "PK\u{3}\u{4}\u{14}\u{0}not really readable",
+        );
+        s.set_report_document_detected_container(&doc, "zip")
+            .expect("stamp container");
+
+        run_job(&s, &c, &doc);
+        assert!(s
+            .management_holdings()
+            .list_by_company(&c)
+            .expect("rows")
+            .is_empty());
+        assert!(
+            s.management_holdings()
+                .list_residuals(&c)
+                .expect("residuals")
+                .is_empty(),
+            "a package is not a parse residual — it is simply not this tier's input"
+        );
     }
 
     #[test]

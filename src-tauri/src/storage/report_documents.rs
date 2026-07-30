@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::fundamentals::extraction::classify::classify_doc_kind;
+use crate::fundamentals::extraction::classify::{classify_doc_kind_with_slug_trust, DocKind};
 
 use super::*;
 
@@ -36,6 +36,12 @@ pub struct ReportDocument {
     /// doc_kind taxonomy (ADR 0077 §1): periodic_ssf | periodic_jsf |
     /// auditor_opinion | presentation | governance | other. NULL = unclassified.
     pub doc_kind: Option<String>,
+    /// What the stored bytes REALLY are (migration 0121, epic #229 T2), using the
+    /// `Container::as_str` vocabulary: pdf | zip | xml | html | unknown. Stamped
+    /// at store time and healed on startup; NULL = not yet sniffed (legacy row,
+    /// or its file is currently missing). Routing prefers this over the
+    /// extension/content-type, both of which the corpus proves unreliable.
+    pub detected_container: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -86,6 +92,34 @@ pub(super) fn create_or_find_pending(
     create_or_find_with_status(connection, input, "pending")
 }
 
+/// Classify a document for the stored taxonomy column with the URL slug
+/// distrusted when it names a **foreign** tracked issuer (epic #229 T3, #171).
+///
+/// The attachment host reuses one issuer's filename across unrelated filings, so
+/// a slug can classify another company's document; the owner's own title is the
+/// signal that survives. Loading the (tiny, ~50-row) issuer index per write keeps
+/// the decision at the single seam where `doc_kind` is written — set-on-write and
+/// the corpus reclassify then cannot drift apart. A failure to load the index
+/// degrades to today's behavior (trust the slug) rather than refusing the write.
+fn classify_for_storage(
+    connection: &Connection,
+    company_id: &str,
+    title: &str,
+    url: &str,
+) -> DocKind {
+    let slug_trusted = match super::sources::TrackedIssuerIndex::load(connection) {
+        Ok(issuers) => !issuers.url_slug_names_foreign_issuer(company_id, title, url),
+        Err(error) => {
+            log::warn!(
+                "module=report_documents stage=classify company={company_id} \
+                 tracked-issuer load failed, trusting the URL slug: {error}"
+            );
+            true
+        }
+    };
+    classify_doc_kind_with_slug_trust(title, url, slug_trusted)
+}
+
 /// Create a report document with an explicit initial `fetch_status`, or return the
 /// existing row for the same `(company_id, url)` (idempotent upsert on the UNIQUE key).
 ///
@@ -134,7 +168,12 @@ pub(super) fn create_or_find_with_status(
         // stale `doc_kind`. A same-title re-ingest stays a pure no-op (the
         // idempotent upsert contract), preserving created_at/updated_at.
         if title.is_some() && title != doc.title {
-            let doc_kind = classify_doc_kind(title.as_deref().unwrap_or(""), &url);
+            let doc_kind = classify_for_storage(
+                connection,
+                &company_id,
+                title.as_deref().unwrap_or(""),
+                &url,
+            );
             connection.execute(
                 "
                 UPDATE report_documents
@@ -152,7 +191,12 @@ pub(super) fn create_or_find_with_status(
 
     let id = report_document_id(&company_id, &url);
     // Classify at ingestion so a new document is never left unclassified (NULL).
-    let doc_kind = classify_doc_kind(title.as_deref().unwrap_or(""), &url);
+    let doc_kind = classify_for_storage(
+        connection,
+        &company_id,
+        title.as_deref().unwrap_or(""),
+        &url,
+    );
 
     connection.execute(
         "
@@ -221,7 +265,7 @@ pub(super) fn list_pending_attachments(
         SELECT
             id, company_id, period_id, source_type, origin_ref, url, local_path,
             content_type, content_hash, byte_size, title, attribution, fetch_status,
-            fetch_error, fetched_at, created_at, updated_at, doc_kind
+            fetch_error, fetched_at, created_at, updated_at, doc_kind, detected_container
         FROM report_documents
         WHERE source_type = 'espi_attachment'
           AND fetch_status = 'pending'
@@ -329,7 +373,8 @@ pub(super) fn list_by_company(
             fetched_at,
             created_at,
             updated_at,
-            doc_kind
+            doc_kind,
+            detected_container
         FROM report_documents
         WHERE company_id = ?1
         ORDER BY created_at DESC
@@ -350,20 +395,34 @@ pub(super) fn list_by_company(
 pub(super) fn reclassify_all(
     connection: &Connection,
 ) -> StorageResult<ReclassifyReportDocumentsSummary> {
-    let rows: Vec<(String, Option<String>, String, Option<String>)> = {
-        let mut statement =
-            connection.prepare("SELECT id, title, url, doc_kind FROM report_documents")?;
+    /// `(id, company_id, title, url, stored doc_kind)` — the owner is read too
+    /// because slug trust is per-owner (epic #229 T3).
+    type ReclassifyRow = (String, String, Option<String>, String, Option<String>);
+    let rows: Vec<ReclassifyRow> = {
+        let mut statement = connection
+            .prepare("SELECT id, company_id, title, url, doc_kind FROM report_documents")?;
         let mapped = statement.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
         })?;
         mapped.collect::<Result<Vec<_>, _>>()?
     };
+    // One load for the whole corpus (epic #229 T3) — the per-write seam loads it
+    // per row, but a reclassify walks every document.
+    let issuers = super::sources::TrackedIssuerIndex::load(connection)?;
 
     let mut updated = 0usize;
     let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
 
-    for (id, title, url, current_kind) in &rows {
-        let kind = classify_doc_kind(title.as_deref().unwrap_or(""), url);
+    for (id, company_id, title, url, current_kind) in &rows {
+        let title = title.as_deref().unwrap_or("");
+        let slug_trusted = !issuers.url_slug_names_foreign_issuer(company_id, title, url);
+        let kind = classify_doc_kind_with_slug_trust(title, url, slug_trusted);
         let kind_str = kind.as_str();
         *by_kind.entry(kind_str.to_owned()).or_insert(0) += 1;
 
@@ -386,6 +445,55 @@ pub(super) fn reclassify_all(
         updated,
         by_kind,
     })
+}
+
+/// Stamp what a stored document's bytes really are (migration 0121, epic #229
+/// T2). Kept separate from [`mark_fetched`] because the same write serves two
+/// callers: the store-time sniff (right after the bytes land) and the startup
+/// self-heal that back-fills legacy rows. Writing only when the value actually
+/// changes keeps the self-heal idempotent — a second pass touches no row and
+/// leaves `updated_at` alone.
+pub(super) fn set_detected_container(
+    connection: &Connection,
+    id: &str,
+    container: &str,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        UPDATE report_documents
+        SET detected_container = ?2,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+          AND (detected_container IS NULL OR detected_container <> ?2)
+        ",
+        params![id, container],
+    )?;
+    Ok(())
+}
+
+/// Fetched documents with a stored file whose container was never sniffed —
+/// the startup self-heal's work list. Returns `(id, local_path)` pairs; the
+/// caller reads each file and stamps the result. A row whose file is missing is
+/// deliberately left NULL by the caller so the next start retries it.
+pub(super) fn list_needing_container_sniff(
+    connection: &Connection,
+) -> StorageResult<Vec<(String, String)>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT id, local_path
+        FROM report_documents
+        WHERE detected_container IS NULL
+          AND local_path IS NOT NULL
+          AND TRIM(local_path) <> ''
+          AND fetch_status = 'fetched'
+        ORDER BY id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
 }
 
 // ============================================================================
@@ -414,7 +522,8 @@ fn get_report_document(connection: &Connection, id: &str) -> StorageResult<Repor
             fetched_at,
             created_at,
             updated_at,
-            doc_kind
+            doc_kind,
+            detected_container
         FROM report_documents
         WHERE id = ?1
         ",
@@ -450,7 +559,8 @@ fn get_by_company_and_url(
                 fetched_at,
                 created_at,
                 updated_at,
-                doc_kind
+                doc_kind,
+                detected_container
             FROM report_documents
             WHERE company_id = ?1 AND url = ?2
             ",
@@ -481,6 +591,7 @@ fn report_document_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportDocum
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
         doc_kind: row.get(17)?,
+        detected_container: row.get(18)?,
     })
 }
 
@@ -546,6 +657,27 @@ impl ReportDocumentStore {
             content_hash,
             byte_size,
         )
+    }
+
+    /// Record the magic-byte container of a stored document's bytes (epic #229
+    /// T2). `container` is a [`crate::fundamentals::extraction::container::Container`]
+    /// marker (`pdf|zip|xml|html|unknown`) — never a filename guess.
+    pub fn set_report_document_detected_container(
+        &self,
+        id: &str,
+        container: &str,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        set_detected_container(&connection, id, container)
+    }
+
+    /// Fetched documents with a stored file and no sniffed container yet —
+    /// the startup self-heal's work list, `(id, local_path)`.
+    pub fn report_documents_needing_container_sniff(&self) -> StorageResult<Vec<(String, String)>> {
+        let connection = self.db.checkout()?;
+
+        list_needing_container_sniff(&connection)
     }
 
     pub fn mark_report_document_failed(
@@ -656,7 +788,7 @@ fn list_by_origin(connection: &Connection, origin_ref: &str) -> StorageResult<Ve
         SELECT
             id, company_id, period_id, source_type, origin_ref, url, local_path,
             content_type, content_hash, byte_size, title, attribution, fetch_status,
-            fetch_error, fetched_at, created_at, updated_at, doc_kind
+            fetch_error, fetched_at, created_at, updated_at, doc_kind, detected_container
         FROM report_documents
         WHERE origin_ref = ?1
         ORDER BY created_at DESC

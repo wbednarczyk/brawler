@@ -608,6 +608,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "repair_eps_shares_currency",
         sql: include_str!("../../migrations/0120_repair_eps_shares_currency.sql"),
     },
+    Migration {
+        version: 121,
+        name: "report_documents_detected_container",
+        sql: include_str!("../../migrations/0121_report_documents_detected_container.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
@@ -766,6 +771,52 @@ mod migration_invariants {
                 migration.name, migration.version, expected,
             );
         }
+    }
+
+    /// Guardrail harvest, epic #229 T3 (#140/#171): **no migration may delete
+    /// report documents on URL evidence.**
+    ///
+    /// `0107_repair_misassociation_and_note_ref_facts.sql` did exactly that —
+    /// `company_id = 'company_gpw_cbf' AND url LIKE '%energa%'` — on the belief
+    /// that a `Grupy-Energa` filename meant an Energa filing. The bytes say
+    /// otherwise: all four deleted files are cyber_Folks' own Q3-2024 filing
+    /// (PDF `/Author: cyber_Folks`, body "Raport kwartalny Grupy cyber_Folks_"),
+    /// and the attachment host simply reuses one issuer's filename across
+    /// unrelated same-day filings. Four legitimate periodic documents were lost.
+    ///
+    /// Only document **content** can settle an association, and SQL cannot read
+    /// bytes — so a migration is structurally the wrong instrument for this
+    /// class. 0107 is grandfathered (immutable once applied); every later
+    /// migration must fail here instead of repeating it.
+    #[test]
+    fn no_migration_deletes_report_documents_by_url_pattern() {
+        const GRANDFATHERED: i64 = 107;
+        let mut offenders = Vec::new();
+        for migration in MIGRATIONS {
+            if migration.version == GRANDFATHERED {
+                continue;
+            }
+            let sql = migration.sql.to_lowercase();
+            for statement in sql.split(';') {
+                let Some(start) = statement.find("delete from report_documents") else {
+                    continue;
+                };
+                let predicate = &statement[start..];
+                if predicate.contains("url") && predicate.contains("like") {
+                    offenders.push(format!(
+                        "  {:04}_{} deletes report_documents on a URL pattern",
+                        migration.version, migration.name
+                    ));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "a report document's owner cannot be decided from its URL — the host reuses one \
+             issuer's filename across unrelated filings, and migration 0107 destroyed four \
+             legitimate cyber_Folks statements that way. Verify content, not slugs:\n{}",
+            offenders.join("\n")
+        );
     }
 
     #[test]

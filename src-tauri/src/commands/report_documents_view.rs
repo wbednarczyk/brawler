@@ -42,6 +42,39 @@ use crate::{app_state, storage};
 pub struct ReportDocumentsView {
     pub company_id: String,
     pub rows: Vec<ReportDocumentViewRow>,
+    /// Per-company coverage roll-up (#174) — the denominator behind the rows.
+    pub totals: ReportDocumentCoverageTotals,
+}
+
+/// What the company's stored-document set adds up to (#174, epic #229 T3): how
+/// many documents exist, how many carry bytes, and whether any **fetched
+/// periodic** report exists at all — the exact predicate the backfill catch-up
+/// gates on (`report_documents::companies_lacking_periodic_coverage`), reused
+/// rather than restated so the panel and the backfill can never disagree.
+///
+/// `periodic_count` counts periodic documents in ANY fetch state (a
+/// `metadata_only` periodic filing is a known report the user can still reach),
+/// which is why it can be non-zero while `has_periodic_coverage` is false — the
+/// "we know about the report but hold no bytes" state the roll-up exists to make
+/// visible.
+///
+/// There is deliberately no `last_backfill_reason`: no table records one today
+/// (the sweep logs its reason, it does not persist it), and inventing a column
+/// for a header line is not worth a migration.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportDocumentCoverageTotals {
+    pub documents: i64,
+    pub fetched: i64,
+    pub pending: i64,
+    pub metadata_only: i64,
+    pub periodic_count: i64,
+    pub has_periodic_coverage: bool,
 }
 
 /// One stored document, with its derived period and canonical flag. `fiscal_year`
@@ -107,6 +140,38 @@ pub fn compute_report_documents_view(
     let documents = state
         .list_report_documents_by_company(company_id)
         .map_err(|e| e.to_string())?;
+
+    // Coverage roll-up (#174) over the same rows the panel lists, so the header
+    // number and the list can never disagree. `has_periodic_coverage` comes from
+    // the backfill's own predicate, not a restatement of it.
+    let lacks_periodic = state
+        .report_documents()
+        .companies_lacking_periodic_coverage(Some(company_id))
+        .map_err(|e| e.to_string())?
+        .iter()
+        .any(|(id, _mode)| id == company_id);
+    let mut totals = ReportDocumentCoverageTotals {
+        documents: documents.len() as i64,
+        fetched: 0,
+        pending: 0,
+        metadata_only: 0,
+        periodic_count: 0,
+        has_periodic_coverage: !lacks_periodic,
+    };
+    for document in &documents {
+        match document.fetch_status.as_str() {
+            "fetched" => totals.fetched += 1,
+            "pending" => totals.pending += 1,
+            "metadata_only" => totals.metadata_only += 1,
+            _ => {}
+        }
+        if matches!(
+            document.doc_kind.as_deref(),
+            Some("periodic_ssf" | "periodic_jsf")
+        ) {
+            totals.periodic_count += 1;
+        }
+    }
 
     // Extraction indicator (#155): aggregate every outcome slot per document.
     // No rows for a document -> None (never attempted) — reads tolerate the
@@ -199,6 +264,7 @@ pub fn compute_report_documents_view(
     Ok(ReportDocumentsView {
         company_id: company_id.to_owned(),
         rows,
+        totals,
     })
 }
 
@@ -286,6 +352,53 @@ mod tests {
             .iter()
             .find(|r| r.document.id == document_id)
             .unwrap_or_else(|| panic!("no row for {document_id}"))
+    }
+
+    /// #174: the roll-up counts what the panel lists, and `has_periodic_coverage`
+    /// answers the backfill's question — "do we hold BYTES for any periodic
+    /// report?" — which is false while the only periodic filing is link-only.
+    /// That gap (periodic_count = 1, coverage = false) is the whole point of the
+    /// roll-up: without it the panel shows a periodic report and the user cannot
+    /// tell that nothing behind it is readable.
+    #[test]
+    fn totals_roll_up_documents_and_expose_the_metadata_only_coverage_gap() {
+        let s = state();
+        let c = company(&s);
+        document(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "x/ssf-2025.pdf",
+            false,
+        );
+        document(&s, &c, "Prezentacja wynikow 2025", "x/deck.pdf", true);
+
+        let view = compute_report_documents_view(&s, &c).expect("view");
+        assert_eq!(view.totals.documents, 2);
+        assert_eq!(view.totals.fetched, 1);
+        assert_eq!(view.totals.metadata_only, 1);
+        assert_eq!(view.totals.pending, 0);
+        assert_eq!(
+            view.totals.periodic_count, 1,
+            "a link-only periodic filing is still a known periodic report"
+        );
+        assert!(
+            !view.totals.has_periodic_coverage,
+            "no FETCHED periodic document means no coverage, however many are known"
+        );
+
+        // Fetching a periodic document flips coverage.
+        document(
+            &s,
+            &c,
+            "Jednostkowy raport roczny 2025 JSF",
+            "x/jsf-2025.pdf",
+            true,
+        );
+        let view = compute_report_documents_view(&s, &c).expect("view");
+        assert_eq!(view.totals.documents, 3);
+        assert_eq!(view.totals.periodic_count, 2);
+        assert!(view.totals.has_periodic_coverage);
     }
 
     #[test]

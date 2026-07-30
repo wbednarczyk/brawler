@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, FileDown, FileText, Star } from "lucide-react";
 import { getReportDocumentsView, reclassifyReportDocuments } from "../../api/reportDocuments";
 import { extractReportDocumentData } from "../../api/fundamentalsExtraction";
-import type { ReportDocument, ReportDocumentViewRow } from "../../api/reportDocumentsTypes";
+import type {
+  ReportDocument,
+  ReportDocumentCoverageTotals,
+  ReportDocumentViewRow,
+} from "../../api/reportDocumentsTypes";
 import { useLocale } from "../locale";
 import { pluralNoun, type PluralForms } from "../locale/plural";
 import { formatDetailTimestamp } from "../format/datetime";
 import {
+  ActionRow,
   Button,
   Checkbox,
   EmptyState,
@@ -43,6 +48,13 @@ const DOCUMENT_FORMS: PluralForms = {
 const COMPANION_FORMS: PluralForms = {
   en: ["companion file", "companion files"],
   pl: ["plik towarzyszący", "pliki towarzyszące", "plików towarzyszących"],
+};
+
+// Plural forms for the coverage-totals summary row's periodic-report chip (#174,
+// epic #229 T3) — `periodicCount` counts periodic filings in ANY fetch state.
+const PERIODIC_FORMS: PluralForms = {
+  en: ["periodic report", "periodic reports"],
+  pl: ["raport okresowy", "raporty okresowe", "raportów okresowych"],
 };
 
 // Descending period index within a fiscal year (ADR 0077): FY/Q4/H2 newest.
@@ -116,6 +128,9 @@ export function CompanyReportDocumentsPanel({
   const { text, locale } = useLocale();
   const toast = useToast();
   const [rows, setRows] = useState<ReportDocumentViewRow[]>([]);
+  // Coverage roll-up (#174, epic #229 T3) — the denominator behind the rows;
+  // null while the view hasn't loaded yet.
+  const [totals, setTotals] = useState<ReportDocumentCoverageTotals | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The report document currently being extracted (its row's action is busy).
   const [extractingId, setExtractingId] = useState<string | null>(null);
@@ -139,7 +154,10 @@ export function CompanyReportDocumentsPanel({
     let cancelled = false;
     getReportDocumentsView(companyId)
       .then((view) => {
-        if (!cancelled) setRows(view.rows);
+        if (!cancelled) {
+          setRows(view.rows);
+          setTotals(view.totals);
+        }
       })
       .catch((reason) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
@@ -499,6 +517,30 @@ export function CompanyReportDocumentsPanel({
         }
       />
       {error ? <ErrorText>{error}</ErrorText> : null}
+      {/* Coverage-totals summary (#174, epic #229 T3): the denominator behind the
+          rows below — documents/fetched/pending/link-only counts plus whether
+          any FETCHED periodic report exists at all. `periodicCount` can be > 0
+          while `hasPeriodicCoverage` is false (a known periodic filing with no
+          stored bytes yet) — the single most important gap the roll-up exists
+          to surface, so it gets its own warn-tone chip rather than folding into
+          the periodic count. Reuses the Quality panel's scorecard-summary
+          pattern (ActionRow + tone-carrying StatusChips). */}
+      {totals && hasDocuments ? (
+        <ActionRow ariaLabel={text("Document totals")} className="doc-coverage-summary">
+          <StatusChip tone="neutral">
+            {`${totals.documents} ${pluralNoun(locale, totals.documents, DOCUMENT_FORMS)}`}
+          </StatusChip>
+          <StatusChip tone="ok">{`${totals.fetched} ${text("Stored")}`}</StatusChip>
+          <StatusChip tone="neutral">{`${totals.pending} ${text("Pending fetch")}`}</StatusChip>
+          <StatusChip tone="neutral">{`${totals.metadataOnly} ${text("Link only")}`}</StatusChip>
+          <StatusChip tone="accent">
+            {`${totals.periodicCount} ${pluralNoun(locale, totals.periodicCount, PERIODIC_FORMS)}`}
+          </StatusChip>
+          {!totals.hasPeriodicCoverage ? (
+            <StatusChip tone="warn">{text("No periodic report stored")}</StatusChip>
+          ) : null}
+        </ActionRow>
+      ) : null}
       {hasDocuments ? (
         <FilterToolbar
           ariaLabel={text("Filter documents by type")}

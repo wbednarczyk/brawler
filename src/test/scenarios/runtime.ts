@@ -2438,7 +2438,24 @@ function buildHandlers(): Record<string, Handler> {
           canonical,
         };
       });
-      return { companyId, rows };
+      // Coverage roll-up (#174, epic #229 T3) — mirrors the Rust
+      // `companies_lacking_periodic_coverage` predicate: `hasPeriodicCoverage`
+      // is true only when a periodic document has ACTUALLY been fetched, so it
+      // can be false while `periodicCount` (any fetch state) is > 0.
+      const isPeriodic = (doc: (typeof docs)[number]) =>
+        doc.docKind === "periodic_ssf" || doc.docKind === "periodic_jsf";
+      const totals = {
+        documents: docs.length,
+        fetched: docs.filter((doc) => doc.fetchStatus === "fetched").length,
+        pending: docs.filter((doc) => doc.fetchStatus === "pending").length,
+        metadataOnly: docs.filter((doc) => doc.fetchStatus === "metadata_only")
+          .length,
+        periodicCount: docs.filter(isPeriodic).length,
+        hasPeriodicCoverage: docs.some(
+          (doc) => isPeriodic(doc) && doc.fetchStatus === "fetched",
+        ),
+      };
+      return { companyId, rows, totals };
     },
 
     // --- Report-over-report diff (ADR 0052) ---

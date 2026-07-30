@@ -835,11 +835,15 @@ fn document_now_extractable(state: &AppState, report_document_id: &str) -> bool 
     }
 }
 
-/// The typed reason for a run that produced no facts: a raw-PDF document is the
-/// by-design `pdf_document` gap (ADR 0086 dec. 1 — never re-armed, rendered as
-/// "core KPIs arrive from the aggregator"); anything else keeps the caller's
-/// fallback (an honest `no_deterministic_tier`). Resolution is name/content-type
-/// only (`SourceFormat::resolve`), no byte read.
+/// The typed reason for a run that produced no facts: a **genuine** PDF document
+/// is the by-design `pdf_document` gap (ADR 0086 dec. 1 — never re-armed,
+/// rendered as "core KPIs arrive from the aggregator"); anything else keeps the
+/// caller's fallback (an honest `no_deterministic_tier`, which stays re-armable).
+///
+/// Resolution reads the stored `detected_container` (epic #229 T2), no byte read.
+/// Only a document whose *bytes* are a PDF earns the never-re-armed verdict — an
+/// XML or ZIP under a `.pdf` name has a deterministic tier that can still read it,
+/// and burying it under `pdf_document` would retire it permanently by mistake.
 fn gap_reason(
     state: &AppState,
     run: &storage::AutopilotRun,
@@ -848,15 +852,10 @@ fn gap_reason(
     let is_pdf = state
         .get_report_document(&run.report_document_id)
         .ok()
-        .and_then(|document| {
-            document.local_path.as_deref().map(|path| {
-                crate::report_diff::extraction::SourceFormat::resolve(
-                    document.content_type.as_deref(),
-                    path,
-                ) == crate::report_diff::extraction::SourceFormat::Pdf
-            })
-        })
-        .unwrap_or(false);
+        .is_some_and(|document| {
+            document.local_path.is_some()
+                && crate::report_documents_container::is_real_pdf(&document)
+        });
     if is_pdf {
         KpiUnavailableReason::PdfDocument.as_str()
     } else {
@@ -957,16 +956,29 @@ fn prefers_candidate(
     }
 }
 
-/// Whether a report document's format is a structured ESEF/iXBRL (xhtml)
-/// statement rather than a PDF, resolved from its content type and/or
-/// URL/local path. Used to break a disclosure-date tie in [`prefers_candidate`]
-/// and, via the coverage read model (ADR 0077 §2), the canonical-report
-/// structured tie-break. `pub(crate)` so the coverage command reuses this exact
-/// definition instead of re-deriving it (F3 decides the final home).
+/// Whether a report document is a **structured** statement — an ESEF/iXBRL
+/// markup instance or an ESEF/eSprawozdanie report package (ZIP) — rather than a
+/// PDF. Used to break a disclosure-date tie in [`prefers_candidate`] and, via the
+/// coverage read model (ADR 0077 §2), the canonical-report structured tie-break.
+/// `pub(crate)` so the coverage command reuses this exact definition instead of
+/// re-deriving it (F3 decides the final home).
+///
+/// Container truth decides it (epic #229 T2): the maintainer's corpus stores 38
+/// XML statements under a `.pdf` name, and the old name-based resolution ranked
+/// every one of them *below* a companion PDF — handing the canonical slot to the
+/// document with less extractable data. A ZIP counts as structured because the
+/// structured path unpacks its inner iXBRL instance.
 pub(crate) fn is_structured_document(document: &storage::ReportDocument) -> bool {
-    use crate::report_diff::extraction::SourceFormat;
+    use crate::fundamentals::extraction::container::Container;
+    use crate::report_documents_container::resolved_container_named;
 
-    SourceFormat::resolve(document.content_type.as_deref(), &document.url) == SourceFormat::Xhtml
+    // The URL is this predicate's name carrier for a never-sniffed row: the
+    // tie-break ranks candidate documents that may not be fetched yet, so it must
+    // not depend on a stored file existing.
+    matches!(
+        resolved_container_named(document, &document.url),
+        Container::Xml | Container::Html | Container::Zip
+    )
 }
 
 /// A sortable **disclosure-date** key (`YYYY-MM-DD`) for ranking report recency —
@@ -977,6 +989,19 @@ pub(crate) fn is_structured_document(document: &storage::ReportDocument) -> bool
 /// then `created_at` only as a last resort (a non-`emitent`, never-fetched doc).
 /// `pub(crate)` so the coverage read model (ADR 0077 §2) ranks canonical-report
 /// revisions with the identical disclosure semantics (F3 decides the final home).
+///
+/// **The month segment survives a misleading slug** (epic #229 T3, #140). The
+/// attachment host reuses one issuer's *filename* across unrelated filings, so a
+/// slug can name a company that is not the owner — but the `/emitent/YYYY-MM/`
+/// segment is the **article's** publication month, not the filename's, and stays
+/// correct. Measured on the maintainer's corpus: all 53 rows whose slug names a
+/// foreign tracked issuer carry the right month for their own filing (e.g.
+/// cyber_Folks' H1-2024 statements under a `Vercom` filename at `/2024-09/`,
+/// Orlen's Q3-2024 report under a `Grupy-Energa` filename at `/2024-11/`). The
+/// distrust this epic ships therefore targets the **filename** — see
+/// [`crate::fundamentals::extraction::classify::classify_doc_kind`] — and
+/// deliberately NOT this date, whose only fallback is a bulk re-fetch timestamp
+/// identical across every revision.
 pub(crate) fn report_disclosure_key(document: &storage::ReportDocument) -> String {
     if let Some(month) = disclosure_month_from_url(&document.url) {
         return format!("{month}-01");
@@ -1737,6 +1762,7 @@ mod tests {
             created_at: created_at.to_owned(),
             updated_at: created_at.to_owned(),
             doc_kind: None,
+            detected_container: None,
         }
     }
 
@@ -2341,5 +2367,133 @@ mod tests {
             gap_reason(&state, &xhtml_run, "no_deterministic_tier"),
             "no_deterministic_tier"
         );
+    }
+
+    /// Epic #229 T2: `pdf_document` is the **never-re-armed** verdict (ADR 0086
+    /// dec. 1) — "core KPIs arrive from the aggregator". Only bytes that really are
+    /// a PDF may earn it. 45 of the maintainer's stored `.pdf` files are XML or ZIP
+    /// inside; stamping those `pdf_document` on the strength of their extension
+    /// retired documents a deterministic tier can still read.
+    #[test]
+    fn gap_reason_earns_pdf_document_only_from_the_sniffed_container() {
+        let dir = unique_temp_dir("gap-reason-container");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "GPC".to_owned(),
+                display_name: "Gap Container S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        let run_for = |suffix: &str, container: &str| {
+            let local = format!("report_{suffix}.pdf");
+            let document = state
+                .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                    company_id: company.id.clone(),
+                    source_type: "user_url".to_owned(),
+                    url: format!("https://example.com/{local}"),
+                    period_id: None,
+                    origin_ref: None,
+                    title: Some(format!("doc {suffix}")),
+                    attribution: None,
+                })
+                .expect("document");
+            std::fs::write(dir.join(&local), b"stub").expect("write file");
+            state
+                .mark_report_document_fetched(
+                    &document.id,
+                    Some(&local),
+                    Some("application/pdf"),
+                    None,
+                    Some(4),
+                )
+                .expect("mark fetched");
+            state
+                .set_report_document_detected_container(&document.id, container)
+                .expect("stamp container");
+            let run_id = format!("run_gapc_{suffix}");
+            state
+                .autopilot()
+                .create_run_if_absent(
+                    &run_id,
+                    &company.id,
+                    &document.id,
+                    "manual",
+                    MODE_AUTOPILOT,
+                    None,
+                )
+                .expect("create run")
+                .expect("run created");
+            state.autopilot().get_run(&run_id).expect("get run")
+        };
+
+        // Everything below is named `.pdf` and served `application/pdf`.
+        assert_eq!(
+            gap_reason(&state, &run_for("real", "pdf"), "no_deterministic_tier"),
+            "pdf_document",
+            "a genuine PDF still earns the by-design reason"
+        );
+        assert_eq!(
+            gap_reason(&state, &run_for("xml", "xml"), "no_deterministic_tier"),
+            "no_deterministic_tier",
+            "an XML statement under a .pdf name keeps a re-armable reason"
+        );
+        assert_eq!(
+            gap_reason(&state, &run_for("zip", "zip"), "no_deterministic_tier"),
+            "no_deterministic_tier",
+            "an ESEF package under a .pdf name keeps a re-armable reason"
+        );
+    }
+
+    /// Epic #229 T2: the canonical-report tie-break (`prefers_candidate`, reused by
+    /// the coverage read model) prefers the **structured** document when two
+    /// filings share a disclosure key. Resolving that from the URL alone ranked the
+    /// corpus's 38 XML statements stored under a `.pdf` name below their companion
+    /// PDF, handing the canonical slot to the document with less extractable data.
+    #[test]
+    fn structured_tie_break_prefers_the_markup_stored_under_a_pdf_name() {
+        let mut markup = report_doc(
+            "doc_markup",
+            "https://bonnier.pl/static/att/emitent/2025-05/ssf_2025.pdf",
+            "SSF 2025",
+            "2025-05-02T00:00:00Z",
+        );
+        markup.detected_container = Some("xml".to_owned());
+        let mut pdf = report_doc(
+            "doc_pdf",
+            "https://bonnier.pl/static/att/emitent/2025-05/ssf_2025_scan.pdf",
+            "SSF 2025 scan",
+            "2025-05-01T00:00:00Z",
+        );
+        pdf.detected_container = Some("pdf".to_owned());
+
+        assert!(is_structured_document(&markup));
+        assert!(!is_structured_document(&pdf));
+        // Same disclosure month → the tie-break decides, and it must pick the
+        // markup even though BOTH URLs end `.pdf`.
+        assert!(
+            prefers_candidate(&pdf, &markup),
+            "the genuinely structured sibling must win the canonical slot"
+        );
+        assert!(
+            !prefers_candidate(&markup, &pdf),
+            "and the PDF must not displace it on a re-run"
+        );
+
+        // An ESEF report package is structured too — the structured path unpacks it.
+        let mut package = report_doc(
+            "doc_zip",
+            "https://bonnier.pl/static/att/emitent/2025-05/ssf_2025_pkg.pdf",
+            "SSF 2025 package",
+            "2025-05-03T00:00:00Z",
+        );
+        package.detected_container = Some("zip".to_owned());
+        assert!(is_structured_document(&package));
     }
 }

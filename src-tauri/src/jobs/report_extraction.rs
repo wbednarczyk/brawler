@@ -84,7 +84,19 @@ pub fn run_report_extraction(
         });
     }
 
-    let format = SourceFormat::resolve(document.content_type.as_deref(), local_path);
+    // Container truth (epic #229 T2): the stored `detected_container` decides the
+    // reader, so an XHTML render under a `.pdf` name is parsed as markup instead
+    // of being handed to the PDF reader (where it fails 100%). A ZIP report
+    // package or an unrecognised container has no readable text layer at all —
+    // that is the same *unreadable* class as a missing file above, surfaced as a
+    // recoverable error with the document left un-extracted, never a fake
+    // `source_format` row.
+    let Some(format) = crate::report_documents_container::resolved_source_format(&document) else {
+        return Err(format!(
+            "report document is a {} container, not readable text (unreadable_container)",
+            crate::report_documents_container::resolved_container(&document).as_str()
+        ));
+    };
     let outcome = extract_report(&bytes, format);
 
     let stored_sections: Vec<StoredSection> = outcome
@@ -224,6 +236,56 @@ mod tests {
         // Re-run: same bytes + version -> skipped.
         let second = run_report_extraction(&state, &id).expect("re-extract");
         assert!(second.skipped);
+    }
+
+    /// Epic #229 T2: 24 of the maintainer's stored files are markup under a `.pdf`
+    /// name. The extension used to pick the PDF reader, which fails on every one of
+    /// them; the sniffed container picks the markup reader and the sections land.
+    #[test]
+    fn markup_stored_under_a_pdf_name_extracts_as_markup() {
+        let state = app_with_dir("liar");
+        let body = format!(
+            "<html><body><h1>Bilans</h1><p>{}</p><h1>Rachunek zysków</h1><p>przychody 100</p></body></html>",
+            "aktywa ".repeat(600)
+        );
+        let id = register_doc(&state, "report.pdf", body.as_bytes());
+        state
+            .report_documents()
+            .set_report_document_detected_container(&id, "html")
+            .expect("stamp container");
+
+        let result = run_report_extraction(&state, &id).expect("extract");
+        assert_eq!(result.state, ExtractionState::Extracted);
+        assert_eq!(result.format, SourceFormat::Xhtml);
+        assert!(result.section_count >= 2);
+    }
+
+    /// A ZIP report package has no text layer at all. That is the same *unreadable*
+    /// class as a missing file — a recoverable error naming the container, with the
+    /// document left un-extracted, never a `report_document_extractions` row
+    /// claiming a `pdf` source format the bytes do not have.
+    #[test]
+    fn a_zip_container_is_an_honest_unreadable_error_not_a_pdf_parse() {
+        let state = app_with_dir("zip");
+        let id = register_doc(&state, "package.pdf", b"PK\x03\x04\x14\x00stuff");
+        state
+            .report_documents()
+            .set_report_document_detected_container(&id, "zip")
+            .expect("stamp container");
+
+        let error = run_report_extraction(&state, &id).expect_err("a package is not readable text");
+        assert!(
+            error.contains("zip") && error.contains("unreadable_container"),
+            "the error must name the detected container: {error}"
+        );
+        assert!(
+            state
+                .report_sections()
+                .extraction(&id)
+                .expect("extraction lookup")
+                .is_none(),
+            "no extraction row may be stored for a container we cannot read"
+        );
     }
 
     #[test]

@@ -6,7 +6,11 @@ import type { ReactElement } from "react";
 import { CompanyReportDocumentsPanel, middleTruncate } from "./CompanyReportDocumentsPanel";
 import { getReportDocumentsView, reclassifyReportDocuments } from "../../api/reportDocuments";
 import { extractReportDocumentData } from "../../api/fundamentalsExtraction";
-import type { ReportDocument, ReportDocumentViewRow } from "../../api/reportDocumentsTypes";
+import type {
+  ReportDocument,
+  ReportDocumentCoverageTotals,
+  ReportDocumentViewRow,
+} from "../../api/reportDocumentsTypes";
 import { ToastProvider } from "../../ui";
 
 vi.mock("../../api/reportDocuments", () => ({
@@ -47,6 +51,7 @@ function reportDocument(overrides: Partial<ReportDocument> = {}): ReportDocument
     createdAt: "2026-06-01T09:12:00Z",
     updatedAt: "2026-06-01T09:12:00Z",
     docKind: "periodic_ssf",
+    detectedContainer: null,
     ...overrides,
   };
 }
@@ -66,8 +71,30 @@ function viewRow(
   };
 }
 
-function mockView(rows: ReportDocumentViewRow[]) {
-  getReportDocumentsViewMock.mockResolvedValue({ companyId: "company_gpw_cdr", rows });
+// Derives realistic coverage totals (#174, epic #229 T3) from the given rows —
+// the same predicate the Rust `companies_lacking_periodic_coverage` roll-up
+// uses (`hasPeriodicCoverage` = at least one FETCHED periodic document) — so
+// every existing single-row test keeps getting sane totals for free. Pass an
+// override to test the totals summary itself, including the "known but not
+// fetched" gap (`periodicCount > 0` with `hasPeriodicCoverage: false`).
+function mockView(
+  rows: ReportDocumentViewRow[],
+  totalsOverride?: Partial<ReportDocumentCoverageTotals>,
+) {
+  const isPeriodic = (row: ReportDocumentViewRow) =>
+    row.document.docKind === "periodic_ssf" || row.document.docKind === "periodic_jsf";
+  const totals: ReportDocumentCoverageTotals = {
+    documents: rows.length,
+    fetched: rows.filter((row) => row.document.fetchStatus === "fetched").length,
+    pending: rows.filter((row) => row.document.fetchStatus === "pending").length,
+    metadataOnly: rows.filter((row) => row.document.fetchStatus === "metadata_only").length,
+    periodicCount: rows.filter(isPeriodic).length,
+    hasPeriodicCoverage: rows.some(
+      (row) => isPeriodic(row) && row.document.fetchStatus === "fetched",
+    ),
+    ...totalsOverride,
+  };
+  getReportDocumentsViewMock.mockResolvedValue({ companyId: "company_gpw_cdr", rows, totals });
 }
 
 describe("middleTruncate", () => {
@@ -136,6 +163,46 @@ describe("CompanyReportDocumentsPanel", () => {
     );
     await screen.findByRole("link");
     expect(container.querySelector(".doc-status")?.textContent).toContain("Link only");
+  });
+
+  // Coverage-totals summary row (#174, epic #229 T3) — the roll-up's denominator.
+  it("shows the coverage totals summary above the document list", async () => {
+    mockView([viewRow()], {
+      documents: 8,
+      fetched: 5,
+      pending: 1,
+      metadataOnly: 2,
+      periodicCount: 3,
+      hasPeriodicCoverage: true,
+    });
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("8 documents")).toBeInTheDocument();
+    expect(screen.getByText("5 Stored")).toBeInTheDocument();
+    expect(screen.getByText("1 Pending fetch")).toBeInTheDocument();
+    expect(screen.getByText("2 Link only")).toBeInTheDocument();
+    expect(screen.getByText("3 periodic reports")).toBeInTheDocument();
+    // Coverage is present, so the missing-coverage warning must NOT render.
+    expect(screen.queryByText("No periodic report stored")).not.toBeInTheDocument();
+  });
+
+  // The exact gap the roll-up exists to surface (#174): a periodic report is
+  // KNOWN (periodicCount > 0) but none has actually been fetched — the "we know
+  // about the report but hold no bytes" state, distinct from "no periodic report
+  // at all". Both must render the same warn-tone affordance.
+  it("flags missing periodic coverage with a warn-tone chip even when periodic reports are known", async () => {
+    mockView([viewRow({ fetchStatus: "metadata_only" })], {
+      documents: 4,
+      fetched: 1,
+      pending: 1,
+      metadataOnly: 2,
+      periodicCount: 2,
+      hasPeriodicCoverage: false,
+    });
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    const warning = await screen.findByText("No periodic report stored");
+    expect(warning.closest(".ui-status-chip")).toHaveClass("ui-status-chip-warn");
   });
 
   it("shows the empty state when there are no documents", async () => {

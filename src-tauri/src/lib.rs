@@ -17,6 +17,7 @@ pub mod observability;
 pub mod providers;
 pub mod report_diff;
 pub mod report_documents_capture;
+pub mod report_documents_container;
 pub mod signal_dates;
 pub mod source_adapters;
 pub mod storage;
@@ -96,6 +97,22 @@ pub fn run() {
                 Err(error) => {
                     log::warn!("startup mis-association repair failed: {error}");
                 }
+            }
+
+            // Container self-heal (epic #229 T2): stamp `detected_container` on
+            // fetched documents stored before migration 0121, reading each file's
+            // magic bytes (SQL cannot). Idempotent and best-effort — a row whose
+            // file is missing stays NULL and is retried next start.
+            match report_documents_container::sniff_missing_containers(&state) {
+                Ok(summary) if summary.scanned == 0 => {}
+                Ok(summary) => log::info!(
+                    "startup container sniff scanned {} document(s): stamped {} {:?}, {} file(s) missing",
+                    summary.scanned,
+                    summary.stamped,
+                    summary.by_container,
+                    summary.file_missing
+                ),
+                Err(error) => log::warn!("startup container sniff failed: {error}"),
             }
 
             // Start the durable-queue worker as isolated lanes (ADR 0059): reclaim

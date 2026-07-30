@@ -154,6 +154,26 @@ const FINANCIAL_MARKERS: &[&str] = &[
     " raport roczny",
     " raport srodroczny",
     " raport śródroczny",
+    // Live-DB harvest 2026-07-30 (epic #229 T3): XTB names its half-year
+    // statements `Raport_polroczne_{jednostkowe,skonsolidowane}_XTB_HY_2025_*`.
+    // Every other cadence word was a financial marker except this one, so the
+    // half-year statement only classified as periodic when a NEIGHBOURING file's
+    // URL slug happened to supply the marker — which is exactly the URL trust
+    // this task removes.
+    " raport polroczn",
+    " raport półroczn",
+    // Same harvest: cadence words the dictionary was missing, each anchored to a
+    // `raport`/`report` word so the token cannot fire on prose. Without them the
+    // owner's own periodic reports classified as `other` UNLESS a neighbouring
+    // file's URL slug supplied a marker (Orlen `RAPORT_IH2025`, Digital Network
+    // `raport_1Q2025`, cyber_Folks `Report_H1_2024_ENG`).
+    " raport ih",
+    " raport 1q",
+    " raport 2q",
+    " raport 3q",
+    " raport 4q",
+    " report h1",
+    " report h2",
     " annual report",
 ];
 
@@ -223,6 +243,30 @@ pub fn is_management_report(title: &str, url: &str) -> bool {
         return false;
     }
     matches_any(&t, MANAGEMENT_REPORT_MARKERS)
+}
+
+/// [`classify_doc_kind`] with the URL's slug made **optional** (epic #229 T3,
+/// #171): `slug_trusted = false` classifies from the title alone.
+///
+/// The attachment host reuses one issuer's filename across unrelated filings —
+/// content-proven on the maintainer's corpus, where XTB's own H1-2025 statements
+/// are served under `DataWalk-…` slugs (the stored bytes name XTB) and
+/// cyber_Folks'/Orlen's Q3-2024 statements under `Grupy-Energa` slugs (their PDF
+/// `/Author` names the owner). The slug then classifies the WRONG document:
+/// `XTB_-_Skonsolidowane_SSF_-_H1_2025.pdf` behind a `…xhtml.xades` slug reads as
+/// a signature companion (`Other`, so no canonical slot and no extraction), and
+/// `Raport_polroczne_jednostkowe_XTB_HY_2025_PL.pdf` behind a `DataWalk-SSF-…`
+/// slug reads as consolidated. Both are decided by another company's filename.
+///
+/// An **empty title** keeps the URL: a slug is a poor signal, no signal is worse.
+/// Callers decide trust with
+/// [`crate::storage::TrackedIssuerIndex::url_slug_names_foreign_issuer`], so a
+/// slug is only ever dropped on positive evidence that it names someone else.
+pub fn classify_doc_kind_with_slug_trust(title: &str, url: &str, slug_trusted: bool) -> DocKind {
+    if slug_trusted || title.trim().is_empty() {
+        return classify_doc_kind(title, url);
+    }
+    classify_doc_kind(title, "")
 }
 
 /// Classify a stored report document from its title and URL. Total and
@@ -352,6 +396,57 @@ mod tests {
         title: String,
         url: String,
         kind: String,
+    }
+
+    /// Epic #229 T3 (#171): a foreign issuer's slug must not classify the
+    /// owner's document. Real strings from the maintainer's database — XTB's own
+    /// H1-2025 statements are served under DataWalk slugs (content-verified: the
+    /// stored bytes name XTB), and today the slug decides all three answers.
+    #[test]
+    fn foreign_slug_does_not_classify_the_owners_document() {
+        // (a) A signature-companion slug demotes a real consolidated statement to
+        //     `Other` — no canonical slot, no extraction, invisible coverage gap.
+        let consolidated = "XTB_-_Skonsolidowane_SSF_-_H1_2025.pdf";
+        let xades_slug = "https://www.bankier.pl/static/att/emitent/2025-08/\
+                          Skonsolidowane-sprawozdanie-finansowe-Grupy-DataWalk-za-I-polrocze-2025\
+                          .xhtml_202508281209683797.xades";
+        assert_eq!(
+            classify_doc_kind(consolidated, xades_slug),
+            DocKind::Other,
+            "precondition: the foreign .xades slug wins today"
+        );
+        assert_eq!(
+            classify_doc_kind_with_slug_trust(consolidated, xades_slug, false),
+            DocKind::PeriodicSsf,
+            "distrusting the slug must recover the owner's consolidated statement"
+        );
+
+        // (b) A consolidated slug flips a STANDALONE statement to consolidated —
+        //     the wrong document then competes for (and can win) the SSF slot.
+        let standalone = "Raport_polroczne_jednostkowe_XTB_HY_2025_PL.pdf";
+        let ssf_slug = "https://www.bankier.pl/static/att/emitent/2025-08/\
+                        DataWalk-SSF-2025-06-30-0-pl_202508281209683797.xhtml";
+        assert_eq!(
+            classify_doc_kind(standalone, ssf_slug),
+            DocKind::PeriodicSsf,
+            "precondition: the foreign SSF slug wins today"
+        );
+        assert_eq!(
+            classify_doc_kind_with_slug_trust(standalone, ssf_slug, false),
+            DocKind::PeriodicJsf,
+            "`jednostkowe` in the owner's own title is the standalone signal"
+        );
+
+        // (c) A trusted slug is untouched, and an empty title keeps the URL — a
+        //     poor signal beats no signal.
+        assert_eq!(
+            classify_doc_kind_with_slug_trust(standalone, ssf_slug, true),
+            classify_doc_kind(standalone, ssf_slug)
+        );
+        assert_eq!(
+            classify_doc_kind_with_slug_trust("", ssf_slug, false),
+            classify_doc_kind("", ssf_slug)
+        );
     }
 
     /// G-2: the committed labeled corpus is the taxonomy's contract. Any

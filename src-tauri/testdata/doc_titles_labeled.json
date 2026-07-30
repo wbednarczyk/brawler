@@ -76,6 +76,12 @@
     { "title": "CBF2025_raport_roczny.xhtmlSprawozdanie Zarządu z Działalności", "url": "", "kind": "other" },
     { "title": "Sprawozdanie Zarządu o wydatkach reprezentacyjnych za rok 2025.pdf", "url": "", "kind": "other" },
     { "title": "Filip Gorczyca - biogram.pdf", "url": "", "kind": "other" },
-    { "title": "Orest_Nazaruk_CV_2026_MOBRUK.pdf", "url": "", "kind": "other" }
+    { "title": "Orest_Nazaruk_CV_2026_MOBRUK.pdf", "url": "", "kind": "other" },
+
+    { "title": "Raport_polroczne_skonsolidowane_XTB_HY_2025_PL.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "Raport_polroczne_jednostkowe_XTB_HY_2025_PL.pdf", "url": "", "kind": "periodic_jsf" },
+    { "title": "ORLEN_250821_2025polrocze_-_RAPORT_IH2025.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "Grupa_Digital_Network_raport__1Q2025_publikacja.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "CBF_Report_H1_2024_ENG.pdf", "url": "", "kind": "periodic_ssf" }
   ]
 }

@@ -34,7 +34,7 @@
 use crate::app_state::AppState;
 use crate::document_fetcher::DocumentFetcher;
 use crate::fundamentals::insider::attachment::{parse_notification_text, AttachmentParse};
-use crate::report_diff::extraction::{extract_report, ExtractionState, SourceFormat};
+use crate::report_diff::extraction::{extract_report, ExtractionState};
 use crate::storage::AttachmentMergeOutcome;
 
 /// Aggregate result of one attachment-tier sweep (surfaced in logs + the closure
@@ -287,7 +287,20 @@ fn process_filing(
             }
         };
 
-        let format = SourceFormat::resolve(fetched_doc.content_type.as_deref(), local_path);
+        // Container truth (epic #229 T2): a notification stored as markup under a
+        // `.pdf` name is parsed as markup. A ZIP package / unrecognised container
+        // carries no readable text for this tier — parked for the vision path
+        // exactly like a scan, never guessed.
+        let Some(format) = crate::report_documents_container::resolved_source_format(&fetched_doc)
+        else {
+            log::warn!(
+                "module=insider_attachment stage=route feed_item={feed_item_id} \
+                 path={local_path} container={} — not readable text",
+                crate::report_documents_container::resolved_container(&fetched_doc).as_str()
+            );
+            any_no_text = true;
+            continue;
+        };
         let extracted = extract_report(&bytes, format);
         match extracted.state {
             ExtractionState::Extracted => {
@@ -501,6 +514,38 @@ mod tests {
         let summary2 = fetch_and_parse_insider_attachments(&s, &fetcher2).expect("sweep2");
         assert_eq!(summary2.filings_attempted, 0, "filing terminally attempted");
         assert_eq!(fetcher2.calls.load(Ordering::Relaxed), 0, "no re-fetch");
+    }
+
+    /// Epic #229 T2, end to end: the KNF notification arrives as markup under a
+    /// `.pdf` name, served `application/pdf` — the exact shape the trust audit
+    /// counted 38 times. The store-time sniff records the real container and the
+    /// attachment tier reads it as markup, so the MAR figures land. Before
+    /// container truth the extension picked the PDF reader, the parse produced
+    /// nothing, and the filing was terminally marked `no_text_layer` with its
+    /// volume/price/date left NULL forever.
+    #[test]
+    fn markup_notification_under_a_pdf_name_parses_end_to_end() {
+        let s = state_with_dir();
+        let c = company(&s, "LIA");
+        ingest_insider_filing(
+            &s,
+            &c,
+            "LIA",
+            "9400009",
+            "https://static.att/powiadomienie.pdf",
+        );
+
+        let fetcher = CountingFetcher::ok(&notification_xhtml(), "application/pdf");
+        let summary = fetch_and_parse_insider_attachments(&s, &fetcher).expect("sweep");
+        assert_eq!(
+            summary.no_text_layer, 0,
+            "markup must not be misread as a text-layer-less PDF"
+        );
+        assert_eq!(summary.parsed, 1);
+
+        let after = &s.insider().list_by_company(&c).expect("list")[0];
+        assert_eq!(after.volume.as_deref(), Some("1000"));
+        assert_eq!(after.tx_date.as_deref(), Some("2026-07-03"));
     }
 
     #[test]

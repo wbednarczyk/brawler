@@ -503,12 +503,20 @@ fn issuer_named(issuer: &TrackedIssuer, tokens: &[&str], use_ticker: bool) -> bo
 /// board bios, resolutions, an AoA, counterparty mentions like `OFE PZU`/`PKO`,
 /// and Bankier hosting-folder names in the URL):
 /// - **doc_kind gate** — only `PeriodicSsf`/`PeriodicJsf` can be rejected.
-/// - **owner detection is generous** — name/alias/ticker over the article title,
-///   the filename, and the URL; a filing naming its owner anywhere is always
-///   kept (covers group filings whose individual files are generically named).
+/// - **owner detection is generous** — name/alias/ticker over the article title
+///   and the filename; a filing naming its owner in either is always kept
+///   (covers group filings whose individual files are generically named).
 /// - **foreign detection is strict** — a full company name/alias phrase in the
-///   **filename only** (never the noisy URL path, never a bare ticker), so a
-///   counterparty/shareholder mention or a hosting-folder name never deletes.
+///   **filename only** (never a bare ticker), so a counterparty/shareholder
+///   mention never deletes.
+/// - **the URL is not an issuer signal in EITHER direction** (epic #229 T3): the
+///   attachment host reuses one issuer's slug across unrelated same-day filings,
+///   proven by content — a `Grupy-Energa` slug sits on cyber_Folks', Vercom's and
+///   Orlen's own Q3-2024 statements (their PDF `/Author` and body name the owner).
+///   A slug therefore cannot delete a row, and — the T3 tightening — cannot save
+///   one either: an owner mention found only in the URL is not evidence of
+///   ownership. Measured on the maintainer's corpus: 737 periodic
+///   `espi_attachment` rows, delete set 0 before and 0 after the tightening.
 fn names_foreign_issuer(
     article_title: &str,
     document_title: &str,
@@ -525,8 +533,7 @@ fn names_foreign_issuer(
         return false;
     }
 
-    let owner_haystack =
-        normalize_media_match_text(&format!("{article_title} {document_title} {url}"));
+    let owner_haystack = normalize_media_match_text(&format!("{article_title} {document_title}"));
     let owner_tokens = owner_haystack.split_whitespace().collect::<Vec<_>>();
     if issuer_named(owner, &owner_tokens, true) {
         return false;
@@ -537,6 +544,58 @@ fn names_foreign_issuer(
     all_issuers.iter().any(|issuer| {
         issuer.company_id != owner.company_id && issuer_named(issuer, &label_tokens, false)
     })
+}
+
+/// The tracked-issuer name index, loaded once and reused across a pass (epic
+/// #229 T3). Production surface over the same [`TrackedIssuer`] signals and the
+/// same [`issuer_named`] matcher the ingestion guard uses, so an issuer-naming
+/// question has exactly one answer in this codebase.
+///
+/// Its one production question today is [`Self::url_slug_names_foreign_issuer`]
+/// — the **URL-distrust** predicate the canonical-report rank consults.
+pub struct TrackedIssuerIndex(Vec<TrackedIssuer>);
+
+impl TrackedIssuerIndex {
+    pub(super) fn load(connection: &Connection) -> StorageResult<Self> {
+        Ok(Self(load_tracked_issuers(connection)?))
+    }
+
+    /// Whether `url`'s slug names a tracked issuer that is **not** `owner` while
+    /// `title` names no foreign issuer at all — the "misleading CDN slug" shape
+    /// the trust audit measured as class 1 (epic #229 T1: 53 rows over the
+    /// maintainer's corpus).
+    ///
+    /// The row itself is trustworthy: content triage of every flagged row found
+    /// **zero** truly-foreign documents — the bytes belong to the owner in every
+    /// readable case. What is NOT trustworthy is anything the slug says, which is
+    /// why [`crate::jobs::autopilot::report_disclosure_key`] stops reading the
+    /// slug's `/emitent/YYYY-MM/` date when this returns true.
+    ///
+    /// Foreign matching is strict (full name/alias phrase, never a bare ticker),
+    /// exactly as in [`names_foreign_issuer`] — a `PKO`/`PZU` token in a path
+    /// must never distrust a date.
+    pub fn url_slug_names_foreign_issuer(
+        &self,
+        owner_company_id: &str,
+        title: &str,
+        url: &str,
+    ) -> bool {
+        let title_haystack = normalize_media_match_text(title);
+        let title_tokens = title_haystack.split_whitespace().collect::<Vec<_>>();
+        if self.0.iter().any(|issuer| {
+            issuer.company_id != owner_company_id && issuer_named(issuer, &title_tokens, false)
+        }) {
+            // The title itself already contradicts the owner; that is the
+            // mis-association question (guard + repair), not the slug question.
+            return false;
+        }
+
+        let url_haystack = normalize_media_match_text(url);
+        let url_tokens = url_haystack.split_whitespace().collect::<Vec<_>>();
+        self.0.iter().any(|issuer| {
+            issuer.company_id != owner_company_id && issuer_named(issuer, &url_tokens, false)
+        })
+    }
 }
 
 /// Test-only handle over the tracked-issuer table, so the real-DB trust audit
@@ -1418,6 +1477,14 @@ impl SourcesStore {
         let connection = self.db.checkout()?;
 
         repair_misassociated_report_documents(&connection)
+    }
+
+    /// The tracked-issuer name index (epic #229 T3), loaded once per pass by a
+    /// caller that then asks it many questions.
+    pub fn tracked_issuer_index(&self) -> StorageResult<TrackedIssuerIndex> {
+        let connection = self.db.checkout()?;
+
+        TrackedIssuerIndex::load(&connection)
     }
 
     pub fn upsert_bankier_company_identifiers(

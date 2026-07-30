@@ -50,7 +50,7 @@ use crate::fundamentals::ownership::{
     parse_shareholders, OwnershipParseOutcome, OwnershipParseState,
 };
 use crate::jobs::structured_extraction::derive_report_period;
-use crate::report_diff::extraction::{extract_report, Section, SourceFormat};
+use crate::report_diff::extraction::{extract_report, Section};
 use crate::storage::{
     ListFinancialPeriodsInput, NewOwnershipStake, OwnershipExtractionResidual, ReportDocument,
 };
@@ -204,7 +204,18 @@ pub fn run_ownership_extraction_job(state: &AppState, payload: &str) -> Result<(
         }
     };
 
-    let format = SourceFormat::resolve(document.content_type.as_deref(), local_path);
+    // Container truth (epic #229 T2): a shareholders table stored as markup under
+    // a `.pdf` name is parsed as markup. A ZIP package / unrecognised container
+    // has no text layer this tier can read — the same skip as an unreadable file
+    // above, logged, never a guessed parse.
+    let Some(format) = crate::report_documents_container::resolved_source_format(&document) else {
+        log::warn!(
+            "ownership extraction: document {} is a {} container, not readable text — skipping",
+            document.id,
+            crate::report_documents_container::resolved_container(&document).as_str()
+        );
+        return Ok(());
+    };
     let extracted = extract_report(&bytes, format);
     let outcome = parse_shareholders(&extracted.sections, format);
 
@@ -541,6 +552,66 @@ mod tests {
         })
         .expect("payload");
         run_ownership_extraction_job(state, &payload).expect("run job");
+    }
+
+    /// Epic #229 T2: the shareholders table arrives as markup under a `.pdf` name,
+    /// served as `application/pdf` — name and header agree with each other and both
+    /// lie. Before container truth the extension handed it to the PDF reader, which
+    /// produced nothing, so the company kept an empty shareholder history. The
+    /// stored container routes it to the markup reader and the stakes land.
+    #[test]
+    fn markup_stored_under_a_pdf_name_parses_shareholders() {
+        let s = state_with_dir();
+        let c = company(&s);
+        let doc = fetched_periodic_report(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "https://example.com/ssf-2025.pdf",
+            "own-liar.pdf",
+            &sample_shareholders_xhtml(),
+            "application/pdf",
+        );
+        s.set_report_document_detected_container(&doc, "html")
+            .expect("stamp container");
+
+        run_job(&s, &c, &doc);
+        let stakes = s.ownership().current_state(&c).expect("state");
+        assert!(
+            !stakes.is_empty(),
+            "container truth must route the markup to the markup reader, \
+             not the PDF reader the .pdf name implies"
+        );
+    }
+
+    /// A ZIP report package under a `.pdf` name carries no text layer this tier can
+    /// read: skipped honestly, with neither fabricated stakes nor a residual that
+    /// would claim a parse was attempted on readable text.
+    #[test]
+    fn a_zip_package_under_a_pdf_name_is_skipped_not_parsed() {
+        let s = state_with_dir();
+        let c = company(&s);
+        let doc = fetched_periodic_report(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "https://example.com/ssf-2025-pkg.pdf",
+            "own-pkg.pdf",
+            "PK\u{3}\u{4}\u{14}\u{0}not really readable",
+            "application/pdf",
+        );
+        s.set_report_document_detected_container(&doc, "zip")
+            .expect("stamp container");
+
+        run_job(&s, &c, &doc);
+        assert!(s.ownership().current_state(&c).expect("state").is_empty());
+        assert!(
+            s.ownership()
+                .list_extraction_residuals(&c)
+                .expect("residuals")
+                .is_empty(),
+            "a package is not a parse residual — it is simply not this tier's input"
+        );
     }
 
     // ---- (1) deterministic pipeline: parsed rows land as stakes directly ----
