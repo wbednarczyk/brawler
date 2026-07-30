@@ -189,7 +189,7 @@ export function CompanyCoveragePanel({
         setActionError(text("History sweep is taking longer than expected — reopen this company to check its status."));
         return;
       }
-      let value: HistorySweepProgress | null = null;
+      let value: HistorySweepProgress | null;
       try {
         value = await getHistorySweepProgress(companyId);
       } catch {
