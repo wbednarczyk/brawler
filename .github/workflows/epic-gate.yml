@@ -1,0 +1,58 @@
+# Epic completion gate (brawler-release skill step 6) — manual-only, run on the
+# epic branch BEFORE the merge. Owner rule 2026-07-30: no heavy suites on the
+# local machine — the ratchets that used to run locally via `make check-epic`
+# run here instead. The full mandatory gate itself is the PR's required checks;
+# this workflow adds the closure-cadence ratchets on top:
+#   gh workflow run epic-gate.yml --ref <epic-branch> [-f bench=true]
+# The real-DB honesty ratchet cannot run here (the owner's DB never leaves
+# their machine — ADR 0091 dec. 4); its class is enforced in the default gate
+# by the synthetic shape corpus, and the local ratchet is owner-on-demand only.
+name: Epic gate (coverage ratchet + bench)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bench:
+        description: "Also run make bench (hot-kernel changes)"
+        required: false
+        default: "false"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  epic-gate:
+    name: Coverage ratchet (+ bench)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Reclaim disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-epicgate-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-epicgate-
+            ${{ runner.os }}-cargo-
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Coverage ratchet
+        run: make coverage
+
+      - name: Bench
+        if: inputs.bench == 'true'
+        run: make bench
