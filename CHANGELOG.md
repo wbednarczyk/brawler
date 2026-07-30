@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.62.2 - 2026-07-30
+
+
+### Bug Fixes
+
+- **fundamentals**: extraction-honesty residue — 0119 repair, typed no-facts reasons, tests/ typecheck gate (#255)
+
 ## v0.62.1 - 2026-07-30
 
 
