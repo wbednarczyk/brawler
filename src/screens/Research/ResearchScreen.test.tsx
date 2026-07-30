@@ -145,8 +145,11 @@ describe("Research screen workflows", () => {
       expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
     });
 
-    await user.click(screen.getByRole("button", { name: "Add question" }));
-    await user.type(screen.getByLabelText("Question title"), "What changed in the report?");
+    await user.click(await screen.findByRole("button", { name: "Add question" }));
+    await user.type(
+      await screen.findByLabelText("Question title", {}, { timeout: 5000 }),
+      "What changed in the report?",
+    );
     await user.type(screen.getByLabelText("Question context"), "Track the source report and notes.");
     await user.click(screen.getByRole("button", { name: "Save question" }));
 
@@ -194,8 +197,11 @@ describe("Research screen workflows", () => {
     // company Dashboard on the "evidence" preset (never Notebooks).
     renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Add question" }));
-    await user.type(screen.getByLabelText("Question title"), "Should backlog normalize?");
+    await user.click(await screen.findByRole("button", { name: "Add question" }));
+    await user.type(
+      await screen.findByLabelText("Question title", {}, { timeout: 5000 }),
+      "Should backlog normalize?",
+    );
     await user.click(screen.getByRole("button", { name: "Save question" }));
 
     await waitFor(() => {
@@ -203,7 +209,11 @@ describe("Research screen workflows", () => {
     });
 
     const researchRegion = await screen.findByLabelText("Evidence timeline");
-    const questionEvidenceTitle = within(researchRegion).getByText("Should backlog normalize?");
+    // The new question's evidence row lands with the post-create refetch — a
+    // later commit than the timeline region itself.
+    const questionEvidenceTitle = await within(researchRegion).findByText(
+      "Should backlog normalize?",
+    );
     const questionEvidenceRow = questionEvidenceTitle.closest("article");
     expect(questionEvidenceRow).not.toBeNull();
 
@@ -354,8 +364,8 @@ describe("Research screen workflows", () => {
 
     renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Add reminder" }));
-    await user.type(screen.getByLabelText("Reminder title"), "Check next report");
+    await user.click(await screen.findByRole("button", { name: "Add reminder" }));
+    await user.type(await screen.findByLabelText("Reminder title"), "Check next report");
     await user.type(screen.getByLabelText("Reminder notes"), "Look for margin commentary.");
     await user.click(screen.getByRole("button", { name: "Save reminder" }));
 

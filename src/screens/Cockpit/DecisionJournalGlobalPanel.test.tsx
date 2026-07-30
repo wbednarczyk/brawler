@@ -35,7 +35,7 @@ describe("DecisionJournalGlobalPanel (ADR 0071, J3)", () => {
 
   it("lists decisions across companies with the company ticker", async () => {
     render(<DecisionJournalGlobalPanel companies={companies} />);
-    await waitFor(() => expect(screen.getByText("GPW:CDR")).toBeInTheDocument());
+    expect(await screen.findByText("GPW:CDR")).toBeInTheDocument();
     expect(screen.getByText("Entering a position on the pipeline.")).toBeInTheDocument();
     // The global list opens unfiltered (no company/kind).
     expect(listDecisionEntriesMock).toHaveBeenCalledWith({});
@@ -48,7 +48,7 @@ describe("DecisionJournalGlobalPanel (ADR 0071, J3)", () => {
     // (kept in the accessible tree) — and the entry count moves to the meta slot,
     // which survives compaction, instead of the dropped subtitle.
     const { container } = render(<DecisionJournalGlobalPanel companies={companies} />);
-    await waitFor(() => expect(screen.getByText("GPW:CDR")).toBeInTheDocument());
+    expect(await screen.findByText("GPW:CDR")).toBeInTheDocument();
     const leadHeader = container.querySelector(".ui-section-header");
     expect(leadHeader).toHaveClass("ui-pane-lead-header");
     expect(leadHeader?.querySelector(".ui-section-header-meta")).toHaveTextContent("1");

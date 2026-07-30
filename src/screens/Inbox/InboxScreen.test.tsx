@@ -257,31 +257,52 @@ describe("Inbox screen workflows", () => {
 
     expect(await screen.findByLabelText("Feed item details")).toBeInTheDocument();
 
+    // React 19 defers these state flushes: await a visible symptom of each
+    // shortcut before firing the next, so every handler sees fresh selection.
     fireEvent.keyDown(document, { key: "J", code: "KeyJ" });
-    expect(
-      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
-    ).toBeGreaterThan(0);
+    await waitFor(() => {
+      const detail = screen.getByLabelText("Feed item details");
+      expect(
+        within(detail).getByText(
+          "Saved sample item used to validate the saved filter before real ingestion exists.",
+        ),
+      ).toBeInTheDocument();
+    });
 
     fireEvent.keyDown(document, { key: "M", code: "KeyM" });
-    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
-      input: {
-        id: "feed_sample_pkn_news",
-        read: false,
-        saved: true,
-      },
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+        input: {
+          id: "feed_sample_pkn_news",
+          read: false,
+          saved: true,
+        },
+      });
     });
+    // Let the optimistic update + refetch SETTLE in the UI (M toggled read, so
+    // the read toggle flips to "Mark read") before the next shortcut — firing
+    // mid-refetch can hit a commit whose selection is still re-deriving
+    // (React 19 timing).
+    await screen.findByRole("button", { name: "Mark read" });
 
     fireEvent.keyDown(document, { key: "S", code: "KeyS" });
-    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
-      input: {
-        id: "feed_sample_pkn_news",
-        read: true,
-        saved: false,
-      },
+    // Settled semantics: the item still carries M's `read: false` — the old
+    // `read: true` expectation encoded firing S mid-refetch, racing M.
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+        input: {
+          id: "feed_sample_pkn_news",
+          read: false,
+          saved: false,
+        },
+      });
     });
+    await screen.findByRole("button", { name: "Save" });
 
     fireEvent.keyDown(document, { key: "O", code: "KeyO" });
-    expect(openUrl).toHaveBeenCalledWith("https://example.test/sample/pkn");
+    await waitFor(() => {
+      expect(openUrl).toHaveBeenCalledWith("https://example.test/sample/pkn");
+    });
 
     fireEvent.keyDown(document, { key: "N", code: "KeyN" });
     expect(await screen.findByRole("heading", { name: "Notebooks" })).toBeInTheDocument();

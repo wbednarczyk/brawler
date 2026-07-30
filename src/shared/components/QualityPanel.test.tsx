@@ -349,7 +349,9 @@ describe("QualityPanel", () => {
     // Collapsed by default: the snapshot detail is not shown.
     expect(screen.queryByText("Snapshot criterion")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /2026-06-10/ }));
+    // The history section lands with the evaluations fetch — a later commit
+    // than the frameworks render awaited above.
+    await user.click(await screen.findByRole("button", { name: /2026-06-10/ }));
 
     expect(await screen.findByText("Snapshot criterion")).toBeInTheDocument();
   });
@@ -429,7 +431,9 @@ describe("QualityPanel", () => {
     await screen.findByText("Wide moat");
 
     // The agent's verdict is visible — not the hardcoded "Not assessed yet".
-    expect(screen.getByText("Partial")).toBeInTheDocument();
+    // (Awaited: the verdict lands with the evaluations fetch, a later commit
+    // than the frameworks render.)
+    expect(await screen.findByText("Partial")).toBeInTheDocument();
     expect(screen.queryByText("Not assessed yet")).not.toBeInTheDocument();
 
     // Expanding reveals the agent's written reasoning alongside the guidance.
@@ -542,8 +546,10 @@ describe("QualityPanel", () => {
     render(<QualityPanel companyId="company_gpw_cdr" />);
 
     // The engine criterion, its measured value, its threshold and its verdict.
+    // (Verdict content lands with the evaluations fetch — a later commit than
+    // the frameworks render, so the first evaluation-derived text is awaited.)
     expect(await screen.findByText("Strong return on equity")).toBeInTheDocument();
-    expect(screen.getByText("18%")).toBeInTheDocument();
+    expect(await screen.findByText("18%")).toBeInTheDocument();
     expect(screen.getByText("Pass")).toBeInTheDocument();
     // The deterministic scorecard summary.
     expect(screen.getByText("1 pass")).toBeInTheDocument();

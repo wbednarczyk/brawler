@@ -118,9 +118,9 @@ describe("ReportDiffPanel", () => {
 
     const user = userEvent.setup();
     render(<ReportDiffPanel companyId="company_gpw_cbf" />);
-    await waitFor(() => expect(screen.getByText("2025 Q3 → 2026 Q1")).toBeInTheDocument());
+    expect(await screen.findByText("2025 Q3 → 2026 Q1")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Compare" }));
-    await waitFor(() => expect(screen.getByText("bilans")).toBeInTheDocument());
+    expect(await screen.findByText("bilans")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Focus" }));
     const overlay = await screen.findByRole("dialog", { name: "Report comparison" });
@@ -141,7 +141,7 @@ describe("ReportDiffPanel", () => {
 
     const user = userEvent.setup();
     render(<ReportDiffPanel companyId="company_gpw_cbf" />);
-    await waitFor(() => expect(screen.getByText("2025 Q3 → 2026 Q1")).toBeInTheDocument());
+    expect(await screen.findByText("2025 Q3 → 2026 Q1")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Compare" }));
 
     await waitFor(() => {
