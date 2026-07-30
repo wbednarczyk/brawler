@@ -30,6 +30,9 @@ const stages = [
     title: "Stage 1 — static (fast-fail)",
     tasks: [
       { name: "typecheck", cmd: "npm", args: ["run", "typecheck"] },
+      // Guardrail (ADR 0045): every dependency engines.node floor must be
+      // satisfied by the Node this shell runs — see engines-floor.mjs.
+      { name: "engines-floor", cmd: "node", args: ["scripts/check/engines-floor.mjs"] },
       { name: "lint", cmd: "npm", args: ["run", "lint"] },
       { name: "stylelint", cmd: "npm", args: ["run", "stylelint"] },
       { name: "rust-fmt", cmd: "cargo", args: ["fmt", "--check"], cwd: "src-tauri" },
