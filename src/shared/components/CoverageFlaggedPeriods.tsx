@@ -31,9 +31,10 @@ type Translate = (value: string) => string;
 type ReadState = "loading" | "ready" | "failed";
 
 // Human-readable label for a typed `reasonCode`. The backend deliberately emits
-// NO prose (ADR 0061 decision 2) — the seven codes are translated here, so a raw
-// code can never reach the user. An unrecognized code (a future backend value)
-// falls back to an honest generic rather than leaking the token.
+// NO prose (ADR 0061 decision 2) — the full code vocabulary (migration 0119) is
+// translated here, so a raw code can never reach the user. An unrecognized code
+// (a future backend value) falls back to an honest generic rather than leaking
+// the token.
 function reasonLabel(code: string, text: Translate): string {
   switch (code) {
     case "validation_failed":
@@ -52,6 +53,8 @@ function reasonLabel(code: string, text: Translate): string {
       return text("Data was recorded for this period");
     case "witness_fallback":
       return text("Figures taken from a third-party source (no reader could read the filing)");
+    case "facts_superseded":
+      return text("Recorded earlier, but the figures were since replaced or removed");
     default:
       return text("This period could not be recorded");
   }
