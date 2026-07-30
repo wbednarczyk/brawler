@@ -118,8 +118,8 @@ pub use financials::{
     UpdateFinancialPeriod, UpdateKpiRelevance,
 };
 pub use fundamentals_provenance::{
-    ExtractionOutcome, FactProvenance, FactTierBreakdown, FundamentalsProvenanceStore,
-    NewExtractionOutcome, NewFactProvenance, TierFactCount,
+    ExtractionOutcome, FactProvenance, FactTierBreakdown, FlaggedFact, FundamentalsProvenanceStore,
+    NewExtractionOutcome, NewFactProvenance, TierFactCount, WitnessCorroboration,
 };
 pub use fx_rates::FxRatesStore;
 pub use severity::{

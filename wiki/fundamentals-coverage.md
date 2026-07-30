@@ -48,6 +48,15 @@ from. Origin is a **label, never a to-do**.
   disagreement is recorded as an informational entry — the filing always wins.
 - The same for your manual entries: the aggregator's dissent is noted so you
   learn of it, and your value stays.
+- **Agreement is recorded too.** When BiznesRadar reads the same figure the
+  filing reports, that confirmation is stamped on the value (the figure seen,
+  the page it came from, and when) and the figure is marked **confirmed by a
+  second source** — so "nobody has checked this" and "two independent sources
+  agree" stop looking the same. A value you typed yourself gets the note beside
+  it, but keeps your grading: the app never re-labels your own entry.
+- Re-reading a report that yields a **different figure than the one already on
+  file** never overwrites it — the disagreement is recorded, with both numbers
+  shown side by side.
 - If one metric starts disagreeing across many companies at once, Brawler
   raises a *mapping suspect* warning — that pattern means a source row is
   being misread, not that ten companies restated at once.
@@ -58,8 +67,11 @@ from. Origin is a **label, never a to-do**.
 report document, how many facts landed and how many were cross-validated, and
 **Flagged periods** — an informational list of periods where a reader ran and
 refused to emit (a failed consistency check, a source disagreement), each with
-a plain-language reason and a **Try again** action. Flagged entries are
-information, not homework: nothing waits for your click.
+a plain-language reason and a **Try again** action. Below it, **Flagged
+figures** lists the opposite case: values that *did* land but could not be fully
+verified, each with its period, metric, amount, the reader that produced it and
+the source label it was read from. Both are information, not homework: nothing
+waits for your click.
 
 Some cells are honestly empty: BiznesRadar's pages simply don't publish every
 line (no cash, no total liabilities, equity only for parent shareholders), so

@@ -1869,10 +1869,21 @@ export const plText: Record<string, string> = {
   "Couldn't load flagged periods.": "Nie udało się wczytać oflagowanych okresów.",
   "Nothing flagged — every attempted period produced data.":
     "Nic nie jest oflagowane — każdy sprawdzony okres dał dane.",
+  // Flagged FIGURES section (epic #229 T5) — the values that DID land but carry
+  // a drift/contradiction, beside the flagged-PERIODS section above.
+  "Flagged figures": "Oflagowane liczby",
+  "Values the app recorded but couldn't fully verify — shown with where they came from.":
+    "Liczby, które aplikacja zapisała, ale nie potwierdziła do końca — wraz z ich pochodzeniem.",
+  "Checking for flagged figures…": "Sprawdzanie oflagowanych liczb…",
+  "Couldn't load flagged figures.": "Nie udało się wczytać oflagowanych liczb.",
+  "No flagged figures — every recorded value passed its checks.":
+    "Brak oflagowanych liczb — każda zapisana wartość przeszła kontrole.",
   // The seven typed reasonCode values.
   "The figures failed a consistency check": "Liczby nie przeszły kontroli zgodności",
   "The report's layout changed": "Układ raportu się zmienił",
   "A second source reported different figures": "Drugie źródło podało inne liczby",
+  "Re-reading the report gave a different figure than the one on file":
+    "Ponowny odczyt raportu dał inną liczbę niż zapisana",
   "Figures taken from a third-party source (no reader could read the filing)":
     "Liczby wzięte z zewnętrznego serwisu (żaden czytnik nie odczytał raportu)",
   "Recorded earlier, but the figures were since replaced or removed":
@@ -1888,6 +1899,8 @@ export const plText: Record<string, string> = {
   "(difference {residual})": "(różnica {residual})",
   "filing reports {actual}, the third-party source {expected}":
     "raport podaje {actual}, zewnętrzny serwis {expected}",
+  "on file {actual}, re-read from the report {expected}":
+    "zapisano {actual}, ponowny odczyt raportu {expected}",
   "Data was recorded for this period": "Dane dla tego okresu zostały zapisane",
   "This period could not be recorded": "Tego okresu nie udało się zapisać",
   // Which reader attempted the document.
@@ -1905,6 +1918,9 @@ export const plText: Record<string, string> = {
     "Dla tego okresu nie zapisano więcej szczegółów.",
   "Attempts: {n}": "Podejść: {n}",
   "Trying again…": "Ponawianie…",
+  // The re-run slot on a row whose flag names an aggregator page, not a stored
+  // document — there is nothing to re-extract (epic #229 T5).
+  "Nothing to re-read": "Nie ma czego odczytać ponownie",
   // Periods × deltas section (v0.61 §A5, ADR 0089 dec. 1). Mirrors the Compare
   // screen's flag/delta voice (pl.ts compare.*) so the N=1 table reads the same.
   "Positions × periods": "Pozycje × okresy",

@@ -37,6 +37,12 @@ slotsSkippedHigherTier: number,
  */
 witnessDisagreements: number, 
 /**
+ * Positive corroborations stamped on an issuer- or manual-held slot the
+ * aggregator AGREED with (epic #229 T5) — the half that previously left no
+ * trace at all.
+ */
+witnessCorroborations: number, 
+/**
  * Empty / zero aggregator cells skipped (the zero rule) — never written.
  */
 zeroCellsSkipped: number, 

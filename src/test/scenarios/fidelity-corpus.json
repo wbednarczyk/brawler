@@ -571,6 +571,37 @@
       ]
     },
     {
+      "name": "flagged facts read back as an empty array for a company whose values all passed (epic #229 T5)",
+      "_comment": "The flagged-FACTS read (list_flagged_fact_provenance) gained a company scope and the fact context the Coverage panel renders. Provenance rows are written only by the extraction pipeline (network-bound stored files, same rationale as the coverage step above), so the corpus pins the shape both dispatchers must agree on: a company whose facts carry no flagged provenance reads back an ARRAY with no row naming it — never an object, never an error, and never another company's flagged figures leaking into a company-scoped read. Per-row enrichment (metric/label/value/period join) is pinned by the Rust store tests and the TS panel tests.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "FLGFC",
+              "displayName": "Flagged Facts Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "list_flagged_fact_provenance",
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectAbsent": {
+            "companyId": "$cid"
+          }
+        }
+      ]
+    },
+    {
       "name": "report documents view returns an empty rows array for a company with no documents (ADR 0077 Panel B)",
       "_comment": "The view is a computed read model returning an object (companyId + rows array). Report documents are seeded only through the network-bound fetch/backfill path (same rationale as the T2.1 coverage step), so the corpus exercises the empty case: a fresh company has no documents, so rows is []. The subset harness compares scalar fields (TS uses ===, so it cannot deep-compare the empty array), hence we assert the deterministic derived companyId — this proves both dispatchers implement the command and key the DTO by the scoped company. Per-row correctness (period fields, canonical ★) is pinned by the Rust unit tests in commands/report_documents_view.rs and the TS mock scenario tests.",
       "steps": [

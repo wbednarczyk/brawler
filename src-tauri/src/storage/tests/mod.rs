@@ -22,6 +22,7 @@ mod events;
 mod extraction_metrics;
 mod feed_sources;
 mod financials;
+mod fundamentals_provenance;
 mod import_export;
 mod insider;
 mod job_queue;

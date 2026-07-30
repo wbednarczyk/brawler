@@ -3485,3 +3485,180 @@ fn migration_0119_recounts_zero_effect_rows_and_names_superseded() {
         ("facts_superseded".to_owned(), 0)
     );
 }
+
+#[test]
+fn migration_0122_adds_witness_columns_null_and_keeps_prior_provenance() {
+    // Epic #229 T5: 0122 appends the positive-corroboration columns to
+    // `financial_fact_provenance`. Append-only + tolerant-read guard — a row
+    // stored before the columns must upgrade cleanly, keep every other value,
+    // and read back NULL ("never corroborated", never "disagreed").
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 121).expect("apply schema through 0121");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    seed_period(&connection, "p1", "c1", 2025, "FY");
+    connection
+        .execute(
+            "INSERT INTO financial_facts (id, company_id, period_id, definition_id, value_numeric)
+             VALUES ('f1', 'c1', 'p1', 'kpidef_net_profit', '100')",
+            [],
+        )
+        .expect("seed a fact");
+    connection
+        .execute(
+            "INSERT INTO financial_fact_provenance
+                (fact_id, source_tier, validation_status, citation)
+             VALUES ('f1', 'esef', 'passed', 'ifrs-full:ProfitLoss')",
+            [],
+        )
+        .expect("seed a pre-0122 provenance row");
+
+    apply_migrations(&mut connection).expect("upgrade to latest");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "upgrade should reach the latest migration",
+    );
+
+    let (tier, status, citation, witness_value, witness_page_url, corroborated_at): (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = connection
+        .query_row(
+            "SELECT source_tier, validation_status, citation,
+                    witness_value, witness_page_url, corroborated_at
+             FROM financial_fact_provenance WHERE fact_id = 'f1'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .expect("the legacy provenance row survives the upgrade");
+    assert_eq!(tier, "esef");
+    assert_eq!(
+        status, "passed",
+        "the verdict is never rewritten by a column add"
+    );
+    assert_eq!(citation.as_deref(), Some("ifrs-full:ProfitLoss"));
+    assert_eq!(witness_value, None, "no corroboration is invented");
+    assert_eq!(witness_page_url, None);
+    assert_eq!(corroborated_at, None);
+}
+
+#[test]
+fn migration_0123_admits_value_divergence_and_loses_no_outcome_row() {
+    // Epic #229 T5 (#192 residual): 0123 widens the outcome `reason_code` CHECK
+    // with `value_divergence` through the 0119 table-rebuild shape. The rebuild
+    // must lose nothing, and the pre-0123 CHECK must genuinely reject the code —
+    // otherwise this test would pass vacuously.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 122).expect("apply schema through 0122");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    connection
+        .execute(
+            "INSERT INTO fundamentals_extraction_outcomes
+                (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                 tier, acceptance, reason_code, detail_json, fact_count, attempt_count)
+             VALUES ('fxo_keep', 'c1', 'doc1', 2025, 'FY', '2025-12-31',
+                 'esef', 'accepted', 'emitted', '{\"a\":1}', 7, 3)",
+            [],
+        )
+        .expect("seed a pre-0123 outcome");
+
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO fundamentals_extraction_outcomes
+                    (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                     acceptance, reason_code)
+                 VALUES ('fxo_pre', 'c1', 'doc2', 2025, 'FY', '2025-12-31',
+                     'flagged', 'value_divergence')",
+                [],
+            )
+            .is_err(),
+        "the pre-0123 CHECK should not admit value_divergence"
+    );
+
+    apply_migrations(&mut connection).expect("apply migration 0123");
+
+    let (tier, acceptance, reason, detail, facts, attempts): (
+        Option<String>,
+        String,
+        String,
+        Option<String>,
+        i64,
+        i64,
+    ) = connection
+        .query_row(
+            "SELECT tier, acceptance, reason_code, detail_json, fact_count, attempt_count
+             FROM fundamentals_extraction_outcomes WHERE id = 'fxo_keep'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .expect("the pre-0123 outcome survives the rebuild");
+    assert_eq!(tier.as_deref(), Some("esef"));
+    assert_eq!(acceptance, "accepted");
+    assert_eq!(reason, "emitted");
+    assert_eq!(detail.as_deref(), Some("{\"a\":1}"));
+    assert_eq!((facts, attempts), (7, 3), "counters survive the rebuild");
+
+    connection
+        .execute(
+            "INSERT INTO fundamentals_extraction_outcomes
+                (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                 acceptance, reason_code)
+             VALUES ('fxo_post', 'c1', 'doc2', 2025, 'FY', '2025-12-31',
+                 'flagged', 'value_divergence')",
+            [],
+        )
+        .expect("value_divergence must be admitted after 0123");
+
+    // The slot unique index survives the rebuild: the same slot upserts, never
+    // duplicates.
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO fundamentals_extraction_outcomes
+                    (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                     acceptance, reason_code)
+                 VALUES ('fxo_dupe', 'c1', 'doc2', 2025, 'FY', '2025-12-31',
+                     'flagged', 'value_divergence')",
+                [],
+            )
+            .is_err(),
+        "the slot unique index must survive the rebuild"
+    );
+
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+}

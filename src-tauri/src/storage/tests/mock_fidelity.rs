@@ -160,6 +160,19 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         // claim a review surface the real pipeline would not produce. A company
         // no extraction ever ran over reads back empty — absence means "never
         // attempted", which is exactly the distinction the table exists for.
+        // Flagged FACTS (epic #229 T5): same store method the command wrapper
+        // delegates to, with the same optional company scope, so the mock can
+        // never claim a review surface the real join would not produce.
+        "list_flagged_fact_provenance" => {
+            let company_id = inner["companyId"].as_str();
+            serde_json::to_value(
+                state
+                    .fundamentals_provenance()
+                    .list_flagged_facts(company_id)
+                    .expect("list_flagged_fact_provenance"),
+            )
+            .unwrap()
+        }
         "list_flagged_extraction_outcomes" => {
             let company_id = inner["companyId"].as_str().expect("companyId");
             serde_json::to_value(

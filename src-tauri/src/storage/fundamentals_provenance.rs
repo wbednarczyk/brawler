@@ -43,6 +43,54 @@ pub struct FactProvenance {
     pub drift_json: Option<String>,
     /// The source concept/label this value was read from (primary citation).
     pub citation: Option<String>,
+    /// Positive corroboration (migration `0122`, ADR 0086 dec. 4): the figure an
+    /// INDEPENDENT source (the BiznesRadar-primary pull) read for this same slot
+    /// and agreed with, within the shared tolerance. `None` = never corroborated
+    /// — never "disagreed" (a disagreement is an extraction outcome, not a
+    /// missing stamp). Cleared whenever the fact's value is re-written, so a
+    /// stamp never outlives the value it corroborated.
+    pub witness_value: Option<String>,
+    /// The aggregator report page the corroborating figure was read from.
+    pub witness_page_url: Option<String>,
+    /// When the corroboration was last observed (refreshed by a later pull).
+    pub corroborated_at: Option<String>,
+}
+
+/// One FLAGGED fact, with the context a human needs to judge the flag (epic
+/// #229 T5): the metric and its catalog label, the value, the period, the tier
+/// that produced it and the citation it was read from.
+///
+/// A superset of [`FactProvenance`] on purpose — the flagged-facts read was
+/// previously fact-ids-and-tiers only, which is why it had no UI consumer: a
+/// company-scoped surface cannot render a bare id, and the rows carried no
+/// company to scope by in the first place.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct FlaggedFact {
+    pub fact_id: String,
+    pub company_id: String,
+    /// Catalog `metric_key` (`total_assets`, `revenue`, …).
+    pub metric_key: String,
+    /// The catalog's human label for the metric, so no raw key reaches the user.
+    pub label: String,
+    pub value_numeric: String,
+    pub currency: Option<String>,
+    pub fiscal_year: i64,
+    /// `FY` | `Q1` | … — the stored period type.
+    pub period_type: String,
+    /// esef | structured_xhtml | espi_cover_note | pdf | html_aggregator
+    pub source_tier: String,
+    /// Always `flagged` for this read — carried so the row stays a superset of
+    /// [`FactProvenance`] for the MCP consumers.
+    pub validation_status: String,
+    pub drift_json: Option<String>,
+    /// The source concept/label this value was read from.
+    pub citation: Option<String>,
 }
 
 /// Fact count for one `source_tier` — one row of the rebuild verdict.
@@ -91,6 +139,10 @@ pub struct NewFactProvenance<'a> {
 /// Upserts provenance for a produced fact on a caller-owned connection — the
 /// seam the ingest-time ESPI cover-note tier (which runs inside the Bankier
 /// ingest's connection) shares with [`FundamentalsProvenanceStore`].
+///
+/// A provenance write means the fact's VALUE was just (re)written, so the
+/// corroboration stamp is cleared: a witness figure recorded against the old
+/// value would otherwise read as a live agreement with the new one.
 pub(super) fn set_fact_provenance(
     connection: &Connection,
     input: NewFactProvenance<'_>,
@@ -105,6 +157,9 @@ pub(super) fn set_fact_provenance(
             validation_status = excluded.validation_status,
             drift_json = excluded.drift_json,
             citation = excluded.citation,
+            witness_value = NULL,
+            witness_page_url = NULL,
+            corroborated_at = NULL,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         ",
         params![
@@ -113,6 +168,63 @@ pub(super) fn set_fact_provenance(
             input.validation_status,
             input.drift_json,
             input.citation,
+        ],
+    )?;
+    Ok(())
+}
+
+/// The tier stamped on a MANUAL slot's provenance row when a witness
+/// corroborates it. Deliberately NOT a [`crate::fundamentals::extraction::SourceTier`]
+/// (it parses to `None`), so every precedence path keeps treating the fact as
+/// untouchable and [`FundamentalsProvenanceStore::count_facts_by_tier`] keeps
+/// counting it in the manual bucket — the row exists only to carry the stamp.
+pub(crate) const MANUAL_PROVENANCE_TIER: &str = "manual";
+
+/// One positive corroboration: an independent source read the same slot and
+/// agreed within tolerance (ADR 0086 dec. 4, epic #229 T5).
+pub struct WitnessCorroboration<'a> {
+    pub fact_id: &'a str,
+    /// The witness's own figure, exactly as read.
+    pub witness_value: &'a str,
+    /// The page it was read from — the evidence link.
+    pub witness_page_url: &'a str,
+    /// Whether the verdict may be upgraded to `witness_confirmed`. TRUE for an
+    /// ISSUER-held slot (`passed`/`unreviewed` → `witness_confirmed`); FALSE for
+    /// a MANUAL slot, whose verdict the automaton never re-labels.
+    pub upgrade_validation_status: bool,
+}
+
+/// Stamps the corroboration onto the fact's provenance row, creating the row for
+/// a MANUAL fact (which has none) so the user still learns an independent source
+/// agrees with their entry. Re-corroboration on a later pull refreshes the stamp
+/// in place — one row per fact, never a history.
+pub(crate) fn corroborate_fact(
+    connection: &Connection,
+    input: WitnessCorroboration<'_>,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        INSERT INTO financial_fact_provenance
+            (fact_id, source_tier, validation_status, witness_value,
+             witness_page_url, corroborated_at)
+        VALUES (?1, ?2, 'none', ?3, ?4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ON CONFLICT(fact_id) DO UPDATE SET
+            witness_value = excluded.witness_value,
+            witness_page_url = excluded.witness_page_url,
+            corroborated_at = excluded.corroborated_at,
+            validation_status = CASE
+                WHEN ?5 = 1 AND validation_status IN ('passed', 'unreviewed')
+                THEN 'witness_confirmed'
+                ELSE validation_status
+            END,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![
+            input.fact_id,
+            MANUAL_PROVENANCE_TIER,
+            input.witness_value,
+            input.witness_page_url,
+            i64::from(input.upgrade_validation_status),
         ],
     )?;
     Ok(())
@@ -301,8 +413,14 @@ impl FundamentalsProvenanceStore {
     /// and no stray `pdf` (`extraction_method='api'`) facts, without extra queries.
     pub fn count_facts_by_tier(&self) -> StorageResult<FactTierBreakdown> {
         let connection = self.db.checkout()?;
+        // The `manual` tier is not a pipeline tier: it marks a hand-entered fact
+        // whose row exists only to carry a witness corroboration stamp (epic #229
+        // T5). It stays in the manual bucket below, exactly where it counted
+        // before the row existed — the automaton never claims a tier produced a
+        // value the user typed.
         let mut statement = connection.prepare(
             "SELECT source_tier, COUNT(*) FROM financial_fact_provenance
+             WHERE source_tier <> 'manual'
              GROUP BY source_tier ORDER BY source_tier",
         )?;
         let by_tier = statement
@@ -317,7 +435,7 @@ impl FundamentalsProvenanceStore {
         let manual_or_unprovenanced = connection.query_row(
             "SELECT COUNT(*) FROM financial_facts f
              LEFT JOIN financial_fact_provenance p ON p.fact_id = f.id
-             WHERE p.fact_id IS NULL",
+             WHERE p.fact_id IS NULL OR p.source_tier = 'manual'",
             [],
             |row| row.get(0),
         )?;
@@ -333,8 +451,7 @@ impl FundamentalsProvenanceStore {
         let connection = self.db.checkout()?;
         let row = connection
             .query_row(
-                "SELECT fact_id, source_tier, validation_status, drift_json, citation
-                 FROM financial_fact_provenance WHERE fact_id = ?1",
+                &format!("{FACT_PROVENANCE_COLUMNS} WHERE fact_id = ?1"),
                 [fact_id],
                 fact_provenance_from_row,
             )
@@ -352,8 +469,7 @@ impl FundamentalsProvenanceStore {
         for id in fact_ids {
             if let Some(p) = connection
                 .query_row(
-                    "SELECT fact_id, source_tier, validation_status, drift_json, citation
-                     FROM financial_fact_provenance WHERE fact_id = ?1",
+                    &format!("{FACT_PROVENANCE_COLUMNS} WHERE fact_id = ?1"),
                     [id],
                     fact_provenance_from_row,
                 )
@@ -366,17 +482,50 @@ impl FundamentalsProvenanceStore {
     }
 
     /// Every fact currently flagged (a drift or contradiction) — the review /
-    /// "structure changed" surface.
-    pub fn list_flagged(&self) -> StorageResult<Vec<FactProvenance>> {
+    /// "structure changed" surface, with the metric/value/period context a
+    /// reviewer needs.
+    /// `company_id = None` spans every company (the MCP data-quality surface);
+    /// `Some(id)` scopes the read to one company (the Coverage panel's
+    /// flagged-facts section). Ordered newest-verdict first.
+    pub fn list_flagged_facts(&self, company_id: Option<&str>) -> StorageResult<Vec<FlaggedFact>> {
         let connection = self.db.checkout()?;
         let mut statement = connection.prepare(
-            "SELECT fact_id, source_tier, validation_status, drift_json, citation
-             FROM financial_fact_provenance
-             WHERE validation_status = 'flagged'
-             ORDER BY updated_at DESC",
+            "SELECT p.fact_id, f.company_id, d.metric_key, d.label, f.value_numeric,
+                    f.currency, pe.fiscal_year, pe.period_type, p.source_tier,
+                    p.validation_status, p.drift_json, p.citation
+             FROM financial_fact_provenance p
+             JOIN financial_facts f ON f.id = p.fact_id
+             JOIN financial_periods pe ON pe.id = f.period_id
+             JOIN kpi_definitions d ON d.id = f.definition_id
+             WHERE p.validation_status = 'flagged'
+               AND (?1 IS NULL OR f.company_id = ?1)
+             ORDER BY p.updated_at DESC, pe.fiscal_year DESC, d.metric_key",
         )?;
-        let rows = statement.query_map([], fact_provenance_from_row)?;
+        let rows = statement.query_map([company_id], |row| {
+            Ok(FlaggedFact {
+                fact_id: row.get(0)?,
+                company_id: row.get(1)?,
+                metric_key: row.get(2)?,
+                label: row.get(3)?,
+                value_numeric: row.get(4)?,
+                currency: row.get(5)?,
+                fiscal_year: row.get(6)?,
+                period_type: row.get(7)?,
+                source_tier: row.get(8)?,
+                validation_status: row.get(9)?,
+                drift_json: row.get(10)?,
+                citation: row.get(11)?,
+            })
+        })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Stamps a positive witness corroboration onto one fact — see
+    /// [`corroborate_fact`] for the semantics (issuer verdicts upgrade, manual
+    /// verdicts never do).
+    pub fn corroborate_fact(&self, input: WitnessCorroboration<'_>) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        corroborate_fact(&connection, input)
     }
 
     /// Records the outcome of one extraction attempt, upserting the slot.
@@ -494,6 +643,13 @@ fn extraction_outcome_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Extr
     })
 }
 
+/// Shared column list + FROM for every provenance read, so the projection and
+/// [`fact_provenance_from_row`]'s indexes can never drift apart.
+const FACT_PROVENANCE_COLUMNS: &str = "
+    SELECT fact_id, source_tier, validation_status, drift_json, citation,
+           witness_value, witness_page_url, corroborated_at
+    FROM financial_fact_provenance";
+
 fn fact_provenance_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FactProvenance> {
     Ok(FactProvenance {
         fact_id: row.get(0)?,
@@ -501,5 +657,8 @@ fn fact_provenance_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FactPro
         validation_status: row.get(2)?,
         drift_json: row.get(3)?,
         citation: row.get(4)?,
+        witness_value: row.get(5)?,
+        witness_page_url: row.get(6)?,
+        corroborated_at: row.get(7)?,
     })
 }

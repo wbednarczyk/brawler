@@ -83,8 +83,50 @@ describe("mock runtime — command coverage", () => {
     expect(forF1).toHaveLength(1);
     expect(forF1[0]).toMatchObject({ factId: "f1", sourceTier: "esef" });
 
-    const flagged = (await runtime.invoke("list_flagged_fact_provenance", {})) as Array<{ factId: string }>;
+    // The flagged-FACTS read JOINs provenance → fact → period → definition (epic
+    // #229 T5), so a provenance row whose fact is absent yields nothing — exactly
+    // as the real backend's join does. Seed the fact side for the flagged row.
+    runtime.data = {
+      ...runtime.data,
+      financialPeriods: [
+        {
+          id: "p1",
+          companyId: "c1",
+          fiscalYear: 2026,
+          periodType: "FY",
+          periodEndDate: "2026-12-31",
+          reportEvidenceRef: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      financialFacts: [
+        {
+          ...runtime.data.financialFacts[0],
+          id: "f2",
+          companyId: "c1",
+          periodId: "p1",
+          definitionId: "kpi_def_revenue",
+          valueNumeric: "1050000000",
+          currency: "PLN",
+        },
+      ],
+    } as typeof runtime.data;
+
+    const flagged = (await runtime.invoke("list_flagged_fact_provenance", {})) as Array<{
+      factId: string;
+      metricKey: string;
+      valueNumeric: string;
+      fiscalYear: number;
+    }>;
     expect(flagged.map((p) => p.factId)).toEqual(["f2"]);
+    expect(flagged[0]).toMatchObject({ metricKey: "revenue", valueNumeric: "1050000000", fiscalYear: 2026 });
+
+    // Scoping to another company excludes it (the Coverage panel's read).
+    const scoped = (await runtime.invoke("list_flagged_fact_provenance", {
+      input: { companyId: "other" },
+    })) as unknown[];
+    expect(scoped).toEqual([]);
 
     const summary = (await runtime.invoke("run_structured_extraction", {
       input: { companyId: "c1", reportDocumentId: "d1", fiscalYear: 2026, periodType: "FY", periodEnd: "2026-03-31" },

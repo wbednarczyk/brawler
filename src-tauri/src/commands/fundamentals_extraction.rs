@@ -522,15 +522,33 @@ pub fn list_fact_provenance(
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ListFlaggedFactProvenanceInput {
+    /// Scope the read to one company (the Coverage panel's flagged-facts
+    /// section). Omitted / `null` spans every company — the app-wide
+    /// data-quality surface the MCP port reads.
+    pub company_id: Option<String>,
+}
+
 /// Every fact currently flagged by the pipeline (drift / contradiction) — the
-/// "structure changed" review surface.
+/// "structure changed" review surface, carrying the metric, its catalog label,
+/// the value, the period, the tier and the citation (epic #229 T5). Its sibling
+/// `list_flagged_extraction_outcomes` covers the periods where nothing emitted.
 #[tauri::command]
 pub fn list_flagged_fact_provenance(
+    input: Option<ListFlaggedFactProvenanceInput>,
     state: tauri::State<'_, app_state::AppState>,
-) -> Result<Vec<storage::FactProvenance>, String> {
+) -> Result<Vec<storage::FlaggedFact>, String> {
+    let company_id = input.and_then(|input| input.company_id);
     state
         .fundamentals_provenance()
-        .list_flagged()
+        .list_flagged_facts(company_id.as_deref())
         .map_err(|error| error.to_string())
 }
 

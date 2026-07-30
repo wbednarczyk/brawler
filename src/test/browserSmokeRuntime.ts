@@ -739,6 +739,11 @@ const factProvenance: FactProvenance[] = [
     validationStatus: "passed",
     driftJson: null,
     citation: "Przychody ze sprzedaży",
+    // Positively corroborated by the aggregator (epic #229 T5): the issuer's
+    // figure and the independent web read agree.
+    witnessValue: "412000000",
+    witnessPageUrl: "https://www.biznesradar.pl/raporty-finansowe-rachunek-zyskow-i-strat/CDR",
+    corroboratedAt: "2026-07-29T06:12:00Z",
   },
   {
     factId: "fact_np_q3",
@@ -750,6 +755,10 @@ const factProvenance: FactProvenance[] = [
       unit_changed: null,
     }),
     citation: null,
+    // Never corroborated — absence is "no witness", never "disagreed".
+    witnessValue: null,
+    witnessPageUrl: null,
+    corroboratedAt: null,
   },
 ];
 

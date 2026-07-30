@@ -75,6 +75,11 @@ pub(crate) mod reason {
     // The `witness_fallback` reason (ADR 0085 aggregator gap-fill) is retired
     // with ADR 0086: BiznesRadar sources core KPIs through its own primary
     // pull. Already-stored rows keep the literal string; readers stay tolerant.
+    /// A re-read of an already-stored slot disagreed with the committed value
+    /// (migration `0123`, epic #229 T5 / #192). The stored value is KEPT — this
+    /// records the disagreement so it can be ratified instead of evaporating
+    /// with the run result.
+    pub const VALUE_DIVERGENCE: &str = "value_divergence";
     /// No deterministic tier could read the document (post-ADR-0084 there is no
     /// AI fallback: this is an honest, explicit gap, never a guess).
     pub const NO_DETERMINISTIC_TIER: &str = "no_deterministic_tier";
@@ -208,6 +213,96 @@ fn record_outcome(
              company={company_id} document={report_document_id} error={error}"
         );
     }
+}
+
+/// One re-read that disagreed with the stored value, recorded as a DURABLE
+/// outcome row (epic #229 T5, closing the #192 residual).
+///
+/// The stored value is never overwritten (that is the divergence policy) — but
+/// until now the finding lived only in the run result and a developer-mode
+/// diagnostic trimmed after 7 days, so a disagreement between two reads of the
+/// issuer's own filing could not be reviewed later. The row is keyed by the
+/// synthetic `documentId#metricKey` slot ref (the reversed-witnessing precedent),
+/// so two diverging metrics in one document keep separate rows and a
+/// re-extraction UPSERTS its row instead of appending a duplicate.
+///
+/// Detail is the canonical gate shape the Coverage "Flagged periods" panel
+/// renders (`failedIdentities` / `failedCrossChecks` / `valueDivergences`), with
+/// `actual` = the STORED value and `expected` = the freshly read one; the raw
+/// `storedValue` / `incomingValue` / `factId` travel inside `detail` for
+/// programmatic inspection (the panel ignores keys it does not render).
+///
+/// Best-effort by design, exactly like [`record_outcome`]: a bookkeeping failure
+/// is logged, never propagated into the extraction verdict.
+fn record_value_divergence_outcome(
+    state: &AppState,
+    slot: &DivergenceSlot<'_>,
+    divergence: &FactDivergence,
+) {
+    let DivergenceSlot {
+        company_id,
+        report_document_id,
+        fiscal_year,
+        period_type,
+        period_end,
+        tier,
+    } = *slot;
+    let stored = divergence.existing.trim();
+    let incoming = divergence.incoming.trim();
+    log::info!(
+        "module=structured_extraction stage=value_divergence company={company_id} \
+         document={report_document_id} metric={} stored={stored} incoming={incoming}",
+        divergence.metric_key,
+    );
+    let detail = serde_json::json!({
+        "failedIdentities": [],
+        "failedCrossChecks": [],
+        "valueDivergences": [{
+            "metricKey": divergence.metric_key,
+            "detail": {
+                "actual": stored,
+                "expected": incoming,
+                "storedValue": stored,
+                "incomingValue": incoming,
+                "factId": divergence.fact_id,
+            },
+        }],
+    })
+    .to_string();
+    let outcome_ref = format!("{report_document_id}#{}", divergence.metric_key);
+    if let Err(error) = state.fundamentals_provenance().record_extraction_outcome(
+        crate::storage::NewExtractionOutcome {
+            company_id,
+            report_document_id: &outcome_ref,
+            fiscal_year,
+            period_type,
+            period_end,
+            tier: Some(tier),
+            acceptance: Acceptance::Flagged.as_str(),
+            reason_code: reason::VALUE_DIVERGENCE,
+            detail_json: Some(&detail),
+            drift_json: None,
+            structure_changed: false,
+            // No fact was established by this finding — the stored one stays.
+            fact_count: 0,
+        },
+    ) {
+        log::warn!(
+            "module=structured_extraction stage=value_divergence_record_failed \
+             company={company_id} document={report_document_id} error={error}"
+        );
+    }
+}
+
+/// The slot a [`record_value_divergence_outcome`] row is written against — the
+/// document/period the re-read ran over, plus the tier that re-read it.
+struct DivergenceSlot<'a> {
+    company_id: &'a str,
+    report_document_id: &'a str,
+    fiscal_year: i64,
+    period_type: &'a str,
+    period_end: &'a str,
+    tier: &'a str,
 }
 
 /// The `fact_count` an outcome row records: the facts this run ESTABLISHED at
@@ -981,12 +1076,26 @@ pub(crate) fn run_structured_extraction(
                     incoming,
                 } => {
                     skipped_fact_ids.push(fact_id.clone());
-                    divergences.push(FactDivergence {
+                    let divergence = FactDivergence {
                         fact_id,
                         metric_key,
                         existing,
                         incoming,
-                    });
+                    };
+                    // Durable, not just in-memory (epic #229 T5 / #192).
+                    record_value_divergence_outcome(
+                        state,
+                        &DivergenceSlot {
+                            company_id,
+                            report_document_id,
+                            fiscal_year,
+                            period_type,
+                            period_end,
+                            tier,
+                        },
+                        &divergence,
+                    );
+                    divergences.push(divergence);
                 }
                 // Non-catalog key — the pipeline should not emit it; not counted.
                 crate::storage::StructuredFactCommit::NoDefinition => {}
@@ -1047,6 +1156,12 @@ pub(crate) fn run_structured_extraction(
     })
 }
 
+/// Typed refusal prefix for a re-run request against an outcome slot that names
+/// no re-readable document (the reversed-witnessing rows, whose slot ref is an
+/// aggregator PAGE URL). A machine-readable code, not prose, so the MCP/API
+/// caller can branch on it — the UI simply does not offer the action there.
+pub(crate) const RERUN_NOT_APPLICABLE: &str = "rerun_not_applicable";
+
 /// Re-runs the extraction for a **recorded outcome slot**, by its id.
 ///
 /// The review surface's retry action. It re-uses the company/document/period the
@@ -1066,15 +1181,40 @@ pub(crate) fn rerun_extraction_outcome(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("no recorded extraction outcome '{outcome_id}'"))?;
 
+    // Reversed witnessing keys its slot by the aggregator PAGE URL it read
+    // (`pageUrl#metricKey`), not by a stored document — there is nothing for the
+    // pipeline to re-read, and handing it that ref produced an opaque storage
+    // error ("Query returned no rows"). Refuse with a typed code instead; the
+    // fix for a disagreement is a fresh aggregator pull or a manual correction,
+    // never a re-extraction.
+    if outcome.reason_code == reason::WITNESS_DISAGREEMENT {
+        return Err(format!(
+            "{RERUN_NOT_APPLICABLE}: outcome '{outcome_id}' records an aggregator \
+             disagreement against a held value, not a document extraction — there is \
+             no stored document to re-read"
+        ));
+    }
+
     run_structured_extraction(
         state,
         &outcome.company_id,
-        &outcome.report_document_id,
+        base_document_ref(&outcome.report_document_id),
         outcome.fiscal_year,
         &outcome.period_type,
         &outcome.period_end,
         mode,
     )
+}
+
+/// The real stored-document id behind an outcome slot ref.
+///
+/// Per-metric outcomes (`value_divergence`) key their slot by the synthetic
+/// `documentId#metricKey` discriminator, so two diverging metrics in one document
+/// keep separate rows. That suffix is bookkeeping, not identity: a re-run must
+/// re-extract `documentId`. An ordinary slot ref carries no `#` and passes
+/// through untouched.
+fn base_document_ref(slot_ref: &str) -> &str {
+    slot_ref.split('#').next().unwrap_or(slot_ref)
 }
 
 /// Tier-3b positional route (ADR 0077 T-B2): parse a non-iXBRL pdf2htmlEX XHTML
@@ -1209,12 +1349,27 @@ fn run_positional_extraction(
                     incoming,
                 } => {
                     skipped_fact_ids.push(fact_id.clone());
-                    divergences.push(FactDivergence {
+                    let divergence = FactDivergence {
                         fact_id,
                         metric_key,
                         existing,
                         incoming,
-                    });
+                    };
+                    record_value_divergence_outcome(
+                        state,
+                        &DivergenceSlot {
+                            company_id,
+                            report_document_id,
+                            fiscal_year,
+                            period_type,
+                            period_end,
+                            // The positional route reuses the deterministic PDF
+                            // tier (identified by `extraction_method`).
+                            tier: SourceTier::Pdf.as_str(),
+                        },
+                        &divergence,
+                    );
+                    divergences.push(divergence);
                 }
                 crate::storage::StructuredFactCommit::NoDefinition => {}
             }
@@ -2349,6 +2504,217 @@ mod tests {
             .find(|f| f.id == assets.id)
             .expect("fact still present");
         assert_eq!(after.value_numeric.trim(), "999000000");
+    }
+
+    #[test]
+    fn a_value_divergence_leaves_a_durable_flagged_outcome_that_upserts() {
+        // Epic #229 T5 (#192 residual): a divergence used to live only in the
+        // in-memory result and a developer-mode diagnostic (7-day trimmed), so
+        // "two reads of the issuer's own filing disagree" evaporated. It now
+        // records a durable `value_divergence` outcome, keyed per (document,
+        // metric) so a re-extraction refreshes the row instead of duplicating it.
+        let (state, company_id, document_id) = seed_esef_package();
+        run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("first extraction runs");
+        let assets = state
+            .list_financial_facts(crate::storage::ListFinancialFactsInput {
+                company_id: Some(company_id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list facts")
+            .into_iter()
+            .find(|f| f.value_numeric.trim_start_matches('-').starts_with("45"))
+            .expect("the 45m total-assets fact should exist");
+        state
+            .update_financial_fact(crate::storage::UpdateFinancialFact {
+                id: assets.id.clone(),
+                value_numeric: Some("999000000".to_owned()),
+                currency: None,
+                data_quality: None,
+                confirmation_state: None,
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("mutate stored fact");
+
+        for _ in 0..2 {
+            run_structured_extraction(
+                &state,
+                &company_id,
+                &document_id,
+                2025,
+                "FY",
+                "2025-12-31",
+                MODE_AUTOPILOT,
+            )
+            .expect("re-extraction must not error");
+        }
+
+        let flagged = state
+            .fundamentals_provenance()
+            .list_flagged_extraction_outcomes(&company_id)
+            .expect("flagged outcomes");
+        let divergences: Vec<_> = flagged
+            .iter()
+            .filter(|outcome| outcome.reason_code == "value_divergence")
+            .collect();
+        assert_eq!(
+            divergences.len(),
+            1,
+            "one row per (document, metric), refreshed by the re-run: {flagged:?}"
+        );
+        let outcome = divergences[0];
+        assert_eq!(outcome.acceptance, "flagged");
+        assert_eq!(outcome.fact_count, 0);
+        assert_eq!(
+            outcome.tier.as_deref(),
+            Some("esef"),
+            "the outcome names the tier that re-read the value: {outcome:?}"
+        );
+        assert!(
+            outcome.report_document_id.starts_with(&document_id)
+                && outcome.report_document_id.contains('#'),
+            "the slot ref is per-metric so two diverging metrics cannot overwrite \
+             each other: {outcome:?}"
+        );
+        assert!(
+            outcome.attempt_count >= 2,
+            "a repeated divergence is visibly repeated: {outcome:?}"
+        );
+
+        // The detail renders through the Coverage panel's gate shape (the
+        // `witnessDisagreements` precedent) — stored vs freshly read.
+        let detail: serde_json::Value =
+            serde_json::from_str(outcome.detail_json.as_deref().expect("detail_json"))
+                .expect("detail parses");
+        let entry = &detail["valueDivergences"][0];
+        assert_eq!(entry["metricKey"], "total_assets");
+        assert_eq!(
+            entry["detail"]["actual"], "999000000",
+            "actual is the STORED value: {detail}"
+        );
+        assert_eq!(
+            entry["detail"]["storedValue"], "999000000",
+            "the raw stored/incoming pair travels alongside: {detail}"
+        );
+        assert_eq!(entry["detail"]["factId"], assets.id);
+        assert!(
+            entry["detail"]["incomingValue"]
+                .as_str()
+                .is_some_and(|v| v != "999000000"),
+            "incoming is the freshly re-read value: {detail}"
+        );
+    }
+
+    /// Guardrail-harvest (epic #229 T5): a per-metric slot ref (`docId#metricKey`)
+    /// names a REAL stored document — the re-run must re-extract it, not hand the
+    /// synthetic ref to the pipeline and fail with "no such document". The
+    /// "Try again" action on a `value_divergence` row is only honest if this holds.
+    #[test]
+    fn rerunning_a_value_divergence_reextracts_the_real_document() {
+        let (state, company_id, document_id) = seed_esef_package();
+        run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("first extraction runs");
+        let assets = state
+            .list_financial_facts(crate::storage::ListFinancialFactsInput {
+                company_id: Some(company_id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list facts")
+            .into_iter()
+            .find(|f| f.value_numeric.trim_start_matches('-').starts_with("45"))
+            .expect("the 45m total-assets fact should exist");
+        state
+            .update_financial_fact(crate::storage::UpdateFinancialFact {
+                id: assets.id.clone(),
+                value_numeric: Some("999000000".to_owned()),
+                currency: None,
+                data_quality: None,
+                confirmation_state: None,
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("mutate stored fact");
+        run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("re-extraction records the divergence");
+
+        let divergence = state
+            .fundamentals_provenance()
+            .list_flagged_extraction_outcomes(&company_id)
+            .expect("flagged outcomes")
+            .into_iter()
+            .find(|outcome| outcome.reason_code == "value_divergence")
+            .expect("the divergence outcome exists");
+        assert!(divergence.report_document_id.contains('#'));
+
+        let result = rerun_extraction_outcome(&state, &divergence.id, MODE_AUTOPILOT)
+            .expect("the re-run must reach the real document, not the synthetic slot ref");
+        assert!(
+            !result.skipped_fact_ids.is_empty(),
+            "the re-run re-read the document's slots: {result:?}"
+        );
+    }
+
+    /// The reversed-witnessing rows key their slot by an AGGREGATOR PAGE URL, so
+    /// there is no document to re-read. The UI hides the action, but the backend
+    /// is the boundary that must hold: an MCP/API caller gets a TYPED refusal,
+    /// never a confusing "no report document 'https://…#metric'".
+    #[test]
+    fn rerunning_a_witness_disagreement_is_refused_with_a_typed_code() {
+        let (state, company_id, _document_id) = seed_esef_package();
+        let outcome_id = state
+            .fundamentals_provenance()
+            .record_extraction_outcome(crate::storage::NewExtractionOutcome {
+                company_id: &company_id,
+                report_document_id:
+                    "https://www.biznesradar.pl/raporty-finansowe-bilans/CDR#current_assets",
+                fiscal_year: 2025,
+                period_type: "FY",
+                period_end: "2025-12-31",
+                tier: Some("esef"),
+                acceptance: "flagged",
+                reason_code: "witness_disagreement",
+                detail_json: None,
+                drift_json: None,
+                structure_changed: false,
+                fact_count: 0,
+            })
+            .expect("record a reversed-witnessing outcome");
+
+        let error = rerun_extraction_outcome(&state, &outcome_id, MODE_AUTOPILOT)
+            .expect_err("a witness disagreement has no document to re-read");
+        assert!(
+            error.starts_with(RERUN_NOT_APPLICABLE),
+            "the refusal must be a typed code the caller can branch on: {error}"
+        );
     }
 
     #[test]

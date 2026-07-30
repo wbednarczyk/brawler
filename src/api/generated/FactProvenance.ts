@@ -21,4 +21,21 @@ driftJson: string | null,
 /**
  * The source concept/label this value was read from (primary citation).
  */
-citation: string | null, };
+citation: string | null, 
+/**
+ * Positive corroboration (migration `0122`, ADR 0086 dec. 4): the figure an
+ * INDEPENDENT source (the BiznesRadar-primary pull) read for this same slot
+ * and agreed with, within the shared tolerance. `None` = never corroborated
+ * — never "disagreed" (a disagreement is an extraction outcome, not a
+ * missing stamp). Cleared whenever the fact's value is re-written, so a
+ * stamp never outlives the value it corroborated.
+ */
+witnessValue: string | null, 
+/**
+ * The aggregator report page the corroborating figure was read from.
+ */
+witnessPageUrl: string | null, 
+/**
+ * When the corroboration was last observed (refreshed by a later pull).
+ */
+corroboratedAt: string | null, };

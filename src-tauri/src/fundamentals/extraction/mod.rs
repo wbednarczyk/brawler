@@ -58,7 +58,13 @@ pub enum SourceTier {
     /// rows under this tier are the retired PDF arm's output, distinguishable by
     /// method.
     Pdf,
-    /// HTML financial-data aggregator (witness / fallback).
+    /// HTML financial-data aggregator (BiznesRadar). **Primary source of the
+    /// core KPI history** (ADR 0086 dec. 2) and the LOWEST precedence tier: it
+    /// fills every slot no issuer tier owns, never overwrites one that is owned,
+    /// and against an owned slot it acts as a reversed witness — recording a
+    /// `witness_disagreement` outcome on divergence and a corroboration stamp on
+    /// agreement (epic #229 T5). "Witness, not source of truth" (ADR 0061) is
+    /// retired: it is both, in different places.
     HtmlAggregator,
 }
 

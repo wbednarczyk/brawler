@@ -16,10 +16,16 @@
 //! manual or higher-tier slot is left untouched.
 //!
 //! ## Reversed witnessing (ADR 0086 decision 4)
-//! Where an ISSUER tier (ESEF / structured xHTML / WDF cover-note) holds a slot and
-//! the aggregator value diverges beyond the shared tolerance, an informational
-//! `witness_disagreement` extraction outcome is recorded — never blocking, never
-//! overwriting the issuer value.
+//! Where an ISSUER tier (ESEF / structured xHTML / WDF cover-note / the positional
+//! `pdf` read) or a MANUAL entry holds a slot, the aggregator's figure is compared
+//! against it and BOTH outcomes are recorded (epic #229 T5):
+//! - **Diverges** beyond the shared tolerance → an informational
+//!   `witness_disagreement` extraction outcome — never blocking, never overwriting.
+//! - **Agrees** (exactly, or within tolerance) → a positive corroboration stamped on
+//!   the held fact's provenance row (`witness_value` / `witness_page_url` /
+//!   `corroborated_at`, migration `0122`), upgrading an ISSUER slot's
+//!   `passed`/`unreviewed` verdict to `witness_confirmed`. A MANUAL slot is stamped
+//!   but never re-graded, and the aggregator never witnesses its own slot.
 //!
 //! ## Zero rule (ADR 0085 amendment)
 //! An empty / dash / zero aggregator cell is NEVER written and never counts as
@@ -46,6 +52,7 @@ use crate::source_adapters::biznesradar_fundamentals::{
 };
 use crate::storage::{
     AggregatorFactCommit, AggregatorPageKind, NewExtractionOutcome, StructuredFactInput,
+    WitnessCorroboration,
 };
 
 /// Durable-queue job kind for the BiznesRadar-primary fundamentals pull.
@@ -105,6 +112,10 @@ pub struct AggregatorPullSummary {
     pub slots_skipped_higher_tier: i64,
     /// Reversed-witnessing disagreements recorded against an issuer-held slot.
     pub witness_disagreements: i64,
+    /// Positive corroborations stamped on an issuer- or manual-held slot the
+    /// aggregator AGREED with (epic #229 T5) — the half that previously left no
+    /// trace at all.
+    pub witness_corroborations: i64,
     /// Empty / zero aggregator cells skipped (the zero rule) — never written.
     pub zero_cells_skipped: i64,
     /// Report pages that resolved but parsed to ZERO cells (issue #244) — a
@@ -142,10 +153,13 @@ impl crate::effects_honesty::ExplainsEffect for AggregatorPullSummary {
         use crate::effects_honesty::{first_named, verdict};
         use aggregator_effect_reason as reason;
 
-        // A recorded reversed-witnessing disagreement IS an effect: the run
-        // wrote no fact but persisted a finding against an issuer-held slot.
-        let produced =
-            self.facts_written > 0 || self.facts_updated > 0 || self.witness_disagreements > 0;
+        // A recorded reversed-witnessing finding IS an effect: the run wrote no
+        // fact but persisted something durable about an issuer/manual-held slot —
+        // a disagreement, or (epic #229 T5) a positive corroboration.
+        let produced = self.facts_written > 0
+            || self.facts_updated > 0
+            || self.witness_disagreements > 0
+            || self.witness_corroborations > 0;
         let reason = first_named([
             (reason::PAGES_UNAVAILABLE, self.pages_unavailable > 0),
             (
@@ -255,13 +269,14 @@ pub fn run_aggregator_fundamentals_pull(state: &AppState) -> Result<AggregatorPu
 
     log::info!(
         "module=aggregator_fundamentals_pull stage=done companies={} written={} updated={} \
-         reobserved={} skipped_higher={} disagreements={} zero_skipped={}",
+         reobserved={} skipped_higher={} disagreements={} corroborations={} zero_skipped={}",
         summary.companies,
         summary.facts_written,
         summary.facts_updated,
         summary.facts_reobserved,
         summary.slots_skipped_higher_tier,
         summary.witness_disagreements,
+        summary.witness_corroborations,
         summary.zero_cells_skipped,
     );
     Ok(summary)
@@ -392,13 +407,40 @@ fn apply_commit(
     match commit {
         AggregatorFactCommit::Created(_) => summary.facts_written += 1,
         AggregatorFactCommit::Updated(_) => summary.facts_updated += 1,
-        AggregatorFactCommit::Reobserved(_) => summary.facts_reobserved += 1,
+        AggregatorFactCommit::Reobserved {
+            fact_id,
+            existing_tier,
+            existing_method,
+        } => {
+            summary.facts_reobserved += 1;
+            // Positive corroboration, exact-agreement branch (epic #229 T5): the
+            // slot already holds the aggregator's figure. When its holder is the
+            // ISSUER's own filing or the USER's own entry, that is an independent
+            // second read of the same number — stamped as evidence. When the
+            // holder is the aggregator itself, it is the same source read twice:
+            // no self-witnessing, nothing recorded.
+            let is_manual = existing_method == "manual";
+            if is_manual || existing_tier.as_deref().is_some_and(is_issuer_tier) {
+                record_corroboration(
+                    state,
+                    &CorroboratedSlot {
+                        company_id,
+                        fact_id: &fact_id,
+                        fact,
+                        page_url,
+                        held_tier: existing_tier.as_deref().unwrap_or("manual"),
+                        is_manual,
+                    },
+                )?;
+                summary.witness_corroborations += 1;
+            }
+        }
         AggregatorFactCommit::NoDefinition => summary.no_definition += 1,
         AggregatorFactCommit::SkippedHigherTier {
+            fact_id,
             existing_tier,
             existing_method,
             existing_value,
-            ..
         } => {
             summary.slots_skipped_higher_tier += 1;
             // Reversed witnessing (ADR 0086 decision 4, amended 2026-07-22). A
@@ -435,12 +477,75 @@ fn apply_commit(
                             &checks,
                         )?;
                         summary.witness_disagreements += 1;
+                    } else {
+                        // Positive corroboration, within-tolerance branch (epic
+                        // #229 T5): the two figures differ only by reporting
+                        // rounding, which the cross-check accepts as the SAME
+                        // value. Agreement is evidence and is recorded as such.
+                        record_corroboration(
+                            state,
+                            &CorroboratedSlot {
+                                company_id,
+                                fact_id: &fact_id,
+                                fact,
+                                page_url,
+                                held_tier: &existing_tier,
+                                is_manual,
+                            },
+                        )?;
+                        summary.witness_corroborations += 1;
                     }
                 }
             }
         }
     }
     Ok(())
+}
+
+/// The held slot a POSITIVE corroboration is stamped on — the issuer/manual value
+/// the aggregator agreed with (exactly, or within the shared tolerance).
+struct CorroboratedSlot<'a> {
+    company_id: &'a str,
+    fact_id: &'a str,
+    fact: &'a ExtractedFact,
+    page_url: &'a str,
+    held_tier: &'a str,
+    /// A manual slot is stamped but never re-labelled `witness_confirmed` — the
+    /// user's own entry is not the automaton's to grade (ADR 0086 dec. 3).
+    is_manual: bool,
+}
+
+/// Record that an independent source read the same figure (ADR 0086 dec. 4,
+/// positive half). Stamps `witness_value` / `witness_page_url` /
+/// `corroborated_at` on the held fact's provenance row and, for an ISSUER-held
+/// slot only, upgrades a `passed`/`unreviewed` verdict to `witness_confirmed`.
+/// A later pull refreshes the same stamp — one row per fact, never a history.
+fn record_corroboration(state: &AppState, slot: &CorroboratedSlot<'_>) -> Result<(), String> {
+    let CorroboratedSlot {
+        company_id,
+        fact_id,
+        fact,
+        page_url,
+        held_tier,
+        is_manual,
+    } = *slot;
+    let witness_value = fact.value.to_string();
+    log::info!(
+        "module=aggregator_fundamentals_pull stage=witness_corroboration company={company_id} \
+         metric={} tier={held_tier} witness={witness_value} upgrade={}",
+        fact.metric_key,
+        !is_manual,
+    );
+    state
+        .fundamentals_provenance()
+        .corroborate_fact(WitnessCorroboration {
+            fact_id,
+            witness_value: &witness_value,
+            witness_page_url: page_url,
+            // ADR 0086 dec. 3: a MANUAL slot's verdict stays the user's.
+            upgrade_validation_status: !is_manual,
+        })
+        .map_err(|error| error.to_string())
 }
 
 fn single(metric_key: &str, value: rust_decimal::Decimal) -> FactSet {

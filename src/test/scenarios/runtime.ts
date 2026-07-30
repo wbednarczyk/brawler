@@ -2166,11 +2166,54 @@ function buildHandlers(): Record<string, Handler> {
       );
       return store.filter((p) => ids.has(p.factId));
     },
-    list_flagged_fact_provenance: (d) =>
-      (
-        (d as { factProvenance?: Array<{ validationStatus: string }> })
-          .factProvenance ?? []
-      ).filter((p) => p.validationStatus === "flagged"),
+    // Flagged FACTS with the context a reviewer needs (epic #229 T5): the real
+    // backend JOINs provenance → fact → period → definition, so the mock derives
+    // the same row from the same seeds instead of carrying a parallel one.
+    // `companyId` omitted = every company (the MCP data-quality surface).
+    list_flagged_fact_provenance: (d, a) => {
+      const companyId = str(unwrap(a).companyId);
+      const provenance =
+        (
+          d as {
+            factProvenance?: Array<{
+              factId: string;
+              sourceTier: string;
+              validationStatus: string;
+              driftJson: string | null;
+              citation: string | null;
+            }>;
+          }
+        ).factProvenance ?? [];
+      return provenance
+        .filter((p) => p.validationStatus === "flagged")
+        .flatMap((p) => {
+          const fact = d.financialFacts.find((f) => f.id === p.factId);
+          if (!fact) return [];
+          // `null` (absent / explicitly null) = every company, mirroring the
+          // backend's `Option<String>` scope.
+          if (companyId !== null && fact.companyId !== companyId) return [];
+          const period = d.financialPeriods.find((x) => x.id === fact.periodId);
+          const definition = d.kpiDefinitions.find(
+            (x) => x.id === fact.definitionId,
+          );
+          return [
+            {
+              factId: p.factId,
+              companyId: fact.companyId,
+              metricKey: definition?.metricKey ?? "",
+              label: definition?.label ?? "",
+              valueNumeric: fact.valueNumeric,
+              currency: fact.currency ?? null,
+              fiscalYear: period?.fiscalYear ?? 0,
+              periodType: period?.periodType ?? "",
+              sourceTier: p.sourceTier,
+              validationStatus: p.validationStatus,
+              driftJson: p.driftJson ?? null,
+              citation: p.citation ?? null,
+            },
+          ];
+        });
+    },
     // The company's NON-EMITTING extraction outcomes, newest attempt first (ADR
     // 0061 decision 2). Clean periods are excluded, and an absent row means
     // "never attempted" — so `[]` is the honest "nothing flagged" state, never a
