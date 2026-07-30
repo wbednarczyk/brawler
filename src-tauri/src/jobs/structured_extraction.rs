@@ -21,7 +21,6 @@ use crate::fundamentals::extraction::pipeline::{
     run_pipeline, validate_parsed_set_report, Acceptance, PipelineInput,
 };
 use crate::fundamentals::extraction::SourceTier;
-use crate::report_diff::extraction::SourceFormat;
 use crate::storage::StructuredFactInput;
 
 /// The immediately-prior period's end date for `period_end` (`YYYY-MM-DD`),
@@ -76,6 +75,11 @@ pub(crate) mod reason {
     // The `witness_fallback` reason (ADR 0085 aggregator gap-fill) is retired
     // with ADR 0086: BiznesRadar sources core KPIs through its own primary
     // pull. Already-stored rows keep the literal string; readers stay tolerant.
+    /// A re-read of an already-stored slot disagreed with the committed value
+    /// (migration `0123`, epic #229 T5 / #192). The stored value is KEPT — this
+    /// records the disagreement so it can be ratified instead of evaporating
+    /// with the run result.
+    pub const VALUE_DIVERGENCE: &str = "value_divergence";
     /// No deterministic tier could read the document (post-ADR-0084 there is no
     /// AI fallback: this is an honest, explicit gap, never a guess).
     pub const NO_DETERMINISTIC_TIER: &str = "no_deterministic_tier";
@@ -209,6 +213,96 @@ fn record_outcome(
              company={company_id} document={report_document_id} error={error}"
         );
     }
+}
+
+/// One re-read that disagreed with the stored value, recorded as a DURABLE
+/// outcome row (epic #229 T5, closing the #192 residual).
+///
+/// The stored value is never overwritten (that is the divergence policy) — but
+/// until now the finding lived only in the run result and a developer-mode
+/// diagnostic trimmed after 7 days, so a disagreement between two reads of the
+/// issuer's own filing could not be reviewed later. The row is keyed by the
+/// synthetic `documentId#metricKey` slot ref (the reversed-witnessing precedent),
+/// so two diverging metrics in one document keep separate rows and a
+/// re-extraction UPSERTS its row instead of appending a duplicate.
+///
+/// Detail is the canonical gate shape the Coverage "Flagged periods" panel
+/// renders (`failedIdentities` / `failedCrossChecks` / `valueDivergences`), with
+/// `actual` = the STORED value and `expected` = the freshly read one; the raw
+/// `storedValue` / `incomingValue` / `factId` travel inside `detail` for
+/// programmatic inspection (the panel ignores keys it does not render).
+///
+/// Best-effort by design, exactly like [`record_outcome`]: a bookkeeping failure
+/// is logged, never propagated into the extraction verdict.
+fn record_value_divergence_outcome(
+    state: &AppState,
+    slot: &DivergenceSlot<'_>,
+    divergence: &FactDivergence,
+) {
+    let DivergenceSlot {
+        company_id,
+        report_document_id,
+        fiscal_year,
+        period_type,
+        period_end,
+        tier,
+    } = *slot;
+    let stored = divergence.existing.trim();
+    let incoming = divergence.incoming.trim();
+    log::info!(
+        "module=structured_extraction stage=value_divergence company={company_id} \
+         document={report_document_id} metric={} stored={stored} incoming={incoming}",
+        divergence.metric_key,
+    );
+    let detail = serde_json::json!({
+        "failedIdentities": [],
+        "failedCrossChecks": [],
+        "valueDivergences": [{
+            "metricKey": divergence.metric_key,
+            "detail": {
+                "actual": stored,
+                "expected": incoming,
+                "storedValue": stored,
+                "incomingValue": incoming,
+                "factId": divergence.fact_id,
+            },
+        }],
+    })
+    .to_string();
+    let outcome_ref = format!("{report_document_id}#{}", divergence.metric_key);
+    if let Err(error) = state.fundamentals_provenance().record_extraction_outcome(
+        crate::storage::NewExtractionOutcome {
+            company_id,
+            report_document_id: &outcome_ref,
+            fiscal_year,
+            period_type,
+            period_end,
+            tier: Some(tier),
+            acceptance: Acceptance::Flagged.as_str(),
+            reason_code: reason::VALUE_DIVERGENCE,
+            detail_json: Some(&detail),
+            drift_json: None,
+            structure_changed: false,
+            // No fact was established by this finding — the stored one stays.
+            fact_count: 0,
+        },
+    ) {
+        log::warn!(
+            "module=structured_extraction stage=value_divergence_record_failed \
+             company={company_id} document={report_document_id} error={error}"
+        );
+    }
+}
+
+/// The slot a [`record_value_divergence_outcome`] row is written against — the
+/// document/period the re-read ran over, plus the tier that re-read it.
+struct DivergenceSlot<'a> {
+    company_id: &'a str,
+    report_document_id: &'a str,
+    fiscal_year: i64,
+    period_type: &'a str,
+    period_end: &'a str,
+    tier: &'a str,
 }
 
 /// The `fact_count` an outcome row records: the facts this run ESTABLISHED at
@@ -457,12 +551,11 @@ fn derive_report_period_uncached(
     use crate::report_diff::classify::period_from_title_url;
 
     let local_path = document.local_path.as_deref()?;
-    let content_type = document.content_type.as_deref();
-    // ESEF tier — a bare `.xhtml` instance OR a `.xbri`/`.zip` report package
-    // (ADR 0061 dec. 1). Read the file only for the formats that self-derive
-    // their period from the iXBRL contexts; a PDF derives it from its title/URL
-    // without a read.
-    if is_esef_route(content_type, local_path) {
+    // ESEF tier — a markup instance OR a ZIP report package (ADR 0061 dec. 1),
+    // decided from the sniffed container (epic #229 T2). Read the file only for
+    // the formats that self-derive their period from the iXBRL contexts; a PDF
+    // derives it from its title/URL without a read.
+    if is_esef_route(document) {
         // ESEF self-derives its period from the iXBRL contexts. A file that is the
         // ESEF route by extension/content-type but is NOT valid iXBRL — an interim
         // XHTML with no `ix:` tags (a pdf2htmlEX render) — yields no period here;
@@ -470,7 +563,7 @@ fn derive_report_period_uncached(
         // None (T-A1), the same fallback the coverage read model already applies.
         let esef_period = (|| {
             let raw = std::fs::read(state.data_dir().join(local_path)).ok()?;
-            let instance = esef_instance_bytes(content_type, local_path, &raw)?;
+            let instance = esef_instance_bytes(&raw)?;
             let facts = parse_esef(&instance).ok()?;
             let period_end = primary_period_end(&facts)?;
             let fiscal_year = period_end.get(0..4).and_then(|y| y.parse::<i64>().ok())?;
@@ -527,7 +620,12 @@ fn period_from_cover_page(
         return None;
     }
     let local_path = document.local_path.as_deref()?;
-    let format = SourceFormat::resolve(document.content_type.as_deref(), local_path);
+    // Container truth (epic #229 T2): a `.pdf` holding markup is read as markup,
+    // where the PDF reader used to return nothing. A ZIP package or an
+    // unrecognised container yields no cover text at all — the ESEF route above
+    // already self-derives a package's period from its iXBRL contexts — so it
+    // stays a measured `no_period_derived` gap rather than a garbage parse.
+    let format = crate::report_documents_container::resolved_source_format(document)?;
     let bytes = std::fs::read(state.data_dir().join(local_path)).ok()?;
     let outcome = extract_report(&bytes, format);
     if outcome.state != ExtractionState::Extracted {
@@ -553,18 +651,19 @@ fn period_from_cover_page(
 }
 
 /// Whether a stored document should be resolved through the ESEF/iXBRL tier
-/// rather than the PDF tier: a bare `.xhtml`/`.html` instance, or an ESEF report
-/// *package* (`.xbri`/`.zip`, ADR 0061 dec. 1). Extension/content-type only —
-/// no byte read — so callers can decide whether to load the file at all. A
-/// mislabeled package (generic `application/octet-stream`, no telltale
-/// extension) is still caught later by the ZIP-magic sniff in
-/// [`esef_instance_bytes`].
-pub(crate) fn is_esef_route(content_type: Option<&str>, local_path: &str) -> bool {
-    if SourceFormat::resolve(content_type, local_path) == SourceFormat::Xhtml {
-        return true;
-    }
-    let lower = local_path.to_ascii_lowercase();
-    lower.ends_with(".xbri") || lower.ends_with(".zip")
+/// rather than the PDF tier: a markup instance, or an ESEF report *package* (a
+/// ZIP, ADR 0061 dec. 1).
+///
+/// Decided from the stored `detected_container` (epic #229 T2) with the old
+/// extension/content-type rule as the fallback for a never-sniffed row — still
+/// **no byte read**, so callers can decide whether to load the file at all. This
+/// is what catches the corpus's mislabeled packages (generic
+/// `application/octet-stream` under a `.pdf` name) up front instead of relying on
+/// the later ZIP-magic sniff in [`esef_instance_bytes`].
+pub(crate) fn is_esef_route(document: &crate::storage::ReportDocument) -> bool {
+    use crate::report_documents_container::{is_markup, is_package};
+
+    is_markup(document) || is_package(document)
 }
 
 /// A fetched periodic (ssf/jsf) document with a stored file — the extractability
@@ -589,11 +688,13 @@ pub(crate) fn find_pdf_sibling(
     state: &AppState,
     document: &crate::storage::ReportDocument,
 ) -> Option<crate::storage::ReportDocument> {
-    let format = SourceFormat::resolve(
-        document.content_type.as_deref(),
-        document.local_path.as_deref().unwrap_or(""),
-    );
-    if format != SourceFormat::Xhtml {
+    use crate::report_documents_container::{is_markup, is_real_pdf};
+
+    // Container truth on both ends (epic #229 T2): the residual must really be
+    // markup, and the sibling must really be a PDF — a ZIP package under a `.pdf`
+    // name has no text layer to fall back to, so choosing it would swap one
+    // unreadable document for another.
+    if !is_markup(document) {
         return None;
     }
     let target_period = derive_report_period(state, document).map(|(_, _, end)| end)?;
@@ -603,10 +704,7 @@ pub(crate) fn find_pdf_sibling(
     siblings.into_iter().find(|sibling| {
         sibling.id != document.id
             && is_fetched_periodic(sibling)
-            && SourceFormat::resolve(
-                sibling.content_type.as_deref(),
-                sibling.local_path.as_deref().unwrap_or(""),
-            ) == SourceFormat::Pdf
+            && is_real_pdf(sibling)
             && derive_report_period(state, sibling).map(|(_, _, end)| end)
                 == Some(target_period.clone())
     })
@@ -615,22 +713,20 @@ pub(crate) fn find_pdf_sibling(
 /// The inline-XBRL **instance** bytes for a stored document, if it is (or
 /// contains) one — the single seam shared by [`derive_report_period`] and
 /// [`run_structured_extraction`] so the on-demand button and autopilot resolve
-/// the ESEF tier identically (ADR 0061 dec. 1). A bare `.xhtml`/`.html` returns
-/// its own bytes; an ESEF report package (`.xbri`/`.zip`, or any ZIP by magic)
-/// is unpacked to its inner `reports/` instance. `None` for a PDF, or a package
-/// with no readable instance.
-fn esef_instance_bytes(
-    content_type: Option<&str>,
-    local_path: &str,
-    bytes: &[u8],
-) -> Option<Vec<u8>> {
+/// the ESEF tier identically (ADR 0061 dec. 1). Markup returns its own bytes; an
+/// ESEF report package (a ZIP) is unpacked to its inner `reports/` instance.
+/// `None` for a PDF, a package with no readable instance, or an unrecognised
+/// container.
+///
+/// The bytes are already in hand here, so this decides from
+/// [`detect_container`] directly — the same sniffer that fills the stored
+/// `detected_container` column (epic #229 T2), never the filename.
+fn esef_instance_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     use crate::fundamentals::extraction::esef_package;
-    if esef_package::is_report_package(local_path, bytes) {
-        return esef_package::extract_instance(bytes);
-    }
-    match SourceFormat::resolve(content_type, local_path) {
-        SourceFormat::Xhtml => Some(bytes.to_vec()),
-        SourceFormat::Pdf => None,
+    match detect_container(bytes) {
+        Container::Zip => esef_package::extract_instance(bytes),
+        Container::Xml | Container::Html => Some(bytes.to_vec()),
+        Container::Pdf | Container::Unknown => None,
     }
 }
 
@@ -980,12 +1076,26 @@ pub(crate) fn run_structured_extraction(
                     incoming,
                 } => {
                     skipped_fact_ids.push(fact_id.clone());
-                    divergences.push(FactDivergence {
+                    let divergence = FactDivergence {
                         fact_id,
                         metric_key,
                         existing,
                         incoming,
-                    });
+                    };
+                    // Durable, not just in-memory (epic #229 T5 / #192).
+                    record_value_divergence_outcome(
+                        state,
+                        &DivergenceSlot {
+                            company_id,
+                            report_document_id,
+                            fiscal_year,
+                            period_type,
+                            period_end,
+                            tier,
+                        },
+                        &divergence,
+                    );
+                    divergences.push(divergence);
                 }
                 // Non-catalog key — the pipeline should not emit it; not counted.
                 crate::storage::StructuredFactCommit::NoDefinition => {}
@@ -1046,6 +1156,12 @@ pub(crate) fn run_structured_extraction(
     })
 }
 
+/// Typed refusal prefix for a re-run request against an outcome slot that names
+/// no re-readable document (the reversed-witnessing rows, whose slot ref is an
+/// aggregator PAGE URL). A machine-readable code, not prose, so the MCP/API
+/// caller can branch on it — the UI simply does not offer the action there.
+pub(crate) const RERUN_NOT_APPLICABLE: &str = "rerun_not_applicable";
+
 /// Re-runs the extraction for a **recorded outcome slot**, by its id.
 ///
 /// The review surface's retry action. It re-uses the company/document/period the
@@ -1065,15 +1181,40 @@ pub(crate) fn rerun_extraction_outcome(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("no recorded extraction outcome '{outcome_id}'"))?;
 
+    // Reversed witnessing keys its slot by the aggregator PAGE URL it read
+    // (`pageUrl#metricKey`), not by a stored document — there is nothing for the
+    // pipeline to re-read, and handing it that ref produced an opaque storage
+    // error ("Query returned no rows"). Refuse with a typed code instead; the
+    // fix for a disagreement is a fresh aggregator pull or a manual correction,
+    // never a re-extraction.
+    if outcome.reason_code == reason::WITNESS_DISAGREEMENT {
+        return Err(format!(
+            "{RERUN_NOT_APPLICABLE}: outcome '{outcome_id}' records an aggregator \
+             disagreement against a held value, not a document extraction — there is \
+             no stored document to re-read"
+        ));
+    }
+
     run_structured_extraction(
         state,
         &outcome.company_id,
-        &outcome.report_document_id,
+        base_document_ref(&outcome.report_document_id),
         outcome.fiscal_year,
         &outcome.period_type,
         &outcome.period_end,
         mode,
     )
+}
+
+/// The real stored-document id behind an outcome slot ref.
+///
+/// Per-metric outcomes (`value_divergence`) key their slot by the synthetic
+/// `documentId#metricKey` discriminator, so two diverging metrics in one document
+/// keep separate rows. That suffix is bookkeeping, not identity: a re-run must
+/// re-extract `documentId`. An ordinary slot ref carries no `#` and passes
+/// through untouched.
+fn base_document_ref(slot_ref: &str) -> &str {
+    slot_ref.split('#').next().unwrap_or(slot_ref)
 }
 
 /// Tier-3b positional route (ADR 0077 T-B2): parse a non-iXBRL pdf2htmlEX XHTML
@@ -1208,12 +1349,27 @@ fn run_positional_extraction(
                     incoming,
                 } => {
                     skipped_fact_ids.push(fact_id.clone());
-                    divergences.push(FactDivergence {
+                    let divergence = FactDivergence {
                         fact_id,
                         metric_key,
                         existing,
                         incoming,
-                    });
+                    };
+                    record_value_divergence_outcome(
+                        state,
+                        &DivergenceSlot {
+                            company_id,
+                            report_document_id,
+                            fiscal_year,
+                            period_type,
+                            period_end,
+                            // The positional route reuses the deterministic PDF
+                            // tier (identified by `extraction_method`).
+                            tier: SourceTier::Pdf.as_str(),
+                        },
+                        &divergence,
+                    );
+                    divergences.push(divergence);
                 }
                 crate::storage::StructuredFactCommit::NoDefinition => {}
             }
@@ -1756,6 +1912,198 @@ mod tests {
         );
     }
 
+    /// Epic #229 T2: `is_esef_route` decides — without reading the file — whether
+    /// a document goes down the ESEF/iXBRL path. It used to answer from the
+    /// extension alone, so the corpus's markup and ZIP packages stored under a
+    /// `.pdf` name were routed to the PDF tier and never reached the structured
+    /// path at all.
+    #[test]
+    fn esef_route_follows_the_sniffed_container_not_the_pdf_name() {
+        let (state, _company_id, document_id) = seed_document_with_bytes(
+            "esef-route-liar",
+            "PKN",
+            "Skonsolidowane sprawozdanie finansowe 2024",
+            "ssf_2024_signed.pdf",
+            POSITIONAL_XHTML.as_bytes(),
+        );
+        // Never sniffed: the `.pdf` name still decides (the pre-T2 fallback), so a
+        // legacy row routes exactly as it did before.
+        let unsniffed = state.get_report_document(&document_id).expect("document");
+        assert!(!is_esef_route(&unsniffed));
+
+        for (container, expected) in [
+            ("xml", true),
+            ("html", true),
+            ("zip", true),
+            ("pdf", false),
+            ("unknown", false),
+        ] {
+            state
+                .set_report_document_detected_container(&document_id, container)
+                .expect("stamp container");
+            let document = state.get_report_document(&document_id).expect("document");
+            assert_eq!(
+                is_esef_route(&document),
+                expected,
+                "a document sniffed as `{container}` under a .pdf name"
+            );
+        }
+    }
+
+    /// Epic #229 T2: the residual→PDF-sibling fallback exists because a pdf2htmlEX
+    /// container has no usable text layer and its real content sits in the
+    /// companion PDF. Both ends must be container truth: a sibling that is a ZIP
+    /// package wearing a `.pdf` name has no text layer either, so choosing it
+    /// swaps one unreadable document for another.
+    #[test]
+    fn pdf_sibling_selection_uses_container_truth_on_both_ends() {
+        let dir = unique_temp_dir("sibling-container");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "SIB".to_owned(),
+                display_name: "Sibling S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        let seed = |file: &str, title: &str, bytes: &[u8], container: &str| -> String {
+            let document = state
+                .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                    company_id: company.id.clone(),
+                    source_type: "espi_attachment".to_owned(),
+                    url: format!("https://example.com/{file}"),
+                    period_id: None,
+                    origin_ref: None,
+                    title: Some(title.to_owned()),
+                    attribution: None,
+                })
+                .expect("document");
+            assert!(
+                matches!(
+                    document.doc_kind.as_deref(),
+                    Some("periodic_ssf") | Some("periodic_jsf")
+                ),
+                "sample title must classify as periodic, got {:?}",
+                document.doc_kind
+            );
+            std::fs::write(dir.join(file), bytes).expect("write bytes");
+            state
+                .mark_report_document_fetched(
+                    &document.id,
+                    Some(file),
+                    Some("application/octet-stream"),
+                    None,
+                    Some(bytes.len() as i64),
+                )
+                .expect("mark fetched");
+            state
+                .set_report_document_detected_container(&document.id, container)
+                .expect("stamp container");
+            document.id
+        };
+
+        // The residual: markup, stored under a `.pdf` name.
+        let residual_id = seed(
+            "raport_q3_2024_render.pdf",
+            "Skonsolidowany raport okresowy Q3 2024 SSF",
+            POSITIONAL_XHTML.as_bytes(),
+            "html",
+        );
+        // The only same-period candidate is an ESEF package wearing `.pdf`.
+        let package_id = seed(
+            "raport_q3_2024_pakiet.pdf",
+            "Skonsolidowany raport okresowy Q3 2024 SSF pakiet",
+            &minimal_zip(&[("reports/instance.xhtml", b"<html></html>")]),
+            "zip",
+        );
+        let residual = state.get_report_document(&residual_id).expect("residual");
+        assert_eq!(
+            find_pdf_sibling(&state, &residual).map(|d| d.id),
+            None,
+            "a ZIP package is not a readable PDF sibling, whatever its name says"
+        );
+
+        // Add a genuine PDF for the same period: now the fallback has a real target.
+        let pdf_id = seed(
+            "raport_q3_2024_ssf.pdf",
+            "Skonsolidowany raport okresowy Q3 2024 SSF podpisany",
+            &minimal_text_pdf(&["Przychody 100"]),
+            "pdf",
+        );
+        assert_eq!(
+            find_pdf_sibling(&state, &residual).map(|d| d.id),
+            Some(pdf_id),
+            "the genuine PDF is the sibling — selected over the same-period package"
+        );
+        assert_ne!(residual_id, package_id);
+    }
+
+    /// Epic #229 T2: the cover-page tier is the last resort for a bare `SSF.pdf`
+    /// whose title and URL name no period. Reading that cover with the PDF reader
+    /// because the name ends `.pdf` returns nothing when the bytes are markup — the
+    /// document then has no period, so it never reaches extraction at all. Container
+    /// truth reads the same cover as markup and the period lands.
+    #[test]
+    fn cover_page_period_reads_markup_stored_under_a_pdf_name() {
+        let dir = unique_temp_dir("cover-container");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CVR".to_owned(),
+                display_name: "Cover S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "espi_attachment".to_owned(),
+                url: "https://example.com/SSF.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("SSF.pdf".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        // A pdf2htmlEX render: the cover text is markup, the name says PDF.
+        let body = format!(
+            "<html><body><h1>SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ CVR</h1>\
+             <p>za okres 6 miesiecy zakonczony 30.06.2025</p><p>{}</p></body></html>",
+            "dane porownawcze oraz komentarz zarzadu. ".repeat(120)
+        );
+        std::fs::write(dir.join("ssf.pdf"), body.as_bytes()).expect("write render");
+        state
+            .mark_report_document_fetched(
+                &document.id,
+                Some("ssf.pdf"),
+                Some("application/pdf"),
+                None,
+                Some(body.len() as i64),
+            )
+            .expect("mark fetched");
+        state
+            .set_report_document_detected_container(&document.id, "html")
+            .expect("stamp container");
+
+        let stored = state.get_report_document(&document.id).expect("document");
+        assert_eq!(
+            derive_report_period(&state, &stored),
+            Some((2025, "H1", "2025-06-30".to_owned())),
+            "the cover page must be read with the reader the BYTES call for"
+        );
+    }
+
     #[test]
     fn period_abstains_when_neither_title_nor_cover_page_names_one() {
         // The abstention contract survives the new fallback: a cover page that
@@ -2156,6 +2504,217 @@ mod tests {
             .find(|f| f.id == assets.id)
             .expect("fact still present");
         assert_eq!(after.value_numeric.trim(), "999000000");
+    }
+
+    #[test]
+    fn a_value_divergence_leaves_a_durable_flagged_outcome_that_upserts() {
+        // Epic #229 T5 (#192 residual): a divergence used to live only in the
+        // in-memory result and a developer-mode diagnostic (7-day trimmed), so
+        // "two reads of the issuer's own filing disagree" evaporated. It now
+        // records a durable `value_divergence` outcome, keyed per (document,
+        // metric) so a re-extraction refreshes the row instead of duplicating it.
+        let (state, company_id, document_id) = seed_esef_package();
+        run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("first extraction runs");
+        let assets = state
+            .list_financial_facts(crate::storage::ListFinancialFactsInput {
+                company_id: Some(company_id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list facts")
+            .into_iter()
+            .find(|f| f.value_numeric.trim_start_matches('-').starts_with("45"))
+            .expect("the 45m total-assets fact should exist");
+        state
+            .update_financial_fact(crate::storage::UpdateFinancialFact {
+                id: assets.id.clone(),
+                value_numeric: Some("999000000".to_owned()),
+                currency: None,
+                data_quality: None,
+                confirmation_state: None,
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("mutate stored fact");
+
+        for _ in 0..2 {
+            run_structured_extraction(
+                &state,
+                &company_id,
+                &document_id,
+                2025,
+                "FY",
+                "2025-12-31",
+                MODE_AUTOPILOT,
+            )
+            .expect("re-extraction must not error");
+        }
+
+        let flagged = state
+            .fundamentals_provenance()
+            .list_flagged_extraction_outcomes(&company_id)
+            .expect("flagged outcomes");
+        let divergences: Vec<_> = flagged
+            .iter()
+            .filter(|outcome| outcome.reason_code == "value_divergence")
+            .collect();
+        assert_eq!(
+            divergences.len(),
+            1,
+            "one row per (document, metric), refreshed by the re-run: {flagged:?}"
+        );
+        let outcome = divergences[0];
+        assert_eq!(outcome.acceptance, "flagged");
+        assert_eq!(outcome.fact_count, 0);
+        assert_eq!(
+            outcome.tier.as_deref(),
+            Some("esef"),
+            "the outcome names the tier that re-read the value: {outcome:?}"
+        );
+        assert!(
+            outcome.report_document_id.starts_with(&document_id)
+                && outcome.report_document_id.contains('#'),
+            "the slot ref is per-metric so two diverging metrics cannot overwrite \
+             each other: {outcome:?}"
+        );
+        assert!(
+            outcome.attempt_count >= 2,
+            "a repeated divergence is visibly repeated: {outcome:?}"
+        );
+
+        // The detail renders through the Coverage panel's gate shape (the
+        // `witnessDisagreements` precedent) — stored vs freshly read.
+        let detail: serde_json::Value =
+            serde_json::from_str(outcome.detail_json.as_deref().expect("detail_json"))
+                .expect("detail parses");
+        let entry = &detail["valueDivergences"][0];
+        assert_eq!(entry["metricKey"], "total_assets");
+        assert_eq!(
+            entry["detail"]["actual"], "999000000",
+            "actual is the STORED value: {detail}"
+        );
+        assert_eq!(
+            entry["detail"]["storedValue"], "999000000",
+            "the raw stored/incoming pair travels alongside: {detail}"
+        );
+        assert_eq!(entry["detail"]["factId"], assets.id);
+        assert!(
+            entry["detail"]["incomingValue"]
+                .as_str()
+                .is_some_and(|v| v != "999000000"),
+            "incoming is the freshly re-read value: {detail}"
+        );
+    }
+
+    /// Guardrail-harvest (epic #229 T5): a per-metric slot ref (`docId#metricKey`)
+    /// names a REAL stored document — the re-run must re-extract it, not hand the
+    /// synthetic ref to the pipeline and fail with "no such document". The
+    /// "Try again" action on a `value_divergence` row is only honest if this holds.
+    #[test]
+    fn rerunning_a_value_divergence_reextracts_the_real_document() {
+        let (state, company_id, document_id) = seed_esef_package();
+        run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("first extraction runs");
+        let assets = state
+            .list_financial_facts(crate::storage::ListFinancialFactsInput {
+                company_id: Some(company_id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list facts")
+            .into_iter()
+            .find(|f| f.value_numeric.trim_start_matches('-').starts_with("45"))
+            .expect("the 45m total-assets fact should exist");
+        state
+            .update_financial_fact(crate::storage::UpdateFinancialFact {
+                id: assets.id.clone(),
+                value_numeric: Some("999000000".to_owned()),
+                currency: None,
+                data_quality: None,
+                confirmation_state: None,
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("mutate stored fact");
+        run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("re-extraction records the divergence");
+
+        let divergence = state
+            .fundamentals_provenance()
+            .list_flagged_extraction_outcomes(&company_id)
+            .expect("flagged outcomes")
+            .into_iter()
+            .find(|outcome| outcome.reason_code == "value_divergence")
+            .expect("the divergence outcome exists");
+        assert!(divergence.report_document_id.contains('#'));
+
+        let result = rerun_extraction_outcome(&state, &divergence.id, MODE_AUTOPILOT)
+            .expect("the re-run must reach the real document, not the synthetic slot ref");
+        assert!(
+            !result.skipped_fact_ids.is_empty(),
+            "the re-run re-read the document's slots: {result:?}"
+        );
+    }
+
+    /// The reversed-witnessing rows key their slot by an AGGREGATOR PAGE URL, so
+    /// there is no document to re-read. The UI hides the action, but the backend
+    /// is the boundary that must hold: an MCP/API caller gets a TYPED refusal,
+    /// never a confusing "no report document 'https://…#metric'".
+    #[test]
+    fn rerunning_a_witness_disagreement_is_refused_with_a_typed_code() {
+        let (state, company_id, _document_id) = seed_esef_package();
+        let outcome_id = state
+            .fundamentals_provenance()
+            .record_extraction_outcome(crate::storage::NewExtractionOutcome {
+                company_id: &company_id,
+                report_document_id:
+                    "https://www.biznesradar.pl/raporty-finansowe-bilans/CDR#current_assets",
+                fiscal_year: 2025,
+                period_type: "FY",
+                period_end: "2025-12-31",
+                tier: Some("esef"),
+                acceptance: "flagged",
+                reason_code: "witness_disagreement",
+                detail_json: None,
+                drift_json: None,
+                structure_changed: false,
+                fact_count: 0,
+            })
+            .expect("record a reversed-witnessing outcome");
+
+        let error = rerun_extraction_outcome(&state, &outcome_id, MODE_AUTOPILOT)
+            .expect_err("a witness disagreement has no document to re-read");
+        assert!(
+            error.starts_with(RERUN_NOT_APPLICABLE),
+            "the refusal must be a typed code the caller can branch on: {error}"
+        );
     }
 
     #[test]

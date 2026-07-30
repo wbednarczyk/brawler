@@ -1,16 +1,25 @@
-//! HTML financial-data aggregator adapter — tier 3 (ADR 0061).
+//! HTML financial-data aggregator adapter (BiznesRadar-primary, ADR 0086).
 //!
 //! Aggregators (BiznesRadar, Bankier „wyniki finansowe", StockWatch) publish a
 //! company's headline figures as clean HTML tables: rows are metrics, columns
 //! are reporting periods. This adapter parses that grid, maps the Polish row
 //! labels to our `metric_key` catalog (reusing the tier-2 dictionary and number
-//! rules), and reads the requested period's column.
+//! rules), and reads every period column the page carries.
 //!
-//! Its role is **witness, not source of truth**: where an aggregator covers a
-//! company it is cross-checked against the primary filing on every period
-//! (agreement ⇒ ~100% confidence), and it is the rescue path when the PDF
-//! parser drifts. The primary filing always wins on disagreement; the
-//! aggregator only ever confirms or flags. Pure over `&str` HTML — no network.
+//! ## Role: PRIMARY for core KPIs, witnessed in REVERSE (ADR 0086 dec. 2/4)
+//! The original ADR 0061 posture ("witness, not source of truth") is **retired**.
+//! BiznesRadar is the primary, daily source of the core KPI history
+//! ([`crate::jobs::aggregator_fundamentals_pull`]): its facts are written under
+//! `source_tier = html_aggregator`, which sits at the BOTTOM of the precedence
+//! order (`manual > esef > espi_cover_note > positional > html_aggregator`), so
+//! an issuer tier still owns any slot it reads.
+//!
+//! Witnessing therefore runs REVERSED: where an issuer tier (or the user's own
+//! manual entry) holds the slot, the aggregator's figure never overwrites it and
+//! instead records what it saw — a `witness_disagreement` extraction outcome when
+//! the two diverge beyond tolerance, or a positive corroboration stamp on the
+//! held fact's provenance when they agree (epic #229 T5). Pure over `&str`
+//! HTML — no network.
 
 use scraper::{Html, Selector};
 

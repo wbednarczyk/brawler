@@ -75,10 +75,10 @@ pub fn backfill_company_health_facts(
         if !is_fetched_periodic(&document) {
             continue;
         }
-        let Some(local_path) = document.local_path.as_deref() else {
+        if document.local_path.is_none() {
             continue;
-        };
-        if !is_esef_route(document.content_type.as_deref(), local_path) {
+        }
+        if !is_esef_route(&document) {
             continue;
         }
 

@@ -276,6 +276,10 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
     let mut period_field: Option<PeriodField> = None;
     let mut unit_id: Option<String> = None;
     let mut in_measure = false;
+    // A ratio unit (`xbrli:divide`) carries two measures: the numerator names
+    // the currency, the denominator the per-what (`xbrli:shares` for EPS). Only
+    // the numerator defines the fact's currency — see the measure-text handler.
+    let mut in_denominator = false;
     let mut pending: Option<PendingFact> = None;
     let mut raw_facts: Vec<RawFact> = Vec::new();
 
@@ -297,6 +301,7 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
                     b"startDate" => period_field = Some(PeriodField::Start),
                     b"endDate" => period_field = Some(PeriodField::End),
                     b"unit" => unit_id = attr(&e, b"id"),
+                    b"unitDenominator" => in_denominator = true,
                     b"measure" => in_measure = true,
                     b"nonFraction" if pending.is_none() => {
                         if let Some(context_ref) = attr(&e, b"contextRef") {
@@ -325,9 +330,11 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
                         PeriodField::Start => ctx_period.start = Some(value.trim().to_string()),
                         PeriodField::End => ctx_period.end = Some(value.trim().to_string()),
                     }
-                } else if in_measure {
+                } else if in_measure && !in_denominator {
+                    // The denominator of a divide unit (`xbrli:shares` in an EPS
+                    // unit, #93) is not a currency — only numerator/simple
+                    // measures define one. e.g. "iso4217:PLN" → "PLN".
                     if let Some(id) = &unit_id {
-                        // e.g. "iso4217:PLN" → "PLN".
                         units.insert(id.clone(), local_str(value.trim().as_bytes()));
                     }
                 } else if let Some(p) = pending.as_mut() {
@@ -371,6 +378,7 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
                     }
                     b"instant" | b"startDate" | b"endDate" => period_field = None,
                     b"unit" => unit_id = None,
+                    b"unitDenominator" => in_denominator = false,
                     b"measure" => in_measure = false,
                     _ => {}
                 }

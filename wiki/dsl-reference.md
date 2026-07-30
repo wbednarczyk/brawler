@@ -100,7 +100,7 @@ company's period history:
 | Function | What it does |
 |----------|--------------|
 | `cagr(metric, n)` | compound annual growth rate of `metric` over `n` years |
-| `ttm(metric)`     | trailing-twelve-months value (sums the last four quarters, or uses the latest annual figure) |
+| `ttm(metric)`     | trailing-twelve-months value — see [Window semantics](#window-semantics) |
 | `avg(metric, n)`  | average of `metric` over the last `n` periods |
 | `trend(metric, n)`| average change per period of `metric` over the last `n` periods (positive = rising) |
 | `coalesce(a, b, …)` | the first expression whose inputs are available — a fallback chain, e.g. `coalesce(market_cap / net_profit_ttm, close / eps_diluted_ttm)`; empty only when every recipe fails |
@@ -125,6 +125,32 @@ Two shorthands can be appended to a metric key:
 For example `total_equity_avg` is the average equity across the latest two
 periods. These mostly appear inside metric formulas, but you can use them in
 criteria too.
+
+## Window semantics
+
+Exactly what each window does when history is thin:
+
+| Window | On an annual period | On an interim (quarterly/half-year) period | Empty when |
+|---|---|---|---|
+| `ttm(metric)` / `_ttm` | that period's own annual figure — no summing | sum of the four most recent periods in the series | fewer than four of those periods carry the figure |
+| `_avg` | average of the current and prior period | same | the current period lacks the figure |
+| `cagr(metric, n)` | `(end / begin)^(1/n) − 1` | same | no period is labelled `fiscal_year − n`, or either endpoint is ≤ 0 |
+
+Notes worth knowing:
+
+- **A partial TTM is empty, not a guess.** Three quarters are not a trailing
+  twelve months, so `_ttm` reads **No data** rather than quietly presenting one
+  quarter's profit as a full year. Everything built on it — `roe`, `roa`,
+  `pe_ratio`, `ev_ebitda`, `fcf_yield`, the comparative-valuation drivers — goes
+  empty with it until the fourth quarter lands.
+- **`_avg` does degrade.** With no prior period (or none carrying the figure) it
+  returns the current value alone. Balance-sheet averaging exists to smooth a
+  point-in-time figure; one point is still a usable figure, unlike a partial sum.
+- **`cagr` matches on the fiscal-year label**, not on position in the series: it
+  looks for a period whose `fiscal_year` is exactly `n` years before the latest
+  one. A gap year means **No data**. Negative or zero endpoints have no defined
+  growth rate, so they're empty too. The fractional root is computed in floating
+  point — a growth-rate threshold doesn't need decimal-exact arithmetic.
 
 ## The "No data" verdict
 

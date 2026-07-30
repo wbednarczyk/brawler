@@ -15,6 +15,7 @@ import { pluralNoun, FACT_FORMS, type PluralForms } from "../locale/plural";
 import { Button, EmptyState, ErrorText, Hint, SectionHeader, StatusChip } from "../../ui";
 import { middleTruncate } from "./CompanyReportDocumentsPanel";
 import { CoverageFlaggedPeriods } from "./CoverageFlaggedPeriods";
+import { CoverageFlaggedFacts } from "./CoverageFlaggedFacts";
 
 // Facts the pipeline flagged (drift/contradiction) — an informational origin
 // label, not a review to-do (ADR 0086 dec. 5). Three Polish forms.
@@ -532,6 +533,11 @@ export function CompanyCoveragePanel({
         reloadKey={reloadKey + localReloadTick}
         onRerun={refreshAfterExtraction}
       />
+      {/* Flagged FACTS (epic #229 T5): the values that DID land but carry a
+          drift/contradiction. The "Flagged" table column counts them per
+          period; this section is where the figures themselves are readable —
+          without it the count pointed at nothing (the read had no UI consumer). */}
+      <CoverageFlaggedFacts companyId={companyId} reloadKey={reloadKey + localReloadTick} />
       {/* History actions footer (ADR 0077 §3, T3.2). Fixed slots: two actions +
           a status line (ui-authoring styling rules). Both actions disable in
           automation mode `off`; the status line names the phase, never silent. */}

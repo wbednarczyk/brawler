@@ -134,7 +134,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `list_financial_facts` | One company's stored financial facts, each carrying its trust-ladder provenance: sourceTier, validationStatus, and citation. Decision support only. |
 | `list_financial_periods` | One company's fiscal periods (year + period type + period-end date). |
 | `list_kpi_definitions` | The metric catalog: every KPI/financial-concept definition (id, label, unit) facts are keyed by. |
-| `list_flagged_fact_provenance` | Every fact the extraction pipeline flagged for review (a drift or contradiction against another source) — the data-quality review surface. |
+| `list_flagged_fact_provenance` | Every fact the extraction pipeline flagged for review (a drift or contradiction against another source) — the data-quality review surface. Each row carries the company, metric key + label, value, period, source tier and citation. |
 | `get_price_context` | One company's price context: latest quote and the recent range, plus derived valuation ratios where computable. |
 | `get_kpi_comparison` | Compare one or more canonical KPIs across companies on a shared, aligned period axis (annual or quarterly). Each cell carries the native + PLN-converted value with its FX basis, the evidence link (fact id + validation status), and server-computed QoQ/YoY deltas; gaps and unconvertible currencies are typed flags, never silent. Works for a single company too (the periods×deltas view). Decision support only. |
 | `get_sector_percentiles` | Where one company stands against its tracked sector peers: rank-based percentiles for the level-0 market ratios (P/E, P/BV, EV/EBITDA, dividend yield, FCF yield) and selected canonical KPIs, computed from confirmed data only. Always returns the peer count N and flags thin sets (N < 4); a company with no sector returns a typed empty reason. Decision support only. |
@@ -189,7 +189,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `record_expectation_resolution` | Resolve a report expectation after the report lands (resolution note). |
 | `create_company_event` | Add a calendar event (dividend/meeting/report date) for a company. |
 | `create_kpi_definition` | Add a KPI/financial-concept definition to the metric catalog. |
-| `create_kpi_relevance` | Mark a KPI definition relevant to a company (scorecard editor). |
+| `create_kpi_relevance` | Mark a KPI definition relevant to a company (scorecard editor). Every company starts with an app-seeded IFRS core set (`revenue`, `operating_profit`, `net_profit`, `total_assets`, `total_equity`, `source='core'`); calling this for one of them **restates** that row with your `source`/`rank` rather than failing. |
 | `update_kpi_relevance` | Update a company's KPI-relevance row (status/rank) by id. |
 | `create_quality_framework` | Create a quality-scorecard framework. |
 | `update_quality_framework` | Update a quality framework (name/description) by id. |
@@ -224,7 +224,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `run_aggregator_fundamentals_pull` | Run the aggregator fundamentals pull across tracked companies. |
 | `backfill_company_history` | Run an on-track history backfill for one company (`companyId`); progress via get_backfill_progress. |
 | `run_structured_extraction` | Run the deterministic structured-first extraction pipeline over one company report+period (`mode`: autopilot \| assist). |
-| `rerun_extraction_outcome` | Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`). |
+| `rerun_extraction_outcome` | Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`). A `witness_disagreement` slot names an aggregator page rather than a stored document, so it is refused with the typed `rerun_not_applicable` code — resolve those by a fresh aggregator pull or a manual correction. |
 
 <!-- END GENERATED MCP CATALOG -->
 

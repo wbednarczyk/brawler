@@ -118,8 +118,8 @@ pub use financials::{
     UpdateFinancialPeriod, UpdateKpiRelevance,
 };
 pub use fundamentals_provenance::{
-    ExtractionOutcome, FactProvenance, FactTierBreakdown, FundamentalsProvenanceStore,
-    NewExtractionOutcome, NewFactProvenance, TierFactCount,
+    ExtractionOutcome, FactProvenance, FactTierBreakdown, FlaggedFact, FundamentalsProvenanceStore,
+    NewExtractionOutcome, NewFactProvenance, TierFactCount, WitnessCorroboration,
 };
 pub use fx_rates::FxRatesStore;
 pub use severity::{
@@ -225,7 +225,7 @@ pub use short_positions::{
 pub use signals::ClassifyFilingOutcome;
 pub use signals::SignalNeedingDate;
 pub use signals::SignalStore;
-pub use sources::{BackfillMarketStatus, SourcesStore};
+pub use sources::{BackfillMarketStatus, SourcesStore, TrackedIssuerIndex};
 pub use transcripts::TranscriptStore;
 pub use transcripts::{
     CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
@@ -1057,6 +1057,12 @@ impl AppState {
         self.sources().repair_misassociated_report_documents()
     }
 
+    /// The tracked-issuer name index (epic #229 T3) — load once per read-model
+    /// pass, then ask it per document.
+    pub fn tracked_issuer_index(&self) -> StorageResult<sources::TrackedIssuerIndex> {
+        self.sources().tracked_issuer_index()
+    }
+
     pub fn upsert_bankier_company_identifiers(
         &self,
         company_id: &str,
@@ -1692,6 +1698,22 @@ impl AppState {
             content_hash,
             byte_size,
         )
+    }
+
+    /// Stamp the magic-byte container of a stored document (epic #229 T2).
+    pub fn set_report_document_detected_container(
+        &self,
+        id: &str,
+        container: &str,
+    ) -> StorageResult<()> {
+        self.report_documents()
+            .set_report_document_detected_container(id, container)
+    }
+
+    /// Fetched documents with a stored file and no sniffed container yet.
+    pub fn report_documents_needing_container_sniff(&self) -> StorageResult<Vec<(String, String)>> {
+        self.report_documents()
+            .report_documents_needing_container_sniff()
     }
 
     pub fn mark_report_document_failed(

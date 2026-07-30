@@ -673,10 +673,7 @@ fn deterministic_pipeline_real_data_sweep() {
                 continue;
             };
 
-            let route = if is_esef_route(
-                document.content_type.as_deref(),
-                document.local_path.as_deref().unwrap_or(""),
-            ) {
+            let route = if is_esef_route(document) {
                 "esef_route"
             } else {
                 "pdf_route"
@@ -995,6 +992,8 @@ filled by the pipeline             : {filled_slots}  -> recall {}",
         "no_deterministic_tier",
         "no_period_derived",
         "document_unreadable",
+        "facts_superseded",
+        "value_divergence",
     ];
     for reason in tally.by_reason.keys() {
         assert!(

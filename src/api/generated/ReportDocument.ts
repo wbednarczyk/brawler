@@ -5,4 +5,12 @@ export type ReportDocument = { id: string, companyId: string, periodId: string |
  * doc_kind taxonomy (ADR 0077 §1): periodic_ssf | periodic_jsf |
  * auditor_opinion | presentation | governance | other. NULL = unclassified.
  */
-docKind: string | null, };
+docKind: string | null, 
+/**
+ * What the stored bytes REALLY are (migration 0121, epic #229 T2), using the
+ * `Container::as_str` vocabulary: pdf | zip | xml | html | unknown. Stamped
+ * at store time and healed on startup; NULL = not yet sniffed (legacy row,
+ * or its file is currently missing). Routing prefers this over the
+ * extension/content-type, both of which the corpus proves unreliable.
+ */
+detectedContainer: string | null, };

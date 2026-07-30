@@ -69,7 +69,7 @@ pub(super) const SHAPE_DOMAINS: [&str; 5] =
 /// with digits and dashes) can never be spliced into a committed descriptor. It
 /// is deliberately conservative — an `other` bucket is a visible prompt to look,
 /// a leaked token would be silent.
-fn shape_token(raw: &str) -> String {
+pub(super) fn shape_token(raw: &str) -> String {
     let trimmed = raw.trim();
     let looks_machine = !trimmed.is_empty()
         && trimmed.len() <= 40

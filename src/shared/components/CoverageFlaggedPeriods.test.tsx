@@ -232,6 +232,70 @@ describe("CoverageFlaggedPeriods", () => {
     expect(screen.queryByText(/[{[\]}]/)).not.toBeInTheDocument();
   });
 
+  // Epic #229 T5 (#192 residual): a re-extraction that read a DIFFERENT value
+  // than the one on file writes a durable `value_divergence` outcome. Its typed
+  // reason must translate, and the stored-vs-re-read pair must render as a
+  // sentence — the divergence was previously invisible outside developer mode.
+  it("renders a value_divergence with the stored and the re-read figure", async () => {
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([
+      outcome({
+        reasonCode: "value_divergence",
+        tier: "esef",
+        detailJson: JSON.stringify({
+          failedIdentities: [],
+          failedCrossChecks: [],
+          valueDivergences: [
+            {
+              metricKey: "total_assets",
+              detail: {
+                actual: "999000000",
+                expected: "45000000",
+                storedValue: "999000000",
+                incomingValue: "45000000",
+                factId: "fact_1",
+              },
+            },
+          ],
+        }),
+      }),
+    ]);
+    render(<CoverageFlaggedPeriods companyId="company_gpw_cdr" />);
+
+    expect(
+      await screen.findByText("Re-reading the report gave a different figure than the one on file"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /2025 Q3/ }));
+    // The metric name is the localized KPI label, never the raw catalog key.
+    expect(await screen.findByText("Total assets")).toBeInTheDocument();
+    const detailValue = screen.getByText(/999 M PLN/);
+    expect(detailValue).toHaveTextContent("45 M PLN");
+    // No machine speak: the gate keys and the programmatic extras stay internal.
+    expect(
+      screen.queryByText(/valueDivergences|storedValue|incomingValue|factId|total_assets/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/[{[\]}]/)).not.toBeInTheDocument();
+  });
+
+  // Guardrail-harvest (epic #229 T5): a `witness_disagreement` row's slot is an
+  // AGGREGATOR PAGE, not a document — a re-extraction has nothing to re-read, so
+  // the backend refuses it with a typed code. An action that cannot work must not
+  // be offered: the row carries no "Try again", while ordinary rows still do.
+  it("offers no re-run on a witness_disagreement row, but does on an ordinary one", async () => {
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([
+      outcome({ id: "o_witness", fiscalYear: 2025, reasonCode: "witness_disagreement" }),
+      outcome({ id: "o_normal", fiscalYear: 2024, reasonCode: "validation_failed" }),
+    ]);
+    render(<CoverageFlaggedPeriods companyId="company_gpw_cdr" />);
+
+    await screen.findByText("A second source reported different figures");
+    // Exactly one re-run action, and it belongs to the re-runnable row.
+    const retries = screen.getAllByRole("button", { name: /Try again/ });
+    expect(retries).toHaveLength(1);
+    await userEvent.click(retries[0]);
+    await waitFor(() => expect(rerunExtractionOutcomeMock).toHaveBeenCalledTimes(1));
+    expect(rerunExtractionOutcomeMock).toHaveBeenCalledWith({ outcomeId: "o_normal" });
+  });
+
   // HONEST STATES. "Nothing flagged" is a GOOD state and must never be what a
   // failed read looks like (recorded past defect: a failed category silently
   // degrading to empty).

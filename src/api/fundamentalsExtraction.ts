@@ -1,5 +1,6 @@
 import { callCommand } from "./tauri";
 import type { ExtractionOutcome } from "./generated/ExtractionOutcome";
+import type { FlaggedFact } from "./generated/FlaggedFact";
 import type { ExtractReportDocumentDataInput } from "./generated/ExtractReportDocumentDataInput";
 import type { FactProvenance } from "./generated/FactProvenance";
 import type { RerunExtractionOutcomeInput } from "./generated/RerunExtractionOutcomeInput";
@@ -15,9 +16,10 @@ export type { RerunExtractionOutcomeInput } from "./generated/RerunExtractionOut
 export type { RunStructuredExtractionInput } from "./generated/RunStructuredExtractionInput";
 export type { StructuredExtractionSummary } from "./generated/StructuredExtractionSummary";
 
-// NOTE: `run_structured_extraction` and `list_flagged_fact_provenance` are
-// headless-only commands (autopilot flow / MCP port — contracts.md); they have
-// no frontend wrapper on purpose (issues #153/#131 — orphaned exports).
+export type { FlaggedFact } from "./generated/FlaggedFact";
+
+// NOTE: `run_structured_extraction` is a headless-only command (autopilot flow /
+// MCP port — contracts.md); it has no frontend wrapper on purpose (issue #153).
 
 // The reachable, one-click "Extract data" action over a single stored report
 // document (ADR 0061 S5). The period is derived server-side (no Inbox round-trip
@@ -45,6 +47,17 @@ export function listFactProvenance(factIds: string[]) {
 export function listFlaggedExtractionOutcomes(companyId: string) {
   return callCommand<ExtractionOutcome[]>("list_flagged_extraction_outcomes", {
     input: { companyId },
+  });
+}
+
+// The company's flagged FACTS — the values the pipeline recorded but marked as
+// drifted/contradicted (epic #229 T5). The sibling read above covers the periods
+// where nothing emitted at all; this one covers the figures that DID land and
+// need a human eye. Omitting `companyId` spans every company (the MCP
+// data-quality surface); the Coverage panel always scopes to its company.
+export function listFlaggedFactProvenance(companyId?: string) {
+  return callCommand<FlaggedFact[]>("list_flagged_fact_provenance", {
+    input: { companyId: companyId ?? null },
   });
 }
 

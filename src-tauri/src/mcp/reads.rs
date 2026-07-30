@@ -290,9 +290,12 @@ pub fn list_flagged_fact_provenance_handler(
     arguments: &Value,
 ) -> Result<ToolOutcome, ToolCallError> {
     run(arguments, |_: NoInput| {
+        // App-wide by design: this is the data-quality surface across every
+        // tracked company (the per-company scoping lives on the IPC command the
+        // Coverage panel calls).
         state
             .fundamentals_provenance()
-            .list_flagged()
+            .list_flagged_facts(None)
             .map_err(CommandError::from)
     })
 }

@@ -108,6 +108,40 @@ fn seed_fact(
         .expect("seed fact");
 }
 
+/// The provenance row behind one stored slot — the corroboration stamp lives
+/// here, so every witness assertion reads it through the real store.
+fn provenance_of(
+    state: &AppState,
+    company_id: &str,
+    fiscal_year: i64,
+    metric: &str,
+) -> Option<crate::storage::FactProvenance> {
+    let periods = state
+        .financials()
+        .list_financial_periods(crate::storage::ListFinancialPeriodsInput {
+            company_id: company_id.to_owned(),
+            fiscal_year: None,
+        })
+        .expect("periods");
+    let period = periods
+        .into_iter()
+        .find(|p| p.fiscal_year == fiscal_year && p.period_type == "FY")?;
+    let fact = state
+        .financials()
+        .list_financial_facts(crate::storage::ListFinancialFactsInput {
+            company_id: Some(company_id.to_owned()),
+            period_id: Some(period.id),
+            definition_id: None,
+        })
+        .expect("facts")
+        .into_iter()
+        .find(|f| f.definition_id == format!("kpidef_{metric}"))?;
+    state
+        .fundamentals_provenance()
+        .get_fact_provenance(&fact.id)
+        .expect("provenance")
+}
+
 fn stored(state: &AppState, company_id: &str, fiscal_year: i64, metric: &str) -> Option<Decimal> {
     state
         .financials()
@@ -348,6 +382,189 @@ fn pull_reobserves_an_agreeing_issuer_slot_without_a_disagreement() {
             .iter()
             .all(|outcome| outcome.reason_code != "witness_disagreement"),
         "no witness_disagreement is recorded on agreement: {flagged:?}"
+    );
+}
+
+#[test]
+fn pull_corroborates_an_agreeing_issuer_slot_and_upgrades_the_verdict() {
+    // Epic #229 T5 deliverable 1 (ADR 0086 dec. 4, positive half): agreement was
+    // the silent case — BR reading the same figure as the issuer's own filing
+    // left NOTHING behind. It now stamps the witness columns and upgrades an
+    // `unreviewed`/`passed` verdict to `witness_confirmed`.
+    let (state, company_id) = state_with_company();
+    seed_fact(
+        &state,
+        &company_id,
+        "inventories",
+        2008,
+        1_373_000,
+        "esef",
+        "api",
+    );
+    let (fetcher, _) = MapFetcher::new(&[(AggregatorPageKind::Balance, BILANS)]);
+    let state = state.with_fundamentals_witness_fetcher(fetcher);
+
+    let summary = run_aggregator_fundamentals_pull(&state).expect("pull runs");
+
+    assert!(
+        summary.witness_corroborations >= 1,
+        "an agreeing issuer slot is corroborated: {summary:?}"
+    );
+    assert_eq!(summary.witness_disagreements, 0);
+    let provenance = provenance_of(&state, &company_id, 2008, "inventories")
+        .expect("the issuer fact keeps its provenance row");
+    assert_eq!(
+        provenance.validation_status, "witness_confirmed",
+        "an independently corroborated issuer value is witness_confirmed: {provenance:?}"
+    );
+    assert_eq!(
+        provenance
+            .witness_value
+            .as_deref()
+            .map(|v| v.parse::<Decimal>().expect("witness value parses")),
+        Some(Decimal::from(1_373_000)),
+        "the aggregator's own figure is stamped: {provenance:?}"
+    );
+    assert!(
+        provenance
+            .witness_page_url
+            .as_deref()
+            .is_some_and(|url| url.contains("biznesradar.pl")),
+        "the evidence page is stamped: {provenance:?}"
+    );
+    assert!(
+        provenance.corroborated_at.is_some(),
+        "the corroboration is timestamped: {provenance:?}"
+    );
+    assert_eq!(
+        provenance.source_tier, "esef",
+        "corroboration never re-labels the tier that produced the value"
+    );
+}
+
+#[test]
+fn pull_stamps_a_manual_slot_without_touching_its_verdict() {
+    // ADR 0086 dec. 3 posture: a hand-entered value is the user's, so the witness
+    // is RECORDED beside it but the automaton never re-labels it
+    // `witness_confirmed`. Within tolerance (0.5%) counts as agreement, so this
+    // also exercises the SkippedHigherTier-but-agreeing branch.
+    let (state, company_id) = state_with_company();
+    seed_fact(
+        &state,
+        &company_id,
+        "inventories",
+        2008,
+        1_373_100, // 0.007% off the aggregator's 1 373 000 — inside tolerance
+        "manual",
+        "manual",
+    );
+    let (fetcher, _) = MapFetcher::new(&[(AggregatorPageKind::Balance, BILANS)]);
+    let state = state.with_fundamentals_witness_fetcher(fetcher);
+
+    let summary = run_aggregator_fundamentals_pull(&state).expect("pull runs");
+
+    assert_eq!(
+        stored(&state, &company_id, 2008, "inventories"),
+        Some(Decimal::from(1_373_100)),
+        "the manual value is never overwritten, corroborated or not"
+    );
+    assert_eq!(
+        summary.witness_disagreements, 0,
+        "inside tolerance is agreement, not a disagreement: {summary:?}"
+    );
+    assert!(summary.witness_corroborations >= 1, "{summary:?}");
+    let provenance = provenance_of(&state, &company_id, 2008, "inventories")
+        .expect("a manual slot gains a provenance row carrying only the witness stamp");
+    assert_ne!(
+        provenance.validation_status, "witness_confirmed",
+        "a manual verdict is NEVER upgraded by the automaton: {provenance:?}"
+    );
+    assert!(
+        provenance.witness_value.is_some() && provenance.corroborated_at.is_some(),
+        "the witness columns are stamped even on a manual slot: {provenance:?}"
+    );
+    // The read-model invariant holds: a hand-entered value still counts in the
+    // manual bucket, never as a pipeline tier (the rebuild verdict's promise).
+    let breakdown = state
+        .fundamentals_provenance()
+        .count_facts_by_tier()
+        .expect("tier breakdown");
+    assert!(
+        breakdown.manual_or_unprovenanced >= 1,
+        "the manual fact stays in the manual bucket: {breakdown:?}"
+    );
+    assert!(
+        breakdown
+            .by_tier
+            .iter()
+            .all(|entry| entry.source_tier != "manual"),
+        "the manual stamp is never reported as a pipeline tier: {breakdown:?}"
+    );
+}
+
+#[test]
+fn pull_never_self_witnesses_its_own_slot() {
+    // No self-witnessing: the aggregator re-reading its OWN stored value is not
+    // corroboration — a second look at the same source proves nothing.
+    let (state, company_id) = state_with_company();
+    let (fetcher, _) = MapFetcher::new(&[(AggregatorPageKind::Balance, BILANS)]);
+    let state = state.with_fundamentals_witness_fetcher(fetcher);
+
+    run_aggregator_fundamentals_pull(&state).expect("first pull");
+    let summary = run_aggregator_fundamentals_pull(&state).expect("second pull re-observes");
+
+    assert!(
+        summary.facts_reobserved >= 1,
+        "the second pull re-observes its own facts: {summary:?}"
+    );
+    assert_eq!(
+        summary.witness_corroborations, 0,
+        "the aggregator never corroborates itself: {summary:?}"
+    );
+    let provenance = provenance_of(&state, &company_id, 2008, "inventories")
+        .expect("the aggregator fact has provenance");
+    assert_eq!(provenance.source_tier, "html_aggregator");
+    assert_eq!(
+        provenance.witness_value, None,
+        "no self-witness stamp: {provenance:?}"
+    );
+    assert_eq!(provenance.corroborated_at, None);
+    assert_eq!(
+        provenance.validation_status, "unreviewed",
+        "a self-read never upgrades the verdict: {provenance:?}"
+    );
+}
+
+#[test]
+fn a_disagreeing_issuer_slot_is_flagged_and_never_corroborated() {
+    // The negative half is unchanged AND exclusive: a divergence records the
+    // disagreement and stamps no corroboration.
+    let (state, company_id) = state_with_company();
+    seed_fact(
+        &state,
+        &company_id,
+        "current_assets",
+        2008,
+        999,
+        "esef",
+        "api",
+    );
+    let (fetcher, _) = MapFetcher::new(&[(AggregatorPageKind::Balance, BILANS)]);
+    let state = state.with_fundamentals_witness_fetcher(fetcher);
+
+    let summary = run_aggregator_fundamentals_pull(&state).expect("pull runs");
+
+    assert!(summary.witness_disagreements >= 1, "{summary:?}");
+    let provenance = provenance_of(&state, &company_id, 2008, "current_assets")
+        .expect("the issuer fact keeps its provenance row");
+    assert_eq!(
+        provenance.witness_value, None,
+        "a disagreement stamps no corroboration: {provenance:?}"
+    );
+    assert_eq!(provenance.corroborated_at, None);
+    assert_eq!(
+        provenance.validation_status, "unreviewed",
+        "a disagreeing witness never upgrades the verdict: {provenance:?}"
     );
 }
 
@@ -615,6 +832,12 @@ fn every_zero_effect_aggregator_state_names_a_reason() {
     assert_eq!(with(|s| s.facts_updated = 1), EffectVerdict::Produced);
     assert_eq!(
         with(|s| s.witness_disagreements = 1),
+        EffectVerdict::Produced
+    );
+    // A recorded corroboration is equally an effect (epic #229 T5): no fact was
+    // written, but "an independent source read the same figure" was persisted.
+    assert_eq!(
+        with(|s| s.witness_corroborations = 1),
         EffectVerdict::Produced
     );
     // No tracked companies: nothing was asked of the pull.

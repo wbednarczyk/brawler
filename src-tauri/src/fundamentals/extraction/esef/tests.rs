@@ -177,6 +177,58 @@ fn untracked_concepts_are_ignored() {
 }
 
 #[test]
+fn divide_unit_currency_is_the_numerator_measure() {
+    // #93: an EPS unit is a RATIO — `iso4217:PLN` per `xbrli:shares` — declared
+    // as an `xbrli:divide` with a numerator and a denominator measure. The unit's
+    // currency is the NUMERATOR; taking the last measure seen made every
+    // eps_basic / eps_diluted fact land with currency = "shares".
+    let xml = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2023/ifrs-full"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+      <ix:header><ix:resources>
+        <xbrli:context id="c-d">
+          <xbrli:period>
+            <xbrli:startDate>2024-01-01</xbrli:startDate>
+            <xbrli:endDate>2024-12-31</xbrli:endDate>
+          </xbrli:period>
+        </xbrli:context>
+        <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+        <xbrli:unit id="pln-per-share">
+          <xbrli:divide>
+            <xbrli:unitNumerator><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unitNumerator>
+            <xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unitDenominator>
+          </xbrli:divide>
+        </xbrli:unit>
+      </ix:resources></ix:header>
+      <p>Zysk na akcję: <ix:nonFraction name="ifrs-full:BasicEarningsLossPerShare" contextRef="c-d" unitRef="pln-per-share" scale="0" format="ixt:num-comma-decimal">3,21</ix:nonFraction></p>
+      <p>Rozwodniony: <ix:nonFraction name="ifrs-full:DilutedEarningsLossPerShare" contextRef="c-d" unitRef="pln-per-share" scale="0" format="ixt:num-comma-decimal">3,15</ix:nonFraction></p>
+      <p>Przychody: <ix:nonFraction name="ifrs-full:Revenue" contextRef="c-d" unitRef="pln" scale="3">12 000</ix:nonFraction></p>
+    </html>"#;
+    let facts = parse_esef(xml.as_bytes()).unwrap();
+    let eps = facts
+        .iter()
+        .find(|f| f.metric_key == "eps_basic")
+        .expect("eps_basic is extracted");
+    assert_eq!(
+        eps.currency.as_deref(),
+        Some("PLN"),
+        "a divide unit resolves to its numerator currency, not the shares denominator"
+    );
+    let diluted = facts
+        .iter()
+        .find(|f| f.metric_key == "eps_diluted")
+        .expect("eps_diluted is extracted");
+    assert_eq!(diluted.currency.as_deref(), Some("PLN"));
+    // A simple single-measure unit in the same document is unaffected.
+    let revenue = facts
+        .iter()
+        .find(|f| f.metric_key == "revenue")
+        .expect("revenue is extracted");
+    assert_eq!(revenue.currency.as_deref(), Some("PLN"));
+}
+
+#[test]
 fn dedup_keeps_longest_duration() {
     // Both a 3-month and a YTD revenue end on the report date; keep the YTD.
     let xml = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance">

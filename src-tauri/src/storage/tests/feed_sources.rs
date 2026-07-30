@@ -1481,6 +1481,71 @@ fn attachment_guard_accepts_group_filing_via_article_title() {
     );
 }
 
+/// (f) Epic #229 T3 (#140 re-diagnosis): a MISLEADING SLUG MUST NEVER DELETE.
+/// Real strings from the maintainer's database — cyber_Folks' own H1-2024
+/// consolidated statement is served under a `Vercom` filename, and the OCR spike
+/// read that filename as evidence of mis-association. Content says otherwise:
+/// the stored bytes' PDF `/Author` is `cyber_Folks`. The row must register.
+#[test]
+fn attachment_guard_keeps_owner_filing_under_a_foreign_named_slug() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let owner = seed_named_company(&state, "CBF", "cyber_Folks S.A.");
+    seed_named_company(&state, "VRC", "VERCOM S.A.");
+
+    state
+        .ingest_bankier_company_items(&bankier_item_with_attachment(
+            &owner,
+            "Raport okresowy za I polrocze 2024",
+            "cyber_Folks_2024_Q2_SSF.pdf",
+            "https://www.bankier.pl/static/att/emitent/2024-09/\
+             raport_SSF_Vercom_SA_Q2_2024_202409030407872091.pdf",
+        ))
+        .expect("items should ingest");
+
+    let docs = state
+        .list_report_documents_by_company(&owner.id)
+        .expect("documents should list");
+    assert_eq!(
+        docs.len(),
+        1,
+        "the owner's own statement must survive a foreign issuer's URL slug"
+    );
+}
+
+/// (g) The same rule read the other way (epic #229 T3): the URL is not evidence
+/// of OWNERSHIP either. A filing whose title names a different tracked issuer is
+/// rejected even when the owner's name appears in the URL — a slug that names the
+/// wrong company is naming a different filing, so it can neither delete a row nor
+/// save one. Measured before shipping: 0 rows of the maintainer's 737 periodic
+/// `espi_attachment` rows change verdict, so the tightening is inert on real data
+/// and only shapes what a future contaminated slug can do.
+#[test]
+fn attachment_guard_rejects_foreign_titled_filing_named_only_in_the_url() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let owner = seed_named_company(&state, "CDR", "CD PROJEKT S.A.");
+    seed_named_company(&state, "VRC", "VERCOM S.A.");
+
+    state
+        .ingest_bankier_company_items(&bankier_item_with_attachment(
+            &owner,
+            "Skonsolidowany raport kwartalny QSr 1/2025",
+            "VERCOM SA - Skonsolidowany raport okresowy.xhtml",
+            "https://bonnier.pl/static/att/emitent/2025-05/cd-projekt-2025-q1.xhtml",
+        ))
+        .expect("items should ingest");
+
+    let docs = state
+        .list_report_documents_by_company(&owner.id)
+        .expect("documents should list");
+    assert!(
+        docs.is_empty(),
+        "an owner mention found only in the URL must not save a Vercom-titled \
+         statement filed under CDR: {docs:?}"
+    );
+}
+
 fn seed_report_document(state: &AppState, id: &str, company: &Company, title: &str, url: &str) {
     let connection = state.checkout().expect("database connection");
     connection

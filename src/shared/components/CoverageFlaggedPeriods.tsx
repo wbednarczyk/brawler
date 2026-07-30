@@ -8,6 +8,7 @@ import {
 import type { ExtractionOutcome } from "../../api/fundamentalsExtraction";
 import { useLocale } from "../locale";
 import type { LocaleCode } from "../locale";
+import { localizedKpiLabelForKey } from "../locale/kpiLabels";
 import { formatFinancialValue } from "../format/financialValue";
 import {
   Button,
@@ -43,6 +44,8 @@ function reasonLabel(code: string, text: Translate): string {
       return text("The report's layout changed");
     case "witness_disagreement":
       return text("A second source reported different figures");
+    case "value_divergence":
+      return text("Re-reading the report gave a different figure than the one on file");
     case "no_deterministic_tier":
       return text("No reader could handle this document");
     case "no_period_derived":
@@ -89,6 +92,17 @@ function tierLabel(tier: string | null, text: Translate): string {
   }
 }
 
+// Whether a flagged row's cause can be re-attempted by re-extracting a stored
+// document. A `witness_disagreement` row's slot is an AGGREGATOR PAGE, not a
+// document (its ref is `pageUrl#metricKey`), so there is nothing to re-read —
+// the backend refuses such a request with the typed `rerun_not_applicable` code,
+// and an action that cannot work must never be offered. A `value_divergence` row
+// DOES name a real document (`documentId#metricKey`), so it keeps the action:
+// the backend strips the per-metric suffix and re-extracts the document.
+function isRerunnable(outcome: Pick<ExtractionOutcome, "reasonCode">): boolean {
+  return outcome.reasonCode !== "witness_disagreement";
+}
+
 // Period label matching the coverage table's idiom (`2025 Q3`, `2024 FY`). The
 // SENTINEL period — `fiscalYear: 0` with an empty `periodType` — is what a
 // `no_period_derived` failure carries, because a period-less failure has no slot
@@ -113,7 +127,14 @@ export function flaggedPeriodLabel(
 // empty-array noise never reach the user (owner dogfooding, 2026-07-21). Any
 // UNKNOWN shape still falls through to the generic label/value flatten rather
 // than being dropped: unfamiliar evidence is shown, never swallowed.
-const GATE_DETAIL_KEYS = ["failedIdentities", "failedCrossChecks", "witnessDisagreements"] as const;
+const GATE_DETAIL_KEYS = [
+  "failedIdentities",
+  "failedCrossChecks",
+  "witnessDisagreements",
+  // Epic #229 T5 (#192): a re-read of a stored slot disagreed with the committed
+  // value. `actual` = the value on file, `expected` = the freshly read one.
+  "valueDivergences",
+] as const;
 
 function formatGateAmount(raw: unknown, locale: LocaleCode): string | null {
   const numeric = String(raw ?? "").trim();
@@ -138,6 +159,13 @@ function gateCheckValue(
       .replace("{actual}", actual)
       .replace("{expected}", expected);
   }
+  if (kind === "valueDivergences") {
+    // `actual` is the figure already on file, `expected` the fresh re-read. The
+    // stored value is KEPT — this states the disagreement, never resolves it.
+    return text("on file {actual}, re-read from the report {expected}")
+      .replace("{actual}", actual)
+      .replace("{expected}", expected);
+  }
   const residual = formatGateAmount(detail.residual, locale);
   const base = text("reported {actual}, expected {expected}")
     .replace("{actual}", actual)
@@ -146,11 +174,17 @@ function gateCheckValue(
   return `${base} ${text("(difference {residual})").replace("{residual}", residual)}`;
 }
 
-function gateCheckLabel(element: Record<string, unknown>, text: Translate): string {
+function gateCheckLabel(
+  element: Record<string, unknown>,
+  text: Translate,
+  locale: LocaleCode,
+): string {
   if (element.id === "balance_sheet_identity") return text("Assets = Liabilities + Equity");
   if (typeof element.label === "string" && element.label.trim() !== "") return element.label;
   if (typeof element.metricKey === "string" && element.metricKey.trim() !== "") {
-    return element.metricKey;
+    // A metric name is a KPI display name: it goes through the locale map, never
+    // as the raw catalog key (ui-authoring § i18n).
+    return localizedKpiLabelForKey(element.metricKey, locale);
   }
   return text("Failing check");
 }
@@ -185,7 +219,7 @@ function detailItems(detailJson: string | null, text: Translate, locale: LocaleC
         : record;
     const value = gateCheckValue(detail, kind, text, locale);
     if (value !== null) {
-      entries.push({ label: gateCheckLabel(record, text), value });
+      entries.push({ label: gateCheckLabel(record, text, locale), value });
     } else {
       pushObject(record);
     }
@@ -353,15 +387,23 @@ export function CoverageFlaggedPeriods({
                   </div>
                 }
                 actions={
-                  <Button
-                    variant="secondary"
-                    className="coverage-flagged-rerun"
-                    disabled={rerunningId !== null}
-                    onClick={() => void rerun(outcome)}
-                  >
-                    <RefreshCw size={14} aria-hidden="true" />
-                    {isRerunning ? text("Trying again…") : text("Try again")}
-                  </Button>
+                  isRerunnable(outcome) ? (
+                    <Button
+                      variant="secondary"
+                      className="coverage-flagged-rerun"
+                      disabled={rerunningId !== null}
+                      onClick={() => void rerun(outcome)}
+                    >
+                      <RefreshCw size={14} aria-hidden="true" />
+                      {isRerunning ? text("Trying again…") : text("Try again")}
+                    </Button>
+                  ) : (
+                    // The slot has no document to re-read. Say why in the row
+                    // rather than leaving a bare gap where every neighbour has a
+                    // control (ui-authoring: the optional-action slot is reserved,
+                    // never silently empty).
+                    <Hint>{text("Nothing to re-read")}</Hint>
+                  )
                 }
               >
                 {/* Two lines, not four columns. The identity line holds the FIXED

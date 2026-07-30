@@ -1304,6 +1304,171 @@ fn migration_0098_maps_debt_collectors_but_not_investment_holdings() {
 }
 
 #[test]
+fn migration_0121_adds_detected_container_null_and_leaves_old_rows_untouched() {
+    // Epic #229 T2 (#193): 0121 appends `report_documents.detected_container`.
+    // Append-only + tolerant-read guard — a row stored before the column must
+    // upgrade cleanly, keep every other value, and read back NULL ("not yet
+    // sniffed"), which the resolver falls back from and the startup self-heal
+    // fills. There is deliberately NO SQL backfill: SQL cannot read file bytes.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 120).expect("apply schema through 0120");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO report_documents
+                (id, company_id, source_type, url, local_path, content_type, fetch_status, doc_kind)
+             VALUES ('legacy_doc', 'c1', 'espi_attachment', 'https://x/ssf.pdf',
+                     'report_documents/legacy_doc.pdf', 'application/octet-stream',
+                     'fetched', 'periodic_ssf')",
+            [],
+        )
+        .expect("seed a legacy report document on the pre-0121 schema");
+
+    apply_migrations(&mut connection).expect("upgrade to latest");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "upgrade should reach the latest migration",
+    );
+
+    let (container, local_path, content_type, kind): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = connection
+        .query_row(
+            "SELECT detected_container, local_path, content_type, doc_kind
+             FROM report_documents WHERE id = 'legacy_doc'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("the new column is present and readable on the legacy row");
+    assert_eq!(
+        container, None,
+        "a legacy row is NULL — not yet sniffed, never a guessed value"
+    );
+    assert_eq!(
+        local_path,
+        Some("report_documents/legacy_doc.pdf".to_owned()),
+        "the append must not disturb existing columns",
+    );
+    assert_eq!(content_type, Some("application/octet-stream".to_owned()));
+    assert_eq!(kind, Some("periodic_ssf".to_owned()));
+
+    // Idempotent: re-running the runner neither errors nor rewrites the column.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    let after: Option<String> = connection
+        .query_row(
+            "SELECT detected_container FROM report_documents WHERE id = 'legacy_doc'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read back after re-run");
+    assert_eq!(after, None);
+}
+
+#[test]
+fn migration_0120_repairs_eps_shares_currency_and_spares_every_other_fact() {
+    // #93 (epic #229 T4): the ESEF divide-unit bug stored 76 EPS facts (38
+    // eps_basic + 38 eps_diluted) with currency = 'shares' — the denominator of
+    // the `iso4217:PLN / xbrli:shares` ratio unit. The repair rewrites exactly
+    // that class to PLN and touches nothing else.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 119).expect("apply schema through 0119");
+
+    let def_id = |conn: &rusqlite::Connection, key: &str| -> String {
+        conn.query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'canonical'",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("seeded canonical definition for {key}"))
+    };
+    let def_basic = def_id(&connection, "eps_basic");
+    let def_diluted = def_id(&connection, "eps_diluted");
+    let def_revenue = def_id(&connection, "revenue");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.');
+             INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+                VALUES ('per_fy', 'cdr', 2024, 'FY', '2024-12-31'),
+                       ('per_fy23', 'cdr', 2023, 'FY', '2023-12-31');",
+        )
+        .expect("seed company + periods");
+
+    connection
+        .execute(
+            "INSERT INTO financial_facts
+                (id, company_id, period_id, definition_id, value_numeric, currency, extraction_method)
+             VALUES
+                -- The bug class: both EPS metrics carrying the shares denominator.
+                ('f_basic',   'cdr', 'per_fy', ?1, '3.21', 'shares', 'esef'),
+                ('f_diluted', 'cdr', 'per_fy', ?2, '3.15', 'shares', 'esef'),
+                -- Controls: an already-correct EPS fact, an EPS fact reported in
+                -- another currency, and a non-EPS fact (whatever its currency).
+                ('f_ok',      'cdr', 'per_fy23', ?1, '3.21', 'PLN',  'esef'),
+                ('f_eur',     'cdr', 'per_fy23', ?2, '0.75', 'EUR',  'esef'),
+                ('f_revenue', 'cdr', 'per_fy', ?3, '1200', 'PLN',    'esef')",
+            rusqlite::params![def_basic, def_diluted, def_revenue],
+        )
+        .expect("seed facts");
+    // A control fact that is NOT an EPS metric yet carries the same non-ISO unit:
+    // the repair is deliberately scoped to the audited class and must skip it.
+    connection
+        .execute(
+            "UPDATE financial_facts SET currency = 'shares' WHERE id = 'f_revenue'",
+            [],
+        )
+        .expect("force the non-EPS control");
+
+    apply_migrations(&mut connection).expect("apply migration 0120");
+
+    fn currency(conn: &rusqlite::Connection, id: &str) -> Option<String> {
+        conn.query_row(
+            "SELECT currency FROM financial_facts WHERE id = ?1",
+            [id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .expect("currency")
+    }
+
+    assert_eq!(currency(&connection, "f_basic").as_deref(), Some("PLN"));
+    assert_eq!(currency(&connection, "f_diluted").as_deref(), Some("PLN"));
+    assert_eq!(
+        currency(&connection, "f_ok").as_deref(),
+        Some("PLN"),
+        "an already-correct EPS fact is untouched"
+    );
+    assert_eq!(
+        currency(&connection, "f_eur").as_deref(),
+        Some("EUR"),
+        "a non-PLN EPS fact must never be rewritten"
+    );
+    assert_eq!(
+        currency(&connection, "f_revenue").as_deref(),
+        Some("shares"),
+        "a non-EPS metric is outside the audited class"
+    );
+
+    // Idempotent: nothing matches 'shares' among the EPS metrics any more.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(currency(&connection, "f_basic").as_deref(), Some("PLN"));
+    assert_eq!(
+        currency(&connection, "f_revenue").as_deref(),
+        Some("shares")
+    );
+}
+
+#[test]
 fn migration_0099_repairs_only_the_misscaled_cdr_q3_2023_facts() {
     // Card e6ebda3: the v0.57 backfill mis-scaled CDR Q3 2023 current_assets /
     // current_liabilities ×1000 (a bare "mln zł" prose token wrongly flipped the
@@ -3319,4 +3484,396 @@ fn migration_0119_recounts_zero_effect_rows_and_names_superseded() {
         row(&connection, "fxo_super"),
         ("facts_superseded".to_owned(), 0)
     );
+}
+
+#[test]
+fn migration_0122_adds_witness_columns_null_and_keeps_prior_provenance() {
+    // Epic #229 T5: 0122 appends the positive-corroboration columns to
+    // `financial_fact_provenance`. Append-only + tolerant-read guard — a row
+    // stored before the columns must upgrade cleanly, keep every other value,
+    // and read back NULL ("never corroborated", never "disagreed").
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 121).expect("apply schema through 0121");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    seed_period(&connection, "p1", "c1", 2025, "FY");
+    connection
+        .execute(
+            "INSERT INTO financial_facts (id, company_id, period_id, definition_id, value_numeric)
+             VALUES ('f1', 'c1', 'p1', 'kpidef_net_profit', '100')",
+            [],
+        )
+        .expect("seed a fact");
+    connection
+        .execute(
+            "INSERT INTO financial_fact_provenance
+                (fact_id, source_tier, validation_status, citation)
+             VALUES ('f1', 'esef', 'passed', 'ifrs-full:ProfitLoss')",
+            [],
+        )
+        .expect("seed a pre-0122 provenance row");
+
+    apply_migrations(&mut connection).expect("upgrade to latest");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "upgrade should reach the latest migration",
+    );
+
+    let (tier, status, citation, witness_value, witness_page_url, corroborated_at): (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = connection
+        .query_row(
+            "SELECT source_tier, validation_status, citation,
+                    witness_value, witness_page_url, corroborated_at
+             FROM financial_fact_provenance WHERE fact_id = 'f1'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .expect("the legacy provenance row survives the upgrade");
+    assert_eq!(tier, "esef");
+    assert_eq!(
+        status, "passed",
+        "the verdict is never rewritten by a column add"
+    );
+    assert_eq!(citation.as_deref(), Some("ifrs-full:ProfitLoss"));
+    assert_eq!(witness_value, None, "no corroboration is invented");
+    assert_eq!(witness_page_url, None);
+    assert_eq!(corroborated_at, None);
+}
+
+#[test]
+fn migration_0123_admits_value_divergence_and_loses_no_outcome_row() {
+    // Epic #229 T5 (#192 residual): 0123 widens the outcome `reason_code` CHECK
+    // with `value_divergence` through the 0119 table-rebuild shape. The rebuild
+    // must lose nothing, and the pre-0123 CHECK must genuinely reject the code —
+    // otherwise this test would pass vacuously.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 122).expect("apply schema through 0122");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    connection
+        .execute(
+            "INSERT INTO fundamentals_extraction_outcomes
+                (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                 tier, acceptance, reason_code, detail_json, fact_count, attempt_count)
+             VALUES ('fxo_keep', 'c1', 'doc1', 2025, 'FY', '2025-12-31',
+                 'esef', 'accepted', 'emitted', '{\"a\":1}', 7, 3)",
+            [],
+        )
+        .expect("seed a pre-0123 outcome");
+
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO fundamentals_extraction_outcomes
+                    (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                     acceptance, reason_code)
+                 VALUES ('fxo_pre', 'c1', 'doc2', 2025, 'FY', '2025-12-31',
+                     'flagged', 'value_divergence')",
+                [],
+            )
+            .is_err(),
+        "the pre-0123 CHECK should not admit value_divergence"
+    );
+
+    apply_migrations(&mut connection).expect("apply migration 0123");
+
+    let (tier, acceptance, reason, detail, facts, attempts): (
+        Option<String>,
+        String,
+        String,
+        Option<String>,
+        i64,
+        i64,
+    ) = connection
+        .query_row(
+            "SELECT tier, acceptance, reason_code, detail_json, fact_count, attempt_count
+             FROM fundamentals_extraction_outcomes WHERE id = 'fxo_keep'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .expect("the pre-0123 outcome survives the rebuild");
+    assert_eq!(tier.as_deref(), Some("esef"));
+    assert_eq!(acceptance, "accepted");
+    assert_eq!(reason, "emitted");
+    assert_eq!(detail.as_deref(), Some("{\"a\":1}"));
+    assert_eq!((facts, attempts), (7, 3), "counters survive the rebuild");
+
+    connection
+        .execute(
+            "INSERT INTO fundamentals_extraction_outcomes
+                (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                 acceptance, reason_code)
+             VALUES ('fxo_post', 'c1', 'doc2', 2025, 'FY', '2025-12-31',
+                 'flagged', 'value_divergence')",
+            [],
+        )
+        .expect("value_divergence must be admitted after 0123");
+
+    // The slot unique index survives the rebuild: the same slot upserts, never
+    // duplicates.
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO fundamentals_extraction_outcomes
+                    (id, company_id, report_document_id, fiscal_year, period_type, period_end,
+                     acceptance, reason_code)
+                 VALUES ('fxo_dupe', 'c1', 'doc2', 2025, 'FY', '2025-12-31',
+                     'flagged', 'value_divergence')",
+                [],
+            )
+            .is_err(),
+        "the slot unique index must survive the rebuild"
+    );
+
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+}
+
+#[test]
+fn migration_0124_heals_companies_missing_core_kpi_relevance() {
+    // #203 residual (epic #229 T7): migration 0106 seeded the IFRS core set for
+    // the companies that existed WHEN IT APPLIED. Two companies on the owner's
+    // database were created afterwards and hold ZERO kpi_relevance rows, so
+    // `expected_primary_metric_keys` returns None and the completeness check
+    // never fires for them. 0124 re-runs 0106's statement, curated rows intact.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 123).expect("apply schema through 0123");
+
+    let def_id = |conn: &rusqlite::Connection, key: &str| -> String {
+        conn.query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'canonical'",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("seeded canonical definition for {key}"))
+    };
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('gap', 'GPW', 'ALE', 'GPW:ALE', 'Allegro'),
+                       ('curated', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.');",
+        )
+        .expect("seed the gap company and the curated one");
+
+    // The curated company already holds a hand-ranked `revenue` row: the seed
+    // must fill the OTHER four around it and leave this one exactly as it is.
+    connection
+        .execute(
+            "INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+             VALUES ('kpirel_user_curated_revenue', 'curated', ?1, 'retired', 'user', 'secondary')",
+            [def_id(&connection, "revenue")],
+        )
+        .expect("seed the curated row");
+
+    apply_migrations(&mut connection).expect("apply migration 0124");
+
+    let core_keys = |conn: &rusqlite::Connection, company: &str| -> Vec<String> {
+        let mut statement = conn
+            .prepare(
+                "SELECT d.metric_key
+                 FROM kpi_relevance r
+                 JOIN kpi_definitions d ON d.id = r.definition_id
+                 WHERE r.company_id = ?1 AND r.source = 'core'
+                 ORDER BY d.metric_key",
+            )
+            .expect("prepare");
+        let rows = statement
+            .query_map([company], |row| row.get::<_, String>(0))
+            .expect("query");
+        rows.collect::<Result<Vec<_>, _>>().expect("collect")
+    };
+
+    assert_eq!(
+        core_keys(&connection, "gap"),
+        vec![
+            "net_profit".to_owned(),
+            "operating_profit".to_owned(),
+            "revenue".to_owned(),
+            "total_assets".to_owned(),
+            "total_equity".to_owned(),
+        ],
+        "the gap company gets the full 0106 core set"
+    );
+
+    assert_eq!(
+        core_keys(&connection, "curated"),
+        vec![
+            "net_profit".to_owned(),
+            "operating_profit".to_owned(),
+            "total_assets".to_owned(),
+            "total_equity".to_owned(),
+        ],
+        "the curated metric is filled around, never re-seeded"
+    );
+
+    let curated: (String, String, Option<String>) = connection
+        .query_row(
+            "SELECT status, source, rank FROM kpi_relevance WHERE id = 'kpirel_user_curated_revenue'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the curated row must survive");
+    assert_eq!(curated.0, "retired");
+    assert_eq!(curated.1, "user");
+    assert_eq!(curated.2.as_deref(), Some("secondary"));
+
+    // Deterministic 0106-shaped ids, so re-applying converges.
+    let seeded_id: String = connection
+        .query_row(
+            "SELECT id FROM kpi_relevance WHERE company_id = 'gap' AND source = 'core'
+             AND definition_id = (SELECT id FROM kpi_definitions
+                                  WHERE metric_key = 'revenue' AND scope = 'canonical')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("seeded id");
+    assert_eq!(seeded_id, "kpirel_core_gap_revenue");
+
+    let before: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    let after: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(before, after, "the seed converges instead of accumulating");
+}
+
+#[test]
+fn migration_0125_rekeys_scope_blind_definition_ids_and_repoints_every_reference() {
+    // #149 (epic #229 T7): `kpi_definition_id` built the PRIMARY KEY from
+    // `metric_key` alone, so a company/sector-scoped definition squatted on the
+    // bare `kpidef_<key>` id that belongs to the canonical concept. 0125 moves
+    // those rows onto scope-discriminated ids and re-points every FK'd child —
+    // with `PRAGMA foreign_keys = ON`, which is how the runner runs.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .expect("enforce foreign keys");
+    apply_migrations_up_to(&mut connection, 123).expect("apply schema through 0123");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.');
+             INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+                VALUES ('per_fy', 'cdr', 2024, 'FY', '2024-12-31');
+             -- The bug class: a company-scoped definition on the bare id, with a
+             -- fact and a relevance row hanging off it.
+             INSERT INTO kpi_definitions (id, scope, company_id, metric_key, label, value_kind)
+                VALUES ('kpidef_backlog', 'company', 'cdr', 'backlog', 'Backlog', 'monetary');
+             INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+                VALUES ('kpirel_backlog', 'cdr', 'kpidef_backlog', 'active', 'user', 'primary');
+             INSERT INTO financial_facts (id, company_id, period_id, definition_id, value_numeric)
+                VALUES ('fact_backlog', 'cdr', 'per_fy', 'kpidef_backlog', '1234');",
+        )
+        .expect("seed the pre-fix state");
+
+    let canonical_revenue: String = connection
+        .query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = 'revenue' AND scope = 'canonical'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("canonical revenue");
+
+    apply_migrations(&mut connection).expect("apply migration 0125");
+
+    // Re-keyed, with the scope discriminator; nothing was dropped.
+    let rekeyed: (String, String, Option<String>) = connection
+        .query_row(
+            "SELECT id, scope, company_id FROM kpi_definitions WHERE metric_key = 'backlog'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the company-scoped definition must survive the re-key");
+    assert_eq!(rekeyed.0, "kpidef_backlog__c_cdr");
+    assert_eq!(rekeyed.1, "company");
+    assert_eq!(rekeyed.2.as_deref(), Some("cdr"));
+
+    // Both children follow the parent — nothing was cascade-deleted.
+    let relevance: String = connection
+        .query_row(
+            "SELECT definition_id FROM kpi_relevance WHERE id = 'kpirel_backlog'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the relevance row must survive and follow the parent");
+    assert_eq!(relevance, "kpidef_backlog__c_cdr");
+    let fact: String = connection
+        .query_row(
+            "SELECT definition_id FROM financial_facts WHERE id = 'fact_backlog'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the fact must survive and follow the parent");
+    assert_eq!(fact, "kpidef_backlog__c_cdr");
+
+    // The canonical rows and the curated sector packs (own id shape) are not touched.
+    assert_eq!(canonical_revenue, "kpidef_revenue");
+    let sector_pack: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM kpi_definitions WHERE id = 'kpidef_bank_nim'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(sector_pack, 1, "curated sector packs keep their ids");
+
+    // The freed bare id is now available to the canonical concept.
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO kpi_definitions (id, scope, metric_key, label, value_kind)
+             VALUES ('kpidef_backlog', 'canonical', 'backlog', 'Backlog', 'monetary')",
+            [],
+        )
+        .expect("insert canonical backlog");
+    let canonical_backlog: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM kpi_definitions WHERE id = 'kpidef_backlog' AND scope = 'canonical'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(
+        canonical_backlog, 1,
+        "a canonical seed for the key is no longer silently ignored"
+    );
+
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
 }

@@ -306,8 +306,15 @@ pub(crate) fn build_candidates(
         if older_type != newer_type {
             continue; // different statement types never pair
         }
-        let source_format =
-            crate::report_diff::SourceFormat::resolve(newer.content_type.as_deref(), &newer.url);
+        // Container truth (epic #229 T2): the diff compares extracted *text*, so a
+        // candidate is only offered when the newer document's real bytes are
+        // readable as one. A ZIP report package or an unrecognised container is
+        // not diffable — offering it would surface a comparison that can only
+        // fail, mislabelled `pdf` by its filename.
+        let Some(source_format) = crate::report_documents_container::resolved_source_format(newer)
+        else {
+            continue;
+        };
         candidates.push(ReportDiffCandidate {
             statement_type: newer_type.as_str().to_owned(),
             source_format: source_format.as_str().to_owned(),
@@ -414,4 +421,87 @@ pub(crate) fn build_diff(
         status: "ok".to_owned(),
         diff: Some(diff),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{
+        open_in_memory_database, AppState, CaptureReportDocumentInput, NewCompany,
+    };
+
+    /// Epic #229 T2. `classify_statement` already refuses an ESEF package as a
+    /// diff candidate — the diff compares parsed statement *bodies*, and a package
+    /// has none — but it refuses it by NAME (`.xbri`/`.zip`). A package stored
+    /// under a `.pdf` name slipped straight through that guard and was offered as a
+    /// `pdf` candidate that could only ever fail. Container truth closes the same
+    /// hole the same way, from the bytes.
+    #[test]
+    fn a_package_stored_under_a_pdf_name_is_not_offered_as_a_diff_candidate() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "DIF".to_owned(),
+                display_name: "Diff S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        let seed = |title: &str, file: &str, container: &str| -> ReportDocument {
+            let document = state
+                .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                    company_id: company.id.clone(),
+                    source_type: "espi_attachment".to_owned(),
+                    url: format!("https://example.com/{file}"),
+                    period_id: None,
+                    origin_ref: None,
+                    title: Some(title.to_owned()),
+                    attribution: None,
+                })
+                .expect("document");
+            state
+                .mark_report_document_fetched(
+                    &document.id,
+                    Some(file),
+                    Some("application/pdf"),
+                    None,
+                    Some(1024),
+                )
+                .expect("mark fetched");
+            state
+                .set_report_document_detected_container(&document.id, container)
+                .expect("stamp container");
+            state.get_report_document(&document.id).expect("reload")
+        };
+
+        let older = seed(
+            "Skonsolidowany raport okresowy Q2 2024 SSF",
+            "ssf_q2_2024.pdf",
+            "pdf",
+        );
+        let newer_pdf = seed(
+            "Skonsolidowany raport okresowy Q3 2024 SSF",
+            "ssf_q3_2024.pdf",
+            "pdf",
+        );
+        let candidates =
+            build_candidates(&state, vec![older.clone(), newer_pdf.clone()]).expect("candidates");
+        assert_eq!(candidates.len(), 1, "two readable PDFs pair up as before");
+        assert_eq!(candidates[0].source_format, "pdf");
+
+        // The same pair, but the newer document's bytes are an ESEF package.
+        let newer_zip = seed(
+            "Skonsolidowany raport okresowy Q3 2024 SSF pakiet",
+            "ssf_q3_2024_pkg.pdf",
+            "zip",
+        );
+        let candidates = build_candidates(&state, vec![older, newer_zip]).expect("candidates");
+        assert!(
+            candidates.is_empty(),
+            "a package has no statement body to diff, whatever its filename claims"
+        );
+    }
 }

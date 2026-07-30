@@ -12,6 +12,7 @@ import type { BackfillProgress } from "../../api/types";
 import { getCompanyAutopilot } from "../../api/autopilot";
 import {
   listFlaggedExtractionOutcomes,
+  listFlaggedFactProvenance,
   rerunExtractionOutcome,
 } from "../../api/fundamentalsExtraction";
 import type { ExtractionOutcome } from "../../api/fundamentalsExtraction";
@@ -30,9 +31,11 @@ vi.mock("../../api/historySweep", () => ({
 vi.mock("../../api/autopilot", () => ({
   getCompanyAutopilot: vi.fn(),
 }));
-// The flagged-periods section (ADR 0061 decision 2) is part of this panel.
+// The flagged-periods (ADR 0061 decision 2) and flagged-figures (epic #229 T5)
+// sections are both part of this panel.
 vi.mock("../../api/fundamentalsExtraction", () => ({
   listFlaggedExtractionOutcomes: vi.fn(),
+  listFlaggedFactProvenance: vi.fn(),
   rerunExtractionOutcome: vi.fn(),
 }));
 
@@ -43,6 +46,7 @@ const getHistorySweepProgressMock = vi.mocked(getHistorySweepProgress);
 const runHistorySweepMock = vi.mocked(runHistorySweep);
 const getCompanyAutopilotMock = vi.mocked(getCompanyAutopilot);
 const listFlaggedExtractionOutcomesMock = vi.mocked(listFlaggedExtractionOutcomes);
+const listFlaggedFactProvenanceMock = vi.mocked(listFlaggedFactProvenance);
 const rerunExtractionOutcomeMock = vi.mocked(rerunExtractionOutcome);
 
 function flaggedOutcome(overrides: Partial<ExtractionOutcome> = {}): ExtractionOutcome {
@@ -133,6 +137,7 @@ describe("CompanyCoveragePanel", () => {
     });
     runHistorySweepMock.mockResolvedValue(sweep({ status: "queued" }));
     listFlaggedExtractionOutcomesMock.mockResolvedValue([]);
+    listFlaggedFactProvenanceMock.mockResolvedValue([]);
     rerunExtractionOutcomeMock.mockResolvedValue({
       acceptance: "accepted",
       tier: "pdf",

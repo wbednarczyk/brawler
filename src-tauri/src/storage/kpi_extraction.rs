@@ -421,8 +421,17 @@ pub enum AggregatorFactCommit {
     /// place with the fresh aggregator value.
     Updated(String),
     /// The slot already held this exact value (aggregator's own or an agreeing
-    /// higher tier) — no write, no change.
-    Reobserved(String),
+    /// higher tier) — no write, no change. The holder's tier/method travel with
+    /// it because exact agreement with an ISSUER or MANUAL slot is the positive
+    /// half of reversed witnessing (ADR 0086 dec. 4, epic #229 T5): the caller
+    /// corroborates that slot, and must not corroborate the aggregator's own.
+    Reobserved {
+        fact_id: String,
+        /// The holder's provenance `source_tier`; `None` for a fact with no
+        /// provenance row (a hand-entered value).
+        existing_tier: Option<String>,
+        existing_method: String,
+    },
     /// The slot is held by a higher-precedence fact (manual / esef /
     /// structured_xhtml / espi_cover_note / positional) — left untouched. The
     /// caller decides whether the divergence warrants an informational
@@ -470,8 +479,17 @@ fn apply_aggregator_precedence(
             Ok(AggregatorFactCommit::Created(fact.id))
         }
         // Slot holds this exact value already — aggregator's own row, or a higher
-        // tier that happens to agree. Either way nothing to write and no conflict.
-        FactWriteOutcome::Reobserved(existing) => Ok(AggregatorFactCommit::Reobserved(existing.id)),
+        // tier that happens to agree. Either way nothing to write and no conflict;
+        // the holder's identity travels out so the caller can tell "my own value
+        // again" (no self-witnessing) from "the issuer/user agrees" (corroboration).
+        FactWriteOutcome::Reobserved(existing) => {
+            let existing_tier = fact_source_tier(connection, &existing.id)?;
+            Ok(AggregatorFactCommit::Reobserved {
+                fact_id: existing.id,
+                existing_tier,
+                existing_method: existing.extraction_method,
+            })
+        }
         FactWriteOutcome::Divergent { existing, incoming } => {
             let existing_tier = fact_source_tier(connection, &existing.id)?;
             if aggregator_owns_slot(existing_tier.as_deref(), &existing.extraction_method) {
@@ -604,6 +622,11 @@ fn aggregator_owns_slot(source_tier: Option<&str>, extraction_method: &str) -> b
 /// a fact — the ONE writer shared by both the structured
 /// ([`record_structured_fact`]) and aggregator ([`record_aggregator_fact`]) paths
 /// (they wrote byte-identical rows before this consolidation).
+///
+/// The witness-corroboration stamp (migration `0122`) is CLEARED here: this
+/// writer runs only where the fact's value was just written or overwritten, and
+/// a stamp recorded against the previous value would otherwise be read as a live
+/// agreement with the new one.
 fn write_fact_provenance(
     connection: &Connection,
     fact_id: &str,
@@ -619,6 +642,9 @@ fn write_fact_provenance(
             validation_status = excluded.validation_status,
             drift_json = excluded.drift_json,
             citation = excluded.citation,
+            witness_value = NULL,
+            witness_page_url = NULL,
+            corroborated_at = NULL,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         ",
         params![
@@ -1221,8 +1247,8 @@ mod tests {
         assert_eq!(fact_count, 2);
 
         let again = record_aggregator_facts(&connection, &inputs).expect("re-batch");
-        assert!(matches!(again[0], AggregatorFactCommit::Reobserved(_)));
-        assert!(matches!(again[1], AggregatorFactCommit::Reobserved(_)));
+        assert!(matches!(again[0], AggregatorFactCommit::Reobserved { .. }));
+        assert!(matches!(again[1], AggregatorFactCommit::Reobserved { .. }));
         assert!(matches!(again[2], AggregatorFactCommit::NoDefinition));
     }
 }

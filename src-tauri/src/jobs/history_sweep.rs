@@ -25,10 +25,11 @@ use serde::{Deserialize, Serialize};
 use crate::app_state::AppState;
 use crate::commands::fundamentals_coverage::{compute_fundamentals_coverage, document_period};
 use crate::fundamentals::extraction::classify::DocKind;
+use crate::fundamentals::extraction::container::Container;
 use crate::jobs::autopilot::{
     enqueue_extraction_run, EnqueueExtractionOutcome, TRIGGER_HISTORY_SWEEP,
 };
-use crate::report_diff::extraction::SourceFormat;
+use crate::report_documents_container::resolved_container;
 use crate::storage::{HistorySweep, HistorySweepOutcome, ReportDocument, MODE_OFF};
 
 /// Durable-queue job kind for one history sweep.
@@ -119,12 +120,17 @@ pub(crate) fn history_sweep_candidates(
 const IXBRL_SNIFF_BYTES: u64 = 64 * 1024;
 
 /// Whether a fetched periodic document could be extracted by SOME tier: a PDF
-/// (tier-4-eligible), an ESEF report package (`.xbri`/`.zip`, which resolve to
-/// `Pdf` here), an iXBRL instance (a bare `.xhtml`/`.html` carrying `ix:` tags),
-/// **or** a non-iXBRL XHTML — a pdf2htmlEX render — now that the tier-3b positional
-/// parser reads those (ADR 0077 T-B2). The only remaining non-extractable case is a
-/// document with no stored file, or one whose bytes cannot be read (a genuinely
-/// dead/empty file), which surfaces as `Err` from the prefix read.
+/// (tier-4-eligible), an ESEF report package (a ZIP, unpacked to its inner
+/// instance), an iXBRL instance (markup carrying `ix:` tags), **or** a non-iXBRL
+/// XHTML — a pdf2htmlEX render — now that the tier-3b positional parser reads
+/// those (ADR 0077 T-B2). Non-extractable: a document with no stored file, one
+/// whose bytes cannot be read (a genuinely dead/empty file), or one whose bytes
+/// were sniffed and recognised as **no** container the pipeline can act on.
+///
+/// Container truth decides the branch (epic #229 T2): the stored
+/// `detected_container` beats the filename, so a `.pdf` holding garbage bytes is
+/// honestly *not* extractable instead of "a PDF by construction", and a `.pdf`
+/// holding markup takes the readable-markup branch.
 ///
 /// `pub(crate)` so the shared `enqueue_extraction_run` re-arm gate (ADR 0077 §3,
 /// 2026-07-10) reuses this exact "could SOME tier read it now?" test instead of
@@ -134,18 +140,27 @@ pub(crate) fn document_is_extractable(state: &AppState, document: &ReportDocumen
     let Some(local_path) = document.local_path.as_deref() else {
         return false;
     };
-    // A PDF and an ESEF package are extractable by construction (no byte read).
-    if SourceFormat::resolve(document.content_type.as_deref(), local_path) != SourceFormat::Xhtml {
-        return true;
+    match resolved_container(document) {
+        // A real PDF and an ESEF/eSprawozdanie report package are extractable by
+        // construction — the PDF tier and the package unpack respectively — with
+        // no byte read.
+        Container::Pdf | Container::Zip => true,
+        // Markup is extractable via ESEF (iXBRL) OR the positional tier
+        // (non-iXBRL). Either way, a *readable, non-empty* file is extractable;
+        // only an unreadable or zero-byte file (a genuinely dead document) is not
+        // — the deliberate T-B2 contract change from T-A2, where a non-iXBRL XHTML
+        // was itself treated as not-extractable (see the sibling-fallback tests).
+        Container::Xml | Container::Html => {
+            read_file_prefix(&state.data_dir().join(local_path), IXBRL_SNIFF_BYTES)
+                .map(|prefix| !prefix.is_empty())
+                .unwrap_or(false)
+        }
+        // We read these bytes and recognised no container: no tier can extract
+        // them. Before T2 such a file passed as "a PDF by construction" purely
+        // because its name ended `.pdf`, and every re-arm handed it back to the
+        // PDF reader forever.
+        Container::Unknown => false,
     }
-    // A bare XHTML is extractable via ESEF (iXBRL) OR the positional tier
-    // (non-iXBRL). Either way, a *readable, non-empty* XHTML is extractable; only an
-    // unreadable or zero-byte file (a genuinely dead document) is not — this is the
-    // deliberate T-B2 contract change from T-A2, where a non-iXBRL XHTML was itself
-    // treated as not-extractable (see the sibling-fallback tests).
-    read_file_prefix(&state.data_dir().join(local_path), IXBRL_SNIFF_BYTES)
-        .map(|prefix| !prefix.is_empty())
-        .unwrap_or(false)
 }
 
 /// Read up to `limit` leading bytes of a file. An unreadable file surfaces as
@@ -479,6 +494,76 @@ mod tests {
                 .expect("mark metadata_only");
         }
         doc.id
+    }
+
+    /// Epic #229 T2: `document_is_extractable` is the gate the sweep and the
+    /// `enqueue_extraction_run` re-arm share. Before container truth it answered
+    /// "extractable by construction" for anything whose name did not end `.xhtml`
+    /// — so a `.pdf` holding garbage bytes was re-armed forever and handed to the
+    /// PDF reader every time. The sniffed container gives each class its honest
+    /// answer.
+    #[test]
+    fn extractability_follows_the_sniffed_container_not_the_pdf_name() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "brawler-hs-container-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let state = AppState::with_data_dir(open_in_memory_database().expect("db"), dir.clone());
+        let company_id = company(&state);
+
+        let seed = |file: &str, bytes: &[u8], container: &str| -> ReportDocument {
+            std::fs::write(dir.join(file), bytes).expect("write file");
+            let doc = state
+                .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                    company_id: company_id.clone(),
+                    source_type: "user_url".to_owned(),
+                    url: format!("https://example.com/{file}"),
+                    period_id: None,
+                    origin_ref: None,
+                    title: Some(format!("Raport {file}")),
+                    attribution: None,
+                })
+                .expect("document");
+            state
+                .mark_report_document_fetched(
+                    &doc.id,
+                    Some(file),
+                    Some("application/pdf"),
+                    Some("hash"),
+                    Some(bytes.len() as i64),
+                )
+                .expect("mark fetched");
+            state
+                .set_report_document_detected_container(&doc.id, container)
+                .expect("stamp container");
+            state.get_report_document(&doc.id).expect("reload")
+        };
+
+        // Garbage bytes under a `.pdf` name: no tier can read them. This is the
+        // class the old name-based gate called extractable-by-construction.
+        assert!(
+            !document_is_extractable(&state, &seed("junk.pdf", b"\x00\x01\x02junk", "unknown")),
+            "bytes we sniffed and did not recognise are NOT extractable"
+        );
+        // Markup under a `.pdf` name: readable by the ESEF/positional tiers.
+        assert!(document_is_extractable(
+            &state,
+            &seed("markup.pdf", b"<?xml version=\"1.0\"?><html/>", "xml")
+        ));
+        // A ZIP package under a `.pdf` name: the structured path unpacks it.
+        assert!(document_is_extractable(
+            &state,
+            &seed("package.pdf", b"PK\x03\x04\x14\x00", "zip")
+        ));
+        // A genuine PDF is unchanged.
+        assert!(document_is_extractable(
+            &state,
+            &seed("real.pdf", b"%PDF-1.7\nbody", "pdf")
+        ));
     }
 
     fn period(state: &AppState, company_id: &str, fiscal_year: i64, period_type: &str) -> String {

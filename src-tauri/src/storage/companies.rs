@@ -178,7 +178,12 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
     let qualified_ticker = format!("{exchange}:{ticker}");
     let id = company_id(&exchange, &ticker);
 
-    connection.execute(
+    // The row, its registry-seeded sector and its core KPI denominator land
+    // together or not at all — a company that exists without the core
+    // `kpi_relevance` set is exactly the state issue #203 was about.
+    let transaction = connection.unchecked_transaction()?;
+
+    transaction.execute(
         "
         INSERT INTO companies (
             id,
@@ -205,7 +210,7 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
 
     // Seed the sector from the directory cache if the registry already knows it
     // (ADR 0067 Decision 3); `sector_source='registry'`, overridable later.
-    connection.execute(
+    transaction.execute(
         "
         UPDATE companies
         SET sector = (
@@ -223,7 +228,14 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
         params![id, qualified_ticker],
     )?;
 
-    connection
+    // Every company starts with the 0106 core KPI denominator (issue #203
+    // residual): migration 0106 could only seed the companies that existed when
+    // it applied, so without this the completeness check never fires for a
+    // newly tracked company. Curated rows are never overwritten — see
+    // [`super::financials::seed_core_kpi_relevance`].
+    super::financials::seed_core_kpi_relevance(&transaction, &id)?;
+
+    let company = transaction
         .query_row(
             "
         SELECT id, exchange, ticker, qualified_ticker, display_name, isin, cik, lei
@@ -244,7 +256,11 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
                 })
             },
         )
-        .map_err(StorageError::from)
+        .map_err(StorageError::from)?;
+
+    transaction.commit()?;
+
+    Ok(company)
 }
 
 pub(super) fn refresh_company_directory(
