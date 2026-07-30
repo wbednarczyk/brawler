@@ -18,6 +18,7 @@ pub mod providers;
 pub mod report_diff;
 pub mod report_documents_capture;
 pub mod report_documents_container;
+pub mod report_documents_restore;
 pub mod signal_dates;
 pub mod source_adapters;
 pub mod storage;
@@ -97,6 +98,25 @@ pub fn run() {
                 Err(error) => {
                     log::warn!("startup mis-association repair failed: {error}");
                 }
+            }
+
+            // Restore the documents migration 0107 wrongly deleted (epic #229 T3,
+            // owner decision 2026-07-30): four cyber_Folks Q3-2024 filings removed
+            // on URL-slug evidence their own bytes contradict. Runs AFTER the
+            // mis-association repair (which keeps them — their titles name the
+            // owner) and BEFORE the container sniff, which it pre-empts by
+            // stamping the container itself. Idempotent, best-effort, never fatal.
+            match report_documents_restore::restore_migration_0107_deletions(&state) {
+                Ok(summary) if summary.is_noop() => {}
+                Ok(summary) => log::warn!(
+                    "startup 0107 restore: {} document(s) restored, {} already present, \
+                     {} file(s) missing, {} untracked company row(s)",
+                    summary.restored,
+                    summary.already_present,
+                    summary.file_missing,
+                    summary.company_absent
+                ),
+                Err(error) => log::warn!("startup 0107 restore failed: {error}"),
             }
 
             // Container self-heal (epic #229 T2): stamp `detected_container` on
