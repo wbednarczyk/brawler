@@ -1,9 +1,9 @@
 {
   "_comment": "Coverage ratchet floors (ADR 0048). `make coverage` fails if line coverage drops below these. When coverage rises, the ratchet prints the new floors to commit here. Set a hair below current to absorb measurement noise.",
   "frontend": {
-    "lines": 77.5
+    "lines": 80.0
   },
   "rust": {
-    "lines": 85.3
+    "lines": 86.5
   }
 }

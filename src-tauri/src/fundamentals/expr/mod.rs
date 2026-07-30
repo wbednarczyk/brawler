@@ -309,11 +309,10 @@ mod tests {
 
     #[test]
     fn boolean_mixed_operand_combinations() {
-        // AND/OR with one decisive and one opposite operand. (The residual
-        // && / || mutants cargo-mutants reports at eval.rs:99-100 are equivalent
-        // mutants: the decisive-operand guard arms above them make the only
-        // reachable inputs there degenerate, so no test can distinguish && from
-        // ||. Accepted as known-equivalent, not a coverage gap.)
+        // AND/OR with one decisive and one opposite operand. (The && / ||
+        // swaps in eval_binary's Kleene arms are equivalent mutants — the
+        // decisive-operand guard arms above them make the only reachable
+        // inputs degenerate — and are excluded in .cargo/mutants.toml.)
         // fcf > 0 is true; roic > 100% is false.
         let r = MapResolver::new()
             .with("fcf", 1)
@@ -326,6 +325,86 @@ mod tests {
     fn referenced_metrics_dedupes_repeated_keys() {
         let expr = parse("roic + roic > roic").unwrap();
         assert_eq!(referenced_metrics(&expr), vec!["roic".to_owned()]);
+    }
+
+    #[test]
+    fn single_equals_tokenizes_a_directly_adjacent_operand() {
+        // The ergonomic single-'=' path must look at the NEXT character, not
+        // the current one: a spaceless `roe=5` keeps its operand.
+        assert_eq!(
+            lexer::tokenize("roe=5").expect("tokenize"),
+            vec![
+                lexer::Token::Ident("roe".to_owned()),
+                lexer::Token::Eq,
+                lexer::Token::Number(Decimal::new(5, 0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn two_char_comparators_tokenize_off_the_coincidence_index() {
+        // `<=` at char index 2 cannot distinguish `i += 2` from `i *= 2`;
+        // `roe <= 5` puts the operator at index 4 where they diverge.
+        assert_eq!(
+            lexer::tokenize("roe <= 5").expect("tokenize"),
+            vec![
+                lexer::Token::Ident("roe".to_owned()),
+                lexer::Token::Lte,
+                lexer::Token::Number(Decimal::new(5, 0)),
+            ]
+        );
+        assert_eq!(
+            lexer::tokenize("roe >= 5").expect("tokenize"),
+            vec![
+                lexer::Token::Ident("roe".to_owned()),
+                lexer::Token::Gte,
+                lexer::Token::Number(Decimal::new(5, 0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn bare_boolean_keyword_as_value_is_a_named_parse_error() {
+        // A bare `and`/`or` in value position must fail with the dedicated
+        // message — not silently parse as a metric identifier (which would
+        // surface as Unavailable at eval time instead of an editor error).
+        for input in ["revenue > and", "revenue > or"] {
+            let error = parse(input).expect_err("bare boolean keyword must not parse");
+            assert!(
+                error
+                    .to_string()
+                    .contains("is a binary operator, not a value"),
+                "unexpected error for {input:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn func_names_are_stable_and_round_trip() {
+        // Func::name feeds error rendering and the resolver's window keys —
+        // pin the exact strings and the from_name round-trip.
+        for (func, name) in [
+            (Func::Cagr, "cagr"),
+            (Func::Ttm, "ttm"),
+            (Func::Avg, "avg"),
+            (Func::Trend, "trend"),
+            (Func::Coalesce, "coalesce"),
+        ] {
+            assert_eq!(func.name(), name);
+            assert_eq!(Func::from_name(name), Some(func));
+        }
+    }
+
+    #[test]
+    fn expr_error_display_carries_the_message() {
+        assert_eq!(
+            ExprError::Lex("bad char".to_owned()).to_string(),
+            "syntax error: bad char"
+        );
+        assert_eq!(
+            ExprError::Parse("boom".to_owned()).to_string(),
+            "parse error: boom"
+        );
     }
 
     mod properties {

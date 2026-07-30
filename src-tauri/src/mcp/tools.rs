@@ -184,7 +184,7 @@ where
         .map_err(|error| ToolCallError::InvalidArguments(format!("invalid arguments: {error}")))?;
     Ok(match tool(input) {
         Ok(payload) => match serde_json::to_value(payload) {
-            Ok(value) => ToolOutcome::Success(value),
+            Ok(value) => ToolOutcome::Success(envelope(value)),
             Err(error) => ToolOutcome::Failure(CommandError::new(
                 CommandErrorCode::Internal,
                 format!("tool output serialization failed: {error}"),
@@ -192,6 +192,20 @@ where
         },
         Err(error) => ToolOutcome::Failure(error),
     })
+}
+
+/// MCP requires `structuredContent` to be a JSON OBJECT; a bare array (every
+/// command returning `Vec<T>`) fails strict client-side schema validation
+/// (issue #249 — a deliberate ADR 0088 contract amendment, this is the single
+/// choke point every handler serializes through). Arrays are wrapped as
+/// `{ "items": [...] }`; scalars (a bare unit/bool/number/string result) as
+/// `{ "result": ... }`; objects pass through verbatim.
+fn envelope(value: Value) -> Value {
+    match value {
+        Value::Array(items) => serde_json::json!({ "items": items }),
+        Value::Object(_) => value,
+        scalar => serde_json::json!({ "result": scalar }),
+    }
 }
 
 // ============================================================================

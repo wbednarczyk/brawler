@@ -298,7 +298,10 @@ act_handler!(
 act_handler!(
     create_company_handler,
     storage::NewCompany,
-    |state, input| state.create_company(input).map_err(CommandError::from)
+    // Routes through the COMMAND impl, not the bare storage write, so the GPW
+    // quote-backfill enqueue fires for MCP-created companies too (issue #250).
+    |state, input| crate::commands::companies::create_company_impl(input, state)
+        .map_err(CommandError::from)
 );
 
 act_handler!(

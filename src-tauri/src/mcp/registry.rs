@@ -1587,14 +1587,20 @@ mod tests {
             assert!(listed.contains(*name), "{name} is listed in tools/list");
         }
 
-        // Each is callable and returns a domain outcome (never a protocol error).
+        // Each is callable and returns a domain outcome (never a protocol
+        // error), and every success payload is a JSON OBJECT — MCP requires
+        // `structuredContent` to be a record, so a bare array/scalar must have
+        // been wrapped by the `tools::run` envelope (issue #249).
         for (name, arguments, may_fail) in inputs {
             let outcome = call(&state, name, arguments)
                 .unwrap_or_else(|error| panic!("{name} rejected minimal input: {error:?}"));
-            if !may_fail {
-                match outcome {
-                    ToolOutcome::Success(_) => {}
-                    ToolOutcome::Failure(error) => {
+            match outcome {
+                ToolOutcome::Success(value) => assert!(
+                    value.is_object(),
+                    "{name}: structuredContent must be a JSON object (MCP spec), got: {value}"
+                ),
+                ToolOutcome::Failure(error) => {
+                    if !may_fail {
                         panic!("{name} failed on seeded minimal input: {error:?}")
                     }
                 }
@@ -1820,6 +1826,99 @@ mod tests {
             text.contains("\"verdict\":\"pass\""),
             "verdict present: {text}"
         );
+    }
+
+    /// MCP parity (issue #250): `create_company` routes through the same
+    /// command impl as the UI, so a GPW company created over MCP gets its
+    /// quote-backfill job enqueued (the tool description promises it).
+    #[test]
+    fn create_company_over_mcp_enqueues_the_gpw_quote_backfill() {
+        let state = act_state();
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_company",
+            &json!({
+                "exchange": "GPW",
+                "ticker": "ZZZ",
+                "displayName": "Zzz S.A.",
+            }),
+        )
+        .expect("domain outcome");
+        let company = match outcome {
+            ToolOutcome::Success(value) => value,
+            ToolOutcome::Failure(error) => panic!("create_company failed: {error:?}"),
+        };
+        let company_id = company["id"].as_str().expect("company id");
+
+        let job = state
+            .jobs()
+            .status(&format!("quote_backfill:{company_id}"))
+            .expect("job status query")
+            .expect("backfill job enqueued for an MCP-created GPW company");
+        assert_eq!(job.status, "pending");
+    }
+
+    /// Guardrail (issue #250): a command that wraps extra logic in an
+    /// extracted `<command>_impl` helper (e.g. `create_company_impl`'s GPW
+    /// quote-backfill enqueue) must have its exposed MCP handler route through
+    /// that helper — dispatching the bare storage write silently drops the
+    /// command's extra behavior. Source-scan: for every exposed tool whose
+    /// backing command has a `<command>_impl` in `src/commands/`, the `mcp`
+    /// module must reference that helper.
+    #[test]
+    fn exposed_handlers_route_through_command_impl_helpers() {
+        use std::fs;
+        use std::path::{Path, PathBuf};
+
+        fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
+            for entry in fs::read_dir(dir).expect("source dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    rust_sources(&path, out);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    out.push(path);
+                }
+            }
+        }
+
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let impl_pattern = regex::Regex::new(r"\bfn ([a-z0-9_]+)_impl\b").expect("valid regex");
+
+        let mut command_sources = Vec::new();
+        rust_sources(&manifest.join("src/commands"), &mut command_sources);
+        let mut impl_names = BTreeSet::new();
+        for path in command_sources {
+            let source = fs::read_to_string(&path).expect("command source");
+            for capture in impl_pattern.captures_iter(&source) {
+                impl_names.insert(capture.get(1).expect("group 1").as_str().to_owned());
+            }
+        }
+        assert!(
+            impl_names.contains("create_company"),
+            "sanity: create_company_impl should be discovered in src/commands/"
+        );
+
+        let mut mcp_sources = Vec::new();
+        rust_sources(&manifest.join("src/mcp"), &mut mcp_sources);
+        let mcp_source: String = mcp_sources
+            .iter()
+            .map(|path| fs::read_to_string(path).expect("mcp source"))
+            .collect();
+
+        for entry in entries() {
+            if !entry.exposed || !impl_names.contains(entry.command_name) {
+                continue;
+            }
+            assert!(
+                mcp_source.contains(&format!("{}_impl", entry.command_name)),
+                "{}: the backing command extracts `{}_impl`, but the MCP handler never \
+                 references it — route the handler through the impl (UI parity, issue #250)",
+                entry.tool_name,
+                entry.command_name
+            );
+        }
     }
 
     /// The act wave's umbrella proof: every exposed `act` tool is listed in
@@ -2068,8 +2167,16 @@ mod tests {
                 continue;
             }
             set_writes_enabled(&state, true);
-            let _ = call(&state, name, arguments)
+            let outcome = call(&state, name, arguments)
                 .unwrap_or_else(|error| panic!("{name} raised a protocol error on ON: {error:?}"));
+            // Every success payload is a JSON OBJECT — MCP requires
+            // `structuredContent` to be a record (issue #249).
+            if let ToolOutcome::Success(value) = outcome {
+                assert!(
+                    value.is_object(),
+                    "{name}: structuredContent must be a JSON object (MCP spec), got: {value}"
+                );
+            }
         }
     }
 

@@ -17,18 +17,19 @@ pub fn create_company(
     input: storage::NewCompany,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<storage::Company, String> {
-    create_company_impl(input, &state)
+    create_company_impl(input, &state).map_err(|error| error.to_string())
 }
 
 /// The command's core logic, factored out so it is unit-testable without a
 /// live `tauri::State` (the command wrapper's job is only to unwrap it).
-fn create_company_impl(
+/// `pub(crate)` because the MCP act handler routes through this same impl —
+/// parity requires MCP-created companies to get the backfill enqueue too
+/// (issue #250).
+pub(crate) fn create_company_impl(
     input: storage::NewCompany,
     state: &app_state::AppState,
-) -> Result<storage::Company, String> {
-    let company = state
-        .create_company(input)
-        .map_err(|error| error.to_string())?;
+) -> Result<storage::Company, storage::StorageError> {
+    let company = state.create_company(input)?;
 
     // Kick off full-history quote backfill on add (v0.53 T5 wiring, ADR 0082
     // T2): idempotent and throttled, so a user can see price context without

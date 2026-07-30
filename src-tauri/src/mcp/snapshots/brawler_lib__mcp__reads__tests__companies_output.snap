@@ -2,15 +2,17 @@
 source: src/mcp/reads.rs
 expression: redact(&payload)
 ---
-[
-  {
-    "cik": null,
-    "displayName": "Test S.A.",
-    "exchange": "GPW",
-    "id": "company_gpw_tst",
-    "isin": "PLTEST0000011",
-    "lei": null,
-    "qualifiedTicker": "GPW:TST",
-    "ticker": "TST"
-  }
-]
+{
+  "items": [
+    {
+      "cik": null,
+      "displayName": "Test S.A.",
+      "exchange": "GPW",
+      "id": "company_gpw_tst",
+      "isin": "PLTEST0000011",
+      "lei": null,
+      "qualifiedTicker": "GPW:TST",
+      "ticker": "TST"
+    }
+  ]
+}
