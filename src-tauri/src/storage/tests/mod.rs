@@ -41,6 +41,7 @@ mod real_data_insider;
 mod real_data_management_holdings;
 mod real_data_ownership;
 mod real_data_shape_inventory;
+mod real_data_trust_audit;
 mod red_flags;
 mod report_documents;
 mod report_expectations;

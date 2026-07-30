@@ -207,6 +207,23 @@ BRAWLER_REAL_DB=../private/realdata/a4_worktest.sqlite3 \
 coverage floor on purpose**: the deliverable is the real number, and a harness asserting the
 number it hopes for is worse than no harness.
 
+### Data-trust audit (epic #229 T1) — sizing a repair before writing it
+
+`storage::tests::real_data_trust_audit::real_data_trust_audit` (`#[ignore]`, `BRAWLER_REAL_DB`
+required — absent → prints `SKIP`; `BRAWLER_REAL_DATA_DIR` optional, its absence skips the
+file-reading classes with a printed note) measures the stored-data defect classes the T2–T4
+repairs are sized against, one `token=<class> count=N` line plus row-id detail lines per class:
+misleading-URL issuer mismatch, container-vs-extension/content-type disagreement, mis-association
+candidates (metadata + content-token evidence), canonical slots held by a flagged row, per-company
+coverage roll-up, non-ISO currencies, and companies with no `kpi_relevance` row. Output is
+operator-facing and carries real ids — **never commit it**; a repair PR pastes the counts only.
+
+Measurement and rendering live in `run_trust_audit(state, data_dir)`, so `make check` exercises
+the same core against seeded data (`synthetic_trust_audit_finds_seeded_defects`), and a token guard
+keeps the class vocabulary machine-readable. Issuer matching is reused from
+`storage::sources` (test-only handle) — never re-implemented, or the numbers stop describing
+production.
+
 ### Ownership shareholders-table harness (v0.56 T1)
 
 The ownership parser (`fundamentals::ownership::parse_shareholders`, ADR 0072) has its own

@@ -539,6 +539,90 @@ fn names_foreign_issuer(
     })
 }
 
+/// Test-only handle over the tracked-issuer table, so the real-DB trust audit
+/// (epic #229 T1, `super::tests::real_data_trust_audit`) measures with the very
+/// machinery the ingestion guard and the startup repair use. A copy of the
+/// normalization/matching rules would drift, and a drifted measurement stops
+/// describing production — which is the only thing the audit is for. Nothing
+/// here widens the production surface: the module is `cfg(test)` and
+/// [`TrackedIssuer`]'s fields never leave it.
+#[cfg(test)]
+pub(super) mod trust_audit_support {
+    use super::{
+        issuer_named, load_tracked_issuers, normalize_media_match_text, Connection, StorageResult,
+        TrackedIssuer,
+    };
+    use crate::storage::feed_matching::normalized_text_contains_phrase;
+
+    pub(in crate::storage) struct TrackedIssuers(Vec<TrackedIssuer>);
+
+    impl TrackedIssuers {
+        pub(in crate::storage) fn load(connection: &Connection) -> StorageResult<Self> {
+            Ok(Self(load_tracked_issuers(connection)?))
+        }
+
+        pub(in crate::storage) fn is_empty(&self) -> bool {
+            self.0.is_empty()
+        }
+
+        /// Company ids named by `text`. `use_ticker` mirrors the production
+        /// gate: on for **owner** detection (generous), off for **foreign**
+        /// detection (strict — a bare ticker is a common word).
+        pub(in crate::storage) fn named_in(&self, text: &str, use_ticker: bool) -> Vec<&str> {
+            let haystack = normalize_media_match_text(text);
+            let tokens = haystack.split_whitespace().collect::<Vec<_>>();
+            self.0
+                .iter()
+                .filter(|issuer| issuer_named(issuer, &tokens, use_ticker))
+                .map(|issuer| issuer.company_id.as_str())
+                .collect()
+        }
+
+        /// Whether `company_id` itself is named by `text`.
+        pub(in crate::storage) fn names(
+            &self,
+            company_id: &str,
+            text: &str,
+            use_ticker: bool,
+        ) -> bool {
+            self.named_in(text, use_ticker).contains(&company_id)
+        }
+
+        /// How many times any name/alias phrase of `company_id` occurs in
+        /// `text` — the content-token evidence the #92 re-diagnosis used to tell
+        /// "wrongly stamped" from "misleadingly named".
+        pub(in crate::storage) fn phrase_occurrences(&self, company_id: &str, text: &str) -> usize {
+            let Some(issuer) = self.0.iter().find(|issuer| issuer.company_id == company_id) else {
+                return 0;
+            };
+            let haystack = normalize_media_match_text(text);
+            let tokens = haystack.split_whitespace().collect::<Vec<_>>();
+            issuer
+                .signals
+                .iter()
+                .map(|signal| {
+                    // A window of exactly the phrase's length makes the shared
+                    // `contains` predicate an equality test — occurrences
+                    // counted with the production matcher, not a copy of it.
+                    let phrase_len = signal.split_whitespace().count();
+                    if phrase_len == 0 || phrase_len > tokens.len() {
+                        return 0;
+                    }
+                    (0..=tokens.len() - phrase_len)
+                        .filter(|start| {
+                            normalized_text_contains_phrase(
+                                &tokens[*start..*start + phrase_len],
+                                signal,
+                            )
+                        })
+                        .count()
+                })
+                .max()
+                .unwrap_or(0)
+        }
+    }
+}
+
 /// Re-scan every `espi_attachment` report document and delete the ones that name
 /// a **different** tracked issuer than their owner (T-A3 repair, card 45fcece).
 /// Idempotent and self-healing: safe to run on every startup, records nothing
