@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 
 export type ShortcutScope = "app" | "screen";
 
@@ -88,7 +88,12 @@ export function formatShortcutBinding(binding: ShortcutKeyBinding) {
 }
 
 export function useKeyboardShortcuts(shortcuts: ShortcutDefinition[]) {
-  useEffect(() => {
+  // Layout effect, not a passive one: the document listener must swap in the
+  // same commit that produced the new closures. A passive effect leaves a
+  // window between paint and effect flush in which a keydown still hits the
+  // PREVIOUS render's handler (stale selection/items) — React 19's scheduling
+  // made that window real (caught by the inbox shortcut workflow test).
+  useLayoutEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       for (const shortcut of shortcuts) {
         if (!shortcutMatchesEvent(shortcut.binding, event)) {

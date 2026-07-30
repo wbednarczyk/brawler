@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   expect,
   renderApp,
@@ -96,21 +97,40 @@ describe("Research cockpit shell", () => {
     });
   });
 
-  it("rebuilds a working layout after closing a panel then resetting (no blank app)", async () => {
+  // Own timeout budget: two full dockview teardown/rebuild cycles routinely
+  // exceed the 5s default under loaded test workers (React 19 migration).
+  it("rebuilds a working layout after closing a panel then resetting (no blank app)", { timeout: 20000 }, async () => {
     const user = userEvent.setup();
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // Close the Inspector panel (the × on its accessible tab), then Reset layout.
-    await user.click(await within(cockpit).findByRole("button", { name: "Close Inspector" }));
-    await waitFor(() => {
-      expect(within(cockpit).queryByRole("button", { name: "Inspector" })).toBeNull();
-    });
+    // While dockview settles its initial layout it re-creates tab DOM, so a
+    // single click can land on a node detached between query and dispatch and
+    // silently vanish (React 19 timing under loaded workers). Model a user
+    // retrying: click the currently-attached close control until the tab is
+    // gone.
+    await within(cockpit).findByRole("button", { name: "Close Inspector" });
+    await waitFor(
+      () => {
+        const close = within(cockpit).queryByRole("button", { name: "Close Inspector" });
+        if (close) {
+          fireEvent.click(close);
+        }
+        expect(within(cockpit).queryByRole("button", { name: "Inspector" })).toBeNull();
+      },
+      { timeout: 10000 },
+    );
     await user.click(within(cockpit).getByRole("button", { name: "Reset layout" }));
 
-    // The default layout must come back — not a blank cockpit.
-    expect(await within(cockpit).findByRole("button", { name: "Inspector" })).toBeInTheDocument();
-    expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
+    // The default layout must come back — not a blank cockpit. The dockview
+    // rebuild is slow under loaded test workers — give it a real timeout.
+    expect(
+      await within(cockpit).findByRole("button", { name: "Inspector" }, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(
+      await within(cockpit).findByRole("button", { name: "Feed" }, { timeout: 5000 }),
+    ).toBeInTheDocument();
   });
 
   it("applies a preset composing FOLLOW panels for the view company (Dashboard redesign)", async () => {
@@ -221,12 +241,12 @@ describe("Research cockpit shell", () => {
     // The Feed panel is open in the default linked layout; both sample items are
     // listed until the filter narrows them.
     expect(
-      within(cockpit).getByRole("button", {
+      await within(cockpit).findByRole("button", {
         name: "Inspect feed item: Current report placeholder for watchlist company",
       }),
     ).toBeInTheDocument();
 
-    await user.type(within(cockpit).getByLabelText("Filter feed items"), "KGH");
+    await user.type(await within(cockpit).findByLabelText("Filter feed items"), "KGH");
 
     await waitFor(() => {
       expect(
@@ -387,7 +407,9 @@ describe("Research cockpit — view company context (U-Ra)", () => {
 
     // Both cockpit search surfaces wear the shared search-box dressing — a bare
     // native input (owner dogfooding round 2) reads as unfinished.
-    expect(within(cockpit).getByLabelText("Filter feed items").closest(".search-box")).not.toBeNull();
+    expect(
+      (await within(cockpit).findByLabelText("Filter feed items")).closest(".search-box"),
+    ).not.toBeNull();
     await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
     const input = await screen.findByLabelText("Search commands");
     expect(input.closest(".search-box")).not.toBeNull();

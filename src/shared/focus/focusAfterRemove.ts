@@ -47,7 +47,7 @@ export function focusRowAfterRemove(
 
 export type UseFocusAfterRemoveResult<T extends HTMLElement> = {
   /** Attach to the list container element that holds the rows. */
-  listRef: RefObject<T>;
+  listRef: RefObject<T | null>;
 };
 
 /**

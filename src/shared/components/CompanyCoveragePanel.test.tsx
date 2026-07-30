@@ -456,10 +456,13 @@ describe("CompanyCoveragePanel", () => {
       await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
 
       // Queued, then draining: the action stays in flight and nothing reloads
-      // yet — and the status line shows the live drain counter (T3.3).
+      // yet — and the status line shows the live drain counter (T3.3). React 19
+      // defers the tick's render, so the counter is awaited, not read inline.
       await vi.advanceTimersByTimeAsync(1500);
       expect(onHistoryRefreshed).not.toHaveBeenCalled();
-      expect(screen.getByRole("status")).toHaveTextContent("Extracting… 1/2");
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent("Extracting… 1/2"),
+      );
 
       // Drained: polling stops, siblings reload, counters land in the status line.
       await vi.advanceTimersByTimeAsync(1500);

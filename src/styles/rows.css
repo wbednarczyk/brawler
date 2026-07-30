@@ -189,6 +189,16 @@
   color: var(--muted);
 }
 
+/* A trailing status chip keeps its intrinsic width in a tight row — the
+   ellipsizing title/meta slots give way first (trailing-chips-in-fixed-slots,
+   ui-authoring § Styling rules). React 19's flex text-measure tie-break made
+   this priority explicit: without it a narrow row could clip the chip label
+   while keeping a sliver of the title. The issue #209 degenerate case (a slot
+   narrower than the chip alone) stays safe via the chip's own max-width+clip. */
+.ui-list-row > .ui-status-chip {
+  flex: none;
+}
+
 /* ExpandableRow (ui/ExpandableRow.tsx): a disclosure row that reveals its
    detail in place. The primitive owns a leading rotating chevron so the
    affordance is consistent and never ARIA-only (ADR 0076 D9). The row is a
