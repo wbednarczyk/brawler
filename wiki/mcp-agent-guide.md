@@ -110,6 +110,10 @@ quality frameworks · calendar & report season · attention, alerts & briefing �
 autopilot · source & extraction jobs**. The exact, machine-generated list (kept
 in lock-step with the server by a drift gate — never edit it by hand) follows.
 
+Result shape: every tool's `structuredContent` is a JSON object — tools whose
+natural result is a list return `{ "items": [...] }`, scalar results arrive as
+`{ "result": ... }`.
+
 <!-- BEGIN GENERATED MCP CATALOG — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->
 
 **Read tools** — always available once the server is on (44):

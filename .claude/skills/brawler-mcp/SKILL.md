@@ -91,6 +91,9 @@ tell the user they are theirs to do in the app:
 
 ## Tool catalog
 
+Result shape: every tool's `structuredContent` is a JSON object — list results
+arrive as `{ "items": [...] }`, scalar results as `{ "result": ... }`.
+
 Machine-generated from the server's frozen `tools/list` snapshot (a drift gate
 keeps it exact — do not hand-edit):
 

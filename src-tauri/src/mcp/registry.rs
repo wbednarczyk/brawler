@@ -1587,14 +1587,20 @@ mod tests {
             assert!(listed.contains(*name), "{name} is listed in tools/list");
         }
 
-        // Each is callable and returns a domain outcome (never a protocol error).
+        // Each is callable and returns a domain outcome (never a protocol
+        // error), and every success payload is a JSON OBJECT — MCP requires
+        // `structuredContent` to be a record, so a bare array/scalar must have
+        // been wrapped by the `tools::run` envelope (issue #249).
         for (name, arguments, may_fail) in inputs {
             let outcome = call(&state, name, arguments)
                 .unwrap_or_else(|error| panic!("{name} rejected minimal input: {error:?}"));
-            if !may_fail {
-                match outcome {
-                    ToolOutcome::Success(_) => {}
-                    ToolOutcome::Failure(error) => {
+            match outcome {
+                ToolOutcome::Success(value) => assert!(
+                    value.is_object(),
+                    "{name}: structuredContent must be a JSON object (MCP spec), got: {value}"
+                ),
+                ToolOutcome::Failure(error) => {
+                    if !may_fail {
                         panic!("{name} failed on seeded minimal input: {error:?}")
                     }
                 }
@@ -2068,8 +2074,16 @@ mod tests {
                 continue;
             }
             set_writes_enabled(&state, true);
-            let _ = call(&state, name, arguments)
+            let outcome = call(&state, name, arguments)
                 .unwrap_or_else(|error| panic!("{name} raised a protocol error on ON: {error:?}"));
+            // Every success payload is a JSON OBJECT — MCP requires
+            // `structuredContent` to be a record (issue #249).
+            if let ToolOutcome::Success(value) = outcome {
+                assert!(
+                    value.is_object(),
+                    "{name}: structuredContent must be a JSON object (MCP spec), got: {value}"
+                );
+            }
         }
     }
 
