@@ -3877,3 +3877,106 @@ fn migration_0125_rekeys_scope_blind_definition_ids_and_repoints_every_reference
 
     apply_migrations(&mut connection).expect("re-running migrations should be safe");
 }
+
+#[test]
+fn migration_0126_seeds_statement_packs_without_touching_the_core_floor() {
+    // ADR 0092 layer 2 (#273): the scope='sector' packs have existed since 0034
+    // and nothing ever read them. 0126 selects the conservative subset for each
+    // company's statement_type, additively, on top of the core floor.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 125).expect("apply schema through 0125");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name, statement_type)
+                VALUES ('pko', 'GPW', 'PKO', 'GPW:PKO', 'PKO BP S.A.', 'banking'),
+                       ('pzu', 'GPW', 'PZU', 'GPW:PZU', 'PZU S.A.', 'insurance'),
+                       ('kru', 'GPW', 'KRU', 'GPW:KRU', 'KRUK S.A.', 'specialty_finance'),
+                       ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.', 'industrial');",
+        )
+        .expect("seed companies across every statement type");
+
+    // A curated row on a key the banking pack would otherwise seed: automation
+    // must fill around it, never re-source it.
+    connection
+        .execute(
+            "INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+             VALUES ('kpirel_user_nii', 'pko', 'kpidef_bank_net_interest_income',
+                     'retired', 'user', 'secondary')",
+            [],
+        )
+        .expect("seed the curated row");
+
+    apply_migrations(&mut connection).expect("apply migration 0126");
+
+    let pack_keys = |conn: &rusqlite::Connection, company: &str| -> Vec<String> {
+        let mut statement = conn
+            .prepare(
+                "SELECT d.metric_key
+                 FROM kpi_relevance r
+                 JOIN kpi_definitions d ON d.id = r.definition_id
+                 WHERE r.company_id = ?1 AND r.source = 'sector'
+                 ORDER BY d.metric_key",
+            )
+            .expect("prepare");
+        let rows = statement
+            .query_map([company], |row| row.get::<_, String>(0))
+            .expect("query");
+        rows.collect::<Result<Vec<_>, _>>().expect("collect")
+    };
+
+    assert_eq!(
+        pack_keys(&connection, "pko"),
+        vec![
+            "net_fee_commission_income".to_owned(),
+            "total_deposits".to_owned(),
+            "total_loans".to_owned(),
+        ],
+        "the conservative banking subset, minus the curated key it filled around"
+    );
+    assert_eq!(
+        pack_keys(&connection, "pzu"),
+        vec!["gross_insurance_revenue".to_owned()],
+        "insurance seeds the IFRS 17 top line only"
+    );
+    assert!(
+        pack_keys(&connection, "kru").is_empty(),
+        "specialty_finance is deliberately empty — 0095 maps brokers onto the \
+         same statement_type as debt collectors, so no pack key is universal"
+    );
+    assert!(
+        pack_keys(&connection, "cdr").is_empty(),
+        "the industrial pack is scope='canonical'; there is no sector pack to add"
+    );
+
+    let curated: (String, String, Option<String>) = connection
+        .query_row(
+            "SELECT status, source, rank FROM kpi_relevance WHERE id = 'kpirel_user_nii'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the curated row must survive");
+    assert_eq!(curated.0, "retired");
+    assert_eq!(curated.1, "user");
+    assert_eq!(curated.2.as_deref(), Some("secondary"));
+
+    // Deterministic ids, and re-applying converges instead of accumulating.
+    let seeded_id: String = connection
+        .query_row(
+            "SELECT id FROM kpi_relevance
+             WHERE company_id = 'pko' AND definition_id = 'kpidef_bank_total_loans'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("seeded id");
+    assert_eq!(seeded_id, "kpirel_sector_pko_total_loans");
+
+    let before: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    let after: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(before, after, "the seed converges instead of accumulating");
+}

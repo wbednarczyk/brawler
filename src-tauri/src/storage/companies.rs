@@ -228,12 +228,41 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
         params![id, qualified_ticker],
     )?;
 
+    // Derive the financial `statement_type` from the sector just seeded — the
+    // create-time twin of migrations 0095/0098, same allow-list, same
+    // manual-wins rule (only the `'industrial'` DEFAULT is rewritten). Without
+    // it those migrations are one-shot exactly like 0106 was: a bank added
+    // today would stay `'industrial'` forever, its statement pack would have
+    // nothing to key off, and — worse — the ADR 0083 D4 gate would let a
+    // meaningless Altman Z″ compute for it.
+    transaction.execute(
+        "
+        UPDATE companies
+        SET statement_type = CASE sector
+                WHEN 'banki komercyjne' THEN 'banking'
+                WHEN 'firmy ubezpieczeniowe' THEN 'insurance'
+                WHEN 'giełdy i biura maklerskie' THEN 'specialty_finance'
+                WHEN 'Wierzytelności' THEN 'specialty_finance'
+                ELSE statement_type
+            END
+        WHERE id = ?1
+          AND statement_type = 'industrial'
+        ",
+        params![id],
+    )?;
+
     // Every company starts with the 0106 core KPI denominator (issue #203
     // residual): migration 0106 could only seed the companies that existed when
     // it applied, so without this the completeness check never fires for a
     // newly tracked company. Curated rows are never overwritten — see
     // [`super::financials::seed_core_kpi_relevance`].
     super::financials::seed_core_kpi_relevance(&transaction, &id)?;
+
+    // ADR 0092 layer 2: the statement-pack additions on top of that floor, for
+    // a company the bridge above recognised as a financial issuer. A no-op for
+    // an industrial company — its pack is `scope='canonical'`, already covered
+    // by the core floor.
+    super::financials::seed_statement_pack_kpi_relevance(&transaction, &id)?;
 
     let company = transaction
         .query_row(

@@ -235,6 +235,32 @@ pub fn run_aggregator_fundamentals_pull(state: &AppState) -> Result<AggregatorPu
                 }
             }
         }
+
+        // ADR 0092 layers 2 + 3, on the cheapest correct cadence.
+        //
+        // Why here and not after each extraction: this is the one existing job
+        // that already walks EVERY tracked company exactly once per day, and it
+        // runs after the day's filings have landed. Hooking the document
+        // pipeline instead would re-scan a company once per document — 250
+        // redundant scans during a single history backfill — to compute a
+        // picture that only moves when a whole new period lands.
+        //
+        // Layer 2 here is what makes a `statement_type` change converge
+        // additively: the value is written by the registry-sector bridge
+        // (migrations 0095/0098, and `create_company` since #273), not by a
+        // setter this could hang off. Layer 3 is the derived-observation pass.
+        //
+        // Best-effort by design, exactly like the diagnostics below: these two
+        // layers ENRICH, they never gate (layer 3 is structurally excluded from
+        // `expected_primary_metric_keys`), so a bookkeeping failure must never
+        // fail a pull that wrote real facts.
+        if let Err(error) = state.financials().refresh_kpi_relevance_layers(&company.id) {
+            log::warn!(
+                "module=aggregator_fundamentals_pull stage=kpi_relevance_layers \
+                 company={} error={error}",
+                company.id
+            );
+        }
     }
 
     // G3: a metric contradicted at many companies at once is a mapping suspect —

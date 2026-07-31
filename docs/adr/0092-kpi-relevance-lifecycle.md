@@ -1,6 +1,6 @@
 # ADR 0092: kpi_relevance lifecycle — layered expectations, no self-referential gate
 
-Status: Proposed (2026-07-30, epic #229 T7 study — issue #81)
+Status: Accepted (2026-07-31, layers 2–3 implementation PR — issues #273 / #274; proposed 2026-07-30 as the epic #229 T7 study, issue #81)
 
 Deciders: maintainer. Area: fundamentals, data trust.
 
@@ -61,8 +61,29 @@ is expectation — a future UX may *suggest* relevance from criteria, never auto
 
 ## Consequences
 
-- Epic #229 ships: the core-floor lifecycle (create-time seed + healing migration) and
-  this ADR. Layers 2–3 are follow-up cards; layer 4 exists.
+- Epic #229 shipped the core-floor lifecycle (create-time seed + healing migration) and
+  this ADR. **All four layers are now live** (2026-07-31, issues #273 / #274): layer 2 as
+  `seed_statement_pack_kpi_relevance` + migration `0126`, layer 3 as
+  `refresh_derived_kpi_relevance`, both converging per company on the daily aggregator
+  pull; layer 4 was already there. The no-self-referential-gate rule is enforced
+  structurally — `expected_primary_metric_keys` filters `source != 'derived'` rather than
+  relying on the `secondary` rank layer 3 happens to write, and a guard test hand-upgrades
+  a derived row to `primary` to prove it still cannot gate.
+- Two findings from implementing layer 2, both recorded rather than papered over:
+  - The conservative subsets are **banking** (`net_interest_income`,
+    `net_fee_commission_income`, `total_loans`, `total_deposits`), **insurance**
+    (`gross_insurance_revenue` — the IFRS 17 top line), **reit** (`ffo`), and
+    **specialty_finance: nothing**. Migration 0095 maps exchanges and brokerage houses
+    (GPW, XTB) onto the same `statement_type` as debt collectors (KRU), and the pack
+    (`recoveries`, `erc`, `cash_ebitda`, `portfolio_purchases`) is debt-collector
+    vocabulary — no key is universal across that mix. Splitting the type is a separate
+    decision, not one this ADR forces.
+  - `statement_type` had **no runtime write path at all** — migrations 0095/0098 only,
+    which made them one-shot exactly like 0106 was. `create_company` now runs the same
+    registry-sector bridge in-transaction, so a bank tracked today is classified today
+    (and stops receiving a meaningless Altman Z″ under the ADR 0083 D4 gate). Layer 2's
+    convergence on the daily pull is what makes any later reclassification additive,
+    since there is no setter to hang it off.
 - A4 recall becomes measurable with an honest, extraction-independent denominator; the
   chicken-and-egg of newly tracked companies (#81 b) is dissolved by layers 1–2 being
   available at creation time, before any extraction runs.

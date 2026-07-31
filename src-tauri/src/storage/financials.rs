@@ -640,6 +640,191 @@ pub(super) fn seed_core_kpi_relevance(
         .map_err(StorageError::from)
 }
 
+/// Layer 2 of [ADR 0092](../../../docs/adr/0092-kpi-relevance-lifecycle.md):
+/// the statement-pack additions, keyed off `companies.statement_type` over the
+/// `scope='sector'` packs migration 0034 seeded and nothing ever read.
+///
+/// **Conservative subset by construction** — the ADR asks for keys that are
+/// genuinely universal within the statement type, not everything a pack lists,
+/// because a key nobody reports inflates the recall denominator without making
+/// the completeness gate any smarter. Each pick, and each deliberate omission:
+///
+/// * **banking** (pack has 12): `net_interest_income`, `net_fee_commission_income`,
+///   `total_loans`, `total_deposits` — the four primary-statement lines every
+///   bank's periodic report carries. *Omitted:* `operating_income` /
+///   `operating_expenses` (aggregates whose composition varies by presentation),
+///   and `nim` / `cost_income_ratio` / `npl_ratio` / `cost_of_risk` / `cet1` /
+///   `tcr` (ratios and capital measures that live in the management commentary
+///   or the notes, not the statements).
+/// * **insurance** (pack has 7): `gross_insurance_revenue` only — the IFRS 17
+///   top line, mandatory for every EU insurer since 2023. *Omitted:*
+///   `gross_written_premium` and `net_earned_premium` (pre-IFRS-17 concepts,
+///   now supplementary), `claims_ratio` / `combined_ratio` (non-life only),
+///   `technical_result` / `investment_result` (presentation varies).
+/// * **reit** (pack has 7): `ffo` only — the NAREIT-standard headline.
+///   *Omitted:* the rest are property-type specific (`occupancy`,
+///   `same_store_noi`, `walt`) or derived (`affo_payout_ratio`).
+/// * **specialty_finance**: **nothing**. The pack (`recoveries`, `erc`,
+///   `cash_ebitda`, `portfolio_purchases`) is debt-collector vocabulary, but
+///   migration 0095 also maps exchanges and brokerage houses onto this same
+///   `statement_type` (GPW and XTB on the owner's database, next to KRU). No
+///   key is universal across that mix, and the ADR's rule is to leave out when
+///   unsure. Splitting the type is a separate decision.
+///
+/// Keys are globally unique across the packs, so this flat allow-list plus the
+/// `d.sector = c.statement_type` join selects exactly the company's own pack.
+pub(super) const STATEMENT_PACK_METRIC_KEYS: [&str; 6] = [
+    // banking
+    "net_interest_income",
+    "net_fee_commission_income",
+    "total_loans",
+    "total_deposits",
+    // insurance
+    "gross_insurance_revenue",
+    // reit
+    "ffo",
+];
+
+/// Seed the statement-pack `kpi_relevance` additions for ONE company.
+///
+/// Same semantics as [`seed_core_kpi_relevance`], one layer up: deterministic
+/// `kpirel_sector_<company>_<metric_key>` ids, `INSERT OR IGNORE` against
+/// `UNIQUE(company_id, definition_id)` plus the `NOT EXISTS` guard, so a core or
+/// curated row for the same metric is never overwritten or duplicated.
+///
+/// **Additive on reclassification** (ADR 0092 layer 2): a `statement_type`
+/// change re-seeds — it never deletes the previous type's rows. Automation
+/// widens a company's expectations and leaves narrowing to the user.
+pub(super) fn seed_statement_pack_kpi_relevance(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<usize> {
+    let placeholders = STATEMENT_PACK_METRIC_KEYS
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("?{}", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "
+        INSERT OR IGNORE INTO kpi_relevance
+            (id, company_id, definition_id, status, source, rank)
+        SELECT
+            'kpirel_sector_' || c.id || '_' || d.metric_key,
+            c.id,
+            d.id,
+            'active',
+            'sector',
+            'primary'
+        FROM companies c
+        JOIN kpi_definitions d
+          ON d.scope = 'sector'
+         AND d.sector = c.statement_type
+         AND d.metric_key IN ({placeholders})
+        WHERE c.id = ?1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM kpi_relevance existing
+              WHERE existing.company_id = c.id
+                AND existing.definition_id = d.id
+          )
+        "
+    );
+
+    let mut parameters: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(7);
+    parameters.push(&company_id);
+    for key in STATEMENT_PACK_METRIC_KEYS.iter() {
+        parameters.push(key);
+    }
+
+    connection
+        .execute(&sql, parameters.as_slice())
+        .map_err(StorageError::from)
+}
+
+/// `kpi_relevance.source` for a layer-3 observation. Named once because two
+/// places must agree forever: the pass that writes it and the completeness
+/// gate that structurally refuses it.
+pub(super) const DERIVED_RELEVANCE_SOURCE: &str = "derived";
+
+/// How many of a company's most recent periods the derived pass looks at, and
+/// how many of them must carry a key for it to count as consistently reported
+/// (ADR 0092 layer 3: "issuer-tier facts in ≥3 of the last 4 periods").
+const DERIVED_OBSERVATION_WINDOW: i64 = 4;
+const DERIVED_OBSERVATION_MIN_PERIODS: i64 = 3;
+
+/// Layer 3 of [ADR 0092](../../../docs/adr/0092-kpi-relevance-lifecycle.md):
+/// mark the keys a company **consistently reports** as `source='derived'`,
+/// `rank='secondary'` — enrichment for the company-characteristic KPI surface
+/// and the coverage display.
+///
+/// **These rows never gate.** [`expected_primary_metric_keys`] excludes
+/// `source='derived'` structurally, not by relying on the rank. That exclusion
+/// is the whole reason this layer is allowed to exist: the completeness gate
+/// compares extraction output against expectations, so an expectation derived
+/// FROM extraction output would let a systematic extraction hole (a parser that
+/// never yields equity) silently erase the very expectation that would have
+/// caught it.
+///
+/// Additive and conservative, like every other automatic layer:
+/// * only **issuer-tier** facts count — a fact with no provenance row (manual)
+///   or one stamped `html_aggregator` is third-party or hand-entered, never
+///   evidence that the ISSUER reports the key;
+/// * `INSERT OR IGNORE` + `NOT EXISTS`, so a `core`/`sector`/`user` row for the
+///   same metric is left exactly as it is;
+/// * a key that STOPS being reported is **not** deleted — staleness is a
+///   display concern, and deleting would fight the user's curation.
+pub(super) fn refresh_derived_kpi_relevance(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<usize> {
+    connection
+        .execute(
+            "
+        INSERT OR IGNORE INTO kpi_relevance
+            (id, company_id, definition_id, status, source, rank)
+        SELECT
+            'kpirel_derived_' || ?1 || '_' || d.metric_key,
+            ?1,
+            f.definition_id,
+            'active',
+            'derived',
+            'secondary'
+        FROM financial_facts f
+        JOIN kpi_definitions d
+          ON d.id = f.definition_id
+        JOIN financial_fact_provenance p
+          ON p.fact_id = f.id
+        WHERE f.company_id = ?1
+          -- Issuer tiers only. `is_issuer()` in fundamentals::extraction is the
+          -- Rust twin of this predicate: everything but the aggregator.
+          AND p.source_tier <> 'html_aggregator'
+          AND f.period_id IN (
+              SELECT id
+              FROM financial_periods
+              WHERE company_id = ?1
+              ORDER BY IFNULL(period_end_date, fiscal_year || '-12-31') DESC,
+                       fiscal_year DESC
+              LIMIT ?2
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM kpi_relevance existing
+              WHERE existing.company_id = ?1
+                AND existing.definition_id = f.definition_id
+          )
+        GROUP BY f.definition_id, d.metric_key
+        HAVING COUNT(DISTINCT f.period_id) >= ?3
+        ",
+            params![
+                company_id,
+                DERIVED_OBSERVATION_WINDOW,
+                DERIVED_OBSERVATION_MIN_PERIODS
+            ],
+        )
+        .map_err(StorageError::from)
+}
+
 pub(super) fn create_kpi_relevance(
     connection: &Connection,
     input: NewKpiRelevance,
@@ -870,6 +1055,15 @@ pub(super) fn expected_primary_metric_keys(
                 && r.rank
                     .as_deref()
                     .is_some_and(|rank| rank.eq_ignore_ascii_case("primary"))
+                // ADR 0092's no-self-referential-gate rule, enforced
+                // STRUCTURALLY and not left to the rank the layer-3 pass
+                // happens to write: this gate compares extraction output
+                // against expectations, so an expectation derived FROM
+                // extraction output would let a systematic extraction hole
+                // silently erase the very expectation that would catch it.
+                // Derived rows enrich the KPI surface; they never gate — even
+                // if something (a user, a future job) ranks one `primary`.
+                && !r.source.eq_ignore_ascii_case(DERIVED_RELEVANCE_SOURCE)
         })
         .map(|r| r.definition_id)
         .collect();
@@ -2142,6 +2336,22 @@ impl FinancialsStore {
         let connection = self.db.checkout()?;
 
         expected_primary_metric_keys(&connection, company_id)
+    }
+
+    /// Bring one company's automatic `kpi_relevance` layers up to date (ADR
+    /// 0092 layers 2 + 3), in one checkout and one transaction.
+    ///
+    /// Idempotent, additive, and safe to call on any cadence: the statement
+    /// pack converges after a `statement_type` change, the derived pass picks
+    /// up newly-consistent keys. Neither ever overwrites a `core` or curated
+    /// row, and neither ever deletes. Returns the rows added.
+    pub fn refresh_kpi_relevance_layers(&self, company_id: &str) -> StorageResult<usize> {
+        let connection = self.db.checkout()?;
+        let transaction = connection.unchecked_transaction()?;
+        let seeded = seed_statement_pack_kpi_relevance(&transaction, company_id)?
+            + refresh_derived_kpi_relevance(&transaction, company_id)?;
+        transaction.commit()?;
+        Ok(seeded)
     }
 
     /// The previously-stored fact set for one `(company, fiscal_year,
