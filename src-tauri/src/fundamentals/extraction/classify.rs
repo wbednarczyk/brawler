@@ -131,6 +131,11 @@ const GOVERNANCE_MARKERS: &[&str] = &[
     " policy",
     " lad korporacyjny",
     " ład korporacyjny",
+    // Nominative form of the convening notice (#269) — the dictionary only had
+    // the locative `zwołaniu` ("o zwołaniu ZWZ"), so the equally common
+    // `Zwolanie_ZWZA_…` / `Wniosek o zwołanie NWZ` titles fell through.
+    " zwolanie",
+    " zwołanie",
 ];
 
 /// Non-periodic documents whose titles routinely co-occur with financial
@@ -159,6 +164,41 @@ const OTHER_EARLY_MARKERS: &[&str] = &[
     // narrative text mined for financial facts.
     " report on activities",
     " report on the activities",
+    // --- #269 systematic pass: documents that ride along with a periodic
+    // filing and carry its `SSF`/`JSF`/cadence token in their own title, so the
+    // periodic gate would claim them and feed narrative text to extraction.
+    //
+    // Management-board statements/representations attached to the statements
+    // (`LPP_JSF_Oswiadczenie_Zarzadu_do_JSF_2025.xhtml`, `NPGM_OZ_SSF_2025…`) —
+    // 35 stored rows classified periodic before this.
+    " oswiadcz",
+    " oświadcz",
+    // The activity report (SzD) when its title is CamelCase-glued, which hides
+    // the spaced ` sprawozdanie zarzadu` marker above.
+    " sprawozdaniezarzadu",
+    " sprawozdaniezarządu",
+    " szdz ",
+    // A sustainability report is explicitly NOT the financial statement, and
+    // its title contains ` financial report` (`…_Non_financial_report_2023`).
+    " non financial",
+    // Selected-data extracts: the dictionary had ` wybrane dane`, which misses
+    // the far more common `Wybrane <skonsolidowane|jednostkowe|wstępne> dane`.
+    " wybrane skonsolidowane dane",
+    " wybrane jednostkowe dane",
+    " wybrane wstepne dane",
+    " wybrane wstępne dane",
+    " dane operacyjne",
+    // Results commentary, forecasts and estimates published alongside a report.
+    // ` szacunkow` only caught the adjective, not `Szacunki za 4 kw.`.
+    " komentarz",
+    " prognoz",
+    " szacunk",
+    " zaproszenie",
+    // MAR art. 19 manager-transaction notifications.
+    " mar19",
+    " art 19 mar",
+    " powiadomienie o transakc",
+    " biogram",
 ];
 
 const PRESENTATION_MARKERS: &[&str] = &[" prezentacj", " presentation"];
@@ -205,6 +245,29 @@ const FINANCIAL_MARKERS: &[&str] = &[
     " report h1",
     " report h2",
     " annual report",
+    // --- #269 systematic pass: cadence words the dictionary never had. Before
+    // this, a report named by its PERIOD rather than by `SSF`/`sprawozdanie
+    // finansowe` was invisible to canonical selection unless a slug rescued it
+    // (`Skonsolidowany_raport_za_III_kwartal_2023`, `Interim_report_for_H1_2024`,
+    // `GPW Group quarterly report for Q1 2026`). 100 stored rows recovered.
+    //
+    // Polish quarter/half-year, incl. the `za I kw. 2026` abbreviation. The
+    // announcement classes that also carry these words (`Szacunki za 4 kw.`,
+    // `Wybrane wstępne dane … za I kwartał`) are routed out by the early-Other
+    // markers above, which run first.
+    " kwartal",
+    " kwartał",
+    " kw ",
+    " polrocze",
+    " półrocze",
+    " srodroczn",
+    " śródroczn",
+    " raport finansow",
+    // English forms. ` financial report` is guarded by ` non financial` above;
+    // KGHM's monthly `Production-Sales report` matches none of these.
+    " quarterly report",
+    " interim report",
+    " financial report",
 ];
 
 const CONSOLIDATED_MARKERS: &[&str] =
@@ -219,41 +282,71 @@ const STANDALONE_MARKERS: &[&str] = &[
     " bsf",
 ];
 
-/// Lowercase, map every non-alphanumeric char to a space, collapse runs, and
-/// pad — so markers written as `" word"` match on a left word boundary while
-/// staying inflection-tolerant on the right.
+/// File extensions that show up **glued** to the first word of a title (#269).
+/// The attachment store concatenates `<filename><document title>` with no
+/// separator, so a real title reads
+/// `SF_MO-BRUK_…-pl.xhtmlSprawozdanie finansowe jednostkowe za 2025 r.` — the
+/// statement's own name is welded to `xhtml` and every `" word"` marker misses
+/// it on the left boundary. 945 stored rows carry the glue. Longest-first
+/// (`xhtml` before `html`) so the split lands on the real extension.
+const GLUED_TITLE_EXTENSIONS: &[&str] =
+    &["xhtml", "xades", "xbri", "html", "pdf", "zip", "xml", "csv"];
+
+/// Lowercase, map every non-alphanumeric char to a space, collapse runs, unglue
+/// a leading file extension from each token, and pad — so markers written as
+/// `" word"` match on a left word boundary while staying inflection-tolerant on
+/// the right.
 fn normalize(raw: &str) -> String {
     let mapped: String = raw
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { ' ' })
         .collect();
-    let collapsed = mapped.split_whitespace().collect::<Vec<_>>().join(" ");
-    format!(" {collapsed} ")
+    let mut parts: Vec<&str> = Vec::new();
+    for token in mapped.split_whitespace() {
+        // Split at most once, and only when the extension is a strict prefix:
+        // a bare `…-pl.xbri` token stays whole, `xhtmlsprawozdanie` becomes two.
+        // The extensions are ASCII, so slicing at their length is always on a
+        // char boundary even when the rest of the token is not.
+        if let Some(ext) = GLUED_TITLE_EXTENSIONS
+            .iter()
+            .find(|e| token.len() > e.len() && token.starts_with(**e))
+        {
+            parts.push(&token[..ext.len()]);
+            parts.push(&token[ext.len()..]);
+        } else {
+            parts.push(token);
+        }
+    }
+    format!(" {} ", parts.join(" "))
 }
 
 fn matches_any(t: &str, markers: &[&str]) -> bool {
     markers.iter().any(|m| t.contains(m))
 }
 
-/// `(fires_anywhere, fires_from_the_title)` for [`AUDITOR_MARKERS`].
+/// Whether a routing gate fires, under **title precedence**.
 ///
 /// **The URL is not a signal about THIS document** (epic #229 T3 doctrine,
 /// [`docs/data-model.md`] `doc_kind`): the bankier CDN reuses a neighbouring
-/// attachment's filename as the slug, so an auditor marker found only in the
-/// URL is evidence about some *other* file in the same filing. Callers use the
-/// second flag to keep such a marker from overriding what the title says the
-/// document is — content-proven on the maintainer's corpus, where Asseco's own
-/// `Asseco_Poland_jednostkowe_sprawozdanie_finansowe_HY_2023.pdf` is served
-/// under a `23-HY-ACP-Review-Report-…` slug and mBank's auditor-report slug
-/// carries Asseco BS's `Sprawozdanie_finansowe_ABS_2023.xhtml`. Note this is
-/// orthogonal to [`classify_doc_kind_with_slug_trust`], which only fires when
-/// the slug names a *foreign* tracked issuer — both of these slugs belong to
-/// the same filing or an untracked issuer, so nothing else catches them.
-fn auditor_marker_source(title_norm: &str, combined_norm: &str) -> (bool, bool) {
-    (
-        matches_any(combined_norm, AUDITOR_MARKERS),
-        matches_any(title_norm, AUDITOR_MARKERS),
-    )
+/// attachment's filename as the slug, so a marker found only in the URL is
+/// evidence about some *other* file in the same filing. The gate therefore
+/// fires on a title-borne marker outright, but on a URL-only marker only while
+/// the title itself does not already say what the document is
+/// (`title_speaks_for_itself`) — content-proven on the maintainer's corpus,
+/// where Asseco's own `…_jednostkowe_sprawozdanie_finansowe_HY_2023.pdf` is
+/// served under a `23-HY-ACP-Review-Report-…` slug and CD PROJEKT's own
+/// `…_PSF_PL.xhtml` under an `Oswiadczenia-Zarzadu-…` slug. Orthogonal to
+/// [`classify_doc_kind_with_slug_trust`], which only fires when the slug names
+/// a *foreign tracked* issuer — these slugs belong to the same filing or an
+/// untracked issuer, so nothing else catches them.
+fn gate_fires(
+    title_norm: &str,
+    combined_norm: &str,
+    markers: &[&str],
+    title_speaks_for_itself: bool,
+) -> bool {
+    matches_any(combined_norm, markers)
+        && (matches_any(title_norm, markers) || !title_speaks_for_itself)
 }
 
 /// Management activity-report markers ("sprawozdanie [zarządu] z działalności"
@@ -292,10 +385,13 @@ pub fn is_management_report(title: &str, url: &str) -> bool {
     // auditor marker (a neighbouring attachment's slug) must not veto a
     // document whose own title names a management activity report — that veto
     // would silently lose the company's holdings table (the KRU class).
-    let (auditor_any, auditor_in_title) = auditor_marker_source(&t_title, &t);
     let title_names_a_management_report = matches_any(&t_title, MANAGEMENT_REPORT_MARKERS);
-    if (auditor_any && (auditor_in_title || !title_names_a_management_report))
-        || matches_any(&t, GOVERNANCE_MARKERS)
+    if gate_fires(
+        &t_title,
+        &t,
+        AUDITOR_MARKERS,
+        title_names_a_management_report,
+    ) || matches_any(&t, GOVERNANCE_MARKERS)
         || matches_any(&t, PRESENTATION_MARKERS)
     {
         return false;
@@ -343,18 +439,20 @@ pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
     // markers (`..._BSSF_MSSF_SzB_PL`), which is why this gate runs first.
     let title_lower = title.to_lowercase();
     let t_title = normalize(&title_lower);
-    let (auditor_any, auditor_in_title) = auditor_marker_source(&t_title, &t);
     let title_names_a_statement = PACKAGE_EXTENSIONS
         .iter()
         .any(|ext| title_lower.contains(ext))
         || matches_any(&t_title, FINANCIAL_MARKERS);
-    if auditor_any && (auditor_in_title || !title_names_a_statement) {
+    // All three routing gates run under title precedence (#269): a marker the
+    // title does not carry belongs to the neighbouring attachment whose slug
+    // was reused, and must not overrule a title that names a statement.
+    if gate_fires(&t_title, &t, AUDITOR_MARKERS, title_names_a_statement) {
         return DocKind::AuditorOpinion;
     }
-    if matches_any(&t, GOVERNANCE_MARKERS) {
+    if gate_fires(&t_title, &t, GOVERNANCE_MARKERS, title_names_a_statement) {
         return DocKind::Governance;
     }
-    if matches_any(&t, OTHER_EARLY_MARKERS) {
+    if gate_fires(&t_title, &t, OTHER_EARLY_MARKERS, title_names_a_statement) {
         return DocKind::Other;
     }
     if matches_any(&t, PRESENTATION_MARKERS) {
@@ -482,6 +580,36 @@ mod tests {
         title: String,
         url: String,
         kind: String,
+    }
+
+    /// #269: the store concatenates `<filename><document title>` with no
+    /// separator, welding the statement's own name to the file extension. Real
+    /// shapes from the maintainer's database (945 stored rows carry the glue);
+    /// every `" word"` marker misses them until `normalize` splits the token.
+    #[test]
+    fn glued_extension_does_not_hide_the_document_title() {
+        assert_eq!(
+            classify_doc_kind(
+                "SF_MO-BRUK_S_A_MSSF-2025-12-31-1-pl.xhtmlSprawozdanie finansowe jednostkowe za 2025 r.",
+                ""
+            ),
+            DocKind::PeriodicJsf
+        );
+        assert_eq!(
+            classify_doc_kind(
+                "2026.03.19 SB statements - Audit Committee.xhtmlSupervisory Board statement",
+                ""
+            ),
+            DocKind::Governance
+        );
+        // A bare package extension is NOT a glued token — it must stay whole so
+        // the ESEF package still routes through the periodic branch.
+        assert_eq!(
+            classify_doc_kind("CBF-2025-12-31-1-pl.xbri", ""),
+            DocKind::PeriodicSsf
+        );
+        // `xhtml` is split before `html`, so the marker sees the real word.
+        assert!(normalize("a.xhtmlopinia").contains(" opinia "));
     }
 
     /// Epic #229 T3 (#171): a foreign issuer's slug must not classify the

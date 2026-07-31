@@ -1,5 +1,5 @@
 {
-  "readme": "G-2 taxonomy contract corpus (ADR 0077 §1, plan §F1 T1.1). Real GPW/NewConnect report-document title shapes (owner's live DB, 2026-07-09, issuers: CBF, CDR, TXT, SWG, MBR + shapes from the report_diff golden corpus) hand-labeled with the expected doc_kind. classify_doc_kind must reproduce every label — the contract test reddens on any marker edit that flips a known-good classification (the 'denylist rot' defect class). url is empty when the URL carries no classification signal; a few rows keep real URLs (companion extensions, the bankier mis-association bug shape). Extend by appending labeled rows; never relabel to make a failing change pass. 2026-07-31 (#270): appended the English auditor-product shapes (review report, independent auditor's/auditors' report, audit report, assurance/attestation report — issuers ORLEN, PKO BP, Pekao, KGHM, XTB, BDX) plus the auditor-SELECTION negative that keeps the new markers from over-firing. Same change: the two bankier reused-slug rows (ABS/Asseco) pin the title-precedence rule — a URL-only auditor marker must not demote a titled statement — and the DataWalk `Report_on_Review` / KGHM `MB_report_on_activities` rows pin the two title shapes that precedence would otherwise misread. 2026-07-31 (#275): the Asseco and XTB rows now carry their REAL consolidated slugs and stay `periodic_jsf` — title-first precedence extended to the consolidated/standalone axis.",
+  "readme": "G-2 taxonomy contract corpus (ADR 0077 §1, plan §F1 T1.1). Real GPW/NewConnect report-document title shapes (owner's live DB, 2026-07-09, issuers: CBF, CDR, TXT, SWG, MBR + shapes from the report_diff golden corpus) hand-labeled with the expected doc_kind. classify_doc_kind must reproduce every label — the contract test reddens on any marker edit that flips a known-good classification (the 'denylist rot' defect class). url is empty when the URL carries no classification signal; a few rows keep real URLs (companion extensions, the bankier mis-association bug shape). Extend by appending labeled rows; never relabel to make a failing change pass. 2026-07-31 (#270): appended the English auditor-product shapes (review report, independent auditor's/auditors' report, audit report, assurance/attestation report — issuers ORLEN, PKO BP, Pekao, KGHM, XTB, BDX) plus the auditor-SELECTION negative that keeps the new markers from over-firing. Same change: the two bankier reused-slug rows (ABS/Asseco) pin the title-precedence rule — a URL-only auditor marker must not demote a titled statement — and the DataWalk `Report_on_Review` / KGHM `MB_report_on_activities` rows pin the two title shapes that precedence would otherwise misread. 2026-07-31 (#275): the Asseco and XTB rows now carry their REAL consolidated slugs and stay `periodic_jsf` — title-first precedence extended to the consolidated/standalone axis. 2026-07-31 (#269): systematic marker-dictionary pass — period-cadence families (kwartał/kw./półrocze/śródroczny, quarterly|interim|financial report), the ride-along non-statements that carry a filing's SSF/JSF token (oświadczenie zarządu, SzDZ, selected-data extracts, komentarz/prognoza/szacunki, MAR-19 notifications), convening notices, and the glued-extension title shape; the near-miss negatives (Production-Sales report, SB annual activity report, PZU solvency report, Wyniki finansowe QSr) pin that the new families do not overfire.",
   "entries": [
     { "title": "cyber_Folks_2026_Q1_SSF.pdf", "url": "raport/SSF.pdf", "kind": "periodic_ssf" },
     { "title": "cF_2023_Q3_SSF.pdf", "url": "", "kind": "periodic_ssf" },
@@ -102,6 +102,30 @@
     { "title": "DataWalk_S.A._30.06.2024_Report_on_Review_JSF.pdf", "url": "", "kind": "auditor_opinion" },
     { "title": "DataWalk_S.A._30.06.2024_Report_on_Review_SSF.pdf", "url": "", "kind": "auditor_opinion" },
     { "title": "MB_report_on_activities_of_the_KGHM_Group_PSr_2024.pdf", "url": "", "kind": "other" },
-    { "title": "MBs_report_on_activities_in_2024.xhtml", "url": "", "kind": "other" }
+    { "title": "MBs_report_on_activities_in_2024.xhtml", "url": "", "kind": "other" },
+
+    { "title": "Grupa_ELEKTROTIM_raport_skonsolidowany_za_III_kwartal_2023-sig-sig-sig-sig.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "Raport Creotech Instruments S.A. za I kwartał 2026 roku.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "DINO_POLSKA_S.A._raport_za_I_kw._2024.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "Dino_Polska_S.A.__raport_za_I_polrocze_2024.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "GPW Group quarterly report for Q1 2026.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "Consolidated_interim_report_for_H1_2023.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "Financial_report_of_Echo_Investment_Group_for_H1_2024.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "Jednostkowy_Raport_Finansowy_CCC_SA.xhtml", "url": "", "kind": "periodic_jsf" },
+    { "title": "Srodroczny_skonsolidowany_raport_za_1Q_2025-sig-sig-sig-sig-sig.pdf", "url": "", "kind": "periodic_ssf" },
+    { "title": "SF_MO-BRUK_S_A_MSSF-2025-12-31-1-pl.xhtmlSprawozdanie finansowe jednostkowe za 2025 r.", "url": "", "kind": "periodic_jsf" },
+    { "title": "2026.03.19 SB statements - Audit Committee.xhtmlSupervisory Board statement", "url": "", "kind": "governance" },
+    { "title": "LPP_JSF_Oswiadczenie_Zarzadu_do_JSF_2025.xhtml", "url": "", "kind": "other" },
+    { "title": "GK_LPP_SSF_Oswiadczenie_Zarzadu_do_SSF_2025.xhtml", "url": "", "kind": "other" },
+    { "title": "DOMDEV_SprawozdanieZarzadu_pierwsze_polrocze_2025.pdf", "url": "", "kind": "other" },
+    { "title": "Zwolanie_ZWZA_Echo_Investment_S.A._na_dzien_26_czerwca_2025.pdf", "url": "", "kind": "governance" },
+    { "title": "Wybrane_skonsolidowane_dane_finansowe_GK_GPW_2023.xhtml", "url": "", "kind": "other" },
+    { "title": "YE'23_GASEE_Non_financial_report_2023.xhtml", "url": "", "kind": "other" },
+    { "title": "Komentarz_segmenty_2Q2023_PL.pdf", "url": "", "kind": "other" },
+    { "title": "SzDZ_Grupy_Banku_Pekao_I_polrocze_2026.pdf", "url": "", "kind": "other" },
+    { "title": "Szacunki_za_4_kw_i_rok_2024.pdf", "url": "", "kind": "other" },
+    { "title": "Production-Sales_report_KGHM_June_2025.pdf", "url": "", "kind": "other" },
+    { "title": "2025 Supervisory Board annual activity report.pdf", "url": "", "kind": "governance" },
+    { "title": "Sprawozdanie_o_wyplacalnosci_i_kondycji_finansowej_PZU_SA_2023.pdf", "url": "", "kind": "other" }
   ]
 }
