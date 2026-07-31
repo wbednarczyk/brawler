@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       shard:
-        description: 'cargo-mutants shard, e.g. "1/8" (empty = full sweep)'
+        description: 'cargo-mutants shard k/n, k 0-INDEXED: a full 8-way sweep is 0/8..7/8 (8/8 is a usage error; empty = full sweep)'
         required: false
         default: ""
       build_jobs:
@@ -112,6 +112,13 @@ jobs:
             MUTANTS_BUILD_JOBS=${{ inputs.build_jobs }} \
             MUTANTS_SHARD=${{ inputs.shard }} || rc=$?
           kill "$TELEM_PID" 2>/dev/null || true
+          # GNU make maps every failed recipe to its own exit 2, swallowing
+          # cargo-mutants' code (the 2026-07-31 sweep failed 3 timeout-only
+          # shards as "exit 2"). The recipe persists the true code to a marker
+          # file; make's status is only the fallback when the file is absent
+          # (recipe died before cargo-mutants ran — no proof, stays red).
+          ec_file=src-tauri/mutants.out/cargo-mutants-exit-code
+          if [ -f "$ec_file" ]; then rc=$(cat "$ec_file"); fi
           echo "rc=$rc" >>"$GITHUB_OUTPUT"
 
       # #256: cargo-mutants encodes the sweep result in its exit code — 0 all
