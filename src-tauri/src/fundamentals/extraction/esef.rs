@@ -79,6 +79,29 @@ fn concept_to_metric_key(local_name: &str) -> Option<&'static str> {
         "CashFlowsFromUsedInOperatingActivities" => "operating_cash_flow",
         "CashFlowsFromUsedInInvestingActivities" => "investing_cash_flow",
         "CashFlowsFromUsedInFinancingActivities" => "financing_cash_flow",
+        // Banking/insurance sector packs (epic #277 T3) — deliberately ONLY the
+        // four `banking` and one `insurance` keys `seed_statement_pack_kpi_relevance`
+        // already expects (docs/data-model.md § kpi_relevance layer 2); the rest of
+        // each pack (ratios, capital measures, GWP/earned premium) waits until a
+        // real filing demands it, not guessed ahead of evidence. Verified against
+        // the maintainer's real PKO BP and PZU FY2025 ESEF packages: all five are
+        // reported as dimensionless `ix:nonFraction` facts (see `esef/tests.rs`
+        // `BANK_SAMPLE`/`INSURANCE_SAMPLE` doc comments for the exact values).
+        // `InterestRevenueExpense` is the bold RZIS (income-statement) line PKO
+        // reports its net interest result under — not a debit/credit-netted
+        // "expense" despite the taxonomy label. `NetInterestIncome` is
+        // deliberately NOT mapped: PKO's own `pko:NetInterestIncome` extension
+        // dual-tags the SAME period/value from the cash-flow statement's
+        // indirect-method reconciliation (parenthesized, `sign="-"`) — a generic
+        // local-name match on that string would ingest a sign-flipped,
+        // wrong-statement figure for any filer whose extension happens to share
+        // the name, so it stays unmapped until a filer is found using it for the
+        // genuine P&L line.
+        "InterestRevenueExpense" => "net_interest_income",
+        "FeeAndCommissionIncomeExpense" => "net_fee_commission_income",
+        "LoansAndAdvancesToCustomers" => "total_loans",
+        "DepositsFromCustomers" => "total_deposits",
+        "InsuranceRevenue" => "gross_insurance_revenue",
         _ => return None,
     })
 }

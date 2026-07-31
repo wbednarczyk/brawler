@@ -61,6 +61,70 @@ const HEALTH_SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </body>
 </html>"#;
 
+/// Banking-sector sample carrying real figures from the maintainer's PKO BP
+/// FY2025 ESEF package (`ESEF_SSF_GKPKOBPSA-2025-12-31-1-pl.xhtml`, epic #277
+/// T3): `ifrs-full:InterestRevenueExpense` (24 223 mln PLN, the bold RZIS.070
+/// income-statement row) and `ifrs-full:FeeAndCommissionIncomeExpense`
+/// (5 243 mln PLN, RZIS.100) for FY2025 duration 2025-01-01..2025-12-31;
+/// `ifrs-full:LoansAndAdvancesToCustomers` (293 411 mln PLN) and
+/// `ifrs-full:DepositsFromCustomers` (460 722 mln PLN) as dimensionless
+/// instant totals at 2025-12-31. Also carries the real `pko:NetInterestIncome`
+/// company-extension fact PKO dual-tags onto the SAME period/value — but from
+/// the cash-flow statement's indirect-method reconciliation (`CF_DO.045`),
+/// displayed in parentheses with `sign="-"`, i.e. the adjustment that backs
+/// interest income OUT of operating profit, not the P&L net-interest-income
+/// line. `concept_to_metric_key` deliberately does NOT map `NetInterestIncome`
+/// for exactly this reason (verified against the real package, not assumed).
+const BANK_SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2023/ifrs-full"
+      xmlns:pko="http://www.pkobp.pl/xbrl/2025"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+  <body>
+    <ix:header><ix:resources>
+      <xbrli:context id="c-fy-d">
+        <xbrli:period>
+          <xbrli:startDate>2025-01-01</xbrli:startDate>
+          <xbrli:endDate>2025-12-31</xbrli:endDate>
+        </xbrli:period>
+      </xbrli:context>
+      <xbrli:context id="c-fy-i">
+        <xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period>
+      </xbrli:context>
+      <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+    </ix:resources></ix:header>
+    <p>Wynik z tytułu odsetek: <ix:nonFraction name="ifrs-full:InterestRevenueExpense" contextRef="c-fy-d" unitRef="pln" scale="6" format="ixt:num-comma-decimal">24 223</ix:nonFraction></p>
+    <p>Wynik z tytułu prowizji: <ix:nonFraction name="ifrs-full:FeeAndCommissionIncomeExpense" contextRef="c-fy-d" unitRef="pln" scale="6" format="ixt:num-comma-decimal">5 243</ix:nonFraction></p>
+    <p>Kredyty i pożyczki: <ix:nonFraction name="ifrs-full:LoansAndAdvancesToCustomers" contextRef="c-fy-i" unitRef="pln" scale="6" format="ixt:num-comma-decimal">293 411</ix:nonFraction></p>
+    <p>Zobowiązania wobec klientów: <ix:nonFraction name="ifrs-full:DepositsFromCustomers" contextRef="c-fy-i" unitRef="pln" scale="6" format="ixt:num-comma-decimal">460 722</ix:nonFraction></p>
+    <p>(<ix:nonFraction name="pko:NetInterestIncome" contextRef="c-fy-d" unitRef="pln" scale="6" format="ixt:num-comma-decimal" sign="-">24 223</ix:nonFraction>)</p>
+  </body>
+</html>"#;
+
+/// Insurance-sector sample carrying the real `ifrs-full:InsuranceRevenue`
+/// figure from the maintainer's PZU FY2025 ESEF package
+/// (`pzu-2025-12-31-1-pl.xhtml`, epic #277 T3): 30 882 mln PLN for the
+/// FY2025 duration 2025-01-01..2025-12-31, a dimensionless fact.
+const INSURANCE_SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2023/ifrs-full"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+  <body>
+    <ix:header><ix:resources>
+      <xbrli:context id="c-fy-d">
+        <xbrli:period>
+          <xbrli:startDate>2025-01-01</xbrli:startDate>
+          <xbrli:endDate>2025-12-31</xbrli:endDate>
+        </xbrli:period>
+      </xbrli:context>
+      <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+    </ix:resources></ix:header>
+    <p>Przychody ubezpieczeniowe: <ix:nonFraction name="ifrs-full:InsuranceRevenue" contextRef="c-fy-d" unitRef="pln" scale="6" format="ixt:num-comma-decimal">30 882</ix:nonFraction></p>
+  </body>
+</html>"#;
+
 fn d(v: i64) -> Decimal {
     Decimal::from(v)
 }
@@ -297,6 +361,64 @@ fn extracts_health_score_balance_sheet_concepts() {
         .find(|f| f.metric_key == "current_assets")
         .unwrap();
     assert_eq!(ca.citation, "CurrentAssets");
+}
+
+#[test]
+fn concept_to_metric_key_maps_banking_and_insurance_concepts() {
+    assert_eq!(
+        concept_to_metric_key("InterestRevenueExpense"),
+        Some("net_interest_income")
+    );
+    assert_eq!(
+        concept_to_metric_key("FeeAndCommissionIncomeExpense"),
+        Some("net_fee_commission_income")
+    );
+    assert_eq!(
+        concept_to_metric_key("LoansAndAdvancesToCustomers"),
+        Some("total_loans")
+    );
+    assert_eq!(
+        concept_to_metric_key("DepositsFromCustomers"),
+        Some("total_deposits")
+    );
+    assert_eq!(
+        concept_to_metric_key("InsuranceRevenue"),
+        Some("gross_insurance_revenue")
+    );
+    // Deliberately NOT mapped: PKO's own `pko:NetInterestIncome` extension
+    // tags the cash-flow reconciliation adjustment, not the P&L net-interest
+    // line (see BANK_SAMPLE doc comment) — mapping this local name generically
+    // would ingest a sign-flipped, wrong-statement figure for any filer whose
+    // extension happens to share the name.
+    assert_eq!(concept_to_metric_key("NetInterestIncome"), None);
+}
+
+#[test]
+fn extracts_banking_sector_concepts_from_real_pko_values() {
+    // Epic #277 T3: real PKO BP FY2025 figures (see BANK_SAMPLE doc comment).
+    let facts = parse_esef(BANK_SAMPLE.as_bytes()).expect("bank sample parses");
+    let set = fact_set_for_period(&facts, "2025-12-31");
+    assert_eq!(set.get("net_interest_income"), Some(&d(24_223_000_000)));
+    assert_eq!(
+        set.get("net_fee_commission_income"),
+        Some(&d(5_243_000_000))
+    );
+    assert_eq!(set.get("total_loans"), Some(&d(293_411_000_000)));
+    assert_eq!(set.get("total_deposits"), Some(&d(460_722_000_000)));
+    // The dual-tagged `pko:NetInterestIncome` cash-flow adjustment must not
+    // leak in under any key — it is untracked, so it produces no fact at all.
+    assert!(
+        facts.iter().all(|f| f.citation != "NetInterestIncome"),
+        "the pko:NetInterestIncome extension must not be extracted: {facts:?}"
+    );
+}
+
+#[test]
+fn extracts_insurance_sector_concept_from_real_pzu_value() {
+    // Epic #277 T3: real PZU FY2025 figure (see INSURANCE_SAMPLE doc comment).
+    let facts = parse_esef(INSURANCE_SAMPLE.as_bytes()).expect("insurance sample parses");
+    let set = fact_set_for_period(&facts, "2025-12-31");
+    assert_eq!(set.get("gross_insurance_revenue"), Some(&d(30_882_000_000)));
 }
 
 // ---------------------------------------------------------------------------
