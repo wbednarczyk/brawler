@@ -200,6 +200,61 @@ act_handler!(
     }
 );
 
+/// `capture_report_document` MCP input (ADR 0093 dec. 5, epic #285 T8):
+/// mirrors `storage::CaptureReportDocumentInput` but deliberately EXCLUDES
+/// `sourceType` — an agent registers a URL it read, it must never mint an
+/// `espi_attachment`/other ingest-only row. `deny_unknown_fields` makes that
+/// the honest refusal: an agent that sends `sourceType` gets the same typed
+/// `-32602` "unknown field" protocol error `record_financial_facts` proves
+/// for `totallyMadeUpField` (T7 precedent) — never a silent override of a
+/// field the schema doesn't expose. The handler always writes
+/// `source_type = "user_url"`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AgentCaptureReportDocumentInput {
+    pub company_id: String,
+    pub url: String,
+    #[serde(default)]
+    pub period_id: Option<String>,
+    #[serde(default)]
+    pub origin_ref: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub attribution: Option<String>,
+}
+
+// Fetches and stores the document at `url`, always under
+// `source_type = "user_url"` (ADR 0093 dec. 5). Runs the SAME production
+// path (`report_documents_capture::capture_report_document`) the
+// `capture_report_document` Tauri command uses, but through the gated
+// `HttpDocumentFetcher::agent_capture()` fetcher (https-only, SSRF-guarded
+// on every redirect hop, content-type allowlisted, 30 MiB streaming cap) —
+// never the ingest fetcher's unrestricted behavior. Idempotent: a repeat
+// call with the same `companyId`+`url` returns the existing row
+// (`UNIQUE(company_id, url)`).
+act_handler!(
+    capture_report_document_handler,
+    AgentCaptureReportDocumentInput,
+    |state, input| {
+        let fetcher = crate::document_fetcher::HttpDocumentFetcher::agent_capture();
+        crate::report_documents_capture::capture_report_document(
+            state,
+            &fetcher,
+            storage::CaptureReportDocumentInput {
+                company_id: input.company_id,
+                source_type: "user_url".to_owned(),
+                url: input.url,
+                period_id: input.period_id,
+                origin_ref: input.origin_ref,
+                title: input.title,
+                attribution: input.attribution,
+            },
+        )
+        .map_err(CommandError::from)
+    }
+);
+
 // ---- Qualitative verdicts (CitationsJson, batch shape) ---------------------
 
 act_handler!(

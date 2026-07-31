@@ -643,6 +643,19 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
             tools::tool_schema::<storage::UpdateFinancialFact>,
             acts::update_financial_fact_handler,
         ),
+        // The document an agent read, registered so record_financial_facts can
+        // cite it (ADR 0093 dec. 5, epic #285 T8). Fetch is gated:
+        // https-only + SSRF guard (every resolved address, re-checked on
+        // every redirect hop), content-type allowlist, 30 MiB streaming cap
+        // (`document_fetcher::HttpDocumentFetcher::agent_capture()`) — never
+        // the unrestricted ingest fetcher every other caller keeps.
+        exposed_act(
+            "capture_report_document",
+            None,
+            "Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (record_financial_facts needs its returned documentId). Always registers under source_type \"user_url\"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf | text/html | application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error.",
+            tools::tool_schema::<acts::AgentCaptureReportDocumentInput>,
+            acts::capture_report_document_handler,
+        ),
         // Batch write over `record_structured_fact` (ADR 0093 dec. 6, epic
         // #285 T7): the agent-acquisition tier's centerpiece. No Tauri command
         // twin (MCP-only, like the four MVP read composites) — `tool_name` ==
@@ -1097,7 +1110,6 @@ fn classifications() -> Vec<RegistryEntry> {
         act("set_company_sector", None),
         act("rename_watchlist", None), // watchlist rename (UI config)
         act("rename_cockpit_layout", None), // saved-view rename (UI config, issue #89)
-        act("capture_report_document", None), // document-ingest plumbing (fetch/extract pipeline owns it)
         act("resolve_transcript_job_company", None), // transcript-triage UI step
         // Report-pipeline job triggers (multi-stage document machinery; UI-driven
         // per-document, not a clean headless agent surface):
@@ -1358,12 +1370,13 @@ fn act_gate(
 /// round-trip in `mcp::server`). Adding a tool bumps exactly this constant.
 /// Itemization: 44 read (4 MVP + 34 read wave + get_kpi_comparison +
 /// get_sector_percentiles + list_valuation_runs (ADR 0089) + list_alert_rules +
-/// list_flagged_extraction_outcomes + list_unclassified_filings) + 57 act incl.
+/// list_flagged_extraction_outcomes + list_unclassified_filings) + 58 act incl.
 /// compute_comparative_valuation (ADR 0089), classify_filing, ADR 0088 dec. 2/3/4,
 /// record_financial_facts (ADR 0093 dec. 6, epic #285 T7 — MCP-only, no Tauri
-/// command twin).
+/// command twin), capture_report_document (ADR 0093 dec. 5, epic #285 T8 —
+/// gated fetch, promoted from classified-but-unexposed).
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 101;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 102;
 
 #[cfg(test)]
 mod tests {
@@ -2004,6 +2017,13 @@ mod tests {
                 json!({ "id": "x", "sourceDocumentRef": "doc" }),
             ),
             (
+                // https-only gate refuses before any network call (ADR 0093
+                // dec. 5) — a domain Success carrying success:false, never a
+                // live fetch; the umbrella stays hermetic.
+                "capture_report_document",
+                json!({ "companyId": company_id, "url": "http://example.com/doc.pdf" }),
+            ),
+            (
                 "record_financial_facts",
                 // reportDocumentId "x" is unseeded here (seed_company_framework
                 // creates no report_documents row) — a typed `not_found` Failure
@@ -2307,6 +2327,85 @@ mod tests {
             })
         )
         .is_ok());
+    }
+
+    /// ADR 0093 dec. 5 (epic #285 T8): `capture_report_document` always
+    /// writes `source_type = "user_url"` — an agent trying to set `sourceType`
+    /// itself is refused before the handler runs (the field is not in the
+    /// exposed schema at all, so `deny_unknown_fields` produces the same
+    /// typed protocol refusal T7 proved for `totallyMadeUpField`) — and the
+    /// write is idempotent on `(companyId, url)`. Exercised via an `http://`
+    /// URL so the https-only gate refuses BEFORE any network call — hermetic.
+    #[test]
+    fn capture_report_document_forces_user_url_and_is_idempotent_without_network() {
+        let state = act_state();
+        let (company_id, _framework_id, _criterion_id) = seed_company_framework(&state);
+        set_writes_enabled(&state, true);
+
+        let unknown_field = call(
+            &state,
+            "capture_report_document",
+            &json!({
+                "companyId": company_id,
+                "url": "https://example.com/doc.pdf",
+                "sourceType": "espi_attachment",
+            }),
+        );
+        match unknown_field {
+            Err(ToolCallError::InvalidArguments(message)) => {
+                assert!(
+                    message.contains("sourceType"),
+                    "unexpected message: {message}"
+                );
+            }
+            other => panic!("expected InvalidArguments, got {other:?}"),
+        }
+
+        let url = "http://example.com/doc.pdf";
+        let first = call(
+            &state,
+            "capture_report_document",
+            &json!({ "companyId": company_id, "url": url }),
+        )
+        .expect("domain outcome, not a protocol error");
+        let first_id = match first {
+            ToolOutcome::Success(value) => value["documentId"]
+                .as_str()
+                .expect("documentId present")
+                .to_owned(),
+            ToolOutcome::Failure(error) => panic!("capture_report_document failed: {error:?}"),
+        };
+        assert!(
+            !first_id.is_empty(),
+            "a document row is created even though the fetch itself is refused"
+        );
+
+        let document = state
+            .get_report_document(&first_id)
+            .expect("report document");
+        assert_eq!(
+            document.source_type, "user_url",
+            "an agent capture always registers source_type=user_url, never an ingest type"
+        );
+
+        // Idempotent: same company_id+url returns the SAME row (existing
+        // UNIQUE(company_id, url) behavior, unaffected by the new gates).
+        let second = call(
+            &state,
+            "capture_report_document",
+            &json!({ "companyId": company_id, "url": url }),
+        )
+        .expect("domain outcome");
+        let second_id = match second {
+            ToolOutcome::Success(value) => {
+                value["documentId"].as_str().expect("documentId").to_owned()
+            }
+            ToolOutcome::Failure(error) => panic!("capture_report_document failed: {error:?}"),
+        };
+        assert_eq!(
+            first_id, second_id,
+            "same company+url must return the same row"
+        );
     }
 
     /// Two ADR 0093 dec. 6 guardrails for `record_financial_facts` that only
