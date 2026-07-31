@@ -51,6 +51,60 @@ pub enum Computation {
 /// `financial_periods.period_type`.
 pub const ANNUAL_PERIOD_TYPE: &str = "FY";
 
+/// Metric keys measured **at a point in time** rather than accumulated over
+/// one — balance-sheet lines, share/asset counts and quote scalars. A TTM
+/// window is undefined over them (see [`MetricsContext::is_flow_key`]).
+///
+/// **Interim home.** `kpi_definitions` carries no flow/stock axis: `value_kind`
+/// separates `monetary` from `ratio`, not a revenue from a cash balance. Until
+/// the catalog grows that column (at which point this list becomes a seeded
+/// migration and this const goes away), the classification lives here, covering
+/// every seeded key across `canonical` and `sector` scope. Keys genuinely
+/// ambiguous on the axis are deliberately **absent** — `_ttm` keeps working for
+/// them rather than being refused on a guess.
+///
+/// Ratios and percentages are *not* listed: they are refused by `value_kind`
+/// instead, which also covers user-defined ones.
+pub(crate) const STOCK_METRIC_KEYS: &[&str] = &[
+    // Balance sheet — canonical reported (migration 0034).
+    "cash",
+    "current_assets",
+    "current_liabilities",
+    "inventories",
+    "inventory",
+    "long_term_debt",
+    "net_debt",
+    "retained_earnings",
+    "total_assets",
+    "total_debt",
+    "total_equity",
+    "total_liabilities",
+    // Balance sheet — WDF issuer rows (migration 0112).
+    "wdf_equity_parent",
+    "wdf_noncurrent_assets",
+    "wdf_noncurrent_liabilities",
+    "wdf_share_capital",
+    // Derived aggregates of the above — sums of balances are still balances
+    // (migrations 0034/0050/0072).
+    "capital_employed",
+    "invested_capital",
+    "market_cap",
+    "working_capital",
+    // Counts and durations measured on a date, not over a span.
+    "properties_count",
+    "shares_outstanding",
+    "walt",
+    // Quote scalars: an as-of-date price is the definition of point-in-time
+    // (ADR 0067 Decision 4).
+    "close",
+    "week52_high",
+    "week52_low",
+    // Sector packs — banking / specialty-finance balances (migration 0034).
+    "erc",
+    "total_deposits",
+    "total_loans",
+];
+
 /// Reported facts for one period. `index 0` is the latest period.
 #[derive(Debug, Clone)]
 pub struct PeriodFacts {
@@ -427,6 +481,9 @@ impl MetricsContext {
         idx: usize,
         visiting: &RefCell<HashSet<(String, usize)>>,
     ) -> Option<Decimal> {
+        if !self.is_flow_key(key) {
+            return None;
+        }
         let period = self.periods.get(idx)?;
         if period.is_annual() {
             return self.value_at(key, idx, visiting);
@@ -439,6 +496,31 @@ impl MetricsContext {
         let prior_ytd = self.value_at(key, prior_ytd_idx, visiting)?;
         let prior_fy = self.value_at(key, prior_fy_idx, visiting)?;
         Some(prior_fy + ytd - prior_ytd)
+    }
+
+    /// Whether a TTM window is defined over this key at all. "Trailing twelve
+    /// months" only means something for a quantity that **accumulates over
+    /// time**; two classes never do, and for them the honest answer is no value
+    /// rather than a computed one:
+    ///
+    /// * **point-in-time stocks** — balance-sheet lines, share counts, quotes
+    ///   ([`STOCK_METRIC_KEYS`]). Span arithmetic over a balance produces a
+    ///   number that is neither a balance nor a flow. Use the bare key, or
+    ///   `_avg` for the balance-sheet averaging that return ratios want.
+    /// * **ratios and percentages** — never additive across periods, whatever
+    ///   their inputs. Recognised from the catalog's `value_kind`, so a
+    ///   `user`/`sector`-scope ratio is covered without listing it.
+    ///
+    /// A key absent from both the list and the catalog (an ad-hoc reported
+    /// fact) is treated as a flow — the pre-existing default.
+    fn is_flow_key(&self, key: &str) -> bool {
+        if STOCK_METRIC_KEYS.contains(&key) {
+            return false;
+        }
+        !matches!(
+            self.definitions.get(key).map(|d| d.value_kind.as_str()),
+            Some("ratio") | Some("percentage")
+        )
     }
 
     /// The series index of the period carrying this exact fiscal label and year
@@ -795,6 +877,79 @@ mod tests {
                 interim(2025, "Q1", &[("net_profit", dec(20, 0))]),
             ]);
             assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(100, 0)));
+        }
+
+        /// A trailing *twelve months* only means something for a quantity that
+        /// accumulates over time. Balance-sheet lines and ratios do not, so
+        /// `_ttm` over them is refused rather than computed (#271 residue).
+        mod non_flow_keys {
+            use super::*;
+
+            /// The DBC span shape, carrying a balance-sheet key instead of a
+            /// flow one: every span input is present, so only the flow/stock
+            /// classification can make this empty.
+            fn stock_series() -> Vec<PeriodFacts> {
+                vec![
+                    interim(2026, "Q1", &[("total_equity", dec(600, 0))]),
+                    period(2025, &[("total_equity", dec(500, 0))]),
+                    interim(2025, "Q1", &[("total_equity", dec(450, 0))]),
+                ]
+            }
+
+            #[test]
+            fn ttm_on_a_balance_sheet_key_is_none_at_an_interim_period() {
+                // Span arithmetic would happily return 500 + 600 − 450 = 650:
+                // a number that is not a balance, not a flow, and not anything.
+                let ctx = ctx_with(stock_series());
+                assert_eq!(ctx.resolver().value("total_equity_ttm"), None);
+            }
+
+            #[test]
+            fn ttm_on_a_balance_sheet_key_is_none_at_an_annual_period_too() {
+                // The annual branch would return the period's own equity —
+                // a real figure, but "TTM equity" is still a category error.
+                // The honest answers are the bare key or `_avg`.
+                let ctx = ctx_with(vec![period(2025, &[("total_equity", dec(500, 0))])]);
+                assert_eq!(ctx.resolver().value("total_equity_ttm"), None);
+                assert_eq!(ctx.resolver().value("total_equity"), Some(dec(500, 0)));
+                assert_eq!(ctx.resolver().value("total_equity_avg"), Some(dec(500, 0)));
+            }
+
+            #[test]
+            fn the_ttm_function_form_refuses_stock_keys_exactly_like_the_suffix() {
+                let ctx = ctx_with(stock_series());
+                assert_eq!(ctx.resolver().window(Func::Ttm, "total_equity", 0), None);
+            }
+
+            #[test]
+            fn ttm_on_a_ratio_or_percentage_key_is_none() {
+                // Ratios never add up across periods, whatever their inputs.
+                let ctx = ctx_with(vec![
+                    period(
+                        2025,
+                        &[("gross_profit", dec(350, 0)), ("revenue", dec(1000, 0))],
+                    ),
+                    period(
+                        2024,
+                        &[("gross_profit", dec(300, 0)), ("revenue", dec(1000, 0))],
+                    ),
+                ]);
+                assert_eq!(ctx.resolver().value("gross_margin"), Some(dec(35, 2)));
+                assert_eq!(ctx.resolver().value("gross_margin_ttm"), None);
+            }
+
+            #[test]
+            fn flow_keys_are_untouched_by_the_refusal() {
+                // Guard against over-blocking: the same annual period still
+                // resolves flow TTMs, and `roe` (net_profit_ttm /
+                // total_equity_avg) still computes end to end.
+                let ctx = ctx_with(vec![period(
+                    2025,
+                    &[("net_profit", dec(100, 0)), ("total_equity", dec(500, 0))],
+                )]);
+                assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(100, 0)));
+                assert_eq!(ctx.resolver().value("roe"), Some(dec(2, 1)));
+            }
         }
 
         #[test]

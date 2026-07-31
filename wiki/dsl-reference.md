@@ -132,7 +132,7 @@ Exactly what each window does when history is thin:
 
 | Window | On an annual period | On an interim (quarterly/half-year) period | Empty when |
 |---|---|---|---|
-| `ttm(metric)` / `_ttm` | that period's own annual figure — no summing | `last full year + this year's figure so far − the same point last year` | any one of those three is missing |
+| `ttm(metric)` / `_ttm` | that period's own annual figure — no summing | `last full year + this year's figure so far − the same point last year` | any one of those three is missing, **or the metric isn't a flow** |
 | `_avg` | average of the current and prior period | same | the current period lacks the figure |
 | `cagr(metric, n)` | `(end / begin)^(1/n) − 1` | same | no period is labelled `fiscal_year − n`, or either endpoint is ≤ 0 |
 
@@ -152,6 +152,12 @@ Notes worth knowing:
   comparative-valuation drivers — goes empty with it. Most companies get their
   TTM back one year after their first interim report, once there's a year-ago
   comparison point.
+- **`_ttm` only applies to flows** — things that accumulate over months, like
+  revenue, profit, EBITDA or cash flow. On a balance-sheet figure (equity,
+  assets, cash, debt, share count, price) or on a ratio there is no such thing
+  as a trailing twelve months, so `_ttm` yields **No data**. Use the bare key
+  for the latest balance, or `_avg` for the two-period average that return
+  ratios like ROE use.
 - **`_avg` does degrade.** With no prior period (or none carrying the figure) it
   returns the current value alone. Balance-sheet averaging exists to smooth a
   point-in-time figure; one point is still a usable figure, unlike a partial sum.

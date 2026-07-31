@@ -1286,6 +1286,37 @@ fn every_canonical_derived_metric_is_computable_from_a_representative_fact_set()
 }
 
 #[test]
+fn every_stock_metric_key_names_a_seeded_definition() {
+    // `STOCK_METRIC_KEYS` (metrics.rs) is a hand-maintained flow/stock axis the
+    // catalog does not carry, and it is refusal-by-name: a typo or a renamed
+    // seeded key silently stops refusing `_ttm` over a balance sheet, with no
+    // other symptom. This gate catches that half of the drift. (The other half —
+    // a newly seeded balance-sheet key nobody classified — is not mechanically
+    // detectable until `kpi_definitions` grows the axis; the const's doc comment
+    // is the checklist.)
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let seeded: std::collections::HashSet<String> = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions")
+        .into_iter()
+        .map(|def| def.metric_key)
+        .collect();
+
+    for key in crate::fundamentals::metrics::STOCK_METRIC_KEYS {
+        assert!(
+            seeded.contains(*key),
+            "STOCK_METRIC_KEYS names `{key}`, which no migration seeds — \
+             a rename or typo would silently re-enable `{key}_ttm`"
+        );
+    }
+}
+
+#[test]
 fn health_score_liquidity_metrics_derive_from_current_items() {
     // ADR 0083 Decision 5 (v0.57): the four reported health-score inputs are
     // seeded as canonical reported definitions, and the two liquidity derivations
