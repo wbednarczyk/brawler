@@ -199,6 +199,31 @@ const OTHER_EARLY_MARKERS: &[&str] = &[
     " art 19 mar",
     " powiadomienie o transakc",
     " biogram",
+    // --- Guards the period-anchored cadence markers below require: each of
+    // these rides along with a periodic filing and repeats its period token, so
+    // without them the new markers would claim narrative documents.
+    // Signature bundles (` podpisy` plural only — a statement titled
+    // `…-podpisany` must stay a statement).
+    " podpisy",
+    // Sustainability reporting, spaced or CamelCase-glued
+    // (`SprawozdanieZrownowazonegoRozwojuGrupy…`), hence no left boundary.
+    "zrownowazonego",
+    "zrównoważonego",
+    // The explanatory note attached to a periodic report — not the report.
+    " informacja dodatkowa",
+    // Preliminary/estimated results and commentary published beside a report.
+    " wyniki wstepne",
+    " wyniki wstępne",
+    " commentary",
+    // English management-board statements and activity reports (the analogues
+    // of ` oswiadcz` / ` sprawozdanie zarzadu` above), plus FERRO's glued form.
+    " boards statement",
+    " board statement",
+    " board report on",
+    " management report of",
+    " directors report",
+    " report on the operations",
+    " oswzarzadu",
 ];
 
 const PRESENTATION_MARKERS: &[&str] = &[" prezentacj", " presentation"];
@@ -268,6 +293,35 @@ const FINANCIAL_MARKERS: &[&str] = &[
     " quarterly report",
     " interim report",
     " financial report",
+    // --- Terse titles that name the report by PERIOD or FORM CODE only. Each
+    // marker is anchored to a following year/period token rather than left bare,
+    // so it cannot fire inside a word: ` sf 20` matches `Creotech_SF-2024-…` but
+    // never `MSSF 2024`, and `jsf 20` (deliberately boundary-free) reaches the
+    // company-glued `newagJSF_2023-12-31_pl.xhtml` while still missing `MSSF`.
+    // The announcement classes that share these tokens (`Wyniki wstępne Q1
+    // 2026`, `Komentarz_segmenty_1Q2024`, `Informacja dodatkowa … Q3 2024`) are
+    // routed out by the early-Other markers above, which run first.
+    " 1q 20",
+    " 2q 20",
+    " 3q 20",
+    " 4q 20",
+    " q1 20",
+    " q2 20",
+    " q3 20",
+    " q4 20",
+    " h1 20",
+    " h2 20",
+    // ORLEN's roman-numeral quarter welded to the Q (`RAPORT IIIQ2025`).
+    " raport iq",
+    " raport iiq",
+    " raport iiiq",
+    " raport ivq",
+    // `SF`/`FS` (sprawozdanie finansowe / financial statements) and the
+    // standalone statement named without the word `finansowe`.
+    " sf 20",
+    " fs q",
+    "jsf 20",
+    " sprawozdanie jednostkow",
 ];
 
 const CONSOLIDATED_MARKERS: &[&str] =
@@ -291,6 +345,32 @@ const STANDALONE_MARKERS: &[&str] = &[
 /// (`xhtml` before `html`) so the split lands on the real extension.
 const GLUED_TITLE_EXTENSIONS: &[&str] =
     &["xhtml", "xades", "xbri", "html", "pdf", "zip", "xml", "csv"];
+
+/// ESEF/eSprawozdanie filings also arrive as `.zip` — `data-model.md` records
+/// the same taxonomy on `detected_container` ("a ZIP is an ESEF/eSprawozdanie
+/// *package* the structured path unpacks"), so the classifier was simply out of
+/// step by knowing only `.xbri`. A bare `.zip` filename is **not** evidence on
+/// its own though (`adam-kicinski.zip`, `Podpisy_KRUK.zip`, `Dokumenty do
+/// rozpatrzenia przez ZWZ …zip` are all real rows), so the package only counts
+/// when the name carries the ESEF shape: an `esef` token, or the `YYYY MM DD`
+/// instant every package name embeds (`orlen-2024-12-31-0-pl.zip`). Deliberately
+/// narrower than `.zip` alone — measured on the maintainer's corpus, the bare
+/// form promoted 7 non-filings.
+fn names_an_esef_package(lower: &str, norm: &str) -> bool {
+    if !lower.contains(".zip") {
+        return false;
+    }
+    if lower.contains("esef") {
+        return true;
+    }
+    let is_digits = |s: &str, n: usize| s.len() == n && s.chars().all(|c| c.is_ascii_digit());
+    norm.split_whitespace()
+        .collect::<Vec<_>>()
+        .windows(3)
+        .any(|w| {
+            is_digits(w[0], 4) && w[0].starts_with("20") && is_digits(w[1], 2) && is_digits(w[2], 2)
+        })
+}
 
 /// Lowercase, map every non-alphanumeric char to a space, collapse runs, unglue
 /// a leading file extension from each token, and pad — so markers written as
@@ -412,7 +492,15 @@ pub fn is_management_report(title: &str, url: &str) -> bool {
 /// `Raport_polroczne_jednostkowe_XTB_HY_2025_PL.pdf` behind a `DataWalk-SSF-…`
 /// slug reads as consolidated. Both are decided by another company's filename.
 ///
-/// An **empty title** keeps the URL: a slug is a poor signal, no signal is worse.
+/// The **empty-title** branch is kept deliberately. A stored title really can be
+/// `NULL` — `CaptureReportDocumentInput::title` is an `Option`,
+/// `storage::report_documents` runs it through `empty_string_to_none`, and both
+/// the write seam and `reclassify_all` classify with `unwrap_or("")`; there is no
+/// basename fallback at registration, and the user-URL capture path
+/// (`report_documents_capture`) can supply no title at all. It is inert on
+/// today's corpus (0 of 9,658 rows) and, since a silent title no longer takes its
+/// URL's classification, both arms of the branch now answer `Other` for an empty
+/// title anyway — but the branch documents the intent and costs nothing.
 /// Callers decide trust with
 /// [`crate::storage::TrackedIssuerIndex::url_slug_names_foreign_issuer`], so a
 /// slug is only ever dropped on positive evidence that it names someone else.
@@ -442,7 +530,25 @@ pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
     let title_names_a_statement = PACKAGE_EXTENSIONS
         .iter()
         .any(|ext| title_lower.contains(ext))
+        || names_an_esef_package(&title_lower, &t_title)
         || matches_any(&t_title, FINANCIAL_MARKERS);
+    // **A silent title is never classified by its URL** (owner decision, #269
+    // follow-up). Title precedence stopped a slug from *overruling* the title;
+    // this stops it from *creating* a classification the title never supported.
+    // The bankier CDN reuses a neighbouring attachment's filename, so the slug
+    // on a title that says nothing is evidence about a different document — it
+    // was promoting CVs (`Monika_Dobosz_-_przebieg_kariery_zawodowej.pdf`), MAR
+    // notifications and results decks into the periodic set, where they became
+    // canonical candidates and extraction input. Unclassifiable is the honest
+    // answer, and `Other` is this taxonomy's honest default.
+    let title_speaks = title_names_a_statement
+        || matches_any(&t_title, AUDITOR_MARKERS)
+        || matches_any(&t_title, GOVERNANCE_MARKERS)
+        || matches_any(&t_title, OTHER_EARLY_MARKERS)
+        || matches_any(&t_title, PRESENTATION_MARKERS);
+    if !title_speaks {
+        return DocKind::Other;
+    }
     // All three routing gates run under title precedence (#269): a marker the
     // title does not carry belongs to the neighbouring attachment whose slug
     // was reused, and must not overrule a title that names a statement.
@@ -462,7 +568,8 @@ pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
     // carries no ssf/jsf/financial marker (e.g. `CBF-2025-12-31-1-pl.xbri`), so
     // route it through the periodic branch alongside marker-bearing titles; the
     // default-consolidated fall-through below mirrors the no-marker default.
-    let is_package = PACKAGE_EXTENSIONS.iter().any(|ext| raw.contains(ext));
+    let is_package =
+        PACKAGE_EXTENSIONS.iter().any(|ext| raw.contains(ext)) || names_an_esef_package(&raw, &t);
     if is_package || matches_any(&t, FINANCIAL_MARKERS) {
         // **Title-first on the consolidated/standalone axis** (owner decision
         // #275), mirroring the auditor gate above: when the TITLE speaks on the
@@ -580,6 +687,43 @@ mod tests {
         title: String,
         url: String,
         kind: String,
+    }
+
+    /// A title that fires **no** gate is not classified by its URL, and an ESEF
+    /// `.zip` only counts as the filing when its name carries the package shape.
+    /// Real rows from the maintainer's database.
+    #[test]
+    fn a_silent_title_is_not_classified_by_its_url() {
+        // A CV behind a neighbouring quarterly-statement slug: periodic before,
+        // honestly unclassified now.
+        let periodic_slug = "https://www.bankier.pl/static/att/emitent/2024-11/\
+                             CZT-Srodroczne-skrocone-skons.-spr.-fin.-3Q-2024_202411291302541914.pdf";
+        assert_eq!(
+            classify_doc_kind(
+                "Monika_Dobosz_-_przebieg_kariery_zawodowej.pdf",
+                periodic_slug
+            ),
+            DocKind::Other
+        );
+        // One real title marker is enough to keep the URL in play: `SF 2024` is
+        // a statement, so the foreign slug still decides the ssf/jsf axis.
+        assert_eq!(
+            classify_doc_kind("Creotech_SF-2024-12-31-0-pl.xhtml", periodic_slug),
+            DocKind::PeriodicSsf
+        );
+        // An ESEF package name speaks for itself; a bare `.zip` does not.
+        assert_eq!(
+            classify_doc_kind("orlen-2024-12-31-0-pl.zip", ""),
+            DocKind::PeriodicSsf
+        );
+        assert_eq!(
+            classify_doc_kind("Podpisy_KRUK.zip", periodic_slug),
+            DocKind::Other
+        );
+        assert_eq!(
+            classify_doc_kind("adam-kicinski.zip", periodic_slug),
+            DocKind::Other
+        );
     }
 
     /// #269: the store concatenates `<filename><document title>` with no
