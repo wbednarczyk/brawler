@@ -92,3 +92,4 @@
 - [0090](0090-github-canonical-forge-and-continuous-release.md) — GitHub as the Canonical Forge for Everything; Radicle as the Second Path; Continuous Release — Accepted (2026-07-27, owner sign-off at CI/forge-migration planning; amended 202
 - [0091](0091-failure-path-and-real-state-testing.md) — Failure-Path & Real-State Test Layer — chaos seam, job-failure visibility, honesty harness — Accepted (2026-07-29, owner sign-off at epic #40 planning
 - [0092](0092-kpi-relevance-lifecycle.md) — kpi_relevance lifecycle — layered expectations, no self-referential gate — Accepted (2026-07-31, layers 2–3 implementation PR
+- [0093](0093-agent-acquisition-tier-and-preliminary-lifecycle.md) — Agent acquisition tier and the preliminary-data lifecycle — Proposed (2026-07-31, epic #285 T1; owner decisions ratified at plan approval)
