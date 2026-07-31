@@ -387,6 +387,20 @@ fn classify(label: &str) -> Option<&'static str> {
         });
     }
 
+    // Bank income-statement rows (epic #277 T2, card #279, evidenced by the
+    // real Pekao PSr H1/2026 note): these are already-net figures with no
+    // "przychody"/"zysk"/"strata"/"kapitał" stem to collide with, so the
+    // branch is safe ahead of every check below it. Checked against the real
+    // note: it carries no "Przychody z tytułu odsetek"/"prowizji" row, so the
+    // `przychody` branch immediately below is left untouched — no guard
+    // needed today, but a bank note that DID carry such a row would need one.
+    if low.contains("wynik z tytułu odsetek") {
+        return Some("net_interest_income");
+    }
+    if low.contains("wynik z tytułu prowizji") {
+        return Some("net_fee_commission_income");
+    }
+
     if low.contains("przychody") {
         return Some("revenue");
     }
@@ -438,7 +452,15 @@ fn classify(label: &str) -> Option<&'static str> {
         if low.contains("przed opodatkowaniem") || low.contains("brutto") {
             return Some("wdf_pretax_profit");
         }
-        if low.contains("niekontrolując") || low.contains("niekontrolujac") {
+        // "niedając(ym) kontroli" (Pekao's own wording) is a synonym of
+        // "niekontrolując" — both name non-controlling interests, checked
+        // ahead of the generic "przypad" arm so an NCI row never lands on
+        // `wdf_net_profit_parent`.
+        if low.contains("niekontrolując")
+            || low.contains("niekontrolujac")
+            || low.contains("niedając")
+            || low.contains("niedajac")
+        {
             return Some("wdf_zysk_strata_netto_przypadajacy_na_udzialy_niekontrolujace");
         }
         if low.contains("przypad") || low.contains("dominując") || low.contains("dominujac") {
@@ -470,11 +492,61 @@ fn classify(label: &str) -> Option<&'static str> {
         if low.contains("krótkoterminow") || low.contains("krotkoterminow") {
             return Some("current_liabilities");
         }
-        return Some("total_liabilities");
+        // Bank-table honesty (epic #277 T2, card #279, evidenced by the real
+        // Pekao PSr H1/2026 note): a bank WDF table often carries NO
+        // "Zobowiązania razem" row at all, only qualified sub-lines
+        // ("wobec innych banków", "wobec klientów", "z tytułu...",
+        // "podporządkowane", "finansowe"...). Greedily falling through those
+        // to `total_liabilities` produced a 40x-understated fact from the
+        // interbank-liabilities row (7 899 000 000 vs the real ~316.9bn).
+        // `total_liabilities` is now returned ONLY for an explicit total
+        // ("razem"/"ogółem"/"łącznie", or the industrial "zobowiązania i
+        // rezerwy na zobowiązania" form) or a bare, unqualified row; customer
+        // deposits map to the same `total_deposits` key the T1 aggregator
+        // dictionary (`text_numbers.rs`) already uses; every other qualified
+        // form — including interbank/central-bank liabilities — abstains
+        // (`None`) as a reviewed abstention rather than a guessed total.
+        if low.contains("wobec klientów") || low.contains("wobec klientow") {
+            return Some("total_deposits");
+        }
+        let bare = low.trim() == "zobowiązania" || low.trim() == "zobowiazania";
+        if bare
+            || low.contains("razem")
+            || low.contains("ogółem")
+            || low.contains("ogolem")
+            || low.contains("łącznie")
+            || low.contains("lacznie")
+            || low.contains("i rezerwy")
+        {
+            return Some("total_liabilities");
+        }
+        return None;
     }
 
     if low.contains("kapitał") || low.contains("kapital") {
         if low.contains("własny") || low.contains("wlasny") {
+            // Bank-table honesty (epic #277 T2, card #279, evidenced by the
+            // real Pekao PSr H1/2026 note): checked BEFORE the parent-equity
+            // arm below, whose "przypisan" trigger otherwise also matches
+            // "Kapitał własny przypisany udziałom niedającym kontroli" — the
+            // non-controlling-interests row, the exact opposite of parent
+            // equity (12 000 000 emitted as `wdf_equity_parent` in place of
+            // the real ~32.9bn parent-equity row that follows it in the
+            // table). No seeded NCI-equity catalog key exists today (checked
+            // against migrations 0111/0112, which seed the parent-equity key
+            // and the NCI *profit* key
+            // `wdf_zysk_strata_netto_przypadajacy_na_udzialy_niekontrolujace`
+            // respectively, but no NCI-equity counterpart) — inventing one
+            // here would need its own catalog seed + definition, out of this
+            // card's scope, so this abstains (`None`), a deliberate asymmetry
+            // with the profit branch above.
+            if low.contains("niedając")
+                || low.contains("niedajac")
+                || low.contains("niekontrolując")
+                || low.contains("niekontrolujac")
+            {
+                return None;
+            }
             if low.contains("przypad")
                 || low.contains("przypisan")
                 || low.contains("dominując")
@@ -1200,6 +1272,12 @@ II. Zysk netto 1801500\n\
 III. Aktywa razem 500 000 480 000 116 279 111 628\n\
 Zastosowane kursy: 4,3000\n";
 
+    /// Verbatim real Bank Pekao S.A. PSr H1/2026 "WYBRANE DANE FINANSOWE"
+    /// cover note (feed item `feed_bankier_company_komunikatyarticle9175261`,
+    /// a public ESPI periodic report — no owner-private content), used by
+    /// the bank-table honesty tests below (epic #277 T2, card #279).
+    const PEO_BANK_BODY: &str = r#"Spis treści:1. STRONA TYTUŁOWA2. METADANE ESAP3. WYBRANE DANE FINANSOWE4. KOREKTA RAPORTU5. ZAWARTOŚĆ RAPORTU6. PODPISY OSÓB REPREZENTUJĄCYCH SPÓŁKĘSpis załączników:Wybrane_dane_finansowe_Bank_Pekao_30.06.2026.pdfWybrane_dane_finansowe_Grupa_Banku_Pekao_30.06.2026.pdfSzDZ_Grupy_Banku_Pekao_I_polrocze_2026.pdfJSF_Banku_Pekao_30.06.2026.pdfSSF_Grupy_Banku_Pekao_30.06.2026.pdfRaport_audytora_z_przegladu_JSF_Banku_Pekao_S.A._za_I_polrocze_2026.pdfRaport_audytora_z_przegladu_SSF_Banku_Pekao_S.A._za_I_polrocze_2026.pdfSTRONA TYTUŁOWA>>>skorygowanyKOMISJA NADZRO FINANSOWEGOSkonsolidowany raport półroczny PSr2026(rok)zgodnie z § 61 ust. 2 i § 63 ust. 3 Rozporządzenia w sprawie informacji bieżących i okresowychdlabanków(rodzaj emitenta)za półrocze roku obrotowego2026obejmujące okres2026-01-01do2026-06-30zawierający skonsolidowane sprawozdanie finansowe wedługMSSFw waluciePLNoraz skrócone sprawozdanie finansowe wedługMSSFw waluciePLNdata przekazania:2026-07-30BANK POLSKA KASA OPIEKI SPÓŁKA AKCYJNA(pełna nazwa emitenta)BANK PEKAO S.A.Banki (ban)(skrócona nazwa emitenta)(sektor wg klasyfikacji GPW w Warszawie / branża)01-066WARSZAWA(kod pocztowy)(miejscowość)ŻUBRA1(ulica)(numer)656 00 000000014843(telefon)(fax)bri@pekao.com.pl(e-mail)(www)526-000-68-41000010205(NIP)(REGON)PricewaterhouseCoopers Polska spółka z ograniczoną odpowiedzialnością Audyt sp.k.(firma audytorska)Ramy prawneRodzaj informacji przekazanych przez podmiotTRANSDPółroczne sprawozdanie finansoweTRANSDDodatkowe informacje regulowane, których ujawnienie jest wymagane na mocy przepisów państwa członkowskiegoRegulatoryDataOrgan zbierający dane odpowiedzialny za zbieranie informacjiPLKNFUnikalny identyfikator danychRodzaj przedkładanych informacjinowe (do zastosowania w przypadku nowych informacji)Dobrowolny lub obowiązkowy charakter przedłożonych informacjiData lub początek okresu, której lub którego dotyczą informacje2026-01-01Data lub koniec okresu, której lub którego dotyczą informacje2026-06-30Znacznik danych osobowychMacierzyste państwo członkowskie, w stosownych przypadkachPLDocumentReferenceJęzyk, w którym przekazano informacjeOryginał (ORIG) czy tłumaczenie (TRAN)Numer referencyjny pliku danychPLORIGSubmittingEntityIdentyfikator podmiotu prawnego (LEI) dotyczący podmiotu przekazującego informacje - wypełnij w przypadku osób prawnychlubImię i nazwisko, osoby która przekazała informacje - wypełnij w przypadku osób fizycznychRelatedEntity/LegalPersonIdentyfikator podmiotu prawnego (LEI) przypisany do osoby prawnej, której dotyczą informacjeWielkość osoby prawnej, której dotyczą informacjeSektor(y) przemysłu, w których osoba fizyczna lub prawna, której te informacje dotyczą, prowadzi działalność gospodarczą5493000LKS7B3UTF7H35Duża jednostka(wg regulacji) Instytucja kredytowa5493000LKS7B3UTF7H35Duża grupa(wg regulacji) Instytucja kredytowa WYBRANE DANE FINANSOWEw mln.PLNw tys.EURpółrocze /2026półrocze /2025półrocze /2026półrocze /2025Wybrane skonsolidowane dane finansowe Grupy Kapitałowej Banku Pekao S.A.RACHUNEK ZYSKÓW I STRATI. Wynik z tytułu odsetek6 614,006 860,001 555,001 625,00II. Wynik z tytułu prowizji i opłat1 661,001 497,00391,00355,00III. Zysk brutto4 259,004 286,001 002,001 015,00IV. Zysk netto2 750,003 288,00646,00779,00V. Zysk netto przypadający na akcjonariuszy Banku2 748,003 286,00646,00779,00VI. Zysk netto przypadający na udziały niedające kontroli2,002,00VII. Zysk na akcję zwykłą (w PLN/EUR)10,4712,522,462,97VIII. Rozwodniony zysk na akcję zwykłą (w PLN/EUR)10,4712,522,462,97IX. Wypłacona dywidenda na akcję zwykłą (w PLN/EUR)19,7718,364,654,35PRZEPŁYWY PIENIĘŻNEX. Przepływy pieniężne netto z działalności operacyjnej16 617,005 971,003 908,001 415,00XI. Przepływy pieniężne netto z działalności inwestycyjnej-3 419,002 050,00-804,00486,00XII. Przepływy pieniężne netto z działalności finansowej-4 004,00-4 358,00-942,00-1 033,00XIII. Przepływy pieniężne netto razem9 194,003 663,002 162,00868,00SPRAWOZDANIE Z SYTUACJI FINANSOWEJXIV. Aktywa razem367 789,00352 233,0085 606,0083 335,00XV. Zobowiązania wobec innych banków7 899,005 748,001 839,001 360,00XVI. Zobowiązania wobec klientów284 801,00269 552,0066 290,0063 774,00XVII. Kapitał własny przypisany udziałom niedającym kontroli12,0014,003,003,00XVIII. Kapitał własny przypisany akcjonariuszom Banku32 881,0035 348,007 653,008 363,00XIX. Kapitał zakładowy262,00262,0061,0062,00XX. Liczba akcji (w szt.)262 470 034,00262 470 034,00262 470 034,00262 470 034,00XXI. Wartość księgowa na jedną akcję (w PLN/EUR)125,28134,6729,1631,86XXII. Rozwodniona wartość księgowa na jedną akcję (w PLN/EUR)125,28134,6729,1631,86ADEKWATNOŚĆ KAPITAŁOWAXXIII. Łączny współczynnik kapitałowy (%)16,8017,1016,8017,10XXIV. Aktywa ważone ryzykiem186 468,00175 935,0043 402,0041 625,00XXV. Kapitał Tier I27 623,0027 533,006 429,006 514,00XXVI. Kapitał Tier II3 683,002 464,00857,00583,00Dane finansowe w powyższej tabeli są prezentowane w mln EUR, a nie w tys. EUR(*) Dane za 31 grudnia 2025 roku zostały przeliczone z uwzględnieniem retrospektywnego zaliczenia części zysku za 2025 rok (po podziale wyniku przez Walne Zgromadzenie Akcjonariuszy), zgodnie ze stanowiskiem EBA wyrażonym w Q&A 2018_3822 oraz Q&A 2018_4085."Do przeliczenia wybranych pozycji ze złotych na EUR zastosowano następujące kursy:• do przeliczenia pozycji bilansowych średni kurs ogłoszony przez NBP na 30.06.2026 - 1 EUR = 4,2963 PLN oraz na 31.12.2025 - 1 EUR =4,2267 PLN,• do przeliczenia pozycji rachunku zysków i strat, pozycji przepływów pieniężnych oraz dywidendy - średnie arytmetyczne średnich kursów ogłoszonych przez NBPna ostatni dzień każdego miesiąca odpowiednio za I półrocze 2026 roku oraz za I półrocze 2025 roku - 1 EUR = 4,2522 PLN oraz 1 EUR = 4,2208 PLN.W przypadku prezentowania wybranych danych finansowych z półrocznego skróconego sprawozdania finansowego dane te należy odpowiednio opisać.Wybrane dane finansowe ze skonsolidowanego bilansu (skonsolidowanego sprawozdania z sytuacji finansowej) lub odpowiednio z bilansu (sprawozdania z sytuacji finansowej) prezentuje się na koniec półrocza bieżącego roku obrotowego i na koniec poprzedniego roku obrotowego, co należy odpowiednio opisać.Raport powinien zostać przekazany Komisji Nadzoru Finansowego, spółce prowadzącej rynek regulowany oraz do publicznej wiadomości za pośrednictwem agencji informacyjnej zgodnie z przepisami prawa.INFORMACJA O KOREKCIE RAPORTUSkorygowany raportem bieżącym nrz dniao treści:PlikOpisZAWARTOŚĆ RAPORTURozszerzony skonsolidowany raport półroczny powinien zawierać składniki i informacje zgodnie z przepisami Rozporządzenia w sprawie informacji bieżących i okresowych lub odpowiednio zgodnie z art. 56 ust. 1 pkt 2 lit. b i art. 61 Ustawy o ofercie lub odpowiednio zgodnie z art. 56 ust. 1 pkt 2 i ust. 6 tej UstawyPlikOpisWybrane_dane_finansowe_Bank_Pekao_30.06.2026.pdfWybrane dane finansowe_Bank Pekao_30.06.2026Wybrane_dane_finansowe_Grupa_Banku_Pekao_30.06.2026.pdfWybrane dane finansowe_Grupa Banku Pekao_30.06.2026SzDZ_Grupy_Banku_Pekao_I_polrocze_2026.pdfSzDZ_Grupy_Banku_Pekao_I_pólrocze_2026JSF_Banku_Pekao_30.06.2026.pdfJSF_Banku_Pekao_30.06.2026SSF_Grupy_Banku_Pekao_30.06.2026.pdfSSF_Grupy_Banku_Pekao_30.06.2026Raport_audytora_z_przegladu_JSF_Banku_Pekao_S.A._za_I_polrocze_2026.pdfRaport_audytora_z_przeglądu_JSF_Banku_Pekao_S.A._za_I_półrocze_2026Raport_audytora_z_przegladu_SSF_Banku_Pekao_S.A._za_I_polrocze_2026.pdfRaport_audytora_z_przeglądu_SSF_Banku_Pekao_S.A._za_I_półrocze_2026PODPISY OSÓB REPREZENTUJĄCYCH SPÓŁKĘDataImię i NazwiskoStanowisko/FunkcjaPodpis2026-07-29Cezary StypułkowskiPrezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym2026-07-29Marcin GadomskiWiceprezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym2026-07-29Łukasz JanuszewskiWiceprezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym2026-07-29Michał PanowiczWiceprezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym2026-07-29Robert SochackiWiceprezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym2026-07-29Błażej SzczeckiWiceprezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym2026-07-29Dagmara WojnarWiceprezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym2026-07-29Marcin ZygmanowskiWiceprezes Zarządu BankuPodpisano kwalifikowanym podpisem elektronicznym"#;
+
     fn keys(res: &WdfParseResult) -> Vec<String> {
         res.facts.iter().map(|f| f.metric_key.clone()).collect()
     }
@@ -1405,6 +1483,242 @@ Zastosowane kursy: 4,3000\n";
     fn golden_snapshot() {
         let res = parse_espi_cover_note(GOLDEN_BODY, PERIOD_END);
         insta::assert_debug_snapshot!("espi_cover_note_golden", res);
+    }
+
+    // -- Test 5: bank-table honesty (epic #277 T2, card #279) ---------------
+    //
+    // `PEO_BANK_BODY` is the REAL "WYBRANE DANE FINANSOWE" cover note Bank
+    // Pekao S.A. published for PSr H1/2026 (feed item
+    // `feed_bankier_company_komunikatyarticle9175261`, a public ESPI periodic
+    // report — no owner-private content), verbatim as the Bankier ingest seam
+    // stores it (body_text, no HTML). It is the note that produced the two
+    // LIVE WRONG facts this card fixes: a bare `zobowiązania` stem greedily
+    // mapped the interbank-liabilities row ("Zobowiązania wobec innych
+    // banków", row XV) to `total_liabilities` (40x understated — the real
+    // total, ~316.9bn, has no "razem"/"ogółem" row in this bank-format note
+    // at all), and the equity branch's "przypisan" trigger mapped the
+    // non-controlling-interests row ("Kapitał własny przypisany udziałom
+    // niedającym kontroli", row XVII) onto `wdf_equity_parent`, shadowing the
+    // real parent-equity row (row XVIII) that follows it and shares the same
+    // slot.
+    const PERIOD_END_PEO: &str = "2026-06-30";
+
+    #[test]
+    fn classify_bank_liabilities_rows_by_evidence() {
+        // Interbank / central-bank liabilities: qualified, not a total — abstain.
+        assert_eq!(classify("Zobowiązania wobec innych banków"), None);
+        assert_eq!(classify("Zobowiązania wobec Banku Centralnego"), None);
+        // Customer deposits: the same mapping T1 added to the aggregator
+        // dictionary (`text_numbers.rs`) — kept consistent here.
+        assert_eq!(
+            classify("Zobowiązania wobec klientów"),
+            Some("total_deposits")
+        );
+        // A genuine total: "razem"/"ogółem"/"łącznie", the industrial "i
+        // rezerwy" form, or a bare unqualified row.
+        assert_eq!(classify("Zobowiązania razem"), Some("total_liabilities"));
+        assert_eq!(classify("Zobowiązania ogółem"), Some("total_liabilities"));
+        assert_eq!(
+            classify("Zobowiązania i rezerwy na zobowiązania"),
+            Some("total_liabilities")
+        );
+        assert_eq!(classify("Zobowiązania"), Some("total_liabilities"));
+        // Every other qualified form is a reviewed abstention, never a guess.
+        assert_eq!(classify("Zobowiązania z tytułu dostaw i usług"), None);
+        assert_eq!(classify("Zobowiązania podporządkowane"), None);
+        assert_eq!(classify("Zobowiązania finansowe"), None);
+        // The existing długo/krótkoterminowe arms are untouched.
+        assert_eq!(
+            classify("Zobowiązania długoterminowe"),
+            Some("wdf_noncurrent_liabilities")
+        );
+        assert_eq!(
+            classify("Zobowiązania krótkoterminowe"),
+            Some("current_liabilities")
+        );
+    }
+
+    #[test]
+    fn classify_never_maps_non_controlling_equity_to_parent_equity() {
+        // No seeded NCI-equity catalog key exists today (checked against the
+        // 0111/0112 migrations) — the deliberate asymmetry with
+        // `wdf_zysk_strata_netto_przypadajacy_na_udzialy_niekontrolujace` noted
+        // at the mapping site. An abstention here is honest; the wrong parent
+        // key is not.
+        assert_eq!(
+            classify("Kapitał własny przypisany udziałom niedającym kontroli"),
+            None
+        );
+        assert_eq!(
+            classify("Kapitał własny przypadający udziałom niekontrolującym"),
+            None
+        );
+        // The real parent-equity row still maps correctly.
+        assert_eq!(
+            classify("Kapitał własny przypisany akcjonariuszom Banku"),
+            Some("wdf_equity_parent")
+        );
+    }
+
+    #[test]
+    fn classify_non_controlling_net_profit_never_becomes_parent_profit() {
+        // PEO's own wording ("udziały niedające kontroli") is a synonym of the
+        // "niekontrolując" stem the profit branch already recognized elsewhere
+        // in the catalog (0112's seeded
+        // `wdf_zysk_strata_netto_przypadajacy_na_udzialy_niekontrolujace`) but
+        // did not match — so this row fell through to the "przypad" arm and
+        // silently collided with the real parent-profit row's slot.
+        assert_eq!(
+            classify("Zysk netto przypadający na udziały niedające kontroli"),
+            Some("wdf_zysk_strata_netto_przypadajacy_na_udzialy_niekontrolujace")
+        );
+        assert_eq!(
+            classify("Zysk netto przypadający na akcjonariuszy Banku"),
+            Some("wdf_net_profit_parent")
+        );
+    }
+
+    #[test]
+    fn classify_bank_income_rows_map_to_bank_keys() {
+        assert_eq!(
+            classify("Wynik z tytułu odsetek"),
+            Some("net_interest_income")
+        );
+        assert_eq!(
+            classify("Wynik z tytułu prowizji i opłat"),
+            Some("net_fee_commission_income")
+        );
+    }
+
+    /// End-to-end proof that the `net_interest_income` mapping itself
+    /// extracts correctly when its row IS reachable (marker not glued to an
+    /// uppercase header — see the documented anchor-swallow surprise on
+    /// [`peo_bank_note_never_emits_wrong_total_liabilities_or_nci_as_parent_equity`]
+    /// below, which is why the real Pekao note's own row I never reaches
+    /// this path).
+    #[test]
+    fn bank_income_row_extracts_end_to_end_when_its_anchor_is_reachable() {
+        let body = "RAPORT PÓŁROCZNY PSr\n\
+Spis: WYBRANE DANE FINANSOWE\n\
+Skonsolidowany raport półroczny\n\
+WYBRANE DANE FINANSOWE w mln. PLN w tys. EUR\n\
+I. Wynik z tytułu odsetek 6 614,00 6 860,00 1 555,00 1 625,00\n\
+II. Wynik z tytułu prowizji i opłat 1 661,00 1 497,00 391,00 355,00\n\
+III. Zysk netto 2 750,00 3 288,00 646,00 779,00\n\
+Do przeliczenia zastosowano kursy: 1 EUR = 4,2522 PLN oraz 1 EUR = 4,2208 PLN.\n";
+        let res = parse_espi_cover_note(body, PERIOD_END_PEO);
+        let got: BTreeMap<String, Decimal> = res
+            .facts
+            .iter()
+            .map(|f| (f.metric_key.clone(), f.value))
+            .collect();
+        assert_eq!(
+            got.get("net_interest_income"),
+            Some(&Decimal::from_str("6614000000").unwrap())
+        );
+        assert_eq!(
+            got.get("net_fee_commission_income"),
+            Some(&Decimal::from_str("1661000000").unwrap())
+        );
+    }
+
+    /// The full real Pekao PSr H1/2026 note through the extractor: neither
+    /// misclassification the two live-wrong facts trace to may reappear, the
+    /// bank-specific rows the note actually carries must emit under their own
+    /// keys, and every previously-correct row (net profit, parent profit,
+    /// EPS, dividend, cash flows, share data) must emit identically to
+    /// before this change.
+    ///
+    /// **Surprise found building this test (out of scope, reported not
+    /// fixed):** rows I ("Wynik z tytułu odsetek" — `net_interest_income`),
+    /// X ("Przepływy pieniężne netto z działalności operacyjnej" —
+    /// `operating_cash_flow`) and XIV ("Aktywa razem" — `total_assets`) each
+    /// immediately follow an ALL-CAPS sub-heading with NO separating space
+    /// ("...ZYSKÓW I STRATI.", "...PIENIĘŻNEX.", "...FINANSOWEJXIV."). The
+    /// roman-marker lookbehind (`roman_markers`, ported 1:1 from the pinned
+    /// 347/347 Python spike's `(?<![A-ZĄĆĘŁŃÓŚŻŹ])` guard — present in both,
+    /// not introduced by this card) blocks a marker directly preceded by an
+    /// uppercase letter, so these three rows are never anchored at all —
+    /// silently dropped before `classify` ever sees them, not even counted
+    /// as abstained. Real-DB evidence corroborates this independently of
+    /// this test: PEO has NO fact for `total_assets`, `operating_cash_flow`
+    /// or `net_interest_income` at 2026 H1, in ANY tier. Fixing the anchor
+    /// heuristic is a separate, riskier change (it is baked into the pinned
+    /// corpus) — filed as a follow-up rather than touched here.
+    #[test]
+    fn peo_bank_note_never_emits_wrong_total_liabilities_or_nci_as_parent_equity() {
+        let res = parse_espi_cover_note(PEO_BANK_BODY, PERIOD_END_PEO);
+        let got: BTreeMap<String, Decimal> = res
+            .facts
+            .iter()
+            .map(|f| (f.metric_key.clone(), f.value))
+            .collect();
+
+        // The two live-wrong facts: total_liabilities must never emit from
+        // this note (no unqualified/total liabilities row exists in it), and
+        // wdf_equity_parent must be the REAL parent-equity value, never the
+        // NCI row's.
+        assert!(
+            !got.contains_key("total_liabilities"),
+            "no unqualified/total liabilities row exists in this bank note, \
+             got {:?}",
+            got.get("total_liabilities")
+        );
+        assert_eq!(
+            got.get("wdf_equity_parent"),
+            Some(&Decimal::from_str("32881000000").unwrap()),
+            "wdf_equity_parent must be row XVIII (parent equity), never row \
+             XVII (NCI equity)"
+        );
+
+        // Row VI ("Zysk netto przypadający na udziały niedające kontroli",
+        // the NCI-profit row) carries only 2 numbers in the real filing (its
+        // EUR columns are blank) where the grammar needs 4 — it legitimately
+        // ABSTAINS (a pre-existing, unrelated column-count limitation), but
+        // critically it must never land on `wdf_net_profit_parent` (its
+        // pre-fix behavior, silently shadowing row V's slot).
+        assert!(
+            !got.contains_key("wdf_zysk_strata_netto_przypadajacy_na_udzialy_niekontrolujace"),
+            "row VI has only 2 of the expected 4 columns and must abstain, \
+             not emit"
+        );
+        assert_eq!(res.abstained, 1, "row VI is the sole abstention");
+
+        // Bank-specific rows the note actually carries AND that the anchor
+        // grammar reaches (row II is not glued to an uppercase header).
+        let expect_bank = [
+            ("total_deposits", "284801000000"),
+            ("net_fee_commission_income", "1661000000"),
+        ];
+        for (k, v) in expect_bank {
+            assert_eq!(
+                got.get(k),
+                Some(&Decimal::from_str(v).unwrap()),
+                "bank metric {k}"
+            );
+        }
+
+        // Previously-correct rows still emit identically.
+        let expect_unchanged = [
+            ("net_profit", "2750000000"),
+            ("wdf_net_profit_parent", "2748000000"),
+            ("wdf_pretax_profit", "4259000000"),
+            ("eps_basic", "10.47"),
+            ("eps_diluted", "10.47"),
+            ("dividend_per_share", "19.77"),
+            ("investing_cash_flow", "-3419000000"),
+            ("financing_cash_flow", "-4004000000"),
+            ("wdf_net_cash_change", "9194000000"),
+            ("shares_outstanding", "262470034"),
+            ("wdf_share_capital", "262000000"),
+        ];
+        for (k, v) in expect_unchanged {
+            assert_eq!(
+                got.get(k),
+                Some(&Decimal::from_str(v).unwrap()),
+                "unaffected metric {k}"
+            );
+        }
     }
 
     // -- R3: cross-authority dictionary-parity guard -------------------------

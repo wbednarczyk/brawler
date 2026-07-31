@@ -4114,3 +4114,163 @@ fn migration_0127_splits_brokers_out_of_specialty_finance_without_touching_anyth
     assert_eq!(before_rows, after_rows, "the split converges");
     assert_eq!(statement_type(&connection, "xtb"), "brokerage");
 }
+
+#[test]
+fn migration_0128_repairs_only_the_peo_wdf_bank_misclassified_facts() {
+    // Epic #277 T2, card #279: the pre-fix `espi_cover_note` classifier's bare
+    // "zobowiązania" stem greedily mapped Bank Pekao's interbank-liabilities
+    // row onto `total_liabilities` (~40x understated — the real total has no
+    // "razem" row in this bank note at all), and the "przypisan" equity
+    // trigger mapped the non-controlling-interests row onto
+    // `wdf_equity_parent` — the opposite of parent equity. This forward
+    // repair deletes ONLY those two exact wrong values, at PEO's H1/2026
+    // espi_cover_note slot, and nothing else.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 127).expect("apply schema through 0127");
+
+    let def_id = |conn: &rusqlite::Connection, key: &str| -> String {
+        conn.query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'canonical'",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("seeded canonical definition for {key}"))
+    };
+    let def_liab = def_id(&connection, "total_liabilities");
+    let def_eq = def_id(&connection, "wdf_equity_parent");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('peo', 'GPW', 'PEO', 'GPW:PEO', 'BANK POLSKA KASA OPIEKI S.A.'),
+                       ('pko', 'GPW', 'PKO', 'GPW:PKO', 'PKO BP S.A.');
+             INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+                VALUES ('per_peo_2026_h1', 'peo', 2026, 'H1', '2026-06-30'),
+                       ('per_peo_2025_fy', 'peo', 2025, 'FY', '2025-12-31'),
+                       ('per_pko_2026_h1', 'pko', 2026, 'H1', '2026-06-30');",
+        )
+        .expect("seed companies + periods");
+
+    connection
+        .execute(
+            "INSERT INTO financial_facts
+                (id, company_id, period_id, definition_id, value_numeric, extraction_method,
+                 statement_basis, source_document_ref)
+             VALUES
+                -- The two live-wrong facts (the exact PEO H1/2026 values).
+                ('f_wrong_liab', 'peo', 'per_peo_2026_h1', ?1, '7899000000', 'espi_cover_note',
+                 'consolidated', 'feed_bankier_company_komunikatyarticle9175261'),
+                ('f_wrong_eq', 'peo', 'per_peo_2026_h1', ?2, '12000000', 'espi_cover_note',
+                 'consolidated', 'feed_bankier_company_komunikatyarticle9175261'),
+                -- Controls that must survive:
+                -- same company/period/metric, DIFFERENT value + basis (a
+                -- plausible re-extracted correct total_liabilities).
+                ('f_ok_liab', 'peo', 'per_peo_2026_h1', ?1, '316900000000', 'espi_cover_note',
+                 'standalone', 'feed_bankier_company_komunikatyarticle9175261'),
+                -- same value + metric, DIFFERENT period.
+                ('f_other_period', 'peo', 'per_peo_2025_fy', ?1, '7899000000', 'espi_cover_note',
+                 'consolidated', 'feed_bankier_company_komunikatyarticle9175261'),
+                -- same value + metric + period_type, DIFFERENT company.
+                ('f_other_ticker', 'pko', 'per_pko_2026_h1', ?1, '7899000000', 'espi_cover_note',
+                 'consolidated', 'feed_bankier_company_komunikatyarticle9175261'),
+                -- same company/period/metric/value coincidence, but a MANUAL
+                -- fact (a different basis so it does not collide with
+                -- f_wrong_eq's slot) — the user's own entry, never touched by
+                -- an automatic repair.
+                ('f_manual', 'peo', 'per_peo_2026_h1', ?2, '12000000', 'manual',
+                 'standalone', NULL)",
+            rusqlite::params![def_liab, def_eq],
+        )
+        .expect("seed facts");
+
+    connection
+        .execute_batch(
+            "INSERT INTO financial_fact_provenance (fact_id, source_tier, validation_status, citation)
+                VALUES
+                    ('f_wrong_liab', 'espi_cover_note', 'unreviewed',
+                     'Zobowiązania wobec innych banków | feed_item:feed_bankier_company_komunikatyarticle9175261'),
+                    ('f_wrong_eq', 'espi_cover_note', 'unreviewed',
+                     'Kapitał własny przypisany udziałom niedającym kontroli | feed_item:feed_bankier_company_komunikatyarticle9175261'),
+                    ('f_ok_liab', 'espi_cover_note', 'unreviewed', 'Zobowiązania razem'),
+                    ('f_other_period', 'espi_cover_note', 'unreviewed', 'Zobowiązania wobec innych banków'),
+                    ('f_other_ticker', 'espi_cover_note', 'unreviewed', 'Zobowiązania wobec innych banków');",
+        )
+        .expect("seed provenance");
+
+    let before: i64 = connection
+        .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+        .expect("count");
+
+    apply_migrations(&mut connection).expect("apply migration 0128");
+
+    let fact_exists = |conn: &rusqlite::Connection, id: &str| -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM financial_facts WHERE id = ?1",
+            [id],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("count")
+            > 0
+    };
+    let provenance_exists = |conn: &rusqlite::Connection, id: &str| -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM financial_fact_provenance WHERE fact_id = ?1",
+            [id],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("count")
+            > 0
+    };
+
+    assert!(
+        !fact_exists(&connection, "f_wrong_liab"),
+        "the wrong total_liabilities fact is deleted"
+    );
+    assert!(
+        !fact_exists(&connection, "f_wrong_eq"),
+        "the wrong wdf_equity_parent fact is deleted"
+    );
+    assert!(
+        !provenance_exists(&connection, "f_wrong_liab"),
+        "the orphaned provenance row is cleaned up too"
+    );
+    assert!(
+        !provenance_exists(&connection, "f_wrong_eq"),
+        "the orphaned provenance row is cleaned up too"
+    );
+
+    assert!(
+        fact_exists(&connection, "f_ok_liab"),
+        "a different value at a different basis is never touched"
+    );
+    assert!(
+        fact_exists(&connection, "f_other_period"),
+        "a fact in a different period is never matched"
+    );
+    assert!(
+        fact_exists(&connection, "f_other_ticker"),
+        "a fact for a different company is never matched"
+    );
+    assert!(
+        fact_exists(&connection, "f_manual"),
+        "a manual fact at the same numeric coincidence is never touched"
+    );
+    assert!(provenance_exists(&connection, "f_ok_liab"));
+    assert!(provenance_exists(&connection, "f_other_period"));
+    assert!(provenance_exists(&connection, "f_other_ticker"));
+
+    assert_eq!(
+        before - 2,
+        connection
+            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row
+                .get::<_, i64>(0))
+            .expect("count"),
+        "exactly the two wrong facts are removed"
+    );
+
+    // Idempotent: nothing left matches the wrong-value predicate.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert!(!fact_exists(&connection, "f_wrong_liab"));
+    assert!(!fact_exists(&connection, "f_wrong_eq"));
+    assert!(fact_exists(&connection, "f_ok_liab"));
+}

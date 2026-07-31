@@ -643,6 +643,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "split_brokerage_from_specialty_finance",
         sql: include_str!("../../migrations/0127_split_brokerage_from_specialty_finance.sql"),
     },
+    Migration {
+        version: 128,
+        name: "repair_peo_wdf_bank_misclassified_facts",
+        sql: include_str!("../../migrations/0128_repair_peo_wdf_bank_misclassified_facts.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
