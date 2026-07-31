@@ -764,11 +764,31 @@ fn is_roman(token: &[char]) -> bool {
 
 /// Roman row markers in `section`, as `(start, end_after_dot)`.
 ///
+/// Known ALL-CAPS WDF sub-section headers a bank-format note glues directly
+/// onto the following row's roman marker with NO separator — evidenced by
+/// the real Bank Pekao PSr H1/2026 note (epic #277 T2b, card #279):
+/// `"...ZYSKÓW I STRATI. Wynik..."`, `"...PIENIĘŻNEX. Przepływy..."`,
+/// `"...FINANSOWEJXIV. Aktywa..."`, `"...KAPITAŁOWAXXIII. Łączny..."`. A
+/// **closed, evidenced vocabulary** — deliberately NOT a general relaxation
+/// of the uppercase lookbehind below, which stays blocked for everything
+/// else (the ported spike's own rationale: an uppercase-preceded run is
+/// otherwise an acronym or series-letter tail, e.g. "...obligacje serii XI."
+/// must never become row XI).
+const GLUED_SECTION_HEADERS: &[&str] = &[
+    "RACHUNEK ZYSKÓW I STRAT",
+    "PRZEPŁYWY PIENIĘŻNE",
+    "SPRAWOZDANIE Z SYTUACJI FINANSOWEJ",
+    "ADEKWATNOŚĆ KAPITAŁOWA",
+];
+
 /// Ports `(?<![A-ZĄĆĘŁŃÓŚŻŹ])([IVXLC]{1,8})\.(?=\s?[A-ZĄĆĘŁŃÓŚŻŹ0-9(])`. Roman
 /// tokens are themselves uppercase, so only a preceding **uppercase** letter is
 /// disqualifying — sub-headers and scope markers run straight into the next
 /// numeral with no separator (`…sprawozdania finansowegoI. Przychody`) and must
-/// still anchor a row.
+/// still anchor a row. The blanket uppercase block is itself relaxed ONLY when
+/// the marker is glued to one of [`GLUED_SECTION_HEADERS`] (T2b, card #279) —
+/// every other uppercase-preceded run (an acronym/series-letter tail) stays
+/// blocked, exactly as the ported spike measured it.
 fn roman_markers(section: &[char]) -> Vec<(usize, usize)> {
     let n = section.len();
     let mut out = Vec::new();
@@ -784,8 +804,15 @@ fn roman_markers(section: &[char]) -> Vec<(usize, usize)> {
             j += 1;
         }
         let run = j - i;
-        // Lookbehind: the char before the run must not be an uppercase letter.
-        let blocked = i > 0 && is_upper_pl(section[i - 1]);
+        // Lookbehind: the char before the run must not be an uppercase letter
+        // — UNLESS the run is glued directly to one of the known
+        // GLUED_SECTION_HEADERS (T2b), in which case the header itself
+        // disambiguates the boundary and the marker is allowed through.
+        let glued_to_known_header = GLUED_SECTION_HEADERS.iter().any(|header| {
+            let header: Vec<char> = header.chars().collect();
+            i >= header.len() && section[i - header.len()..i] == header[..]
+        });
+        let blocked = i > 0 && is_upper_pl(section[i - 1]) && !glued_to_known_header;
         // `{1,8}` cannot backtrack onto another roman char, so the run must be
         // 1..=8 long and immediately followed by the dot.
         let ok_shape = run <= 8 && j < n && section[j] == '.';
@@ -1591,11 +1618,11 @@ Zastosowane kursy: 4,3000\n";
     }
 
     /// End-to-end proof that the `net_interest_income` mapping itself
-    /// extracts correctly when its row IS reachable (marker not glued to an
-    /// uppercase header — see the documented anchor-swallow surprise on
+    /// extracts correctly on a minimal synthetic body (kept alongside the
+    /// full real-note golden test
     /// [`peo_bank_note_never_emits_wrong_total_liabilities_or_nci_as_parent_equity`]
-    /// below, which is why the real Pekao note's own row I never reaches
-    /// this path).
+    /// below, which since T2b also covers the row-glued-to-a-known-header
+    /// case with the real Pekao text).
     #[test]
     fn bank_income_row_extracts_end_to_end_when_its_anchor_is_reachable() {
         let body = "RAPORT PÓŁROCZNY PSr\n\
@@ -1629,22 +1656,17 @@ Do przeliczenia zastosowano kursy: 1 EUR = 4,2522 PLN oraz 1 EUR = 4,2208 PLN.\n
     /// EPS, dividend, cash flows, share data) must emit identically to
     /// before this change.
     ///
-    /// **Surprise found building this test (out of scope, reported not
-    /// fixed):** rows I ("Wynik z tytułu odsetek" — `net_interest_income`),
-    /// X ("Przepływy pieniężne netto z działalności operacyjnej" —
-    /// `operating_cash_flow`) and XIV ("Aktywa razem" — `total_assets`) each
-    /// immediately follow an ALL-CAPS sub-heading with NO separating space
-    /// ("...ZYSKÓW I STRATI.", "...PIENIĘŻNEX.", "...FINANSOWEJXIV."). The
-    /// roman-marker lookbehind (`roman_markers`, ported 1:1 from the pinned
-    /// 347/347 Python spike's `(?<![A-ZĄĆĘŁŃÓŚŻŹ])` guard — present in both,
-    /// not introduced by this card) blocks a marker directly preceded by an
-    /// uppercase letter, so these three rows are never anchored at all —
-    /// silently dropped before `classify` ever sees them, not even counted
-    /// as abstained. Real-DB evidence corroborates this independently of
-    /// this test: PEO has NO fact for `total_assets`, `operating_cash_flow`
-    /// or `net_interest_income` at 2026 H1, in ANY tier. Fixing the anchor
-    /// heuristic is a separate, riskier change (it is baked into the pinned
-    /// corpus) — filed as a follow-up rather than touched here.
+    /// **T2b (card #279 follow-up):** rows I ("Wynik z tytułu odsetek" —
+    /// `net_interest_income`), X ("Przepływy pieniężne netto z działalności
+    /// operacyjnej" — `operating_cash_flow`) and XIV ("Aktywa razem" —
+    /// `total_assets`) each immediately follow an ALL-CAPS sub-heading with
+    /// NO separating space ("...ZYSKÓW I STRATI.", "...PIENIĘŻNEX.",
+    /// "...FINANSOWEJXIV."). `roman_markers`'s lookbehind now recognizes a
+    /// marker glued to one of the closed set of known WDF sub-section
+    /// headers (`GLUED_SECTION_HEADERS`) while keeping every other
+    /// uppercase-preceded run blocked (the acronym/series-letter-tail risk
+    /// the ported spike's guard exists for) — so these three rows anchor and
+    /// emit like every other row.
     #[test]
     fn peo_bank_note_never_emits_wrong_total_liabilities_or_nci_as_parent_equity() {
         let res = parse_espi_cover_note(PEO_BANK_BODY, PERIOD_END_PEO);
@@ -1684,11 +1706,14 @@ Do przeliczenia zastosowano kursy: 1 EUR = 4,2522 PLN oraz 1 EUR = 4,2208 PLN.\n
         );
         assert_eq!(res.abstained, 1, "row VI is the sole abstention");
 
-        // Bank-specific rows the note actually carries AND that the anchor
-        // grammar reaches (row II is not glued to an uppercase header).
+        // Bank-specific rows the note actually carries, including the two
+        // (row I, row X) whose marker is glued directly to a known WDF
+        // sub-section header with no separator (T2b).
         let expect_bank = [
             ("total_deposits", "284801000000"),
             ("net_fee_commission_income", "1661000000"),
+            ("net_interest_income", "6614000000"),
+            ("operating_cash_flow", "16617000000"),
         ];
         for (k, v) in expect_bank {
             assert_eq!(
@@ -1698,7 +1723,8 @@ Do przeliczenia zastosowano kursy: 1 EUR = 4,2522 PLN oraz 1 EUR = 4,2208 PLN.\n
             );
         }
 
-        // Previously-correct rows still emit identically.
+        // Previously-correct rows still emit identically, including
+        // total_assets (row XIV — also glued to a known header, T2b).
         let expect_unchanged = [
             ("net_profit", "2750000000"),
             ("wdf_net_profit_parent", "2748000000"),
@@ -1711,6 +1737,7 @@ Do przeliczenia zastosowano kursy: 1 EUR = 4,2522 PLN oraz 1 EUR = 4,2208 PLN.\n
             ("wdf_net_cash_change", "9194000000"),
             ("shares_outstanding", "262470034"),
             ("wdf_share_capital", "262000000"),
+            ("total_assets", "367789000000"),
         ];
         for (k, v) in expect_unchanged {
             assert_eq!(
