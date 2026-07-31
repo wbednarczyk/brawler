@@ -7,6 +7,7 @@ import { getPriceContext } from "../../api/marketData";
 import { getKpiComparison } from "../../api/comparison";
 import type { KpiComparison } from "../../api/comparison";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
+import { buildScenario } from "../../test/scenarios/scenarios";
 
 // The Autopilot / custom-KPI child fields load state via the mocked `invoke`
 // on mount (out of scope here); stub them so the render exercises only the
@@ -61,7 +62,14 @@ const panelProps = {
   financialFacts: [],
   kpiDefinitions: [],
   fundamentalsForm: { periodFiscalYear: "", periodType: "annual" },
-  financialFactForm: { definitionId: "", valueNumeric: "", currency: "", periodId: "", annotation: "" },
+  financialFactForm: {
+    definitionId: "",
+    valueNumeric: "",
+    currency: "",
+    periodId: "",
+    annotation: "",
+    dataQuality: "final",
+  },
   selectedFinancialFactId: null,
   isFinancialFactEditMode: false,
   fundamentalsError: null,
@@ -415,5 +423,111 @@ describe("FundamentalsPanel fact annotation marker (#156)", () => {
       "aria-label",
       "Annotation: includes a one-off gain",
     );
+  });
+});
+
+// ADR 0093 dec. 2 (epic #285 T5): preliminary/final coexist in the same slot,
+// and the matrix must show the final-preferred fact with a compact quality
+// marker on the cell (dense grid — mirrors the annotation '*' precedent) plus
+// the full StatusChip in the fact detail, next to the Source/Validation chips
+// T2 already put there.
+describe("FundamentalsPanel preliminary-data marker and detail chip (ADR 0093 dec. 2)", () => {
+  it("renders a compact quality marker on a preliminary-backed cell, and none on a final one", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const withPreliminary = {
+      ...periodsProps,
+      financialFacts: [
+        { ...fact("f_rev", "def_revenue", "p_2024"), dataQuality: "preliminary" },
+        fact("f_np", "def_net_profit", "p_2024"),
+      ],
+    };
+    const { container } = render(<FundamentalsPanel {...withPreliminary} />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".fact-quality-marker")).not.toBeNull();
+    });
+    const markers = container.querySelectorAll(".fact-quality-marker");
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toHaveAttribute("title", "Preliminary");
+    expect(markers[0]).toHaveAttribute("aria-label", "Data quality: Preliminary");
+  });
+
+  it("shows the full 'Preliminary' StatusChip in the fact detail panel for a selected preliminary fact", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const withPreliminary = {
+      ...periodsProps,
+      financialFacts: [
+        { ...fact("f_rev", "def_revenue", "p_2024"), dataQuality: "preliminary" },
+        fact("f_np", "def_net_profit", "p_2024"),
+      ],
+      selectedFinancialFactId: "f_rev",
+    };
+    render(<FundamentalsPanel {...withPreliminary} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Financial fact detail")).toBeInTheDocument();
+    });
+    const detail = screen.getByLabelText("Financial fact detail");
+    expect(within(detail).getByText("Preliminary")).toBeInTheDocument();
+  });
+
+  // Ties the `preliminary-fundamentals` scenario overlay (ADR 0081 mechanism,
+  // src/test/scenarios/overlays.ts) to an actual render, so the T5 dogfooding
+  // state — final-preferred selection + the preliminary marker — renders in
+  // CI forever, not just as a data-shape assertion (docs/testing.md "UI
+  // dogfooding finding ⇒ overlay").
+  it("renders the preliminary-fundamentals overlay: final wins the superseded period's cell, and only the preliminary-only period gets a marker", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce({
+      granularity: "annual",
+      metricKeys: [],
+      axis: [],
+      series: [],
+    });
+    const data = buildScenario({ base: "empty", overlays: ["preliminary-fundamentals"] });
+    const overlayCompanyId = "company_gpw_preliminary";
+    const scenarioProps = {
+      ...panelProps,
+      companyId: overlayCompanyId,
+      financialPeriods: data.financialPeriods.filter((p) => p.companyId === overlayCompanyId),
+      financialFacts: data.financialFacts.filter((f) => f.companyId === overlayCompanyId),
+      kpiDefinitions: data.kpiDefinitions.filter(
+        (d) => d.id === "kpidef_overlay_preliminary_net_profit",
+      ),
+    };
+
+    render(<FundamentalsPanel {...scenarioProps} />);
+
+    const supersededCell = await screen.findByRole("button", { name: "Net profit, 2025 FY" });
+    const preliminaryOnlyCell = screen.getByRole("button", { name: "Net profit, 2026 FY" });
+
+    // The final fact (1010.0 million) wins the 2025 cell — the superseded
+    // preliminary value (980.0 million) never renders, and no marker: once a
+    // final fact lands, the cell is no longer "awaiting the audited figure".
+    expect(supersededCell.textContent).toContain("1010.0");
+    expect(supersededCell.textContent).not.toContain("980.0");
+    expect(supersededCell.querySelector(".fact-quality-marker")).toBeNull();
+
+    // The 2026 period has no final sibling yet — its preliminary fact (1150.0
+    // million) shows, with the compact marker.
+    expect(preliminaryOnlyCell.textContent).toContain("1150.0");
+    expect(preliminaryOnlyCell.querySelector(".fact-quality-marker")).not.toBeNull();
+
+    expect(document.querySelectorAll(".fact-quality-marker")).toHaveLength(1);
+  });
+
+  it("renders no quality marker and a plain 'Final' value for a final fact's detail", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const allFinal = {
+      ...periodsProps,
+      selectedFinancialFactId: "f_rev",
+    };
+    render(<FundamentalsPanel {...allFinal} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Financial fact detail")).toBeInTheDocument();
+    });
+    const detail = screen.getByLabelText("Financial fact detail");
+    expect(within(detail).getByText("Final")).toBeInTheDocument();
+    expect(document.querySelector(".fact-quality-marker")).toBeNull();
   });
 });

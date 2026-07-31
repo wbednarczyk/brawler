@@ -94,6 +94,38 @@ export function tierLabel(tier: string, text: (value: string) => string): string
   }
 }
 
+/**
+ * Human-readable `data_quality` label (ADR 0093 dec. 2: `final | preliminary
+ * | estimated`, canonical vocabulary). A pure module-level function (mirrors
+ * `tierLabel`) so it is unit-testable without rendering. Any unrecognized
+ * token (a future addition to the vocabulary, or a legacy row) falls back to
+ * "Final" — matching the storage-layer default and never blocking the value.
+ */
+export function factQualityLabel(quality: string, text: (value: string) => string): string {
+  switch (quality) {
+    case "preliminary":
+      return text("Preliminary");
+    case "estimated":
+      return text("Estimated");
+    default:
+      return text("Final");
+  }
+}
+
+/** Chip tone for {@link factQualityLabel} — caution for preliminary (issuer-
+ * published, pending the audited figure), accent for estimated (third-party
+ * derived), neutral for the default final. */
+function factQualityTone(quality: string): "warn" | "accent" | "neutral" {
+  switch (quality) {
+    case "preliminary":
+      return "warn";
+    case "estimated":
+      return "accent";
+    default:
+      return "neutral";
+  }
+}
+
 export function FundamentalsPanel({
   companyId,
   financialPeriods,
@@ -417,6 +449,15 @@ export function FundamentalsPanel({
                                   *
                                 </span>
                               ) : null}
+                              {fact.dataQuality !== "final" ? (
+                                <span
+                                  className="fact-quality-marker"
+                                  title={factQualityLabel(fact.dataQuality, text)}
+                                  aria-label={`${text("Data quality")}: ${factQualityLabel(fact.dataQuality, text)}`}
+                                >
+                                  ‡
+                                </span>
+                              ) : null}
                             </button>
                           </td>
                         );
@@ -588,7 +629,12 @@ export function FundamentalsPanel({
                       { label: text("Variant"), value: selectedFact.variant },
                       {
                         label: text("Data quality"),
-                        value: selectedFact.dataQuality,
+                        value: (
+                          <StatusChip tone={factQualityTone(selectedFact.dataQuality)}>
+                            {factQualityLabel(selectedFact.dataQuality, text)}
+                          </StatusChip>
+                        ),
+                        valueAriaLabel: `${text("Data quality")}: ${factQualityLabel(selectedFact.dataQuality, text)}`,
                       },
                       // Facts are review-free (ADR 0086 dec. 5): `confirmationState`
                       // is a frozen compatibility column, always `confirmed` — it is

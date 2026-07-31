@@ -112,4 +112,62 @@ describe("buildFactMatrix", () => {
     expect(matrix.rows[0].definition.label).toBe("Revenue");
     expect(matrix.rows[0].cells.p1?.id).toBe("f1");
   });
+
+  // ADR 0093 dec. 2: preliminary and final coexist in the same slot (same
+  // period + definition, distinguished only by `dataQuality`). The matrix
+  // shows ONE fact per period, and it must be the final one — mirrors the
+  // backend's final-preferred idiom (`metric_history`,
+  // `stored_fact_set_filtered`) instead of the old "last object in the facts
+  // array wins" behavior.
+  describe("final-preferred cell selection (ADR 0093 dec. 2)", () => {
+    it("prefers the final sibling when the preliminary fact comes LAST in the array (facts arrive created_at DESC — final first)", () => {
+      const periods = [period("p1", 2025, "annual", "2025-12-31")];
+      const definitions = [definition("d_rev", "revenue", "Revenue")];
+      const finalFact = { ...fact("f_final", "p1", "d_rev"), dataQuality: "final" };
+      const preliminaryFact = { ...fact("f_prelim", "p1", "d_rev"), dataQuality: "preliminary" };
+      // Real ordering: created_at DESC, and the final fact is created LATER
+      // (the audited report lands after the preliminary release) — so it
+      // sorts first, and the preliminary sibling comes after it.
+      const facts = [finalFact, preliminaryFact];
+
+      const matrix = buildFactMatrix(periods, facts, definitions);
+
+      expect(matrix.rows[0].cells.p1?.id).toBe("f_final");
+      expect(matrix.rows[0].cells.p1?.dataQuality).toBe("final");
+    });
+
+    it("prefers the final sibling even when the preliminary fact comes FIRST in the array (last-wins would shadow it)", () => {
+      const periods = [period("p1", 2025, "annual", "2025-12-31")];
+      const definitions = [definition("d_rev", "revenue", "Revenue")];
+      const finalFact = { ...fact("f_final", "p1", "d_rev"), dataQuality: "final" };
+      const preliminaryFact = { ...fact("f_prelim", "p1", "d_rev"), dataQuality: "preliminary" };
+      const facts = [preliminaryFact, finalFact];
+
+      const matrix = buildFactMatrix(periods, facts, definitions);
+
+      expect(matrix.rows[0].cells.p1?.id).toBe("f_final");
+    });
+
+    it("still shows a preliminary-only fact (no final sibling), with its quality exposed", () => {
+      const periods = [period("p1", 2026, "h1", "2026-06-30")];
+      const definitions = [definition("d_rev", "revenue", "Revenue")];
+      const preliminaryFact = { ...fact("f_prelim", "p1", "d_rev"), dataQuality: "preliminary" };
+
+      const matrix = buildFactMatrix(periods, [preliminaryFact], definitions);
+
+      expect(matrix.rows[0].cells.p1?.id).toBe("f_prelim");
+      expect(matrix.rows[0].cells.p1?.dataQuality).toBe("preliminary");
+    });
+
+    it("prefers final over an estimated sibling too (any non-final rank is equal, final always wins)", () => {
+      const periods = [period("p1", 2025, "annual", "2025-12-31")];
+      const definitions = [definition("d_rev", "revenue", "Revenue")];
+      const estimatedFact = { ...fact("f_est", "p1", "d_rev"), dataQuality: "estimated" };
+      const finalFact = { ...fact("f_final", "p1", "d_rev"), dataQuality: "final" };
+
+      const matrix = buildFactMatrix(periods, [estimatedFact, finalFact], definitions);
+
+      expect(matrix.rows[0].cells.p1?.id).toBe("f_final");
+    });
+  });
 });

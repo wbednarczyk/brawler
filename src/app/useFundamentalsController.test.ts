@@ -28,6 +28,7 @@ const EMPTY_FACT_FORM: FinancialFactForm = {
   currency: "",
   periodId: "",
   annotation: "",
+  dataQuality: "final",
 };
 
 const period: FinancialPeriod = {
@@ -64,6 +65,18 @@ const fact: FinancialFact = {
   annotation: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+};
+
+// ADR 0093 dec. 2: a preliminary fact, otherwise identical to `fact` — used to
+// prove `saveFinancialFact`'s update path sends the ROW'S EXISTING
+// `dataQuality`, not a hardcoded "final" (which would trip the backend's
+// typed `FinancialFactDataQualityLocked` conflict on every edit of a
+// preliminary/estimated fact).
+const preliminaryFact: FinancialFact = {
+  ...fact,
+  id: "fact_preliminary_1",
+  dataQuality: "preliminary",
+  extractionMethod: "mcp_agent",
 };
 
 const fakeSubmitEvent = { preventDefault: () => {} } as unknown as React.FormEvent<HTMLFormElement>;
@@ -254,6 +267,7 @@ describe("useFundamentalsController", () => {
       valueNumeric: "1000",
       currency: "PLN",
       periodId: "period_1",
+      dataQuality: "final",
     });
 
     act(() => {
@@ -279,6 +293,65 @@ describe("useFundamentalsController", () => {
     expect(refreshFinancialFacts).toHaveBeenCalledTimes(1);
     expect(result.current.isFinancialFactEditMode).toBe(false);
     expect(result.current.selectedFinancialFactId).toBeNull();
+  });
+
+  // ADR 0093 dec. 2 (epic #285 T5): the update path used to hardcode
+  // `dataQuality: "final"` regardless of the fact being edited — which would
+  // attempt an illegal quality flip on every edit of a preliminary/estimated
+  // fact and trip the backend's typed `FinancialFactDataQualityLocked`
+  // conflict. It must send the ROW'S OWN existing quality instead (a no-op
+  // resend the backend passes straight through).
+  it("preserves a preliminary fact's dataQuality on update instead of hardcoding final", async () => {
+    vi.mocked(financialsApi.updateFinancialFact).mockResolvedValue(preliminaryFact);
+    const { result } = renderHook(() =>
+      useHarness({ periods: [period], facts: [preliminaryFact] }),
+    );
+
+    act(() => {
+      result.current.selectFinancialFact("fact_preliminary_1");
+    });
+    expect(result.current.financialFactForm.dataQuality).toBe("preliminary");
+
+    act(() => {
+      result.current.startEditingFinancialFact();
+      result.current.updateFinancialFactForm("valueNumeric", "1200");
+    });
+
+    await act(async () => {
+      await result.current.saveFinancialFact(fakeSubmitEvent);
+    });
+
+    expect(financialsApi.updateFinancialFact).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "fact_preliminary_1", dataQuality: "preliminary" }),
+    );
+  });
+
+  // Defense-in-depth: IF the backend ever does reject a quality-locked update
+  // (e.g. a future direct edit path bypassing the preserved-quality form
+  // field), the typed `FinancialFactDataQualityLocked` conflict must surface
+  // readably — the existing `error instanceof Error` catch already does this
+  // for any `CommandInvocationError` (ADR 0070), pinned here so the path
+  // never regresses silently.
+  it("surfaces a typed data-quality-locked conflict readably when an update is rejected", async () => {
+    vi.mocked(financialsApi.updateFinancialFact).mockRejectedValue(
+      new Error(
+        "fact fact_1 data_quality is immutable via update (final -> preliminary): data_quality is a uniqueness-slot dimension (ADR 0093) — create a new final fact instead so supersession records the change",
+      ),
+    );
+    const { result } = renderHook(() => useHarness({ periods: [period], facts: [fact] }));
+
+    act(() => {
+      result.current.selectFinancialFact("fact_1");
+      result.current.startEditingFinancialFact();
+    });
+
+    await act(async () => {
+      await result.current.saveFinancialFact(fakeSubmitEvent);
+    });
+
+    expect(result.current.fundamentalsError).toBe(
+      "fact fact_1 data_quality is immutable via update (final -> preliminary): data_quality is a uniqueness-slot dimension (ADR 0093) — create a new final fact instead so supersession records the change",
+    );
   });
 
   it("cancels an in-progress edit and clears the form and selection", () => {
