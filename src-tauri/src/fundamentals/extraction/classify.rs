@@ -366,15 +366,30 @@ pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
     // default-consolidated fall-through below mirrors the no-marker default.
     let is_package = PACKAGE_EXTENSIONS.iter().any(|ext| raw.contains(ext));
     if is_package || matches_any(&t, FINANCIAL_MARKERS) {
-        // Consolidated wins when both markers appear (a QSr bundles condensed
-        // standalone data inside a consolidated report); a periodic report
-        // with no explicit marker defaults to consolidated — the common case
-        // for group reports, and the pre-taxonomy `classify_statement`
-        // behavior this projection must preserve.
-        if matches_any(&t, CONSOLIDATED_MARKERS) {
+        // **Title-first on the consolidated/standalone axis** (owner decision
+        // #275), mirroring the auditor gate above: when the TITLE speaks on the
+        // axis it is the whole evidence, because a marker found only in the URL
+        // belongs to the neighbouring attachment whose slug was reused. A title
+        // silent on both markers still falls back to the combined text — a poor
+        // signal beats no signal, and that is the only case a slug decides.
+        //
+        // Within whichever text is consulted the classic rules are unchanged:
+        // consolidated wins when both markers appear (a QSr bundles condensed
+        // standalone data inside a consolidated report), and a periodic report
+        // with no explicit marker defaults to consolidated — the common case for
+        // group reports, and the pre-taxonomy `classify_statement` behavior this
+        // projection must preserve.
+        let axis = if matches_any(&t_title, CONSOLIDATED_MARKERS)
+            || matches_any(&t_title, STANDALONE_MARKERS)
+        {
+            &t_title
+        } else {
+            &t
+        };
+        if matches_any(axis, CONSOLIDATED_MARKERS) {
             return DocKind::PeriodicSsf;
         }
-        if matches_any(&t, STANDALONE_MARKERS) {
+        if matches_any(axis, STANDALONE_MARKERS) {
             return DocKind::PeriodicJsf;
         }
         return DocKind::PeriodicSsf;
@@ -472,7 +487,9 @@ mod tests {
     /// Epic #229 T3 (#171): a foreign issuer's slug must not classify the
     /// owner's document. Real strings from the maintainer's database — XTB's own
     /// H1-2025 statements are served under DataWalk slugs (content-verified: the
-    /// stored bytes name XTB), and today the slug decides all three answers.
+    /// stored bytes name XTB). Case (a) still needs slug distrust to recover the
+    /// document; case (b) no longer does — the title-first precedence (#275)
+    /// decides the consolidated/standalone axis before trust is consulted.
     #[test]
     fn foreign_slug_does_not_classify_the_owners_document() {
         // (a) A signature-companion slug demotes a real consolidated statement to
@@ -492,15 +509,23 @@ mod tests {
             "distrusting the slug must recover the owner's consolidated statement"
         );
 
-        // (b) A consolidated slug flips a STANDALONE statement to consolidated —
-        //     the wrong document then competes for (and can win) the SSF slot.
+        // (b) A consolidated slug used to flip a STANDALONE statement to
+        //     consolidated, so the wrong document competed for (and could win)
+        //     the SSF slot. That is no longer a precondition to work around:
+        //     **owner decision #275** extended the title-first precedence to the
+        //     consolidated/standalone axis, so `jednostkowe` in the owner's own
+        //     title now decides regardless of slug trust. Slug distrust is the
+        //     narrower instrument (it needs the issuer index and only fires on a
+        //     *foreign tracked* issuer); the precedence covers the same-issuer
+        //     and untracked-issuer slugs it cannot see, which is why both paths
+        //     must now agree here.
         let standalone = "Raport_polroczne_jednostkowe_XTB_HY_2025_PL.pdf";
         let ssf_slug = "https://www.bankier.pl/static/att/emitent/2025-08/\
                         DataWalk-SSF-2025-06-30-0-pl_202508281209683797.xhtml";
         assert_eq!(
             classify_doc_kind(standalone, ssf_slug),
-            DocKind::PeriodicSsf,
-            "precondition: the foreign SSF slug wins today"
+            DocKind::PeriodicJsf,
+            "#275: the title speaks on the axis, so the foreign SSF slug cannot"
         );
         assert_eq!(
             classify_doc_kind_with_slug_trust(standalone, ssf_slug, false),
