@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.62.8 - 2026-07-30
+
+
+### Bug Fixes
+
+- **fundamentals**: data trust — measured repairs + guards for every bad-data class: container truth, association trust, currency, witness corroboration, honest TTM, kpi_relevance lifecycle (epic #229) (#268)
+
 ## v0.62.2 - 2026-07-30
 
 
