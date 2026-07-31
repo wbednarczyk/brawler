@@ -683,6 +683,15 @@ Sweeps also run off-box via the manual `mutants.yml` GitHub Actions workflow
 `make mutants` (jailed by default) stays the documented local equivalent for a
 dedicated box.
 
+**Red means a survivor, not a slow mutant** (#256). The workflow captures
+cargo-mutants' exit code and decides the job in a separate `Sweep verdict`
+step: exit `0` passes; exit `3` (timeouts) passes **with a notice** when
+`mutants.out/missed.txt` is empty, because a timeout is caught-by-limit, not a
+survivor; everything else — `1`/`2`/`4`, an unset code, or exit `3` **with**
+missed mutants — fails. The exit code alone never decides, only the missed
+tally does. (The 2026-07-30 full sweep, 288 mutants and 0 missed, went red on
+one timeout per shard and sent triage hunting a survivor that did not exist.)
+
 ## Generated API types (Rust → TypeScript)
 
 The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the Rust source** with `ts-rs`, so a Rust struct and its TS shape cannot silently drift (ADR 0048). The Rust DTO carries `#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]` + `#[ts(export, export_to = "../../src/api/generated/")]` (ts-rs honors the existing `#[serde(rename_all = "camelCase")]` via serde-compat); `make types` emits `src/api/generated/`, and the hand-written `src/api/*Types.ts` module re-exports the generated types so consumers keep a stable import path. `make types-check` regenerates and fails if regeneration changes the working-tree bindings (a before/after hash self-consistency check — independent of git staging state, so it works both mid-work and in the pre-commit gate). `ts-rs` is behind the off-by-default `ts-export` feature, so it never ships in the binary; `src/api/generated/` is lint-excluded and **knip-ignored** (`ignore` in `knip.json`), because it is a generated contract mirror governed by `types-check`, not authored source — knip's unused-file check would flag generated leaf DTOs that nothing imports, and deleting them is invalid (regenerate, don't hand-edit). Authored dead-code detection stays strict everywhere else.
