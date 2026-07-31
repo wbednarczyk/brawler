@@ -132,17 +132,32 @@ Exactly what each window does when history is thin:
 
 | Window | On an annual period | On an interim (quarterly/half-year) period | Empty when |
 |---|---|---|---|
-| `ttm(metric)` / `_ttm` | that period's own annual figure — no summing | sum of the four most recent periods in the series | fewer than four of those periods carry the figure |
+| `ttm(metric)` / `_ttm` | that period's own annual figure — no summing | `last full year + this year's figure so far − the same point last year` | any one of those three is missing, **or the metric isn't a flow** |
 | `_avg` | average of the current and prior period | same | the current period lacks the figure |
 | `cagr(metric, n)` | `(end / begin)^(1/n) − 1` | same | no period is labelled `fiscal_year − n`, or either endpoint is ≤ 0 |
 
 Notes worth knowing:
 
-- **A partial TTM is empty, not a guess.** Three quarters are not a trailing
-  twelve months, so `_ttm` reads **No data** rather than quietly presenting one
-  quarter's profit as a full year. Everything built on it — `roe`, `roa`,
-  `pe_ratio`, `ev_ebitda`, `fcf_yield`, the comparative-valuation drivers — goes
-  empty with it until the fourth quarter lands.
+- **TTM at an interim period is arithmetic, not a sum of the last four rows.**
+  Polish issuers report *cumulatively*: the half-year report already contains
+  Q1, and the Q3 report is really nine months. Adding consecutive reports would
+  count the same months twice. So for, say, a Q1 2026 report Brawler computes
+  **FY 2025 + Q1 2026 − Q1 2025** — last full year, roll the new quarter on,
+  roll the year-ago quarter off.
+- **A TTM that can't be closed is empty, not a guess.** All three inputs must
+  exist, and the year-ago period must carry the *same* fiscal label (a half-year
+  figure can't stand in for a quarter). Miss one and `_ttm` reads **No data**
+  rather than quietly presenting part of a year as a full one. Everything built
+  on it — `roe`, `roa`, `pe_ratio`, `ev_ebitda`, `fcf_yield`, the
+  comparative-valuation drivers — goes empty with it. Most companies get their
+  TTM back one year after their first interim report, once there's a year-ago
+  comparison point.
+- **`_ttm` only applies to flows** — things that accumulate over months, like
+  revenue, profit, EBITDA or cash flow. On a balance-sheet figure (equity,
+  assets, cash, debt, share count, price) or on a ratio there is no such thing
+  as a trailing twelve months, so `_ttm` yields **No data**. Use the bare key
+  for the latest balance, or `_avg` for the two-period average that return
+  ratios like ROE use.
 - **`_avg` does degrade.** With no prior period (or none carrying the figure) it
   returns the current value alone. Balance-sheet averaging exists to smooth a
   point-in-time figure; one point is still a usable figure, unlike a partial sum.

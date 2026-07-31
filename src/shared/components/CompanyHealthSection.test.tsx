@@ -194,6 +194,26 @@ describe("CompanyHealthSection", () => {
     expect(screen.queryByText(/banking/)).not.toBeInTheDocument();
   });
 
+  // `brokerage` is the 2026-07-31 split of `specialty_finance` (owner decision):
+  // XTB and GPW now report it as their not-applicable reason, so it needs the
+  // same localization the other recognized types have — otherwise the Polish UI
+  // shows a raw English token.
+  it("localizes the brokerage not-applicable reason (pl)", async () => {
+    const period = headlinePeriod();
+    period.piotroski = { state: "not_applicable", reason: "brokerage" };
+    period.altman = { state: "not_applicable", reason: "brokerage" };
+    getCompanyHealthMock.mockResolvedValue(
+      health({ latest: period, statementType: "brokerage" }),
+    );
+    renderPl(<CompanyHealthSection companyId="company_gpw_xtb" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Piotroski F \(2000\)/ }));
+    expect(
+      await screen.findByText(/Nie dotyczy spółek finansowych \(Działalność maklerska\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/brokerage/)).not.toBeInTheDocument();
+  });
+
   it("localizes the averaging-basis and leverage-basis marker inputs, not raw tokens (pl)", async () => {
     const period = headlinePeriod();
     period.piotroski = {

@@ -99,9 +99,9 @@ function missingLine(missing: MissingInput[], text: Localize, locale: LocaleCode
 }
 
 /** The `NotApplicable` reason echoes the company's `statement_type` column
- * (`banking` / `insurance` / `specialty_finance`, migrations 0095/0098) —
- * localize the recognized values; an unrecognized value still renders (never
- * blocked), just untranslated. */
+ * (`banking` / `insurance` / `specialty_finance` / `brokerage` / `reit`,
+ * migrations 0095/0098/0127) — localize the recognized values; an unrecognized
+ * value still renders (never blocked), just untranslated. */
 function notApplicableReasonLabel(reason: string, text: Localize): string {
   switch (reason) {
     case "banking":
@@ -109,7 +109,12 @@ function notApplicableReasonLabel(reason: string, text: Localize): string {
     case "insurance":
       return text("Insurance");
     case "specialty_finance":
+      // Debt collection since the 2026-07-31 split — brokers moved to `brokerage`.
       return text("Specialty finance");
+    case "brokerage":
+      return text("Brokerage");
+    case "reit":
+      return text("REIT");
     default:
       return reason;
   }

@@ -76,12 +76,13 @@ jobs:
 
       # No jail: MUTANTS_JAIL=off skips the systemd-run --user memory jail
       # (Makefile), which needs a user systemd manager that a GitHub-hosted
-      # runner does not have. cargo-mutants exits non-zero when mutants are
-      # MISSED (or on a build/test error) — that non-zero is the intended
-      # signal for this job to go red, so the run is NOT forced green; the
-      # artifact upload below is unconditional (`if: always()`) so the report
-      # is still available when the job fails on missed mutants.
+      # runner does not have. The sweep's own exit code is CAPTURED, not
+      # propagated here — the "Sweep verdict" step below turns it into the
+      # job's red/green (#256); the run is NOT forced green, and the artifact
+      # upload is unconditional (`if: always()`) so the report is available
+      # however the verdict lands.
       - name: Run mutation sweep
+        id: sweep
         # Memory jail via a root cgroup: mutants can turn a loop into a memory
         # bomb (the class the TIMEOUT auto-limit cannot catch when allocation
         # outruns it) — a <60s burst freezes the VM and the runner agent misses
@@ -111,7 +112,54 @@ jobs:
             MUTANTS_BUILD_JOBS=${{ inputs.build_jobs }} \
             MUTANTS_SHARD=${{ inputs.shard }} || rc=$?
           kill "$TELEM_PID" 2>/dev/null || true
-          exit "$rc"
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+
+      # #256: cargo-mutants encodes the sweep result in its exit code — 0 all
+      # caught, 2 mutants MISSED, 3 mutants TIMED OUT, 1/4 usage or baseline
+      # failure. A timeout is caught-by-limit, not a survivor, so a run with 0
+      # missed and only timeouts is a PASS with a notice: the 2026-07-30 full
+      # sweep (288 mutants, 0 missed, one timeout on shards 3/4/7) went red on
+      # exit 3 alone and sent triage hunting a survivor that did not exist.
+      # Everything else stays red — exit 1/2/4, an unset exit code, and exit 3
+      # WITH missed mutants (cargo-mutants may report either code when a run
+      # both misses and times out, so the missed tally, never the code alone,
+      # decides). `missed.txt` is the tally cargo-mutants writes for exactly
+      # this question, so the verdict never re-derives it from the log — and a
+      # missing tally file cannot buy the timeout pass either: no report, no
+      # proof that nothing survived, so the job stays red.
+      - name: Sweep verdict
+        # Inputs/outputs arrive as env, never interpolated into the script body
+        # (a dispatch input is caller-controlled text, not shell).
+        env:
+          RC: ${{ steps.sweep.outputs.rc }}
+          SHARD: ${{ inputs.shard }}
+        run: |
+          rc="$RC"
+          missed_file=src-tauri/mutants.out/missed.txt
+          missed=0
+          tally_known=0
+          if [ -f "$missed_file" ]; then
+            tally_known=1
+            if [ -s "$missed_file" ]; then missed=$(grep -c '' "$missed_file"); fi
+          fi
+          {
+            echo "### cargo-mutants sweep — ${SHARD:-full sweep}"
+            echo ""
+            echo "- cargo-mutants exit code: \`${rc:-<unset>}\`"
+            echo "- missed mutants: \`$missed\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [ "$rc" = "0" ]; then
+            echo "- verdict: **pass** — every mutant caught." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$rc" = "3" ] && [ "$tally_known" = "1" ] && [ "$missed" -eq 0 ]; then
+            echo "::notice::cargo-mutants exit 3 = timeouts only, 0 mutants missed — caught by the timeout limit, not survivors (#256)."
+            echo "- verdict: **pass with timeouts** — nothing survived (#256)." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::cargo-mutants sweep failed: exit ${rc:-<unset>}, $missed missed mutants — see the mutants-out artifact."
+          echo "- verdict: **fail** — see the \`mutants-out\` artifact." >>"$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - name: Upload mutants.out
         if: always()

@@ -633,6 +633,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "scope_discriminated_kpi_definition_ids",
         sql: include_str!("../../migrations/0125_scope_discriminated_kpi_definition_ids.sql"),
     },
+    Migration {
+        version: 126,
+        name: "seed_statement_pack_kpi_relevance",
+        sql: include_str!("../../migrations/0126_seed_statement_pack_kpi_relevance.sql"),
+    },
+    Migration {
+        version: 127,
+        name: "split_brokerage_from_specialty_finance",
+        sql: include_str!("../../migrations/0127_split_brokerage_from_specialty_finance.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

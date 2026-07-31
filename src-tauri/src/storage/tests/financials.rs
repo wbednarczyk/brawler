@@ -1579,3 +1579,303 @@ fn fact_annotation_set_kept_replaced_and_cleared() {
         .expect("update should apply");
     assert_eq!(cleared.annotation, None);
 }
+
+// ---------------------------------------------------------------------------
+// ADR 0092 layers 2 and 3 (issues #273 / #274).
+//
+// Layer 2 (`source='sector'`) is a real gate contributor: it must reach
+// `expected_primary_metric_keys` alongside the core floor.
+// Layer 3 (`source='derived'`) must NEVER reach it — the completeness gate
+// compares extraction output against expectations, so deriving the expectations
+// FROM extraction output would let a systematic extraction hole silently erase
+// the very expectation that would have caught it.
+// ---------------------------------------------------------------------------
+
+/// Give `company_id` an issuer-tier fact for `metric_key` in `period_id`.
+fn seed_issuer_fact(
+    state: &AppState,
+    company_id: &str,
+    period_id: &str,
+    metric_key: &str,
+    value: &str,
+    tier: &str,
+) {
+    let fact = state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company_id.to_owned(),
+            period_id: period_id.to_owned(),
+            definition_id: definition_id_for(state, metric_key),
+            value_numeric: value.to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("fact should create");
+    state
+        .fundamentals_provenance()
+        .set_fact_provenance(NewFactProvenance {
+            fact_id: &fact.id,
+            source_tier: tier,
+            validation_status: "passed",
+            drift_json: None,
+            citation: None,
+        })
+        .expect("provenance should record");
+}
+
+fn relevance_rows(state: &AppState, company_id: &str) -> Vec<(String, String, String)> {
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions should list");
+    let mut rows: Vec<(String, String, String)> = state
+        .list_kpi_relevance(company_id)
+        .expect("relevance should list")
+        .into_iter()
+        .map(|r| {
+            let key = definitions
+                .iter()
+                .find(|d| d.id == r.definition_id)
+                .map(|d| d.metric_key.clone())
+                .unwrap_or_else(|| panic!("dangling definition_id {}", r.definition_id));
+            (key, r.source, r.rank.unwrap_or_default())
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+#[test]
+fn expected_primary_metric_keys_includes_statement_pack_additions() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = company_with_ticker(&state, "PKO");
+
+    {
+        let connection = state
+            .checkout_for_tests()
+            .expect("connection should check out");
+        connection
+            .execute(
+                "UPDATE companies SET statement_type = 'banking' WHERE id = ?1",
+                [&company.id],
+            )
+            .expect("reclassify");
+        crate::storage::financials::seed_statement_pack_kpi_relevance(&connection, &company.id)
+            .expect("statement pack should seed");
+    }
+
+    // The gate reads any active+primary row regardless of `source`, so layer 2
+    // widens the denominator for financial issuers.
+    let expected = state
+        .financials()
+        .expected_primary_metric_keys(&company.id)
+        .expect("expected keys should read")
+        .expect("a seeded company has a denominator");
+    let keys: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        vec![
+            "net_fee_commission_income",
+            "net_interest_income",
+            "net_profit",
+            "operating_profit",
+            "revenue",
+            "total_assets",
+            "total_deposits",
+            "total_equity",
+            "total_loans",
+        ]
+    );
+}
+
+#[test]
+fn derived_pass_marks_keys_reported_in_at_least_three_of_the_last_four_periods() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = company_with_ticker(&state, "DRV");
+
+    let periods: Vec<String> = (2022..=2025)
+        .map(|year| seed_fy_period(&state, &company.id, year))
+        .collect();
+
+    // `ebitda`: 3 of the last 4 → marked.
+    for period in periods.iter().take(3) {
+        seed_issuer_fact(&state, &company.id, period, "ebitda", "100", "esef");
+    }
+    // `gross_profit`: only 2 of the last 4 → not marked.
+    for period in periods.iter().take(2) {
+        seed_issuer_fact(&state, &company.id, period, "gross_profit", "50", "esef");
+    }
+    // `capex`: 4 of the last 4 but ONLY from the aggregator — not issuer-tier,
+    // so it never becomes a derived observation.
+    for period in &periods {
+        seed_issuer_fact(
+            &state,
+            &company.id,
+            period,
+            "capex",
+            "10",
+            "html_aggregator",
+        );
+    }
+
+    {
+        let connection = state
+            .checkout_for_tests()
+            .expect("connection should check out");
+        crate::storage::financials::refresh_derived_kpi_relevance(&connection, &company.id)
+            .expect("derived pass should run");
+    }
+
+    let derived: Vec<String> = relevance_rows(&state, &company.id)
+        .into_iter()
+        .filter(|(_, source, _)| source == "derived")
+        .map(|(key, _, rank)| {
+            assert_eq!(rank, "secondary", "derived rows are never ranked primary");
+            key
+        })
+        .collect();
+    assert_eq!(derived, vec!["ebitda".to_owned()]);
+}
+
+#[test]
+fn derived_pass_never_touches_core_sector_or_user_rows() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = company_with_ticker(&state, "KEEP");
+
+    let curated = state
+        .create_kpi_relevance(NewKpiRelevance {
+            company_id: company.id.clone(),
+            definition_id: definition_id_for(&state, "revenue"),
+            source: "user".to_owned(),
+            rank: Some("primary".to_owned()),
+            first_seen_period: None,
+            last_seen_period: None,
+        })
+        .expect("curated row should create");
+
+    // `revenue` (user) and `net_profit` (core) are both consistently reported,
+    // so the pass would want to mark them — and must not.
+    let periods: Vec<String> = (2022..=2025)
+        .map(|year| seed_fy_period(&state, &company.id, year))
+        .collect();
+    for period in &periods {
+        seed_issuer_fact(&state, &company.id, period, "revenue", "100", "esef");
+        seed_issuer_fact(&state, &company.id, period, "net_profit", "10", "esef");
+    }
+
+    let before = relevance_rows(&state, &company.id);
+    {
+        let connection = state
+            .checkout_for_tests()
+            .expect("connection should check out");
+        crate::storage::financials::refresh_derived_kpi_relevance(&connection, &company.id)
+            .expect("derived pass should run");
+        // Idempotence: the pass converges instead of accumulating.
+        crate::storage::financials::refresh_derived_kpi_relevance(&connection, &company.id)
+            .expect("derived pass should be idempotent");
+    }
+    assert_eq!(
+        relevance_rows(&state, &company.id),
+        before,
+        "an occupied (company, definition) slot is never re-sourced or duplicated"
+    );
+
+    let survivor = state
+        .list_kpi_relevance(&company.id)
+        .expect("relevance should list")
+        .into_iter()
+        .find(|r| r.id == curated.id)
+        .expect("the user row must survive");
+    assert_eq!(survivor.source, "user");
+    assert_eq!(survivor.rank, Some("primary".to_owned()));
+}
+
+#[test]
+fn derived_rows_never_enter_the_completeness_denominator() {
+    // ADR 0092's no-self-referential-gate rule. `rank='secondary'` already keeps
+    // derived rows out incidentally; this pins the STRUCTURAL exclusion by
+    // hand-upgrading one to `primary` — it must STILL not count.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = company_with_ticker(&state, "GATE");
+
+    let periods: Vec<String> = (2022..=2025)
+        .map(|year| seed_fy_period(&state, &company.id, year))
+        .collect();
+    for period in &periods {
+        seed_issuer_fact(&state, &company.id, period, "ebitda", "100", "esef");
+    }
+    {
+        let connection = state
+            .checkout_for_tests()
+            .expect("connection should check out");
+        crate::storage::financials::refresh_derived_kpi_relevance(&connection, &company.id)
+            .expect("derived pass should run");
+    }
+
+    let derived_row = state
+        .list_kpi_relevance(&company.id)
+        .expect("relevance should list")
+        .into_iter()
+        .find(|r| r.source == "derived")
+        .expect("ebitda should be a derived observation");
+    state
+        .update_kpi_relevance(UpdateKpiRelevance {
+            id: derived_row.id.clone(),
+            status: Some("active".to_owned()),
+            rank: Some("primary".to_owned()),
+            first_seen_period: None,
+            last_seen_period: None,
+        })
+        .expect("hand-upgrade should apply");
+    assert_eq!(
+        state
+            .list_kpi_relevance(&company.id)
+            .expect("relevance should list")
+            .into_iter()
+            .find(|r| r.id == derived_row.id)
+            .expect("row should still exist")
+            .rank,
+        Some("primary".to_owned()),
+        "the upgrade must really be stored, or the guard proves nothing"
+    );
+
+    let expected = state
+        .financials()
+        .expected_primary_metric_keys(&company.id)
+        .expect("expected keys should read")
+        .expect("the core floor still supplies a denominator");
+    assert!(
+        !expected.contains("ebitda"),
+        "a derived observation must never gate, whatever its rank — got {expected:?}"
+    );
+    let keys: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        vec![
+            "net_profit",
+            "operating_profit",
+            "revenue",
+            "total_assets",
+            "total_equity"
+        ]
+    );
+}

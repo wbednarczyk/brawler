@@ -624,3 +624,350 @@ fn core_kpi_relevance_seeding_never_overwrites_a_curated_row() {
     assert_eq!(curated.status, "retired");
     assert_eq!(curated.rank, Some("secondary".to_owned()));
 }
+
+// ---------------------------------------------------------------------------
+// Create-time statement-pack seeding — ADR 0092 layer 2 (issue #273).
+//
+// The `scope='sector'` KPI packs have been seeded since ADR 0027 but nothing
+// ever read them at runtime. Layer 2 turns `companies.statement_type` into a
+// conservative additive selection over them. Two truths this pins:
+//   * the INDUSTRIAL pack is `scope='canonical'` (migration 0034 seeds it with
+//     `scope='canonical', sector=NULL`), so an industrial company gets the core
+//     five and nothing more — there is no industrial sector pack to add;
+//   * `statement_type` is written by the registry-sector bridge, so a bank has
+//     to be RECOGNISED at creation for its pack to land.
+// ---------------------------------------------------------------------------
+
+fn sector_registry_entry(
+    ticker: &str,
+    display_name: &str,
+    sector: &str,
+) -> GpwCompanyRegistryEntry {
+    GpwCompanyRegistryEntry {
+        exchange: "GPW".to_owned(),
+        ticker: ticker.to_owned(),
+        qualified_ticker: format!("GPW:{ticker}"),
+        display_name: display_name.to_owned(),
+        isin: format!("PL{ticker}00000000"),
+        source_url: "https://www.gpw.pl/spolka".to_owned(),
+        sector: Some(sector.to_owned()),
+    }
+}
+
+fn banking_registry_entry(ticker: &str, display_name: &str) -> GpwCompanyRegistryEntry {
+    sector_registry_entry(ticker, display_name, "banki komercyjne")
+}
+
+/// The `statement_type` a company lands on when the registry knows `sector` at
+/// creation — the create-time twin of the 0095/0098/0127 bridge.
+fn statement_type_for_registry_sector(sector: &str, ticker: &str) -> String {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .refresh_gpw_company_registry(
+            &[sector_registry_entry(ticker, "Test Co.", sector)],
+            "2026-07-31T12:00:00Z",
+        )
+        .expect("registry should refresh");
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: ticker.to_owned(),
+            display_name: "Test Co.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+    state
+        .companies()
+        .get_statement_type(&created.id)
+        .expect("statement type should read")
+}
+
+#[test]
+fn the_creation_bridge_splits_brokers_from_debt_collectors() {
+    // Owner decision 2026-07-31: `specialty_finance` conflated two businesses.
+    // Exchanges and brokerage houses get their own `brokerage` type; the
+    // `specialty_finance` KPI pack is debt-collector vocabulary and stays with
+    // debt collection.
+    assert_eq!(
+        statement_type_for_registry_sector("giełdy i biura maklerskie", "XTB"),
+        "brokerage"
+    );
+    assert_eq!(
+        statement_type_for_registry_sector("Wierzytelności", "KRU"),
+        "specialty_finance"
+    );
+    // The other bridge rows are untouched by the split.
+    assert_eq!(
+        statement_type_for_registry_sector("banki komercyjne", "PKO"),
+        "banking"
+    );
+    assert_eq!(
+        statement_type_for_registry_sector("firmy ubezpieczeniowe", "PZU"),
+        "insurance"
+    );
+    // An unmapped sector still falls through to the default.
+    assert_eq!(
+        statement_type_for_registry_sector("Gry", "CDR"),
+        "industrial"
+    );
+}
+
+#[test]
+fn creating_a_debt_collector_seeds_the_specialty_finance_pack() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .refresh_gpw_company_registry(
+            &[sector_registry_entry("KRU", "KRUK S.A.", "Wierzytelności")],
+            "2026-07-31T12:00:00Z",
+        )
+        .expect("registry should refresh");
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "KRU".to_owned(),
+            display_name: "KRUK S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    let rows = core_relevance_keys(&state, &created.id);
+    let keys: Vec<&str> = rows.iter().map(|(k, _, _)| k.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec![
+            "cash_ebitda",
+            "erc",
+            "net_profit",
+            "operating_profit",
+            "portfolio_purchases",
+            "recoveries",
+            "revenue",
+            "total_assets",
+            "total_equity",
+        ],
+        "core five + the whole specialty_finance pack, now that the type means \
+         debt collection only"
+    );
+}
+
+#[test]
+fn creating_a_broker_seeds_only_the_core_set() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .refresh_gpw_company_registry(
+            &[sector_registry_entry(
+                "XTB",
+                "XTB S.A.",
+                "giełdy i biura maklerskie",
+            )],
+            "2026-07-31T12:00:00Z",
+        )
+        .expect("registry should refresh");
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "XTB".to_owned(),
+            display_name: "XTB S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    assert_eq!(
+        state
+            .companies()
+            .get_statement_type(&created.id)
+            .expect("statement type should read"),
+        "brokerage"
+    );
+    let keys: Vec<String> = core_relevance_keys(&state, &created.id)
+        .into_iter()
+        .map(|(k, _, _)| k)
+        .collect();
+    assert_eq!(
+        keys,
+        CORE_KPI_KEYS
+            .iter()
+            .map(|k| (*k).to_owned())
+            .collect::<Vec<_>>(),
+        "there is no `brokerage` sector pack, so the core floor is all a broker gets"
+    );
+}
+
+#[test]
+fn creating_a_recognised_bank_seeds_core_plus_the_banking_pack() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .refresh_gpw_company_registry(
+            &[banking_registry_entry("PKO", "PKO BP S.A.")],
+            "2026-07-31T12:00:00Z",
+        )
+        .expect("registry should refresh");
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "PKO".to_owned(),
+            display_name: "PKO BP S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    assert_eq!(
+        state
+            .companies()
+            .get_statement_type(&created.id)
+            .expect("statement type should read"),
+        "banking",
+        "the registry-sector bridge has to run at creation or the pack cannot key off anything"
+    );
+
+    let rows = core_relevance_keys(&state, &created.id);
+    let keys: Vec<&str> = rows.iter().map(|(k, _, _)| k.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec![
+            "net_fee_commission_income",
+            "net_interest_income",
+            "net_profit",
+            "operating_profit",
+            "revenue",
+            "total_assets",
+            "total_deposits",
+            "total_equity",
+            "total_loans",
+        ],
+        "core five + the conservative banking pack"
+    );
+    for (key, source, rank) in &rows {
+        let expected_source = if CORE_KPI_KEYS.contains(&key.as_str()) {
+            "core"
+        } else {
+            "sector"
+        };
+        assert_eq!(source, expected_source, "{key} source");
+        assert_eq!(rank, "primary", "{key} rank");
+    }
+}
+
+#[test]
+fn creating_an_industrial_company_seeds_only_the_core_set() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    assert_eq!(
+        state
+            .companies()
+            .get_statement_type(&created.id)
+            .expect("statement type should read"),
+        "industrial"
+    );
+    let keys: Vec<String> = core_relevance_keys(&state, &created.id)
+        .into_iter()
+        .map(|(k, _, _)| k)
+        .collect();
+    assert_eq!(
+        keys,
+        CORE_KPI_KEYS
+            .iter()
+            .map(|k| (*k).to_owned())
+            .collect::<Vec<_>>(),
+        "the industrial pack is scope='canonical', so there is nothing to add"
+    );
+}
+
+#[test]
+fn statement_type_change_adds_the_pack_and_removes_nothing() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "PEO".to_owned(),
+            display_name: "Bank Pekao S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    // A user-curated row that automation must treat as untouchable (ADR 0092
+    // layer 4), plus the core five already seeded.
+    let curated = state
+        .create_kpi_relevance(NewKpiRelevance {
+            company_id: created.id.clone(),
+            definition_id: "kpidef_revenue".to_owned(),
+            source: "user".to_owned(),
+            rank: Some("secondary".to_owned()),
+            first_seen_period: None,
+            last_seen_period: None,
+        })
+        .expect("curated row should create");
+
+    // The bridge (or a future setter) reclassifies the company.
+    {
+        let connection = state
+            .checkout_for_tests()
+            .expect("connection should check out");
+        connection
+            .execute(
+                "UPDATE companies SET statement_type = 'banking' WHERE id = ?1",
+                [&created.id],
+            )
+            .expect("reclassify");
+        crate::storage::financials::seed_statement_pack_kpi_relevance(&connection, &created.id)
+            .expect("additive re-seed should apply");
+    }
+
+    let rows = core_relevance_keys(&state, &created.id);
+    let keys: Vec<&str> = rows.iter().map(|(k, _, _)| k.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec![
+            "net_fee_commission_income",
+            "net_interest_income",
+            "net_profit",
+            "operating_profit",
+            "revenue",
+            "total_assets",
+            "total_deposits",
+            "total_equity",
+            "total_loans",
+        ],
+        "the change ADDS the pack; ADR 0092 forbids deleting on reclassification"
+    );
+
+    let survivor = state
+        .list_kpi_relevance(&created.id)
+        .expect("relevance should list")
+        .into_iter()
+        .find(|r| r.id == curated.id)
+        .expect("the user row must survive an automatic re-seed");
+    assert_eq!(survivor.source, "user");
+    assert_eq!(survivor.rank, Some("secondary".to_owned()));
+}

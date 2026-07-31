@@ -880,3 +880,106 @@ fn a_resolved_page_with_no_cells_counts_pages_empty() {
     assert_eq!(summary.pages_empty, 1, "the empty parse must be counted");
     assert_eq!(summary.facts_written, 0);
 }
+
+/// The pull is the convergence cadence for ADR 0092 layers 2 and 3 (#273/#274)
+/// — the one existing job that walks every tracked company exactly once a day.
+/// Without this the layers would only ever land at company creation, so a
+/// reclassified company (there is no `statement_type` setter to hang layer 2
+/// off) and a company that just filed its third period would both stay stale.
+#[test]
+fn the_pull_converges_the_automatic_kpi_relevance_layers() {
+    let (state, company_id) = state_with_company();
+
+    // Reclassification after creation — exactly what has no other write seam.
+    state
+        .checkout_for_tests()
+        .expect("connection")
+        .execute(
+            "UPDATE companies SET statement_type = 'banking' WHERE id = ?1",
+            [&company_id],
+        )
+        .expect("reclassify");
+
+    // Three years of an issuer-tier key the core floor does not cover.
+    for fiscal_year in 2023..=2025 {
+        seed_fact(
+            &state,
+            &company_id,
+            "ebitda",
+            fiscal_year,
+            100,
+            "esef",
+            "esef",
+        );
+    }
+
+    let sources = |state: &AppState| -> Vec<(String, String)> {
+        let definitions = state
+            .financials()
+            .list_kpi_definitions(crate::storage::ListKpiDefinitionsInput {
+                scope: None,
+                sector: None,
+                company_id: None,
+            })
+            .expect("definitions");
+        let mut rows: Vec<(String, String)> = state
+            .financials()
+            .list_kpi_relevance(&company_id)
+            .expect("relevance")
+            .into_iter()
+            .map(|r| {
+                let key = definitions
+                    .iter()
+                    .find(|d| d.id == r.definition_id)
+                    .map(|d| d.metric_key.clone())
+                    .expect("definition");
+                (key, r.source)
+            })
+            .collect();
+        rows.sort();
+        rows
+    };
+
+    assert!(
+        !sources(&state)
+            .iter()
+            .any(|(_, source)| source == "sector" || source == "derived"),
+        "precondition: neither layer has run yet"
+    );
+
+    // No fetcher installed: every page is unavailable. The layers must still
+    // converge — they are per-company bookkeeping, not page-derived.
+    run_aggregator_fundamentals_pull(&state).expect("pull should run");
+
+    let rows = sources(&state);
+    assert_eq!(
+        rows.iter()
+            .filter(|(_, source)| source == "sector")
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "net_fee_commission_income",
+            "net_interest_income",
+            "total_deposits",
+            "total_loans",
+        ],
+        "layer 2 converges after the reclassification"
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|(_, source)| source == "derived")
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["ebitda"],
+        "layer 3 picks up the consistently reported key"
+    );
+
+    // And the enrichment layer still never reaches the gate.
+    let expected = state
+        .financials()
+        .expected_primary_metric_keys(&company_id)
+        .expect("expected keys")
+        .expect("denominator");
+    assert!(!expected.contains("ebitda"));
+    assert!(expected.contains("net_interest_income"));
+}

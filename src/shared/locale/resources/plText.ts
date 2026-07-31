@@ -52,6 +52,7 @@ export const plText: Record<string, string> = {
   "Banking": "Bankowość",
   "Insurance": "Ubezpieczenia",
   "Specialty finance": "Finanse specjalistyczne",
+  "Brokerage": "Działalność maklerska",
   // Alerts settings — rules manager + fired-event review (ADR 0068 T3)
   "Alerts": "Alerty",
   "Alerts tell you when something you care about happens — a signal category, an autopilot run, or a price condition — on a company or a whole watchlist. They surface in the app only; nothing leaves your machine.":

@@ -83,6 +83,29 @@ const AUDITOR_MARKERS: &[&str] = &[
     " atestacj",
     " bieglego rewidenta",
     " biegłego rewidenta",
+    // English shapes (#270). The dictionary was Polish-only, so every
+    // English-language auditor product read `other` — ORLEN's own
+    // `ORLEN__Group_Review_report_30062025_ENG.pdf` classified `auditor_opinion`
+    // only by the luck of a foreign Polish slug, and honest title-only reading
+    // (epic #229 T3 slug distrust) demoted it. Each marker is anchored to a
+    // second auditor word ("report"/"auditor") rather than the bare token, so a
+    // periodic title carrying "report" (`CBF_Annual_Report_2024.pdf`) or an
+    // auditor-SELECTION announcement (`MB Statement - auditor selection …`, a
+    // governance/other document) cannot reach this branch. Apostrophes normalize
+    // to a space, so `auditor's` and `auditor’s` both match " auditor s report".
+    " review report",
+    // The issuer's own English rendering of `Raport z przegladu` — DataWalk's
+    // `…_Report_on_Review_JSF.pdf` and Pekao's `Auditor_s_Report_on_Review_of_…`.
+    // Needed as a TITLE marker, not just via the slug: the title also carries
+    // `JSF`, so the title-precedence rule below would otherwise read the
+    // auditor's review report as the statement it reviews.
+    " report on review",
+    " independent auditor",
+    " auditor s report",
+    " auditors report",
+    " audit report",
+    " assurance report",
+    " attestation report",
 ];
 
 /// Corporate-governance documents: GM materials, resolutions,
@@ -108,6 +131,11 @@ const GOVERNANCE_MARKERS: &[&str] = &[
     " policy",
     " lad korporacyjny",
     " ład korporacyjny",
+    // Nominative form of the convening notice (#269) — the dictionary only had
+    // the locative `zwołaniu` ("o zwołaniu ZWZ"), so the equally common
+    // `Zwolanie_ZWZA_…` / `Wniosek o zwołanie NWZ` titles fell through.
+    " zwolanie",
+    " zwołanie",
 ];
 
 /// Non-periodic documents whose titles routinely co-occur with financial
@@ -129,6 +157,73 @@ const OTHER_EARLY_MARKERS: &[&str] = &[
     " szacunkow",
     " list prezesa",
     " do akcjonariusz",
+    // English rendering of `sprawozdanie zarządu z działalności` (#270): KGHM
+    // titles its management-board activity report `MB_report_on_activities_of_
+    // the_KGHM_Group_PSr_2024.pdf`. The `PSr` cadence token makes it look like a
+    // periodic statement, so without this it would be extracted as one —
+    // narrative text mined for financial facts.
+    " report on activities",
+    " report on the activities",
+    // --- #269 systematic pass: documents that ride along with a periodic
+    // filing and carry its `SSF`/`JSF`/cadence token in their own title, so the
+    // periodic gate would claim them and feed narrative text to extraction.
+    //
+    // Management-board statements/representations attached to the statements
+    // (`LPP_JSF_Oswiadczenie_Zarzadu_do_JSF_2025.xhtml`, `NPGM_OZ_SSF_2025…`) —
+    // 35 stored rows classified periodic before this.
+    " oswiadcz",
+    " oświadcz",
+    // The activity report (SzD) when its title is CamelCase-glued, which hides
+    // the spaced ` sprawozdanie zarzadu` marker above.
+    " sprawozdaniezarzadu",
+    " sprawozdaniezarządu",
+    " szdz ",
+    // A sustainability report is explicitly NOT the financial statement, and
+    // its title contains ` financial report` (`…_Non_financial_report_2023`).
+    " non financial",
+    // Selected-data extracts: the dictionary had ` wybrane dane`, which misses
+    // the far more common `Wybrane <skonsolidowane|jednostkowe|wstępne> dane`.
+    " wybrane skonsolidowane dane",
+    " wybrane jednostkowe dane",
+    " wybrane wstepne dane",
+    " wybrane wstępne dane",
+    " dane operacyjne",
+    // Results commentary, forecasts and estimates published alongside a report.
+    // ` szacunkow` only caught the adjective, not `Szacunki za 4 kw.`.
+    " komentarz",
+    " prognoz",
+    " szacunk",
+    " zaproszenie",
+    // MAR art. 19 manager-transaction notifications.
+    " mar19",
+    " art 19 mar",
+    " powiadomienie o transakc",
+    " biogram",
+    // --- Guards the period-anchored cadence markers below require: each of
+    // these rides along with a periodic filing and repeats its period token, so
+    // without them the new markers would claim narrative documents.
+    // Signature bundles (` podpisy` plural only — a statement titled
+    // `…-podpisany` must stay a statement).
+    " podpisy",
+    // Sustainability reporting, spaced or CamelCase-glued
+    // (`SprawozdanieZrownowazonegoRozwojuGrupy…`), hence no left boundary.
+    "zrownowazonego",
+    "zrównoważonego",
+    // The explanatory note attached to a periodic report — not the report.
+    " informacja dodatkowa",
+    // Preliminary/estimated results and commentary published beside a report.
+    " wyniki wstepne",
+    " wyniki wstępne",
+    " commentary",
+    // English management-board statements and activity reports (the analogues
+    // of ` oswiadcz` / ` sprawozdanie zarzadu` above), plus FERRO's glued form.
+    " boards statement",
+    " board statement",
+    " board report on",
+    " management report of",
+    " directors report",
+    " report on the operations",
+    " oswzarzadu",
 ];
 
 const PRESENTATION_MARKERS: &[&str] = &[" prezentacj", " presentation"];
@@ -175,6 +270,58 @@ const FINANCIAL_MARKERS: &[&str] = &[
     " report h1",
     " report h2",
     " annual report",
+    // --- #269 systematic pass: cadence words the dictionary never had. Before
+    // this, a report named by its PERIOD rather than by `SSF`/`sprawozdanie
+    // finansowe` was invisible to canonical selection unless a slug rescued it
+    // (`Skonsolidowany_raport_za_III_kwartal_2023`, `Interim_report_for_H1_2024`,
+    // `GPW Group quarterly report for Q1 2026`). 100 stored rows recovered.
+    //
+    // Polish quarter/half-year, incl. the `za I kw. 2026` abbreviation. The
+    // announcement classes that also carry these words (`Szacunki za 4 kw.`,
+    // `Wybrane wstępne dane … za I kwartał`) are routed out by the early-Other
+    // markers above, which run first.
+    " kwartal",
+    " kwartał",
+    " kw ",
+    " polrocze",
+    " półrocze",
+    " srodroczn",
+    " śródroczn",
+    " raport finansow",
+    // English forms. ` financial report` is guarded by ` non financial` above;
+    // KGHM's monthly `Production-Sales report` matches none of these.
+    " quarterly report",
+    " interim report",
+    " financial report",
+    // --- Terse titles that name the report by PERIOD or FORM CODE only. Each
+    // marker is anchored to a following year/period token rather than left bare,
+    // so it cannot fire inside a word: ` sf 20` matches `Creotech_SF-2024-…` but
+    // never `MSSF 2024`, and `jsf 20` (deliberately boundary-free) reaches the
+    // company-glued `newagJSF_2023-12-31_pl.xhtml` while still missing `MSSF`.
+    // The announcement classes that share these tokens (`Wyniki wstępne Q1
+    // 2026`, `Komentarz_segmenty_1Q2024`, `Informacja dodatkowa … Q3 2024`) are
+    // routed out by the early-Other markers above, which run first.
+    " 1q 20",
+    " 2q 20",
+    " 3q 20",
+    " 4q 20",
+    " q1 20",
+    " q2 20",
+    " q3 20",
+    " q4 20",
+    " h1 20",
+    " h2 20",
+    // ORLEN's roman-numeral quarter welded to the Q (`RAPORT IIIQ2025`).
+    " raport iq",
+    " raport iiq",
+    " raport iiiq",
+    " raport ivq",
+    // `SF`/`FS` (sprawozdanie finansowe / financial statements) and the
+    // standalone statement named without the word `finansowe`.
+    " sf 20",
+    " fs q",
+    "jsf 20",
+    " sprawozdanie jednostkow",
 ];
 
 const CONSOLIDATED_MARKERS: &[&str] =
@@ -189,20 +336,97 @@ const STANDALONE_MARKERS: &[&str] = &[
     " bsf",
 ];
 
-/// Lowercase, map every non-alphanumeric char to a space, collapse runs, and
-/// pad — so markers written as `" word"` match on a left word boundary while
-/// staying inflection-tolerant on the right.
+/// File extensions that show up **glued** to the first word of a title (#269).
+/// The attachment store concatenates `<filename><document title>` with no
+/// separator, so a real title reads
+/// `SF_MO-BRUK_…-pl.xhtmlSprawozdanie finansowe jednostkowe za 2025 r.` — the
+/// statement's own name is welded to `xhtml` and every `" word"` marker misses
+/// it on the left boundary. 945 stored rows carry the glue. Longest-first
+/// (`xhtml` before `html`) so the split lands on the real extension.
+const GLUED_TITLE_EXTENSIONS: &[&str] =
+    &["xhtml", "xades", "xbri", "html", "pdf", "zip", "xml", "csv"];
+
+/// ESEF/eSprawozdanie filings also arrive as `.zip` — `data-model.md` records
+/// the same taxonomy on `detected_container` ("a ZIP is an ESEF/eSprawozdanie
+/// *package* the structured path unpacks"), so the classifier was simply out of
+/// step by knowing only `.xbri`. A bare `.zip` filename is **not** evidence on
+/// its own though (`adam-kicinski.zip`, `Podpisy_KRUK.zip`, `Dokumenty do
+/// rozpatrzenia przez ZWZ …zip` are all real rows), so the package only counts
+/// when the name carries the ESEF shape: an `esef` token, or the `YYYY MM DD`
+/// instant every package name embeds (`orlen-2024-12-31-0-pl.zip`). Deliberately
+/// narrower than `.zip` alone — measured on the maintainer's corpus, the bare
+/// form promoted 7 non-filings.
+fn names_an_esef_package(lower: &str, norm: &str) -> bool {
+    if !lower.contains(".zip") {
+        return false;
+    }
+    if lower.contains("esef") {
+        return true;
+    }
+    let is_digits = |s: &str, n: usize| s.len() == n && s.chars().all(|c| c.is_ascii_digit());
+    norm.split_whitespace()
+        .collect::<Vec<_>>()
+        .windows(3)
+        .any(|w| {
+            is_digits(w[0], 4) && w[0].starts_with("20") && is_digits(w[1], 2) && is_digits(w[2], 2)
+        })
+}
+
+/// Lowercase, map every non-alphanumeric char to a space, collapse runs, unglue
+/// a leading file extension from each token, and pad — so markers written as
+/// `" word"` match on a left word boundary while staying inflection-tolerant on
+/// the right.
 fn normalize(raw: &str) -> String {
     let mapped: String = raw
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { ' ' })
         .collect();
-    let collapsed = mapped.split_whitespace().collect::<Vec<_>>().join(" ");
-    format!(" {collapsed} ")
+    let mut parts: Vec<&str> = Vec::new();
+    for token in mapped.split_whitespace() {
+        // Split at most once, and only when the extension is a strict prefix:
+        // a bare `…-pl.xbri` token stays whole, `xhtmlsprawozdanie` becomes two.
+        // The extensions are ASCII, so slicing at their length is always on a
+        // char boundary even when the rest of the token is not.
+        if let Some(ext) = GLUED_TITLE_EXTENSIONS
+            .iter()
+            .find(|e| token.len() > e.len() && token.starts_with(**e))
+        {
+            parts.push(&token[..ext.len()]);
+            parts.push(&token[ext.len()..]);
+        } else {
+            parts.push(token);
+        }
+    }
+    format!(" {} ", parts.join(" "))
 }
 
 fn matches_any(t: &str, markers: &[&str]) -> bool {
     markers.iter().any(|m| t.contains(m))
+}
+
+/// Whether a routing gate fires, under **title precedence**.
+///
+/// **The URL is not a signal about THIS document** (epic #229 T3 doctrine,
+/// [`docs/data-model.md`] `doc_kind`): the bankier CDN reuses a neighbouring
+/// attachment's filename as the slug, so a marker found only in the URL is
+/// evidence about some *other* file in the same filing. The gate therefore
+/// fires on a title-borne marker outright, but on a URL-only marker only while
+/// the title itself does not already say what the document is
+/// (`title_speaks_for_itself`) — content-proven on the maintainer's corpus,
+/// where Asseco's own `…_jednostkowe_sprawozdanie_finansowe_HY_2023.pdf` is
+/// served under a `23-HY-ACP-Review-Report-…` slug and CD PROJEKT's own
+/// `…_PSF_PL.xhtml` under an `Oswiadczenia-Zarzadu-…` slug. Orthogonal to
+/// [`classify_doc_kind_with_slug_trust`], which only fires when the slug names
+/// a *foreign tracked* issuer — these slugs belong to the same filing or an
+/// untracked issuer, so nothing else catches them.
+fn gate_fires(
+    title_norm: &str,
+    combined_norm: &str,
+    markers: &[&str],
+    title_speaks_for_itself: bool,
+) -> bool {
+    matches_any(combined_norm, markers)
+        && (matches_any(title_norm, markers) || !title_speaks_for_itself)
 }
 
 /// Management activity-report markers ("sprawozdanie [zarządu] z działalności"
@@ -236,8 +460,18 @@ pub fn is_management_report(title: &str, url: &str) -> bool {
         return false;
     }
     let t = normalize(&raw);
-    if matches_any(&t, AUDITOR_MARKERS)
-        || matches_any(&t, GOVERNANCE_MARKERS)
+    let t_title = normalize(&title.to_lowercase());
+    // Same title-precedence as the classifier's auditor gate: a URL-only
+    // auditor marker (a neighbouring attachment's slug) must not veto a
+    // document whose own title names a management activity report — that veto
+    // would silently lose the company's holdings table (the KRU class).
+    let title_names_a_management_report = matches_any(&t_title, MANAGEMENT_REPORT_MARKERS);
+    if gate_fires(
+        &t_title,
+        &t,
+        AUDITOR_MARKERS,
+        title_names_a_management_report,
+    ) || matches_any(&t, GOVERNANCE_MARKERS)
         || matches_any(&t, PRESENTATION_MARKERS)
     {
         return false;
@@ -258,7 +492,15 @@ pub fn is_management_report(title: &str, url: &str) -> bool {
 /// `Raport_polroczne_jednostkowe_XTB_HY_2025_PL.pdf` behind a `DataWalk-SSF-…`
 /// slug reads as consolidated. Both are decided by another company's filename.
 ///
-/// An **empty title** keeps the URL: a slug is a poor signal, no signal is worse.
+/// The **empty-title** branch is kept deliberately. A stored title really can be
+/// `NULL` — `CaptureReportDocumentInput::title` is an `Option`,
+/// `storage::report_documents` runs it through `empty_string_to_none`, and both
+/// the write seam and `reclassify_all` classify with `unwrap_or("")`; there is no
+/// basename fallback at registration, and the user-URL capture path
+/// (`report_documents_capture`) can supply no title at all. It is inert on
+/// today's corpus (0 of 9,658 rows) and, since a silent title no longer takes its
+/// URL's classification, both arms of the branch now answer `Other` for an empty
+/// title anyway — but the branch documents the intent and costs nothing.
 /// Callers decide trust with
 /// [`crate::storage::TrackedIssuerIndex::url_slug_names_foreign_issuer`], so a
 /// slug is only ever dropped on positive evidence that it names someone else.
@@ -277,13 +519,46 @@ pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
         return DocKind::Other;
     }
     let t = normalize(&raw);
-    if matches_any(&t, AUDITOR_MARKERS) {
+    // Auditor gate with **title precedence** (epic #229 T3 doctrine, #270): an
+    // auditor marker found only in the URL is about a neighbouring attachment,
+    // so it must not demote a document whose own title names a financial
+    // statement (or is an ESEF package, which IS the filing). A title-borne
+    // marker still wins outright — real SzB titles embed the statement's own
+    // markers (`..._BSSF_MSSF_SzB_PL`), which is why this gate runs first.
+    let title_lower = title.to_lowercase();
+    let t_title = normalize(&title_lower);
+    let title_names_a_statement = PACKAGE_EXTENSIONS
+        .iter()
+        .any(|ext| title_lower.contains(ext))
+        || names_an_esef_package(&title_lower, &t_title)
+        || matches_any(&t_title, FINANCIAL_MARKERS);
+    // **A silent title is never classified by its URL** (owner decision, #269
+    // follow-up). Title precedence stopped a slug from *overruling* the title;
+    // this stops it from *creating* a classification the title never supported.
+    // The bankier CDN reuses a neighbouring attachment's filename, so the slug
+    // on a title that says nothing is evidence about a different document — it
+    // was promoting CVs (`Monika_Dobosz_-_przebieg_kariery_zawodowej.pdf`), MAR
+    // notifications and results decks into the periodic set, where they became
+    // canonical candidates and extraction input. Unclassifiable is the honest
+    // answer, and `Other` is this taxonomy's honest default.
+    let title_speaks = title_names_a_statement
+        || matches_any(&t_title, AUDITOR_MARKERS)
+        || matches_any(&t_title, GOVERNANCE_MARKERS)
+        || matches_any(&t_title, OTHER_EARLY_MARKERS)
+        || matches_any(&t_title, PRESENTATION_MARKERS);
+    if !title_speaks {
+        return DocKind::Other;
+    }
+    // All three routing gates run under title precedence (#269): a marker the
+    // title does not carry belongs to the neighbouring attachment whose slug
+    // was reused, and must not overrule a title that names a statement.
+    if gate_fires(&t_title, &t, AUDITOR_MARKERS, title_names_a_statement) {
         return DocKind::AuditorOpinion;
     }
-    if matches_any(&t, GOVERNANCE_MARKERS) {
+    if gate_fires(&t_title, &t, GOVERNANCE_MARKERS, title_names_a_statement) {
         return DocKind::Governance;
     }
-    if matches_any(&t, OTHER_EARLY_MARKERS) {
+    if gate_fires(&t_title, &t, OTHER_EARLY_MARKERS, title_names_a_statement) {
         return DocKind::Other;
     }
     if matches_any(&t, PRESENTATION_MARKERS) {
@@ -293,17 +568,33 @@ pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
     // carries no ssf/jsf/financial marker (e.g. `CBF-2025-12-31-1-pl.xbri`), so
     // route it through the periodic branch alongside marker-bearing titles; the
     // default-consolidated fall-through below mirrors the no-marker default.
-    let is_package = PACKAGE_EXTENSIONS.iter().any(|ext| raw.contains(ext));
+    let is_package =
+        PACKAGE_EXTENSIONS.iter().any(|ext| raw.contains(ext)) || names_an_esef_package(&raw, &t);
     if is_package || matches_any(&t, FINANCIAL_MARKERS) {
-        // Consolidated wins when both markers appear (a QSr bundles condensed
-        // standalone data inside a consolidated report); a periodic report
-        // with no explicit marker defaults to consolidated — the common case
-        // for group reports, and the pre-taxonomy `classify_statement`
-        // behavior this projection must preserve.
-        if matches_any(&t, CONSOLIDATED_MARKERS) {
+        // **Title-first on the consolidated/standalone axis** (owner decision
+        // #275), mirroring the auditor gate above: when the TITLE speaks on the
+        // axis it is the whole evidence, because a marker found only in the URL
+        // belongs to the neighbouring attachment whose slug was reused. A title
+        // silent on both markers still falls back to the combined text — a poor
+        // signal beats no signal, and that is the only case a slug decides.
+        //
+        // Within whichever text is consulted the classic rules are unchanged:
+        // consolidated wins when both markers appear (a QSr bundles condensed
+        // standalone data inside a consolidated report), and a periodic report
+        // with no explicit marker defaults to consolidated — the common case for
+        // group reports, and the pre-taxonomy `classify_statement` behavior this
+        // projection must preserve.
+        let axis = if matches_any(&t_title, CONSOLIDATED_MARKERS)
+            || matches_any(&t_title, STANDALONE_MARKERS)
+        {
+            &t_title
+        } else {
+            &t
+        };
+        if matches_any(axis, CONSOLIDATED_MARKERS) {
             return DocKind::PeriodicSsf;
         }
-        if matches_any(&t, STANDALONE_MARKERS) {
+        if matches_any(axis, STANDALONE_MARKERS) {
             return DocKind::PeriodicJsf;
         }
         return DocKind::PeriodicSsf;
@@ -398,10 +689,79 @@ mod tests {
         kind: String,
     }
 
+    /// A title that fires **no** gate is not classified by its URL, and an ESEF
+    /// `.zip` only counts as the filing when its name carries the package shape.
+    /// Real rows from the maintainer's database.
+    #[test]
+    fn a_silent_title_is_not_classified_by_its_url() {
+        // A CV behind a neighbouring quarterly-statement slug: periodic before,
+        // honestly unclassified now.
+        let periodic_slug = "https://www.bankier.pl/static/att/emitent/2024-11/\
+                             CZT-Srodroczne-skrocone-skons.-spr.-fin.-3Q-2024_202411291302541914.pdf";
+        assert_eq!(
+            classify_doc_kind(
+                "Monika_Dobosz_-_przebieg_kariery_zawodowej.pdf",
+                periodic_slug
+            ),
+            DocKind::Other
+        );
+        // One real title marker is enough to keep the URL in play: `SF 2024` is
+        // a statement, so the foreign slug still decides the ssf/jsf axis.
+        assert_eq!(
+            classify_doc_kind("Creotech_SF-2024-12-31-0-pl.xhtml", periodic_slug),
+            DocKind::PeriodicSsf
+        );
+        // An ESEF package name speaks for itself; a bare `.zip` does not.
+        assert_eq!(
+            classify_doc_kind("orlen-2024-12-31-0-pl.zip", ""),
+            DocKind::PeriodicSsf
+        );
+        assert_eq!(
+            classify_doc_kind("Podpisy_KRUK.zip", periodic_slug),
+            DocKind::Other
+        );
+        assert_eq!(
+            classify_doc_kind("adam-kicinski.zip", periodic_slug),
+            DocKind::Other
+        );
+    }
+
+    /// #269: the store concatenates `<filename><document title>` with no
+    /// separator, welding the statement's own name to the file extension. Real
+    /// shapes from the maintainer's database (945 stored rows carry the glue);
+    /// every `" word"` marker misses them until `normalize` splits the token.
+    #[test]
+    fn glued_extension_does_not_hide_the_document_title() {
+        assert_eq!(
+            classify_doc_kind(
+                "SF_MO-BRUK_S_A_MSSF-2025-12-31-1-pl.xhtmlSprawozdanie finansowe jednostkowe za 2025 r.",
+                ""
+            ),
+            DocKind::PeriodicJsf
+        );
+        assert_eq!(
+            classify_doc_kind(
+                "2026.03.19 SB statements - Audit Committee.xhtmlSupervisory Board statement",
+                ""
+            ),
+            DocKind::Governance
+        );
+        // A bare package extension is NOT a glued token — it must stay whole so
+        // the ESEF package still routes through the periodic branch.
+        assert_eq!(
+            classify_doc_kind("CBF-2025-12-31-1-pl.xbri", ""),
+            DocKind::PeriodicSsf
+        );
+        // `xhtml` is split before `html`, so the marker sees the real word.
+        assert!(normalize("a.xhtmlopinia").contains(" opinia "));
+    }
+
     /// Epic #229 T3 (#171): a foreign issuer's slug must not classify the
     /// owner's document. Real strings from the maintainer's database — XTB's own
     /// H1-2025 statements are served under DataWalk slugs (content-verified: the
-    /// stored bytes name XTB), and today the slug decides all three answers.
+    /// stored bytes name XTB). Case (a) still needs slug distrust to recover the
+    /// document; case (b) no longer does — the title-first precedence (#275)
+    /// decides the consolidated/standalone axis before trust is consulted.
     #[test]
     fn foreign_slug_does_not_classify_the_owners_document() {
         // (a) A signature-companion slug demotes a real consolidated statement to
@@ -421,15 +781,23 @@ mod tests {
             "distrusting the slug must recover the owner's consolidated statement"
         );
 
-        // (b) A consolidated slug flips a STANDALONE statement to consolidated —
-        //     the wrong document then competes for (and can win) the SSF slot.
+        // (b) A consolidated slug used to flip a STANDALONE statement to
+        //     consolidated, so the wrong document competed for (and could win)
+        //     the SSF slot. That is no longer a precondition to work around:
+        //     **owner decision #275** extended the title-first precedence to the
+        //     consolidated/standalone axis, so `jednostkowe` in the owner's own
+        //     title now decides regardless of slug trust. Slug distrust is the
+        //     narrower instrument (it needs the issuer index and only fires on a
+        //     *foreign tracked* issuer); the precedence covers the same-issuer
+        //     and untracked-issuer slugs it cannot see, which is why both paths
+        //     must now agree here.
         let standalone = "Raport_polroczne_jednostkowe_XTB_HY_2025_PL.pdf";
         let ssf_slug = "https://www.bankier.pl/static/att/emitent/2025-08/\
                         DataWalk-SSF-2025-06-30-0-pl_202508281209683797.xhtml";
         assert_eq!(
             classify_doc_kind(standalone, ssf_slug),
-            DocKind::PeriodicSsf,
-            "precondition: the foreign SSF slug wins today"
+            DocKind::PeriodicJsf,
+            "#275: the title speaks on the axis, so the foreign SSF slug cannot"
         );
         assert_eq!(
             classify_doc_kind_with_slug_trust(standalone, ssf_slug, false),
@@ -447,6 +815,60 @@ mod tests {
             classify_doc_kind_with_slug_trust("", ssf_slug, false),
             classify_doc_kind("", ssf_slug)
         );
+    }
+
+    /// Epic #229 T3 doctrine (#270): an auditor marker that fires **only from
+    /// the URL** must not demote a document whose own title names a financial
+    /// statement. Real strings from the maintainer's database — the bankier CDN
+    /// serves both of these under a *neighbouring* attachment's slug, and
+    /// neither is rescued by [`classify_doc_kind_with_slug_trust`] (the ACP slug
+    /// is the same issuer's, mBank is not a tracked issuer here).
+    #[test]
+    fn url_only_auditor_marker_never_demotes_a_titled_statement() {
+        // (a) Asseco's own STANDALONE half-year statement, served under the
+        //     neighbouring review-report slug. Title-only it is unambiguously
+        //     standalone; with the slug attached the ssf/jsf axis still follows
+        //     the URL's "consolidated" (the separate, deliberate behavior that
+        //     `classify_doc_kind_with_slug_trust` governs) — what this test
+        //     pins is that it stays a PERIODIC statement either way.
+        let standalone = "Asseco_Poland_jednostkowe_sprawozdanie_finansowe_HY_2023.pdf";
+        let review_slug = "https://www.bankier.pl/static/att/emitent/2023-08/\
+                           23-HY-ACP-Review-Report-PAS-consolidated-condensed-P-01.22-\
+                           _202308241043519806.pdf";
+        assert_eq!(classify_doc_kind(standalone, ""), DocKind::PeriodicJsf);
+        assert_ne!(
+            classify_doc_kind(standalone, review_slug),
+            DocKind::AuditorOpinion,
+            "a neighbouring attachment's slug must not turn a titled statement into an opinion"
+        );
+        assert!(matches!(
+            classify_doc_kind(standalone, review_slug),
+            DocKind::PeriodicSsf | DocKind::PeriodicJsf
+        ));
+
+        // (b) The same shape with a Polish title and an English auditor slug.
+        assert_eq!(
+            classify_doc_kind(
+                "Sprawozdanie_finansowe_ABS_2023.xhtml",
+                "https://www.bankier.pl/static/att/emitent/2024-02/\
+                 mBank-Auditor-s-report-2023-Group_202402290354542351.xhtml"
+            ),
+            DocKind::PeriodicSsf
+        );
+
+        // (c) A title-borne auditor marker still wins outright — real SzB
+        //     titles embed the statement's own markers.
+        assert_eq!(
+            classify_doc_kind("CD_PROJEKT_2024_BSSF_MSSF_SzB_PL.xhtml", ""),
+            DocKind::AuditorOpinion
+        );
+
+        // (d) The same veto is lifted for the management-activity report, whose
+        //     holdings table is lost outright on a false negative (the KRU class).
+        assert!(is_management_report(
+            "HY'23_Sprawozdanie_Zarzadu_z_dzialalnosci_Grupy_Asseco.pdf",
+            review_slug
+        ));
     }
 
     /// G-2: the committed labeled corpus is the taxonomy's contract. Any
