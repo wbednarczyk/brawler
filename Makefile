@@ -346,6 +346,12 @@ MUTANTS_BUILD_JOBS ?= 2
 MUTANTS_MEMORY_MAX ?= 11G
 MUTANTS_SHARD ?=
 MUTANTS_JAIL ?= auto
+# cargo-mutants encodes the sweep result in its exit code (0 caught, 2 missed,
+# 3 timed out), but GNU make maps EVERY failed recipe to its own exit 2 — the
+# true code never reaches a caller through make's status. The recipe therefore
+# persists it to mutants.out/cargo-mutants-exit-code (the MAKE_CHECK_EXIT=
+# marker pattern); mutants.yml's verdict reads the file, never make's status.
+# MUTANTS_SHARD is cargo-mutants k/n syntax: k is 0-INDEXED (valid: 0/8..7/8).
 mutants:
 	@jail_cmd=""; \
 	case "$(MUTANTS_JAIL)" in \
@@ -363,7 +369,9 @@ mutants:
 	  -f 'src/storage/migrations.rs' \
 	  -f 'src/storage/feed_matching.rs' \
 	  -f 'src/source_adapters/parsing.rs' \
-	  -f 'src/entity_resolution.rs'"
+	  -f 'src/entity_resolution.rs'; \
+	  ec=\$$?; mkdir -p mutants.out; \
+	  echo \$$ec >mutants.out/cargo-mutants-exit-code; exit \$$ec"
 
 # Generate the TypeScript API DTOs from the Rust source (ADR 0048): ts-rs emits
 # src/api/generated/ from the #[ts(export)] structs (behind the ts-export feature).

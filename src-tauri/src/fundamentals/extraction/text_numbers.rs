@@ -37,6 +37,16 @@ fn default_dictionary() -> &'static [(&'static str, &'static str)] {
         ("kapitał własny", "total_equity"),
         ("kapitał własny razem", "total_equity"),
         ("razem kapitał własny", "total_equity"),
+        // BiznesRadar's BANK balance-sheet schema (real PEO live pages,
+        // 2026-07-31; epic #277 T1) uses a PLURAL equity pair, distinct
+        // strings from the singular "kapitał własny" above so neither
+        // prefix-matches the other: "Kapitały własne" is the
+        // parent-attributable figure, "Kapitały razem" is the group total
+        // (parent + non-controlling). Verified on the live page: Kapitały
+        // własne + Udziały niekontrolujące = Kapitały razem (e.g.
+        // 8 407 290 + 15 436 = 8 422 726; 14 666 788 + 80 507 = 14 747 295).
+        ("kapitały własne", "wdf_equity_parent"),
+        ("kapitały razem", "total_equity"),
         ("środki pieniężne i ich ekwiwalenty", "cash"),
         ("środki pieniężne i ekwiwalenty środków pieniężnych", "cash"),
         // SFP cash-position label variant (asb / Asseco Business Solutions and
@@ -55,6 +65,13 @@ fn default_dictionary() -> &'static [(&'static str, &'static str)] {
         ("zapasy", "inventories"),
         ("zobowiązania krótkoterminowe", "current_liabilities"),
         ("zyski zatrzymane", "retained_earnings"),
+        // BiznesRadar's BANK balance-sheet schema (real PEO live pages,
+        // 2026-07-31; epic #277 T1): customer-facing loans/deposits, distinct
+        // from the page's separate INTERBANK rows ("Należności/Zobowiązania
+        // wobec banków"), which stay deliberately unmapped — interbank
+        // exposure is not the retail/corporate book these KPIs track.
+        ("należności od klientów", "total_loans"),
+        ("zobowiązania wobec klientów", "total_deposits"),
         ("kredyty i pożyczki długoterminowe", "long_term_debt"),
         ("długoterminowe kredyty i pożyczki", "long_term_debt"),
         // Income statement.
@@ -147,6 +164,12 @@ fn default_dictionary() -> &'static [(&'static str, &'static str)] {
             "przepływy pieniężne z działalności finansowej",
             "financing_cash_flow",
         ),
+        // BiznesRadar's BANK income-statement schema (real PEO live pages,
+        // 2026-07-31; epic #277 T1): the bank-specific KPI-pack metrics
+        // (migration 0034/0126/0127) that only a bank's dedicated report
+        // structure carries — no non-bank row ever uses these labels.
+        ("wynik z tytułu odsetek", "net_interest_income"),
+        ("wynik z tytułu prowizji", "net_fee_commission_income"),
         // Per-share (never scaled by the document unit).
         ("zysk na jedną akcję", "eps_basic"),
         ("zysk na akcję", "eps_basic"),
