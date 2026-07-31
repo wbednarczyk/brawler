@@ -19,4 +19,5 @@ pub mod report_extraction;
 pub mod scheduler;
 pub mod source_refresh;
 pub mod structured_extraction;
+pub mod supplied_set;
 pub mod transcript_runner;
