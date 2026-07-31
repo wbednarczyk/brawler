@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.62.9 - 2026-07-31
+
+
+### Bug Fixes
+
+- **fundamentals**: discovered-tasks batch — mutants false-red, doc_kind marker system + title precedence, kpi_relevance layers 2-3 (ADR 0092 Accepted), span-arithmetic TTM (#276)
+
 ## v0.62.8 - 2026-07-30
 
 
