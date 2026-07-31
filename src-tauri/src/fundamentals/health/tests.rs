@@ -537,3 +537,66 @@ mod properties {
         }
     }
 }
+
+/// Every `statement_type` the app actually writes, pinned against the ADR 0083
+/// D4 gate. The gate is an allow-list of ONE (`!= industrial`), so a new type
+/// lands on the financial side automatically — this test exists so that stays
+/// true: if the gate is ever rewritten as an explicit list, a forgotten member
+/// reddens here instead of silently emitting a meaningless Altman Z″.
+///
+/// `brokerage` is the 2026-07-31 split of `specialty_finance` (owner decision):
+/// it must sit on exactly the side `specialty_finance` sat on before it.
+#[test]
+fn every_financial_statement_type_is_not_applicable_and_names_itself() {
+    let ctx = full_sample();
+    let fys = ctx.fy_period_refs();
+
+    for statement_type in [
+        "banking",
+        "insurance",
+        "specialty_finance",
+        "brokerage",
+        "reit",
+    ] {
+        let piotroski = piotroski_f(&ctx, &coords_latest(&ctx), statement_type);
+        match piotroski {
+            PiotroskiScore::NotApplicable { ref reason } => {
+                assert_eq!(
+                    reason, statement_type,
+                    "the reason echoes the type verbatim"
+                )
+            }
+            other => panic!("{statement_type} must not score Piotroski F, got {other:?}"),
+        }
+
+        let altman = altman_z(&ctx, fys[0].idx, fys[0].fiscal_year, statement_type);
+        match altman {
+            AltmanScore::NotApplicable { ref reason } => {
+                assert_eq!(
+                    reason, statement_type,
+                    "the reason echoes the type verbatim"
+                )
+            }
+            other => panic!("{statement_type} must not score Altman Z\u{2033}, got {other:?}"),
+        }
+
+        assert!(
+            company_health(&ctx, statement_type).iter().all(|s| {
+                matches!(s.piotroski, PiotroskiScore::NotApplicable { .. })
+                    && matches!(s.altman, AltmanScore::NotApplicable { .. })
+            }),
+            "{statement_type} must be NotApplicable through the read model too"
+        );
+    }
+
+    // The control: the one type the scores DO apply to.
+    assert!(!matches!(
+        altman_z(
+            &ctx,
+            fys[0].idx,
+            fys[0].fiscal_year,
+            INDUSTRIAL_STATEMENT_TYPE
+        ),
+        AltmanScore::NotApplicable { .. }
+    ));
+}

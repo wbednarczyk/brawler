@@ -72,12 +72,19 @@ is expectation — a future UX may *suggest* relevance from criteria, never auto
 - Two findings from implementing layer 2, both recorded rather than papered over:
   - The conservative subsets are **banking** (`net_interest_income`,
     `net_fee_commission_income`, `total_loans`, `total_deposits`), **insurance**
-    (`gross_insurance_revenue` — the IFRS 17 top line), **reit** (`ffo`), and
-    **specialty_finance: nothing**. Migration 0095 maps exchanges and brokerage houses
-    (GPW, XTB) onto the same `statement_type` as debt collectors (KRU), and the pack
-    (`recoveries`, `erc`, `cash_ebitda`, `portfolio_purchases`) is debt-collector
-    vocabulary — no key is universal across that mix. Splitting the type is a separate
-    decision, not one this ADR forces.
+    (`gross_insurance_revenue` — the IFRS 17 top line), **reit** (`ffo`),
+    **specialty_finance** (all four pack keys), and **brokerage: nothing**.
+    Layer 2 originally had to seed *nothing* for `specialty_finance`: migration 0095 put
+    exchanges and brokerage houses (GPW, XTB) on the same `statement_type` as debt
+    collectors (KRU), while the pack (`recoveries`, `erc`, `cash_ebitda`,
+    `portfolio_purchases`) is debt-collector vocabulary — no key was universal across
+    that mix. **Owner decision 2026-07-31 split the type** (migration 0127): `brokerage`
+    for exchanges/brokers, `specialty_finance` for debt collection only, which freed the
+    pack to seed in full. `brokerage` seeds nothing because migration 0034 never wrote a
+    `brokerage` pack, and inventing one would be guessing at expectations rather than
+    reading a curated catalog. Lesson recorded: **a statement-type discriminator that
+    conflates two businesses silently disables the whole layer for both** — the pack, not
+    convenience, defines the type's boundary.
   - `statement_type` had **no runtime write path at all** — migrations 0095/0098 only,
     which made them one-shot exactly like 0106 was. `create_company` now runs the same
     registry-sector bridge in-transaction, so a bank tracked today is classified today

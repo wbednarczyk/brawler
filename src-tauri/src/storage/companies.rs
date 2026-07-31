@@ -229,19 +229,25 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
     )?;
 
     // Derive the financial `statement_type` from the sector just seeded — the
-    // create-time twin of migrations 0095/0098, same allow-list, same
+    // create-time twin of migrations 0095/0098/0127, same allow-list, same
     // manual-wins rule (only the `'industrial'` DEFAULT is rewritten). Without
     // it those migrations are one-shot exactly like 0106 was: a bank added
     // today would stay `'industrial'` forever, its statement pack would have
     // nothing to key off, and — worse — the ADR 0083 D4 gate would let a
     // meaningless Altman Z″ compute for it.
+    //
+    // Brokers/exchanges and debt collectors are DIFFERENT types (owner decision
+    // 2026-07-31, migration 0127): 0095 originally mapped both onto
+    // `specialty_finance`, which made that type's debt-collection KPI pack
+    // (`recoveries`, `erc`, …) unusable for everyone. `brokerage` has no sector
+    // pack of its own, so a broker keeps the ADR 0092 core floor only.
     transaction.execute(
         "
         UPDATE companies
         SET statement_type = CASE sector
                 WHEN 'banki komercyjne' THEN 'banking'
                 WHEN 'firmy ubezpieczeniowe' THEN 'insurance'
-                WHEN 'giełdy i biura maklerskie' THEN 'specialty_finance'
+                WHEN 'giełdy i biura maklerskie' THEN 'brokerage'
                 WHEN 'Wierzytelności' THEN 'specialty_finance'
                 ELSE statement_type
             END

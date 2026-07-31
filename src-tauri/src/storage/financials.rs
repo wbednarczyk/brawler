@@ -664,16 +664,23 @@ pub(super) fn seed_core_kpi_relevance(
 /// * **reit** (pack has 7): `ffo` only — the NAREIT-standard headline.
 ///   *Omitted:* the rest are property-type specific (`occupancy`,
 ///   `same_store_noi`, `walt`) or derived (`affo_payout_ratio`).
-/// * **specialty_finance**: **nothing**. The pack (`recoveries`, `erc`,
-///   `cash_ebitda`, `portfolio_purchases`) is debt-collector vocabulary, but
-///   migration 0095 also maps exchanges and brokerage houses onto this same
-///   `statement_type` (GPW and XTB on the owner's database, next to KRU). No
-///   key is universal across that mix, and the ADR's rule is to leave out when
-///   unsure. Splitting the type is a separate decision.
+/// * **specialty_finance** (pack has 4): **all four** — `recoveries`, `erc`,
+///   `cash_ebitda`, `portfolio_purchases`. This pack was written as debt-collection
+///   vocabulary and, since the 2026-07-31 split (migration 0127), the type means
+///   only that. Every key is a headline figure in a debt collector's own periodic
+///   reporting — cash actually collected, the forward book (estimated remaining
+///   collections), the sector's standard cash-earnings measure, and the
+///   reinvestment that drives future recoveries. None is a ratio or a notes-only
+///   disclosure, so nothing is omitted.
+/// * **brokerage**: **nothing** — migration 0034 never seeded a `brokerage`
+///   pack, and inventing one would be guessing at expectations instead of
+///   reading them off a curated catalog. A broker keeps the core floor. (Before
+///   0127, brokers and exchanges shared `specialty_finance` with debt
+///   collectors, which forced that whole type to seed nothing.)
 ///
 /// Keys are globally unique across the packs, so this flat allow-list plus the
 /// `d.sector = c.statement_type` join selects exactly the company's own pack.
-pub(super) const STATEMENT_PACK_METRIC_KEYS: [&str; 6] = [
+pub(super) const STATEMENT_PACK_METRIC_KEYS: [&str; 10] = [
     // banking
     "net_interest_income",
     "net_fee_commission_income",
@@ -683,6 +690,11 @@ pub(super) const STATEMENT_PACK_METRIC_KEYS: [&str; 6] = [
     "gross_insurance_revenue",
     // reit
     "ffo",
+    // specialty_finance (debt collection)
+    "recoveries",
+    "erc",
+    "cash_ebitda",
+    "portfolio_purchases",
 ];
 
 /// Seed the statement-pack `kpi_relevance` additions for ONE company.
@@ -731,7 +743,8 @@ pub(super) fn seed_statement_pack_kpi_relevance(
         "
     );
 
-    let mut parameters: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(7);
+    let mut parameters: Vec<&dyn rusqlite::ToSql> =
+        Vec::with_capacity(STATEMENT_PACK_METRIC_KEYS.len() + 1);
     parameters.push(&company_id);
     for key in STATEMENT_PACK_METRIC_KEYS.iter() {
         parameters.push(key);

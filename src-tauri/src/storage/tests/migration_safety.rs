@@ -3939,10 +3939,18 @@ fn migration_0126_seeds_statement_packs_without_touching_the_core_floor() {
         vec!["gross_insurance_revenue".to_owned()],
         "insurance seeds the IFRS 17 top line only"
     );
-    assert!(
-        pack_keys(&connection, "kru").is_empty(),
-        "specialty_finance is deliberately empty — 0095 maps brokers onto the \
-         same statement_type as debt collectors, so no pack key is universal"
+    assert_eq!(
+        pack_keys(&connection, "kru"),
+        vec![
+            "cash_ebitda".to_owned(),
+            "erc".to_owned(),
+            "portfolio_purchases".to_owned(),
+            "recoveries".to_owned(),
+        ],
+        "specialty_finance seeded NOTHING when 0126 shipped (0095 had brokers on \
+         the same statement_type as debt collectors, so no pack key was \
+         universal); migration 0127 split `brokerage` out and this test runs the \
+         whole chain, so the freed debt-collection pack lands in full"
     );
     assert!(
         pack_keys(&connection, "cdr").is_empty(),
@@ -3979,4 +3987,130 @@ fn migration_0126_seeds_statement_packs_without_touching_the_core_floor() {
         .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
         .expect("count");
     assert_eq!(before, after, "the seed converges instead of accumulating");
+}
+
+#[test]
+fn migration_0127_splits_brokers_out_of_specialty_finance_without_touching_anything_else() {
+    // Owner decision 2026-07-31: `specialty_finance` conflated debt collectors
+    // (KRU) with exchanges and brokerage houses (GPW, XTB) because migration
+    // 0095 mapped them onto one type. The KPI pack is debt-collector
+    // vocabulary, so the brokers move to their own `brokerage` type — which
+    // frees `specialty_finance` to seed its whole pack (0126's allow-list grew
+    // with it).
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 126).expect("apply schema through 0126");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies
+                (id, exchange, ticker, qualified_ticker, display_name, sector, statement_type)
+             VALUES
+                -- the 0095-mapped brokers: reclassified
+                ('xtb', 'GPW', 'XTB', 'GPW:XTB', 'XTB S.A.',
+                    'giełdy i biura maklerskie', 'specialty_finance'),
+                ('gpw', 'GPW', 'GPW', 'GPW:GPW', 'GPW S.A.',
+                    'giełdy i biura maklerskie', 'specialty_finance'),
+                -- the 0098-mapped debt collector: keeps specialty_finance
+                ('kru', 'GPW', 'KRU', 'GPW:KRU', 'KRUK S.A.',
+                    'Wierzytelności', 'specialty_finance'),
+                -- a hand-set value on a broker sector: NOT the 0095 mapping, so
+                -- the manual choice is authoritative and must survive
+                ('manual', 'GPW', 'MAN', 'GPW:MAN', 'Manual Co.',
+                    'giełdy i biura maklerskie', 'industrial'),
+                -- a specialty_finance row whose sector is NOT in the broker
+                -- list (unknown/NULL provenance): never guessed at
+                ('unknown', 'GPW', 'UNK', 'GPW:UNK', 'Unknown Co.',
+                    NULL, 'specialty_finance'),
+                -- controls
+                ('pko', 'GPW', 'PKO', 'GPW:PKO', 'PKO BP S.A.',
+                    'banki komercyjne', 'banking'),
+                ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.', 'Gry', 'industrial');",
+        )
+        .expect("seed the pre-split state");
+
+    let before: i64 = connection
+        .query_row("SELECT COUNT(*) FROM companies", [], |row| row.get(0))
+        .expect("count");
+
+    apply_migrations(&mut connection).expect("apply migration 0127");
+
+    let statement_type = |conn: &rusqlite::Connection, id: &str| -> String {
+        conn.query_row(
+            "SELECT statement_type FROM companies WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .expect("statement type")
+    };
+
+    assert_eq!(statement_type(&connection, "xtb"), "brokerage");
+    assert_eq!(statement_type(&connection, "gpw"), "brokerage");
+    assert_eq!(
+        statement_type(&connection, "kru"),
+        "specialty_finance",
+        "the debt collector keeps the type its KPI pack describes"
+    );
+    assert_eq!(
+        statement_type(&connection, "manual"),
+        "industrial",
+        "a value that is not the 0095 mapping is the owner's, never rewritten"
+    );
+    assert_eq!(
+        statement_type(&connection, "unknown"),
+        "specialty_finance",
+        "a specialty_finance row with no broker sector is never guessed at"
+    );
+    assert_eq!(statement_type(&connection, "pko"), "banking");
+    assert_eq!(statement_type(&connection, "cdr"), "industrial");
+
+    assert_eq!(
+        before,
+        connection
+            .query_row("SELECT COUNT(*) FROM companies", [], |row| row
+                .get::<_, i64>(0))
+            .expect("count"),
+        "a reclassification loses no company row"
+    );
+
+    // The freed `specialty_finance` type now seeds its whole pack for KRU, and
+    // the brokers get nothing (there is no `brokerage` pack).
+    let pack_keys = |conn: &rusqlite::Connection, company: &str| -> Vec<String> {
+        let mut statement = conn
+            .prepare(
+                "SELECT d.metric_key
+                 FROM kpi_relevance r
+                 JOIN kpi_definitions d ON d.id = r.definition_id
+                 WHERE r.company_id = ?1 AND r.source = 'sector'
+                 ORDER BY d.metric_key",
+            )
+            .expect("prepare");
+        let rows = statement
+            .query_map([company], |row| row.get::<_, String>(0))
+            .expect("query");
+        rows.collect::<Result<Vec<_>, _>>().expect("collect")
+    };
+    assert_eq!(
+        pack_keys(&connection, "kru"),
+        vec![
+            "cash_ebitda".to_owned(),
+            "erc".to_owned(),
+            "portfolio_purchases".to_owned(),
+            "recoveries".to_owned(),
+        ],
+        "the whole debt-collection pack, now that the type means only that"
+    );
+    assert!(
+        pack_keys(&connection, "xtb").is_empty() && pack_keys(&connection, "gpw").is_empty(),
+        "no `brokerage` sector pack exists, so a broker keeps the core floor only"
+    );
+
+    let before_rows: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    let after_rows: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(before_rows, after_rows, "the split converges");
+    assert_eq!(statement_type(&connection, "xtb"), "brokerage");
 }
