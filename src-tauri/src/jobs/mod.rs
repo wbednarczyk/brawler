@@ -15,6 +15,7 @@ pub mod queue;
 pub mod quote_backfill;
 pub mod quote_daily_pull;
 pub mod rebuild_fundamentals;
+pub mod record_financial_facts;
 pub mod report_extraction;
 pub mod scheduler;
 pub mod source_refresh;

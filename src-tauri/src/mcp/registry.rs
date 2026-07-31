@@ -61,6 +61,11 @@ pub enum ProvenanceRequirement {
     CitationsJson,
     /// `sourceDocumentRef` / `attribution` — a manual KPI fact's citation.
     FactCitation,
+    /// A non-blank `reportDocumentId` AND a non-blank `citation` on EVERY
+    /// entry of `facts` (the `record_financial_facts` batch shape, ADR 0093
+    /// dec. 6) — never the broken `FactCitation` shape (`attribution` is a
+    /// slot dimension, not a citation carrier).
+    DocumentAndPerFactCitations,
 }
 
 impl ProvenanceRequirement {
@@ -73,6 +78,9 @@ impl ProvenanceRequirement {
             ProvenanceRequirement::CitationsJson => "a non-empty `citationsJson` array",
             ProvenanceRequirement::FactCitation => {
                 "a `sourceDocumentRef` or `attribution` citation"
+            }
+            ProvenanceRequirement::DocumentAndPerFactCitations => {
+                "a non-blank `reportDocumentId` and a non-blank `citation` on every entry of `facts`"
             }
         }
     }
@@ -635,6 +643,17 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
             tools::tool_schema::<storage::UpdateFinancialFact>,
             acts::update_financial_fact_handler,
         ),
+        // Batch write over `record_structured_fact` (ADR 0093 dec. 6, epic
+        // #285 T7): the agent-acquisition tier's centerpiece. No Tauri command
+        // twin (MCP-only, like the four MVP read composites) — `tool_name` ==
+        // `command_name` (the [`exposed_act`] convention for such tools).
+        exposed_act(
+            "record_financial_facts",
+            Some(DocumentAndPerFactCitations),
+            "Record a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: \"preliminary\"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only.",
+            tools::tool_schema::<acts::RecordFinancialFactsInput>,
+            acts::record_financial_facts_handler,
+        ),
         // The qualitative-verdict write path (ADR 0084 dec. 5 successor). Batch
         // shape: every result carries its own `citationsJson` provenance.
         exposed_act(
@@ -1186,6 +1205,9 @@ pub fn validate_provenance(
         ProvenanceRequirement::FactCitation => {
             nonempty_str(input, "sourceDocumentRef") || nonempty_str(input, "attribution")
         }
+        ProvenanceRequirement::DocumentAndPerFactCitations => {
+            nonempty_str(input, "reportDocumentId") && facts_all_cited(input)
+        }
     };
     if satisfied {
         Ok(())
@@ -1213,6 +1235,18 @@ fn results_all_cited(input: &Value) -> bool {
                     .iter()
                     .all(|result| citations_nonempty(result.get("citationsJson")))
         })
+        .unwrap_or(false)
+}
+
+/// True when `input.facts` is a non-empty array and every entry carries a
+/// non-blank `citation` (the `record_financial_facts` per-fact provenance
+/// shape, ADR 0093 dec. 6) — a blank citation on ANY entry fails the WHOLE
+/// batch before the handler runs (atomic refusal, never a partial write).
+fn facts_all_cited(input: &Value) -> bool {
+    input
+        .get("facts")
+        .and_then(Value::as_array)
+        .map(|facts| !facts.is_empty() && facts.iter().all(|fact| nonempty_str(fact, "citation")))
         .unwrap_or(false)
 }
 
@@ -1324,10 +1358,12 @@ fn act_gate(
 /// round-trip in `mcp::server`). Adding a tool bumps exactly this constant.
 /// Itemization: 44 read (4 MVP + 34 read wave + get_kpi_comparison +
 /// get_sector_percentiles + list_valuation_runs (ADR 0089) + list_alert_rules +
-/// list_flagged_extraction_outcomes + list_unclassified_filings) + 56 act incl.
-/// compute_comparative_valuation (ADR 0089), classify_filing, ADR 0088 dec. 2/3/4.
+/// list_flagged_extraction_outcomes + list_unclassified_filings) + 57 act incl.
+/// compute_comparative_valuation (ADR 0089), classify_filing, ADR 0088 dec. 2/3/4,
+/// record_financial_facts (ADR 0093 dec. 6, epic #285 T7 — MCP-only, no Tauri
+/// command twin).
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 100;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 101;
 
 #[cfg(test)]
 mod tests {
@@ -1968,6 +2004,18 @@ mod tests {
                 json!({ "id": "x", "sourceDocumentRef": "doc" }),
             ),
             (
+                "record_financial_facts",
+                // reportDocumentId "x" is unseeded here (seed_company_framework
+                // creates no report_documents row) — a typed `not_found` Failure
+                // is the expected, acceptable domain outcome (comment above).
+                json!({
+                    "companyId": company_id,
+                    "reportDocumentId": "x",
+                    "period": { "fiscalYear": 2025, "periodType": "FY" },
+                    "facts": [{ "metricKey": "net_profit", "valueNumeric": "1", "citation": "p.1" }]
+                }),
+            ),
+            (
                 "set_qualitative_verdicts",
                 json!({ "frameworkId": framework_id, "companyId": company_id, "results": [{ "criterionId": criterion_id, "verdict": "pass", "reasoning": "r", "citationsJson": "[{\"k\":1}]", "confidence": "low" }] }),
             ),
@@ -2235,6 +2283,86 @@ mod tests {
             &json!({ "attribution": "Skonsolidowany 2025" })
         )
         .is_ok());
+
+        // DocumentAndPerFactCitations — reportDocumentId AND every fact cited.
+        assert!(validate_provenance(DocumentAndPerFactCitations, &json!({})).is_err());
+        assert!(validate_provenance(
+            DocumentAndPerFactCitations,
+            &json!({ "reportDocumentId": "doc_1", "facts": [] })
+        )
+        .is_err());
+        assert!(validate_provenance(
+            DocumentAndPerFactCitations,
+            &json!({
+                "reportDocumentId": "doc_1",
+                "facts": [{ "citation": "p.1" }, { "citation": "  " }]
+            })
+        )
+        .is_err());
+        assert!(validate_provenance(
+            DocumentAndPerFactCitations,
+            &json!({
+                "reportDocumentId": "doc_1",
+                "facts": [{ "citation": "p.1" }, { "citation": "p.2" }]
+            })
+        )
+        .is_ok());
+    }
+
+    /// Two ADR 0093 dec. 6 guardrails for `record_financial_facts` that only
+    /// the real dispatch path (`registry::call`) can exercise: (1) an unknown
+    /// input field is rejected before the handler runs (schemars
+    /// `deny_unknown_fields` ⇒ a protocol `InvalidArguments`, never a silently
+    /// dropped agent typo); (2) ONE blank citation among several facts refuses
+    /// the WHOLE batch atomically — the provenance gate runs BEFORE the
+    /// handler, so nothing is written even though the other facts in the same
+    /// call are individually well-formed.
+    #[test]
+    fn record_financial_facts_rejects_unknown_field_and_a_blank_citation_atomically() {
+        let state = act_state();
+        let (company_id, _framework_id, _criterion_id) = seed_company_framework(&state);
+        set_writes_enabled(&state, true);
+
+        let unknown_field = call(
+            &state,
+            "record_financial_facts",
+            &json!({
+                "companyId": company_id,
+                "reportDocumentId": "x",
+                "period": { "fiscalYear": 2025, "periodType": "FY" },
+                "facts": [{ "metricKey": "net_profit", "valueNumeric": "1", "citation": "p.1" }],
+                "totallyMadeUpField": true
+            }),
+        );
+        match unknown_field {
+            Err(ToolCallError::InvalidArguments(message)) => {
+                assert!(
+                    message.contains("totallyMadeUpField"),
+                    "unexpected message: {message}"
+                );
+            }
+            other => panic!("expected InvalidArguments, got {other:?}"),
+        }
+
+        let one_blank_citation = call(
+            &state,
+            "record_financial_facts",
+            &json!({
+                "companyId": company_id,
+                "reportDocumentId": "x",
+                "period": { "fiscalYear": 2025, "periodType": "FY" },
+                "facts": [
+                    { "metricKey": "net_profit", "valueNumeric": "1", "citation": "p.1" },
+                    { "metricKey": "revenue", "valueNumeric": "2", "citation": "  " }
+                ]
+            }),
+        )
+        .expect("domain outcome, not a protocol error");
+        assert_eq!(
+            failure_code(one_blank_citation),
+            CommandErrorCode::ProvenanceRequired,
+            "one blank citation must refuse the whole batch before any write"
+        );
     }
 
     // ---- M4 unclassified-filings triage pair (ADR 0088 dec. 4) -------------

@@ -104,6 +104,8 @@ fn seed_fact(
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("seed"),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         })
         .expect("seed fact");

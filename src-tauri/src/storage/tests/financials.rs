@@ -2287,6 +2287,8 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("XTB RB 18/2026"),
+            attribution: None,
+            measure_window: None,
             data_quality: Some("preliminary"),
         })
         .expect("preliminary total_assets should record");
@@ -2307,6 +2309,8 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             validation_status: "passed",
             drift_json: None,
             citation: Some("ifrs-full:Assets"),
+            attribution: None,
+            measure_window: None,
             data_quality: None, // normalizes to "final"
         })
         .expect("final total_assets should record");
@@ -2329,6 +2333,8 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("XTB RB 18/2026"),
+            attribution: None,
+            measure_window: None,
             data_quality: Some("preliminary"),
         })
         .expect("preliminary-only net_profit should record");
@@ -2351,6 +2357,8 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             validation_status: "passed",
             drift_json: None,
             citation: Some("ifrs-full:Revenue"),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         })
         .expect("final-only revenue should record");

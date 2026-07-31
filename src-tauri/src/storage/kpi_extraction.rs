@@ -229,6 +229,14 @@ pub struct StructuredFactInput<'a> {
     /// for this outcome (PDF tier only); `None` on a clean/no-profile parse.
     pub drift_json: Option<&'a str>,
     pub citation: Option<&'a str>,
+    /// Slot dimension `total` (default) | `owners_of_parent` | `nci` (ADR 0093
+    /// epic #285 T7). Every writer before the MCP agent batch tool passes
+    /// `None` — `slot_dims` already defaults it to `total`, unchanged behavior.
+    pub attribution: Option<&'a str>,
+    /// Slot dimension `flow` (default) | `stock`. Every writer before the MCP
+    /// agent batch tool passes `None` — `slot_dims` already defaults it to
+    /// `flow`, unchanged behavior.
+    pub measure_window: Option<&'a str>,
     /// `final` (default, `None` normalizes to it) | `preliminary` | `estimated`
     /// (ADR 0093 decision 2), normalized at the storage write boundary
     /// (`normalize_data_quality`). Every writer before the MCP agent tool (T7)
@@ -325,9 +333,9 @@ fn prepare_fact_write(
             value_numeric: input.value_numeric.to_owned(),
             currency: input.currency.map(str::to_owned),
             statement_basis: None,
-            attribution: None,
+            attribution: input.attribution.map(str::to_owned),
             variant: None,
-            measure_window: None,
+            measure_window: input.measure_window.map(str::to_owned),
             data_quality: input.data_quality.map(str::to_owned),
             as_reported_value: None,
             as_reported_scale: None,
@@ -730,6 +738,32 @@ impl KpiExtractionStore {
         Ok(result)
     }
 
+    /// Idempotently ensures a fiscal period exists and returns its id (ADR 0093
+    /// decision 6): the MCP batch fact tool needs the `finper_` id up front so
+    /// its response always carries a `periodId`, even when every submitted fact
+    /// is skipped (no_definition/implausible/identity_violation) and
+    /// [`record_structured_fact`] never runs. Shares the same idempotent upsert
+    /// every structured write uses — never `create_financial_period` (that
+    /// manual-entry path stays unexposed over MCP).
+    pub fn ensure_financial_period(
+        &self,
+        company_id: &str,
+        fiscal_year: i64,
+        period_type: &str,
+        period_end: Option<&str>,
+        report_evidence_ref: &str,
+    ) -> StorageResult<String> {
+        let connection = self.db.checkout()?;
+        ensure_period(
+            &connection,
+            company_id,
+            fiscal_year,
+            period_type,
+            period_end,
+            report_evidence_ref,
+        )
+    }
+
     /// Persists one BiznesRadar-primary aggregator fact under the ADR 0086 tier
     /// precedence (see [`record_aggregator_fact`]): writes an empty slot,
     /// overwrites the aggregator's OWN slot with a fresh value, and never touches
@@ -859,6 +893,8 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -884,6 +920,8 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Sales revenue"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -942,6 +980,8 @@ mod tests {
                     validation_status: "flagged",
                     drift_json: Some(drift),
                     citation: Some("Przychody netto ze sprzedazy"),
+                    attribution: None,
+                    measure_window: None,
                     data_quality: None,
                 },
             )
@@ -990,6 +1030,8 @@ mod tests {
                         r#"{"addedLabels":[],"removedLabels":["x"],"unitChanged":null}"#,
                     ),
                     citation: Some("Przychody"),
+                    attribution: None,
+                    measure_window: None,
                     data_quality: None,
                 },
             )
@@ -1048,6 +1090,8 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1070,6 +1114,8 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1113,6 +1159,8 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1135,6 +1183,8 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1175,6 +1225,8 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("hand-entered"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1201,6 +1253,8 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1241,6 +1295,8 @@ mod tests {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("https://biznesradar.example/page | Przychody"),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         };
         // Two catalog facts sharing ONE period + a non-catalog key (order matters).
@@ -1291,6 +1347,8 @@ mod tests {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("XTB RB 18/2026 | Revenue"),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         }
     }
@@ -1315,6 +1373,8 @@ mod tests {
             validation_status: "passed",
             drift_json: None,
             citation: Some("Revenue"),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         }
     }
@@ -1487,6 +1547,8 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1534,6 +1596,8 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )
@@ -1625,6 +1689,8 @@ mod tests {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("XTB RB 18/2026 | Revenue"),
+            attribution: None,
+            measure_window: None,
             data_quality: Some(data_quality),
         }
     }

@@ -53,6 +53,8 @@ fn seed_history_fact(
             validation_status: "passed",
             drift_json: None,
             citation: Some("seed"),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         })
         .expect("seed history fact");

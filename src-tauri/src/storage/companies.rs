@@ -33,6 +33,27 @@ impl CompanyStore {
         get_company_ir_reports_url(&connection, company_id)
     }
 
+    /// FK-existence check for a company id (ADR 0093 decision 6): the MCP batch
+    /// fact tool refuses with a typed `not_found` before any write when the
+    /// caller's `companyId` doesn't exist, rather than letting a bogus id
+    /// surface as an opaque `financial_periods` FK-constraint failure.
+    pub fn ensure_company_exists(&self, company_id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM companies WHERE id = ?1)",
+            [company_id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            Ok(())
+        } else {
+            Err(StorageError::MissingFinancialsReference {
+                table: "companies".to_owned(),
+                id: company_id.to_owned(),
+            })
+        }
+    }
+
     pub fn set_company_ir_reports_url(
         &self,
         company_id: &str,

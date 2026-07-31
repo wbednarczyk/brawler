@@ -398,6 +398,8 @@ fn pull_one_page(
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some(&p.citation),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         })
         .collect();

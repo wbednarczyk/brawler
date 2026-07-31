@@ -123,7 +123,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `get_company_dossier` | One company's research dossier: identity, fundamentals coverage per fiscal period, confirmed financial facts, and quality-scorecard summaries. Sourced from the user's own research; decision support only. |
 | `search_research` | Full-text search across the user's research workspace (notes, report documents, transcripts, claims, facts). Returns ranked matches with snippets. |
 | `list_claims_due` | Management claims whose verification period has arrived (due), passed (overdue), or is approaching (upcoming), per company. |
-| `get_quality_assessment` | Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus previously-stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — qualitative criteria are recorded manually now, and this tool reads only stored verdicts (new criteria stay empty until the planned MCP write-tools). Decision support only — never an investment recommendation. |
+| `get_quality_assessment` | Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — this tool reads only stored verdicts; agents record new verdicts with provenance via the `set_qualitative_verdicts` write-tool (until then a criterion reads as unassessed). Decision support only — never an investment recommendation. |
 | `list_companies` | Every company tracked in the user's workspace (identity, exchange, qualified ticker). |
 | `get_company_basic_info` | One company's identity card: name, exchange, ticker, ISIN, sector (with its provenance), and latest reported shares outstanding. |
 | `list_watchlists` | The user's watchlists (id, name, ordering). |
@@ -134,7 +134,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `list_financial_facts` | One company's stored financial facts, each carrying its trust-ladder provenance: sourceTier, validationStatus, and citation. Decision support only. |
 | `list_financial_periods` | One company's fiscal periods (year + period type + period-end date). |
 | `list_kpi_definitions` | The metric catalog: every KPI/financial-concept definition (id, label, unit) facts are keyed by. |
-| `list_flagged_fact_provenance` | Every fact the extraction pipeline flagged for review (a drift or contradiction against another source) — the data-quality review surface. Each row carries the company, metric key + label, value, period, source tier and citation. |
+| `list_flagged_fact_provenance` | Every fact the extraction pipeline flagged for review (a drift or contradiction against another source) — the data-quality review surface. |
 | `get_price_context` | One company's price context: latest quote and the recent range, plus derived valuation ratios where computable. |
 | `get_kpi_comparison` | Compare one or more canonical KPIs across companies on a shared, aligned period axis (annual or quarterly). Each cell carries the native + PLN-converted value with its FX basis, the evidence link (fact id + validation status), and server-computed QoQ/YoY deltas; gaps and unconvertible currencies are typed flags, never silent. Works for a single company too (the periods×deltas view). Decision support only. |
 | `get_sector_percentiles` | Where one company stands against its tracked sector peers: rank-based percentiles for the level-0 market ratios (P/E, P/BV, EV/EBITDA, dividend yield, FCF yield) and selected canonical KPIs, computed from confirmed data only. Always returns the peer count N and flags thin sets (N < 4); a company with no sector returns a typed empty reason. Decision support only. |
@@ -165,7 +165,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `list_flagged_extraction_outcomes` | One company's extraction-coverage gaps: the fiscal periods where the deterministic pipeline emitted nothing (a flagged/failed outcome). Complements list_flagged_fact_provenance (flagged facts that DID emit) — the coverage-gap review surface. |
 | `list_unclassified_filings` | Official filings (ESPI/EBI) the deterministic rule classifier could not place — the explicit unclassified bucket, never guessed at. Optionally scoped to one company. Classify one with classify_filing. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (56):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (57):
 
 | Tool | What it does |
 | --- | --- |
@@ -177,6 +177,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `set_claim_verdict` | Record a verification verdict on a management claim (optionally linking the verifying fact). |
 | `create_financial_fact` | Record a financial fact for a company/period/metric. Must carry a citation (`sourceDocumentRef` or `attribution`). Decision support only. |
 | `update_financial_fact` | Update a stored financial fact (by id). Must carry its citation provenance. |
+| `record_financial_facts` | Record a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: "preliminary"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only. |
 | `set_qualitative_verdicts` | Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation. |
 | `create_research_question` | Open a research question scoped to a company/watchlist/sector. |
 | `update_research_question` | Update a research question (title/body/status) by id. |
@@ -189,7 +190,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `record_expectation_resolution` | Resolve a report expectation after the report lands (resolution note). |
 | `create_company_event` | Add a calendar event (dividend/meeting/report date) for a company. |
 | `create_kpi_definition` | Add a KPI/financial-concept definition to the metric catalog. |
-| `create_kpi_relevance` | Mark a KPI definition relevant to a company (scorecard editor). Every company starts with an app-seeded IFRS core set (`revenue`, `operating_profit`, `net_profit`, `total_assets`, `total_equity`, `source='core'`); calling this for one of them **restates** that row with your `source`/`rank` rather than failing. |
+| `create_kpi_relevance` | Mark a KPI definition relevant to a company (scorecard editor). |
 | `update_kpi_relevance` | Update a company's KPI-relevance row (status/rank) by id. |
 | `create_quality_framework` | Create a quality-scorecard framework. |
 | `update_quality_framework` | Update a quality framework (name/description) by id. |
@@ -224,7 +225,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `run_aggregator_fundamentals_pull` | Run the aggregator fundamentals pull across tracked companies. |
 | `backfill_company_history` | Run an on-track history backfill for one company (`companyId`); progress via get_backfill_progress. |
 | `run_structured_extraction` | Run the deterministic structured-first extraction pipeline over one company report+period (`mode`: autopilot \| assist). |
-| `rerun_extraction_outcome` | Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`). A `witness_disagreement` slot names an aggregator page rather than a stored document, so it is refused with the typed `rerun_not_applicable` code — resolve those by a fresh aggregator pull or a manual correction. |
+| `rerun_extraction_outcome` | Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`). |
 
 <!-- END GENERATED MCP CATALOG -->
 

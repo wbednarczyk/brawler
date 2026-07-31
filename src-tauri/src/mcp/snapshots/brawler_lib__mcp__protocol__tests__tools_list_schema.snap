@@ -1116,6 +1116,97 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "update_financial_fact"
       },
       {
+        "description": "Record a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: \"preliminary\"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "definitions": {
+            "RecordFinancialFactEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "attribution": {
+                  "description": "Slot dimension `total` (default) | `owners_of_parent` | `nci` — a typed refusal rejects any other token. NEVER a citation.",
+                  "type": "string"
+                },
+                "citation": {
+                  "description": "REQUIRED, non-blank — page/quote free text pointing at where this value was read in the cited document.",
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "measureWindow": {
+                  "type": "string"
+                },
+                "metricKey": {
+                  "type": "string"
+                },
+                "valueNumeric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "citation",
+                "metricKey",
+                "valueNumeric"
+              ],
+              "type": "object"
+            },
+            "RecordFinancialFactsPeriod": {
+              "additionalProperties": false,
+              "properties": {
+                "fiscalYear": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "periodEnd": {
+                  "type": "string"
+                },
+                "periodType": {
+                  "description": "GPW interim reporting is cumulative — record H1/9M/FY only (ADR 0093 dec. 3); a discrete-quarter column is derivable by span arithmetic, never submitted here.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "fiscalYear",
+                "periodType"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "dataQuality": {
+              "description": "`final` (default when absent) | `preliminary` | `estimated` (ADR 0093 dec. 2). Applies to every fact in the batch.",
+              "type": "string"
+            },
+            "facts": {
+              "items": {
+                "$ref": "#/definitions/RecordFinancialFactEntry"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "period": {
+              "$ref": "#/definitions/RecordFinancialFactsPeriod"
+            },
+            "reportDocumentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "facts",
+            "period",
+            "reportDocumentId"
+          ],
+          "type": "object"
+        },
+        "name": "record_financial_facts"
+      },
+      {
         "description": "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation.",
         "inputSchema": {
           "definitions": {

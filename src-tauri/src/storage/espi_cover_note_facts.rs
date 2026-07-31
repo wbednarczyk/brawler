@@ -489,6 +489,8 @@ fn extract_one(
                 validation_status,
                 drift_json: None,
                 citation: Some(&citation),
+                attribution: None,
+                measure_window: None,
                 data_quality: None,
             },
         )?;

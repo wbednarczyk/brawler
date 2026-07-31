@@ -413,6 +413,8 @@ fn undo_deletes_produced_facts_regardless_of_confirmation_state() {
             validation_status: "passed",
             drift_json: None,
             citation: Some("Przychody"),
+            attribution: None,
+            measure_window: None,
             data_quality: None,
         })
         .expect("record structured fact");

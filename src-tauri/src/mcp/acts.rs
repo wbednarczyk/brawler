@@ -115,6 +115,91 @@ act_handler!(
         .map_err(CommandError::from)
 );
 
+/// `record_financial_facts` batch input (ADR 0093 dec. 6, epic #285 T7):
+/// `companyId`/`reportDocumentId` are internal ids (act tier convention).
+/// `facts` is capped 1..=100 (`jobs::record_financial_facts::MAX_BATCH_FACTS`
+/// — a typed refusal beyond that, checked in the handler since schemars
+/// `minItems`/`maxItems` are schema metadata only, never enforced at
+/// deserialization). Every fact's `citation` is mandatory and non-blank,
+/// checked BEFORE this handler runs
+/// (`ProvenanceRequirement::DocumentAndPerFactCitations`,
+/// `mcp::registry::act_gate`) — never the broken `FactCitation` shape
+/// (`attribution` is a slot dimension, not a citation carrier).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RecordFinancialFactsInput {
+    pub company_id: String,
+    pub report_document_id: String,
+    pub period: RecordFinancialFactsPeriod,
+    /// `final` (default when absent) | `preliminary` | `estimated` (ADR 0093
+    /// dec. 2). Applies to every fact in the batch.
+    #[serde(default)]
+    pub data_quality: Option<String>,
+    #[schemars(length(min = 1, max = 100))]
+    pub facts: Vec<RecordFinancialFactEntry>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RecordFinancialFactsPeriod {
+    pub fiscal_year: i64,
+    /// GPW interim reporting is cumulative — record H1/9M/FY only (ADR 0093
+    /// dec. 3); a discrete-quarter column is derivable by span arithmetic,
+    /// never submitted here.
+    pub period_type: String,
+    #[serde(default)]
+    pub period_end: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RecordFinancialFactEntry {
+    pub metric_key: String,
+    pub value_numeric: String,
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Slot dimension `total` (default) | `owners_of_parent` | `nci` — a
+    /// typed refusal rejects any other token. NEVER a citation.
+    #[serde(default)]
+    pub attribution: Option<String>,
+    #[serde(default)]
+    pub measure_window: Option<String>,
+    /// REQUIRED, non-blank — page/quote free text pointing at where this
+    /// value was read in the cited document.
+    pub citation: String,
+}
+
+act_handler!(
+    record_financial_facts_handler,
+    RecordFinancialFactsInput,
+    |state, input| {
+        let facts: Vec<crate::jobs::record_financial_facts::BatchFactInput<'_>> = input
+            .facts
+            .iter()
+            .map(|fact| crate::jobs::record_financial_facts::BatchFactInput {
+                metric_key: &fact.metric_key,
+                value_numeric: &fact.value_numeric,
+                currency: fact.currency.as_deref(),
+                attribution: fact.attribution.as_deref(),
+                measure_window: fact.measure_window.as_deref(),
+                citation: &fact.citation,
+            })
+            .collect();
+        crate::jobs::record_financial_facts::record_financial_facts(
+            state,
+            crate::jobs::record_financial_facts::RecordFinancialFactsInput {
+                company_id: &input.company_id,
+                report_document_id: &input.report_document_id,
+                fiscal_year: input.period.fiscal_year,
+                period_type: &input.period.period_type,
+                period_end: input.period.period_end.as_deref(),
+                data_quality: input.data_quality.as_deref(),
+                facts: &facts,
+            },
+        )
+    }
+);
+
 // ---- Qualitative verdicts (CitationsJson, batch shape) ---------------------
 
 act_handler!(
