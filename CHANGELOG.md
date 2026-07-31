@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.62.10 - 2026-07-31
+
+
+### Features
+
+- **fundamentals**: banking & insurance extraction — bank vocabulary for all three tiers, WDF bank-table honesty + repair, startup doc-kind self-heal (epic #277) (#283)
+
 ## v0.62.9 - 2026-07-31
 
 
