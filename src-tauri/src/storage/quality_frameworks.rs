@@ -1198,7 +1198,7 @@ pub(super) fn load_metrics_context(
         periods.push(PeriodFacts {
             period_id,
             fiscal_year,
-            is_annual: period_type == "FY",
+            period_type,
             reported,
         });
     }

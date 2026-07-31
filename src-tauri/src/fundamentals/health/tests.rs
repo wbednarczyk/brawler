@@ -96,7 +96,7 @@ fn rebuild(src: &MetricsContext, take: usize, drop: &[&str]) -> MetricsContext {
         periods.push(PeriodFacts {
             period_id: y.period_id.clone(),
             fiscal_year: y.fiscal_year,
-            is_annual: true,
+            period_type: "FY".to_owned(),
             reported: facts,
         });
     }
@@ -111,7 +111,7 @@ fn period(year: i64, facts: &[(&str, i64)]) -> PeriodFacts {
     PeriodFacts {
         period_id: format!("p{year}"),
         fiscal_year: year,
-        is_annual: true,
+        period_type: "FY".to_owned(),
         reported: facts.iter().map(|(k, v)| (k.to_string(), d(*v))).collect(),
     }
 }
@@ -484,7 +484,7 @@ mod properties {
             periods.push(PeriodFacts {
                 period_id: format!("p{year}"),
                 fiscal_year: year,
-                is_annual: true,
+                period_type: "FY".to_owned(),
                 reported: facts,
             });
         }

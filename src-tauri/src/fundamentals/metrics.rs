@@ -47,14 +47,29 @@ pub enum Computation {
     Derived,
 }
 
+/// The canonical fiscal label of an annual period, as stored in
+/// `financial_periods.period_type`.
+pub const ANNUAL_PERIOD_TYPE: &str = "FY";
+
 /// Reported facts for one period. `index 0` is the latest period.
 #[derive(Debug, Clone)]
 pub struct PeriodFacts {
     pub period_id: String,
     pub fiscal_year: i64,
-    /// True for an annual (`FY`) period; drives TTM degradation.
-    pub is_annual: bool,
+    /// The canonical fiscal label (`FY`, `H1`, `Q1`–`Q4`, `9M`, …) exactly as
+    /// stored in `financial_periods.period_type`. Drives the annual/interim
+    /// split and the same-label prior-year lookup that TTM span arithmetic
+    /// needs — which is why the period's *label* is carried here rather than a
+    /// derived `is_annual` flag.
+    pub period_type: String,
     pub reported: HashMap<String, Decimal>,
+}
+
+impl PeriodFacts {
+    /// True for an annual (`FY`) period; false for every interim label.
+    pub fn is_annual(&self) -> bool {
+        self.period_type == ANNUAL_PERIOD_TYPE
+    }
 }
 
 /// Quote-derived scalars for one company as of a given date (ADR 0067
@@ -225,7 +240,7 @@ impl MetricsContext {
         self.periods
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.is_annual)
+            .filter(|(_, p)| p.is_annual())
             .map(|(idx, p)| FyPeriodRef {
                 idx,
                 period_id: p.period_id.clone(),
@@ -382,10 +397,30 @@ impl MetricsContext {
         }
     }
 
-    /// TTM: for an annual period, that period's own figure; otherwise the sum of
-    /// the four most recent periods — `None` when fewer than four are present
-    /// (#62). A partial window is not a trailing twelve months, and reporting one
-    /// quarter under a TTM label is worse than reporting nothing.
+    /// TTM. For an **annual** period, that period's own figure. For an
+    /// **interim** period, period-span arithmetic:
+    ///
+    /// ```text
+    /// ttm = FY(year − 1) + YTD(period_type, year) − YTD(period_type, year − 1)
+    /// ```
+    ///
+    /// `None` unless all three inputs exist — a span with a hole is not a
+    /// trailing twelve months (#62), and neither is a sum of whatever rows
+    /// happen to sit next to each other in the series (#271).
+    ///
+    /// Why arithmetic rather than "sum the last four rows": interim facts are
+    /// **cumulative year-to-date**, and the series interleaves granularities. On
+    /// the owner's database (measured 2026-07-31) GPW companies file `Q1` (3M),
+    /// `H1` (6M), `Q3` (9M) and `FY` — no `Q2`/`Q4` row exists at all — so
+    /// consecutive rows overlap (`H1 ⊃ Q1`) and a four-row sum double-counts,
+    /// summing across granularities and across years. Subtracting the prior
+    /// year's same-label year-to-date from the prior full year leaves exactly
+    /// the trailing months the current year-to-date does not cover.
+    ///
+    /// The formula assumes interim figures are cumulative. A future adapter
+    /// filing *discrete* quarters (US 10-Q) is correct only at the first
+    /// interim period of a fiscal year and must revisit this — see the
+    /// window-semantics note in `docs/data-model.md`.
     fn ttm_at(
         &self,
         key: &str,
@@ -393,14 +428,26 @@ impl MetricsContext {
         visiting: &RefCell<HashSet<(String, usize)>>,
     ) -> Option<Decimal> {
         let period = self.periods.get(idx)?;
-        if period.is_annual {
+        if period.is_annual() {
             return self.value_at(key, idx, visiting);
         }
-        let mut sum = Decimal::ZERO;
-        for k in 0..4 {
-            sum += self.value_at(key, idx + k, visiting)?;
-        }
-        Some(sum)
+        let prior_year = period.fiscal_year - 1;
+        let prior_ytd_idx = self.period_index(&period.period_type, prior_year)?;
+        let prior_fy_idx = self.period_index(ANNUAL_PERIOD_TYPE, prior_year)?;
+
+        let ytd = self.value_at(key, idx, visiting)?;
+        let prior_ytd = self.value_at(key, prior_ytd_idx, visiting)?;
+        let prior_fy = self.value_at(key, prior_fy_idx, visiting)?;
+        Some(prior_fy + ytd - prior_ytd)
+    }
+
+    /// The series index of the period carrying this exact fiscal label and year
+    /// (`financial_periods` is unique on `(company, fiscal_year, period_type)`,
+    /// so at most one matches).
+    fn period_index(&self, period_type: &str, fiscal_year: i64) -> Option<usize> {
+        self.periods
+            .iter()
+            .position(|p| p.fiscal_year == fiscal_year && p.period_type == period_type)
     }
 
     /// Two-point average of the current and prior period (balance-sheet averaging),
@@ -545,7 +592,7 @@ mod tests {
         PeriodFacts {
             period_id: format!("p{year}"),
             fiscal_year: year,
-            is_annual: true,
+            period_type: "FY".to_owned(),
             reported: facts.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
         }
     }
@@ -626,84 +673,128 @@ mod tests {
         assert!(v > dec(9, 2) && v < dec(11, 2));
     }
 
-    /// T6 (#62) — honest metric windows. Every other test in this module runs
-    /// on annual periods; production sets `is_annual = (period_type == "FY")`
-    /// (`storage/quality_frameworks.rs`), so these pin the quarterly branch and
-    /// the documented degradations of `_avg` / `cagr`.
+    /// Honest metric windows — T6 (#62) then #271. Every other test in this
+    /// module runs on annual periods; production carries the raw
+    /// `financial_periods.period_type` (`storage/quality_frameworks.rs`), so
+    /// these pin the interim branch and the documented degradations of `_avg` /
+    /// `cagr`.
+    ///
+    /// Interim facts on the real DB are **cumulative year-to-date** (Polish
+    /// reporting convention, measured 2026-07-31 on the owner's database: CDR
+    /// FY2024 revenue Q1 226.8M < H1 424.8M < FY 799.6M, same shape for
+    /// net_profit; no `Q2`/`Q4` row exists anywhere — GPW files Q1 / H1 / Q3-as-9M
+    /// / FY). So a trailing twelve months at an interim period is span
+    /// arithmetic, never a sum of the last four rows.
     mod window_semantics {
         use super::*;
 
-        fn quarter(year: i64, seq: u32, facts: &[(&str, Decimal)]) -> PeriodFacts {
+        /// An interim (year-to-date) period carrying its real fiscal label.
+        fn interim(year: i64, period_type: &str, facts: &[(&str, Decimal)]) -> PeriodFacts {
             PeriodFacts {
-                period_id: format!("p{year}q{seq}"),
+                period_id: format!("p{year}{period_type}"),
                 fiscal_year: year,
-                is_annual: false,
+                period_type: period_type.to_owned(),
                 reported: facts.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
             }
         }
 
-        #[test]
-        fn ttm_sums_four_present_quarters() {
-            let ctx = ctx_with(vec![
-                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
-                quarter(2025, 3, &[("net_profit", dec(30, 0))]),
-                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
-                quarter(2025, 1, &[("net_profit", dec(10, 0))]),
-            ]);
-            assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(100, 0)));
+        /// The real GPW shape (DBC on the owner's DB): Q1 of the current year on
+        /// top of an FY history that still holds last year's Q1.
+        fn dbc_shaped_series() -> Vec<PeriodFacts> {
+            vec![
+                interim(2026, "Q1", &[("net_profit", dec(100, 0))]),
+                period(2025, &[("net_profit", dec(400, 0))]),
+                interim(2025, "Q3", &[("net_profit", dec(300, 0))]),
+                interim(2025, "Q1", &[("net_profit", dec(80, 0))]),
+                period(2024, &[("net_profit", dec(380, 0))]),
+            ]
         }
 
         #[test]
-        fn ttm_is_none_when_only_three_quarters_exist() {
-            // Three quarters are not a trailing twelve months. Before #62 this
-            // degraded to the latest single quarter (40) and labeled it TTM.
+        fn ttm_at_an_interim_period_is_prior_fy_plus_ytd_minus_prior_year_ytd() {
+            // 400 (FY2025) + 100 (YTD Q1 2026) − 80 (YTD Q1 2025) = 420.
+            let ctx = ctx_with(dbc_shaped_series());
+            assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(420, 0)));
+        }
+
+        #[test]
+        fn ttm_never_sums_across_period_granularities() {
+            // #271: the old four-slot index walk summed Q1 + FY + Q3 + Q1 here
+            // (880 — nearly three years of profit labeled "trailing twelve
+            // months"). Span arithmetic replaces it outright.
+            let ctx = ctx_with(dbc_shaped_series());
+            let ttm = ctx.resolver().value("net_profit_ttm");
+            assert_ne!(ttm, Some(dec(880, 0)), "index-walk sum must be dead");
+            assert_eq!(ttm, Some(dec(420, 0)));
+        }
+
+        #[test]
+        fn ttm_is_none_when_the_prior_year_interim_period_is_absent() {
+            // The dominant shape today (KTY, PEO, CDR): one interim period on
+            // top of FY history, with no same-label period a year earlier. The
+            // span cannot be closed, so the answer is "no data" — never the
+            // year-to-date figure wearing a TTM label.
             let ctx = ctx_with(vec![
-                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
-                quarter(2025, 3, &[("net_profit", dec(30, 0))]),
-                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
+                interim(2026, "H1", &[("net_profit", dec(386, 0))]),
+                period(2025, &[("net_profit", dec(569, 0))]),
+                period(2024, &[("net_profit", dec(561, 0))]),
+                period(2023, &[("net_profit", dec(540, 0))]),
             ]);
             assert_eq!(ctx.resolver().value("net_profit_ttm"), None);
         }
 
         #[test]
-        fn ttm_is_none_when_a_quarter_inside_the_window_lacks_the_fact() {
+        fn ttm_is_none_when_the_prior_annual_period_is_absent() {
             let ctx = ctx_with(vec![
-                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
-                quarter(2025, 3, &[("revenue", dec(300, 0))]), // no net_profit
-                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
-                quarter(2025, 1, &[("net_profit", dec(10, 0))]),
+                interim(2026, "Q1", &[("net_profit", dec(100, 0))]),
+                interim(2025, "Q1", &[("net_profit", dec(80, 0))]),
+                period(2024, &[("net_profit", dec(380, 0))]), // FY2025 missing
+            ]);
+            assert_eq!(ctx.resolver().value("net_profit_ttm"), None);
+        }
+
+        #[test]
+        fn ttm_is_none_when_any_span_input_lacks_the_fact() {
+            // #62's rule survives the #271 rewrite: a span with a hole is not a
+            // trailing twelve months. Each of the three inputs in turn.
+            let holes = [
+                ("net_profit", "revenue", "revenue"),
+                ("revenue", "net_profit", "revenue"),
+                ("revenue", "revenue", "net_profit"),
+            ];
+            for (now, prior_fy, prior_ytd) in holes {
+                let ctx = ctx_with(vec![
+                    interim(2026, "Q1", &[(now, dec(100, 0))]),
+                    period(2025, &[(prior_fy, dec(400, 0))]),
+                    interim(2025, "Q1", &[(prior_ytd, dec(80, 0))]),
+                ]);
+                assert_eq!(ctx.resolver().value("net_profit_ttm"), None);
+            }
+        }
+
+        #[test]
+        fn ttm_matches_the_prior_year_period_on_its_fiscal_label_not_its_position() {
+            // A half-year YTD is not comparable to a Q1 YTD: the prior-year row
+            // must carry the same fiscal label or there is no span.
+            let ctx = ctx_with(vec![
+                interim(2026, "Q1", &[("net_profit", dec(100, 0))]),
+                period(2025, &[("net_profit", dec(400, 0))]),
+                interim(2025, "H1", &[("net_profit", dec(200, 0))]),
             ]);
             assert_eq!(ctx.resolver().value("net_profit_ttm"), None);
         }
 
         #[test]
         fn ttm_on_an_annual_period_is_that_periods_own_figure() {
-            // Mixed series: the annual branch never sums, even when quarters
-            // follow the annual period in the series.
+            // Mixed series: the annual branch never computes a span, even when
+            // interim periods follow the annual period in the series.
             let ctx = ctx_with(vec![
                 period(2025, &[("net_profit", dec(100, 0))]),
-                quarter(2025, 4, &[("net_profit", dec(40, 0))]),
-                quarter(2025, 3, &[("net_profit", dec(30, 0))]),
-                quarter(2025, 2, &[("net_profit", dec(20, 0))]),
+                interim(2025, "Q3", &[("net_profit", dec(40, 0))]),
+                interim(2025, "H1", &[("net_profit", dec(30, 0))]),
+                interim(2025, "Q1", &[("net_profit", dec(20, 0))]),
             ]);
             assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(100, 0)));
-        }
-
-        /// Characterization, not endorsement: the four-slot window walks the
-        /// series by index, so a quarterly latest period followed by annual
-        /// periods (the real GPW shape — one interim quarter on top of an
-        /// FY history) sums across period types. Out of T6's scope (T6 only
-        /// removes the `count < 4` degradation); this test exists so the
-        /// behavior cannot change silently.
-        #[test]
-        fn ttm_window_walks_the_series_by_index_across_period_types() {
-            let ctx = ctx_with(vec![
-                quarter(2026, 1, &[("net_profit", dec(10, 0))]),
-                period(2025, &[("net_profit", dec(400, 0))]),
-                period(2024, &[("net_profit", dec(380, 0))]),
-                period(2023, &[("net_profit", dec(360, 0))]),
-            ]);
-            assert_eq!(ctx.resolver().value("net_profit_ttm"), Some(dec(1150, 0)));
         }
 
         #[test]
@@ -711,8 +802,8 @@ mod tests {
             // Documented degradation (balance-sheet averaging): a two-point
             // average with no prior point is the current point, not missing.
             let ctx = ctx_with(vec![
-                quarter(2025, 4, &[("total_equity", dec(600, 0))]),
-                quarter(2025, 3, &[("revenue", dec(300, 0))]), // no total_equity
+                interim(2026, "Q1", &[("total_equity", dec(600, 0))]),
+                interim(2025, "Q3", &[("revenue", dec(300, 0))]), // no total_equity
             ]);
             assert_eq!(ctx.resolver().value("total_equity_avg"), Some(dec(600, 0)));
         }
@@ -815,7 +906,7 @@ mod tests {
             PeriodFacts {
                 period_id: format!("p{year}"),
                 fiscal_year: year,
-                is_annual: true,
+                period_type: "FY".to_owned(),
                 reported: facts.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
             }
         }

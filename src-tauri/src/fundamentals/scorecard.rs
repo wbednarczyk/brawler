@@ -183,7 +183,7 @@ mod tests {
         let period = PeriodFacts {
             period_id: "p1".to_owned(),
             fiscal_year: 2025,
-            is_annual: true,
+            period_type: "FY".to_owned(),
             reported: facts
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), Decimal::new(*v, 2)))

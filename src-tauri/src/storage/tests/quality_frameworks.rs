@@ -1267,7 +1267,7 @@ fn every_canonical_derived_metric_is_computable_from_a_representative_fact_set()
     let period = PeriodFacts {
         period_id: "period-representative".to_owned(),
         fiscal_year: 2024,
-        is_annual: true,
+        period_type: "FY".to_owned(),
         reported,
     };
     let context = MetricsContext::new(defs, vec![period]);
@@ -1352,7 +1352,7 @@ fn health_score_liquidity_metrics_derive_from_current_items() {
     let period = PeriodFacts {
         period_id: "period-liquidity".to_owned(),
         fiscal_year: 2025,
-        is_annual: true,
+        period_type: "FY".to_owned(),
         reported,
     };
     let context = MetricsContext::new(defs, vec![period]);
