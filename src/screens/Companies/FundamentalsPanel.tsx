@@ -78,8 +78,12 @@ export function tierLabel(tier: string, text: (value: string) => string): string
       return text("ESEF (tagged)");
     case "structured_xhtml":
       return text("Structured HTML");
+    case "espi_cover_note":
+      return text("ESPI cover note");
     case "pdf":
       return text("Structured read (xHTML)");
+    case "agent":
+      return text("Agent (MCP)");
     case "html_aggregator":
       return text("Aggregator");
     case "ai_text":

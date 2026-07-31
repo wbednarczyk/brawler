@@ -28,6 +28,10 @@ function tierLabel(tier: string, text: Translate): string {
       return text("ESPI cover note");
     case "pdf":
       return text("Structured read (xHTML)");
+    case "agent":
+      // MCP acquisition tier (ADR 0093, epic #285): an agent's read of an
+      // issuer document, recorded through the port's write tools.
+      return text("Agent (MCP)");
     case "html_aggregator":
       return text("Web cross-check");
     case "manual":

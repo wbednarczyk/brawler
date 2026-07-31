@@ -24,7 +24,7 @@ label: string, valueNumeric: string, currency: string | null, fiscalYear: number
  */
 periodType: string, 
 /**
- * esef | structured_xhtml | espi_cover_note | pdf | html_aggregator
+ * esef | structured_xhtml | espi_cover_note | pdf | agent | html_aggregator
  */
 sourceTier: string, 
 /**

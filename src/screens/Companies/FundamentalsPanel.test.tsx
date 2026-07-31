@@ -107,6 +107,10 @@ describe("tierLabel", () => {
     expect(tierLabel("esef", identity)).toBe("ESEF (tagged)");
   });
 
+  it("maps the ADR 0093 agent (MCP) tier to an honest label", () => {
+    expect(tierLabel("agent", identity)).toBe("Agent (MCP)");
+  });
+
   it("falls back to the raw tier string for an unknown tier", () => {
     expect(tierLabel("mystery_tier", identity)).toBe("mystery_tier");
   });

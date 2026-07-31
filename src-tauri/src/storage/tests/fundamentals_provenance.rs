@@ -206,3 +206,36 @@ fn rewriting_a_fact_clears_its_witness_corroboration() {
     );
     assert_eq!(after.corroborated_at, None);
 }
+
+/// (e) ADR 0093 decision 1: an agent-provenance fact counts under its own
+/// `agent` bucket in the tier breakdown — never folded into
+/// `manual_or_unprovenanced`, which is reserved for a fact with NO provenance
+/// row or an explicit `manual` tier.
+#[test]
+fn count_facts_by_tier_buckets_an_agent_fact_under_its_own_tier() {
+    let (state, company_id) = state_with_company("CDR");
+    record_as(
+        &state,
+        &company_id,
+        "total_assets",
+        "45000000",
+        "unreviewed",
+        "agent",
+    );
+
+    let breakdown = state.count_facts_by_tier().expect("count");
+    let agent_count = breakdown
+        .by_tier
+        .iter()
+        .find(|entry| entry.source_tier == "agent")
+        .map(|entry| entry.facts);
+    assert_eq!(
+        agent_count,
+        Some(1),
+        "an agent fact must appear in its own bucket: {breakdown:?}"
+    );
+    assert_eq!(
+        breakdown.manual_or_unprovenanced, 0,
+        "an agent fact is not manual/unprovenanced: {breakdown:?}"
+    );
+}

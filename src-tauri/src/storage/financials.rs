@@ -781,8 +781,9 @@ const DERIVED_OBSERVATION_MIN_PERIODS: i64 = 3;
 ///
 /// Additive and conservative, like every other automatic layer:
 /// * only **issuer-tier** facts count — a fact with no provenance row (manual)
-///   or one stamped `html_aggregator` is third-party or hand-entered, never
-///   evidence that the ISSUER reports the key;
+///   or one stamped `html_aggregator`/`agent` is third-party, agent-read, or
+///   hand-entered, never evidence that the ISSUER reports the key (ADR 0093
+///   decision 1: the `agent` tier is explicitly NOT an issuer tier);
 /// * `INSERT OR IGNORE` + `NOT EXISTS`, so a `core`/`sector`/`user` row for the
 ///   same metric is left exactly as it is;
 /// * a key that STOPS being reported is **not** deleted — staleness is a
@@ -810,8 +811,11 @@ pub(super) fn refresh_derived_kpi_relevance(
           ON p.fact_id = f.id
         WHERE f.company_id = ?1
           -- Issuer tiers only. `is_issuer()` in fundamentals::extraction is the
-          -- Rust twin of this predicate: everything but the aggregator.
-          AND p.source_tier <> 'html_aggregator'
+          -- Rust twin of this predicate: everything but the aggregator and the
+          -- MCP agent tier (ADR 0093 decision 1 — an agent's read is not
+          -- deterministically verified, so it is not evidence the issuer itself
+          -- reports the key).
+          AND p.source_tier NOT IN ('html_aggregator', 'agent')
           AND f.period_id IN (
               SELECT id
               FROM financial_periods

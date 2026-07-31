@@ -5,9 +5,10 @@
  */
 export type FactProvenance = { factId: string, 
 /**
- * esef | structured_xhtml | espi_cover_note | pdf | html_aggregator
- * (`ai_text` appears only on rows written before ADR 0084 retired the AI
- * tier; they stay readable, never rewritten)
+ * esef | structured_xhtml | espi_cover_note | pdf | agent | html_aggregator
+ * (`agent` is the MCP acquisition tier, ADR 0093; `ai_text` appears only on
+ * rows written before ADR 0084 retired the AI tier; they stay readable,
+ * never rewritten)
  */
 sourceTier: string, 
 /**

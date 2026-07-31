@@ -1754,6 +1754,43 @@ fn derived_pass_marks_keys_reported_in_at_least_three_of_the_last_four_periods()
     assert_eq!(derived, vec!["ebitda".to_owned()]);
 }
 
+/// ADR 0093 decision 1: the agent tier is NOT an issuer tier — an agent's
+/// figure is never evidence "the issuer reports this key" for the derived
+/// completeness observation, exactly like `html_aggregator`.
+#[test]
+fn derived_pass_never_marks_a_key_reported_only_by_the_agent_tier() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = company_with_ticker(&state, "AGT");
+
+    let periods: Vec<String> = (2022..=2025)
+        .map(|year| seed_fy_period(&state, &company.id, year))
+        .collect();
+    // `net_deposits`: 4 of the last 4, but ONLY from the agent tier — not
+    // issuer-tier, so it never becomes a derived observation.
+    for period in &periods {
+        seed_issuer_fact(&state, &company.id, period, "capex", "10", "agent");
+    }
+
+    {
+        let connection = state
+            .checkout_for_tests()
+            .expect("connection should check out");
+        crate::storage::financials::refresh_derived_kpi_relevance(&connection, &company.id)
+            .expect("derived pass should run");
+    }
+
+    let derived: Vec<String> = relevance_rows(&state, &company.id)
+        .into_iter()
+        .filter(|(_, source, _)| source == "derived")
+        .map(|(key, _, _)| key)
+        .collect();
+    assert!(
+        derived.is_empty(),
+        "an agent-only reported key must not enter the derived layer: {derived:?}"
+    );
+}
+
 #[test]
 fn derived_pass_never_touches_core_sector_or_user_rows() {
     let connection = open_in_memory_database().expect("database should initialize");

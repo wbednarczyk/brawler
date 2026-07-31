@@ -409,10 +409,10 @@ pub(super) fn record_structured_fact(
 }
 
 /// Outcome of committing one BiznesRadar-primary aggregator fact into its slot,
-/// applying the ADR 0086 decision 3 precedence: `manual` > `esef` >
-/// `espi_cover_note` > positional > `html_aggregator`. The aggregator only ever
-/// overwrites its OWN (`html_aggregator`, non-manual) slot and NEVER a manual or
-/// higher-tier fact.
+/// applying the ADR 0086 decision 3 precedence (`agent` added by ADR 0093
+/// decision 1): `manual` > `esef` > `espi_cover_note` > positional > `agent` >
+/// `html_aggregator`. The aggregator only ever overwrites its OWN
+/// (`html_aggregator`, non-manual) slot and NEVER a manual or higher-tier fact.
 #[derive(Debug, Clone)]
 pub enum AggregatorFactCommit {
     /// The slot was empty — a new aggregator fact was written.
@@ -433,8 +433,8 @@ pub enum AggregatorFactCommit {
         existing_method: String,
     },
     /// The slot is held by a higher-precedence fact (manual / esef /
-    /// structured_xhtml / espi_cover_note / positional) — left untouched. The
-    /// caller decides whether the divergence warrants an informational
+    /// structured_xhtml / espi_cover_note / positional / agent) — left
+    /// untouched. The caller decides whether the divergence warrants an informational
     /// `witness_disagreement` outcome (issuer tiers only).
     SkippedHigherTier {
         fact_id: String,
@@ -1250,5 +1250,329 @@ mod tests {
         assert!(matches!(again[0], AggregatorFactCommit::Reobserved { .. }));
         assert!(matches!(again[1], AggregatorFactCommit::Reobserved { .. }));
         assert!(matches!(again[2], AggregatorFactCommit::NoDefinition));
+    }
+
+    // --- ADR 0093 decision 1: `SourceTier::Agent` threaded through the trust
+    // ladder — ranked below every issuer tier and above `html_aggregator`. ---
+
+    fn agent_input<'a>(
+        company_id: &'a str,
+        document_id: &'a str,
+        value: &'a str,
+    ) -> StructuredFactInput<'a> {
+        StructuredFactInput {
+            company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: document_id,
+            metric_key: "revenue",
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026 | Revenue"),
+        }
+    }
+
+    fn issuer_input<'a>(
+        company_id: &'a str,
+        document_id: &'a str,
+        value: &'a str,
+    ) -> StructuredFactInput<'a> {
+        StructuredFactInput {
+            company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: document_id,
+            metric_key: "revenue",
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("Revenue"),
+        }
+    }
+
+    /// (a) ADR 0093 decision 1: an issuer tier RE-OBSERVING an agent-held slot
+    /// takes the slot's LABEL over — mirrors
+    /// `an_issuer_reobservation_upgrades_an_aggregator_slot_label`, agent instead
+    /// of the aggregator.
+    #[test]
+    fn an_issuer_reobservation_upgrades_an_agent_slot_label() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "1000000"),
+        )
+        .expect("agent write");
+
+        record_structured_fact(
+            &connection,
+            issuer_input(&company_id, &document_id, "1000000"),
+        )
+        .expect("issuer re-observation");
+
+        let (tier, citation): (String, String) = connection
+            .query_row(
+                "SELECT p.source_tier, p.citation FROM financial_fact_provenance p",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("provenance row");
+        assert_eq!(
+            tier, "esef",
+            "the issuer tier must take over the agent slot label"
+        );
+        assert_eq!(citation, "Revenue", "the evidence must point at the filing");
+    }
+
+    /// (a) ADR 0093 decision 1: an issuer tier DISAGREEING with an agent-held
+    /// slot overwrites it — a mis-extracted agent figure can never block the
+    /// audited correction.
+    #[test]
+    fn an_issuer_divergence_overwrites_an_agent_slot() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "999000"),
+        )
+        .expect("agent write");
+
+        let commit = record_structured_fact(
+            &connection,
+            issuer_input(&company_id, &document_id, "1000123"),
+        )
+        .expect("issuer divergence");
+        assert!(
+            matches!(
+                &commit,
+                StructuredFactCommit::Upgraded {
+                    previous_tier,
+                    previous_value: Some(v),
+                    ..
+                } if previous_tier == "agent" && v == "999000"
+            ),
+            "the issuer's number must upgrade the agent slot: {commit:?}"
+        );
+
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier FROM financial_facts f \
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(value, "1000123", "the issuer's number must win its slot");
+        assert_eq!(tier, "esef");
+    }
+
+    /// (b) ADR 0093 decision 1: the agent tier never overwrites an issuer-held
+    /// slot — a disagreement is a `Divergent` outcome, reported, never resolved
+    /// silently.
+    #[test]
+    fn an_agent_divergence_against_an_issuer_slot_is_never_applied() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            issuer_input(&company_id, &document_id, "1000123"),
+        )
+        .expect("issuer write");
+
+        let commit = record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "999000"),
+        )
+        .expect("agent divergence against an issuer slot");
+        assert!(
+            matches!(commit, StructuredFactCommit::Divergent { .. }),
+            "an agent write against an issuer slot is reported, never overwritten: {commit:?}"
+        );
+
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier FROM financial_facts f \
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(value, "1000123", "the issuer's value must survive");
+        assert_eq!(tier, "esef");
+    }
+
+    /// (b) ADR 0093 decision 1: the agent tier never overwrites a manual
+    /// (no-provenance) slot either.
+    #[test]
+    fn an_agent_write_against_a_manual_slot_is_never_applied() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "555000"),
+        )
+        .expect("seed");
+        // Strip the provenance row — a hand-entered fact never gets one.
+        connection
+            .execute("DELETE FROM financial_fact_provenance", [])
+            .expect("strip provenance");
+
+        let commit = record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "560000"),
+        )
+        .expect("agent write against a manual slot");
+        assert!(
+            matches!(commit, StructuredFactCommit::Divergent { .. }),
+            "a manual slot is reported as a divergence, never overwritten: {commit:?}"
+        );
+        let value: String = connection
+            .query_row("SELECT value_numeric FROM financial_facts", [], |row| {
+                row.get(0)
+            })
+            .expect("fact");
+        assert_eq!(value, "555000", "the hand-entered value must survive");
+    }
+
+    /// (c) ADR 0093 decision 1: the agent tier fills over `html_aggregator` — an
+    /// agent reads the issuer's own document, the aggregator is third-party.
+    /// Agreement branch: the slot's LABEL takes the agent's over.
+    #[test]
+    fn an_agent_reobservation_upgrades_an_html_aggregator_slot_label() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
+            },
+        )
+        .expect("aggregator write");
+
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "1000000"),
+        )
+        .expect("agent re-observation");
+
+        let tier: String = connection
+            .query_row(
+                "SELECT source_tier FROM financial_fact_provenance",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance row");
+        assert_eq!(
+            tier, "agent",
+            "the agent tier must take over the aggregator slot label"
+        );
+    }
+
+    /// (c) ADR 0093 decision 1: the agent tier OVERWRITES a divergent
+    /// `html_aggregator` slot (outranks it).
+    #[test]
+    fn an_agent_divergence_overwrites_an_html_aggregator_slot() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "999000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
+            },
+        )
+        .expect("aggregator write");
+
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "1000123"),
+        )
+        .expect("agent divergence");
+
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier FROM financial_facts f \
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(
+            value, "1000123",
+            "the agent's number must win the aggregator's slot"
+        );
+        assert_eq!(tier, "agent");
+    }
+
+    /// (2) `outranked_stored_tier_of` explicit precedence pins for the agent
+    /// tier — no assumption that parse/outranks compose correctly.
+    #[test]
+    fn outranked_stored_tier_of_places_agent_between_pdf_and_html_aggregator() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        let fact_id = created_id(
+            record_structured_fact(&connection, agent_input(&company_id, &document_id, "1"))
+                .expect("agent seed"),
+        );
+
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "esef").expect("esef outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "structured_xhtml")
+                .expect("structured_xhtml outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "espi_cover_note")
+                .expect("espi_cover_note outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "pdf").expect("pdf outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "html_aggregator")
+                .expect("html_aggregator does not outrank agent"),
+            None
+        );
     }
 }

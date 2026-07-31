@@ -8,17 +8,23 @@
 //! ([`crate::fundamentals::extraction::html::parse_all_financials`]), and write a
 //! fact per (period × metric) under `source_tier = html_aggregator`.
 //!
-//! ## Tier precedence (ADR 0086 decision 3)
+//! ## Tier precedence (ADR 0086 decision 3, `agent` added by ADR 0093 decision 1)
 //! Each slot is written through
 //! [`crate::storage::KpiExtractionStore::record_aggregator_fact`], which applies
-//! `manual > esef > espi_cover_note > positional > html_aggregator`: an empty slot
-//! is filled, the aggregator's OWN slot is overwritten with the fresh value, and a
-//! manual or higher-tier slot is left untouched.
+//! `manual > esef > espi_cover_note > positional > agent > html_aggregator`: an
+//! empty slot is filled, the aggregator's OWN slot is overwritten with the fresh
+//! value, and a manual or higher-tier slot (including an agent-held one) is left
+//! untouched.
 //!
-//! ## Reversed witnessing (ADR 0086 decision 4)
-//! Where an ISSUER tier (ESEF / structured xHTML / WDF cover-note / the positional
-//! `pdf` read) or a MANUAL entry holds a slot, the aggregator's figure is compared
-//! against it and BOTH outcomes are recorded (epic #229 T5):
+//! ## Reversed witnessing (ADR 0086 decision 4, amended by ADR 0093 decision 1)
+//! Where a slot is held by a tier that OUTRANKS `html_aggregator` — every issuer
+//! tier (ESEF / structured xHTML / WDF cover-note / the positional `pdf` read),
+//! the MCP `agent` tier, or a MANUAL entry — the aggregator's figure is compared
+//! against it and BOTH outcomes are recorded (epic #229 T5). The agent tier
+//! qualifies here without being an issuer tier (`SourceTier::is_issuer` is
+//! `false` for it): witnessing exists to cross-check whoever holds the slot
+//! with more authority than the witness, and membership in the issuer set was
+//! an implementation detail, not the semantic (ADR 0093 decision 1).
 //! - **Diverges** beyond the shared tolerance → an informational
 //!   `witness_disagreement` extraction outcome — never blocking, never overwriting.
 //! - **Agrees** (exactly, or within tolerance) → a positive corroboration stamped on
@@ -76,15 +82,20 @@ pub fn enqueue_daily_pull(state: &AppState) {
     }
 }
 
-/// Whether a stored `source_tier` names an ISSUER tier — one read from the
-/// issuer's own filing, whose held slot records a reversed-witnessing
-/// `witness_disagreement` when the aggregator diverges (ADR 0086 decision 4,
-/// amended 2026-07-22). Delegates to the canonical [`SourceTier`] taxonomy rather
-/// than string-matching, so the positional `pdf` tier (the issuer's filing read
-/// deterministically) is covered and a new tier cannot be silently omitted. A
-/// `manual` slot (parses to `None`) is handled separately by the caller.
-fn is_issuer_tier(tier: &str) -> bool {
-    SourceTier::parse(tier).is_some_and(SourceTier::is_issuer)
+/// Whether a stored `source_tier` OUTRANKS the aggregator's own `html_aggregator`
+/// tier — the operative reversed-witnessing question (ADR 0086 decision 4,
+/// amended 2026-07-22, amended again by ADR 0093 decision 1): the holder's slot
+/// records a `witness_disagreement` when the aggregator diverges from it. This
+/// is NOT the same predicate as [`SourceTier::is_issuer`] — the `agent` tier
+/// outranks `html_aggregator` and so qualifies here, while `is_issuer` is
+/// `false` for it (no deterministic pipeline verified an agent's read).
+/// Delegates to the canonical [`SourceTier`] taxonomy rather than
+/// string-matching, so the positional `pdf` tier (the issuer's filing read
+/// deterministically) and the `agent` tier are both covered and a new tier
+/// cannot be silently omitted. A `manual` slot (parses to `None`) is handled
+/// separately by the caller.
+fn outranks_aggregator_tier(tier: &str) -> bool {
+    SourceTier::parse(tier).is_some_and(|parsed| parsed.outranks(SourceTier::HtmlAggregator))
 }
 
 /// What one pull run did, for the on-demand command + the rebuild verdict.
@@ -440,13 +451,18 @@ fn apply_commit(
         } => {
             summary.facts_reobserved += 1;
             // Positive corroboration, exact-agreement branch (epic #229 T5): the
-            // slot already holds the aggregator's figure. When its holder is the
-            // ISSUER's own filing or the USER's own entry, that is an independent
-            // second read of the same number — stamped as evidence. When the
-            // holder is the aggregator itself, it is the same source read twice:
-            // no self-witnessing, nothing recorded.
+            // slot already holds the aggregator's figure. When its holder OUTRANKS
+            // the aggregator (an ISSUER filing, the MCP `agent` tier, or the
+            // USER's own entry), that is an independent second read of the same
+            // number — stamped as evidence. When the holder is the aggregator
+            // itself, it is the same source read twice: no self-witnessing,
+            // nothing recorded.
             let is_manual = existing_method == "manual";
-            if is_manual || existing_tier.as_deref().is_some_and(is_issuer_tier) {
+            if is_manual
+                || existing_tier
+                    .as_deref()
+                    .is_some_and(outranks_aggregator_tier)
+            {
                 record_corroboration(
                     state,
                     &CorroboratedSlot {
@@ -469,16 +485,20 @@ fn apply_commit(
             existing_value,
         } => {
             summary.slots_skipped_higher_tier += 1;
-            // Reversed witnessing (ADR 0086 decision 4, amended 2026-07-22). A
-            // genuine divergence (beyond tolerance, aggregator side non-zero)
-            // records an informational `witness_disagreement` when the held slot is
-            // EITHER an issuer tier (ESEF / structured xHTML / WDF cover-note / the
-            // positional `pdf` tier — all the issuer's own filing) OR a MANUAL slot
-            // (the user's own entry — ADR 0086 decision 3 "divergence is logged,
-            // never applied", made concrete so the user learns of the conflict). It
-            // never blocks and never overwrites. An unknown/legacy tier stays silent.
+            // Reversed witnessing (ADR 0086 decision 4, amended 2026-07-22 and by
+            // ADR 0093 decision 1). A genuine divergence (beyond tolerance,
+            // aggregator side non-zero) records an informational
+            // `witness_disagreement` when the held slot OUTRANKS the aggregator —
+            // an issuer tier (ESEF / structured xHTML / WDF cover-note / the
+            // positional `pdf` tier — all the issuer's own filing), the MCP `agent`
+            // tier (ADR 0093: the agent never overwrites this slot either, so it
+            // is witnessed exactly like an issuer slot despite not being one), OR
+            // a MANUAL slot (the user's own entry — ADR 0086 decision 3
+            // "divergence is logged, never applied", made concrete so the user
+            // learns of the conflict). It never blocks and never overwrites. An
+            // unknown/legacy tier stays silent.
             let is_manual = existing_method == "manual";
-            if is_issuer_tier(&existing_tier) || is_manual {
+            if outranks_aggregator_tier(&existing_tier) || is_manual {
                 if let Ok(issuer_value) = existing_value.trim().parse::<rust_decimal::Decimal>() {
                     let issuer_set = single(&fact.metric_key, issuer_value);
                     let aggregator_set = single(&fact.metric_key, fact.value);

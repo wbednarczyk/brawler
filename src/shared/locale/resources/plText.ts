@@ -1909,6 +1909,7 @@ export const plText: Record<string, string> = {
   // "Structured HTML" is already translated above (report-documents taxonomy) —
   // one key, one home.
   "ESPI cover note": "Raport bieżący ESPI",
+  "Agent (MCP)": "Agent (MCP)",
   "Web cross-check": "Porównanie ze źródłem w sieci",
   "Manual entry": "Wpis ręczny",
   // Row + detail.
