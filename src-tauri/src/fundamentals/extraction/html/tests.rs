@@ -209,6 +209,77 @@ fn parse_all_financials_reads_cash_flow_labels_without_netto() {
     );
 }
 
+// BiznesRadar's BANK schema (verified live Bank Pekao / PEO pages, epic #277
+// T1): net interest/fee income on the income statement, customer loans/
+// deposits + a plural "Kapitały własne/razem" equity pair on the balance
+// sheet — a different row set than the non-financial CDR samples above.
+const BR_PEO_RZIS: &str = include_str!("../../../../samples/biznesradar_rzis_peo.html");
+const BR_PEO_BILANS: &str = include_str!("../../../../samples/biznesradar_bilans_peo.html");
+
+#[test]
+fn parses_bank_schema_rows_into_bank_specific_metrics() {
+    let income_map: std::collections::BTreeMap<_, _> = parse_all_financials(BR_PEO_RZIS)
+        .iter()
+        .flat_map(|(_, facts)| facts.iter())
+        .map(|f| (f.metric_key.clone(), f.value))
+        .collect();
+    let nii = income_map
+        .get("net_interest_income")
+        .expect("net_interest_income mapped from 'Wynik z tytułu odsetek'");
+    // Real PEO net interest income is in the low tens of billions PLN
+    // (base units, page states tys. PLN).
+    assert!(
+        *nii > d(1_000_000_000) && *nii < d(30_000_000_000),
+        "implausible net_interest_income: {nii}"
+    );
+    let nfi = income_map
+        .get("net_fee_commission_income")
+        .expect("net_fee_commission_income mapped from 'Wynik z tytułu prowizji'");
+    assert!(
+        *nfi > d(500_000_000) && *nfi < d(10_000_000_000),
+        "implausible net_fee_commission_income: {nfi}"
+    );
+
+    let balance_map: std::collections::BTreeMap<_, _> = parse_all_financials(BR_PEO_BILANS)
+        .iter()
+        .flat_map(|(_, facts)| facts.iter())
+        .map(|f| (f.metric_key.clone(), f.value))
+        .collect();
+    let loans = balance_map
+        .get("total_loans")
+        .expect("total_loans mapped from 'Należności od klientów'");
+    assert!(
+        *loans > d(50_000_000_000) && *loans < d(500_000_000_000),
+        "implausible total_loans: {loans}"
+    );
+    let deposits = balance_map
+        .get("total_deposits")
+        .expect("total_deposits mapped from 'Zobowiązania wobec klientów'");
+    assert!(
+        *deposits > d(50_000_000_000) && *deposits < d(500_000_000_000),
+        "implausible total_deposits: {deposits}"
+    );
+    let equity_parent = balance_map
+        .get("wdf_equity_parent")
+        .expect("wdf_equity_parent mapped from bank-schema plural 'Kapitały własne'");
+    assert!(
+        *equity_parent > d(5_000_000_000) && *equity_parent < d(100_000_000_000),
+        "implausible wdf_equity_parent: {equity_parent}"
+    );
+    let total_equity = balance_map
+        .get("total_equity")
+        .expect("total_equity mapped from bank-schema group total 'Kapitały razem'");
+    assert!(
+        *total_equity > d(5_000_000_000) && *total_equity < d(100_000_000_000),
+        "implausible total_equity: {total_equity}"
+    );
+    // Group total (parent + non-controlling) must be >= the parent-only figure.
+    assert!(
+        total_equity >= equity_parent,
+        "group total_equity ({total_equity}) must be >= parent-only wdf_equity_parent ({equity_parent})"
+    );
+}
+
 #[test]
 fn period_header_parsing_handles_shifted_fiscal_year_month() {
     // A June fiscal-year end column "2013 (cze 13)" → FY 2013 ending 2013-06-30,
@@ -338,7 +409,7 @@ mod period_header_invariants {
 fn source_vocabulary_contract_golden() {
     use scraper::{Html, Selector};
 
-    let samples: [(&str, &str); 3] = [
+    let samples: [(&str, &str); 5] = [
         (
             "rzis",
             include_str!("../../../../samples/biznesradar_rzis_cdr.html"),
@@ -350,6 +421,14 @@ fn source_vocabulary_contract_golden() {
         (
             "przeplywy",
             include_str!("../../../../samples/biznesradar_przeplywy_cdr.html"),
+        ),
+        (
+            "rzis-bank",
+            include_str!("../../../../samples/biznesradar_rzis_peo.html"),
+        ),
+        (
+            "bilans-bank",
+            include_str!("../../../../samples/biznesradar_bilans_peo.html"),
         ),
     ];
     let row_sel = Selector::parse("tr[data-field]").unwrap();
