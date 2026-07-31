@@ -144,6 +144,7 @@ fn seed_fact(state: &AppState, company_id: &str, metric_key: &str, value: &str, 
             validation_status: "passed",
             drift_json: None,
             citation: Some("seeded"),
+            data_quality: None,
         })
         .expect("seed fact");
 }

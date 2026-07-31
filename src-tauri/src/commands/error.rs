@@ -103,6 +103,11 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::InvalidSourceValue { .. } => InvalidInput,
         StorageError::InvalidResearchValue { .. } => InvalidInput,
         StorageError::InvalidFinancialsValue { .. } => InvalidInput,
+        // data_quality is a uniqueness-slot dimension; changing it via update
+        // conflicts with the ADR 0093 lifecycle (a new final fact supersedes a
+        // preliminary/estimated one, never an in-place edit) — a state conflict,
+        // not a shape problem with the requested value itself.
+        StorageError::FinancialFactDataQualityLocked { .. } => Conflict,
         StorageError::InvalidClaimValue { .. } => InvalidInput,
         StorageError::InvalidReportSeasonValue { .. } => InvalidInput,
         StorageError::InvalidFrameworkValue { .. } => InvalidInput,

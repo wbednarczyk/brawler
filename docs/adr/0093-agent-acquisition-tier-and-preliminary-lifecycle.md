@@ -88,9 +88,12 @@ Lifecycle:
   and counts a slot once; a preliminary-only slot still counts as covered but stays
   distinguishable.
 - **Supersession is stamped in the storage write path**, not a background pass: when a
-  `final` fact is created into (or upgrades) a slot whose sibling — same dimensions except
-  `data_quality` — is `preliminary`, the final fact's `supersedes_id` points at the
-  preliminary row. This revives the write-dead column with race-free semantics (the write
+  `final` fact is **created** into a slot whose sibling — same dimensions except
+  `data_quality` — is `preliminary` (or, lacking one, `estimated`; issuer-published beats
+  third-party estimate), the final fact's `supersedes_id` points at that row. A tier
+  *upgrade* of an existing final slot never needs a fresh stamp — the stamp was made at
+  the final fact's creation, and a non-final sibling arriving *after* the final row is
+  the degenerate late case every reader already handles by preferring `final`. This revives the write-dead column with race-free semantics (the write
   that creates the successor is the only place that knows both rows). Rejected: a
   startup/post-extraction sweep (raceable, and a second bookkeeping pass for something the
   write already knows).

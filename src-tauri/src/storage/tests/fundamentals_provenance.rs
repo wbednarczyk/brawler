@@ -60,6 +60,7 @@ fn record_as(
             validation_status,
             drift_json: None,
             citation: Some("ifrs-full:Assets"),
+            data_quality: None,
         })
         .expect("record fact");
 }

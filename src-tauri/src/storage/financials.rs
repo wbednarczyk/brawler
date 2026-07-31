@@ -1427,6 +1427,7 @@ pub struct CachedDerivedPeriod {
 /// statement_basis, attribution, variant, measure_window, data_quality)`, shared
 /// by the INSERT and the re-observation lookup so a re-extraction can never miss
 /// (or spuriously match) an existing row through a defaulting mismatch.
+#[derive(Clone)]
 pub(super) struct SlotDims {
     pub statement_basis: String,
     pub attribution: String,
@@ -1435,7 +1436,7 @@ pub(super) struct SlotDims {
     pub data_quality: String,
 }
 
-pub(super) fn slot_dims(input: &NewFinancialFact) -> SlotDims {
+pub(super) fn slot_dims(input: &NewFinancialFact) -> StorageResult<SlotDims> {
     fn or_default(value: &Option<String>, fallback: &str) -> String {
         value
             .as_deref()
@@ -1444,13 +1445,13 @@ pub(super) fn slot_dims(input: &NewFinancialFact) -> SlotDims {
             .unwrap_or(fallback)
             .to_owned()
     }
-    SlotDims {
+    Ok(SlotDims {
         statement_basis: or_default(&input.statement_basis, "consolidated"),
         attribution: or_default(&input.attribution, "total"),
         variant: or_default(&input.variant, "reported"),
         measure_window: or_default(&input.measure_window, "flow"),
-        data_quality: or_default(&input.data_quality, "final"),
-    }
+        data_quality: normalize_data_quality(input.data_quality.clone())?,
+    })
 }
 
 /// The already-committed fact occupying a fully-qualified slot, if any — the
@@ -1485,6 +1486,32 @@ fn find_fact_by_slot(
         Some(id) => Ok(Some(get_financial_fact(connection, &id)?)),
         None => Ok(None),
     }
+}
+
+/// The sibling this new/incoming `final` fact supersedes (ADR 0093 decision 2):
+/// same slot dimensions except `data_quality`. When both a `preliminary` and an
+/// `estimated` sibling occupy the slot, the `preliminary` one wins — an
+/// issuer-published preliminary figure outranks a third-party estimate as the
+/// thing a later audited number corrects. `None` when no non-final sibling
+/// exists (the ordinary case — nothing to supersede).
+fn find_supersession_target(
+    connection: &Connection,
+    period_id: &str,
+    definition_id: &str,
+    dims: &SlotDims,
+) -> StorageResult<Option<String>> {
+    for candidate_quality in ["preliminary", "estimated"] {
+        let sibling_dims = SlotDims {
+            data_quality: candidate_quality.to_owned(),
+            ..dims.clone()
+        };
+        if let Some(sibling) =
+            find_fact_by_slot(connection, period_id, definition_id, &sibling_dims)?
+        {
+            return Ok(Some(sibling.id));
+        }
+    }
+    Ok(None)
 }
 
 /// The outcome of a slot-aware fact write (re-observation semantics for the
@@ -1527,13 +1554,39 @@ fn normalize_currency(currency: Option<String>) -> StorageResult<Option<String>>
     Ok(Some(currency.to_ascii_uppercase()))
 }
 
+/// Canonicalizes a fact's `data_quality` at the write boundary — the
+/// `normalize_currency` pattern, ADR 0093 decision 2. Vocabulary: `final`
+/// (audited-or-reported-final, the default) | `preliminary` (issuer-published
+/// pre-report figures) | `estimated` (third-party/derived). Absent/empty → the
+/// `final` default (all pre-ADR-0093 rows are `final`); the third-party synonym
+/// `estimate` normalizes to `estimated`; any other token is a typed error rather
+/// than a silently mis-slotted row (the uniqueness slot includes `data_quality`,
+/// so an un-normalized synonym would mint a phantom slot instead of coexisting
+/// correctly with the canonical token).
+fn normalize_data_quality(data_quality: Option<String>) -> StorageResult<String> {
+    let value = data_quality
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("final")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "final" | "preliminary" | "estimated" => Ok(value),
+        "estimate" => Ok("estimated".to_owned()),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "data_quality",
+            value,
+        }),
+    }
+}
+
 pub(super) fn create_or_reobserve_financial_fact(
     connection: &Connection,
     input: NewFinancialFact,
 ) -> StorageResult<FactWriteOutcome> {
     let period_id = input.period_id.trim().to_owned();
     let definition_id = input.definition_id.trim().to_owned();
-    let dims = slot_dims(&input);
+    let dims = slot_dims(&input)?;
     if let Some(existing) = find_fact_by_slot(connection, &period_id, &definition_id, &dims)? {
         let incoming = input.value_numeric.trim().to_owned();
         let same = match (
@@ -1561,13 +1614,14 @@ pub(super) fn create_financial_fact(
     let period_id = input.period_id.trim().to_owned();
     let definition_id = input.definition_id.trim().to_owned();
     let value_numeric = input.value_numeric.trim().to_owned();
+    let dims = slot_dims(&input)?;
     let SlotDims {
         statement_basis,
         attribution,
         variant,
         measure_window,
         data_quality,
-    } = slot_dims(&input);
+    } = dims.clone();
     let currency = normalize_currency(input.currency)?;
     let as_reported_value =
         empty_string_to_none(input.as_reported_value.map(|s| s.trim().to_owned()));
@@ -1590,7 +1644,8 @@ pub(super) fn create_financial_fact(
         .filter(|s| !s.is_empty())
         .unwrap_or("confirmed")
         .to_owned();
-    let supersedes_id = empty_string_to_none(input.supersedes_id.map(|s| s.trim().to_owned()));
+    let explicit_supersedes_id =
+        empty_string_to_none(input.supersedes_id.map(|s| s.trim().to_owned()));
     let source_document_ref =
         empty_string_to_none(input.source_document_ref.map(|s| s.trim().to_owned()));
     let annotation = empty_string_to_none(input.annotation.map(|s| s.trim().to_owned()));
@@ -1598,6 +1653,20 @@ pub(super) fn create_financial_fact(
     validate_reference_exists(connection, "companies", &company_id)?;
     validate_reference_exists(connection, "financial_periods", &period_id)?;
     validate_reference_exists(connection, "kpi_definitions", &definition_id)?;
+
+    // ADR 0093 decision 2: a `final` fact created into a slot whose sibling —
+    // same dimensions except `data_quality` — is `preliminary`/`estimated`
+    // stamps `supersedes_id` at that sibling here, at the one place that knows
+    // both rows (race-free; no background sweep). An explicit caller-provided
+    // `supersedes_id` always wins; existing rows' `supersedes_id` is never
+    // touched.
+    let supersedes_id = match explicit_supersedes_id {
+        Some(explicit) => Some(explicit),
+        None if data_quality == "final" => {
+            find_supersession_target(connection, &period_id, &definition_id, &dims)?
+        }
+        None => None,
+    };
 
     if value_numeric.is_empty() {
         return Err(StorageError::InvalidFinancialsValue {
@@ -1700,13 +1769,36 @@ pub(super) fn update_financial_fact(
             .or(current.currency),
     )?;
 
-    let data_quality = input
+    // `data_quality` is a uniqueness-slot dimension (like `statement_basis`,
+    // `attribution`, `variant`, `measure_window` — none of which this struct
+    // exposes for update at all): changing it here without re-resolving the
+    // slot would raise a raw sqlite UNIQUE error the moment it collides with an
+    // existing sibling. ADR 0093 decision 2 models the lifecycle as a NEW final
+    // fact superseding a preliminary/estimated one, not an in-place edit, so a
+    // requested change (even to a non-colliding quality) is rejected with a
+    // typed error pointing the caller at creating a new fact — never silently
+    // dropped, never a raw UNIQUE. An absent/empty input, or a value that
+    // normalizes to the fact's current quality (e.g. the `estimate` synonym
+    // re-sent for an already-`estimated` fact), is a no-op and passes through.
+    let data_quality = match input
         .data_quality
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or(&current.data_quality)
-        .to_owned();
+    {
+        None => current.data_quality.clone(),
+        Some(_) => {
+            let requested = normalize_data_quality(input.data_quality.clone())?;
+            if requested != current.data_quality {
+                return Err(StorageError::FinancialFactDataQualityLocked {
+                    id,
+                    current: current.data_quality,
+                    requested,
+                });
+            }
+            requested
+        }
+    };
 
     let confirmation_state = input
         .confirmation_state

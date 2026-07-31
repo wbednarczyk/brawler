@@ -229,6 +229,11 @@ pub struct StructuredFactInput<'a> {
     /// for this outcome (PDF tier only); `None` on a clean/no-profile parse.
     pub drift_json: Option<&'a str>,
     pub citation: Option<&'a str>,
+    /// `final` (default, `None` normalizes to it) | `preliminary` | `estimated`
+    /// (ADR 0093 decision 2), normalized at the storage write boundary
+    /// (`normalize_data_quality`). Every writer before the MCP agent tool (T7)
+    /// passes `None` — no behavior change for the existing pipeline.
+    pub data_quality: Option<&'a str>,
 }
 
 /// Outcome of committing one deterministically-extracted fact (ADR 0061) into
@@ -323,7 +328,7 @@ fn prepare_fact_write(
             attribution: None,
             variant: None,
             measure_window: None,
-            data_quality: None,
+            data_quality: input.data_quality.map(str::to_owned),
             as_reported_value: None,
             as_reported_scale: None,
             reporting_standard: None,
@@ -764,7 +769,7 @@ impl KpiExtractionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::open_in_memory_database;
+    use crate::storage::{open_in_memory_database, StorageError};
 
     /// The id of a freshly-created fact, asserting the commit was a new write
     /// (not a re-observation) — the shape these unit tests exercise.
@@ -854,6 +859,7 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                data_quality: None,
             },
         )
         .expect("structured emit");
@@ -878,6 +884,7 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Sales revenue"),
+                data_quality: None,
             },
         )
         .expect("positional emit");
@@ -935,6 +942,7 @@ mod tests {
                     validation_status: "flagged",
                     drift_json: Some(drift),
                     citation: Some("Przychody netto ze sprzedazy"),
+                    data_quality: None,
                 },
             )
             .expect("record structured fact"),
@@ -982,6 +990,7 @@ mod tests {
                         r#"{"addedLabels":[],"removedLabels":["x"],"unitChanged":null}"#,
                     ),
                     citation: Some("Przychody"),
+                    data_quality: None,
                 },
             )
             .expect("record structured fact"),
@@ -1039,6 +1048,7 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                data_quality: None,
             },
         )
         .expect("aggregator write");
@@ -1060,6 +1070,7 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                data_quality: None,
             },
         )
         .expect("issuer re-observation");
@@ -1102,6 +1113,7 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                data_quality: None,
             },
         )
         .expect("aggregator write");
@@ -1123,6 +1135,7 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                data_quality: None,
             },
         )
         .expect("issuer divergence");
@@ -1162,6 +1175,7 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("hand-entered"),
+                data_quality: None,
             },
         )
         .expect("seed");
@@ -1187,6 +1201,7 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                data_quality: None,
             },
         )
         .expect("issuer write against a manual slot");
@@ -1226,6 +1241,7 @@ mod tests {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("https://biznesradar.example/page | Przychody"),
+            data_quality: None,
         };
         // Two catalog facts sharing ONE period + a non-catalog key (order matters).
         let inputs = vec![
@@ -1275,6 +1291,7 @@ mod tests {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("XTB RB 18/2026 | Revenue"),
+            data_quality: None,
         }
     }
 
@@ -1298,6 +1315,7 @@ mod tests {
             validation_status: "passed",
             drift_json: None,
             citation: Some("Revenue"),
+            data_quality: None,
         }
     }
 
@@ -1469,6 +1487,7 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                data_quality: None,
             },
         )
         .expect("aggregator write");
@@ -1515,6 +1534,7 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                data_quality: None,
             },
         )
         .expect("aggregator write");
@@ -1573,6 +1593,168 @@ mod tests {
             outranked_stored_tier_of(&connection, &fact_id, "html_aggregator")
                 .expect("html_aggregator does not outrank agent"),
             None
+        );
+    }
+
+    // --- ADR 0093 decision 2: `data_quality` canonical vocabulary + the
+    // preliminary-data lifecycle — coexistence and write-path supersession,
+    // exercised through the structured path (`record_structured_fact` /
+    // `create_or_reobserve_financial_fact`). The plain `create_financial_fact`
+    // path (MCP/UI manual writes) is covered directly in
+    // `storage/tests/financials.rs`, since both share the same
+    // `create_financial_fact` stamping logic (T3). ---
+
+    fn quality_input<'a>(
+        company_id: &'a str,
+        document_id: &'a str,
+        value: &'a str,
+        data_quality: &'a str,
+    ) -> StructuredFactInput<'a> {
+        StructuredFactInput {
+            company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: document_id,
+            metric_key: "revenue",
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026 | Revenue"),
+            data_quality: Some(data_quality),
+        }
+    }
+
+    /// `record_structured_fact` rejects an unknown `data_quality` token as a
+    /// typed error rather than silently minting a phantom uniqueness slot
+    /// (`normalize_data_quality`, `storage/financials.rs`).
+    #[test]
+    fn record_structured_fact_rejects_an_unknown_data_quality_token() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let error = record_structured_fact(
+            &connection,
+            quality_input(&company_id, &document_id, "1", "garbage"),
+        )
+        .expect_err("an unknown data_quality token must never be silently slotted");
+        assert!(
+            matches!(
+                error,
+                StorageError::InvalidFinancialsValue {
+                    key: "data_quality",
+                    ref value
+                } if value == "garbage"
+            ),
+            "expected a typed invalid-data_quality error, got {error:?}"
+        );
+    }
+
+    /// A `preliminary` fact and a `final` fact for the same metric/period are
+    /// two DIFFERENT rows in the uniqueness slot (`data_quality` is a slot
+    /// dimension, 0034) — never a UNIQUE violation, never a silent overwrite.
+    #[test]
+    fn preliminary_and_final_coexist_in_the_same_slot() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let preliminary_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "492200000", "preliminary"),
+            )
+            .expect("preliminary write"),
+        );
+        let final_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "495000000", "final"),
+            )
+            .expect("final write"),
+        );
+
+        assert_ne!(preliminary_id, final_id, "distinct rows, same slot");
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(count, 2, "both quality variants persist");
+    }
+
+    /// A `final` fact created into a slot whose sibling is `preliminary` stamps
+    /// `supersedes_id` at it (ADR 0093 decision 2), via the structured path.
+    #[test]
+    fn final_created_next_to_preliminary_stamps_supersedes_id_via_structured_path() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let preliminary_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "492200000", "preliminary"),
+            )
+            .expect("preliminary write"),
+        );
+        let final_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "495000000", "final"),
+            )
+            .expect("final write"),
+        );
+
+        let supersedes_id: Option<String> = connection
+            .query_row(
+                "SELECT supersedes_id FROM financial_facts WHERE id = ?1",
+                [&final_id],
+                |row| row.get(0),
+            )
+            .expect("final row");
+        assert_eq!(supersedes_id, Some(preliminary_id));
+    }
+
+    /// When BOTH a `preliminary` and an `estimated` sibling occupy the slot, a
+    /// later `final` fact supersedes the `preliminary` one — the issuer's own
+    /// preliminary release outranks a third-party estimate (ADR 0093 decision 2).
+    #[test]
+    fn final_prefers_the_preliminary_sibling_over_an_estimated_one() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        record_structured_fact(
+            &connection,
+            quality_input(&company_id, &document_id, "480000000", "estimated"),
+        )
+        .expect("estimated write");
+        let preliminary_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "492200000", "preliminary"),
+            )
+            .expect("preliminary write"),
+        );
+        let final_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "495000000", "final"),
+            )
+            .expect("final write"),
+        );
+
+        let supersedes_id: Option<String> = connection
+            .query_row(
+                "SELECT supersedes_id FROM financial_facts WHERE id = ?1",
+                [&final_id],
+                |row| row.get(0),
+            )
+            .expect("final row");
+        assert_eq!(
+            supersedes_id,
+            Some(preliminary_id),
+            "the issuer-published preliminary must win over a third-party estimate"
         );
     }
 }

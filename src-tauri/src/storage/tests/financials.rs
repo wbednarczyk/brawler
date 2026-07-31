@@ -904,7 +904,9 @@ fn updates_financial_fact() {
             attribution: None,
             variant: None,
             measure_window: None,
-            data_quality: Some("estimate".to_owned()),
+            // ADR 0093 decision 2 canonical vocabulary (`estimate` synonym
+            // migrated to `estimated`).
+            data_quality: Some("estimated".to_owned()),
             as_reported_value: None,
             as_reported_scale: None,
             reporting_standard: None,
@@ -922,7 +924,10 @@ fn updates_financial_fact() {
             id: fact.id.clone(),
             value_numeric: Some("550000".to_owned()),
             currency: Some("EUR".to_owned()),
-            data_quality: Some("final".to_owned()),
+            // `data_quality` is a slot dimension the update path never edits in
+            // place (§4, ADR 0093) — resending the fact's own quality is a
+            // no-op, exercised together with the rest of the field update.
+            data_quality: Some("estimated".to_owned()),
             confirmation_state: Some("provisional".to_owned()),
             supersedes_id: None,
             source_document_ref: Some("revised_report.pdf".to_owned()),
@@ -931,7 +936,7 @@ fn updates_financial_fact() {
         .expect("fact should update");
 
     assert_eq!(updated.value_numeric, "550000");
-    assert_eq!(updated.data_quality, "final");
+    assert_eq!(updated.data_quality, "estimated");
     assert_eq!(updated.confirmation_state, "provisional");
     assert_eq!(
         updated.source_document_ref,
@@ -1130,6 +1135,319 @@ fn update_financial_fact_rejects_a_non_iso_currency_and_normalizes_case() {
         })
         .expect("a lowercase ISO code is normalized");
     assert_eq!(updated.currency.as_deref(), Some("EUR"));
+}
+
+// ---------------------------------------------------------------------------
+// Data quality (ADR 0093 decision 2): `final | preliminary | estimated`
+// canonical vocabulary, normalized at the write boundary
+// (`normalize_data_quality`, the `normalize_currency` pattern); preliminary
+// and final coexist in the slot (`data_quality` is a uniqueness-slot
+// dimension); a `final` fact created into a slot whose sibling is
+// `preliminary`/`estimated` stamps `supersedes_id` at it.
+// ---------------------------------------------------------------------------
+
+fn new_fact_with_quality(
+    company_id: &str,
+    period_id: &str,
+    definition_id: &str,
+    value_numeric: &str,
+    data_quality: Option<&str>,
+) -> NewFinancialFact {
+    NewFinancialFact {
+        company_id: company_id.to_owned(),
+        period_id: period_id.to_owned(),
+        definition_id: definition_id.to_owned(),
+        value_numeric: value_numeric.to_owned(),
+        currency: Some("PLN".to_owned()),
+        statement_basis: None,
+        attribution: None,
+        variant: None,
+        measure_window: None,
+        data_quality: data_quality.map(str::to_owned),
+        as_reported_value: None,
+        as_reported_scale: None,
+        reporting_standard: None,
+        extraction_method: None,
+        confidence: None,
+        confirmation_state: None,
+        supersedes_id: None,
+        source_document_ref: None,
+        annotation: None,
+    }
+}
+
+#[test]
+fn create_financial_fact_defaults_absent_data_quality_to_final() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            None,
+        ))
+        .expect("fact should create");
+    assert_eq!(fact.data_quality, "final");
+}
+
+#[test]
+fn create_financial_fact_normalizes_the_estimate_synonym() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("estimate"),
+        ))
+        .expect("the 'estimate' synonym should normalize, not reject");
+    assert_eq!(fact.data_quality, "estimated");
+}
+
+#[test]
+fn create_financial_fact_rejects_an_unknown_data_quality_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let error = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("garbage"),
+        ))
+        .expect_err("an unknown data_quality token must never be silently slotted");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "data_quality",
+                ref value
+            } if value == "garbage"
+        ),
+        "expected a typed invalid-data_quality error, got {error:?}"
+    );
+}
+
+#[test]
+fn preliminary_and_final_coexist_in_the_same_slot_via_plain_create() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let preliminary = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("preliminary"),
+        ))
+        .expect("preliminary fact should create");
+    let final_fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "495000000",
+            Some("final"),
+        ))
+        .expect("final fact should create");
+
+    assert_ne!(preliminary.id, final_fact.id, "distinct rows, same slot");
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: Some(period_id.clone()),
+            definition_id: Some(definition_id.clone()),
+        })
+        .expect("facts should list");
+    assert_eq!(facts.len(), 2, "both quality variants persist in the slot");
+}
+
+#[test]
+fn create_financial_fact_stamps_supersedes_id_when_a_final_lands_next_to_a_preliminary() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let preliminary = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("preliminary"),
+        ))
+        .expect("preliminary fact should create");
+    let final_fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "495000000",
+            Some("final"),
+        ))
+        .expect("final fact should create");
+
+    assert_eq!(final_fact.supersedes_id, Some(preliminary.id));
+}
+
+#[test]
+fn create_financial_fact_never_stamps_supersedes_id_when_no_sibling_exists() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let final_fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "495000000",
+            Some("final"),
+        ))
+        .expect("final fact should create");
+
+    assert_eq!(final_fact.supersedes_id, None);
+}
+
+#[test]
+fn update_financial_fact_rejects_a_data_quality_change() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("preliminary"),
+        ))
+        .expect("preliminary fact should create");
+
+    let error = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: None,
+            currency: None,
+            data_quality: Some("final".to_owned()),
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect_err(
+            "data_quality is a slot dimension: update must never silently re-slot or raise a raw UNIQUE",
+        );
+    assert!(
+        matches!(
+            error,
+            StorageError::FinancialFactDataQualityLocked {
+                ref id,
+                ref current,
+                ref requested,
+            } if *id == fact.id && current == "preliminary" && requested == "final"
+        ),
+        "expected a typed data_quality-locked error, got {error:?}"
+    );
+
+    // The fact is untouched by the rejected update.
+    let unchanged = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: Some(period_id.clone()),
+            definition_id: Some(definition_id.clone()),
+        })
+        .expect("facts should list")
+        .into_iter()
+        .find(|f| f.id == fact.id)
+        .expect("fact should still exist");
+    assert_eq!(unchanged.data_quality, "preliminary");
+}
+
+#[test]
+fn update_financial_fact_rejects_a_data_quality_change_even_without_a_colliding_sibling() {
+    // No sibling exists at all — but the ADR models the lifecycle as a NEW
+    // final fact superseding a preliminary one, never an in-place edit, so the
+    // rejection is unconditional, not just a collision guard.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("estimated"),
+        ))
+        .expect("estimated fact should create");
+
+    let error = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: None,
+            currency: None,
+            data_quality: Some("preliminary".to_owned()),
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect_err("no colliding sibling still rejects the quality flip");
+    assert!(matches!(
+        error,
+        StorageError::FinancialFactDataQualityLocked { .. }
+    ));
+}
+
+#[test]
+fn update_financial_fact_allows_a_data_quality_resend_that_normalizes_to_the_current_value() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("estimate"),
+        ))
+        .expect("fact should create with the estimate synonym normalized");
+    assert_eq!(fact.data_quality, "estimated");
+
+    let updated = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: Some("493000000".to_owned()),
+            currency: None,
+            data_quality: Some("estimate".to_owned()),
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect(
+            "resending the synonym for the fact's own normalized quality is a no-op, not a rejection",
+        );
+    assert_eq!(updated.data_quality, "estimated");
+    assert_eq!(updated.value_numeric, "493000000");
 }
 
 #[test]
