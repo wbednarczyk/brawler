@@ -1141,7 +1141,7 @@ fn stored_fact_set_filtered(
         return Ok(None);
     };
 
-    let facts = list_financial_facts(
+    let mut facts = list_financial_facts(
         connection,
         ListFinancialFactsInput {
             company_id: None,
@@ -1152,6 +1152,13 @@ fn stored_fact_set_filtered(
     if facts.is_empty() {
         return Ok(None);
     }
+
+    // ADR 0093 dec. 2: `final` beats every other quality for the merge below.
+    // A stable sort keeps the existing recency order (`list_financial_facts`
+    // returns `created_at DESC, id`) among facts of the SAME quality, so the
+    // only thing this changes is which of a `final`/`preliminary` PAIR is
+    // seen first by the slot-once loop.
+    facts.sort_by_key(|f| u8::from(f.data_quality != "final"));
 
     // The map is read out of the CATALOG (not derived from ids), so it stays
     // correct now that non-canonical ids carry a scope discriminator
@@ -1202,7 +1209,13 @@ fn stored_fact_set_filtered(
         let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
             continue;
         };
-        set.insert(metric_key.clone(), value);
+        // Slot-once: facts are pre-sorted final-first, so the first value
+        // seen per metric_key is kept — a later (non-final, or same-quality
+        // but older) sibling never overwrites a final value already in the
+        // set. This is what closes the THE REAL HAZARD (ADR 0093 T4): a
+        // preliminary row can no longer silently shadow its final sibling in
+        // the cross-check prior.
+        set.entry(metric_key.clone()).or_insert(value);
     }
 
     if set.is_empty() {
@@ -1273,6 +1286,9 @@ pub(super) fn stored_fact_set_for_cross_check(
 /// the trust anchor of the history, never a contaminant. Read-only. Bridges
 /// `metric_key` to its definition id the same 1:1 way [`stored_fact_set`] does;
 /// values that don't parse as decimals are skipped rather than failing the read.
+/// ADR 0093 dec. 2: final-preferred, ONE value per period — a
+/// `preliminary`+`final` pair for the same period must not double-weight that
+/// period in the plausibility median.
 pub(super) fn metric_history(
     connection: &Connection,
     company_id: &str,
@@ -1310,14 +1326,36 @@ pub(super) fn metric_history(
         },
     )?;
 
-    let mut values = Vec::new();
+    // Final-preferred, one value per period (ADR 0093 dec. 2): `rank` tracks
+    // the quality of the value currently occupying a period's slot in
+    // `values` (0 = final, 1 = anything else) so a later, lower-priority
+    // sibling can never overwrite a final value already recorded, while a
+    // final arriving after a preliminary (the common case: the audited
+    // filing lands after the preliminary release) upgrades it in place.
+    let mut values: Vec<Decimal> = Vec::new();
+    let mut period_index: HashMap<String, usize> = HashMap::new();
+    let mut period_rank: HashMap<String, u8> = HashMap::new();
     for fact in facts {
         if excluded.contains(&fact.period_id) {
             continue;
         }
-        if let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) {
-            values.push(value);
+        let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
+            continue;
+        };
+        let rank = u8::from(fact.data_quality != "final");
+        if let Some(&existing_rank) = period_rank.get(&fact.period_id) {
+            if existing_rank <= rank {
+                continue;
+            }
         }
+        match period_index.get(&fact.period_id) {
+            Some(&idx) => values[idx] = value,
+            None => {
+                period_index.insert(fact.period_id.clone(), values.len());
+                values.push(value);
+            }
+        }
+        period_rank.insert(fact.period_id.clone(), rank);
     }
     Ok(values)
 }
@@ -1335,7 +1373,9 @@ pub(super) fn metric_history(
 /// fact scan preserves the `created_at DESC, id` order each single read sees, and
 /// filtering to one definition preserves that relative order). Every requested
 /// key is present; a key with no history maps to an empty vector, exactly as the
-/// single read returns `[]`.
+/// single read returns `[]`. Final-preferred, one value per period — the same
+/// ADR 0093 dec. 2 slot-once collapse [`metric_history`] applies, kept
+/// byte-identical between the two paths by the equivalence contract above.
 pub(super) fn metric_histories(
     connection: &Connection,
     company_id: &str,
@@ -1393,6 +1433,14 @@ pub(super) fn metric_histories(
             definition_id: None,
         },
     )?;
+    // Final-preferred, one value per (metric, period) — the batched twin of
+    // the single-read loop in [`metric_history`]. `slot_rank`/`slot_index`
+    // track, per `(metric_key, period_id)`, the quality of the value
+    // currently occupying `result[metric_key]` and its index, so a
+    // lower-priority sibling can never overwrite a final value already
+    // recorded there.
+    let mut slot_rank: HashMap<(String, String), u8> = HashMap::new();
+    let mut slot_index: HashMap<(String, String), usize> = HashMap::new();
     for fact in facts {
         let Some(metric_key) = def_to_metric.get(&fact.definition_id) else {
             continue;
@@ -1400,12 +1448,27 @@ pub(super) fn metric_histories(
         if excluded.contains(&fact.period_id) {
             continue;
         }
-        if let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) {
-            result
-                .get_mut(metric_key)
-                .expect("every requested key is pre-seeded")
-                .push(value);
+        let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
+            continue;
+        };
+        let rank = u8::from(fact.data_quality != "final");
+        let slot_key = (metric_key.clone(), fact.period_id.clone());
+        if let Some(&existing_rank) = slot_rank.get(&slot_key) {
+            if existing_rank <= rank {
+                continue;
+            }
         }
+        let values = result
+            .get_mut(metric_key)
+            .expect("every requested key is pre-seeded");
+        match slot_index.get(&slot_key) {
+            Some(&idx) => values[idx] = value,
+            None => {
+                slot_index.insert(slot_key.clone(), values.len());
+                values.push(value);
+            }
+        }
+        slot_rank.insert(slot_key, rank);
     }
     Ok(result)
 }
@@ -2665,18 +2728,38 @@ pub(super) fn facts_coverage_by_period(
     connection: &Connection,
     company_id: &str,
 ) -> StorageResult<Vec<PeriodFactCoverage>> {
+    // ADR 0093 dec. 2: a preliminary+final pair occupies one SLOT (dims minus
+    // `data_quality`), not two — a naive `COUNT(*)` over `financial_facts`
+    // double-counts it. `slot_ranked` picks the final-preferred row per slot
+    // (`rn = 1`) so the outer aggregate counts each slot exactly once, with
+    // the counted row's OWN provenance bucket (a preliminary-only slot's
+    // `validation_status` still applies — it just never wins over a final
+    // sibling's).
     let mut statement = connection.prepare(
-        "SELECT p.fiscal_year,
-                p.period_type,
+        "WITH slot_ranked AS (
+             SELECT f.id AS fact_id,
+                    p.fiscal_year AS fiscal_year,
+                    p.period_type AS period_type,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY f.period_id, f.definition_id, f.statement_basis,
+                                     f.attribution, f.variant, f.measure_window
+                        ORDER BY CASE f.data_quality WHEN 'final' THEN 0 ELSE 1 END,
+                                 datetime(f.created_at) DESC, f.id
+                    ) AS rn
+             FROM financial_facts f
+             JOIN financial_periods p ON p.id = f.period_id
+             WHERE p.company_id = ?1
+         )
+         SELECT sr.fiscal_year,
+                sr.period_type,
                 COUNT(*) AS total,
                 SUM(CASE WHEN pv.validation_status IN ('passed', 'witness_confirmed')
                          THEN 1 ELSE 0 END) AS validated,
                 SUM(CASE WHEN pv.validation_status = 'flagged' THEN 1 ELSE 0 END) AS flagged
-         FROM financial_facts f
-         JOIN financial_periods p ON p.id = f.period_id
-         LEFT JOIN financial_fact_provenance pv ON pv.fact_id = f.id
-         WHERE p.company_id = ?1
-         GROUP BY p.fiscal_year, p.period_type",
+         FROM slot_ranked sr
+         LEFT JOIN financial_fact_provenance pv ON pv.fact_id = sr.fact_id
+         WHERE sr.rn = 1
+         GROUP BY sr.fiscal_year, sr.period_type",
     )?;
     let rows = statement.query_map([company_id], |row| {
         let fiscal_year: i64 = row.get(0)?;

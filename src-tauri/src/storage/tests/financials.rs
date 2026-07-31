@@ -1,5 +1,9 @@
 use super::*;
 use rust_decimal::Decimal;
+use std::collections::BTreeSet;
+
+use crate::fundamentals::extraction::SourceTier;
+use crate::fundamentals::validation::completeness;
 
 // ---------------------------------------------------------------------------
 // stored_fact_set (ADR 0061 dec. 4b): the comparative cross-check's
@@ -2233,4 +2237,377 @@ fn derived_rows_never_enter_the_completeness_denominator() {
             "total_equity"
         ]
     );
+}
+
+// ---------------------------------------------------------------------------
+// ADR 0093 T4 (epic #285): making the data_quality-blind readers
+// preliminary-aware. One shared fixture, driven through every reader that
+// used to double-count or last-wins its way past the `preliminary`/`final`
+// coexistence ADR 0093 dec. 2 introduced.
+// ---------------------------------------------------------------------------
+
+/// One company, one FY2025 period, three metrics covering every quality shape
+/// the readers must handle:
+/// - `total_assets` (A): a `preliminary` (agent tier, unreviewed) fact
+///   followed by its `final` (esef tier, passed) sibling — the exact ADR 0093
+///   dec. 2 coexistence shape, with a DIFFERENT value so a reader that picks
+///   the wrong one is caught.
+/// - `net_profit` (B): preliminary-only (agent tier) — never confirmed by an
+///   issuer filing.
+/// - `revenue` (C): final-only (esef tier) — the untouched control.
+///
+/// Every fact goes through `record_structured_fact` (not the bare
+/// `create_financial_fact` `seed_fact` helper above) so each one carries a
+/// real `financial_fact_provenance` row — the veto filter and the coverage
+/// validation buckets both key off it.
+struct QualityFixture {
+    company_id: String,
+}
+
+fn seed_quality_fixture(state: &AppState) -> QualityFixture {
+    let company = tracked_company(state);
+
+    // A: preliminary first (chronologically realistic — the agent write
+    // precedes the audited filing), then its final sibling with a DIFFERENT
+    // value.
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-agent",
+            metric_key: "total_assets",
+            value_numeric: "39000000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026"),
+            data_quality: Some("preliminary"),
+        })
+        .expect("preliminary total_assets should record");
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-esef",
+            metric_key: "total_assets",
+            value_numeric: "40000000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("ifrs-full:Assets"),
+            data_quality: None, // normalizes to "final"
+        })
+        .expect("final total_assets should record");
+
+    // B: preliminary-only.
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-agent",
+            metric_key: "net_profit",
+            value_numeric: "1200000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026"),
+            data_quality: Some("preliminary"),
+        })
+        .expect("preliminary-only net_profit should record");
+
+    // C: final-only.
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-esef",
+            metric_key: "revenue",
+            value_numeric: "9000000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("ifrs-full:Revenue"),
+            data_quality: None,
+        })
+        .expect("final-only revenue should record");
+
+    QualityFixture {
+        company_id: company.id,
+    }
+}
+
+/// #1: `facts_coverage_by_period` must count each SLOT once (dims minus
+/// `data_quality`), not each ROW — a preliminary+final pair for `total_assets`
+/// is ONE slot, not two, and the counted row's provenance bucket must be the
+/// final-preferred one.
+#[test]
+fn facts_coverage_by_period_counts_each_slot_once_final_preferred() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let coverage = state
+        .financials()
+        .facts_coverage_by_period(&fixture.company_id)
+        .expect("coverage should read");
+    assert_eq!(coverage.len(), 1, "one period bucket, got {coverage:?}");
+    let cell = &coverage[0];
+    assert_eq!(cell.fiscal_year, 2025);
+    assert_eq!(cell.period_type, "FY");
+    assert_eq!(
+        cell.total, 3,
+        "3 SLOTS (A, B, C) counted once each, not the 4 underlying rows — got {cell:?}"
+    );
+    assert_eq!(
+        cell.validated, 2,
+        "A's FINAL (esef/passed) + C (esef/passed) — A's preliminary sibling must not \
+         contribute its own count: {cell:?}"
+    );
+    assert_eq!(
+        cell.unvalidated, 1,
+        "only B (agent/unreviewed, preliminary-only) is unvalidated: {cell:?}"
+    );
+    assert_eq!(cell.flagged, 0, "{cell:?}");
+}
+
+/// #2 — THE REAL HAZARD: `stored_fact_set_for_cross_check` last-wins map
+/// insertion let a preliminary row silently become the cross-check prior. An
+/// incoming tier that does NOT outrank either of A's siblings (here:
+/// `html_aggregator`, ranked below both `esef` and `agent`) lets BOTH the
+/// preliminary and the final fact survive the tier veto filter — exactly the
+/// scenario where final-preference inside the merge itself (not just the tier
+/// filter) is load-bearing.
+#[test]
+fn stored_fact_set_for_cross_check_final_preferred_slot_once() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let prior = state
+        .financials()
+        .stored_fact_set_for_cross_check(
+            &fixture.company_id,
+            2025,
+            "FY",
+            SourceTier::HtmlAggregator,
+        )
+        .expect("cross-check prior should query")
+        .expect("A, B, C all survive a veto filter with no incoming outranking");
+
+    assert_eq!(
+        prior.len(),
+        3,
+        "A, B, C — one value per metric slot, got {prior:?}"
+    );
+    assert_eq!(
+        prior.get("total_assets"),
+        Some(&Decimal::new(40_000_000, 0)),
+        "A's FINAL value must win over its preliminary sibling in the cross-check prior — a \
+         preliminary must never silently shadow a final value here"
+    );
+    assert_eq!(
+        prior.get("net_profit"),
+        Some(&Decimal::new(1_200_000, 0)),
+        "B (preliminary-only) stays visible in the prior, counted once"
+    );
+    assert_eq!(
+        prior.get("revenue"),
+        Some(&Decimal::new(9_000_000, 0)),
+        "C unchanged"
+    );
+}
+
+/// The unfiltered `stored_fact_set` variant (only test harnesses read it
+/// today, per its doc comment) exercises the same final-preferred merge with
+/// no tier veto filter in play at all.
+#[test]
+fn stored_fact_set_unfiltered_final_preferred_slot_once() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let set = state
+        .financials()
+        .stored_fact_set(&fixture.company_id, 2025, "FY")
+        .expect("stored_fact_set should query")
+        .expect("a period with facts should yield Some");
+
+    assert_eq!(set.len(), 3, "A, B, C — got {set:?}");
+    assert_eq!(
+        set.get("total_assets"),
+        Some(&Decimal::new(40_000_000, 0)),
+        "final must win"
+    );
+}
+
+/// §2 safety property (load-bearing, ADR 0093 dec. 1): an incoming ESEF
+/// (issuer) extraction outranks the agent tier, so EVERY agent-tier fact — A's
+/// preliminary sibling AND B (preliminary-only) — must be excluded from the
+/// veto-capable prior entirely. A tier the incoming outranks cannot veto: it
+/// never even enters the comparison, so a wrong agent preliminary can never
+/// block or contradict a correct issuer filing.
+#[test]
+fn stored_fact_set_for_cross_check_esef_never_vetoed_by_agent_preliminary() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let prior = state
+        .financials()
+        .stored_fact_set_for_cross_check(&fixture.company_id, 2025, "FY", SourceTier::Esef)
+        .expect("cross-check prior should query")
+        .expect("A and C's esef-tier facts still yield a prior");
+
+    assert_eq!(
+        prior.get("total_assets"),
+        Some(&Decimal::new(40_000_000, 0)),
+        "only A's esef-tier FINAL value is veto-capable against an incoming esef set"
+    );
+    assert_eq!(
+        prior.get("revenue"),
+        Some(&Decimal::new(9_000_000, 0)),
+        "C is unaffected"
+    );
+    assert!(
+        !prior.contains_key("net_profit"),
+        "B is agent-tier-only: an incoming ESEF extraction outranks the agent tier (T2), so \
+         the agent tier is not veto-capable here and B is excluded from the prior entirely — \
+         it can never veto the incoming issuer set. Got {prior:?}"
+    );
+    assert_eq!(
+        prior.len(),
+        2,
+        "only A and C survive the tier veto filter: {prior:?}"
+    );
+}
+
+/// #3: `metric_history` must weight each PERIOD once, final-preferred — a
+/// preliminary+final pair for the same period must not double-count into the
+/// plausibility median.
+#[test]
+fn metric_history_final_preferred_one_value_per_period() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    // A nonexistent fiscal year excludes nothing (the same trick
+    // `company_scoped_facts_do_not_leak_into_canonical_metric_history` uses
+    // above with `2999`), so FY2025's facts become "the history".
+    let history = state
+        .financials()
+        .metric_history(&fixture.company_id, "total_assets", 2099, "FY")
+        .expect("metric history should read");
+    assert_eq!(
+        history,
+        vec![Decimal::new(40_000_000, 0)],
+        "one value for the period (final wins), not two — got {history:?}"
+    );
+
+    let b_history = state
+        .financials()
+        .metric_history(&fixture.company_id, "net_profit", 2099, "FY")
+        .expect("metric history should read");
+    assert_eq!(
+        b_history,
+        vec![Decimal::new(1_200_000, 0)],
+        "preliminary-only still counts once"
+    );
+
+    let c_history = state
+        .financials()
+        .metric_history(&fixture.company_id, "revenue", 2099, "FY")
+        .expect("metric history should read");
+    assert_eq!(c_history, vec![Decimal::new(9_000_000, 0)], "unchanged");
+}
+
+/// `metric_history_batch`'s (`metric_histories`) equivalence contract: same
+/// values, same slot-once/final-preferred collapse as the per-metric read.
+#[test]
+fn metric_histories_batch_matches_single_read_final_preferred() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let keys: BTreeSet<String> = ["total_assets", "net_profit", "revenue"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let batch = state
+        .financials()
+        .metric_histories(&fixture.company_id, &keys, 2099, "FY")
+        .expect("batched metric histories should read");
+
+    for key in &keys {
+        let single = state
+            .financials()
+            .metric_history(&fixture.company_id, key, 2099, "FY")
+            .expect("single metric history should read");
+        assert_eq!(
+            batch.get(key),
+            Some(&single),
+            "batch must match the single read exactly for {key}"
+        );
+    }
+    assert_eq!(
+        batch.get("total_assets"),
+        Some(&vec![Decimal::new(40_000_000, 0)]),
+        "final wins, one value per period"
+    );
+}
+
+/// #4: completeness/recall over a stored `FactSet`. The FactSet type carries
+/// no quality axis (`metric_key -> Decimal`) — the smallest honest fix is at
+/// the loader (final-preferred, slot-once, fixed above), never at
+/// `completeness` itself. A preliminary-only metric (B) still counts as
+/// covered — it IS issuer/agent-observed data — and the final-preferred merge
+/// means recall is never inflated by counting A's pair twice.
+#[test]
+fn completeness_over_stored_fact_set_counts_each_slot_once() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let set = state
+        .financials()
+        .stored_fact_set(&fixture.company_id, 2025, "FY")
+        .expect("stored_fact_set should query")
+        .expect("a period with facts should yield Some");
+
+    let expected: BTreeSet<String> = ["total_assets", "net_profit", "revenue", "total_equity"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let result = completeness(&set, &expected);
+
+    assert_eq!(result.expected, 4);
+    assert_eq!(
+        result.present, 3,
+        "A, B, C each count once — a preliminary-only metric (B) counts as covered, but A's \
+         pair must not inflate recall past 3: {result:?}"
+    );
+    assert_eq!(result.missing, vec!["total_equity".to_owned()]);
 }
