@@ -983,3 +983,149 @@ fn the_pull_converges_the_automatic_kpi_relevance_layers() {
     assert!(!expected.contains("ebitda"));
     assert!(expected.contains("net_interest_income"));
 }
+
+// ============================================================================
+// Real-data validation (T5, epic #277) — the ONE exception to this file's "no
+// test touches the network" rule above, explicitly env-gated and inert in CI.
+// ============================================================================
+
+/// Scoped BiznesRadar-primary pull for exactly the bank tickers T5 measures
+/// recall for, reusing the same per-company primitives
+/// (`resolve_aggregator_page` + `pull_one_page`) that
+/// [`run_aggregator_fundamentals_pull`] calls for every tracked company —
+/// narrowed here to avoid paying for a full corpus-wide pull (52 companies × 3
+/// pages, live-fetched) against a throwaway copy just to land two companies'
+/// facts.
+///
+/// **Inert in CI** and env-gated like every other `real_data_*` harness: skips
+/// loudly unless `BRAWLER_REAL_DB` (a throwaway copy) and `BRAWLER_REAL_DATA_DIR`
+/// are set, and refuses the master snapshot / live application database. This
+/// harness performs LIVE BiznesRadar fetches (politeness-cached 1/day per page)
+/// — authorized for T5 real-data validation per the epic #277 plan.
+///
+/// ```text
+/// BRAWLER_REAL_DB=../private/realdata/t4-worktest.sqlite3 \
+///   BRAWLER_REAL_DATA_DIR=/mnt/d/Brawler/Builds/latest/data \
+///   cargo nextest run -p brawler real_data_t5_aggregator_pull_scoped \
+///     --run-ignored all --no-capture
+/// ```
+#[test]
+#[ignore = "real-data validation; needs BRAWLER_REAL_DB (a throwaway copy) + BRAWLER_REAL_DATA_DIR; performs live BiznesRadar fetches"]
+fn real_data_t5_aggregator_pull_scoped() {
+    let Ok(db_path) = std::env::var("BRAWLER_REAL_DB") else {
+        eprintln!(
+            "SKIP real_data_t5_aggregator_pull_scoped: set BRAWLER_REAL_DB to a THROWAWAY copy \
+             of the owner's database (see private/realdata/README.md)"
+        );
+        return;
+    };
+    let Ok(data_dir) = std::env::var("BRAWLER_REAL_DATA_DIR") else {
+        eprintln!(
+            "SKIP real_data_t5_aggregator_pull_scoped: set BRAWLER_REAL_DATA_DIR to the Tauri \
+             data dir holding the fetched report files"
+        );
+        return;
+    };
+    if !std::path::Path::new(&db_path).is_file() {
+        eprintln!("SKIP real_data_t5_aggregator_pull_scoped: no database at {db_path}");
+        return;
+    }
+    // Same write-guard as every other writing real_data_* harness.
+    let file_name = std::path::Path::new(&db_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        file_name != "brawler.sqlite3" && !db_path.starts_with("/mnt/d/"),
+        "refusing to run: {db_path} is the master snapshot or the live application database. \
+         This harness writes — copy it first (private/realdata/README.md)."
+    );
+
+    let connection = crate::storage::open_database(&db_path).expect("open throwaway real db");
+    let state = AppState::with_data_dir(connection, std::path::PathBuf::from(&data_dir))
+        .with_fundamentals_witness_fetcher(Arc::new(
+            crate::source_adapters::biznesradar_fundamentals::HttpFundamentalsWitnessFetcher,
+        ));
+
+    // --- Pass 3 (rebuild_fundamentals ordering): WDF re-scan first, DB-only,
+    // no network — re-runs the cover-note tier (with T2's bank-honesty fix)
+    // over every stored feed item whose body survives, corpus-wide. Cheap
+    // enough to run unscoped even though this test only reports PEO/PKO below.
+    eprintln!("== WDF re-scan (rescan_stored_cover_note_facts) ==");
+    match state.rescan_stored_cover_note_facts() {
+        Ok(rescan) => eprintln!(
+            "  carriers_scanned={} facts_written={} skipped_no_body={} errors={} \
+             no_period={} no_table={} flagged={} deferred={} abstained={}",
+            rescan.carriers_scanned,
+            rescan.facts_written,
+            rescan.skipped_no_body,
+            rescan.errors,
+            rescan.no_period,
+            rescan.no_table,
+            rescan.flagged,
+            rescan.deferred,
+            rescan.abstained,
+        ),
+        Err(error) => eprintln!("  WDF re-scan FAILED: {error}"),
+    }
+
+    let tickers = ["PEO", "PKO"];
+    let companies = state.list_companies().expect("list companies");
+    let tolerance = Tolerance::default();
+    let mut disagreement_ledger: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeSet<String>,
+    > = Default::default();
+
+    for ticker in tickers {
+        let company = companies
+            .iter()
+            .find(|c| c.ticker == ticker)
+            .unwrap_or_else(|| panic!("no company for ticker {ticker}"));
+        let mut summary = AggregatorPullSummary::default();
+        eprintln!("== {ticker} ({}) ==", company.id);
+        for kind in AggregatorPageKind::ALL {
+            match resolve_aggregator_page(&state, &company.id, kind) {
+                PageResolution::Page { html, page_url } => {
+                    eprintln!("  page={kind:?} url={page_url} bytes={}", html.len());
+                    pull_one_page(
+                        &state,
+                        &company.id,
+                        &html,
+                        &page_url,
+                        &tolerance,
+                        &mut summary,
+                        &mut disagreement_ledger,
+                    )
+                    .expect("pull_one_page");
+                }
+                PageResolution::Unavailable(reason) => {
+                    eprintln!("  page={kind:?} UNAVAILABLE {reason:?}");
+                }
+            }
+        }
+        eprintln!(
+            "  written={} updated={} reobserved={} skipped_higher={} disagreements={} \
+             corroborations={} zero_skipped={} pages_empty={}",
+            summary.facts_written,
+            summary.facts_updated,
+            summary.facts_reobserved,
+            summary.slots_skipped_higher_tier,
+            summary.witness_disagreements,
+            summary.witness_corroborations,
+            summary.zero_cells_skipped,
+            summary.pages_empty,
+        );
+        if let Err(error) = state.financials().refresh_kpi_relevance_layers(&company.id) {
+            eprintln!("  kpi_relevance layers refresh error: {error}");
+        }
+    }
+    for (metric_key, hit_companies) in &disagreement_ledger {
+        eprintln!(
+            "  disagreement ledger: {metric_key} contradicted at {} compan{}",
+            hit_companies.len(),
+            if hit_companies.len() == 1 { "y" } else { "ies" }
+        );
+    }
+}
