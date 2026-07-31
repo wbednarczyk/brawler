@@ -135,6 +135,24 @@ pub fn run() {
                 Err(error) => log::warn!("startup container sniff failed: {error}"),
             }
 
+            // Doc-kind self-heal (epic #277 T4, #281): classification is
+            // deterministic Rust over stored title + URL, so a shipped classifier
+            // improvement must reach already-stored rows without waiting for a
+            // manual Reclassify click (the automaton rule — e.g. the #276
+            // package-shape marker left PZU's FY2025 ESEF package at 'other'
+            // until triggered by hand). Same production path as the UI command;
+            // `reclassify_all` writes only rows whose recomputed kind differs,
+            // so a no-drift start is read-only and idempotent.
+            match state.reclassify_report_documents() {
+                Ok(summary) if summary.updated == 0 => {}
+                Ok(summary) => log::info!(
+                    "startup doc-kind reclassify updated {} of {} document(s)",
+                    summary.updated,
+                    summary.total
+                ),
+                Err(error) => log::warn!("startup doc-kind reclassify failed: {error}"),
+            }
+
             // Start the durable-queue worker as isolated lanes (ADR 0059): reclaim
             // crash residue, then drain each lane's kinds on its own threads off the
             // UI thread, so a slow source refresh cannot starve autopilot (ADR 0050).
