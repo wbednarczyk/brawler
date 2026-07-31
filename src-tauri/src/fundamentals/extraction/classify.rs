@@ -83,6 +83,29 @@ const AUDITOR_MARKERS: &[&str] = &[
     " atestacj",
     " bieglego rewidenta",
     " biegłego rewidenta",
+    // English shapes (#270). The dictionary was Polish-only, so every
+    // English-language auditor product read `other` — ORLEN's own
+    // `ORLEN__Group_Review_report_30062025_ENG.pdf` classified `auditor_opinion`
+    // only by the luck of a foreign Polish slug, and honest title-only reading
+    // (epic #229 T3 slug distrust) demoted it. Each marker is anchored to a
+    // second auditor word ("report"/"auditor") rather than the bare token, so a
+    // periodic title carrying "report" (`CBF_Annual_Report_2024.pdf`) or an
+    // auditor-SELECTION announcement (`MB Statement - auditor selection …`, a
+    // governance/other document) cannot reach this branch. Apostrophes normalize
+    // to a space, so `auditor's` and `auditor’s` both match " auditor s report".
+    " review report",
+    // The issuer's own English rendering of `Raport z przegladu` — DataWalk's
+    // `…_Report_on_Review_JSF.pdf` and Pekao's `Auditor_s_Report_on_Review_of_…`.
+    // Needed as a TITLE marker, not just via the slug: the title also carries
+    // `JSF`, so the title-precedence rule below would otherwise read the
+    // auditor's review report as the statement it reviews.
+    " report on review",
+    " independent auditor",
+    " auditor s report",
+    " auditors report",
+    " audit report",
+    " assurance report",
+    " attestation report",
 ];
 
 /// Corporate-governance documents: GM materials, resolutions,
@@ -129,6 +152,13 @@ const OTHER_EARLY_MARKERS: &[&str] = &[
     " szacunkow",
     " list prezesa",
     " do akcjonariusz",
+    // English rendering of `sprawozdanie zarządu z działalności` (#270): KGHM
+    // titles its management-board activity report `MB_report_on_activities_of_
+    // the_KGHM_Group_PSr_2024.pdf`. The `PSr` cadence token makes it look like a
+    // periodic statement, so without this it would be extracted as one —
+    // narrative text mined for financial facts.
+    " report on activities",
+    " report on the activities",
 ];
 
 const PRESENTATION_MARKERS: &[&str] = &[" prezentacj", " presentation"];
@@ -205,6 +235,27 @@ fn matches_any(t: &str, markers: &[&str]) -> bool {
     markers.iter().any(|m| t.contains(m))
 }
 
+/// `(fires_anywhere, fires_from_the_title)` for [`AUDITOR_MARKERS`].
+///
+/// **The URL is not a signal about THIS document** (epic #229 T3 doctrine,
+/// [`docs/data-model.md`] `doc_kind`): the bankier CDN reuses a neighbouring
+/// attachment's filename as the slug, so an auditor marker found only in the
+/// URL is evidence about some *other* file in the same filing. Callers use the
+/// second flag to keep such a marker from overriding what the title says the
+/// document is — content-proven on the maintainer's corpus, where Asseco's own
+/// `Asseco_Poland_jednostkowe_sprawozdanie_finansowe_HY_2023.pdf` is served
+/// under a `23-HY-ACP-Review-Report-…` slug and mBank's auditor-report slug
+/// carries Asseco BS's `Sprawozdanie_finansowe_ABS_2023.xhtml`. Note this is
+/// orthogonal to [`classify_doc_kind_with_slug_trust`], which only fires when
+/// the slug names a *foreign* tracked issuer — both of these slugs belong to
+/// the same filing or an untracked issuer, so nothing else catches them.
+fn auditor_marker_source(title_norm: &str, combined_norm: &str) -> (bool, bool) {
+    (
+        matches_any(combined_norm, AUDITOR_MARKERS),
+        matches_any(title_norm, AUDITOR_MARKERS),
+    )
+}
+
 /// Management activity-report markers ("sprawozdanie [zarządu] z działalności"
 /// / "SzD"). Kept separate from [`FINANCIAL_MARKERS`] because the SzD is NOT a
 /// financial statement — it is deliberately routed to [`DocKind::Other`] via
@@ -236,7 +287,14 @@ pub fn is_management_report(title: &str, url: &str) -> bool {
         return false;
     }
     let t = normalize(&raw);
-    if matches_any(&t, AUDITOR_MARKERS)
+    let t_title = normalize(&title.to_lowercase());
+    // Same title-precedence as the classifier's auditor gate: a URL-only
+    // auditor marker (a neighbouring attachment's slug) must not veto a
+    // document whose own title names a management activity report — that veto
+    // would silently lose the company's holdings table (the KRU class).
+    let (auditor_any, auditor_in_title) = auditor_marker_source(&t_title, &t);
+    let title_names_a_management_report = matches_any(&t_title, MANAGEMENT_REPORT_MARKERS);
+    if (auditor_any && (auditor_in_title || !title_names_a_management_report))
         || matches_any(&t, GOVERNANCE_MARKERS)
         || matches_any(&t, PRESENTATION_MARKERS)
     {
@@ -277,7 +335,20 @@ pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
         return DocKind::Other;
     }
     let t = normalize(&raw);
-    if matches_any(&t, AUDITOR_MARKERS) {
+    // Auditor gate with **title precedence** (epic #229 T3 doctrine, #270): an
+    // auditor marker found only in the URL is about a neighbouring attachment,
+    // so it must not demote a document whose own title names a financial
+    // statement (or is an ESEF package, which IS the filing). A title-borne
+    // marker still wins outright — real SzB titles embed the statement's own
+    // markers (`..._BSSF_MSSF_SzB_PL`), which is why this gate runs first.
+    let title_lower = title.to_lowercase();
+    let t_title = normalize(&title_lower);
+    let (auditor_any, auditor_in_title) = auditor_marker_source(&t_title, &t);
+    let title_names_a_statement = PACKAGE_EXTENSIONS
+        .iter()
+        .any(|ext| title_lower.contains(ext))
+        || matches_any(&t_title, FINANCIAL_MARKERS);
+    if auditor_any && (auditor_in_title || !title_names_a_statement) {
         return DocKind::AuditorOpinion;
     }
     if matches_any(&t, GOVERNANCE_MARKERS) {
@@ -447,6 +518,60 @@ mod tests {
             classify_doc_kind_with_slug_trust("", ssf_slug, false),
             classify_doc_kind("", ssf_slug)
         );
+    }
+
+    /// Epic #229 T3 doctrine (#270): an auditor marker that fires **only from
+    /// the URL** must not demote a document whose own title names a financial
+    /// statement. Real strings from the maintainer's database — the bankier CDN
+    /// serves both of these under a *neighbouring* attachment's slug, and
+    /// neither is rescued by [`classify_doc_kind_with_slug_trust`] (the ACP slug
+    /// is the same issuer's, mBank is not a tracked issuer here).
+    #[test]
+    fn url_only_auditor_marker_never_demotes_a_titled_statement() {
+        // (a) Asseco's own STANDALONE half-year statement, served under the
+        //     neighbouring review-report slug. Title-only it is unambiguously
+        //     standalone; with the slug attached the ssf/jsf axis still follows
+        //     the URL's "consolidated" (the separate, deliberate behavior that
+        //     `classify_doc_kind_with_slug_trust` governs) — what this test
+        //     pins is that it stays a PERIODIC statement either way.
+        let standalone = "Asseco_Poland_jednostkowe_sprawozdanie_finansowe_HY_2023.pdf";
+        let review_slug = "https://www.bankier.pl/static/att/emitent/2023-08/\
+                           23-HY-ACP-Review-Report-PAS-consolidated-condensed-P-01.22-\
+                           _202308241043519806.pdf";
+        assert_eq!(classify_doc_kind(standalone, ""), DocKind::PeriodicJsf);
+        assert_ne!(
+            classify_doc_kind(standalone, review_slug),
+            DocKind::AuditorOpinion,
+            "a neighbouring attachment's slug must not turn a titled statement into an opinion"
+        );
+        assert!(matches!(
+            classify_doc_kind(standalone, review_slug),
+            DocKind::PeriodicSsf | DocKind::PeriodicJsf
+        ));
+
+        // (b) The same shape with a Polish title and an English auditor slug.
+        assert_eq!(
+            classify_doc_kind(
+                "Sprawozdanie_finansowe_ABS_2023.xhtml",
+                "https://www.bankier.pl/static/att/emitent/2024-02/\
+                 mBank-Auditor-s-report-2023-Group_202402290354542351.xhtml"
+            ),
+            DocKind::PeriodicSsf
+        );
+
+        // (c) A title-borne auditor marker still wins outright — real SzB
+        //     titles embed the statement's own markers.
+        assert_eq!(
+            classify_doc_kind("CD_PROJEKT_2024_BSSF_MSSF_SzB_PL.xhtml", ""),
+            DocKind::AuditorOpinion
+        );
+
+        // (d) The same veto is lifted for the management-activity report, whose
+        //     holdings table is lost outright on a false negative (the KRU class).
+        assert!(is_management_report(
+            "HY'23_Sprawozdanie_Zarzadu_z_dzialalnosci_Grupy_Asseco.pdf",
+            review_slug
+        ));
     }
 
     /// G-2: the committed labeled corpus is the taxonomy's contract. Any
