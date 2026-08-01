@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { clearCompaniesFilter } from "./helpers/companiesList";
 
 // Live regression for the 2026-07-14 owner UX reports on the v0.53 price
 // context: (1) "a price chart with no scale shows nothing" — the history line
@@ -22,6 +23,7 @@ test("price history renders with a readable scale and the sector field has no ch
 
   // The owner's own path: Companies → row click → cockpit → Fundamentals tab.
   await page.getByRole("button", { name: /Spółki|Companies/ }).first().click();
+  await clearCompaniesFilter(page);
   const row = page.locator("button[data-company-row]").first();
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.click();

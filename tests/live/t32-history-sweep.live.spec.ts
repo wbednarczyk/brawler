@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { clearCompaniesFilter } from "./helpers/companiesList";
 
 // T3.2 live-drive evidence (ADR 0077 §3): on the owner's real Windows app, run
 // a manual history sweep on CBF from the Coverage panel and watch it complete.
@@ -26,6 +27,7 @@ test("manual history sweep on CBF completes and reports runs", async () => {
   const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
   await expect(nav).toBeVisible();
   await nav.getByRole("button", { name: /Companies|Spółki/ }).click();
+  await clearCompaniesFilter(page);
   await page.locator('[data-company-id="company_gpw_cbf"] .company-row-main').click();
   await expect(page.getByLabel(/Research cockpit|Kokpit badawczy/)).toBeVisible();
 

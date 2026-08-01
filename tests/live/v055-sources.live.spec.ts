@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { clearCompaniesFilter } from "./helpers/companiesList";
 
 // v0.55 live validation (ADR 0069): drives the owner's REAL packaged app — real
 // backend, real local SQLite DB — through the milestone's new source paths:
@@ -94,6 +95,7 @@ test("Diagnostics shows the reconciliation ledger section", async () => {
 test("shortPositions cockpit panel opens from the palette on a real company", async () => {
   test.setTimeout(120_000);
   await openScreen(/Spółki|Companies/);
+  await clearCompaniesFilter(page);
   // Open the first tracked company's cockpit dashboard.
   await page.locator(".company-row, [data-company-row], tbody tr").first().click();
   await page.waitForTimeout(2_000);
