@@ -49,7 +49,7 @@ rust_decimal = { version = "1", default-features = false, features = ["serde-str
 schemars = "0.8"
 scraper = "0.22"
 semver = "1"
-similar = "2"
+similar = "3"
 sha2 = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
