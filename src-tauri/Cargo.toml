@@ -25,7 +25,7 @@ ts-export = ["dep:ts-rs"]
 
 [dependencies]
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 ed25519-dalek = "2"
 # OS-entropy RNG for the MCP bearer token (ADR 0078 decision 4). Pure Rust,
 # already in the tree transitively (same 0.3.x line) — promoted to a direct
