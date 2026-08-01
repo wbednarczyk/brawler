@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.0 - 2026-08-01
+
+
+### Features
+
+- **mcp**: agent acquisition path — preliminary-results ingestion with provenance, agent trust tier, batch fact writes, security-gated capture (epic #285) (#306)
+
 ## v0.62.10 - 2026-07-31
 
 
