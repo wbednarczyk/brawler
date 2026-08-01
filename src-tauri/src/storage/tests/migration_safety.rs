@@ -3193,8 +3193,8 @@ fn migration_0111_seeds_the_parent_attributable_kpi_definitions() {
 /// definition — an unseeded key makes `record_structured_fact` silently drop the
 /// fact at its defensive `NoDefinition` skip (the bug that ate every
 /// parent-attributable WDF metric until migration 0111). The keys are scanned
-/// FROM THE MAPPER SOURCES at test time, so a future `Some("new_key")` or
-/// dictionary entry reddens this test until its seed migration lands.
+/// FROM THE MAPPER SOURCES at test time, so a future mapper return or dictionary
+/// entry reddens this test until its seed migration lands.
 #[test]
 fn every_emittable_metric_key_has_a_canonical_definition() {
     use std::collections::BTreeSet;
@@ -3217,16 +3217,51 @@ fn every_emittable_metric_key_has_a_canonical_definition() {
         keys.insert(capture[1].to_owned());
     }
 
-    // 2. The WDF cover-note row mapper: `Some("metric_key")` returns.
+    // 2. The WDF cover-note row mapper. `classify` returns `Option<&'static str>`,
+    //    so every key it can emit is a string literal in ITS BODY — which is what
+    //    this scans, rather than the `Some("literal")` shape it used to match.
+    //    That shape was blind to `Some(if cond { "a" } else { "b" })`, and three
+    //    keys shipped unseeded behind the blind spot (issue #309:
+    //    `wdf_book_value_per_share`, its rozwodniona twin, and
+    //    `wdf_ebitda_przed_odpisami_aktualizujacymi_netto`). A body scan is
+    //    shape-independent, so a future `match` arm, `unwrap_or`, or lookup table
+    //    is covered too. The literals in the body that are NOT keys are the label
+    //    predicates' arguments and the row wording quoted in comments; both are
+    //    stripped first, leaving exactly the returned vocabulary.
     let wdf_src = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/fundamentals/extraction/espi_cover_note.rs"
     ));
-    let some_re = regex::Regex::new(r#"Some\(\s*\n?\s*"([a-z][a-z0-9_]{2,})",?\s*\n?\s*\)"#)
-        .expect("some regex");
-    for capture in some_re.captures_iter(wdf_src) {
+    let classify_body = {
+        let start = wdf_src
+            .find("\nfn classify(")
+            .expect("espi_cover_note must define `fn classify(` at top level");
+        let rest = &wdf_src[start + 1..];
+        let end = rest
+            .find("\n}\n")
+            .expect("`fn classify` body must end at a column-0 brace");
+        &rest[..end]
+    };
+    let comment_re = regex::Regex::new(r"//[^\n]*").expect("comment regex");
+    let predicate_re = regex::Regex::new(r#"(?:contains|starts_with|ends_with)\(\s*"[^"]*"\s*\)"#)
+        .expect("predicate regex");
+    let comparison_re = regex::Regex::new(r#"==\s*"[^"]*""#).expect("comparison regex");
+    let body = comment_re.replace_all(classify_body, "");
+    let body = predicate_re.replace_all(&body, "");
+    let body = comparison_re.replace_all(&body, "");
+    let literal_re = regex::Regex::new(r#""([a-z][a-z0-9_]{2,})""#).expect("literal regex");
+    let mut wdf_key_count = 0usize;
+    for capture in literal_re.captures_iter(&body) {
         keys.insert(capture[1].to_owned());
+        wdf_key_count += 1;
     }
+    // The mapper's vocabulary is ~40 keys; a scan that suddenly sees a handful
+    // means `classify` was split or restructured and the body no longer holds the
+    // returns — the scan must be re-pointed, not silently narrowed.
+    assert!(
+        wdf_key_count >= 30,
+        "the cover-note body scan must find the mapper vocabulary; got only {wdf_key_count}"
+    );
 
     // 3. The ESEF concept map: `"Concept" => "metric_key"` match arms.
     let esef_src = include_str!(concat!(

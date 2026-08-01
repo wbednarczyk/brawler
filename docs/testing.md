@@ -586,6 +586,11 @@ three gates:
   mapper, ESEF concept map) at test time; every emitted `metric_key` must resolve to a seeded
   canonical `kpi_definitions` row, else facts silently drop at `NoDefinition`. A new mapper key
   reddens the gate until its seed migration lands (first catch: 16 unseeded WDF keys → 0112).
+  **A source-scan gate must match the emitting FUNCTION, not one return shape** (#309, 2026-08-01):
+  the WDF scan matched `Some("literal")` and was blind to `Some(if … { "a" } else { "b" })`, so
+  three more keys shipped unseeded behind a gate that read green. It now scans the whole `classify`
+  body (predicate arguments and quoted comment wording stripped) and asserts the scan still finds
+  ≥30 keys, so a restructure that empties it reddens instead of silently narrowing coverage.
 - **G2 — source-vocabulary contract** (`source_vocabulary_contract_golden`, `html/tests.rs`): a
   golden snapshot pinning every statement row of every checked-in real BiznesRadar page as
   `(data-field, label, mapping outcome)`. A BR vocabulary change OR a dictionary prefix silently

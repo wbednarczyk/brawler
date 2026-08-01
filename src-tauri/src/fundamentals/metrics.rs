@@ -84,6 +84,11 @@ pub(crate) const STOCK_METRIC_KEYS: &[&str] = &[
     "wdf_noncurrent_assets",
     "wdf_noncurrent_liabilities",
     "wdf_share_capital",
+    // Book value per share is equity-at-a-date divided by a share count at the
+    // same date — a balance expressed per share is still a balance, so span
+    // arithmetic over it is the same category error (migration 0131, #309).
+    "wdf_book_value_per_share",
+    "wdf_rozwodniona_wartosc_ksiegowa_na_jedna_akcje",
     // Derived aggregates of the above — sums of balances are still balances
     // (migrations 0034/0050/0072).
     "capital_employed",
