@@ -10,10 +10,76 @@ export type FactMatrixRow = {
   cells: Record<string, FinancialFact>;
 };
 
+export type FactMatrixGroupKey =
+  | "income"
+  | "balance"
+  | "cash_flow"
+  | "per_share"
+  | "company"
+  | "other";
+
+export type FactMatrixGroup = {
+  key: FactMatrixGroupKey;
+  rows: FactMatrixRow[];
+};
+
 export type FactMatrix = {
   periods: FinancialPeriod[];
   rows: FactMatrixRow[];
+  // Rows grouped under a display group, in the fixed approved order, with
+  // empty groups omitted (card #307). Derived from `rows` — always in sync.
+  groups: FactMatrixGroup[];
 };
+
+// Display order (approved mockup, card #307): Rachunek wyników / Bilans /
+// Przepływy pieniężne / Na akcję / KPI operacyjne spółki / Pozostałe. Labels
+// are localized by the caller (FundamentalsPanel) — this module stays
+// locale-free, carrying one stable key per group.
+const GROUP_ORDER: FactMatrixGroupKey[] = [
+  "income",
+  "balance",
+  "cash_flow",
+  "per_share",
+  "company",
+  "other",
+];
+
+// Frontend display rule (card #307): a company-scoped definition (an agent's
+// or the owner's own issuer-characteristic KPI) renders under "KPI operacyjne
+// spółki" regardless of `statementGroup` — UNLESS it carries an explicit
+// non-'other' `statementGroup` (future), in which case it sorts into that
+// statement group like any other row. So `scope === 'company'` only wins when
+// `statementGroup` is still at the backend's `other` default.
+function groupKeyFor(row: FactMatrixRow): FactMatrixGroupKey {
+  const { scope, statementGroup } = row.definition;
+  const isDefaultOther = !statementGroup || statementGroup === "other";
+  if (scope === "company" && isDefaultOther) return "company";
+  switch (statementGroup) {
+    case "income":
+    case "balance":
+    case "cash_flow":
+    case "per_share":
+      return statementGroup;
+    default:
+      return "other";
+  }
+}
+
+// Groups matrix rows under their display group, in the fixed approved order,
+// omitting any group with no rows (the mockup's "hide empty groups" rule).
+// Row order within a group preserves `rows`' incoming order.
+export function groupFactMatrixRows(rows: FactMatrixRow[]): FactMatrixGroup[] {
+  const buckets = new Map<FactMatrixGroupKey, FactMatrixRow[]>();
+  for (const row of rows) {
+    const key = groupKeyFor(row);
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(row);
+    else buckets.set(key, [row]);
+  }
+  return GROUP_ORDER.map((key) => ({ key, rows: buckets.get(key) ?? [] })).filter(
+    (group) => group.rows.length > 0,
+  );
+}
 
 const PERIOD_RANK: Record<string, string> = {
   q1: "03",
@@ -81,7 +147,7 @@ export function buildFactMatrix(
     return { definition, cells };
   });
 
-  return { periods: sortedPeriods, rows };
+  return { periods: sortedPeriods, rows, groups: groupFactMatrixRows(rows) };
 }
 
 // Placeholder definition for a fact whose KPI definition isn't loaded, so the
@@ -101,6 +167,7 @@ function syntheticDefinition(definitionId: string): KpiDefinition {
     formula: null,
     displayFormat: null,
     origin: "user",
+    statementGroup: "other",
     createdAt: "",
     updatedAt: "",
   };

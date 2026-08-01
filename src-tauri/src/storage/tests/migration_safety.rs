@@ -4356,3 +4356,89 @@ fn migration_0129_backfills_seed_origin_by_bare_id_shape_only() {
     apply_migrations(&mut connection).expect("re-run must be safe");
     assert_eq!(origin_of(&connection, "kpidef_test_seed_metric"), "seed");
 }
+
+/// Migration `0130` (card #307): `kpi_definitions` gains a `statement_group`
+/// column (`income | balance | cash_flow | per_share | other`), backfilled by
+/// metric_key for the canonical/sector catalog — guarded to bare ids only
+/// (`id NOT GLOB '*__*'`, the 0129 shape) so a company/user/agent row sharing a
+/// canonical metric_key (e.g. a company's own "revenue" concept) never
+/// inherits the seeded classification.
+#[test]
+fn migration_0130_backfills_statement_group_by_metric_key_bare_ids_only() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 129).expect("apply schema through 0129");
+
+    let has_column: bool = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('kpi_definitions') WHERE name = 'statement_group'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("pragma_table_info")
+        > 0;
+    assert!(!has_column, "statement_group must not exist before 0130");
+
+    connection
+        .execute_batch(
+            "INSERT INTO kpi_definitions (id, scope, company_id, metric_key, label, value_kind, computation)
+                VALUES
+                    -- A runtime company-scoped custom KPI that reuses the 'revenue' metric key
+                    -- (ADR 0077 d.8 no-repaint rule): must NOT inherit 'income'.
+                    ('kpidef_revenue__c_xtb', 'company', NULL, 'revenue', 'Revenue (as XTB defines it)', 'monetary', 'reported'),
+                    -- A runtime user-scope custom metric: stays 'other' (DEFAULT).
+                    ('kpidef_custom_metric__user_', 'user', NULL, 'custom_metric', 'Custom Metric', 'ratio', 'reported');",
+        )
+        .expect("seed kpi_definitions rows across the non-canonical id shapes");
+
+    apply_migrations(&mut connection).expect("apply migration 0130");
+
+    let group_of = |conn: &rusqlite::Connection, id: &str| -> String {
+        conn.query_row(
+            "SELECT statement_group FROM kpi_definitions WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("row {id} should exist"))
+    };
+
+    // Real seeded canonical definitions (0034/0072/0089/0110/0112) backfill by
+    // their metric_key, one per group.
+    assert_eq!(group_of(&connection, "kpidef_revenue"), "income");
+    assert_eq!(group_of(&connection, "kpidef_total_assets"), "balance");
+    assert_eq!(
+        group_of(&connection, "kpidef_operating_cash_flow"),
+        "cash_flow"
+    );
+    assert_eq!(group_of(&connection, "kpidef_eps_basic"), "per_share");
+    assert_eq!(
+        group_of(&connection, "kpidef_roe"),
+        "other",
+        "a canonical ratio with no explicit mapping stays at the DEFAULT"
+    );
+    // A bare hand-written sector-pack id (banking): the 0034/0048 shape.
+    assert_eq!(
+        group_of(&connection, "kpidef_bank_net_interest_income"),
+        "income"
+    );
+    assert_eq!(group_of(&connection, "kpidef_bank_total_loans"), "balance");
+    // A wdf_ issuer-row key (0112).
+    assert_eq!(
+        group_of(&connection, "kpidef_wdf_net_cash_change"),
+        "cash_flow"
+    );
+
+    assert_eq!(
+        group_of(&connection, "kpidef_revenue__c_xtb"),
+        "other",
+        "a company-scoped row must never inherit the canonical classification, even sharing the metric_key"
+    );
+    assert_eq!(
+        group_of(&connection, "kpidef_custom_metric__user_"),
+        "other",
+        "a runtime user-scope custom metric is left at the DEFAULT"
+    );
+
+    // Idempotent re-run: no error, backfill is stable.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(group_of(&connection, "kpidef_revenue"), "income");
+}

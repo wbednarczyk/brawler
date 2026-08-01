@@ -2240,6 +2240,94 @@ mod tests {
         );
     }
 
+    /// Card #307: `create_kpi_definition` over MCP accepts an explicit
+    /// `statementGroup` from the caller (unlike `origin`, nothing forces this
+    /// field) and stores it verbatim when it is a valid vocabulary token.
+    #[test]
+    fn create_kpi_definition_over_mcp_accepts_a_valid_statement_group() {
+        let state = act_state();
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "SGD".to_owned(),
+                display_name: "Statement Group S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_kpi_definition",
+            &json!({
+                "scope": "company",
+                "companyId": company.id,
+                "metricKey": "cfd_lots_traded",
+                "label": "CFD lots traded",
+                "valueKind": "count",
+                "computation": "reported",
+                "statementGroup": "cash_flow",
+            }),
+        )
+        .expect("domain outcome");
+        assert!(
+            matches!(outcome, ToolOutcome::Success(_)),
+            "expected a Success outcome: {outcome:?}"
+        );
+
+        let definitions = state
+            .list_kpi_definitions(storage::ListKpiDefinitionsInput {
+                scope: None,
+                sector: None,
+                company_id: None,
+            })
+            .expect("definitions should list");
+        let definition = definitions
+            .iter()
+            .find(|d| d.metric_key == "cfd_lots_traded")
+            .expect("the definition should exist");
+        assert_eq!(definition.statement_group, "cash_flow");
+    }
+
+    /// Card #307: an unknown `statementGroup` token is a typed refusal, not a
+    /// silently-accepted catalog pollution — same shape as the metricKey guard.
+    #[test]
+    fn create_kpi_definition_over_mcp_rejects_an_unknown_statement_group() {
+        let state = act_state();
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_kpi_definition",
+            &json!({
+                "scope": "company",
+                "companyId": "irrelevant",
+                "metricKey": "garbage_group_metric",
+                "label": "Garbage Group Metric",
+                "valueKind": "count",
+                "computation": "reported",
+                "statementGroup": "nonsense",
+            }),
+        )
+        .expect("domain outcome");
+        assert_eq!(failure_code(outcome), CommandErrorCode::InvalidInput);
+
+        assert!(
+            state
+                .list_kpi_definitions(storage::ListKpiDefinitionsInput {
+                    scope: None,
+                    sector: None,
+                    company_id: None,
+                })
+                .expect("definitions should list")
+                .iter()
+                .all(|d| d.metric_key != "garbage_group_metric"),
+            "a rejected statementGroup must never be written"
+        );
+    }
+
     /// End-to-end: with writes on and citations present, set_qualitative_verdicts
     /// persists, and the get_quality_assessment READ tool returns the verdict.
     #[test]

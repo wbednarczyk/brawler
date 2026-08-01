@@ -219,6 +219,7 @@ mod tests {
                 formula: None,
                 display_format: None,
                 origin: None,
+                statement_group: None,
             })
             .expect("definition")
             .id

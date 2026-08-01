@@ -50,6 +50,13 @@ pub struct KpiDefinition {
     /// characteristic-KPI UI; minted definitions are extras, never
     /// completeness-denominator entries.
     pub origin: String,
+    /// `income | balance | cash_flow | per_share | other` (migration `0130`,
+    /// card #307): which statement a KPI belongs to — the single source of
+    /// truth the grouped fundamentals matrix renders rows by (frontend
+    /// `factMatrix.ts`). `other` is also the DEFAULT for every non-canonical
+    /// row (company/user/agent-created); the matrix's own display rule routes
+    /// `scope='company'` rows into "KPI operacyjne spółki" ahead of this field.
+    pub statement_group: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -170,6 +177,12 @@ pub struct NewKpiDefinition {
     /// regardless of caller input — same pattern as `NewFinancialFact.
     /// extraction_method`.
     pub origin: Option<String>,
+    /// `income | balance | cash_flow | per_share | other` (default, card
+    /// #307). Optional on every live writer (UI create command and the MCP
+    /// `create_kpi_definition` act both leave it to the caller/default —
+    /// unlike `origin`, nothing forces this field); validated against the
+    /// fixed vocabulary, never freeform.
+    pub statement_group: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -317,6 +330,7 @@ pub(super) fn list_kpi_definitions(
             formula,
             display_format,
             origin,
+            statement_group,
             created_at,
             updated_at
         FROM kpi_definitions
@@ -362,6 +376,28 @@ fn normalize_kpi_definition_origin(origin: Option<String>) -> StorageResult<Stri
     }
 }
 
+/// Canonicalizes `kpi_definitions.statement_group` at the write boundary
+/// (card #307, mirrors `normalize_kpi_definition_origin`). Absent/empty ->
+/// the `other` default; any other value must be one of the fixed vocabulary
+/// the grouped fundamentals matrix renders by.
+fn normalize_kpi_definition_statement_group(
+    statement_group: Option<String>,
+) -> StorageResult<String> {
+    let value = statement_group
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("other")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "income" | "balance" | "cash_flow" | "per_share" | "other" => Ok(value),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "statement_group",
+            value,
+        }),
+    }
+}
+
 pub(super) fn create_kpi_definition(
     connection: &Connection,
     input: NewKpiDefinition,
@@ -377,6 +413,7 @@ pub(super) fn create_kpi_definition(
     let formula = empty_string_to_none(input.formula.map(|s| s.trim().to_owned()));
     let display_format = empty_string_to_none(input.display_format.map(|s| s.trim().to_owned()));
     let origin = normalize_kpi_definition_origin(input.origin)?;
+    let statement_group = normalize_kpi_definition_statement_group(input.statement_group)?;
 
     if metric_key.is_empty() {
         return Err(StorageError::InvalidFinancialsValue {
@@ -406,8 +443,9 @@ pub(super) fn create_kpi_definition(
             computation,
             formula,
             display_format,
-            origin
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            origin,
+            statement_group
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
         ",
         params![
             id,
@@ -421,7 +459,8 @@ pub(super) fn create_kpi_definition(
             computation,
             formula,
             display_format,
-            origin
+            origin,
+            statement_group
         ],
     )?;
 
@@ -2036,6 +2075,7 @@ fn get_kpi_definition(connection: &Connection, id: &str) -> StorageResult<KpiDef
                 formula,
                 display_format,
                 origin,
+                statement_group,
                 created_at,
                 updated_at
             FROM kpi_definitions
@@ -2145,8 +2185,9 @@ fn kpi_definition_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KpiDefin
         formula: row.get(9)?,
         display_format: row.get(10)?,
         origin: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        statement_group: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 

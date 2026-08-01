@@ -110,6 +110,11 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     expect(remove.clipped, "Remove button label is clipped").toBe(false);
     expect(remove.width, "Remove button is squeezed to icon width").toBeGreaterThan(56);
 
+    // The fact detail is a Modal since card #307 — close it before moving on,
+    // or its overlay intercepts every later click in the journey.
+    await page.keyboard.press("Escape");
+    await expect(factDetail).toBeHidden();
+
     // Resolve a due management claim from the workspace Claims tab, at the real
     // pane size the current project viewport gives it — no forced 900×700
     // shortcut (Q3, ADR 0081). The manual claims path survives ADR 0084.
