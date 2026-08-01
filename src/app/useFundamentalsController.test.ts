@@ -47,6 +47,7 @@ const fact: FinancialFact = {
   companyId: "company_gpw_cdr",
   periodId: "period_1",
   definitionId: "kpi_revenue",
+  metricKey: "revenue",
   valueNumeric: "1000",
   currency: "PLN",
   statementBasis: "consolidated",

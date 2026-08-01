@@ -963,6 +963,20 @@ fn lists_financial_facts_by_company() {
 
     assert_eq!(facts.len(), 2);
     assert!(facts.iter().all(|f| f.company_id == company.id));
+
+    // An agent reading its own writes back must not have to reverse-engineer
+    // the metric from the definition id — the list carries metricKey directly
+    // (epic #285 surface bug).
+    let net_profit_fact = facts
+        .iter()
+        .find(|f| f.definition_id == net_profit_def.id)
+        .expect("net_profit fact should be present");
+    assert_eq!(net_profit_fact.metric_key, net_profit_def.metric_key);
+    let revenue_fact = facts
+        .iter()
+        .find(|f| f.definition_id == revenue_def.id)
+        .expect("revenue fact should be present");
+    assert_eq!(revenue_fact.metric_key, revenue_def.metric_key);
 }
 
 #[test]

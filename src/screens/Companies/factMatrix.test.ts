@@ -35,12 +35,13 @@ function definition(id: string, metricKey: string, label: string): KpiDefinition
   };
 }
 
-function fact(id: string, periodId: string, definitionId: string): FinancialFact {
+function fact(id: string, periodId: string, definitionId: string, metricKey = definitionId): FinancialFact {
   return {
     id,
     companyId: "co1",
     periodId,
     definitionId,
+    metricKey,
     valueNumeric: "1",
     currency: "PLN",
     statementBasis: "consolidated",

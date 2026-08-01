@@ -108,6 +108,13 @@ pub struct FinancialFact {
     pub annotation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// The definition's `metric_key`, joined in from `kpi_definitions` (one
+    /// hop away from `definition_id`, which is `NOT NULL REFERENCES
+    /// kpi_definitions(id) ON DELETE CASCADE` — a fact can never outlive its
+    /// definition). Lets a reader — notably an MCP agent reading back its own
+    /// writes — identify the metric without reverse-engineering it from the
+    /// definition id (epic #285 surface bug).
+    pub metric_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1040,33 +1047,35 @@ pub(super) fn list_financial_facts(
     let mut statement = connection.prepare(
         "
         SELECT
-            id,
-            company_id,
-            period_id,
-            definition_id,
-            value_numeric,
-            currency,
-            statement_basis,
-            attribution,
-            variant,
-            measure_window,
-            data_quality,
-            as_reported_value,
-            as_reported_scale,
-            reporting_standard,
-            extraction_method,
-            confidence,
-            confirmation_state,
-            supersedes_id,
-            source_document_ref,
-            annotation,
-            created_at,
-            updated_at
-        FROM financial_facts
-        WHERE (?1 IS NULL OR company_id = ?1)
-            AND (?2 IS NULL OR period_id = ?2)
-            AND (?3 IS NULL OR definition_id = ?3)
-        ORDER BY datetime(created_at) DESC, id
+            f.id,
+            f.company_id,
+            f.period_id,
+            f.definition_id,
+            f.value_numeric,
+            f.currency,
+            f.statement_basis,
+            f.attribution,
+            f.variant,
+            f.measure_window,
+            f.data_quality,
+            f.as_reported_value,
+            f.as_reported_scale,
+            f.reporting_standard,
+            f.extraction_method,
+            f.confidence,
+            f.confirmation_state,
+            f.supersedes_id,
+            f.source_document_ref,
+            f.annotation,
+            f.created_at,
+            f.updated_at,
+            d.metric_key
+        FROM financial_facts f
+        JOIN kpi_definitions d ON d.id = f.definition_id
+        WHERE (?1 IS NULL OR f.company_id = ?1)
+            AND (?2 IS NULL OR f.period_id = ?2)
+            AND (?3 IS NULL OR f.definition_id = ?3)
+        ORDER BY datetime(f.created_at) DESC, f.id
         ",
     )?;
 
@@ -2089,30 +2098,32 @@ fn get_financial_fact(connection: &Connection, id: &str) -> StorageResult<Financ
         .query_row(
             "
             SELECT
-                id,
-                company_id,
-                period_id,
-                definition_id,
-                value_numeric,
-                currency,
-                statement_basis,
-                attribution,
-                variant,
-                measure_window,
-                data_quality,
-                as_reported_value,
-                as_reported_scale,
-                reporting_standard,
-                extraction_method,
-                confidence,
-                confirmation_state,
-                supersedes_id,
-                source_document_ref,
-                annotation,
-                created_at,
-                updated_at
-            FROM financial_facts
-            WHERE id = ?1
+                f.id,
+                f.company_id,
+                f.period_id,
+                f.definition_id,
+                f.value_numeric,
+                f.currency,
+                f.statement_basis,
+                f.attribution,
+                f.variant,
+                f.measure_window,
+                f.data_quality,
+                f.as_reported_value,
+                f.as_reported_scale,
+                f.reporting_standard,
+                f.extraction_method,
+                f.confidence,
+                f.confirmation_state,
+                f.supersedes_id,
+                f.source_document_ref,
+                f.annotation,
+                f.created_at,
+                f.updated_at,
+                d.metric_key
+            FROM financial_facts f
+            JOIN kpi_definitions d ON d.id = f.definition_id
+            WHERE f.id = ?1
             ",
             [id],
             financial_fact_from_row,
@@ -2191,6 +2202,7 @@ fn financial_fact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Financia
         annotation: row.get(19)?,
         created_at: row.get(20)?,
         updated_at: row.get(21)?,
+        metric_key: row.get(22)?,
     })
 }
 

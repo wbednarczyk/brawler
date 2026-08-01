@@ -242,12 +242,13 @@ function kpiDef(id: string, metricKey: string, valueKind: string): KpiDefinition
   };
 }
 
-function fact(id: string, definitionId: string, periodId: string): FinancialFact {
+function fact(id: string, definitionId: string, periodId: string, metricKey = definitionId): FinancialFact {
   return {
     id,
     companyId: "company_gpw_cdr",
     periodId,
     definitionId,
+    metricKey,
     valueNumeric: "1",
     currency: "PLN",
     statementBasis: "consolidated",

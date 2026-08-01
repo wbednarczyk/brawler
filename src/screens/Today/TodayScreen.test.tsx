@@ -54,6 +54,7 @@ const baseFinancialFact = {
   companyId: pinnedCompanyId,
   periodId: "period_1",
   definitionId: "kpi_revenue",
+  metricKey: "revenue",
   valueNumeric: "100",
   currency: "USD",
   statementBasis: "consolidated",

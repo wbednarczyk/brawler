@@ -153,6 +153,7 @@ function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
     companyId: company.id,
     periodId: supersededPeriod.id,
     definitionId: definition.id,
+    metricKey: definition.metricKey,
     valueNumeric: "980000000",
     currency: "PLN",
     statementBasis: "consolidated",
