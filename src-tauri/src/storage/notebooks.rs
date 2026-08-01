@@ -81,6 +81,13 @@ pub(super) fn create_notebook_entry(
                 "ai_analysis",
                 "manual",
                 "external_url",
+                // A stored `report_documents` row (closes #111) — the
+                // document an agent (or the owner) actually read, as opposed
+                // to `external_url`'s bare link. `source_id` is a soft
+                // reference to `report_documents.id`: NOT FK-checked, the
+                // same parity every other origin type's `source_id` keeps
+                // (none of them are FK-checked either — see the loop above).
+                "report_document",
             ],
         )?;
     }

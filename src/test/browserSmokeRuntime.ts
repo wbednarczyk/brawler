@@ -1017,6 +1017,8 @@ function kpiDefinition(
     computation,
     formula: computation === "derived" ? "gross_profit / revenue" : null,
     displayFormat: valueKind === "monetary" ? "millions" : null,
+    // Matches the real seed: canonical KPIs backfill origin "seed" (0129).
+    origin: "seed",
     createdAt: NOW,
     updatedAt: NOW,
   };

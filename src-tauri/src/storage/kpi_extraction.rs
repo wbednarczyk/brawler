@@ -645,6 +645,30 @@ fn write_fact_provenance(
     fact_id: &str,
     input: &StructuredFactInput<'_>,
 ) -> StorageResult<()> {
+    write_fact_provenance_fields(
+        connection,
+        fact_id,
+        input.source_tier,
+        input.validation_status,
+        input.drift_json,
+        input.citation,
+    )
+}
+
+/// The field-level primitive [`write_fact_provenance`] delegates to — the ONE
+/// upsert every provenance writer shares, including the legacy single-fact MCP
+/// `create_financial_fact`/`update_financial_fact` act path (ADR 0093
+/// decision 1 honesty rule, epic #285 T9), which has no natural
+/// [`StructuredFactInput`] to build (it writes by already-resolved
+/// `period_id`/`definition_id`, never by `metric_key`).
+fn write_fact_provenance_fields(
+    connection: &Connection,
+    fact_id: &str,
+    source_tier: &str,
+    validation_status: &str,
+    drift_json: Option<&str>,
+    citation: Option<&str>,
+) -> StorageResult<()> {
     connection.execute(
         "
         INSERT INTO financial_fact_provenance
@@ -662,10 +686,10 @@ fn write_fact_provenance(
         ",
         params![
             fact_id,
-            input.source_tier,
-            input.validation_status,
-            input.drift_json,
-            input.citation,
+            source_tier,
+            validation_status,
+            drift_json,
+            citation
         ],
     )?;
     Ok(())
@@ -736,6 +760,26 @@ impl KpiExtractionStore {
         let result = record_structured_fact(&tx, input)?;
         tx.commit()?;
         Ok(result)
+    }
+
+    /// Stamps honest MCP-agent provenance on a fact written through the
+    /// LEGACY single-fact `create_financial_fact`/`update_financial_fact` MCP
+    /// act path (ADR 0093 decision 1 honesty rule, epic #285 T9):
+    /// `source_tier='agent'`, `validation_status='unreviewed'` (no validation
+    /// gate runs on this single-fact path — the honest label;
+    /// `record_financial_facts`/T7 is the validated batch path), no drift.
+    /// Reuses the exact upsert `record_structured_fact`/`record_aggregator_fact`
+    /// share, so a slot this stamps is a real rung on the trust ladder: a
+    /// later issuer-tier write still upgrades it in place — the "no
+    /// provenance = untouchable forever" hole an MCP write used to leave
+    /// behind is closed.
+    pub fn stamp_agent_fact_provenance(
+        &self,
+        fact_id: &str,
+        citation: Option<&str>,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        write_fact_provenance_fields(&connection, fact_id, "agent", "unreviewed", None, citation)
     }
 
     /// Idempotently ensures a fiscal period exists and returns its id (ADR 0093

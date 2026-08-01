@@ -236,6 +236,7 @@ function kpiDef(id: string, metricKey: string, valueKind: string): KpiDefinition
     computation: "reported",
     formula: null,
     displayFormat: null,
+    origin: "seed",
     createdAt: "",
     updatedAt: "",
   };

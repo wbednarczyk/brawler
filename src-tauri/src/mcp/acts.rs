@@ -99,21 +99,74 @@ act_handler!(
     |state, input| state.set_claim_verdict(input).map_err(CommandError::from)
 );
 
-act_handler!(
-    create_financial_fact_handler,
-    storage::NewFinancialFact,
-    |state, input| state
-        .create_financial_fact(input)
-        .map_err(CommandError::from)
-);
+/// ADR 0093 decision 1 honesty rule (epic #285 T9): this act writes through
+/// the SAME `NewFinancialFact` → `AppState::create_financial_fact` the UI's
+/// manual-entry command calls (ADR 0039 — no MCP-only write shape), but an
+/// MCP write is never the owner's own manual entry. Before this fix it left
+/// no `financial_fact_provenance` row and defaulted `extraction_method` to
+/// `'manual'` — the agent's figure masqueraded as owner-entered, sat at the
+/// top of the trust ladder (no provenance = untouchable), and could never be
+/// corrected by a later issuer filing. Now: `extraction_method` is forced to
+/// `mcp_agent` regardless of caller input, and a provenance row is stamped
+/// `source_tier='agent'`, `validation_status='unreviewed'` (no validation
+/// gate runs on this single-fact path — `record_financial_facts`/T7 is the
+/// validated batch path), citing the fact's own `sourceDocumentRef` (mandatory
+/// by the `FactCitation` gate before this handler ever runs).
+/// `confirmation_state` is left to the storage default (`confirmed` — ADR
+/// 0086 decision 5, frozen).
+pub fn create_financial_fact_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |mut input: storage::NewFinancialFact| {
+        input.extraction_method = Some("mcp_agent".to_owned());
+        let citation = input.source_document_ref.clone();
+        let fact = state
+            .create_financial_fact(input)
+            .map_err(CommandError::from)?;
+        state
+            .kpi_extraction()
+            .stamp_agent_fact_provenance(&fact.id, citation.as_deref())
+            .map_err(CommandError::from)?;
+        Ok(fact)
+    })
+}
 
-act_handler!(
-    update_financial_fact_handler,
-    storage::UpdateFinancialFact,
-    |state, input| state
-        .update_financial_fact(input)
-        .map_err(CommandError::from)
-);
+/// ADR 0093 decision 1 honesty rule (epic #285 T9): same `UpdateFinancialFact`
+/// → `AppState::update_financial_fact` the UI's edit command calls — but this
+/// path is reachable over MCP, so every update through it stamps
+/// `source_tier='agent'` provenance (`validation_status='unreviewed'`, citing
+/// the mandatory `sourceDocumentRef`), honestly recording that an agent
+/// touched the fact.
+///
+/// Deliberately includes a fact that currently has NO provenance row (a
+/// `manual` UI entry, or a pre-#285 legacy row): `update_financial_fact` is an
+/// explicit, single, interactively agent-directed write the owner enabled via
+/// `mcpWritesEnabled` — the same trust boundary as a UI edit, not the
+/// unattended background writers (`record_structured_fact`'s aggregator/
+/// structured-extraction precedence) ADR 0086 decision 3's "manual facts are
+/// untouchable by every automatic path" governs. No ADR text extends that
+/// rule to this interactive path, so the update SUCCEEDS and the takeover is
+/// stamped honestly rather than silently refused or left mislabeled
+/// `manual`. This is also what makes an MCP-authored fact upgradeable
+/// end-to-end: an agent that mistakenly recorded a wrong value can correct
+/// its own agent-tier slot through this same path.
+pub fn update_financial_fact_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input: storage::UpdateFinancialFact| {
+        let citation = input.source_document_ref.clone();
+        let fact = state
+            .update_financial_fact(input)
+            .map_err(CommandError::from)?;
+        state
+            .kpi_extraction()
+            .stamp_agent_fact_provenance(&fact.id, citation.as_deref())
+            .map_err(CommandError::from)?;
+        Ok(fact)
+    })
+}
 
 /// `record_financial_facts` batch input (ADR 0093 dec. 6, epic #285 T7):
 /// `companyId`/`reportDocumentId` are internal ids (act tier convention).
@@ -357,13 +410,48 @@ act_handler!(
         .map_err(CommandError::from)
 );
 
-act_handler!(
-    create_kpi_definition_handler,
-    storage::NewKpiDefinition,
-    |state, input| state
-        .create_kpi_definition(input)
-        .map_err(CommandError::from)
-);
+/// `^[a-z][a-z0-9_]*$` — the snake_case ASCII shape `metric_key` must take
+/// (ADR 0093 decision 4, epic #285 T9): a catalog key an agent mints must
+/// read like every seeded one (`net_interest_income`, `broker_client_count`),
+/// never prose or mixed case.
+fn is_snake_case_ascii_metric_key(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// ADR 0093 decision 4 (epic #285 T9): agents may mint KPI definitions for
+/// issuer-characteristic metrics the catalog lacks (broker client counts, CFD
+/// lots, net deposits…) — company-scoped by convention, always
+/// `origin='agent'` regardless of caller input (forced, same pattern as
+/// `NewFinancialFact.extraction_method` in the fact-write handlers above),
+/// with a typed refusal on a non-snake_case `metricKey` so a minted key reads
+/// like the rest of the catalog. The UI's create command leaves `origin`
+/// unset, defaulting to `user` (`normalize_kpi_definition_origin`,
+/// `storage/financials.rs`) — untouched by this handler.
+pub fn create_kpi_definition_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |mut input: storage::NewKpiDefinition| {
+        let metric_key = input.metric_key.trim().to_owned();
+        if !is_snake_case_ascii_metric_key(&metric_key) {
+            return Err(CommandError::new(
+                CommandErrorCode::InvalidInput,
+                format!(
+                    "metricKey must be snake_case ASCII matching ^[a-z][a-z0-9_]*$, got {metric_key:?}"
+                ),
+            ));
+        }
+        input.origin = Some("agent".to_owned());
+        state
+            .create_kpi_definition(input)
+            .map_err(CommandError::from)
+    })
+}
 
 act_handler!(
     create_kpi_relevance_handler,

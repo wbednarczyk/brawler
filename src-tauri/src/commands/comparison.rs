@@ -218,6 +218,7 @@ mod tests {
                 computation: "reported".to_owned(),
                 formula: None,
                 display_format: None,
+                origin: None,
             })
             .expect("definition")
             .id

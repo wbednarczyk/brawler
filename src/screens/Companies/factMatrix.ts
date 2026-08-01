@@ -100,6 +100,7 @@ function syntheticDefinition(definitionId: string): KpiDefinition {
     computation: "reported",
     formula: null,
     displayFormat: null,
+    origin: "user",
     createdAt: "",
     updatedAt: "",
   };

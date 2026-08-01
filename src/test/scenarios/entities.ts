@@ -1001,6 +1001,7 @@ export function makeKpiDefinition(): KpiDefinition {
     computation: "reported",
     formula: null,
     displayFormat: "currency",
+    origin: "seed",
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
   };

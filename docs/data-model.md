@@ -844,6 +844,7 @@ Company columns added to `companies`:
 - **Id scheme** (`kpi_definition_id`, `storage/financials.rs`; #149, migration `0125_scope_discriminated_kpi_definition_ids.sql`): canonical rows keep the bare `kpidef_<metric_key>` — facts, `kpi_relevance`, framework criteria and the metric-history reads all key on it, so it never changes. Non-canonical scopes carry the same discriminator as the unique index: `kpidef_<key>__c_<company_id>` (company), `kpidef_<key>__s_<sector>` (sector). Before the fix the id was built from `metric_key` alone, so a company-scoped definition sharing a generic key could not be created at all (PK conflict), and one with no canonical twin squatted on the id a later canonical `INSERT OR IGNORE` seed needed — silently skipping it. `0125` re-keys exactly the rows that scheme produced (`id = 'kpidef_' || metric_key` and `scope <> 'canonical'`; none on the owner's DB) and re-points `kpi_relevance` + `financial_facts` under `PRAGMA defer_foreign_keys`; the curated sector packs keep their own hand-written ids (`kpidef_bank_nim`).
 - Seeded packs: universal, industrial, cash flow, capital efficiency (derived), and sector packs `insurance`, `banking`, `specialty_finance`, `reit`.
 - **No repaint** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) decision 8): a reported measure that is not the generic catalog concept is tracked as a company-scoped definition, never renamed onto the generic key. A company's *characteristic* KPIs are therefore `kpi_relevance` rows (`rank = 'primary'`, `source = 'user'`) over company-scoped definitions — selection, not renaming ([ADR 0092](adr/0092-kpi-relevance-lifecycle.md) layer 4).
+- `origin` ([ADR 0093](adr/0093-agent-acquisition-tier-and-preliminary-lifecycle.md) decision 4, migration `0129_kpi_definition_origin.sql`, epic #285 T9): `seed` (app-owned catalog/sector packs) | `user` (UI-created, the default — `normalize_kpi_definition_origin`, the `normalize_currency` pattern) | `agent` (MCP-minted, forced by the `create_kpi_definition` act handler regardless of caller input; also validates `metric_key` is snake_case ASCII, `^[a-z][a-z0-9_]*$`, typed refusal otherwise). `seed` is never settable by a live writer. Backfill predicate: a bare id (`kpidef_<key>`, no `__<marker>_` discriminator — every non-canonical-scope id `kpi_definition_id` mints carries one) is migration-seeded; every runtime-created row is left at the column DEFAULT `user`. Minted definitions are extras, never completeness-denominator entries (`kpi_relevance` stays governed by ADR 0092's layers).
 
 `kpi_relevance` (selection over time — which KPIs matter for a company):
 
@@ -1517,6 +1518,7 @@ Allowed source types:
 - `ai_analysis`
 - `manual`
 - `external_url`
+- `report_document` (closes #111, epic #285 T9): cites a stored `report_documents` row (`source_id`) — the document actually read, as opposed to `external_url`'s bare link. Used by MCP `capture_report_document` + `create_notebook_entry` sequences.
 
 Rules:
 
@@ -1525,6 +1527,7 @@ Rules:
 - Transcript-created notes require a resolved transcript job company before save.
 - Manual notes may use a `manual` origin link or no external source.
 - Normal note editing preserves existing origin links. Adding or detaching origins requires a future explicit source-link workflow.
+- No `source_type` carries an FK-checked `source_id` (soft reference throughout, `report_document` included) — a rename/deletion never blocks note creation.
 
 ## Company Event Model
 

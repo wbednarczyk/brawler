@@ -29,6 +29,7 @@ function definition(id: string, metricKey: string, label: string): KpiDefinition
     computation: "reported",
     formula: null,
     displayFormat: null,
+    origin: "seed",
     createdAt: "",
     updatedAt: "",
   };

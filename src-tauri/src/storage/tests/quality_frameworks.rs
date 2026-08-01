@@ -503,6 +503,7 @@ fn frameworks_round_trip_through_export_import_with_custom_metric() {
             computation: "derived".to_owned(),
             formula: Some("operating_margin + fcf_margin".to_owned()),
             display_format: None,
+            origin: None,
         })
         .expect("custom metric creates");
 

@@ -44,6 +44,12 @@ pub struct KpiDefinition {
     pub computation: String,
     pub formula: Option<String>,
     pub display_format: Option<String>,
+    /// `seed` (app-owned catalog/sector packs) | `user` (UI-created, the
+    /// default) | `agent` (MCP-minted — ADR 0093 decision 4, epic #285 T9,
+    /// migration `0129`). Reviewable provenance for the #272
+    /// characteristic-KPI UI; minted definitions are extras, never
+    /// completeness-denominator entries.
+    pub origin: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -150,6 +156,13 @@ pub struct NewKpiDefinition {
     pub computation: String,
     pub formula: Option<String>,
     pub display_format: Option<String>,
+    /// `user` (default, absent/empty normalizes to it) | `agent` — the ONLY
+    /// two tokens a live writer may set (`seed` is migration-backfill-only,
+    /// ADR 0093 decision 4). The UI's create command never sets this (stays
+    /// `user`); the MCP `create_kpi_definition` act handler forces `agent`
+    /// regardless of caller input — same pattern as `NewFinancialFact.
+    /// extraction_method`.
+    pub origin: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -296,6 +309,7 @@ pub(super) fn list_kpi_definitions(
             computation,
             formula,
             display_format,
+            origin,
             created_at,
             updated_at
         FROM kpi_definitions
@@ -318,6 +332,29 @@ pub(super) fn list_kpi_definitions(
         .map_err(StorageError::from)
 }
 
+/// Canonicalizes `kpi_definitions.origin` at the write boundary (the
+/// `normalize_currency`/`normalize_data_quality` pattern, ADR 0093
+/// decision 4, epic #285 T9). `seed` is migration-backfill-only (`0129`) —
+/// never settable by a live writer, refused like any other unknown token.
+/// Absent/empty -> the `user` default (the UI's create command never sets
+/// this field); the MCP `create_kpi_definition` act handler forces `agent`
+/// before this ever runs.
+fn normalize_kpi_definition_origin(origin: Option<String>) -> StorageResult<String> {
+    let value = origin
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("user")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "user" | "agent" => Ok(value),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "origin",
+            value,
+        }),
+    }
+}
+
 pub(super) fn create_kpi_definition(
     connection: &Connection,
     input: NewKpiDefinition,
@@ -332,6 +369,7 @@ pub(super) fn create_kpi_definition(
     let computation = input.computation.trim().to_owned();
     let formula = empty_string_to_none(input.formula.map(|s| s.trim().to_owned()));
     let display_format = empty_string_to_none(input.display_format.map(|s| s.trim().to_owned()));
+    let origin = normalize_kpi_definition_origin(input.origin)?;
 
     if metric_key.is_empty() {
         return Err(StorageError::InvalidFinancialsValue {
@@ -360,8 +398,9 @@ pub(super) fn create_kpi_definition(
             unit,
             computation,
             formula,
-            display_format
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            display_format,
+            origin
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
         ",
         params![
             id,
@@ -374,7 +413,8 @@ pub(super) fn create_kpi_definition(
             unit,
             computation,
             formula,
-            display_format
+            display_format,
+            origin
         ],
     )?;
 
@@ -1510,7 +1550,7 @@ pub(super) fn slot_dims(input: &NewFinancialFact) -> StorageResult<SlotDims> {
     }
     Ok(SlotDims {
         statement_basis: or_default(&input.statement_basis, "consolidated"),
-        attribution: or_default(&input.attribution, "total"),
+        attribution: normalize_attribution(input.attribution.clone())?,
         variant: or_default(&input.variant, "reported"),
         measure_window: or_default(&input.measure_window, "flow"),
         data_quality: normalize_data_quality(input.data_quality.clone())?,
@@ -1615,6 +1655,30 @@ fn normalize_currency(currency: Option<String>) -> StorageResult<Option<String>>
         });
     }
     Ok(Some(currency.to_ascii_uppercase()))
+}
+
+/// Canonicalizes a fact's `attribution` SLOT DIMENSION at the write boundary
+/// (`total` (default) | `owners_of_parent` | `nci` — the `normalize_currency`/
+/// `normalize_data_quality` pattern). Epic #285 T9: `attribution` is hashed
+/// into the fact's uniqueness slot (`financial_fact_id`, `slot_dims`), never a
+/// prose citation carrier — the MCP `FactCitation` gate no longer accepts it
+/// as one (`mcp::registry::validate_provenance`). Absent/empty -> the `total`
+/// default; any other token (e.g. an agent's citation prose landing here) is a
+/// typed error rather than silently minting a phantom slot.
+fn normalize_attribution(attribution: Option<String>) -> StorageResult<String> {
+    let value = attribution
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("total")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "total" | "owners_of_parent" | "nci" => Ok(value),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "attribution",
+            value,
+        }),
+    }
 }
 
 /// Canonicalizes a fact's `data_quality` at the write boundary — the
@@ -1962,6 +2026,7 @@ fn get_kpi_definition(connection: &Connection, id: &str) -> StorageResult<KpiDef
                 computation,
                 formula,
                 display_format,
+                origin,
                 created_at,
                 updated_at
             FROM kpi_definitions
@@ -2068,8 +2133,9 @@ fn kpi_definition_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KpiDefin
         computation: row.get(8)?,
         formula: row.get(9)?,
         display_format: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
+        origin: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
     })
 }
 

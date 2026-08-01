@@ -257,12 +257,105 @@ fn creates_company_custom_kpi_definition() {
             computation: "derived".to_owned(),
             formula: Some("metric_a / metric_b".to_owned()),
             display_format: None,
+            origin: None,
         })
         .expect("custom KPI definition should create");
 
     assert_eq!(custom_kpi.scope, "company");
     assert_eq!(custom_kpi.company_id, Some(company.id));
     assert_eq!(custom_kpi.metric_key, "custom_metric");
+    assert_eq!(
+        custom_kpi.origin, "user",
+        "absent origin defaults to user (the UI create path)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `kpi_definitions.origin` enum guard (ADR 0093 decision 4, epic #285 T9):
+// `seed | user | agent` — `seed` is migration-backfill-only, never settable
+// by a live `create_kpi_definition` writer.
+// ---------------------------------------------------------------------------
+
+fn new_kpi_definition_with_origin(
+    company_id: &str,
+    metric_key: &str,
+    origin: Option<&str>,
+) -> NewKpiDefinition {
+    NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: Some(company_id.to_owned()),
+        sector: None,
+        metric_key: metric_key.to_owned(),
+        label: metric_key.to_owned(),
+        value_kind: "count".to_owned(),
+        unit: None,
+        computation: "reported".to_owned(),
+        formula: None,
+        display_format: None,
+        origin: origin.map(str::to_owned),
+    }
+}
+
+#[test]
+fn create_kpi_definition_accepts_the_agent_origin_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let definition = state
+        .create_kpi_definition(new_kpi_definition_with_origin(
+            &company.id,
+            "broker_client_count",
+            Some("agent"),
+        ))
+        .expect("agent origin is a valid token");
+    assert_eq!(definition.origin, "agent");
+}
+
+#[test]
+fn create_kpi_definition_rejects_the_seed_origin_token() {
+    // `seed` is migration-backfill-only (ADR 0093 decision 4) — no live
+    // writer may mint a fake seed row.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .create_kpi_definition(new_kpi_definition_with_origin(
+            &company.id,
+            "fake_seed_metric",
+            Some("seed"),
+        ))
+        .expect_err("seed must never be settable by a live writer");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "origin",
+                ref value
+            } if value == "seed"
+        ),
+        "expected a typed invalid-origin error, got {error:?}"
+    );
+}
+
+#[test]
+fn create_kpi_definition_rejects_an_unknown_origin_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .create_kpi_definition(new_kpi_definition_with_origin(
+            &company.id,
+            "garbage_origin_metric",
+            Some("garbage"),
+        ))
+        .expect_err("an unknown origin token must never be silently stored");
+    assert!(matches!(
+        error,
+        StorageError::InvalidFinancialsValue { key: "origin", .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +399,7 @@ fn company_scoped_definition_coexists_with_canonical_same_metric_key() {
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("a company-scoped definition must not collide with the canonical row");
 
@@ -365,6 +459,7 @@ fn sector_scoped_definition_coexists_with_canonical_same_metric_key() {
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("a sector-scoped definition must not collide with the canonical row");
 
@@ -399,6 +494,7 @@ fn two_companies_may_each_scope_the_same_metric_key() {
         computation: "reported".to_owned(),
         formula: None,
         display_format: None,
+        origin: None,
     };
 
     let a = state
@@ -429,6 +525,7 @@ fn company_scoped_facts_do_not_leak_into_canonical_metric_history() {
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("company-scoped definition should create");
 
@@ -1243,6 +1340,120 @@ fn create_financial_fact_rejects_an_unknown_data_quality_token() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// `attribution` slot-dimension enum guard (ADR 0093 epic #285 T9): the
+// FactCitation gate defect closure means `attribution` is validated the same
+// way `data_quality`/`currency` are — never a free-text citation carrier.
+// ---------------------------------------------------------------------------
+
+fn new_fact_with_attribution(
+    company_id: &str,
+    period_id: &str,
+    definition_id: &str,
+    value_numeric: &str,
+    attribution: Option<&str>,
+) -> NewFinancialFact {
+    NewFinancialFact {
+        company_id: company_id.to_owned(),
+        period_id: period_id.to_owned(),
+        definition_id: definition_id.to_owned(),
+        value_numeric: value_numeric.to_owned(),
+        currency: Some("PLN".to_owned()),
+        statement_basis: None,
+        attribution: attribution.map(str::to_owned),
+        variant: None,
+        measure_window: None,
+        data_quality: None,
+        as_reported_value: None,
+        as_reported_scale: None,
+        reporting_standard: None,
+        extraction_method: None,
+        confidence: None,
+        confirmation_state: None,
+        supersedes_id: None,
+        source_document_ref: None,
+        annotation: None,
+    }
+}
+
+#[test]
+fn create_financial_fact_defaults_absent_attribution_to_total() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            None,
+        ))
+        .expect("fact should create");
+    assert_eq!(fact.attribution, "total");
+}
+
+#[test]
+fn create_financial_fact_accepts_the_owners_of_parent_and_nci_slot_tokens() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let owners = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("owners_of_parent"),
+        ))
+        .expect("owners_of_parent is a valid slot dimension");
+    assert_eq!(owners.attribution, "owners_of_parent");
+
+    let nci = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("nci"),
+        ))
+        .expect("nci is a valid slot dimension");
+    assert_eq!(nci.attribution, "nci");
+}
+
+#[test]
+fn create_financial_fact_rejects_citation_prose_masquerading_as_attribution() {
+    // The exact defect ADR 0093 epic #285 T9 closes: an agent (or any caller)
+    // putting a citation string in `attribution` must never silently mint a
+    // phantom uniqueness slot — it is a typed refusal, like `data_quality`'s
+    // unknown-token guard.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let error = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("FY2024 report, p.42"),
+        ))
+        .expect_err("citation prose must never be silently slotted as attribution");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "attribution",
+                ref value
+            } if value == "fy2024 report, p.42"
+        ),
+        "expected a typed invalid-attribution error, got {error:?}"
+    );
+}
+
 #[test]
 fn preliminary_and_final_coexist_in_the_same_slot_via_plain_create() {
     let connection = open_in_memory_database().expect("database should initialize");
@@ -1773,6 +1984,7 @@ fn company_scoped_definition_list_includes_the_canonical_catalog() {
                 computation: "reported".to_owned(),
                 formula: None,
                 display_format: None,
+                origin: None,
             })
             .expect("custom definition");
     }

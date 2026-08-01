@@ -233,6 +233,7 @@ fn claim_resurfaces_when_due_period_report_arrives_and_resolves_with_evidence() 
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("definition should create");
     let fact = state

@@ -59,7 +59,12 @@ pub enum ProvenanceRequirement {
     SourceEvidence,
     /// `citationsJson` — a non-empty serialized citation array (qualitative verdicts).
     CitationsJson,
-    /// `sourceDocumentRef` / `attribution` — a manual KPI fact's citation.
+    /// `sourceDocumentRef` — a manual KPI fact's citation. `attribution` is
+    /// deliberately NOT an alternate carrier (epic #285 T9): it is the fact's
+    /// slot dimension (`total` | `owners_of_parent` | `nci`, hashed into
+    /// uniqueness), not a citation — accepting prose there let an agent
+    /// satisfy the gate while minting a phantom slot instead of citing a
+    /// source.
     FactCitation,
     /// A non-blank `reportDocumentId` AND a non-blank `citation` on EVERY
     /// entry of `facts` (the `record_financial_facts` batch shape, ADR 0093
@@ -76,9 +81,7 @@ impl ProvenanceRequirement {
             ProvenanceRequirement::Origins => "a non-empty `origins` array",
             ProvenanceRequirement::SourceEvidence => "a non-empty `sourceEvidenceId`",
             ProvenanceRequirement::CitationsJson => "a non-empty `citationsJson` array",
-            ProvenanceRequirement::FactCitation => {
-                "a `sourceDocumentRef` or `attribution` citation"
-            }
+            ProvenanceRequirement::FactCitation => "a non-blank `sourceDocumentRef` citation",
             ProvenanceRequirement::DocumentAndPerFactCitations => {
                 "a non-blank `reportDocumentId` and a non-blank `citation` on every entry of `facts`"
             }
@@ -632,14 +635,14 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "create_financial_fact",
             Some(FactCitation),
-            "Record a financial fact for a company/period/metric. Must carry a citation (`sourceDocumentRef` or `attribution`). Decision support only.",
+            "Record a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry.",
             tools::tool_schema::<storage::NewFinancialFact>,
             acts::create_financial_fact_handler,
         ),
         exposed_act(
             "update_financial_fact",
             Some(FactCitation),
-            "Update a stored financial fact (by id). Must carry its citation provenance.",
+            "Update a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact.",
             tools::tool_schema::<storage::UpdateFinancialFact>,
             acts::update_financial_fact_handler,
         ),
@@ -1214,9 +1217,11 @@ pub fn validate_provenance(
         ProvenanceRequirement::CitationsJson => {
             citations_nonempty(input.get("citationsJson")) || results_all_cited(input)
         }
-        ProvenanceRequirement::FactCitation => {
-            nonempty_str(input, "sourceDocumentRef") || nonempty_str(input, "attribution")
-        }
+        // #285 T9: `attribution` is the fact's slot dimension (`total` |
+        // `owners_of_parent` | `nci`), never an alternate citation carrier —
+        // accepting it here let an agent satisfy the gate with prose that
+        // minted a phantom uniqueness slot instead of citing a source.
+        ProvenanceRequirement::FactCitation => nonempty_str(input, "sourceDocumentRef"),
         ProvenanceRequirement::DocumentAndPerFactCitations => {
             nonempty_str(input, "reportDocumentId") && facts_all_cited(input)
         }
@@ -1806,6 +1811,22 @@ mod tests {
         .expect("domain outcome");
         assert_eq!(failure_code(outcome), CommandErrorCode::ProvenanceRequired);
 
+        // FactCitation — `attribution` alone (the slot dimension, not a
+        // citation) must NOT satisfy the gate (epic #285 T9 defect closure).
+        let outcome = call(
+            &state,
+            "create_financial_fact",
+            &json!({
+                "companyId": company_id,
+                "periodId": "p",
+                "definitionId": "kpidef_net_profit",
+                "valueNumeric": "1",
+                "attribution": "total",
+            }),
+        )
+        .expect("domain outcome");
+        assert_eq!(failure_code(outcome), CommandErrorCode::ProvenanceRequired);
+
         // CitationsJson (batch) — set verdicts where a result carries no citations.
         let outcome = call(
             &state,
@@ -1824,6 +1845,399 @@ mod tests {
         )
         .expect("domain outcome");
         assert_eq!(failure_code(outcome), CommandErrorCode::ProvenanceRequired);
+    }
+
+    /// Seed a company + fiscal period a financial-fact write can slot into.
+    /// `kpidef_net_profit` is a canonical seeded definition's deterministic id
+    /// (no lookup needed — the same convention `every_exposed_act_tool_is_
+    /// listed_and_gated`'s umbrella input map uses).
+    fn seed_fact_slot(state: &AppState) -> (String, String) {
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "AGT".to_owned(),
+                display_name: "Agent Test S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let period = state
+            .create_financial_period(storage::NewFinancialPeriod {
+                company_id: company.id.clone(),
+                fiscal_year: 2026,
+                period_type: "FY".to_owned(),
+                period_end_date: Some("2026-12-31".to_owned()),
+                report_evidence_ref: None,
+            })
+            .expect("financial period");
+        (company.id, period.id)
+    }
+
+    /// ADR 0093 decision 1 honesty rule (epic #285 T9): before this fix, the
+    /// legacy MCP `create_financial_fact` handler called storage verbatim — no
+    /// `financial_fact_provenance` row, `extraction_method` defaulted
+    /// `'manual'`. The agent's write masqueraded as the owner's own entry,
+    /// sitting at the untouchable top of the trust ladder. RED (pre-fix):
+    /// `provenance` was `None` and `extraction_method` was `"manual"`.
+    #[test]
+    fn create_financial_fact_over_mcp_stamps_agent_provenance() {
+        let state = act_state();
+        let (company_id, period_id) = seed_fact_slot(&state);
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_financial_fact",
+            &json!({
+                "companyId": company_id,
+                "periodId": period_id,
+                "definitionId": "kpidef_net_profit",
+                "valueNumeric": "1000000",
+                "sourceDocumentRef": "doc_xtb_rb18",
+            }),
+        )
+        .expect("domain outcome");
+        assert!(
+            matches!(outcome, ToolOutcome::Success(_)),
+            "expected a Success outcome: {outcome:?}"
+        );
+
+        let facts = state
+            .list_financial_facts(storage::ListFinancialFactsInput {
+                company_id: Some(company_id),
+                period_id: Some(period_id),
+                definition_id: None,
+            })
+            .expect("facts should list");
+        assert_eq!(facts.len(), 1);
+        assert_eq!(
+            facts[0].extraction_method, "mcp_agent",
+            "an MCP write must never claim `manual`"
+        );
+
+        let provenance = state
+            .fundamentals_provenance()
+            .get_fact_provenance(&facts[0].id)
+            .expect("provenance read")
+            .expect("an MCP write must leave a provenance row (closes the untouchable-slot hole)");
+        assert_eq!(provenance.source_tier, "agent");
+        assert_eq!(provenance.validation_status, "unreviewed");
+        assert_eq!(provenance.citation.as_deref(), Some("doc_xtb_rb18"));
+    }
+
+    /// ADR 0093 decision 1 (epic #285 T9): `update_financial_fact` over MCP
+    /// stamps `source_tier='agent'` provenance even on a fact that started as
+    /// a plain UI `manual` entry (no provenance row at all) — the owner's own
+    /// agent, acting through the `mcpWritesEnabled`-gated interactive act
+    /// path, may take the slot over, but the takeover is recorded honestly
+    /// rather than silently preserving the `manual` label. RED (pre-fix): no
+    /// provenance row existed after the update (the handler called storage
+    /// verbatim).
+    #[test]
+    fn update_financial_fact_over_mcp_stamps_agent_provenance_on_a_manual_fact() {
+        let state = act_state();
+        let (company_id, period_id) = seed_fact_slot(&state);
+
+        // A plain UI/manual create — the exact shape `create_financial_fact`
+        // (Tauri command) produces: no provenance row, extraction_method
+        // defaults 'manual'.
+        let fact = state
+            .create_financial_fact(storage::NewFinancialFact {
+                company_id,
+                period_id,
+                definition_id: "kpidef_net_profit".to_owned(),
+                value_numeric: "500000".to_owned(),
+                currency: None,
+                statement_basis: None,
+                attribution: None,
+                variant: None,
+                measure_window: None,
+                data_quality: None,
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: None,
+                confidence: None,
+                confirmation_state: None,
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("manual fact should create");
+        assert_eq!(fact.extraction_method, "manual");
+        assert!(
+            state
+                .fundamentals_provenance()
+                .get_fact_provenance(&fact.id)
+                .expect("provenance read")
+                .is_none(),
+            "a fresh manual fact has no provenance row"
+        );
+
+        set_writes_enabled(&state, true);
+        let outcome = call(
+            &state,
+            "update_financial_fact",
+            &json!({
+                "id": fact.id,
+                "valueNumeric": "600000",
+                "sourceDocumentRef": "doc_correction",
+            }),
+        )
+        .expect("domain outcome");
+        assert!(
+            matches!(outcome, ToolOutcome::Success(_)),
+            "an agent update on a manual fact succeeds (interactive, owner-gated write): {outcome:?}"
+        );
+
+        let provenance = state
+            .fundamentals_provenance()
+            .get_fact_provenance(&fact.id)
+            .expect("provenance read")
+            .expect("the MCP update must stamp a provenance row, even taking over a manual fact");
+        assert_eq!(provenance.source_tier, "agent");
+        assert_eq!(provenance.validation_status, "unreviewed");
+        assert_eq!(provenance.citation.as_deref(), Some("doc_correction"));
+    }
+
+    /// Ladder test (epic #285 T9): an MCP-written fact (agent tier) is
+    /// subsequently UPGRADEABLE by an issuer-tier `record_structured_fact`
+    /// write — impossible before this fix (no provenance = manual = the top
+    /// of the ladder, untouchable by every automatic path). Mirrors
+    /// `an_issuer_reobservation_upgrades_an_agent_slot_label`
+    /// (`storage/kpi_extraction.rs`), but starting from the REAL MCP act path
+    /// rather than a raw `StructuredFactInput`.
+    #[test]
+    fn an_mcp_written_fact_is_upgradeable_by_a_later_issuer_tier_write() {
+        let state = act_state();
+        let (company_id, period_id) = seed_fact_slot(&state);
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_financial_fact",
+            &json!({
+                "companyId": company_id,
+                "periodId": period_id,
+                "definitionId": "kpidef_net_profit",
+                "valueNumeric": "1000000",
+                "sourceDocumentRef": "doc_xtb_rb18",
+            }),
+        )
+        .expect("domain outcome");
+        assert!(matches!(outcome, ToolOutcome::Success(_)), "agent write");
+
+        let company_for_structured = company_id.clone();
+        let commit = state
+            .kpi_extraction()
+            .record_structured_fact(storage::StructuredFactInput {
+                company_id: &company_for_structured,
+                fiscal_year: 2026,
+                period_type: "FY",
+                period_end: Some("2026-12-31"),
+                report_document_id: "doc_esef",
+                metric_key: "net_profit",
+                value_numeric: "1000000",
+                currency: None,
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Net profit"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            })
+            .expect("issuer re-observation");
+        assert!(
+            matches!(commit, storage::StructuredFactCommit::Upgraded { .. }),
+            "an issuer tier must upgrade the agent-held slot, not skip/divergence it: {commit:?}"
+        );
+
+        let facts = state
+            .list_financial_facts(storage::ListFinancialFactsInput {
+                company_id: Some(company_id),
+                period_id: Some(period_id),
+                definition_id: None,
+            })
+            .expect("facts should list");
+        assert_eq!(
+            facts.len(),
+            1,
+            "the upgrade rewrites the same slot in place"
+        );
+        let provenance = state
+            .fundamentals_provenance()
+            .get_fact_provenance(&facts[0].id)
+            .expect("provenance read")
+            .expect("provenance row");
+        assert_eq!(
+            provenance.source_tier, "esef",
+            "the issuer tier now owns the slot's label"
+        );
+    }
+
+    /// #111 closure (epic #285 T9): a notebook note origin can cite a stored
+    /// `report_documents` row directly (`source_type: "report_document"`),
+    /// not just a bare `external_url` link — the document the agent actually
+    /// read and registered via `capture_report_document`. Round-trips through
+    /// the REAL MCP `create_notebook_entry` act path. RED (pre-fix): the
+    /// storage-layer allow-list rejected `"report_document"` with a typed
+    /// `InvalidNotebookValue` error, surfaced as an MCP `invalid_input`
+    /// Failure.
+    #[test]
+    fn create_notebook_entry_over_mcp_accepts_a_report_document_origin() {
+        let state = act_state();
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "RDO".to_owned(),
+                display_name: "Report Doc Origin S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(storage::CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: "https://example.com/xtb-rb-18-2026.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("XTB RB 18/2026".to_owned()),
+                attribution: None,
+            })
+            .expect("report document should register");
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_notebook_entry",
+            &json!({
+                "companyId": company.id,
+                "title": "Preliminary H1 results",
+                "body": "Net profit ~1.0bn PLN per the preliminary release.",
+                "kind": "observation",
+                "tags": [],
+                "origins": [{
+                    "sourceType": "report_document",
+                    "sourceId": document.id,
+                    "label": "XTB RB 18/2026",
+                }],
+            }),
+        )
+        .expect("domain outcome");
+        assert!(
+            matches!(outcome, ToolOutcome::Success(_)),
+            "a report_document origin must be accepted: {outcome:?}"
+        );
+
+        let entries = state
+            .list_notebook_entries(&company.id)
+            .expect("notes should list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].origins.len(), 1);
+        assert_eq!(entries[0].origins[0].source_type, "report_document");
+        assert_eq!(
+            entries[0].origins[0].source_id.as_deref(),
+            Some(document.id.as_str())
+        );
+    }
+
+    /// ADR 0093 decision 4 (epic #285 T9): `create_kpi_definition` over MCP
+    /// always stamps `origin='agent'`, regardless of what the caller sends
+    /// (even an explicit `"origin": "user"` is overridden — the field is not
+    /// a caller's to set). RED (pre-fix): the handler called storage verbatim
+    /// and the definition's `origin` stayed the DEFAULT `user`.
+    #[test]
+    fn create_kpi_definition_over_mcp_stamps_agent_origin() {
+        let state = act_state();
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "KDO".to_owned(),
+                display_name: "KPI Definition Origin S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_kpi_definition",
+            &json!({
+                "scope": "company",
+                "companyId": company.id,
+                "metricKey": "broker_client_count",
+                "label": "Broker Client Count",
+                "valueKind": "count",
+                "computation": "reported",
+                "origin": "user",
+            }),
+        )
+        .expect("domain outcome");
+        assert!(
+            matches!(outcome, ToolOutcome::Success(_)),
+            "expected a Success outcome: {outcome:?}"
+        );
+
+        let definitions = state
+            .list_kpi_definitions(storage::ListKpiDefinitionsInput {
+                scope: None,
+                sector: None,
+                company_id: None,
+            })
+            .expect("definitions should list");
+        let definition = definitions
+            .iter()
+            .find(|d| d.metric_key == "broker_client_count")
+            .expect("the definition should exist");
+        assert_eq!(
+            definition.origin, "agent",
+            "MCP-minted definitions are always agent-origin, never caller-controlled"
+        );
+    }
+
+    /// ADR 0093 decision 4 (epic #285 T9): a non-snake_case `metricKey` is a
+    /// typed refusal, not a silently-accepted catalog pollution. RED (pre-fix):
+    /// `create_kpi_definition` accepted ANY metric_key string verbatim.
+    #[test]
+    fn create_kpi_definition_over_mcp_rejects_a_non_snake_case_metric_key() {
+        let state = act_state();
+        set_writes_enabled(&state, true);
+
+        let outcome = call(
+            &state,
+            "create_kpi_definition",
+            &json!({
+                "scope": "company",
+                "companyId": "irrelevant",
+                "metricKey": "Broker Client Count!",
+                "label": "Broker Client Count",
+                "valueKind": "count",
+                "computation": "reported",
+            }),
+        )
+        .expect("domain outcome");
+        assert_eq!(failure_code(outcome), CommandErrorCode::InvalidInput);
+
+        assert!(
+            state
+                .list_kpi_definitions(storage::ListKpiDefinitionsInput {
+                    scope: None,
+                    sector: None,
+                    company_id: None,
+                })
+                .expect("definitions should list")
+                .iter()
+                .all(|d| d.metric_key != "Broker Client Count!"),
+            "a rejected metricKey must never be written"
+        );
     }
 
     /// End-to-end: with writes on and citations present, set_qualitative_verdicts
@@ -2293,7 +2707,9 @@ mod tests {
         )
         .is_ok());
 
-        // FactCitation — either a sourceDocumentRef or an attribution.
+        // FactCitation — a non-blank sourceDocumentRef ONLY (epic #285 T9):
+        // `attribution` is the fact's slot dimension, never an alternate
+        // citation carrier — prose there must be refused, not accepted.
         assert!(validate_provenance(FactCitation, &json!({})).is_err());
         assert!(
             validate_provenance(FactCitation, &json!({ "sourceDocumentRef": "doc_1" })).is_ok()
@@ -2302,7 +2718,18 @@ mod tests {
             FactCitation,
             &json!({ "attribution": "Skonsolidowany 2025" })
         )
-        .is_ok());
+        .is_err());
+        // A blank sourceDocumentRef alongside attribution still refuses —
+        // attribution never compensates.
+        assert!(validate_provenance(
+            FactCitation,
+            &json!({ "sourceDocumentRef": "  ", "attribution": "total" })
+        )
+        .is_err());
+        // `UpdateFinancialFact` carries no `attribution` field at all (it is
+        // immutable post-create — a slot dimension, not editable); after this
+        // fix both create and update gate on sourceDocumentRef ONLY, so the
+        // same carrier shape covers both — parity, not a special case.
 
         // DocumentAndPerFactCitations — reportDocumentId AND every fact cited.
         assert!(validate_provenance(DocumentAndPerFactCitations, &json!({})).is_err());
