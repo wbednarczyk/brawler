@@ -203,7 +203,14 @@ pub fn parse_report_listings(
 ) -> Result<Vec<GpwReportListing>, GpwParseError> {
     let document = Html::parse_document(html);
     let listing_selector = selector("[data-gpw-report-listing], .gpw-report-listing, li")?;
-    let title_selector = selector("[data-field='title'], .report-title")?;
+    // Title carriers, most specific first (issue #191). GPW's live ajax listing
+    // puts the report's own sentence in a BARE `<p>` — no class, no data-field —
+    // so the first two alternatives match nothing there and every reconciled
+    // title came back empty. `p` is the live carrier and is safe as the last
+    // resort: a listing row holds exactly one paragraph (the captured response
+    // has 15 rows and 15 `<p>`s), and `select` walks descendants in document
+    // order, so a row that DOES carry a marked-up title still resolves to it.
+    let title_selector = selector("[data-field='title'], .report-title, p")?;
     let anchor_selector = selector("a")?;
 
     document
@@ -634,6 +641,15 @@ mod tests {
     use super::*;
 
     const FIXTURE: &str = include_str!("../../samples/gpw_espi_ebi_listing.html");
+    /// The REAL ajax listing response, captured 2026-08-01 from
+    /// `POST https://www.gpw.pl/ajaxindex.php` with `gpw_listing_ajax_form()` —
+    /// the exact request the adapter makes. Issue #191: the hand-authored
+    /// `FIXTURE` above encodes markup GPW does not serve (`.report-title`), so
+    /// the suite stayed green for months while every live `witness_title` came
+    /// back empty (70 of 80 reconciliation rows on the owner's database). A
+    /// synthetic sample can only ever pin the shape we imagined; this one pins
+    /// the shape they send.
+    const LIVE_LISTING_SAMPLE: &str = include_str!("../../samples/gpw_espi_ebi_listing_live.html");
     const DETAIL_FIXTURE: &str = include_str!("../../samples/gpw_espi_ebi_detail.html");
     const DETAIL_NO_ATTACHMENTS_FIXTURE: &str =
         include_str!("../../samples/gpw_espi_ebi_detail_no_attachments.html");
@@ -703,6 +719,67 @@ mod tests {
         assert_eq!(listings.len(), 2);
         assert!(listings[0].detail_url.starts_with(SOURCE_URL));
         assert!(listings[0].fetched_at.ends_with('Z'));
+    }
+
+    /// Issue #191, found at v0.60 closure dogfooding: every listing GPW gives a
+    /// title for must yield that title. The live `<li>` carries the report's own
+    /// sentence in a BARE `<p>` — no class, no `data-field` — so the old
+    /// `[data-field='title'], .report-title` selector pair matched nothing and
+    /// the reconciliation ledger showed blank titles. Silently, because
+    /// `report_number`/`report_type` still parsed and the Today row fell back to
+    /// them (70 of 80 rows empty on the owner's database).
+    ///
+    /// Measured while fixing it: **GPW itself publishes no title for PERIODIC
+    /// reports** — the `Półroczny` row's `<p>` is empty and its detail anchor
+    /// carries no `title=` parameter either, so there is nothing to parse. That
+    /// is a source fact, not a parser gap: composing "Raport półroczny /2026"
+    /// here would be inventing a title, and the display layer already falls back
+    /// to report type + number for exactly this case.
+    #[test]
+    fn parses_every_title_the_live_listing_markup_carries() {
+        let listings = parse_report_listings(LIVE_LISTING_SAMPLE, "2026-08-01T12:00:00Z")
+            .expect("the live sample should parse");
+
+        assert_eq!(
+            listings.len(),
+            15,
+            "the ajax form asks for limit=15 and the captured response carries 15 rows"
+        );
+
+        let untitled: Vec<(&str, &str)> = listings
+            .iter()
+            .filter(|listing| listing.title.trim().is_empty())
+            .map(|listing| (listing.report_type.as_str(), listing.report_number.as_str()))
+            .collect();
+        assert_eq!(
+            untitled,
+            vec![("Półroczny", "/2026")],
+            "every current report carries its title; the ONLY empty one is the \
+             periodic report GPW serves with an empty <p> — if this list grows, \
+             the selector broke again; if it empties, we started inventing titles"
+        );
+
+        // Spot-check the first row end to end: the title is the row's own
+        // sentence, not the company name the anchor carries.
+        assert_eq!(
+            listings[0].title,
+            "MOL has received further U.S. approval to continue NIS negotiations"
+        );
+        assert_eq!(listings[0].report_number, "67/2026");
+        assert_eq!(listings[0].system, "ESPI");
+        assert_eq!(listings[0].isin, "HU0000153937");
+        assert_eq!(
+            listings[0].detail_url,
+            "https://www.gpw.pl/komunikat?geru_id=494747&title=MOL+has+received+further+U.S.+approval+to+continue+NIS+negotiations"
+        );
+        // A Polish title proves the response's UTF-8 survives the round trip.
+        assert!(
+            listings.iter().any(|listing| listing
+                .title
+                .contains("elektrociepłowni na biogaz rolniczy")),
+            "diacritics must survive: {:?}",
+            listings.iter().map(|l| &l.title).collect::<Vec<_>>()
+        );
     }
 
     #[test]
