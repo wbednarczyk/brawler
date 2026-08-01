@@ -177,7 +177,7 @@ jobs:
       - name: Build Linux release artifacts
         run: make package-release-linux VERSION=${{ needs.version.outputs.version }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-artifacts-linux
           path: release-artifacts/*
@@ -225,7 +225,7 @@ jobs:
       - name: Build Windows release artifact
         run: make package-release-windows VERSION=${{ needs.version.outputs.version }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-artifacts-windows
           path: release-artifacts/*
