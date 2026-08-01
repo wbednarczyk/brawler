@@ -648,6 +648,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "repair_peo_wdf_bank_misclassified_facts",
         sql: include_str!("../../migrations/0128_repair_peo_wdf_bank_misclassified_facts.sql"),
     },
+    Migration {
+        version: 129,
+        name: "kpi_definition_origin",
+        sql: include_str!("../../migrations/0129_kpi_definition_origin.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

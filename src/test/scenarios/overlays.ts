@@ -27,11 +27,13 @@ import {
   type CompanySpec,
 } from "./entities";
 import type { ScenarioData } from "./scenarios";
+import type { FinancialFact, KpiDefinition } from "../../api/financialsTypes";
 
 export type ScenarioOverlayName =
   | "hostile-content"
   | "dense-history"
   | "partial-data"
+  | "preliminary-fundamentals"
   | "stale-processing"
   | "conflicting-statuses"
   | "mixed-locale"
@@ -56,6 +58,7 @@ const HOSTILE_SPEC: CompanySpec = {
 };
 const DENSE_SPEC: CompanySpec = { key: "dense", ticker: "ZZZD", name: "Dense History Test Sp. z o.o.", sector: "Technology" };
 const PARTIAL_SPEC: CompanySpec = { key: "partial", ticker: "ZZZP", name: "Partial Data Test S.A.", sector: "Financials" };
+const PRELIMINARY_SPEC: CompanySpec = { key: "preliminary", ticker: "ZZZQ", name: "Preliminary Fundamentals Test S.A.", sector: "Technology" };
 const STALE_SPEC: CompanySpec = { key: "stale", ticker: "ZZZS", name: "Stale Processing Test S.A.", sector: "Energy" };
 const MIXED_SPEC: CompanySpec = { key: "mixed", ticker: "ZZZM", name: "Mieszany Test Lokalizacji S.A.", sector: "Consumer Staples" };
 
@@ -107,6 +110,97 @@ function applyPartialData(data: ScenarioData): ScenarioData {
     financialPeriods: [period, ...data.financialPeriods],
     // No matching financialFacts row for PARTIAL_SPEC's company — the missing
     // relevant read.
+  };
+}
+
+/**
+ * ADR 0093 dec. 2 preliminary lifecycle (epic #285 T5 dogfooding finding):
+ * one period holds a `final` fact that SUPERSEDES a `preliminary` sibling in
+ * the same slot (`data_quality` is part of the storage uniqueness key, so
+ * both rows coexist there) — the fact matrix must render the final-preferred
+ * value, never "whichever fact came last in the array". A second period
+ * holds a preliminary-ONLY fact (no final sibling yet), so the marker/chip
+ * also render with nothing to prefer over. Facts are ordered `created_at`
+ * DESC, matching the real backend contract: the final fact (created later —
+ * the audited report lands after the preliminary release) sorts BEFORE its
+ * preliminary sibling, which is exactly the ordering that used to trip the
+ * fact matrix's old "last object in the array wins" bug (factMatrix.ts)
+ * before the ADR 0093 dec. 2 fix. Reproduces the state so it renders in CI
+ * forever (docs/testing.md "UI dogfooding finding ⇒ overlay").
+ */
+function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
+  const company = makeCompany(PRELIMINARY_SPEC);
+  const supersededPeriod = makeFinancialPeriod(PRELIMINARY_SPEC, 2025);
+  const openPeriod = makeFinancialPeriod(PRELIMINARY_SPEC, 2026);
+  const definition: KpiDefinition = {
+    id: "kpidef_overlay_preliminary_net_profit",
+    scope: "global",
+    companyId: null,
+    sector: null,
+    metricKey: "net_profit",
+    label: "Net profit",
+    valueKind: "monetary",
+    unit: null,
+    computation: "reported",
+    formula: null,
+    displayFormat: null,
+    origin: "seed",
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  };
+  const supersededPreliminary: FinancialFact = {
+    id: "fact_overlay_preliminary_2025_preliminary",
+    companyId: company.id,
+    periodId: supersededPeriod.id,
+    definitionId: definition.id,
+    metricKey: definition.metricKey,
+    valueNumeric: "980000000",
+    currency: "PLN",
+    statementBasis: "consolidated",
+    attribution: "total",
+    variant: "reported",
+    measureWindow: "flow",
+    dataQuality: "preliminary",
+    asReportedValue: "980.0",
+    asReportedScale: "million",
+    reportingStandard: "IFRS",
+    extractionMethod: "mcp_agent",
+    confidence: null,
+    confirmationState: "confirmed",
+    supersedesId: null,
+    sourceDocumentRef: null,
+    annotation: null,
+    createdAt: "2026-01-20T09:00:00Z",
+    updatedAt: "2026-01-20T09:00:00Z",
+  };
+  const supersedingFinal: FinancialFact = {
+    ...supersededPreliminary,
+    id: "fact_overlay_preliminary_2025_final",
+    valueNumeric: "1010000000",
+    asReportedValue: "1010.0",
+    dataQuality: "final",
+    extractionMethod: "esef",
+    supersedesId: supersededPreliminary.id,
+    sourceDocumentRef: `report_doc_sample_${PRELIMINARY_SPEC.key}`,
+    createdAt: "2026-03-15T09:00:00Z",
+    updatedAt: "2026-03-15T09:00:00Z",
+  };
+  const preliminaryOnly: FinancialFact = {
+    ...supersededPreliminary,
+    id: "fact_overlay_preliminary_2026_preliminary",
+    periodId: openPeriod.id,
+    valueNumeric: "1150000000",
+    asReportedValue: "1150.0",
+    createdAt: "2027-01-20T09:00:00Z",
+    updatedAt: "2027-01-20T09:00:00Z",
+  };
+
+  return {
+    ...data,
+    companies: [company, ...data.companies],
+    financialPeriods: [supersededPeriod, openPeriod, ...data.financialPeriods],
+    kpiDefinitions: [definition, ...data.kpiDefinitions],
+    financialFacts: [preliminaryOnly, supersedingFinal, supersededPreliminary, ...data.financialFacts],
   };
 }
 
@@ -672,6 +766,7 @@ function applyJobFailedEvent(data: ScenarioData): ScenarioData {
 
 const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData> = {
   "partial-data": applyPartialData,
+  "preliminary-fundamentals": applyPreliminaryFundamentals,
   "stale-processing": applyStaleProcessing,
   "conflicting-statuses": applyConflictingStatuses,
   "hostile-content": applyHostileContent,
@@ -697,6 +792,7 @@ const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData
  */
 export const SCENARIO_OVERLAY_NAMES: readonly ScenarioOverlayName[] = [
   "partial-data",
+  "preliminary-fundamentals",
   "stale-processing",
   "conflicting-statuses",
   "hostile-content",

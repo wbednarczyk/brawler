@@ -41,10 +41,11 @@ family, with a concrete input shape:
 
 | Family | Tools | Carrier + example |
 | --- | --- | --- |
-| Notes | `create_notebook_entry` | non-empty `origins[]`: `"origins":[{"sourceType":"external_url","sourceUrl":"<filingUrl>","label":"FY2024 annual report"}]` — valid `sourceType`: `feed_item` \| `transcript_segment` \| `ai_analysis` \| `manual` \| `external_url` (a stored report document has no first-class origin type yet — cite its URL or `feed_item`; card `670946e`). Also required: `tags` (may be `[]`) and `kind` ∈ `manual` \| `observation` \| `claim` \| `question` \| `follow_up` |
+| Notes | `create_notebook_entry` | non-empty `origins[]`: `"origins":[{"sourceType":"report_document","sourceId":"<reportDocId>","label":"FY2024 annual report"}]` (or `"sourceType":"external_url","sourceUrl":"<filingUrl>"` when you have no stored document) — valid `sourceType`: `feed_item` \| `transcript_segment` \| `ai_analysis` \| `manual` \| `external_url` \| `report_document` (a document you registered via `capture_report_document`, epic #285 T9, closes #111). Also required: `tags` (may be `[]`) and `kind` ∈ `manual` \| `observation` \| `claim` \| `question` \| `follow_up` |
 | Transcript notes | `create_note_from_transcript_selection` | `"transcriptSegmentIds":["<seg1>","<seg2>"]` (the selection is the origin) |
-| Claims | `create_management_claim`, `update_management_claim` | `"sourceEvidenceId":"<reportOrTranscriptId>","sourceEvidenceType":"report"` |
-| Facts | `create_financial_fact`, `update_financial_fact` | `"sourceDocumentRef":"<reportDocId>"` **or** `"attribution":"FY2024 report, p.42"` |
+| Claims | `create_management_claim`, `update_management_claim` | `"sourceEvidenceId":"<reportOrTranscriptId>","sourceEvidenceType":"report_document"` — valid types: `report_document` \| `transcript_segment` \| `transcript` \| `feed_item` \| `manual` (a bare `"report"` is refused; caught live by the epic #285 T11 dogfooding ritual) |
+| Facts | `create_financial_fact`, `update_financial_fact` | `"sourceDocumentRef":"<reportDocId>"` — a non-blank citation, REQUIRED. Never put a citation in `attribution`: that field is the fact's slot dimension (`total` \| `owners_of_parent` \| `nci`), not a citation carrier — prose there is refused, not accepted. Every write through these tools is stamped `source_tier="agent"` provenance honestly (never `manual`). |
+| Batch facts | `record_financial_facts` | non-blank `"reportDocumentId":"<reportDocId>"` PLUS a non-blank `citation` on **every** entry of `facts[]` — one blank citation refuses the WHOLE batch before any write (see the ritual below). |
 | Qualitative verdicts | `set_qualitative_verdicts` | every result carries `"citationsJson":"[{\"type\":\"note\",\"id\":\"<noteId>\"}]"` (non-empty typed-evidence array) |
 
 `update_notebook_entry` (origins are immutable, set at create) and
@@ -89,6 +90,73 @@ tell the user they are theirs to do in the app:
   then poll the matching read tool (`list_autopilot_runs`,
   `get_latest_morning_briefing`) for the result.
 
+## Ingesting an issuer publication
+
+The concrete ritual for turning a report (PDF/HTML) into cited facts, claims,
+notes, and events. Follow the sequence; each step feeds the next (ADR 0093).
+
+1. **Capture** — `capture_report_document` (URL) → keep the returned
+   `documentId`; it is the citation anchor for everything below.
+2. **Read/extract** — read the document; note the page + table/row each figure
+   lives on, you'll need it for step 4's per-fact citation.
+3. **Mint missing metrics** — `create_kpi_definition` for issuer-characteristic
+   KPIs the catalog lacks (broker client counts, CFD lots, net deposits, …):
+   snake_case ASCII `metric_key`, `scope: "company"`. `origin` is stamped
+   `agent` automatically — no field to set.
+4. **One batch per period** — `record_financial_facts`, one call per fiscal
+   period, every fact's `citation` naming the page + row label (e.g. `"p.12,
+   tab. 3, row 'Zysk netto'"`).
+5. **Route everything else** — claims/notes/events/expectations, per the
+   mapping table below.
+
+**Unit scaling.** Polish statements declare the unit in the table header:
+`(w tys. PLN)` → store the FULL base unit (multiply the printed figure by
+1,000); `(w mln PLN)` → ×1,000,000. `valueNumeric` is always base-unit PLN
+(or the stated currency), never the printed thousands/millions figure. Cite
+the declared unit in the citation text so the scaling is checkable.
+
+**Parenthesized negatives.** `(419 996)` in a Polish statement is **−419996**
+(thousands), not a label or a range. Thousand separators are non-breaking
+spaces; the decimal separator is a comma (`1 027 240,50` → `1027240.50`).
+
+**Cumulative-only recording (ADR 0093 dec. 3).** A GPW interim publication
+prints discrete-quarter AND cumulative columns side by side — record ONLY the
+cumulative column (H1/9M/FY) into the cumulative period; skip the
+discrete-quarter column, it's derivable by span arithmetic. Worked example
+(XTB RB 18/2026): the table shows Q2 net profit `492 198` tys. right next to
+H1 `1 027 240` tys. — record `1027240000` against the H1 period, never the
+Q2 figure. `periodType` for a half year is `"H1"` with `periodEnd`
+`YYYY-06-30`.
+
+**Preliminary flag.** A wstępne/preliminary release → `dataQuality:
+"preliminary"` on the batch. The later final audited report supersedes it
+automatically at creation (ADR 0093 dec. 2) — no follow-up write needed.
+
+**Ambiguous label trap.** The same label can be defined twice at different
+windows in one publication (XTB: "Liczba aktywnych klientów" appears both as
+a quarterly figure and a half-year figure). Cite the exact table/row you
+read and pick the column whose window matches the period you're recording —
+never the first match.
+
+**Raster-chart caveat.** A value that exists only inside a chart image is not
+in the document's text layer — read the page visually before citing it, and
+cite the page number. Never estimate a chart value from its axis.
+
+**Refusal handling.** `provenance_required` means a citation is missing — fix
+the input, don't retry as-is. `writes_disabled` means the owner hasn't turned
+on *Settings → MCP server → Allow write tools* — ask, don't work around it.
+
+### Mapping doctrine: report content → tool
+
+| Report content | Tool | Notes |
+| --- | --- | --- |
+| P&L / balance-sheet / KPI figures | `record_financial_facts` | per-fact citation (page + row label) |
+| Management guidance with numbers ("costs +30% in 2026", "marketing +50%") | `create_management_claim` | structured target fields (`targetMetricKey`/comparator/value, due year/period) + `sourceEvidenceId` = the captured document id |
+| One-off narrative events (a KNF penalty, a donation) | `create_notebook_entry` | `report_document` origin |
+| Dividend declarations/payments | `create_company_event` | |
+| The upcoming final report date | `create_report_expectation` | feeds the report-season calendar |
+| Post-balance-date trading updates ("92.8k new clients in July") | `create_notebook_entry` | **NEVER** `record_financial_facts` — the datum belongs to a period not yet closed (wrong period discipline) |
+
 ## Tool catalog
 
 Result shape: every tool's `structuredContent` is a JSON object — list results
@@ -106,7 +174,7 @@ keeps it exact — do not hand-edit):
 | `get_company_dossier` | One company's research dossier: identity, fundamentals coverage per fiscal period, confirmed financial facts, and quality-scorecard summaries. Sourced from the user's own research; decision support only. |
 | `search_research` | Full-text search across the user's research workspace (notes, report documents, transcripts, claims, facts). Returns ranked matches with snippets. |
 | `list_claims_due` | Management claims whose verification period has arrived (due), passed (overdue), or is approaching (upcoming), per company. |
-| `get_quality_assessment` | Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus previously-stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — qualitative criteria are recorded manually now, and this tool reads only stored verdicts (new criteria stay empty until the planned MCP write-tools). Decision support only — never an investment recommendation. |
+| `get_quality_assessment` | Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — this tool reads only stored verdicts; agents record new verdicts with provenance via the `set_qualitative_verdicts` write-tool (until then a criterion reads as unassessed). Decision support only — never an investment recommendation. |
 | `list_companies` | Every company tracked in the user's workspace (identity, exchange, qualified ticker). |
 | `get_company_basic_info` | One company's identity card: name, exchange, ticker, ISIN, sector (with its provenance), and latest reported shares outstanding. |
 | `list_watchlists` | The user's watchlists (id, name, ordering). |
@@ -148,7 +216,7 @@ keeps it exact — do not hand-edit):
 | `list_flagged_extraction_outcomes` | One company's extraction-coverage gaps: the fiscal periods where the deterministic pipeline emitted nothing (a flagged/failed outcome). Complements list_flagged_fact_provenance (flagged facts that DID emit) — the coverage-gap review surface. |
 | `list_unclassified_filings` | Official filings (ESPI/EBI) the deterministic rule classifier could not place — the explicit unclassified bucket, never guessed at. Optionally scoped to one company. Classify one with classify_filing. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (56):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (58):
 
 | Tool | What it does |
 | --- | --- |
@@ -158,8 +226,10 @@ keeps it exact — do not hand-edit):
 | `create_management_claim` | Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report/transcript it was made in). |
 | `update_management_claim` | Update a tracked management claim (by id). Must carry its `sourceEvidenceId` provenance. |
 | `set_claim_verdict` | Record a verification verdict on a management claim (optionally linking the verifying fact). |
-| `create_financial_fact` | Record a financial fact for a company/period/metric. Must carry a citation (`sourceDocumentRef` or `attribution`). Decision support only. |
-| `update_financial_fact` | Update a stored financial fact (by id). Must carry its citation provenance. |
+| `create_financial_fact` | Record a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry. |
+| `update_financial_fact` | Update a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact. |
+| `capture_report_document` | Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (record_financial_facts needs its returned documentId). Always registers under source_type "user_url"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf \| text/html \| application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error. |
+| `record_financial_facts` | Record a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: "preliminary"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only. |
 | `set_qualitative_verdicts` | Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation. |
 | `create_research_question` | Open a research question scoped to a company/watchlist/sector. |
 | `update_research_question` | Update a research question (title/body/status) by id. |

@@ -5,7 +5,8 @@
  */
 export type TierFactCount = { 
 /**
- * esef | structured_xhtml | espi_cover_note | pdf | html_aggregator | ai_text
+ * esef | structured_xhtml | espi_cover_note | pdf | agent | html_aggregator |
+ * ai_text
  */
 sourceTier: string, 
 /**

@@ -805,6 +805,7 @@ Composable, deterministic adversarial data and async-ordering controls on the ON
 | `hostile-content` | unbreakable long URL/filename, long issuer/title/body, Polish diacritics |
 | `dense-history` | ~250 feed rows — ONLY when explicitly selected |
 | `partial-data` | a financial period with NO matching financial fact (the missing-relevant-read state) |
+| `preliminary-fundamentals` | ADR 0093 dec. 2 preliminary lifecycle: a period whose `final` fact supersedes a `preliminary` sibling in the same slot (final-preferred selection, `supersedesId` stamped), plus a second period holding a preliminary-ONLY fact (no final yet) |
 | `stale-processing` | an old visible research-evidence result plus a `running` brief job for the same scope |
 | `conflicting-statuses` | a source adapter reporting `attention` while its latest ingestion result shows a clean run — two independent reads deliberately disagree |
 | `mixed-locale` | realistic Polish + English feed items — real source content, never a planted UI-translation literal |

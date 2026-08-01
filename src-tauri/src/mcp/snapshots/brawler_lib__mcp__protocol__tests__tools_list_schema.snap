@@ -1007,7 +1007,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "set_claim_verdict"
       },
       {
-        "description": "Record a financial fact for a company/period/metric. Must carry a citation (`sourceDocumentRef` or `attribution`). Decision support only.",
+        "description": "Record a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry.",
         "inputSchema": {
           "properties": {
             "annotation": {
@@ -1079,7 +1079,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "create_financial_fact"
       },
       {
-        "description": "Update a stored financial fact (by id). Must carry its citation provenance.",
+        "description": "Update a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact.",
         "inputSchema": {
           "properties": {
             "annotation": {
@@ -1114,6 +1114,129 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "update_financial_fact"
+      },
+      {
+        "description": "Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (record_financial_facts needs its returned documentId). Always registers under source_type \"user_url\"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf | text/html | application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "attribution": {
+              "type": "string"
+            },
+            "companyId": {
+              "type": "string"
+            },
+            "originRef": {
+              "type": "string"
+            },
+            "periodId": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "url"
+          ],
+          "type": "object"
+        },
+        "name": "capture_report_document"
+      },
+      {
+        "description": "Record a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: \"preliminary\"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "definitions": {
+            "RecordFinancialFactEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "attribution": {
+                  "description": "Slot dimension `total` (default) | `owners_of_parent` | `nci` — a typed refusal rejects any other token. NEVER a citation.",
+                  "type": "string"
+                },
+                "citation": {
+                  "description": "REQUIRED, non-blank — page/quote free text pointing at where this value was read in the cited document.",
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "measureWindow": {
+                  "type": "string"
+                },
+                "metricKey": {
+                  "type": "string"
+                },
+                "valueNumeric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "citation",
+                "metricKey",
+                "valueNumeric"
+              ],
+              "type": "object"
+            },
+            "RecordFinancialFactsPeriod": {
+              "additionalProperties": false,
+              "properties": {
+                "fiscalYear": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "periodEnd": {
+                  "type": "string"
+                },
+                "periodType": {
+                  "description": "GPW interim reporting is cumulative — record H1/9M/FY only (ADR 0093 dec. 3); a discrete-quarter column is derivable by span arithmetic, never submitted here.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "fiscalYear",
+                "periodType"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "dataQuality": {
+              "description": "`final` (default when absent) | `preliminary` | `estimated` (ADR 0093 dec. 2). Applies to every fact in the batch.",
+              "type": "string"
+            },
+            "facts": {
+              "items": {
+                "$ref": "#/definitions/RecordFinancialFactEntry"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "period": {
+              "$ref": "#/definitions/RecordFinancialFactsPeriod"
+            },
+            "reportDocumentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId",
+            "facts",
+            "period",
+            "reportDocumentId"
+          ],
+          "type": "object"
+        },
+        "name": "record_financial_facts"
       },
       {
         "description": "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation.",
@@ -1561,6 +1684,10 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
               "type": "string"
             },
             "metricKey": {
+              "type": "string"
+            },
+            "origin": {
+              "description": "`user` (default, absent/empty normalizes to it) | `agent` — the ONLY two tokens a live writer may set (`seed` is migration-backfill-only, ADR 0093 decision 4). The UI's create command never sets this (stays `user`); the MCP `create_kpi_definition` act handler forces `agent` regardless of caller input — same pattern as `NewFinancialFact. extraction_method`.",
               "type": "string"
             },
             "scope": {

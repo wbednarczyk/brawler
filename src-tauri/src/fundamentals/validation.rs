@@ -424,18 +424,57 @@ fn is_split_sensitive_metric(metric_key: &str) -> bool {
 /// `flagged`**, never to reject — a genuine collapse or acquisition is surfaced
 /// for review, not dropped.
 pub fn implausible_against_history(metric_key: &str, value: Decimal, history: &[Decimal]) -> bool {
+    matches!(
+        plausibility_verdict(metric_key, value, history),
+        PlausibilityVerdict::Implausible { .. }
+    )
+}
+
+/// Three-way per-fact plausibility verdict — the honest-abstention doctrine
+/// ([ADR 0093](../../../docs/adr/0093-agent-acquisition-tier-and-preliminary-lifecycle.md)
+/// decision 6) a caller with no set-level accept/flag decision of its own
+/// (e.g. an agent-supplied fact batch, [`crate::jobs::supplied_set`]) needs:
+/// "not implausible" is not always a pass. Thin history (<2 stored points), a
+/// split-sensitive metric, and a zero value/median are ABSTENTIONS, never
+/// silent passes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlausibilityVerdict {
+    /// The value is within [`HISTORY_PLAUSIBILITY_RATIO`]× the history median.
+    Plausible,
+    /// ≥[`HISTORY_PLAUSIBILITY_RATIO`]× off the history median, in either
+    /// direction.
+    Implausible { history_median: Decimal },
+    /// The gate could not run for this fact: fewer than two historical
+    /// magnitudes, a split-sensitive metric, or a zero value/median.
+    Abstained,
+}
+
+/// The typed twin of [`implausible_against_history`]/[`history_median`]: the
+/// exact same rule, but names *why* nothing was proven instead of collapsing
+/// every non-implausible case to a bare `false`.
+pub fn plausibility_verdict(
+    metric_key: &str,
+    value: Decimal,
+    history: &[Decimal],
+) -> PlausibilityVerdict {
     if is_split_sensitive_metric(metric_key) {
-        return false;
+        return PlausibilityVerdict::Abstained;
     }
     let Some(median) = history_median(history) else {
-        return false;
+        return PlausibilityVerdict::Abstained;
     };
     let magnitude = value.abs();
     if median.is_zero() || magnitude.is_zero() {
-        return false;
+        return PlausibilityVerdict::Abstained;
     }
     let ratio = Decimal::from(HISTORY_PLAUSIBILITY_RATIO);
-    magnitude > median * ratio || magnitude * ratio < median
+    if magnitude > median * ratio || magnitude * ratio < median {
+        PlausibilityVerdict::Implausible {
+            history_median: median,
+        }
+    } else {
+        PlausibilityVerdict::Plausible
+    }
 }
 
 /// The magnitude median of a metric's history — the robust center the
@@ -493,6 +532,27 @@ pub fn validate(
 /// inputs): runs only the same-period identities.
 pub fn validate_period(current: &FactSet, tol: &Tolerance) -> ValidationReport {
     validate(current, None, None, None, tol)
+}
+
+/// The `metric_key`s one named identity check ([`IdentityCheck::id`]) consumes
+/// — the reverse of the private `require(...)` lists inside [`balance_sheet`],
+/// [`free_cash_flow`] and [`cash_flow_tie`]. Exists so a caller that must
+/// attribute a set-level failure back onto the individual facts involved
+/// (e.g. [`crate::jobs::supplied_set`]) has one source of truth instead of a
+/// second, driftable copy of each identity's input list. `&[]` for an unknown
+/// id.
+pub fn identity_check_metric_keys(id: &str) -> &'static [&'static str] {
+    match id {
+        "balance_sheet_identity" => &[TOTAL_ASSETS, TOTAL_LIABILITIES, TOTAL_EQUITY],
+        "free_cash_flow_definition" => &[FREE_CASH_FLOW, OPERATING_CASH_FLOW, CAPEX],
+        "cash_flow_tie" => &[
+            CASH,
+            OPERATING_CASH_FLOW,
+            INVESTING_CASH_FLOW,
+            FINANCING_CASH_FLOW,
+        ],
+        _ => &[],
+    }
 }
 
 #[cfg(test)]

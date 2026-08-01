@@ -708,6 +708,16 @@ impl ReportDocumentStore {
         get(&connection, id)
     }
 
+    /// FK-existence check for a report_document id (ADR 0093 decision 6): the
+    /// MCP batch fact tool refuses with a typed `not_found` BEFORE any write
+    /// when the caller's `reportDocumentId` doesn't exist — `get_report_document`
+    /// would otherwise surface an unmapped `QueryReturnedNoRows` as `internal`.
+    pub fn ensure_report_document_exists(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        validate_reference_exists(&connection, "report_documents", id)
+    }
+
     pub fn list_report_documents_by_company(
         &self,
         company_id: &str,

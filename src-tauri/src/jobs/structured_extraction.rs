@@ -1045,6 +1045,9 @@ pub(crate) fn run_structured_extraction(
                     validation_status,
                     drift_json: drift_json.as_deref(),
                     citation: Some(&fact.citation),
+                    attribution: None,
+                    measure_window: None,
+                    data_quality: None,
                 })
                 .map_err(|e| e.to_string())?;
             match commit {
@@ -1319,6 +1322,9 @@ fn run_positional_extraction(
                     validation_status,
                     drift_json: None,
                     citation: Some(&fact.citation),
+                    attribution: None,
+                    measure_window: None,
+                    data_quality: None,
                 })
                 .map_err(|e| e.to_string())?;
             match commit {
@@ -3101,6 +3107,9 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example | Aktywa razem"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             })
             .expect("aggregator prior");
 
@@ -3260,6 +3269,9 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Aktywa"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             })
             .expect("seed aggregator slot");
 

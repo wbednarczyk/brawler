@@ -1,6 +1,6 @@
 ---
 source: src/mcp/reads.rs
-assertion_line: 918
+assertion_line: 921
 expression: redact(&payload)
 ---
 {
@@ -22,6 +22,7 @@ expression: redact(&payload)
       "extractionMethod": "manual",
       "id": "fact_period_company_gpw_tst_2025_fy_[uid]_kpidef_net_profit_consolidated_total_reported_flow_final_[uid]",
       "measureWindow": "flow",
+      "metricKey": "net_profit",
       "periodId": "period_company_gpw_tst_2025_fy_[uid]",
       "reportingStandard": null,
       "sourceDocumentRef": null,

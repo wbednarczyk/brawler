@@ -238,6 +238,61 @@ fn history_plausibility_flags_a_uniform_scale_outlier_but_spares_normal_moves() 
 }
 
 #[test]
+fn plausibility_verdict_names_why_a_fact_was_not_flagged() {
+    // The typed twin of `implausible_against_history`: same cases, but every
+    // non-implausible reason is a distinct, honest `Abstained` — never
+    // collapsed into an unlabeled pass (ADR 0093 dec. 6).
+    let siblings = [d(3_841_000), d(2_315_000), d(8_529_000)];
+    assert_eq!(
+        plausibility_verdict("cash", d(19_000), &siblings),
+        PlausibilityVerdict::Implausible {
+            history_median: d(3_841_000)
+        }
+    );
+    assert_eq!(
+        plausibility_verdict("cash", d(3_500_000), &siblings),
+        PlausibilityVerdict::Plausible
+    );
+    // Split-sensitive: abstains regardless of the swing.
+    assert_eq!(
+        plausibility_verdict("eps_basic", d(1), &[d(200), d(210)]),
+        PlausibilityVerdict::Abstained
+    );
+    // Thin history (< 2 values): abstains.
+    assert_eq!(
+        plausibility_verdict("cash", d(19_000), &[d(3_841_000)]),
+        PlausibilityVerdict::Abstained
+    );
+    // Zero value: abstains.
+    assert_eq!(
+        plausibility_verdict("cash", d(0), &siblings),
+        PlausibilityVerdict::Abstained
+    );
+}
+
+#[test]
+fn identity_check_metric_keys_names_each_identitys_inputs() {
+    assert_eq!(
+        identity_check_metric_keys("balance_sheet_identity"),
+        &[TOTAL_ASSETS, TOTAL_LIABILITIES, TOTAL_EQUITY]
+    );
+    assert_eq!(
+        identity_check_metric_keys("free_cash_flow_definition"),
+        &[FREE_CASH_FLOW, OPERATING_CASH_FLOW, CAPEX]
+    );
+    assert_eq!(
+        identity_check_metric_keys("cash_flow_tie"),
+        &[
+            CASH,
+            OPERATING_CASH_FLOW,
+            INVESTING_CASH_FLOW,
+            FINANCING_CASH_FLOW
+        ]
+    );
+    assert_eq!(identity_check_metric_keys("unknown_check"), &[] as &[&str]);
+}
+
+#[test]
 fn history_median_is_the_upper_middle_magnitude_and_needs_two_values() {
     // The figure the quarantine outcome cites. Upper-middle element (index len/2),
     // magnitudes only, zeros excluded, and `None` below two non-zero values so the

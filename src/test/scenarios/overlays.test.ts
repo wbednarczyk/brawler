@@ -100,6 +100,35 @@ describe("scenario overlays — required content", () => {
     expect(fact).toBeUndefined();
   });
 
+  it("preliminary-fundamentals: a final fact wins its slot over a superseded preliminary sibling, and a preliminary-only fact stays visible (ADR 0093 dec. 2, epic #285 T5)", () => {
+    const data = buildScenario({ base: "minimal", overlays: ["preliminary-fundamentals"] });
+    const facts = data.financialFacts.filter((f) => f.id.startsWith("fact_overlay_preliminary_"));
+    expect(facts).toHaveLength(3);
+
+    const supersededPreliminary = facts.find((f) => f.id === "fact_overlay_preliminary_2025_preliminary");
+    const supersedingFinal = facts.find((f) => f.id === "fact_overlay_preliminary_2025_final");
+    const preliminaryOnly = facts.find((f) => f.id === "fact_overlay_preliminary_2026_preliminary");
+
+    // Same slot (period + definition): a final fact superseding a preliminary
+    // one, `supersedesId` stamped per the storage write path (ADR 0093 dec.
+    // 2), and the final fact created AFTER the preliminary one — the real
+    // ordering the fact matrix's final-preferred selection must handle.
+    expect(supersededPreliminary?.periodId).toBe(supersedingFinal?.periodId);
+    expect(supersededPreliminary?.definitionId).toBe(supersedingFinal?.definitionId);
+    expect(supersededPreliminary?.dataQuality).toBe("preliminary");
+    expect(supersedingFinal?.dataQuality).toBe("final");
+    expect(supersedingFinal?.supersedesId).toBe(supersededPreliminary?.id);
+    expect(
+      new Date(supersedingFinal!.createdAt).getTime() >
+        new Date(supersededPreliminary!.createdAt).getTime(),
+    ).toBe(true);
+
+    // A separate period holds a preliminary-only fact — no final sibling.
+    expect(preliminaryOnly?.dataQuality).toBe("preliminary");
+    expect(preliminaryOnly?.periodId).not.toBe(supersededPreliminary?.periodId);
+    expect(facts.filter((f) => f.periodId === preliminaryOnly?.periodId)).toHaveLength(1);
+  });
+
   it("stale-processing: an old research result stays visible", () => {
     const data = buildScenario({ base: "minimal", overlays: ["stale-processing"] });
     const evidence = data.researchEvidence.find((e) => e.id === "research_overlay_stale_1");

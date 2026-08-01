@@ -7,13 +7,19 @@
 //! runs every candidate set through the [`super::validation`] gate before any
 //! fact is persisted.
 //!
-//! Tiers, highest trust first (ADR 0086 dec. 3, superseding ADR 0061 dec. 1/3):
+//! Tiers, highest trust first (ADR 0086 dec. 3, superseding ADR 0061 dec. 1/3;
+//! `Agent` added by ADR 0093 dec. 1):
 //! 1. [`esef`] — ESEF/iXBRL inline-XBRL facts (tagged IFRS concepts). Tier 1.
 //! 2. Structured xHTML / positional "wybrane dane" tables ([`html_positional`],
 //!    persisted under `source_tier='pdf'`, `extraction_method='html_positional'`).
 //! 3. [`espi_cover_note`] — the ESPI cover-note "WYBRANE DANE FINANSOWE" table,
 //!    parsed from the already-ingested komunikat body (zero-fetch, WDF).
-//! 4. [`html`] — the BiznesRadar aggregator, now the PRIMARY source for core KPIs
+//! 4. `Agent` — an MCP-connected agent's read of an issuer document, recorded
+//!    via the port's write tools (`source_tier='agent'`, `extraction_method=
+//!    'mcp_agent'`). NOT an issuer tier (no deterministic pipeline produced
+//!    it), but ranked above the aggregator: an agent reads the issuer's own
+//!    document, the aggregator is third-party. ADR 0093 decision 1.
+//! 5. [`html`] — the BiznesRadar aggregator, now the PRIMARY source for core KPIs
 //!    (`source_tier='html_aggregator'`, pulled daily by a separate job).
 //!
 //! The PDF fact-extraction arm is RETIRED (ADR 0086 dec. 1): no tier reads
@@ -58,13 +64,25 @@ pub enum SourceTier {
     /// rows under this tier are the retired PDF arm's output, distinguishable by
     /// method.
     Pdf,
+    /// An MCP-connected agent's write, provenanced `source_tier='agent'` /
+    /// `extraction_method='mcp_agent'` (ADR 0093 decision 1, epic #285). Ranked
+    /// BELOW every issuer tier above — no deterministic pipeline verified it, so
+    /// [`is_issuer`](Self::is_issuer) is `false` for this tier — and ABOVE
+    /// [`HtmlAggregator`](Self::HtmlAggregator): an agent reads the issuer's own
+    /// document, the aggregator is third-party. An issuer tier landing on an
+    /// agent-held slot always UPGRADES it (the existing `Upgraded` machinery); a
+    /// mis-extracted agent figure can never block the audited correction. The
+    /// agent tier never overwrites an issuer-held or manual slot — a
+    /// disagreement there is a `Divergent` outcome, reported, never resolved
+    /// silently.
+    Agent,
     /// HTML financial-data aggregator (BiznesRadar). **Primary source of the
     /// core KPI history** (ADR 0086 dec. 2) and the LOWEST precedence tier: it
-    /// fills every slot no issuer tier owns, never overwrites one that is owned,
-    /// and against an owned slot it acts as a reversed witness — recording a
-    /// `witness_disagreement` outcome on divergence and a corroboration stamp on
-    /// agreement (epic #229 T5). "Witness, not source of truth" (ADR 0061) is
-    /// retired: it is both, in different places.
+    /// fills every slot no issuer (or agent) tier owns, never overwrites one
+    /// that is owned, and against an owned slot it acts as a reversed witness —
+    /// recording a `witness_disagreement` outcome on divergence and a
+    /// corroboration stamp on agreement (epic #229 T5). "Witness, not source of
+    /// truth" (ADR 0061) is retired: it is both, in different places.
     HtmlAggregator,
 }
 
@@ -75,6 +93,7 @@ impl SourceTier {
             SourceTier::StructuredXhtml => "structured_xhtml",
             SourceTier::EspiCoverNote => "espi_cover_note",
             SourceTier::Pdf => "pdf",
+            SourceTier::Agent => "agent",
             SourceTier::HtmlAggregator => "html_aggregator",
         }
     }
@@ -89,6 +108,7 @@ impl SourceTier {
             "structured_xhtml" => Some(SourceTier::StructuredXhtml),
             "espi_cover_note" => Some(SourceTier::EspiCoverNote),
             "pdf" => Some(SourceTier::Pdf),
+            "agent" => Some(SourceTier::Agent),
             "html_aggregator" => Some(SourceTier::HtmlAggregator),
             _ => None,
         }
@@ -101,14 +121,25 @@ impl SourceTier {
         self < other
     }
 
-    /// Whether this tier is an ISSUER-produced tier — one read from the issuer's
-    /// own filing, whose held slot records a reversed-witnessing
-    /// `witness_disagreement` when the aggregator diverges (ADR 0086 decision 4,
-    /// amended 2026-07-22: the positional `Pdf` tier is the issuer's filing read
-    /// deterministically and counts as an issuer tier). The aggregator's own
-    /// `HtmlAggregator` tier is the only non-issuer tier.
+    /// Whether this tier is an ISSUER-produced tier — one read DETERMINISTICALLY
+    /// from the issuer's own filing (ADR 0086 decision 4, amended 2026-07-22:
+    /// the positional `Pdf` tier is the issuer's filing read deterministically
+    /// and counts as an issuer tier). Amended again by ADR 0093 decision 1: the
+    /// `Agent` tier also reads the issuer's own document, but no deterministic
+    /// pipeline verified it, so it is **not** an issuer tier either — it is
+    /// distinguished from `HtmlAggregator` (third-party) elsewhere by rank, not
+    /// by this predicate.
+    ///
+    /// This predicate answers "is this genuinely the issuer's own verified
+    /// filing" — used where that specific fact matters (e.g. the derived
+    /// kpi_relevance observation, `refresh_derived_kpi_relevance`). It is
+    /// deliberately NOT the same question as reversed-witnessing precedence
+    /// ("does the stored tier outrank `HtmlAggregator`?", i.e.
+    /// `outranks(SourceTier::HtmlAggregator)`) — the agent tier answers that one
+    /// `true` while answering `is_issuer` `false`. Call sites that mean
+    /// witnessing/precedence must use `outranks`, not this method.
     pub fn is_issuer(self) -> bool {
-        !matches!(self, SourceTier::HtmlAggregator)
+        !matches!(self, SourceTier::HtmlAggregator | SourceTier::Agent)
     }
 }
 
@@ -232,7 +263,50 @@ mod tests {
         assert!(SourceTier::Esef < SourceTier::StructuredXhtml);
         assert!(SourceTier::StructuredXhtml < SourceTier::EspiCoverNote);
         assert!(SourceTier::EspiCoverNote < SourceTier::Pdf);
-        assert!(SourceTier::Pdf < SourceTier::HtmlAggregator);
+        // ADR 0093 decision 1: `Agent` sits below every issuer tier and above
+        // `HtmlAggregator`.
+        assert!(SourceTier::Pdf < SourceTier::Agent);
+        assert!(SourceTier::Agent < SourceTier::HtmlAggregator);
+    }
+
+    /// ADR 0093 decision 1: every issuer tier outranks `Agent`, and `Agent`
+    /// outranks `HtmlAggregator` — pinned directly against `outranks`, not just
+    /// the derived `Ord`, since the precedence machinery calls `outranks`.
+    #[test]
+    fn every_issuer_tier_outranks_agent_which_outranks_the_aggregator() {
+        for issuer_tier in [
+            SourceTier::Esef,
+            SourceTier::StructuredXhtml,
+            SourceTier::EspiCoverNote,
+            SourceTier::Pdf,
+        ] {
+            assert!(
+                issuer_tier.outranks(SourceTier::Agent),
+                "{issuer_tier:?} must outrank Agent"
+            );
+        }
+        assert!(SourceTier::Agent.outranks(SourceTier::HtmlAggregator));
+        assert!(!SourceTier::HtmlAggregator.outranks(SourceTier::Agent));
+    }
+
+    /// ADR 0093 decision 1: `Agent` is explicitly NOT an issuer tier (no
+    /// deterministic pipeline verified it), unlike every other non-aggregator
+    /// tier.
+    #[test]
+    fn agent_is_not_an_issuer_tier() {
+        assert!(!SourceTier::Agent.is_issuer());
+        assert!(!SourceTier::HtmlAggregator.is_issuer());
+        for issuer_tier in [
+            SourceTier::Esef,
+            SourceTier::StructuredXhtml,
+            SourceTier::EspiCoverNote,
+            SourceTier::Pdf,
+        ] {
+            assert!(
+                issuer_tier.is_issuer(),
+                "{issuer_tier:?} must be an issuer tier"
+            );
+        }
     }
 
     /// Guardrail: `parse` must round-trip **every** `as_str` marker. Stored
@@ -246,6 +320,7 @@ mod tests {
             SourceTier::StructuredXhtml,
             SourceTier::EspiCoverNote,
             SourceTier::Pdf,
+            SourceTier::Agent,
             SourceTier::HtmlAggregator,
         ] {
             assert_eq!(

@@ -19,6 +19,16 @@ export type FinancialFactForm = {
   // One-off note (#156): rendered as a '*' marker next to the value. Empty
   // string on save clears a stored annotation.
   annotation: string;
+  // ADR 0093 dec. 2: `final | preliminary | estimated`. Defaults to "final"
+  // for a NEW fact (the manual-entry path stays highest on the trust ladder).
+  // Editing an EXISTING fact must resend its own current value, never a
+  // hardcoded "final" — the backend treats `data_quality` as an immutable
+  // uniqueness-slot dimension on update and rejects any requested CHANGE with
+  // a typed `FinancialFactDataQualityLocked` conflict (a resend of the
+  // current value is a no-op it passes through). `selectFinancialFact`
+  // populates this from the selected fact so a save always resends the row's
+  // own quality.
+  dataQuality: string;
 };
 
 type FundamentalsControllerInput = {
@@ -99,7 +109,12 @@ export function useFundamentalsController({
           id: selectedFinancialFactId,
           valueNumeric: financialFactForm.valueNumeric,
           currency: financialFactForm.currency || undefined,
-          dataQuality: "final",
+          // The row's OWN existing quality (ADR 0093 dec. 2), never a
+          // hardcoded "final" — see the `FinancialFactForm.dataQuality` doc
+          // comment. A resend of the current value is a no-op the backend
+          // passes through; a hardcoded literal would attempt an illegal
+          // flip on every edit of a preliminary/estimated fact.
+          dataQuality: financialFactForm.dataQuality,
           confirmationState: "confirmed",
           // Always sent: the backend treats "" as "clear the annotation".
           annotation: financialFactForm.annotation.trim(),
@@ -121,7 +136,7 @@ export function useFundamentalsController({
           attribution: "total",
           variant: "reported",
           measureWindow: "flow",
-          dataQuality: "final",
+          dataQuality: financialFactForm.dataQuality,
           extractionMethod: "manual",
           confirmationState: "confirmed",
           annotation: financialFactForm.annotation.trim() || undefined,
@@ -134,6 +149,7 @@ export function useFundamentalsController({
         currency: "",
         periodId: "",
         annotation: "",
+        dataQuality: "final",
       });
       setSelectedFinancialFactId(null);
       setIsFinancialFactEditMode(false);
@@ -170,6 +186,9 @@ export function useFundamentalsController({
         currency: fact.currency || "",
         periodId: fact.periodId,
         annotation: fact.annotation || "",
+        // Preserved verbatim so a save resends the row's own quality — see
+        // the `FinancialFactForm.dataQuality` doc comment (ADR 0093 dec. 2).
+        dataQuality: fact.dataQuality,
       });
     }
   }
@@ -187,6 +206,7 @@ export function useFundamentalsController({
       currency: "",
       periodId: "",
       annotation: "",
+      dataQuality: "final",
     });
   }
 

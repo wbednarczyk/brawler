@@ -99,20 +99,213 @@ act_handler!(
     |state, input| state.set_claim_verdict(input).map_err(CommandError::from)
 );
 
-act_handler!(
-    create_financial_fact_handler,
-    storage::NewFinancialFact,
-    |state, input| state
-        .create_financial_fact(input)
-        .map_err(CommandError::from)
-);
+/// ADR 0093 decision 1 honesty rule (epic #285 T9): this act writes through
+/// the SAME `NewFinancialFact` → `AppState::create_financial_fact` the UI's
+/// manual-entry command calls (ADR 0039 — no MCP-only write shape), but an
+/// MCP write is never the owner's own manual entry. Before this fix it left
+/// no `financial_fact_provenance` row and defaulted `extraction_method` to
+/// `'manual'` — the agent's figure masqueraded as owner-entered, sat at the
+/// top of the trust ladder (no provenance = untouchable), and could never be
+/// corrected by a later issuer filing. Now: `extraction_method` is forced to
+/// `mcp_agent` regardless of caller input, and a provenance row is stamped
+/// `source_tier='agent'`, `validation_status='unreviewed'` (no validation
+/// gate runs on this single-fact path — `record_financial_facts`/T7 is the
+/// validated batch path), citing the fact's own `sourceDocumentRef` (mandatory
+/// by the `FactCitation` gate before this handler ever runs).
+/// `confirmation_state` is left to the storage default (`confirmed` — ADR
+/// 0086 decision 5, frozen).
+pub fn create_financial_fact_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |mut input: storage::NewFinancialFact| {
+        input.extraction_method = Some("mcp_agent".to_owned());
+        let citation = input.source_document_ref.clone();
+        let fact = state
+            .create_financial_fact(input)
+            .map_err(CommandError::from)?;
+        state
+            .kpi_extraction()
+            .stamp_agent_fact_provenance(&fact.id, citation.as_deref())
+            .map_err(CommandError::from)?;
+        Ok(fact)
+    })
+}
+
+/// ADR 0093 decision 1 honesty rule (epic #285 T9): same `UpdateFinancialFact`
+/// → `AppState::update_financial_fact` the UI's edit command calls — but this
+/// path is reachable over MCP, so every update through it stamps
+/// `source_tier='agent'` provenance (`validation_status='unreviewed'`, citing
+/// the mandatory `sourceDocumentRef`), honestly recording that an agent
+/// touched the fact.
+///
+/// Deliberately includes a fact that currently has NO provenance row (a
+/// `manual` UI entry, or a pre-#285 legacy row): `update_financial_fact` is an
+/// explicit, single, interactively agent-directed write the owner enabled via
+/// `mcpWritesEnabled` — the same trust boundary as a UI edit, not the
+/// unattended background writers (`record_structured_fact`'s aggregator/
+/// structured-extraction precedence) ADR 0086 decision 3's "manual facts are
+/// untouchable by every automatic path" governs. No ADR text extends that
+/// rule to this interactive path, so the update SUCCEEDS and the takeover is
+/// stamped honestly rather than silently refused or left mislabeled
+/// `manual`. This is also what makes an MCP-authored fact upgradeable
+/// end-to-end: an agent that mistakenly recorded a wrong value can correct
+/// its own agent-tier slot through this same path.
+pub fn update_financial_fact_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input: storage::UpdateFinancialFact| {
+        let citation = input.source_document_ref.clone();
+        let fact = state
+            .update_financial_fact(input)
+            .map_err(CommandError::from)?;
+        state
+            .kpi_extraction()
+            .stamp_agent_fact_provenance(&fact.id, citation.as_deref())
+            .map_err(CommandError::from)?;
+        Ok(fact)
+    })
+}
+
+/// `record_financial_facts` batch input (ADR 0093 dec. 6, epic #285 T7):
+/// `companyId`/`reportDocumentId` are internal ids (act tier convention).
+/// `facts` is capped 1..=100 (`jobs::record_financial_facts::MAX_BATCH_FACTS`
+/// — a typed refusal beyond that, checked in the handler since schemars
+/// `minItems`/`maxItems` are schema metadata only, never enforced at
+/// deserialization). Every fact's `citation` is mandatory and non-blank,
+/// checked BEFORE this handler runs
+/// (`ProvenanceRequirement::DocumentAndPerFactCitations`,
+/// `mcp::registry::act_gate`) — never the broken `FactCitation` shape
+/// (`attribution` is a slot dimension, not a citation carrier).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RecordFinancialFactsInput {
+    pub company_id: String,
+    pub report_document_id: String,
+    pub period: RecordFinancialFactsPeriod,
+    /// `final` (default when absent) | `preliminary` | `estimated` (ADR 0093
+    /// dec. 2). Applies to every fact in the batch.
+    #[serde(default)]
+    pub data_quality: Option<String>,
+    #[schemars(length(min = 1, max = 100))]
+    pub facts: Vec<RecordFinancialFactEntry>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RecordFinancialFactsPeriod {
+    pub fiscal_year: i64,
+    /// GPW interim reporting is cumulative — record H1/9M/FY only (ADR 0093
+    /// dec. 3); a discrete-quarter column is derivable by span arithmetic,
+    /// never submitted here.
+    pub period_type: String,
+    #[serde(default)]
+    pub period_end: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RecordFinancialFactEntry {
+    pub metric_key: String,
+    pub value_numeric: String,
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Slot dimension `total` (default) | `owners_of_parent` | `nci` — a
+    /// typed refusal rejects any other token. NEVER a citation.
+    #[serde(default)]
+    pub attribution: Option<String>,
+    #[serde(default)]
+    pub measure_window: Option<String>,
+    /// REQUIRED, non-blank — page/quote free text pointing at where this
+    /// value was read in the cited document.
+    pub citation: String,
+}
 
 act_handler!(
-    update_financial_fact_handler,
-    storage::UpdateFinancialFact,
-    |state, input| state
-        .update_financial_fact(input)
+    record_financial_facts_handler,
+    RecordFinancialFactsInput,
+    |state, input| {
+        let facts: Vec<crate::jobs::record_financial_facts::BatchFactInput<'_>> = input
+            .facts
+            .iter()
+            .map(|fact| crate::jobs::record_financial_facts::BatchFactInput {
+                metric_key: &fact.metric_key,
+                value_numeric: &fact.value_numeric,
+                currency: fact.currency.as_deref(),
+                attribution: fact.attribution.as_deref(),
+                measure_window: fact.measure_window.as_deref(),
+                citation: &fact.citation,
+            })
+            .collect();
+        crate::jobs::record_financial_facts::record_financial_facts(
+            state,
+            crate::jobs::record_financial_facts::RecordFinancialFactsInput {
+                company_id: &input.company_id,
+                report_document_id: &input.report_document_id,
+                fiscal_year: input.period.fiscal_year,
+                period_type: &input.period.period_type,
+                period_end: input.period.period_end.as_deref(),
+                data_quality: input.data_quality.as_deref(),
+                facts: &facts,
+            },
+        )
+    }
+);
+
+/// `capture_report_document` MCP input (ADR 0093 dec. 5, epic #285 T8):
+/// mirrors `storage::CaptureReportDocumentInput` but deliberately EXCLUDES
+/// `sourceType` — an agent registers a URL it read, it must never mint an
+/// `espi_attachment`/other ingest-only row. `deny_unknown_fields` makes that
+/// the honest refusal: an agent that sends `sourceType` gets the same typed
+/// `-32602` "unknown field" protocol error `record_financial_facts` proves
+/// for `totallyMadeUpField` (T7 precedent) — never a silent override of a
+/// field the schema doesn't expose. The handler always writes
+/// `source_type = "user_url"`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AgentCaptureReportDocumentInput {
+    pub company_id: String,
+    pub url: String,
+    #[serde(default)]
+    pub period_id: Option<String>,
+    #[serde(default)]
+    pub origin_ref: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub attribution: Option<String>,
+}
+
+// Fetches and stores the document at `url`, always under
+// `source_type = "user_url"` (ADR 0093 dec. 5). Runs the SAME production
+// path (`report_documents_capture::capture_report_document`) the
+// `capture_report_document` Tauri command uses, but through the gated
+// `HttpDocumentFetcher::agent_capture()` fetcher (https-only, SSRF-guarded
+// on every redirect hop, content-type allowlisted, 30 MiB streaming cap) —
+// never the ingest fetcher's unrestricted behavior. Idempotent: a repeat
+// call with the same `companyId`+`url` returns the existing row
+// (`UNIQUE(company_id, url)`).
+act_handler!(
+    capture_report_document_handler,
+    AgentCaptureReportDocumentInput,
+    |state, input| {
+        let fetcher = crate::document_fetcher::HttpDocumentFetcher::agent_capture();
+        crate::report_documents_capture::capture_report_document(
+            state,
+            &fetcher,
+            storage::CaptureReportDocumentInput {
+                company_id: input.company_id,
+                source_type: "user_url".to_owned(),
+                url: input.url,
+                period_id: input.period_id,
+                origin_ref: input.origin_ref,
+                title: input.title,
+                attribution: input.attribution,
+            },
+        )
         .map_err(CommandError::from)
+    }
 );
 
 // ---- Qualitative verdicts (CitationsJson, batch shape) ---------------------
@@ -217,13 +410,48 @@ act_handler!(
         .map_err(CommandError::from)
 );
 
-act_handler!(
-    create_kpi_definition_handler,
-    storage::NewKpiDefinition,
-    |state, input| state
-        .create_kpi_definition(input)
-        .map_err(CommandError::from)
-);
+/// `^[a-z][a-z0-9_]*$` — the snake_case ASCII shape `metric_key` must take
+/// (ADR 0093 decision 4, epic #285 T9): a catalog key an agent mints must
+/// read like every seeded one (`net_interest_income`, `broker_client_count`),
+/// never prose or mixed case.
+fn is_snake_case_ascii_metric_key(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// ADR 0093 decision 4 (epic #285 T9): agents may mint KPI definitions for
+/// issuer-characteristic metrics the catalog lacks (broker client counts, CFD
+/// lots, net deposits…) — company-scoped by convention, always
+/// `origin='agent'` regardless of caller input (forced, same pattern as
+/// `NewFinancialFact.extraction_method` in the fact-write handlers above),
+/// with a typed refusal on a non-snake_case `metricKey` so a minted key reads
+/// like the rest of the catalog. The UI's create command leaves `origin`
+/// unset, defaulting to `user` (`normalize_kpi_definition_origin`,
+/// `storage/financials.rs`) — untouched by this handler.
+pub fn create_kpi_definition_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |mut input: storage::NewKpiDefinition| {
+        let metric_key = input.metric_key.trim().to_owned();
+        if !is_snake_case_ascii_metric_key(&metric_key) {
+            return Err(CommandError::new(
+                CommandErrorCode::InvalidInput,
+                format!(
+                    "metricKey must be snake_case ASCII matching ^[a-z][a-z0-9_]*$, got {metric_key:?}"
+                ),
+            ));
+        }
+        input.origin = Some("agent".to_owned());
+        state
+            .create_kpi_definition(input)
+            .map_err(CommandError::from)
+    })
+}
 
 act_handler!(
     create_kpi_relevance_handler,

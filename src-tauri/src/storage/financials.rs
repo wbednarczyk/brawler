@@ -44,6 +44,12 @@ pub struct KpiDefinition {
     pub computation: String,
     pub formula: Option<String>,
     pub display_format: Option<String>,
+    /// `seed` (app-owned catalog/sector packs) | `user` (UI-created, the
+    /// default) | `agent` (MCP-minted — ADR 0093 decision 4, epic #285 T9,
+    /// migration `0129`). Reviewable provenance for the #272
+    /// characteristic-KPI UI; minted definitions are extras, never
+    /// completeness-denominator entries.
+    pub origin: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -102,6 +108,13 @@ pub struct FinancialFact {
     pub annotation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// The definition's `metric_key`, joined in from `kpi_definitions` (one
+    /// hop away from `definition_id`, which is `NOT NULL REFERENCES
+    /// kpi_definitions(id) ON DELETE CASCADE` — a fact can never outlive its
+    /// definition). Lets a reader — notably an MCP agent reading back its own
+    /// writes — identify the metric without reverse-engineering it from the
+    /// definition id (epic #285 surface bug).
+    pub metric_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,6 +163,13 @@ pub struct NewKpiDefinition {
     pub computation: String,
     pub formula: Option<String>,
     pub display_format: Option<String>,
+    /// `user` (default, absent/empty normalizes to it) | `agent` — the ONLY
+    /// two tokens a live writer may set (`seed` is migration-backfill-only,
+    /// ADR 0093 decision 4). The UI's create command never sets this (stays
+    /// `user`); the MCP `create_kpi_definition` act handler forces `agent`
+    /// regardless of caller input — same pattern as `NewFinancialFact.
+    /// extraction_method`.
+    pub origin: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -296,6 +316,7 @@ pub(super) fn list_kpi_definitions(
             computation,
             formula,
             display_format,
+            origin,
             created_at,
             updated_at
         FROM kpi_definitions
@@ -318,6 +339,29 @@ pub(super) fn list_kpi_definitions(
         .map_err(StorageError::from)
 }
 
+/// Canonicalizes `kpi_definitions.origin` at the write boundary (the
+/// `normalize_currency`/`normalize_data_quality` pattern, ADR 0093
+/// decision 4, epic #285 T9). `seed` is migration-backfill-only (`0129`) —
+/// never settable by a live writer, refused like any other unknown token.
+/// Absent/empty -> the `user` default (the UI's create command never sets
+/// this field); the MCP `create_kpi_definition` act handler forces `agent`
+/// before this ever runs.
+fn normalize_kpi_definition_origin(origin: Option<String>) -> StorageResult<String> {
+    let value = origin
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("user")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "user" | "agent" => Ok(value),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "origin",
+            value,
+        }),
+    }
+}
+
 pub(super) fn create_kpi_definition(
     connection: &Connection,
     input: NewKpiDefinition,
@@ -332,6 +376,7 @@ pub(super) fn create_kpi_definition(
     let computation = input.computation.trim().to_owned();
     let formula = empty_string_to_none(input.formula.map(|s| s.trim().to_owned()));
     let display_format = empty_string_to_none(input.display_format.map(|s| s.trim().to_owned()));
+    let origin = normalize_kpi_definition_origin(input.origin)?;
 
     if metric_key.is_empty() {
         return Err(StorageError::InvalidFinancialsValue {
@@ -360,8 +405,9 @@ pub(super) fn create_kpi_definition(
             unit,
             computation,
             formula,
-            display_format
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            display_format,
+            origin
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
         ",
         params![
             id,
@@ -374,7 +420,8 @@ pub(super) fn create_kpi_definition(
             unit,
             computation,
             formula,
-            display_format
+            display_format,
+            origin
         ],
     )?;
 
@@ -781,8 +828,9 @@ const DERIVED_OBSERVATION_MIN_PERIODS: i64 = 3;
 ///
 /// Additive and conservative, like every other automatic layer:
 /// * only **issuer-tier** facts count — a fact with no provenance row (manual)
-///   or one stamped `html_aggregator` is third-party or hand-entered, never
-///   evidence that the ISSUER reports the key;
+///   or one stamped `html_aggregator`/`agent` is third-party, agent-read, or
+///   hand-entered, never evidence that the ISSUER reports the key (ADR 0093
+///   decision 1: the `agent` tier is explicitly NOT an issuer tier);
 /// * `INSERT OR IGNORE` + `NOT EXISTS`, so a `core`/`sector`/`user` row for the
 ///   same metric is left exactly as it is;
 /// * a key that STOPS being reported is **not** deleted — staleness is a
@@ -810,8 +858,11 @@ pub(super) fn refresh_derived_kpi_relevance(
           ON p.fact_id = f.id
         WHERE f.company_id = ?1
           -- Issuer tiers only. `is_issuer()` in fundamentals::extraction is the
-          -- Rust twin of this predicate: everything but the aggregator.
-          AND p.source_tier <> 'html_aggregator'
+          -- Rust twin of this predicate: everything but the aggregator and the
+          -- MCP agent tier (ADR 0093 decision 1 — an agent's read is not
+          -- deterministically verified, so it is not evidence the issuer itself
+          -- reports the key).
+          AND p.source_tier NOT IN ('html_aggregator', 'agent')
           AND f.period_id IN (
               SELECT id
               FROM financial_periods
@@ -996,33 +1047,35 @@ pub(super) fn list_financial_facts(
     let mut statement = connection.prepare(
         "
         SELECT
-            id,
-            company_id,
-            period_id,
-            definition_id,
-            value_numeric,
-            currency,
-            statement_basis,
-            attribution,
-            variant,
-            measure_window,
-            data_quality,
-            as_reported_value,
-            as_reported_scale,
-            reporting_standard,
-            extraction_method,
-            confidence,
-            confirmation_state,
-            supersedes_id,
-            source_document_ref,
-            annotation,
-            created_at,
-            updated_at
-        FROM financial_facts
-        WHERE (?1 IS NULL OR company_id = ?1)
-            AND (?2 IS NULL OR period_id = ?2)
-            AND (?3 IS NULL OR definition_id = ?3)
-        ORDER BY datetime(created_at) DESC, id
+            f.id,
+            f.company_id,
+            f.period_id,
+            f.definition_id,
+            f.value_numeric,
+            f.currency,
+            f.statement_basis,
+            f.attribution,
+            f.variant,
+            f.measure_window,
+            f.data_quality,
+            f.as_reported_value,
+            f.as_reported_scale,
+            f.reporting_standard,
+            f.extraction_method,
+            f.confidence,
+            f.confirmation_state,
+            f.supersedes_id,
+            f.source_document_ref,
+            f.annotation,
+            f.created_at,
+            f.updated_at,
+            d.metric_key
+        FROM financial_facts f
+        JOIN kpi_definitions d ON d.id = f.definition_id
+        WHERE (?1 IS NULL OR f.company_id = ?1)
+            AND (?2 IS NULL OR f.period_id = ?2)
+            AND (?3 IS NULL OR f.definition_id = ?3)
+        ORDER BY datetime(f.created_at) DESC, f.id
         ",
     )?;
 
@@ -1137,7 +1190,7 @@ fn stored_fact_set_filtered(
         return Ok(None);
     };
 
-    let facts = list_financial_facts(
+    let mut facts = list_financial_facts(
         connection,
         ListFinancialFactsInput {
             company_id: None,
@@ -1148,6 +1201,13 @@ fn stored_fact_set_filtered(
     if facts.is_empty() {
         return Ok(None);
     }
+
+    // ADR 0093 dec. 2: `final` beats every other quality for the merge below.
+    // A stable sort keeps the existing recency order (`list_financial_facts`
+    // returns `created_at DESC, id`) among facts of the SAME quality, so the
+    // only thing this changes is which of a `final`/`preliminary` PAIR is
+    // seen first by the slot-once loop.
+    facts.sort_by_key(|f| u8::from(f.data_quality != "final"));
 
     // The map is read out of the CATALOG (not derived from ids), so it stays
     // correct now that non-canonical ids carry a scope discriminator
@@ -1198,7 +1258,13 @@ fn stored_fact_set_filtered(
         let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
             continue;
         };
-        set.insert(metric_key.clone(), value);
+        // Slot-once: facts are pre-sorted final-first, so the first value
+        // seen per metric_key is kept — a later (non-final, or same-quality
+        // but older) sibling never overwrites a final value already in the
+        // set. This is what closes the THE REAL HAZARD (ADR 0093 T4): a
+        // preliminary row can no longer silently shadow its final sibling in
+        // the cross-check prior.
+        set.entry(metric_key.clone()).or_insert(value);
     }
 
     if set.is_empty() {
@@ -1269,6 +1335,9 @@ pub(super) fn stored_fact_set_for_cross_check(
 /// the trust anchor of the history, never a contaminant. Read-only. Bridges
 /// `metric_key` to its definition id the same 1:1 way [`stored_fact_set`] does;
 /// values that don't parse as decimals are skipped rather than failing the read.
+/// ADR 0093 dec. 2: final-preferred, ONE value per period — a
+/// `preliminary`+`final` pair for the same period must not double-weight that
+/// period in the plausibility median.
 pub(super) fn metric_history(
     connection: &Connection,
     company_id: &str,
@@ -1306,14 +1375,36 @@ pub(super) fn metric_history(
         },
     )?;
 
-    let mut values = Vec::new();
+    // Final-preferred, one value per period (ADR 0093 dec. 2): `rank` tracks
+    // the quality of the value currently occupying a period's slot in
+    // `values` (0 = final, 1 = anything else) so a later, lower-priority
+    // sibling can never overwrite a final value already recorded, while a
+    // final arriving after a preliminary (the common case: the audited
+    // filing lands after the preliminary release) upgrades it in place.
+    let mut values: Vec<Decimal> = Vec::new();
+    let mut period_index: HashMap<String, usize> = HashMap::new();
+    let mut period_rank: HashMap<String, u8> = HashMap::new();
     for fact in facts {
         if excluded.contains(&fact.period_id) {
             continue;
         }
-        if let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) {
-            values.push(value);
+        let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
+            continue;
+        };
+        let rank = u8::from(fact.data_quality != "final");
+        if let Some(&existing_rank) = period_rank.get(&fact.period_id) {
+            if existing_rank <= rank {
+                continue;
+            }
         }
+        match period_index.get(&fact.period_id) {
+            Some(&idx) => values[idx] = value,
+            None => {
+                period_index.insert(fact.period_id.clone(), values.len());
+                values.push(value);
+            }
+        }
+        period_rank.insert(fact.period_id.clone(), rank);
     }
     Ok(values)
 }
@@ -1331,7 +1422,9 @@ pub(super) fn metric_history(
 /// fact scan preserves the `created_at DESC, id` order each single read sees, and
 /// filtering to one definition preserves that relative order). Every requested
 /// key is present; a key with no history maps to an empty vector, exactly as the
-/// single read returns `[]`.
+/// single read returns `[]`. Final-preferred, one value per period — the same
+/// ADR 0093 dec. 2 slot-once collapse [`metric_history`] applies, kept
+/// byte-identical between the two paths by the equivalence contract above.
 pub(super) fn metric_histories(
     connection: &Connection,
     company_id: &str,
@@ -1389,6 +1482,14 @@ pub(super) fn metric_histories(
             definition_id: None,
         },
     )?;
+    // Final-preferred, one value per (metric, period) — the batched twin of
+    // the single-read loop in [`metric_history`]. `slot_rank`/`slot_index`
+    // track, per `(metric_key, period_id)`, the quality of the value
+    // currently occupying `result[metric_key]` and its index, so a
+    // lower-priority sibling can never overwrite a final value already
+    // recorded there.
+    let mut slot_rank: HashMap<(String, String), u8> = HashMap::new();
+    let mut slot_index: HashMap<(String, String), usize> = HashMap::new();
     for fact in facts {
         let Some(metric_key) = def_to_metric.get(&fact.definition_id) else {
             continue;
@@ -1396,12 +1497,27 @@ pub(super) fn metric_histories(
         if excluded.contains(&fact.period_id) {
             continue;
         }
-        if let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) {
-            result
-                .get_mut(metric_key)
-                .expect("every requested key is pre-seeded")
-                .push(value);
+        let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
+            continue;
+        };
+        let rank = u8::from(fact.data_quality != "final");
+        let slot_key = (metric_key.clone(), fact.period_id.clone());
+        if let Some(&existing_rank) = slot_rank.get(&slot_key) {
+            if existing_rank <= rank {
+                continue;
+            }
         }
+        let values = result
+            .get_mut(metric_key)
+            .expect("every requested key is pre-seeded");
+        match slot_index.get(&slot_key) {
+            Some(&idx) => values[idx] = value,
+            None => {
+                slot_index.insert(slot_key.clone(), values.len());
+                values.push(value);
+            }
+        }
+        slot_rank.insert(slot_key, rank);
     }
     Ok(result)
 }
@@ -1423,6 +1539,7 @@ pub struct CachedDerivedPeriod {
 /// statement_basis, attribution, variant, measure_window, data_quality)`, shared
 /// by the INSERT and the re-observation lookup so a re-extraction can never miss
 /// (or spuriously match) an existing row through a defaulting mismatch.
+#[derive(Clone)]
 pub(super) struct SlotDims {
     pub statement_basis: String,
     pub attribution: String,
@@ -1431,7 +1548,7 @@ pub(super) struct SlotDims {
     pub data_quality: String,
 }
 
-pub(super) fn slot_dims(input: &NewFinancialFact) -> SlotDims {
+pub(super) fn slot_dims(input: &NewFinancialFact) -> StorageResult<SlotDims> {
     fn or_default(value: &Option<String>, fallback: &str) -> String {
         value
             .as_deref()
@@ -1440,13 +1557,13 @@ pub(super) fn slot_dims(input: &NewFinancialFact) -> SlotDims {
             .unwrap_or(fallback)
             .to_owned()
     }
-    SlotDims {
+    Ok(SlotDims {
         statement_basis: or_default(&input.statement_basis, "consolidated"),
-        attribution: or_default(&input.attribution, "total"),
+        attribution: normalize_attribution(input.attribution.clone())?,
         variant: or_default(&input.variant, "reported"),
         measure_window: or_default(&input.measure_window, "flow"),
-        data_quality: or_default(&input.data_quality, "final"),
-    }
+        data_quality: normalize_data_quality(input.data_quality.clone())?,
+    })
 }
 
 /// The already-committed fact occupying a fully-qualified slot, if any — the
@@ -1481,6 +1598,32 @@ fn find_fact_by_slot(
         Some(id) => Ok(Some(get_financial_fact(connection, &id)?)),
         None => Ok(None),
     }
+}
+
+/// The sibling this new/incoming `final` fact supersedes (ADR 0093 decision 2):
+/// same slot dimensions except `data_quality`. When both a `preliminary` and an
+/// `estimated` sibling occupy the slot, the `preliminary` one wins — an
+/// issuer-published preliminary figure outranks a third-party estimate as the
+/// thing a later audited number corrects. `None` when no non-final sibling
+/// exists (the ordinary case — nothing to supersede).
+fn find_supersession_target(
+    connection: &Connection,
+    period_id: &str,
+    definition_id: &str,
+    dims: &SlotDims,
+) -> StorageResult<Option<String>> {
+    for candidate_quality in ["preliminary", "estimated"] {
+        let sibling_dims = SlotDims {
+            data_quality: candidate_quality.to_owned(),
+            ..dims.clone()
+        };
+        if let Some(sibling) =
+            find_fact_by_slot(connection, period_id, definition_id, &sibling_dims)?
+        {
+            return Ok(Some(sibling.id));
+        }
+    }
+    Ok(None)
 }
 
 /// The outcome of a slot-aware fact write (re-observation semantics for the
@@ -1523,13 +1666,63 @@ fn normalize_currency(currency: Option<String>) -> StorageResult<Option<String>>
     Ok(Some(currency.to_ascii_uppercase()))
 }
 
+/// Canonicalizes a fact's `attribution` SLOT DIMENSION at the write boundary
+/// (`total` (default) | `owners_of_parent` | `nci` — the `normalize_currency`/
+/// `normalize_data_quality` pattern). Epic #285 T9: `attribution` is hashed
+/// into the fact's uniqueness slot (`financial_fact_id`, `slot_dims`), never a
+/// prose citation carrier — the MCP `FactCitation` gate no longer accepts it
+/// as one (`mcp::registry::validate_provenance`). Absent/empty -> the `total`
+/// default; any other token (e.g. an agent's citation prose landing here) is a
+/// typed error rather than silently minting a phantom slot.
+fn normalize_attribution(attribution: Option<String>) -> StorageResult<String> {
+    let value = attribution
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("total")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "total" | "owners_of_parent" | "nci" => Ok(value),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "attribution",
+            value,
+        }),
+    }
+}
+
+/// Canonicalizes a fact's `data_quality` at the write boundary — the
+/// `normalize_currency` pattern, ADR 0093 decision 2. Vocabulary: `final`
+/// (audited-or-reported-final, the default) | `preliminary` (issuer-published
+/// pre-report figures) | `estimated` (third-party/derived). Absent/empty → the
+/// `final` default (all pre-ADR-0093 rows are `final`); the third-party synonym
+/// `estimate` normalizes to `estimated`; any other token is a typed error rather
+/// than a silently mis-slotted row (the uniqueness slot includes `data_quality`,
+/// so an un-normalized synonym would mint a phantom slot instead of coexisting
+/// correctly with the canonical token).
+fn normalize_data_quality(data_quality: Option<String>) -> StorageResult<String> {
+    let value = data_quality
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("final")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "final" | "preliminary" | "estimated" => Ok(value),
+        "estimate" => Ok("estimated".to_owned()),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "data_quality",
+            value,
+        }),
+    }
+}
+
 pub(super) fn create_or_reobserve_financial_fact(
     connection: &Connection,
     input: NewFinancialFact,
 ) -> StorageResult<FactWriteOutcome> {
     let period_id = input.period_id.trim().to_owned();
     let definition_id = input.definition_id.trim().to_owned();
-    let dims = slot_dims(&input);
+    let dims = slot_dims(&input)?;
     if let Some(existing) = find_fact_by_slot(connection, &period_id, &definition_id, &dims)? {
         let incoming = input.value_numeric.trim().to_owned();
         let same = match (
@@ -1557,13 +1750,14 @@ pub(super) fn create_financial_fact(
     let period_id = input.period_id.trim().to_owned();
     let definition_id = input.definition_id.trim().to_owned();
     let value_numeric = input.value_numeric.trim().to_owned();
+    let dims = slot_dims(&input)?;
     let SlotDims {
         statement_basis,
         attribution,
         variant,
         measure_window,
         data_quality,
-    } = slot_dims(&input);
+    } = dims.clone();
     let currency = normalize_currency(input.currency)?;
     let as_reported_value =
         empty_string_to_none(input.as_reported_value.map(|s| s.trim().to_owned()));
@@ -1586,7 +1780,8 @@ pub(super) fn create_financial_fact(
         .filter(|s| !s.is_empty())
         .unwrap_or("confirmed")
         .to_owned();
-    let supersedes_id = empty_string_to_none(input.supersedes_id.map(|s| s.trim().to_owned()));
+    let explicit_supersedes_id =
+        empty_string_to_none(input.supersedes_id.map(|s| s.trim().to_owned()));
     let source_document_ref =
         empty_string_to_none(input.source_document_ref.map(|s| s.trim().to_owned()));
     let annotation = empty_string_to_none(input.annotation.map(|s| s.trim().to_owned()));
@@ -1594,6 +1789,20 @@ pub(super) fn create_financial_fact(
     validate_reference_exists(connection, "companies", &company_id)?;
     validate_reference_exists(connection, "financial_periods", &period_id)?;
     validate_reference_exists(connection, "kpi_definitions", &definition_id)?;
+
+    // ADR 0093 decision 2: a `final` fact created into a slot whose sibling —
+    // same dimensions except `data_quality` — is `preliminary`/`estimated`
+    // stamps `supersedes_id` at that sibling here, at the one place that knows
+    // both rows (race-free; no background sweep). An explicit caller-provided
+    // `supersedes_id` always wins; existing rows' `supersedes_id` is never
+    // touched.
+    let supersedes_id = match explicit_supersedes_id {
+        Some(explicit) => Some(explicit),
+        None if data_quality == "final" => {
+            find_supersession_target(connection, &period_id, &definition_id, &dims)?
+        }
+        None => None,
+    };
 
     if value_numeric.is_empty() {
         return Err(StorageError::InvalidFinancialsValue {
@@ -1696,13 +1905,36 @@ pub(super) fn update_financial_fact(
             .or(current.currency),
     )?;
 
-    let data_quality = input
+    // `data_quality` is a uniqueness-slot dimension (like `statement_basis`,
+    // `attribution`, `variant`, `measure_window` — none of which this struct
+    // exposes for update at all): changing it here without re-resolving the
+    // slot would raise a raw sqlite UNIQUE error the moment it collides with an
+    // existing sibling. ADR 0093 decision 2 models the lifecycle as a NEW final
+    // fact superseding a preliminary/estimated one, not an in-place edit, so a
+    // requested change (even to a non-colliding quality) is rejected with a
+    // typed error pointing the caller at creating a new fact — never silently
+    // dropped, never a raw UNIQUE. An absent/empty input, or a value that
+    // normalizes to the fact's current quality (e.g. the `estimate` synonym
+    // re-sent for an already-`estimated` fact), is a no-op and passes through.
+    let data_quality = match input
         .data_quality
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or(&current.data_quality)
-        .to_owned();
+    {
+        None => current.data_quality.clone(),
+        Some(_) => {
+            let requested = normalize_data_quality(input.data_quality.clone())?;
+            if requested != current.data_quality {
+                return Err(StorageError::FinancialFactDataQualityLocked {
+                    id,
+                    current: current.data_quality,
+                    requested,
+                });
+            }
+            requested
+        }
+    };
 
     let confirmation_state = input
         .confirmation_state
@@ -1803,6 +2035,7 @@ fn get_kpi_definition(connection: &Connection, id: &str) -> StorageResult<KpiDef
                 computation,
                 formula,
                 display_format,
+                origin,
                 created_at,
                 updated_at
             FROM kpi_definitions
@@ -1865,30 +2098,32 @@ fn get_financial_fact(connection: &Connection, id: &str) -> StorageResult<Financ
         .query_row(
             "
             SELECT
-                id,
-                company_id,
-                period_id,
-                definition_id,
-                value_numeric,
-                currency,
-                statement_basis,
-                attribution,
-                variant,
-                measure_window,
-                data_quality,
-                as_reported_value,
-                as_reported_scale,
-                reporting_standard,
-                extraction_method,
-                confidence,
-                confirmation_state,
-                supersedes_id,
-                source_document_ref,
-                annotation,
-                created_at,
-                updated_at
-            FROM financial_facts
-            WHERE id = ?1
+                f.id,
+                f.company_id,
+                f.period_id,
+                f.definition_id,
+                f.value_numeric,
+                f.currency,
+                f.statement_basis,
+                f.attribution,
+                f.variant,
+                f.measure_window,
+                f.data_quality,
+                f.as_reported_value,
+                f.as_reported_scale,
+                f.reporting_standard,
+                f.extraction_method,
+                f.confidence,
+                f.confirmation_state,
+                f.supersedes_id,
+                f.source_document_ref,
+                f.annotation,
+                f.created_at,
+                f.updated_at,
+                d.metric_key
+            FROM financial_facts f
+            JOIN kpi_definitions d ON d.id = f.definition_id
+            WHERE f.id = ?1
             ",
             [id],
             financial_fact_from_row,
@@ -1909,8 +2144,9 @@ fn kpi_definition_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KpiDefin
         computation: row.get(8)?,
         formula: row.get(9)?,
         display_format: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
+        origin: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
     })
 }
 
@@ -1966,6 +2202,7 @@ fn financial_fact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Financia
         annotation: row.get(19)?,
         created_at: row.get(20)?,
         updated_at: row.get(21)?,
+        metric_key: row.get(22)?,
     })
 }
 
@@ -2569,18 +2806,38 @@ pub(super) fn facts_coverage_by_period(
     connection: &Connection,
     company_id: &str,
 ) -> StorageResult<Vec<PeriodFactCoverage>> {
+    // ADR 0093 dec. 2: a preliminary+final pair occupies one SLOT (dims minus
+    // `data_quality`), not two — a naive `COUNT(*)` over `financial_facts`
+    // double-counts it. `slot_ranked` picks the final-preferred row per slot
+    // (`rn = 1`) so the outer aggregate counts each slot exactly once, with
+    // the counted row's OWN provenance bucket (a preliminary-only slot's
+    // `validation_status` still applies — it just never wins over a final
+    // sibling's).
     let mut statement = connection.prepare(
-        "SELECT p.fiscal_year,
-                p.period_type,
+        "WITH slot_ranked AS (
+             SELECT f.id AS fact_id,
+                    p.fiscal_year AS fiscal_year,
+                    p.period_type AS period_type,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY f.period_id, f.definition_id, f.statement_basis,
+                                     f.attribution, f.variant, f.measure_window
+                        ORDER BY CASE f.data_quality WHEN 'final' THEN 0 ELSE 1 END,
+                                 datetime(f.created_at) DESC, f.id
+                    ) AS rn
+             FROM financial_facts f
+             JOIN financial_periods p ON p.id = f.period_id
+             WHERE p.company_id = ?1
+         )
+         SELECT sr.fiscal_year,
+                sr.period_type,
                 COUNT(*) AS total,
                 SUM(CASE WHEN pv.validation_status IN ('passed', 'witness_confirmed')
                          THEN 1 ELSE 0 END) AS validated,
                 SUM(CASE WHEN pv.validation_status = 'flagged' THEN 1 ELSE 0 END) AS flagged
-         FROM financial_facts f
-         JOIN financial_periods p ON p.id = f.period_id
-         LEFT JOIN financial_fact_provenance pv ON pv.fact_id = f.id
-         WHERE p.company_id = ?1
-         GROUP BY p.fiscal_year, p.period_type",
+         FROM slot_ranked sr
+         LEFT JOIN financial_fact_provenance pv ON pv.fact_id = sr.fact_id
+         WHERE sr.rn = 1
+         GROUP BY sr.fiscal_year, sr.period_type",
     )?;
     let rows = statement.query_map([company_id], |row| {
         let fiscal_year: i64 = row.get(0)?;

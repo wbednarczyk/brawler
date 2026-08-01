@@ -1,5 +1,9 @@
 use super::*;
 use rust_decimal::Decimal;
+use std::collections::BTreeSet;
+
+use crate::fundamentals::extraction::SourceTier;
+use crate::fundamentals::validation::completeness;
 
 // ---------------------------------------------------------------------------
 // stored_fact_set (ADR 0061 dec. 4b): the comparative cross-check's
@@ -253,12 +257,105 @@ fn creates_company_custom_kpi_definition() {
             computation: "derived".to_owned(),
             formula: Some("metric_a / metric_b".to_owned()),
             display_format: None,
+            origin: None,
         })
         .expect("custom KPI definition should create");
 
     assert_eq!(custom_kpi.scope, "company");
     assert_eq!(custom_kpi.company_id, Some(company.id));
     assert_eq!(custom_kpi.metric_key, "custom_metric");
+    assert_eq!(
+        custom_kpi.origin, "user",
+        "absent origin defaults to user (the UI create path)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `kpi_definitions.origin` enum guard (ADR 0093 decision 4, epic #285 T9):
+// `seed | user | agent` — `seed` is migration-backfill-only, never settable
+// by a live `create_kpi_definition` writer.
+// ---------------------------------------------------------------------------
+
+fn new_kpi_definition_with_origin(
+    company_id: &str,
+    metric_key: &str,
+    origin: Option<&str>,
+) -> NewKpiDefinition {
+    NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: Some(company_id.to_owned()),
+        sector: None,
+        metric_key: metric_key.to_owned(),
+        label: metric_key.to_owned(),
+        value_kind: "count".to_owned(),
+        unit: None,
+        computation: "reported".to_owned(),
+        formula: None,
+        display_format: None,
+        origin: origin.map(str::to_owned),
+    }
+}
+
+#[test]
+fn create_kpi_definition_accepts_the_agent_origin_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let definition = state
+        .create_kpi_definition(new_kpi_definition_with_origin(
+            &company.id,
+            "broker_client_count",
+            Some("agent"),
+        ))
+        .expect("agent origin is a valid token");
+    assert_eq!(definition.origin, "agent");
+}
+
+#[test]
+fn create_kpi_definition_rejects_the_seed_origin_token() {
+    // `seed` is migration-backfill-only (ADR 0093 decision 4) — no live
+    // writer may mint a fake seed row.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .create_kpi_definition(new_kpi_definition_with_origin(
+            &company.id,
+            "fake_seed_metric",
+            Some("seed"),
+        ))
+        .expect_err("seed must never be settable by a live writer");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "origin",
+                ref value
+            } if value == "seed"
+        ),
+        "expected a typed invalid-origin error, got {error:?}"
+    );
+}
+
+#[test]
+fn create_kpi_definition_rejects_an_unknown_origin_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .create_kpi_definition(new_kpi_definition_with_origin(
+            &company.id,
+            "garbage_origin_metric",
+            Some("garbage"),
+        ))
+        .expect_err("an unknown origin token must never be silently stored");
+    assert!(matches!(
+        error,
+        StorageError::InvalidFinancialsValue { key: "origin", .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +399,7 @@ fn company_scoped_definition_coexists_with_canonical_same_metric_key() {
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("a company-scoped definition must not collide with the canonical row");
 
@@ -361,6 +459,7 @@ fn sector_scoped_definition_coexists_with_canonical_same_metric_key() {
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("a sector-scoped definition must not collide with the canonical row");
 
@@ -395,6 +494,7 @@ fn two_companies_may_each_scope_the_same_metric_key() {
         computation: "reported".to_owned(),
         formula: None,
         display_format: None,
+        origin: None,
     };
 
     let a = state
@@ -425,6 +525,7 @@ fn company_scoped_facts_do_not_leak_into_canonical_metric_history() {
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("company-scoped definition should create");
 
@@ -862,6 +963,20 @@ fn lists_financial_facts_by_company() {
 
     assert_eq!(facts.len(), 2);
     assert!(facts.iter().all(|f| f.company_id == company.id));
+
+    // An agent reading its own writes back must not have to reverse-engineer
+    // the metric from the definition id — the list carries metricKey directly
+    // (epic #285 surface bug).
+    let net_profit_fact = facts
+        .iter()
+        .find(|f| f.definition_id == net_profit_def.id)
+        .expect("net_profit fact should be present");
+    assert_eq!(net_profit_fact.metric_key, net_profit_def.metric_key);
+    let revenue_fact = facts
+        .iter()
+        .find(|f| f.definition_id == revenue_def.id)
+        .expect("revenue fact should be present");
+    assert_eq!(revenue_fact.metric_key, revenue_def.metric_key);
 }
 
 #[test]
@@ -904,7 +1019,9 @@ fn updates_financial_fact() {
             attribution: None,
             variant: None,
             measure_window: None,
-            data_quality: Some("estimate".to_owned()),
+            // ADR 0093 decision 2 canonical vocabulary (`estimate` synonym
+            // migrated to `estimated`).
+            data_quality: Some("estimated".to_owned()),
             as_reported_value: None,
             as_reported_scale: None,
             reporting_standard: None,
@@ -922,7 +1039,10 @@ fn updates_financial_fact() {
             id: fact.id.clone(),
             value_numeric: Some("550000".to_owned()),
             currency: Some("EUR".to_owned()),
-            data_quality: Some("final".to_owned()),
+            // `data_quality` is a slot dimension the update path never edits in
+            // place (§4, ADR 0093) — resending the fact's own quality is a
+            // no-op, exercised together with the rest of the field update.
+            data_quality: Some("estimated".to_owned()),
             confirmation_state: Some("provisional".to_owned()),
             supersedes_id: None,
             source_document_ref: Some("revised_report.pdf".to_owned()),
@@ -931,7 +1051,7 @@ fn updates_financial_fact() {
         .expect("fact should update");
 
     assert_eq!(updated.value_numeric, "550000");
-    assert_eq!(updated.data_quality, "final");
+    assert_eq!(updated.data_quality, "estimated");
     assert_eq!(updated.confirmation_state, "provisional");
     assert_eq!(
         updated.source_document_ref,
@@ -1130,6 +1250,433 @@ fn update_financial_fact_rejects_a_non_iso_currency_and_normalizes_case() {
         })
         .expect("a lowercase ISO code is normalized");
     assert_eq!(updated.currency.as_deref(), Some("EUR"));
+}
+
+// ---------------------------------------------------------------------------
+// Data quality (ADR 0093 decision 2): `final | preliminary | estimated`
+// canonical vocabulary, normalized at the write boundary
+// (`normalize_data_quality`, the `normalize_currency` pattern); preliminary
+// and final coexist in the slot (`data_quality` is a uniqueness-slot
+// dimension); a `final` fact created into a slot whose sibling is
+// `preliminary`/`estimated` stamps `supersedes_id` at it.
+// ---------------------------------------------------------------------------
+
+fn new_fact_with_quality(
+    company_id: &str,
+    period_id: &str,
+    definition_id: &str,
+    value_numeric: &str,
+    data_quality: Option<&str>,
+) -> NewFinancialFact {
+    NewFinancialFact {
+        company_id: company_id.to_owned(),
+        period_id: period_id.to_owned(),
+        definition_id: definition_id.to_owned(),
+        value_numeric: value_numeric.to_owned(),
+        currency: Some("PLN".to_owned()),
+        statement_basis: None,
+        attribution: None,
+        variant: None,
+        measure_window: None,
+        data_quality: data_quality.map(str::to_owned),
+        as_reported_value: None,
+        as_reported_scale: None,
+        reporting_standard: None,
+        extraction_method: None,
+        confidence: None,
+        confirmation_state: None,
+        supersedes_id: None,
+        source_document_ref: None,
+        annotation: None,
+    }
+}
+
+#[test]
+fn create_financial_fact_defaults_absent_data_quality_to_final() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            None,
+        ))
+        .expect("fact should create");
+    assert_eq!(fact.data_quality, "final");
+}
+
+#[test]
+fn create_financial_fact_normalizes_the_estimate_synonym() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("estimate"),
+        ))
+        .expect("the 'estimate' synonym should normalize, not reject");
+    assert_eq!(fact.data_quality, "estimated");
+}
+
+#[test]
+fn create_financial_fact_rejects_an_unknown_data_quality_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let error = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("garbage"),
+        ))
+        .expect_err("an unknown data_quality token must never be silently slotted");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "data_quality",
+                ref value
+            } if value == "garbage"
+        ),
+        "expected a typed invalid-data_quality error, got {error:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `attribution` slot-dimension enum guard (ADR 0093 epic #285 T9): the
+// FactCitation gate defect closure means `attribution` is validated the same
+// way `data_quality`/`currency` are — never a free-text citation carrier.
+// ---------------------------------------------------------------------------
+
+fn new_fact_with_attribution(
+    company_id: &str,
+    period_id: &str,
+    definition_id: &str,
+    value_numeric: &str,
+    attribution: Option<&str>,
+) -> NewFinancialFact {
+    NewFinancialFact {
+        company_id: company_id.to_owned(),
+        period_id: period_id.to_owned(),
+        definition_id: definition_id.to_owned(),
+        value_numeric: value_numeric.to_owned(),
+        currency: Some("PLN".to_owned()),
+        statement_basis: None,
+        attribution: attribution.map(str::to_owned),
+        variant: None,
+        measure_window: None,
+        data_quality: None,
+        as_reported_value: None,
+        as_reported_scale: None,
+        reporting_standard: None,
+        extraction_method: None,
+        confidence: None,
+        confirmation_state: None,
+        supersedes_id: None,
+        source_document_ref: None,
+        annotation: None,
+    }
+}
+
+#[test]
+fn create_financial_fact_defaults_absent_attribution_to_total() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            None,
+        ))
+        .expect("fact should create");
+    assert_eq!(fact.attribution, "total");
+}
+
+#[test]
+fn create_financial_fact_accepts_the_owners_of_parent_and_nci_slot_tokens() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let owners = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("owners_of_parent"),
+        ))
+        .expect("owners_of_parent is a valid slot dimension");
+    assert_eq!(owners.attribution, "owners_of_parent");
+
+    let nci = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("nci"),
+        ))
+        .expect("nci is a valid slot dimension");
+    assert_eq!(nci.attribution, "nci");
+}
+
+#[test]
+fn create_financial_fact_rejects_citation_prose_masquerading_as_attribution() {
+    // The exact defect ADR 0093 epic #285 T9 closes: an agent (or any caller)
+    // putting a citation string in `attribution` must never silently mint a
+    // phantom uniqueness slot — it is a typed refusal, like `data_quality`'s
+    // unknown-token guard.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let error = state
+        .create_financial_fact(new_fact_with_attribution(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "500000",
+            Some("FY2024 report, p.42"),
+        ))
+        .expect_err("citation prose must never be silently slotted as attribution");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidFinancialsValue {
+                key: "attribution",
+                ref value
+            } if value == "fy2024 report, p.42"
+        ),
+        "expected a typed invalid-attribution error, got {error:?}"
+    );
+}
+
+#[test]
+fn preliminary_and_final_coexist_in_the_same_slot_via_plain_create() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let preliminary = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("preliminary"),
+        ))
+        .expect("preliminary fact should create");
+    let final_fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "495000000",
+            Some("final"),
+        ))
+        .expect("final fact should create");
+
+    assert_ne!(preliminary.id, final_fact.id, "distinct rows, same slot");
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: Some(period_id.clone()),
+            definition_id: Some(definition_id.clone()),
+        })
+        .expect("facts should list");
+    assert_eq!(facts.len(), 2, "both quality variants persist in the slot");
+}
+
+#[test]
+fn create_financial_fact_stamps_supersedes_id_when_a_final_lands_next_to_a_preliminary() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let preliminary = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("preliminary"),
+        ))
+        .expect("preliminary fact should create");
+    let final_fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "495000000",
+            Some("final"),
+        ))
+        .expect("final fact should create");
+
+    assert_eq!(final_fact.supersedes_id, Some(preliminary.id));
+}
+
+#[test]
+fn create_financial_fact_never_stamps_supersedes_id_when_no_sibling_exists() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let final_fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "495000000",
+            Some("final"),
+        ))
+        .expect("final fact should create");
+
+    assert_eq!(final_fact.supersedes_id, None);
+}
+
+#[test]
+fn update_financial_fact_rejects_a_data_quality_change() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("preliminary"),
+        ))
+        .expect("preliminary fact should create");
+
+    let error = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: None,
+            currency: None,
+            data_quality: Some("final".to_owned()),
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect_err(
+            "data_quality is a slot dimension: update must never silently re-slot or raise a raw UNIQUE",
+        );
+    assert!(
+        matches!(
+            error,
+            StorageError::FinancialFactDataQualityLocked {
+                ref id,
+                ref current,
+                ref requested,
+            } if *id == fact.id && current == "preliminary" && requested == "final"
+        ),
+        "expected a typed data_quality-locked error, got {error:?}"
+    );
+
+    // The fact is untouched by the rejected update.
+    let unchanged = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: Some(period_id.clone()),
+            definition_id: Some(definition_id.clone()),
+        })
+        .expect("facts should list")
+        .into_iter()
+        .find(|f| f.id == fact.id)
+        .expect("fact should still exist");
+    assert_eq!(unchanged.data_quality, "preliminary");
+}
+
+#[test]
+fn update_financial_fact_rejects_a_data_quality_change_even_without_a_colliding_sibling() {
+    // No sibling exists at all — but the ADR models the lifecycle as a NEW
+    // final fact superseding a preliminary one, never an in-place edit, so the
+    // rejection is unconditional, not just a collision guard.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("estimated"),
+        ))
+        .expect("estimated fact should create");
+
+    let error = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: None,
+            currency: None,
+            data_quality: Some("preliminary".to_owned()),
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect_err("no colliding sibling still rejects the quality flip");
+    assert!(matches!(
+        error,
+        StorageError::FinancialFactDataQualityLocked { .. }
+    ));
+}
+
+#[test]
+fn update_financial_fact_allows_a_data_quality_resend_that_normalizes_to_the_current_value() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let fact = state
+        .create_financial_fact(new_fact_with_quality(
+            &company_id,
+            &period_id,
+            &definition_id,
+            "492200000",
+            Some("estimate"),
+        ))
+        .expect("fact should create with the estimate synonym normalized");
+    assert_eq!(fact.data_quality, "estimated");
+
+    let updated = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: Some("493000000".to_owned()),
+            currency: None,
+            data_quality: Some("estimate".to_owned()),
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect(
+            "resending the synonym for the fact's own normalized quality is a no-op, not a rejection",
+        );
+    assert_eq!(updated.data_quality, "estimated");
+    assert_eq!(updated.value_numeric, "493000000");
 }
 
 #[test]
@@ -1451,6 +1998,7 @@ fn company_scoped_definition_list_includes_the_canonical_catalog() {
                 computation: "reported".to_owned(),
                 formula: None,
                 display_format: None,
+                origin: None,
             })
             .expect("custom definition");
     }
@@ -1754,6 +2302,43 @@ fn derived_pass_marks_keys_reported_in_at_least_three_of_the_last_four_periods()
     assert_eq!(derived, vec!["ebitda".to_owned()]);
 }
 
+/// ADR 0093 decision 1: the agent tier is NOT an issuer tier — an agent's
+/// figure is never evidence "the issuer reports this key" for the derived
+/// completeness observation, exactly like `html_aggregator`.
+#[test]
+fn derived_pass_never_marks_a_key_reported_only_by_the_agent_tier() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = company_with_ticker(&state, "AGT");
+
+    let periods: Vec<String> = (2022..=2025)
+        .map(|year| seed_fy_period(&state, &company.id, year))
+        .collect();
+    // `net_deposits`: 4 of the last 4, but ONLY from the agent tier — not
+    // issuer-tier, so it never becomes a derived observation.
+    for period in &periods {
+        seed_issuer_fact(&state, &company.id, period, "capex", "10", "agent");
+    }
+
+    {
+        let connection = state
+            .checkout_for_tests()
+            .expect("connection should check out");
+        crate::storage::financials::refresh_derived_kpi_relevance(&connection, &company.id)
+            .expect("derived pass should run");
+    }
+
+    let derived: Vec<String> = relevance_rows(&state, &company.id)
+        .into_iter()
+        .filter(|(_, source, _)| source == "derived")
+        .map(|(key, _, _)| key)
+        .collect();
+    assert!(
+        derived.is_empty(),
+        "an agent-only reported key must not enter the derived layer: {derived:?}"
+    );
+}
+
 #[test]
 fn derived_pass_never_touches_core_sector_or_user_rows() {
     let connection = open_in_memory_database().expect("database should initialize");
@@ -1878,4 +2463,385 @@ fn derived_rows_never_enter_the_completeness_denominator() {
             "total_equity"
         ]
     );
+}
+
+// ---------------------------------------------------------------------------
+// ADR 0093 T4 (epic #285): making the data_quality-blind readers
+// preliminary-aware. One shared fixture, driven through every reader that
+// used to double-count or last-wins its way past the `preliminary`/`final`
+// coexistence ADR 0093 dec. 2 introduced.
+// ---------------------------------------------------------------------------
+
+/// One company, one FY2025 period, three metrics covering every quality shape
+/// the readers must handle:
+/// - `total_assets` (A): a `preliminary` (agent tier, unreviewed) fact
+///   followed by its `final` (esef tier, passed) sibling — the exact ADR 0093
+///   dec. 2 coexistence shape, with a DIFFERENT value so a reader that picks
+///   the wrong one is caught.
+/// - `net_profit` (B): preliminary-only (agent tier) — never confirmed by an
+///   issuer filing.
+/// - `revenue` (C): final-only (esef tier) — the untouched control.
+///
+/// Every fact goes through `record_structured_fact` (not the bare
+/// `create_financial_fact` `seed_fact` helper above) so each one carries a
+/// real `financial_fact_provenance` row — the veto filter and the coverage
+/// validation buckets both key off it.
+struct QualityFixture {
+    company_id: String,
+}
+
+fn seed_quality_fixture(state: &AppState) -> QualityFixture {
+    let company = tracked_company(state);
+
+    // A: preliminary first (chronologically realistic — the agent write
+    // precedes the audited filing), then its final sibling with a DIFFERENT
+    // value.
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-agent",
+            metric_key: "total_assets",
+            value_numeric: "39000000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026"),
+            attribution: None,
+            measure_window: None,
+            data_quality: Some("preliminary"),
+        })
+        .expect("preliminary total_assets should record");
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-esef",
+            metric_key: "total_assets",
+            value_numeric: "40000000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("ifrs-full:Assets"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None, // normalizes to "final"
+        })
+        .expect("final total_assets should record");
+
+    // B: preliminary-only.
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-agent",
+            metric_key: "net_profit",
+            value_numeric: "1200000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026"),
+            attribution: None,
+            measure_window: None,
+            data_quality: Some("preliminary"),
+        })
+        .expect("preliminary-only net_profit should record");
+
+    // C: final-only.
+    state
+        .kpi_extraction()
+        .record_structured_fact(StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "doc-esef",
+            metric_key: "revenue",
+            value_numeric: "9000000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("ifrs-full:Revenue"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        })
+        .expect("final-only revenue should record");
+
+    QualityFixture {
+        company_id: company.id,
+    }
+}
+
+/// #1: `facts_coverage_by_period` must count each SLOT once (dims minus
+/// `data_quality`), not each ROW — a preliminary+final pair for `total_assets`
+/// is ONE slot, not two, and the counted row's provenance bucket must be the
+/// final-preferred one.
+#[test]
+fn facts_coverage_by_period_counts_each_slot_once_final_preferred() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let coverage = state
+        .financials()
+        .facts_coverage_by_period(&fixture.company_id)
+        .expect("coverage should read");
+    assert_eq!(coverage.len(), 1, "one period bucket, got {coverage:?}");
+    let cell = &coverage[0];
+    assert_eq!(cell.fiscal_year, 2025);
+    assert_eq!(cell.period_type, "FY");
+    assert_eq!(
+        cell.total, 3,
+        "3 SLOTS (A, B, C) counted once each, not the 4 underlying rows — got {cell:?}"
+    );
+    assert_eq!(
+        cell.validated, 2,
+        "A's FINAL (esef/passed) + C (esef/passed) — A's preliminary sibling must not \
+         contribute its own count: {cell:?}"
+    );
+    assert_eq!(
+        cell.unvalidated, 1,
+        "only B (agent/unreviewed, preliminary-only) is unvalidated: {cell:?}"
+    );
+    assert_eq!(cell.flagged, 0, "{cell:?}");
+}
+
+/// #2 — THE REAL HAZARD: `stored_fact_set_for_cross_check` last-wins map
+/// insertion let a preliminary row silently become the cross-check prior. An
+/// incoming tier that does NOT outrank either of A's siblings (here:
+/// `html_aggregator`, ranked below both `esef` and `agent`) lets BOTH the
+/// preliminary and the final fact survive the tier veto filter — exactly the
+/// scenario where final-preference inside the merge itself (not just the tier
+/// filter) is load-bearing.
+#[test]
+fn stored_fact_set_for_cross_check_final_preferred_slot_once() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let prior = state
+        .financials()
+        .stored_fact_set_for_cross_check(
+            &fixture.company_id,
+            2025,
+            "FY",
+            SourceTier::HtmlAggregator,
+        )
+        .expect("cross-check prior should query")
+        .expect("A, B, C all survive a veto filter with no incoming outranking");
+
+    assert_eq!(
+        prior.len(),
+        3,
+        "A, B, C — one value per metric slot, got {prior:?}"
+    );
+    assert_eq!(
+        prior.get("total_assets"),
+        Some(&Decimal::new(40_000_000, 0)),
+        "A's FINAL value must win over its preliminary sibling in the cross-check prior — a \
+         preliminary must never silently shadow a final value here"
+    );
+    assert_eq!(
+        prior.get("net_profit"),
+        Some(&Decimal::new(1_200_000, 0)),
+        "B (preliminary-only) stays visible in the prior, counted once"
+    );
+    assert_eq!(
+        prior.get("revenue"),
+        Some(&Decimal::new(9_000_000, 0)),
+        "C unchanged"
+    );
+}
+
+/// The unfiltered `stored_fact_set` variant (only test harnesses read it
+/// today, per its doc comment) exercises the same final-preferred merge with
+/// no tier veto filter in play at all.
+#[test]
+fn stored_fact_set_unfiltered_final_preferred_slot_once() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let set = state
+        .financials()
+        .stored_fact_set(&fixture.company_id, 2025, "FY")
+        .expect("stored_fact_set should query")
+        .expect("a period with facts should yield Some");
+
+    assert_eq!(set.len(), 3, "A, B, C — got {set:?}");
+    assert_eq!(
+        set.get("total_assets"),
+        Some(&Decimal::new(40_000_000, 0)),
+        "final must win"
+    );
+}
+
+/// §2 safety property (load-bearing, ADR 0093 dec. 1): an incoming ESEF
+/// (issuer) extraction outranks the agent tier, so EVERY agent-tier fact — A's
+/// preliminary sibling AND B (preliminary-only) — must be excluded from the
+/// veto-capable prior entirely. A tier the incoming outranks cannot veto: it
+/// never even enters the comparison, so a wrong agent preliminary can never
+/// block or contradict a correct issuer filing.
+#[test]
+fn stored_fact_set_for_cross_check_esef_never_vetoed_by_agent_preliminary() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let prior = state
+        .financials()
+        .stored_fact_set_for_cross_check(&fixture.company_id, 2025, "FY", SourceTier::Esef)
+        .expect("cross-check prior should query")
+        .expect("A and C's esef-tier facts still yield a prior");
+
+    assert_eq!(
+        prior.get("total_assets"),
+        Some(&Decimal::new(40_000_000, 0)),
+        "only A's esef-tier FINAL value is veto-capable against an incoming esef set"
+    );
+    assert_eq!(
+        prior.get("revenue"),
+        Some(&Decimal::new(9_000_000, 0)),
+        "C is unaffected"
+    );
+    assert!(
+        !prior.contains_key("net_profit"),
+        "B is agent-tier-only: an incoming ESEF extraction outranks the agent tier (T2), so \
+         the agent tier is not veto-capable here and B is excluded from the prior entirely — \
+         it can never veto the incoming issuer set. Got {prior:?}"
+    );
+    assert_eq!(
+        prior.len(),
+        2,
+        "only A and C survive the tier veto filter: {prior:?}"
+    );
+}
+
+/// #3: `metric_history` must weight each PERIOD once, final-preferred — a
+/// preliminary+final pair for the same period must not double-count into the
+/// plausibility median.
+#[test]
+fn metric_history_final_preferred_one_value_per_period() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    // A nonexistent fiscal year excludes nothing (the same trick
+    // `company_scoped_facts_do_not_leak_into_canonical_metric_history` uses
+    // above with `2999`), so FY2025's facts become "the history".
+    let history = state
+        .financials()
+        .metric_history(&fixture.company_id, "total_assets", 2099, "FY")
+        .expect("metric history should read");
+    assert_eq!(
+        history,
+        vec![Decimal::new(40_000_000, 0)],
+        "one value for the period (final wins), not two — got {history:?}"
+    );
+
+    let b_history = state
+        .financials()
+        .metric_history(&fixture.company_id, "net_profit", 2099, "FY")
+        .expect("metric history should read");
+    assert_eq!(
+        b_history,
+        vec![Decimal::new(1_200_000, 0)],
+        "preliminary-only still counts once"
+    );
+
+    let c_history = state
+        .financials()
+        .metric_history(&fixture.company_id, "revenue", 2099, "FY")
+        .expect("metric history should read");
+    assert_eq!(c_history, vec![Decimal::new(9_000_000, 0)], "unchanged");
+}
+
+/// `metric_history_batch`'s (`metric_histories`) equivalence contract: same
+/// values, same slot-once/final-preferred collapse as the per-metric read.
+#[test]
+fn metric_histories_batch_matches_single_read_final_preferred() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let keys: BTreeSet<String> = ["total_assets", "net_profit", "revenue"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let batch = state
+        .financials()
+        .metric_histories(&fixture.company_id, &keys, 2099, "FY")
+        .expect("batched metric histories should read");
+
+    for key in &keys {
+        let single = state
+            .financials()
+            .metric_history(&fixture.company_id, key, 2099, "FY")
+            .expect("single metric history should read");
+        assert_eq!(
+            batch.get(key),
+            Some(&single),
+            "batch must match the single read exactly for {key}"
+        );
+    }
+    assert_eq!(
+        batch.get("total_assets"),
+        Some(&vec![Decimal::new(40_000_000, 0)]),
+        "final wins, one value per period"
+    );
+}
+
+/// #4: completeness/recall over a stored `FactSet`. The FactSet type carries
+/// no quality axis (`metric_key -> Decimal`) — the smallest honest fix is at
+/// the loader (final-preferred, slot-once, fixed above), never at
+/// `completeness` itself. A preliminary-only metric (B) still counts as
+/// covered — it IS issuer/agent-observed data — and the final-preferred merge
+/// means recall is never inflated by counting A's pair twice.
+#[test]
+fn completeness_over_stored_fact_set_counts_each_slot_once() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let fixture = seed_quality_fixture(&state);
+
+    let set = state
+        .financials()
+        .stored_fact_set(&fixture.company_id, 2025, "FY")
+        .expect("stored_fact_set should query")
+        .expect("a period with facts should yield Some");
+
+    let expected: BTreeSet<String> = ["total_assets", "net_profit", "revenue", "total_equity"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let result = completeness(&set, &expected);
+
+    assert_eq!(result.expected, 4);
+    assert_eq!(
+        result.present, 3,
+        "A, B, C each count once — a preliminary-only metric (B) counts as covered, but A's \
+         pair must not inflate recall past 3: {result:?}"
+    );
+    assert_eq!(result.missing, vec!["total_equity".to_owned()]);
 }

@@ -57,8 +57,26 @@ export function buildFactMatrix(
   const rows: FactMatrixRow[] = orderedIds.map((definitionId) => {
     const definition = definitionsById.get(definitionId) ?? syntheticDefinition(definitionId);
     const cells: Record<string, FinancialFact> = {};
+    // Final-preferred cell selection (ADR 0093 dec. 2): `preliminary` and
+    // `final` facts coexist in the same slot (same period + definition,
+    // distinguished only by `dataQuality` — part of the storage uniqueness
+    // key), and facts arrive `created_at DESC`. A plain "last object in the
+    // array wins" assignment would let a preliminary sibling shadow its final
+    // sibling whenever the final fact (created later, so it sorts first) is
+    // followed by the preliminary one. Mirrors the backend idiom
+    // (`metric_history`/`stored_fact_set_filtered`, storage/financials.rs):
+    // `rank` 0 = final, 1 = anything else; only a strictly lower rank may
+    // replace the cell, so a final fact can never be shadowed regardless of
+    // array order, while a preliminary-only fact (no final sibling) still
+    // shows, with `dataQuality` exposed on the chosen fact for the caller.
+    const cellRank: Record<string, number> = {};
     for (const fact of facts) {
-      if (fact.definitionId === definitionId) cells[fact.periodId] = fact;
+      if (fact.definitionId !== definitionId) continue;
+      const rank = fact.dataQuality === "final" ? 0 : 1;
+      const existingRank = cellRank[fact.periodId];
+      if (existingRank !== undefined && existingRank <= rank) continue;
+      cells[fact.periodId] = fact;
+      cellRank[fact.periodId] = rank;
     }
     return { definition, cells };
   });
@@ -82,6 +100,7 @@ function syntheticDefinition(definitionId: string): KpiDefinition {
     computation: "reported",
     formula: null,
     displayFormat: null,
+    origin: "user",
     createdAt: "",
     updatedAt: "",
   };

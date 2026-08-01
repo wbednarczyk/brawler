@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { clearCompaniesFilter } from "./helpers/companiesList";
 
 // T7 round-2 live validation (ADR 0066): drives the owner's REAL packaged app —
 // real backend, real local SQLite DB — through the exact click paths the owner
@@ -111,6 +112,7 @@ test("T7-B/D/F: extracting the FY2025 .xbri twice is honest and idempotent", asy
   // The owner's own path: Companies → row click → curated cockpit dashboard
   // (default panels include Report documents).
   await openNav(/Spółki|Companies/i);
+  await clearCompaniesFilter(page);
   const cbfRow = page
     .locator("button[data-company-row]", { hasText: /CBF/i })
     .first();

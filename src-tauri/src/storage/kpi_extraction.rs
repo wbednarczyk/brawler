@@ -229,6 +229,19 @@ pub struct StructuredFactInput<'a> {
     /// for this outcome (PDF tier only); `None` on a clean/no-profile parse.
     pub drift_json: Option<&'a str>,
     pub citation: Option<&'a str>,
+    /// Slot dimension `total` (default) | `owners_of_parent` | `nci` (ADR 0093
+    /// epic #285 T7). Every writer before the MCP agent batch tool passes
+    /// `None` — `slot_dims` already defaults it to `total`, unchanged behavior.
+    pub attribution: Option<&'a str>,
+    /// Slot dimension `flow` (default) | `stock`. Every writer before the MCP
+    /// agent batch tool passes `None` — `slot_dims` already defaults it to
+    /// `flow`, unchanged behavior.
+    pub measure_window: Option<&'a str>,
+    /// `final` (default, `None` normalizes to it) | `preliminary` | `estimated`
+    /// (ADR 0093 decision 2), normalized at the storage write boundary
+    /// (`normalize_data_quality`). Every writer before the MCP agent tool (T7)
+    /// passes `None` — no behavior change for the existing pipeline.
+    pub data_quality: Option<&'a str>,
 }
 
 /// Outcome of committing one deterministically-extracted fact (ADR 0061) into
@@ -320,10 +333,10 @@ fn prepare_fact_write(
             value_numeric: input.value_numeric.to_owned(),
             currency: input.currency.map(str::to_owned),
             statement_basis: None,
-            attribution: None,
+            attribution: input.attribution.map(str::to_owned),
             variant: None,
-            measure_window: None,
-            data_quality: None,
+            measure_window: input.measure_window.map(str::to_owned),
+            data_quality: input.data_quality.map(str::to_owned),
             as_reported_value: None,
             as_reported_scale: None,
             reporting_standard: None,
@@ -409,10 +422,10 @@ pub(super) fn record_structured_fact(
 }
 
 /// Outcome of committing one BiznesRadar-primary aggregator fact into its slot,
-/// applying the ADR 0086 decision 3 precedence: `manual` > `esef` >
-/// `espi_cover_note` > positional > `html_aggregator`. The aggregator only ever
-/// overwrites its OWN (`html_aggregator`, non-manual) slot and NEVER a manual or
-/// higher-tier fact.
+/// applying the ADR 0086 decision 3 precedence (`agent` added by ADR 0093
+/// decision 1): `manual` > `esef` > `espi_cover_note` > positional > `agent` >
+/// `html_aggregator`. The aggregator only ever overwrites its OWN
+/// (`html_aggregator`, non-manual) slot and NEVER a manual or higher-tier fact.
 #[derive(Debug, Clone)]
 pub enum AggregatorFactCommit {
     /// The slot was empty — a new aggregator fact was written.
@@ -433,8 +446,8 @@ pub enum AggregatorFactCommit {
         existing_method: String,
     },
     /// The slot is held by a higher-precedence fact (manual / esef /
-    /// structured_xhtml / espi_cover_note / positional) — left untouched. The
-    /// caller decides whether the divergence warrants an informational
+    /// structured_xhtml / espi_cover_note / positional / agent) — left
+    /// untouched. The caller decides whether the divergence warrants an informational
     /// `witness_disagreement` outcome (issuer tiers only).
     SkippedHigherTier {
         fact_id: String,
@@ -632,6 +645,30 @@ fn write_fact_provenance(
     fact_id: &str,
     input: &StructuredFactInput<'_>,
 ) -> StorageResult<()> {
+    write_fact_provenance_fields(
+        connection,
+        fact_id,
+        input.source_tier,
+        input.validation_status,
+        input.drift_json,
+        input.citation,
+    )
+}
+
+/// The field-level primitive [`write_fact_provenance`] delegates to — the ONE
+/// upsert every provenance writer shares, including the legacy single-fact MCP
+/// `create_financial_fact`/`update_financial_fact` act path (ADR 0093
+/// decision 1 honesty rule, epic #285 T9), which has no natural
+/// [`StructuredFactInput`] to build (it writes by already-resolved
+/// `period_id`/`definition_id`, never by `metric_key`).
+fn write_fact_provenance_fields(
+    connection: &Connection,
+    fact_id: &str,
+    source_tier: &str,
+    validation_status: &str,
+    drift_json: Option<&str>,
+    citation: Option<&str>,
+) -> StorageResult<()> {
     connection.execute(
         "
         INSERT INTO financial_fact_provenance
@@ -649,10 +686,10 @@ fn write_fact_provenance(
         ",
         params![
             fact_id,
-            input.source_tier,
-            input.validation_status,
-            input.drift_json,
-            input.citation,
+            source_tier,
+            validation_status,
+            drift_json,
+            citation
         ],
     )?;
     Ok(())
@@ -725,6 +762,52 @@ impl KpiExtractionStore {
         Ok(result)
     }
 
+    /// Stamps honest MCP-agent provenance on a fact written through the
+    /// LEGACY single-fact `create_financial_fact`/`update_financial_fact` MCP
+    /// act path (ADR 0093 decision 1 honesty rule, epic #285 T9):
+    /// `source_tier='agent'`, `validation_status='unreviewed'` (no validation
+    /// gate runs on this single-fact path — the honest label;
+    /// `record_financial_facts`/T7 is the validated batch path), no drift.
+    /// Reuses the exact upsert `record_structured_fact`/`record_aggregator_fact`
+    /// share, so a slot this stamps is a real rung on the trust ladder: a
+    /// later issuer-tier write still upgrades it in place — the "no
+    /// provenance = untouchable forever" hole an MCP write used to leave
+    /// behind is closed.
+    pub fn stamp_agent_fact_provenance(
+        &self,
+        fact_id: &str,
+        citation: Option<&str>,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        write_fact_provenance_fields(&connection, fact_id, "agent", "unreviewed", None, citation)
+    }
+
+    /// Idempotently ensures a fiscal period exists and returns its id (ADR 0093
+    /// decision 6): the MCP batch fact tool needs the `finper_` id up front so
+    /// its response always carries a `periodId`, even when every submitted fact
+    /// is skipped (no_definition/implausible/identity_violation) and
+    /// [`record_structured_fact`] never runs. Shares the same idempotent upsert
+    /// every structured write uses — never `create_financial_period` (that
+    /// manual-entry path stays unexposed over MCP).
+    pub fn ensure_financial_period(
+        &self,
+        company_id: &str,
+        fiscal_year: i64,
+        period_type: &str,
+        period_end: Option<&str>,
+        report_evidence_ref: &str,
+    ) -> StorageResult<String> {
+        let connection = self.db.checkout()?;
+        ensure_period(
+            &connection,
+            company_id,
+            fiscal_year,
+            period_type,
+            period_end,
+            report_evidence_ref,
+        )
+    }
+
     /// Persists one BiznesRadar-primary aggregator fact under the ADR 0086 tier
     /// precedence (see [`record_aggregator_fact`]): writes an empty slot,
     /// overwrites the aggregator's OWN slot with a fresh value, and never touches
@@ -764,7 +847,7 @@ impl KpiExtractionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::open_in_memory_database;
+    use crate::storage::{open_in_memory_database, StorageError};
 
     /// The id of a freshly-created fact, asserting the commit was a new write
     /// (not a re-observation) — the shape these unit tests exercise.
@@ -854,6 +937,9 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("structured emit");
@@ -878,6 +964,9 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Sales revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("positional emit");
@@ -935,6 +1024,9 @@ mod tests {
                     validation_status: "flagged",
                     drift_json: Some(drift),
                     citation: Some("Przychody netto ze sprzedazy"),
+                    attribution: None,
+                    measure_window: None,
+                    data_quality: None,
                 },
             )
             .expect("record structured fact"),
@@ -982,6 +1074,9 @@ mod tests {
                         r#"{"addedLabels":[],"removedLabels":["x"],"unitChanged":null}"#,
                     ),
                     citation: Some("Przychody"),
+                    attribution: None,
+                    measure_window: None,
+                    data_quality: None,
                 },
             )
             .expect("record structured fact"),
@@ -1039,6 +1134,9 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("aggregator write");
@@ -1060,6 +1158,9 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("issuer re-observation");
@@ -1102,6 +1203,9 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("aggregator write");
@@ -1123,6 +1227,9 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("issuer divergence");
@@ -1162,6 +1269,9 @@ mod tests {
                 validation_status: "unreviewed",
                 drift_json: None,
                 citation: Some("hand-entered"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("seed");
@@ -1187,6 +1297,9 @@ mod tests {
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
             },
         )
         .expect("issuer write against a manual slot");
@@ -1226,6 +1339,9 @@ mod tests {
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("https://biznesradar.example/page | Przychody"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
         };
         // Two catalog facts sharing ONE period + a non-catalog key (order matters).
         let inputs = vec![
@@ -1250,5 +1366,505 @@ mod tests {
         assert!(matches!(again[0], AggregatorFactCommit::Reobserved { .. }));
         assert!(matches!(again[1], AggregatorFactCommit::Reobserved { .. }));
         assert!(matches!(again[2], AggregatorFactCommit::NoDefinition));
+    }
+
+    // --- ADR 0093 decision 1: `SourceTier::Agent` threaded through the trust
+    // ladder — ranked below every issuer tier and above `html_aggregator`. ---
+
+    fn agent_input<'a>(
+        company_id: &'a str,
+        document_id: &'a str,
+        value: &'a str,
+    ) -> StructuredFactInput<'a> {
+        StructuredFactInput {
+            company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: document_id,
+            metric_key: "revenue",
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026 | Revenue"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        }
+    }
+
+    fn issuer_input<'a>(
+        company_id: &'a str,
+        document_id: &'a str,
+        value: &'a str,
+    ) -> StructuredFactInput<'a> {
+        StructuredFactInput {
+            company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: document_id,
+            metric_key: "revenue",
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("Revenue"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        }
+    }
+
+    /// (a) ADR 0093 decision 1: an issuer tier RE-OBSERVING an agent-held slot
+    /// takes the slot's LABEL over — mirrors
+    /// `an_issuer_reobservation_upgrades_an_aggregator_slot_label`, agent instead
+    /// of the aggregator.
+    #[test]
+    fn an_issuer_reobservation_upgrades_an_agent_slot_label() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "1000000"),
+        )
+        .expect("agent write");
+
+        record_structured_fact(
+            &connection,
+            issuer_input(&company_id, &document_id, "1000000"),
+        )
+        .expect("issuer re-observation");
+
+        let (tier, citation): (String, String) = connection
+            .query_row(
+                "SELECT p.source_tier, p.citation FROM financial_fact_provenance p",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("provenance row");
+        assert_eq!(
+            tier, "esef",
+            "the issuer tier must take over the agent slot label"
+        );
+        assert_eq!(citation, "Revenue", "the evidence must point at the filing");
+    }
+
+    /// (a) ADR 0093 decision 1: an issuer tier DISAGREEING with an agent-held
+    /// slot overwrites it — a mis-extracted agent figure can never block the
+    /// audited correction.
+    #[test]
+    fn an_issuer_divergence_overwrites_an_agent_slot() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "999000"),
+        )
+        .expect("agent write");
+
+        let commit = record_structured_fact(
+            &connection,
+            issuer_input(&company_id, &document_id, "1000123"),
+        )
+        .expect("issuer divergence");
+        assert!(
+            matches!(
+                &commit,
+                StructuredFactCommit::Upgraded {
+                    previous_tier,
+                    previous_value: Some(v),
+                    ..
+                } if previous_tier == "agent" && v == "999000"
+            ),
+            "the issuer's number must upgrade the agent slot: {commit:?}"
+        );
+
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier FROM financial_facts f \
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(value, "1000123", "the issuer's number must win its slot");
+        assert_eq!(tier, "esef");
+    }
+
+    /// (b) ADR 0093 decision 1: the agent tier never overwrites an issuer-held
+    /// slot — a disagreement is a `Divergent` outcome, reported, never resolved
+    /// silently.
+    #[test]
+    fn an_agent_divergence_against_an_issuer_slot_is_never_applied() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            issuer_input(&company_id, &document_id, "1000123"),
+        )
+        .expect("issuer write");
+
+        let commit = record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "999000"),
+        )
+        .expect("agent divergence against an issuer slot");
+        assert!(
+            matches!(commit, StructuredFactCommit::Divergent { .. }),
+            "an agent write against an issuer slot is reported, never overwritten: {commit:?}"
+        );
+
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier FROM financial_facts f \
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(value, "1000123", "the issuer's value must survive");
+        assert_eq!(tier, "esef");
+    }
+
+    /// (b) ADR 0093 decision 1: the agent tier never overwrites a manual
+    /// (no-provenance) slot either.
+    #[test]
+    fn an_agent_write_against_a_manual_slot_is_never_applied() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "555000"),
+        )
+        .expect("seed");
+        // Strip the provenance row — a hand-entered fact never gets one.
+        connection
+            .execute("DELETE FROM financial_fact_provenance", [])
+            .expect("strip provenance");
+
+        let commit = record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "560000"),
+        )
+        .expect("agent write against a manual slot");
+        assert!(
+            matches!(commit, StructuredFactCommit::Divergent { .. }),
+            "a manual slot is reported as a divergence, never overwritten: {commit:?}"
+        );
+        let value: String = connection
+            .query_row("SELECT value_numeric FROM financial_facts", [], |row| {
+                row.get(0)
+            })
+            .expect("fact");
+        assert_eq!(value, "555000", "the hand-entered value must survive");
+    }
+
+    /// (c) ADR 0093 decision 1: the agent tier fills over `html_aggregator` — an
+    /// agent reads the issuer's own document, the aggregator is third-party.
+    /// Agreement branch: the slot's LABEL takes the agent's over.
+    #[test]
+    fn an_agent_reobservation_upgrades_an_html_aggregator_slot_label() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("aggregator write");
+
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "1000000"),
+        )
+        .expect("agent re-observation");
+
+        let tier: String = connection
+            .query_row(
+                "SELECT source_tier FROM financial_fact_provenance",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance row");
+        assert_eq!(
+            tier, "agent",
+            "the agent tier must take over the aggregator slot label"
+        );
+    }
+
+    /// (c) ADR 0093 decision 1: the agent tier OVERWRITES a divergent
+    /// `html_aggregator` slot (outranks it).
+    #[test]
+    fn an_agent_divergence_overwrites_an_html_aggregator_slot() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "999000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("aggregator write");
+
+        record_structured_fact(
+            &connection,
+            agent_input(&company_id, &document_id, "1000123"),
+        )
+        .expect("agent divergence");
+
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier FROM financial_facts f \
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(
+            value, "1000123",
+            "the agent's number must win the aggregator's slot"
+        );
+        assert_eq!(tier, "agent");
+    }
+
+    /// (2) `outranked_stored_tier_of` explicit precedence pins for the agent
+    /// tier — no assumption that parse/outranks compose correctly.
+    #[test]
+    fn outranked_stored_tier_of_places_agent_between_pdf_and_html_aggregator() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        let fact_id = created_id(
+            record_structured_fact(&connection, agent_input(&company_id, &document_id, "1"))
+                .expect("agent seed"),
+        );
+
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "esef").expect("esef outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "structured_xhtml")
+                .expect("structured_xhtml outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "espi_cover_note")
+                .expect("espi_cover_note outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "pdf").expect("pdf outranks"),
+            Some("agent".to_owned())
+        );
+        assert_eq!(
+            outranked_stored_tier_of(&connection, &fact_id, "html_aggregator")
+                .expect("html_aggregator does not outrank agent"),
+            None
+        );
+    }
+
+    // --- ADR 0093 decision 2: `data_quality` canonical vocabulary + the
+    // preliminary-data lifecycle — coexistence and write-path supersession,
+    // exercised through the structured path (`record_structured_fact` /
+    // `create_or_reobserve_financial_fact`). The plain `create_financial_fact`
+    // path (MCP/UI manual writes) is covered directly in
+    // `storage/tests/financials.rs`, since both share the same
+    // `create_financial_fact` stamping logic (T3). ---
+
+    fn quality_input<'a>(
+        company_id: &'a str,
+        document_id: &'a str,
+        value: &'a str,
+        data_quality: &'a str,
+    ) -> StructuredFactInput<'a> {
+        StructuredFactInput {
+            company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: document_id,
+            metric_key: "revenue",
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: "unreviewed",
+            drift_json: None,
+            citation: Some("XTB RB 18/2026 | Revenue"),
+            attribution: None,
+            measure_window: None,
+            data_quality: Some(data_quality),
+        }
+    }
+
+    /// `record_structured_fact` rejects an unknown `data_quality` token as a
+    /// typed error rather than silently minting a phantom uniqueness slot
+    /// (`normalize_data_quality`, `storage/financials.rs`).
+    #[test]
+    fn record_structured_fact_rejects_an_unknown_data_quality_token() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let error = record_structured_fact(
+            &connection,
+            quality_input(&company_id, &document_id, "1", "garbage"),
+        )
+        .expect_err("an unknown data_quality token must never be silently slotted");
+        assert!(
+            matches!(
+                error,
+                StorageError::InvalidFinancialsValue {
+                    key: "data_quality",
+                    ref value
+                } if value == "garbage"
+            ),
+            "expected a typed invalid-data_quality error, got {error:?}"
+        );
+    }
+
+    /// A `preliminary` fact and a `final` fact for the same metric/period are
+    /// two DIFFERENT rows in the uniqueness slot (`data_quality` is a slot
+    /// dimension, 0034) — never a UNIQUE violation, never a silent overwrite.
+    #[test]
+    fn preliminary_and_final_coexist_in_the_same_slot() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let preliminary_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "492200000", "preliminary"),
+            )
+            .expect("preliminary write"),
+        );
+        let final_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "495000000", "final"),
+            )
+            .expect("final write"),
+        );
+
+        assert_ne!(preliminary_id, final_id, "distinct rows, same slot");
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(count, 2, "both quality variants persist");
+    }
+
+    /// A `final` fact created into a slot whose sibling is `preliminary` stamps
+    /// `supersedes_id` at it (ADR 0093 decision 2), via the structured path.
+    #[test]
+    fn final_created_next_to_preliminary_stamps_supersedes_id_via_structured_path() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let preliminary_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "492200000", "preliminary"),
+            )
+            .expect("preliminary write"),
+        );
+        let final_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "495000000", "final"),
+            )
+            .expect("final write"),
+        );
+
+        let supersedes_id: Option<String> = connection
+            .query_row(
+                "SELECT supersedes_id FROM financial_facts WHERE id = ?1",
+                [&final_id],
+                |row| row.get(0),
+            )
+            .expect("final row");
+        assert_eq!(supersedes_id, Some(preliminary_id));
+    }
+
+    /// When BOTH a `preliminary` and an `estimated` sibling occupy the slot, a
+    /// later `final` fact supersedes the `preliminary` one — the issuer's own
+    /// preliminary release outranks a third-party estimate (ADR 0093 decision 2).
+    #[test]
+    fn final_prefers_the_preliminary_sibling_over_an_estimated_one() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        record_structured_fact(
+            &connection,
+            quality_input(&company_id, &document_id, "480000000", "estimated"),
+        )
+        .expect("estimated write");
+        let preliminary_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "492200000", "preliminary"),
+            )
+            .expect("preliminary write"),
+        );
+        let final_id = created_id(
+            record_structured_fact(
+                &connection,
+                quality_input(&company_id, &document_id, "495000000", "final"),
+            )
+            .expect("final write"),
+        );
+
+        let supersedes_id: Option<String> = connection
+            .query_row(
+                "SELECT supersedes_id FROM financial_facts WHERE id = ?1",
+                [&final_id],
+                |row| row.get(0),
+            )
+            .expect("final row");
+        assert_eq!(
+            supersedes_id,
+            Some(preliminary_id),
+            "the issuer-published preliminary must win over a third-party estimate"
+        );
     }
 }

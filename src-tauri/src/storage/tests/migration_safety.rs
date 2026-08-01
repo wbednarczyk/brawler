@@ -4274,3 +4274,85 @@ fn migration_0128_repairs_only_the_peo_wdf_bank_misclassified_facts() {
     assert!(!fact_exists(&connection, "f_wrong_eq"));
     assert!(fact_exists(&connection, "f_ok_liab"));
 }
+
+/// Migration `0129` (ADR 0093 decision 4, epic #285 T9): `kpi_definitions`
+/// gains an `origin` column (`seed | user | agent`), backfilled by id shape —
+/// a bare id (`kpidef_<key>`, no `__<marker>_` discriminator) is
+/// migration-seeded (canonical packs + hand-written sector packs like
+/// `kpidef_bank_nim`); every runtime-created row (`company`-scope custom
+/// KPIs, `user`-scope quality-framework metrics) carries the discriminator
+/// suffix `kpi_definition_id` always appends for a non-canonical scope, and
+/// is left at the column DEFAULT (`user`).
+#[test]
+fn migration_0129_backfills_seed_origin_by_bare_id_shape_only() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 128).expect("apply schema through 0128");
+
+    // Sanity: the column does not exist yet pre-migration.
+    let has_origin_column: bool = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('kpi_definitions') WHERE name = 'origin'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("pragma_table_info")
+        > 0;
+    assert!(!has_origin_column, "origin must not exist before 0129");
+
+    connection
+        .execute_batch(
+            "INSERT INTO kpi_definitions (id, scope, metric_key, label, value_kind, computation)
+                VALUES
+                    -- A bare canonical-style id: the 0034-style seed shape.
+                    ('kpidef_test_seed_metric', 'canonical', 'test_seed_metric', 'Seed Metric', 'monetary', 'reported'),
+                    -- A bare hand-written sector-pack id (the 0034/0048 shape,
+                    -- e.g. kpidef_bank_nim): no scope=canonical requirement.
+                    ('kpidef_bank_test_nim', 'sector', 'bank_test_nim', 'Bank Test NIM', 'ratio', 'reported'),
+                    -- A runtime company-scoped custom KPI (UI CustomKpiManager
+                    -- shape, __c_<company> discriminator).
+                    ('kpidef_broker_clients__c_xtb', 'company', 'broker_clients', 'Broker Clients', 'count', 'reported'),
+                    -- A runtime user-scope quality-framework custom metric
+                    -- (__user_ discriminator).
+                    ('kpidef_custom_metric__user_', 'user', 'custom_metric', 'Custom Metric', 'ratio', 'reported');",
+        )
+        .expect("seed kpi_definitions rows across every id shape");
+
+    apply_migrations(&mut connection).expect("apply migration 0129");
+
+    let origin_of = |conn: &rusqlite::Connection, id: &str| -> String {
+        conn.query_row(
+            "SELECT origin FROM kpi_definitions WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("row {id} should exist"))
+    };
+
+    assert_eq!(
+        origin_of(&connection, "kpidef_test_seed_metric"),
+        "seed",
+        "a bare canonical-style id backfills to seed"
+    );
+    assert_eq!(
+        origin_of(&connection, "kpidef_bank_test_nim"),
+        "seed",
+        "a bare hand-written sector-pack id backfills to seed"
+    );
+    assert_eq!(
+        origin_of(&connection, "kpidef_broker_clients__c_xtb"),
+        "user",
+        "a runtime company-scoped custom KPI is left at the DEFAULT (never seed)"
+    );
+    assert_eq!(
+        origin_of(&connection, "kpidef_custom_metric__user_"),
+        "user",
+        "a runtime user-scope custom metric is left at the DEFAULT (never seed)"
+    );
+
+    // A pre-existing real seeded canonical definition (0034) also backfills.
+    assert_eq!(origin_of(&connection, "kpidef_net_profit"), "seed");
+
+    // Idempotent re-run: no error, backfill is stable.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(origin_of(&connection, "kpidef_test_seed_metric"), "seed");
+}

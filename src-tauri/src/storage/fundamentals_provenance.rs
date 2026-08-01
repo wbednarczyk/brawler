@@ -33,9 +33,10 @@ use super::*;
 #[serde(rename_all = "camelCase")]
 pub struct FactProvenance {
     pub fact_id: String,
-    /// esef | structured_xhtml | espi_cover_note | pdf | html_aggregator
-    /// (`ai_text` appears only on rows written before ADR 0084 retired the AI
-    /// tier; they stay readable, never rewritten)
+    /// esef | structured_xhtml | espi_cover_note | pdf | agent | html_aggregator
+    /// (`agent` is the MCP acquisition tier, ADR 0093; `ai_text` appears only on
+    /// rows written before ADR 0084 retired the AI tier; they stay readable,
+    /// never rewritten)
     pub source_tier: String,
     /// passed | witness_confirmed | unreviewed | flagged | none
     pub validation_status: String,
@@ -83,7 +84,7 @@ pub struct FlaggedFact {
     pub fiscal_year: i64,
     /// `FY` | `Q1` | … — the stored period type.
     pub period_type: String,
-    /// esef | structured_xhtml | espi_cover_note | pdf | html_aggregator
+    /// esef | structured_xhtml | espi_cover_note | pdf | agent | html_aggregator
     pub source_tier: String,
     /// Always `flagged` for this read — carried so the row stays a superset of
     /// [`FactProvenance`] for the MCP consumers.
@@ -102,7 +103,8 @@ pub struct FlaggedFact {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct TierFactCount {
-    /// esef | structured_xhtml | espi_cover_note | pdf | html_aggregator | ai_text
+    /// esef | structured_xhtml | espi_cover_note | pdf | agent | html_aggregator |
+    /// ai_text
     pub source_tier: String,
     /// Number of stored facts carrying a provenance row for this tier.
     pub facts: i64,

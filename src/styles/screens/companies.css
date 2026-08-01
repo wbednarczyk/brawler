@@ -580,6 +580,17 @@
   cursor: help;
 }
 
+/* Compact non-final data-quality marker (ADR 0093 dec. 2, epic #285 T5) —
+   same pattern as .fact-annotation-marker (dense matrix cell, no room for a
+   full chip), a distinct glyph so it never reads as the annotation marker.
+   The full StatusChip lives in the fact detail panel. */
+.fact-quality-marker {
+  margin-left: var(--space-1);
+  color: var(--tone-caution);
+  font-weight: 700;
+  cursor: help;
+}
+
 .facts-matrix-cell:hover {
   background: var(--surface-raised);
 }

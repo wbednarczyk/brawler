@@ -180,6 +180,7 @@ fn pre_report_card_composes_owning_domains() {
             computation: "reported".to_owned(),
             formula: None,
             display_format: None,
+            origin: None,
         })
         .expect("kpi definition should be created");
 

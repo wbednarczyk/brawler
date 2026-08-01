@@ -34,6 +34,14 @@ pub enum StorageError {
     MissingResearchReference { table: String, id: String },
     #[error("invalid financials value for {key}: {value}")]
     InvalidFinancialsValue { key: &'static str, value: String },
+    #[error(
+        "fact {id} data_quality is immutable via update ({current} -> {requested}): data_quality is a uniqueness-slot dimension (ADR 0093) — create a new final fact instead so supersession records the change"
+    )]
+    FinancialFactDataQualityLocked {
+        id: String,
+        current: String,
+        requested: String,
+    },
     #[error("missing financials reference for {table}: {id}")]
     MissingFinancialsReference { table: String, id: String },
     #[error("invalid claim value for {key}: {value}")]

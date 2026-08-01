@@ -104,6 +104,9 @@ fn seed_fact(
             validation_status: "unreviewed",
             drift_json: None,
             citation: Some("seed"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
         })
         .expect("seed fact");
 }
@@ -300,7 +303,8 @@ fn pull_records_witness_disagreement_against_a_positional_pdf_slot() {
     // FINDING 1: the positional `pdf` tier is the issuer's OWN filing read
     // deterministically (ADR 0086 dec. 4, amended 2026-07-22) — it counts as an
     // issuer tier, so a diverging aggregator value must be flagged, not silently
-    // dropped as it was when `is_issuer_tier` string-matched only esef/xhtml/wdf.
+    // dropped as it was when `outranks_aggregator_tier` string-matched only
+    // esef/xhtml/wdf.
     let (state, company_id) = state_with_company();
     seed_fact(
         &state,
@@ -335,6 +339,49 @@ fn pull_records_witness_disagreement_against_a_positional_pdf_slot() {
             .any(|outcome| outcome.reason_code == "witness_disagreement"
                 && outcome.tier.as_deref() == Some("pdf")),
         "an informational witness_disagreement for the positional slot: {flagged:?}"
+    );
+}
+
+#[test]
+fn pull_records_witness_disagreement_against_an_agent_slot_without_overwriting() {
+    // ADR 0093 decision 1: the agent tier is NOT an issuer tier, but the
+    // witnessing question is "does the stored tier outrank `html_aggregator`?" —
+    // agent qualifies, so the BR pull never overwrites an agent slot and records
+    // witness_disagreement against it exactly as against an issuer slot.
+    let (state, company_id) = state_with_company();
+    seed_fact(
+        &state,
+        &company_id,
+        "current_assets",
+        2008,
+        999,
+        "agent",
+        "mcp_agent",
+    );
+    let (fetcher, _) = MapFetcher::new(&[(AggregatorPageKind::Balance, BILANS)]);
+    let state = state.with_fundamentals_witness_fetcher(fetcher);
+
+    let summary = run_aggregator_fundamentals_pull(&state).expect("pull runs");
+
+    assert_eq!(
+        stored(&state, &company_id, 2008, "current_assets"),
+        Some(Decimal::from(999)),
+        "an agent slot outranks the aggregator and is never overwritten"
+    );
+    assert!(
+        summary.witness_disagreements >= 1,
+        "a divergent agent slot records a witness_disagreement: {summary:?}"
+    );
+    let flagged = state
+        .fundamentals_provenance()
+        .list_flagged_extraction_outcomes(&company_id)
+        .expect("flagged outcomes");
+    assert!(
+        flagged
+            .iter()
+            .any(|outcome| outcome.reason_code == "witness_disagreement"
+                && outcome.tier.as_deref() == Some("agent")),
+        "an informational witness_disagreement for the agent slot: {flagged:?}"
     );
 }
 

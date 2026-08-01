@@ -967,6 +967,7 @@ export function makeFinancialFact(
     companyId: companyId(spec),
     periodId: `period_sample_${spec.key}_${fiscalYear}_FY`,
     definitionId: "kpi_def_revenue",
+    metricKey: "revenue",
     valueNumeric: "1050000000",
     currency: "PLN",
     statementBasis: "consolidated",
@@ -1001,6 +1002,7 @@ export function makeKpiDefinition(): KpiDefinition {
     computation: "reported",
     formula: null,
     displayFormat: "currency",
+    origin: "seed",
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
   };

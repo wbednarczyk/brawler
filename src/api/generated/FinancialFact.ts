@@ -7,4 +7,13 @@ export type FinancialFact = { id: string, companyId: string, periodId: string, d
  * '*' marker; the value itself stays exactly as reported. Never written by
  * any extraction path.
  */
-annotation: string | null, createdAt: string, updatedAt: string, };
+annotation: string | null, createdAt: string, updatedAt: string, 
+/**
+ * The definition's `metric_key`, joined in from `kpi_definitions` (one
+ * hop away from `definition_id`, which is `NOT NULL REFERENCES
+ * kpi_definitions(id) ON DELETE CASCADE` — a fact can never outlive its
+ * definition). Lets a reader — notably an MCP agent reading back its own
+ * writes — identify the metric without reverse-engineering it from the
+ * definition id (epic #285 surface bug).
+ */
+metricKey: string, };

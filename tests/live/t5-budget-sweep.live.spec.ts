@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { clearCompaniesFilter } from "./helpers/companiesList";
 
 // F5 live-drive evidence (ADR 0077 §6): on the owner's real Windows app, with
 // the owner's real Mistral key, prove the per-sweep AI budget end to end.
@@ -48,6 +49,7 @@ function nav(page: Page) {
 
 async function openCoverage(page: Page) {
   await nav(page).getByRole("button", { name: /Companies|Spółki/ }).click();
+  await clearCompaniesFilter(page);
   await page.locator(`[data-company-id="${COMPANY}"] .company-row-main`).click();
   await expect(page.getByLabel(/Research cockpit|Kokpit badawczy/)).toBeVisible();
   await page.getByRole("button", { name: /^(Coverage|Pokrycie)$/ }).first().click();

@@ -66,7 +66,7 @@ function reasonLabel(code: string, text: Translate): string {
 // The deterministic tier that attempted the document. `null` means no tier could
 // read it at all — said plainly, never left blank. An unmapped tier token falls
 // through as-is: showing the real value is honest, inventing a label is not.
-// The five cases below are the complete `SourceTier::as_str` vocabulary
+// The six cases below are the complete `SourceTier::as_str` vocabulary
 // (src-tauri/src/fundamentals/extraction/mod.rs) — verified against the enum,
 // not guessed. A new tier lands here as a raw token until it gets a label.
 function tierLabel(tier: string | null, text: Translate): string {
@@ -80,6 +80,10 @@ function tierLabel(tier: string | null, text: Translate): string {
       return text("ESPI cover note");
     case "pdf":
       return text("Structured read (xHTML)");
+    case "agent":
+      // MCP acquisition tier (ADR 0093, epic #285): an agent's read of an
+      // issuer document, recorded through the port's write tools.
+      return text("Agent (MCP)");
     case "html_aggregator":
       return text("Web cross-check");
     case "manual":

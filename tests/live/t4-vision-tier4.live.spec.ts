@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { clearCompaniesFilter } from "./helpers/companiesList";
 
 // F4 live-drive evidence (ADR 0077 §4): on the owner's real Windows app, with
 // the owner's real Mistral key, walk the tier-4 journey on the CBF Q3 2025
@@ -59,6 +60,7 @@ async function toastAfter(
 
 async function openCbfDocuments(page: Page) {
   await nav(page).getByRole("button", { name: /Companies|Spółki/ }).click();
+  await clearCompaniesFilter(page);
   await page.locator('[data-company-id="company_gpw_cbf"] .company-row-main').click();
   await expect(page.getByLabel(/Research cockpit|Kokpit badawczy/)).toBeVisible();
   const docsTab = page.getByRole("button", { name: /^Report documents$/ }).first();

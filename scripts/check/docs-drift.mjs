@@ -22,12 +22,15 @@
 //      first 5 non-empty lines; docs/adr/INDEX.md stays in sync with a
 //      generated index (regenerate: `node scripts/check/docs-drift.mjs
 //      --write-adr-index`).
-//   6. MCP catalog drift (ADR 0088 dec. 5): the generated tool-catalog sections
-//      in wiki/mcp-agent-guide.md and .claude/skills/brawler-mcp/SKILL.md must
-//      list EXACTLY the tool set in the frozen tools/list insta snapshot —
-//      missing or extra tools fail, naming them. The sections are machine-
-//      generated (name + description from the snapshot, split read vs act by
-//      name prefix) and must never be hand-edited; regenerate with
+//   6. MCP catalog drift (ADR 0088 dec. 5; content-compare hardened epic #285
+//      T10): the generated tool-catalog sections in wiki/mcp-agent-guide.md
+//      and .claude/skills/brawler-mcp/SKILL.md are compared BYTE-FOR-BYTE
+//      against a freshly regenerated block (names AND descriptions) — a
+//      name-set-only compare let a hand-edited description, or a hand-added
+//      line inside the do-not-edit span, drift silently while still passing.
+//      The sections are machine-generated (name + description from the
+//      snapshot, split read vs act by name prefix) and must never be
+//      hand-edited; regenerate with
 //      `node scripts/check/docs-drift.mjs --write-mcp-catalog`.
 //
 // Extraction heuristics (contracts.md documents commands two ways — both are
@@ -546,14 +549,34 @@ function checkMcpCatalog(writeCatalog) {
       console.log(`✓ docs-drift: wrote MCP catalog into ${rel}`);
       continue;
     }
-    const names = extractMcpCatalogNames(text);
-    const missing = [...snapshotNames].filter((n) => !names.has(n)).sort();
-    const extra = [...names].filter((n) => !snapshotNames.has(n)).sort();
-    if (missing.length || extra.length) {
+    // Byte-for-byte content compare (names AND descriptions) against a
+    // freshly regenerated block — a name-set-only compare let a hand-edited
+    // description (or a hand-added line inside the do-not-edit span) drift
+    // silently while still passing (epic #285 T10 guardrail harvest).
+    const actual = MCP_CATALOG_SPAN_RE.exec(text)[0];
+    if (actual !== block) {
+      const names = extractMcpCatalogNames(text);
+      const missing = [...snapshotNames].filter((n) => !names.has(n)).sort();
+      const extra = [...names].filter((n) => !snapshotNames.has(n)).sort();
+      const actualLines = actual.split("\n");
+      const blockLines = block.split("\n");
+      let firstDiffLine = -1;
+      for (let i = 0; i < Math.max(actualLines.length, blockLines.length); i++) {
+        if (actualLines[i] !== blockLines[i]) {
+          firstDiffLine = i;
+          break;
+        }
+      }
       errors.push(
-        `docs-drift: ${rel} MCP catalog is out of sync with the tools/list snapshot.` +
-          (missing.length ? `\n    missing (in snapshot, not in doc): ${missing.join(", ")}` : "") +
-          (extra.length ? `\n    extra (in doc, not in snapshot): ${extra.join(", ")}` : "") +
+        `docs-drift: ${rel} MCP catalog content is out of sync with the tools/list snapshot` +
+          " (byte-for-byte compare, names + descriptions)." +
+          (missing.length ? `\n    missing tool (in snapshot, not in doc): ${missing.join(", ")}` : "") +
+          (extra.length ? `\n    extra tool (in doc, not in snapshot): ${extra.join(", ")}` : "") +
+          (firstDiffLine !== -1
+            ? `\n    first differing line (${firstDiffLine + 1} of the generated block):` +
+              `\n      doc:  ${actualLines[firstDiffLine] ?? "(doc block ends here)"}` +
+              `\n      gen:  ${blockLines[firstDiffLine] ?? "(generated block ends here)"}`
+            : "") +
           "\n    regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog",
       );
     }
