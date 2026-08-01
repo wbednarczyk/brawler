@@ -30,6 +30,24 @@ derived | user`.
    reranks core rows. This floor alone makes the completeness gate live and recall
    measurable for every company.
 
+   **Amended 2026-08-01 (issue #284): "universal" is measured, not assumed.** A
+   `statement_type='banking'` company is *not* seeded `revenue` or `operating_profit`
+   (`BANKING_EXCLUDED_CORE_KEYS`, migration `0132` heals the banks tracked earlier).
+   Evidence on the maintainer's database: **zero** `revenue` facts at either tracked bank
+   from any tier (no `ifrs-full:Revenue` tag in PKO's ESEF instance, no such row in
+   BiznesRadar's bank income layout — layer 2's `net_interest_income` +
+   `net_fee_commission_income` are the structural replacement), and the single
+   `operating_profit` fact (PKO FY2025, 30.343bn from `ProfitLossFromOperatingActivities`)
+   is the bank's total operating **income**, not an operating profit — net profit that
+   year was 10.682bn. An expectation nothing can fill is not a strict gate, it is a
+   permanently-red Coverage cell and a recall ceiling (PEO 7/9, PKO 8/9 → **7/7 and 7/7**
+   after the prune). The carve-out is banking-only on measured grounds: insurance,
+   brokerage and specialty_finance all report both keys normally on the same database.
+   Mechanism-wise this stays inside the layer rules — creation *does not seed* rather than
+   deleting, a migration heals history by `status='archived'` (never a DELETE), the prune
+   is guarded to `source='core'` so layer 4 curation survives it, and a bank whose owner
+   *wants* the expectation just adds it back as a user row.
+
 2. **Statement-pack additions (`source='sector'`)** — rows derived from
    `companies.statement_type` over the existing `scope='sector'` definition packs, seeded
    at creation and by a healing migration, **conservative subset only**: keys that are

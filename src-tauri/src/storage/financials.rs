@@ -664,6 +664,21 @@ pub(super) const CORE_KPI_METRIC_KEYS: [&str; 5] = [
     "total_equity",
 ];
 
+/// Core keys a `banking` issuer does not carry as a comparable statement line,
+/// so expecting them only inflates the recall denominator and paints Coverage
+/// permanently red (issue #284, ADR 0092 layer-1 amendment 2026-08-01).
+///
+/// Measured on the maintainer's database: `revenue` has ZERO facts at either
+/// tracked bank (no `ifrs-full:Revenue` tag in PKO's ESEF, no such row in
+/// BiznesRadar's bank income layout — `net_interest_income` +
+/// `net_fee_commission_income` from layer 2 are the structural replacement), and
+/// `operating_profit` has one PKO fact whose ESEF concept
+/// (`ProfitLossFromOperatingActivities`) carries the bank's total operating
+/// INCOME rather than an operating profit. Banking only: insurance, brokerage
+/// and specialty_finance all report both keys normally on the same database.
+/// Keep in lockstep with `migrations/0132_prune_banking_core_relevance.sql`.
+pub(super) const BANKING_EXCLUDED_CORE_KEYS: [&str; 2] = ["revenue", "operating_profit"];
+
 /// Seed the 0106 core `kpi_relevance` set for ONE company — the create-time
 /// half of the fix for issue #203's residual hole: migration 0106 seeded the
 /// companies that existed when it applied, so every company created afterwards
@@ -680,6 +695,13 @@ pub(super) const CORE_KPI_METRIC_KEYS: [&str; 5] = [
 ///   same metric is never overwritten, re-ranked or duplicated;
 /// * a missing canonical definition seeds nothing for that metric rather than
 ///   failing.
+///
+/// One carve-out (issue #284, migration `0132`): a `banking` company is NOT
+/// seeded the [`BANKING_EXCLUDED_CORE_KEYS`] — a bank files neither as a
+/// comparable statement line, so the expectation could only ever be dead weight
+/// in the recall denominator. This is "not seeding", never deleting, so ADR
+/// 0092's automation-never-removes rule holds; the migration is what heals the
+/// banks tracked before it.
 pub(super) fn seed_core_kpi_relevance(
     connection: &Connection,
     company_id: &str,
@@ -688,6 +710,14 @@ pub(super) fn seed_core_kpi_relevance(
         .iter()
         .enumerate()
         .map(|(index, _)| format!("?{}", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // The statement-type carve-out reads off the joined company row, so it needs
+    // no second query and stays true for whatever `statement_type` the
+    // registry-sector bridge wrote earlier in the same creation transaction.
+    let banking_excluded = BANKING_EXCLUDED_CORE_KEYS
+        .iter()
+        .map(|key| format!("'{key}'"))
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
@@ -706,6 +736,10 @@ pub(super) fn seed_core_kpi_relevance(
           ON d.scope = 'canonical'
          AND d.metric_key IN ({placeholders})
         WHERE c.id = ?1
+          AND NOT (
+              c.statement_type = 'banking'
+              AND d.metric_key IN ({banking_excluded})
+          )
           AND NOT EXISTS (
               SELECT 1
               FROM kpi_relevance existing
