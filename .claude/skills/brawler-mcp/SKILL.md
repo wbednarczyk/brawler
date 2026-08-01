@@ -45,6 +45,7 @@ family, with a concrete input shape:
 | Transcript notes | `create_note_from_transcript_selection` | `"transcriptSegmentIds":["<seg1>","<seg2>"]` (the selection is the origin) |
 | Claims | `create_management_claim`, `update_management_claim` | `"sourceEvidenceId":"<reportOrTranscriptId>","sourceEvidenceType":"report"` |
 | Facts | `create_financial_fact`, `update_financial_fact` | `"sourceDocumentRef":"<reportDocId>"` — a non-blank citation, REQUIRED. Never put a citation in `attribution`: that field is the fact's slot dimension (`total` \| `owners_of_parent` \| `nci`), not a citation carrier — prose there is refused, not accepted. Every write through these tools is stamped `source_tier="agent"` provenance honestly (never `manual`). |
+| Batch facts | `record_financial_facts` | non-blank `"reportDocumentId":"<reportDocId>"` PLUS a non-blank `citation` on **every** entry of `facts[]` — one blank citation refuses the WHOLE batch before any write (see the ritual below). |
 | Qualitative verdicts | `set_qualitative_verdicts` | every result carries `"citationsJson":"[{\"type\":\"note\",\"id\":\"<noteId>\"}]"` (non-empty typed-evidence array) |
 
 `update_notebook_entry` (origins are immutable, set at create) and
@@ -88,6 +89,73 @@ tell the user they are theirs to do in the app:
   `run_structured_extraction`, `generate_morning_briefing`) are async: kick off,
   then poll the matching read tool (`list_autopilot_runs`,
   `get_latest_morning_briefing`) for the result.
+
+## Ingesting an issuer publication
+
+The concrete ritual for turning a report (PDF/HTML) into cited facts, claims,
+notes, and events. Follow the sequence; each step feeds the next (ADR 0093).
+
+1. **Capture** — `capture_report_document` (URL) → keep the returned
+   `documentId`; it is the citation anchor for everything below.
+2. **Read/extract** — read the document; note the page + table/row each figure
+   lives on, you'll need it for step 4's per-fact citation.
+3. **Mint missing metrics** — `create_kpi_definition` for issuer-characteristic
+   KPIs the catalog lacks (broker client counts, CFD lots, net deposits, …):
+   snake_case ASCII `metric_key`, `scope: "company"`. `origin` is stamped
+   `agent` automatically — no field to set.
+4. **One batch per period** — `record_financial_facts`, one call per fiscal
+   period, every fact's `citation` naming the page + row label (e.g. `"p.12,
+   tab. 3, row 'Zysk netto'"`).
+5. **Route everything else** — claims/notes/events/expectations, per the
+   mapping table below.
+
+**Unit scaling.** Polish statements declare the unit in the table header:
+`(w tys. PLN)` → store the FULL base unit (multiply the printed figure by
+1,000); `(w mln PLN)` → ×1,000,000. `valueNumeric` is always base-unit PLN
+(or the stated currency), never the printed thousands/millions figure. Cite
+the declared unit in the citation text so the scaling is checkable.
+
+**Parenthesized negatives.** `(419 996)` in a Polish statement is **−419996**
+(thousands), not a label or a range. Thousand separators are non-breaking
+spaces; the decimal separator is a comma (`1 027 240,50` → `1027240.50`).
+
+**Cumulative-only recording (ADR 0093 dec. 3).** A GPW interim publication
+prints discrete-quarter AND cumulative columns side by side — record ONLY the
+cumulative column (H1/9M/FY) into the cumulative period; skip the
+discrete-quarter column, it's derivable by span arithmetic. Worked example
+(XTB RB 18/2026): the table shows Q2 net profit `492 198` tys. right next to
+H1 `1 027 240` tys. — record `1027240000` against the H1 period, never the
+Q2 figure. `periodType` for a half year is `"H1"` with `periodEnd`
+`YYYY-06-30`.
+
+**Preliminary flag.** A wstępne/preliminary release → `dataQuality:
+"preliminary"` on the batch. The later final audited report supersedes it
+automatically at creation (ADR 0093 dec. 2) — no follow-up write needed.
+
+**Ambiguous label trap.** The same label can be defined twice at different
+windows in one publication (XTB: "Liczba aktywnych klientów" appears both as
+a quarterly figure and a half-year figure). Cite the exact table/row you
+read and pick the column whose window matches the period you're recording —
+never the first match.
+
+**Raster-chart caveat.** A value that exists only inside a chart image is not
+in the document's text layer — read the page visually before citing it, and
+cite the page number. Never estimate a chart value from its axis.
+
+**Refusal handling.** `provenance_required` means a citation is missing — fix
+the input, don't retry as-is. `writes_disabled` means the owner hasn't turned
+on *Settings → MCP server → Allow write tools* — ask, don't work around it.
+
+### Mapping doctrine: report content → tool
+
+| Report content | Tool | Notes |
+| --- | --- | --- |
+| P&L / balance-sheet / KPI figures | `record_financial_facts` | per-fact citation (page + row label) |
+| Management guidance with numbers ("costs +30% in 2026", "marketing +50%") | `create_management_claim` | structured target fields (`targetMetricKey`/comparator/value, due year/period) + `sourceEvidenceId` = the captured document id |
+| One-off narrative events (a KNF penalty, a donation) | `create_notebook_entry` | `report_document` origin |
+| Dividend declarations/payments | `create_company_event` | |
+| The upcoming final report date | `create_report_expectation` | feeds the report-season calendar |
+| Post-balance-date trading updates ("92.8k new clients in July") | `create_notebook_entry` | **NEVER** `record_financial_facts` — the datum belongs to a period not yet closed (wrong period discipline) |
 
 ## Tool catalog
 
