@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { driveSourcesRefresh } from "./helpers/sourcesRefresh";
 
 // v0.56 pivot live verification (ADR 0072 as amended 2026-07-16): drive a MANUAL
 // source refresh in the real Windows app so the fixed BiznesRadar akcjonariat
@@ -7,6 +8,22 @@ import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
 // then confirm the Ownership section renders sane percentages. The refresh spans
 // every adapter (BiznesRadar walks ~50 company pages with a politeness delay),
 // so the wait is generously long.
+//
+// Contention (issue #308): the app is the OWNER'S — a sweep may already be in
+// flight when this starts, and demanding an idle refresh button made this fail
+// as a product defect. `driveSourcesRefresh` joins an in-flight sweep instead,
+// and asserts the sweep really entered its in-flight state (the previous
+// hard-coded in-flight label had drifted, making the wait a silent no-op).
+
+/**
+ * Budget for one full real sweep across every adapter. Measured on the owner's
+ * app 2026-08-01: **244s** on an otherwise idle app. The old 540s budget still
+ * blew up (#308) because a contended sweep — one already running, or racing the
+ * BiznesRadar fundamentals pull for the same per-adapter lock — runs several
+ * times longer, so this leaves ~3.7x headroom over the idle measurement. A
+ * genuine hang still fails, just later.
+ */
+const SWEEP_SETTLE_MS = 900_000;
 
 let connection: LiveConnection;
 
@@ -20,23 +37,22 @@ test.afterAll(async () => {
 
 test("manual refresh rewrites aggregator ownership with sane values", async ({}) => {
   const { page } = connection;
-  test.setTimeout(600_000);
+  // The sweep budget plus a tail for navigation and the ownership assertions.
+  test.setTimeout(SWEEP_SETTLE_MS + 120_000);
 
-  // Sources screen → manual refresh of all adapters.
+  // Sources screen → manual refresh of all adapters (or join one already
+  // running), then wait for it to settle.
   await page
     .getByRole("button", { name: /^(Sources|Źródła)/ })
     .first()
     .click();
-  const refreshButton = page
-    .getByRole("button", { name: /^(Refresh sources|Odśwież źródła)$/ })
-    .first();
-  await expect(refreshButton).toBeVisible({ timeout: 15_000 });
-  await refreshButton.click();
-
-  // Wait until the refreshing state clears (BiznesRadar alone takes ~2 minutes).
-  await expect(page.getByRole("button", { name: /^(Refreshing|Odświeżam)/ })).toHaveCount(0, {
-    timeout: 540_000,
-  });
+  const startedAt = Date.now();
+  const mode = await driveSourcesRefresh(page, { settleTimeout: SWEEP_SETTLE_MS });
+  const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+  console.log(
+    `live sources sweep ${mode === "joined" ? "joined (already running)" : "clicked"}, ` +
+      `settled in ${elapsedSeconds}s of the ${SWEEP_SETTLE_MS / 1000}s budget`,
+  );
 
   // Ownership section on the active company's Basic info: every legend/row
   // percentage must be plausible (≤ 100) — the defect rendered share counts.
