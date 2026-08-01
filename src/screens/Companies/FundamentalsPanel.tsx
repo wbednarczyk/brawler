@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronRight, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
-import { FACT_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
+import { FACT_FORMS, METRIC_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import { formatFinancialValue } from "../../shared/format/financialValue";
-import { buildFactMatrix } from "./factMatrix";
+import { buildFactMatrix, type FactMatrixGroupKey } from "./factMatrix";
 import { FundamentalsPeriodsSection } from "./FundamentalsPeriodsSection";
 import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
-import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, SectionHeader, SelectField, Sparkline, StatusChip, TextField, TrendChart } from "../../ui";
+import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, Modal, SectionHeader, SelectField, Sparkline, StatusChip, TextField, TrendChart } from "../../ui";
 import { listFactProvenance, type FactProvenance } from "../../api/fundamentalsExtraction";
+import { getReportDocumentsView } from "../../api/reportDocuments";
 import { getPriceContext } from "../../api/marketData";
 import type { PriceContext } from "../../api/marketData";
 import { getAnalystRecommendations } from "../../api/analystRecommendations";
@@ -25,6 +27,9 @@ import type {
 
 type FundamentalsPanelProps = {
   companyId: string;
+  // For the fact-detail modal's header ("KPI · GPW:XTB · 2026 H1"). Omitted in
+  // a standalone render (e.g. tests) — the header simply drops the ticker line.
+  qualifiedTicker?: string;
   financialPeriods: FinancialPeriod[];
   financialFacts: FinancialFact[];
   kpiDefinitions: KpiDefinition[];
@@ -126,8 +131,32 @@ function factQualityTone(quality: string): "warn" | "accent" | "neutral" {
   }
 }
 
+/**
+ * Display label for a {@link FactMatrixGroupKey} (card #307's grouped
+ * matrix): the approved mockup's fixed group names. A pure module-level
+ * function (mirrors `tierLabel`/`factQualityLabel`) so it is unit-testable
+ * without rendering.
+ */
+export function factMatrixGroupLabel(key: FactMatrixGroupKey, text: (value: string) => string): string {
+  switch (key) {
+    case "income":
+      return text("Income statement");
+    case "balance":
+      return text("Balance sheet");
+    case "cash_flow":
+      return text("Cash flow");
+    case "per_share":
+      return text("Per share");
+    case "company":
+      return text("Company operating KPIs");
+    default:
+      return text("Other metrics");
+  }
+}
+
 export function FundamentalsPanel({
   companyId,
+  qualifiedTicker,
   financialPeriods,
   financialFacts,
   kpiDefinitions,
@@ -161,6 +190,19 @@ export function FundamentalsPanel({
   const [autopilotExpanded, setAutopilotExpanded] = useState(false);
   const [formsExpanded, setFormsExpanded] = useState(false);
 
+  // Grouped fact matrix (card #307): collapse state per display group, keyed
+  // by companion set of collapsed keys — all groups expanded by default (an
+  // empty set), matching the approved mockup's default state.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<FactMatrixGroupKey>>(new Set());
+  function toggleGroupCollapsed(key: FactMatrixGroupKey) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   // Structured-first provenance (ADR 0061): the source tier + validation verdict
   // the pipeline recorded per fact, badged on the fact detail. Legacy/manual
   // facts have no provenance row (safe: the badges simply don't render).
@@ -187,6 +229,30 @@ export function FundamentalsPanel({
       cancelled = true;
     };
   }, [factIdsKey]);
+
+  // Report-document titles (card #307): resolves a fact's `sourceDocumentRef`
+  // to its stored document's title for the modal's citation block ("source
+  // citation · <document name>"). Best-effort — a load failure just leaves the
+  // citation block showing the raw citation text with no document name.
+  const [documentTitleById, setDocumentTitleById] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    getReportDocumentsView(companyId)
+      .then((view) => {
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        for (const row of view.rows) {
+          map[row.document.id] = row.document.title || row.document.url;
+        }
+        setDocumentTitleById(map);
+      })
+      .catch(() => {
+        if (!cancelled) setDocumentTitleById({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   // Price context (v0.53 T5, ADR 0067/0082): latest close/change, 52-week
   // range, and level-0 market ratios, fundamentals-adjacent. A load failure
@@ -401,75 +467,109 @@ export function FundamentalsPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {factMatrix.rows.map((row) => (
-                    <tr key={row.definition.id}>
-                      <th className="facts-matrix-kpi" scope="row">
-                        {localizedKpiLabel(row.definition, locale)}
-                      </th>
-                      {factMatrix.periods.map((period) => {
-                        const fact = row.cells[period.id];
-                        if (!fact) {
-                          return (
-                            <td key={period.id} className="facts-matrix-cell-empty">
-                              <span aria-hidden="true">—</span>
-                            </td>
-                          );
-                        }
-                        return (
-                          <td key={period.id}>
+                  {factMatrix.groups.map((group) => {
+                    const collapsed = collapsedGroups.has(group.key);
+                    return (
+                      <Fragment key={group.key}>
+                        <tr className="facts-matrix-group-row">
+                          <th
+                            className="facts-matrix-group-header"
+                            colSpan={factMatrix.periods.length + 2}
+                            scope="colgroup"
+                          >
                             <button
-                              aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
-                              className={[
-                                "facts-matrix-cell",
-                                selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
-                              ]
-                                .filter(Boolean)
-                                .join(" ")}
-                              onClick={() => selectFinancialFact(fact.id)}
                               type="button"
+                              className="facts-matrix-group-toggle"
+                              aria-expanded={!collapsed}
+                              onClick={() => toggleGroupCollapsed(group.key)}
                             >
-                              {formatFinancialValue(
-                                {
-                                  valueNumeric: fact.valueNumeric,
-                                  currency: fact.currency,
-                                  asReportedValue: fact.asReportedValue,
-                                  asReportedScale: fact.asReportedScale,
-                                  valueKind: row.definition.valueKind,
-                                  unit: row.definition.unit,
-                                  metricKey: row.definition.metricKey,
-                                },
-                                locale,
-                              )}
-                              {fact.annotation ? (
-                                <span
-                                  className="fact-annotation-marker"
-                                  title={fact.annotation}
-                                  aria-label={`${text("Annotation")}: ${fact.annotation}`}
-                                >
-                                  *
-                                </span>
-                              ) : null}
-                              {fact.dataQuality !== "final" ? (
-                                <span
-                                  className="fact-quality-marker"
-                                  title={factQualityLabel(fact.dataQuality, text)}
-                                  aria-label={`${text("Data quality")}: ${factQualityLabel(fact.dataQuality, text)}`}
-                                >
-                                  ‡
-                                </span>
-                              ) : null}
+                              <span
+                                aria-hidden="true"
+                                className={`facts-matrix-group-chevron${collapsed ? " is-collapsed" : ""}`}
+                              >
+                                <ChevronRight size={14} />
+                              </span>
+                              {factMatrixGroupLabel(group.key, text)}
+                              <span className="facts-matrix-group-count">
+                                {group.rows.length} {pluralNoun(locale, group.rows.length, METRIC_FORMS)}
+                              </span>
                             </button>
-                          </td>
-                        );
-                      })}
-                      <td className="facts-matrix-trend">
-                        <Sparkline
-                          values={seriesValuesFor(row)}
-                          ariaLabel={`${localizedKpiLabel(row.definition, locale)} ${text("trend")}`}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                          </th>
+                        </tr>
+                        {collapsed
+                          ? null
+                          : group.rows.map((row) => (
+                              <tr key={row.definition.id}>
+                                <th className="facts-matrix-kpi" scope="row">
+                                  {localizedKpiLabel(row.definition, locale)}
+                                </th>
+                                {factMatrix.periods.map((period) => {
+                                  const fact = row.cells[period.id];
+                                  if (!fact) {
+                                    return (
+                                      <td key={period.id} className="facts-matrix-cell-empty">
+                                        <span aria-hidden="true">—</span>
+                                      </td>
+                                    );
+                                  }
+                                  return (
+                                    <td key={period.id}>
+                                      <button
+                                        aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
+                                        className={[
+                                          "facts-matrix-cell",
+                                          selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" ")}
+                                        onClick={() => selectFinancialFact(fact.id)}
+                                        type="button"
+                                      >
+                                        {formatFinancialValue(
+                                          {
+                                            valueNumeric: fact.valueNumeric,
+                                            currency: fact.currency,
+                                            asReportedValue: fact.asReportedValue,
+                                            asReportedScale: fact.asReportedScale,
+                                            valueKind: row.definition.valueKind,
+                                            unit: row.definition.unit,
+                                            metricKey: row.definition.metricKey,
+                                          },
+                                          locale,
+                                        )}
+                                        {fact.annotation ? (
+                                          <span
+                                            className="fact-annotation-marker"
+                                            title={fact.annotation}
+                                            aria-label={`${text("Annotation")}: ${fact.annotation}`}
+                                          >
+                                            *
+                                          </span>
+                                        ) : null}
+                                        {fact.dataQuality !== "final" ? (
+                                          <span
+                                            className="fact-quality-marker"
+                                            title={factQualityLabel(fact.dataQuality, text)}
+                                            aria-label={`${text("Data quality")}: ${factQualityLabel(fact.dataQuality, text)}`}
+                                          >
+                                            ‡
+                                          </span>
+                                        ) : null}
+                                      </button>
+                                    </td>
+                                  );
+                                })}
+                                <td className="facts-matrix-trend">
+                                  <Sparkline
+                                    values={seriesValuesFor(row)}
+                                    ariaLabel={`${localizedKpiLabel(row.definition, locale)} ${text("trend")}`}
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -477,238 +577,239 @@ export function FundamentalsPanel({
             <EmptyState>{text("No financial facts yet.")}</EmptyState>
           )}
 
-          {/* Financial Fact Detail and Edit */}
-          {selectedFact && selectedFactDefinition && selectedFactPeriod ? (
-            <form
-              className="fact-detail"
-              aria-label={text("Financial fact detail")}
-              onSubmit={saveFinancialFact}
-            >
-              {isFinancialFactEditMode ? (
-                <>
-                  <div className="fact-detail-header">
-                    <div>
-                      <span className="eyebrow">{text("Editing fact")}</span>
-                      <h3>{localizedKpiLabel(selectedFactDefinition, locale)}</h3>
-                    </div>
-                    <ActionRow className="fact-detail-actions">
-                      <Button
-                        className="compact-button"
-                        onClick={() => deleteFinancialFact(selectedFact.id)}
-                        variant="danger"
-                      >
-                        <Trash2 size={15} />
-                        {text("Delete")}
-                      </Button>
-                      <Button
-                        className="compact-button"
-                        onClick={cancelEditingFinancialFact}
-                      >
-                        <X size={15} />
-                        {text("Cancel")}
-                      </Button>
-                      <Button
-                        className="compact-button"
-                        type="submit"
-                        variant="primary"
-                      >
-                        <Save size={15} />
-                        {text("Save")}
-                      </Button>
-                    </ActionRow>
-                  </div>
-                  <div className="fact-form-grid">
-                    <TextField
-                      label={text("Value")}
-                      aria-label={text("Numeric value")}
-                      type="number"
-                      step="any"
-                      value={financialFactForm.valueNumeric}
-                      onChange={(event) =>
-                        updateFinancialFactForm("valueNumeric", event.target.value)
-                      }
-                    />
-                    <TextField
-                      label={text("Currency")}
-                      aria-label={text("Currency")}
-                      value={financialFactForm.currency}
-                      onChange={(event) =>
-                        updateFinancialFactForm("currency", event.target.value)
-                      }
-                      placeholder="USD"
-                    />
-                    <TextField
-                      label={text("Annotation")}
-                      aria-label={text("Annotation")}
-                      value={financialFactForm.annotation}
-                      onChange={(event) =>
-                        updateFinancialFactForm("annotation", event.target.value)
-                      }
-                      placeholder={text("One-off event note")}
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="fact-detail-header">
-                    <div>
-                      <span className="eyebrow">{text("Financial fact")}</span>
-                      <h3>{localizedKpiLabel(selectedFactDefinition, locale)}</h3>
-                    </div>
-                    {confirmDeleteFact ? (
-                      <InlineConfirm
-                        cancelLabel={text("Cancel")}
-                        confirmLabel={text("Remove")}
-                        onCancel={() => setConfirmDeleteFact(false)}
-                        onConfirm={() => {
-                          void deleteFinancialFact(selectedFact.id);
-                          setConfirmDeleteFact(false);
-                        }}
-                      >
-                        {text("Remove this fact?")}
-                      </InlineConfirm>
-                    ) : (
-                      <ActionRow className="fact-detail-actions">
-                        <Button className="compact-button" onClick={startEditingFinancialFact}>
-                          <Pencil size={15} />
-                          {text("Edit")}
-                        </Button>
-                        <Button
-                          className="compact-button"
-                          onClick={() => setConfirmDeleteFact(true)}
-                          variant="danger"
-                        >
-                          <Trash2 size={15} />
-                          {text("Remove")}
-                        </Button>
-                      </ActionRow>
-                    )}
-                  </div>
-                  <InfoGrid
-                    className="fact-detail-grid"
-                    items={[
-                      {
-                        label: text("Period"),
-                        value: `${selectedFactPeriod.fiscalYear} ${selectedFactPeriod.periodType.toUpperCase()}`,
-                      },
-                      {
-                        label: text("Value"),
-                        value: formatFinancialValue(
-                          {
-                            valueNumeric: selectedFact.valueNumeric,
-                            currency: selectedFact.currency,
-                            asReportedValue: selectedFact.asReportedValue,
-                            asReportedScale: selectedFact.asReportedScale,
-                            valueKind: selectedFactDefinition.valueKind,
-                            unit: selectedFactDefinition.unit,
-                          },
-                          locale,
-                        ),
-                      },
-                      {
-                        label: text("As stored"),
-                        value: `${selectedFact.valueNumeric}${selectedFact.currency ? ` ${selectedFact.currency}` : ""}`,
-                      },
-                      ...(selectedFact.annotation
-                        ? [
-                            {
-                              label: text("Annotation"),
-                              value: `* ${selectedFact.annotation}`,
-                            },
-                          ]
-                        : []),
-                      {
-                        label: text("Currency"),
-                        value: selectedFact.currency || text("Not set"),
-                      },
-                      {
-                        label: text("Statement basis"),
-                        value: selectedFact.statementBasis,
-                      },
-                      { label: text("Attribution"), value: selectedFact.attribution },
-                      { label: text("Variant"), value: selectedFact.variant },
-                      {
-                        label: text("Data quality"),
-                        value: (
-                          <StatusChip tone={factQualityTone(selectedFact.dataQuality)}>
-                            {factQualityLabel(selectedFact.dataQuality, text)}
-                          </StatusChip>
-                        ),
-                        valueAriaLabel: `${text("Data quality")}: ${factQualityLabel(selectedFact.dataQuality, text)}`,
-                      },
-                      // Facts are review-free (ADR 0086 dec. 5): `confirmationState`
-                      // is a frozen compatibility column, always `confirmed` — it is
-                      // not a fact's origin. Origin lives in the Source (tier) +
-                      // Validation labels below, so the meaningless row is dropped.
-                      ...(selectedProvenance
-                        ? [
-                            {
-                              label: text("Source"),
-                              value: (
-                                <StatusChip tone="accent">
-                                  {tierLabel(selectedProvenance.sourceTier, text)}
-                                </StatusChip>
-                              ),
-                              valueAriaLabel: `${text("Source")}: ${tierLabel(selectedProvenance.sourceTier, text)}`,
-                            },
-                            {
-                              label: text("Validation"),
-                              value: (
-                                <StatusChip tone={validationTone(selectedProvenance.validationStatus)}>
-                                  {validationLabel(selectedProvenance.validationStatus)}
-                                </StatusChip>
-                              ),
-                              valueAriaLabel: `${text("Validation")}: ${validationLabel(selectedProvenance.validationStatus)}`,
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-                  {selectedFactRow && chartPointsFor(selectedFactRow).length > 1 ? (
-                    <div className="fact-detail-chart">
-                      <span className="eyebrow">
-                        {localizedKpiLabel(selectedFactDefinition, locale)} {text("by period")}
-                      </span>
-                      <TrendChart
-                        ariaLabel={`${localizedKpiLabel(selectedFactDefinition, locale)} ${text("by period")}`}
-                        points={chartPointsFor(selectedFactRow)}
-                        formatValue={(value) =>
-                          formatFinancialValue(
-                            {
-                              valueNumeric: String(value),
-                              currency: selectedFact.currency,
-                              valueKind: selectedFactDefinition.valueKind,
-                              unit: selectedFactDefinition.unit,
-                            },
-                            locale,
-                          )
-                        }
-                      />
-                    </div>
-                  ) : null}
-                  {selectedDrift ? (
-                    <section
-                      className="fact-detail-drift"
-                      aria-label={text("Structure changed")}
-                    >
-                      <SectionHeader
-                        level="h4"
-                        title={text("Structure changed")}
-                        description={text(
-                          "The report layout differs from the confirmed profile — verify before trusting this value.",
-                        )}
-                      />
-                      <DriftDiff drift={selectedDrift} />
-                    </section>
-                  ) : null}
-                </>
-              )}
-            </form>
-          ) : (
-            <EmptyState>{text("Select a fact to inspect it.")}</EmptyState>
-          )}
         </div>
       </section>
+
+      {/* Fact detail modal (card #307): replaces the old below-table detail/edit
+          section — clicking a matrix cell opens the SAME modal Edytuj switches
+          into the edit-form fields. Esc/X/backdrop close via the Modal
+          primitive; `cancelEditingFinancialFact` doubles as the close handler
+          in both modes (it always clears the selection + edit mode + resets
+          the form, a no-op reset when nothing was being edited). */}
+      <Modal
+        open={Boolean(selectedFact && selectedFactDefinition && selectedFactPeriod)}
+        onClose={cancelEditingFinancialFact}
+        ariaLabel={text("Financial fact detail")}
+        className="fact-detail-modal"
+        title={
+          selectedFactDefinition && selectedFactPeriod ? (
+            <span className="fact-modal-title">
+              <span className="fact-modal-title-metric">
+                {localizedKpiLabel(selectedFactDefinition, locale)}
+              </span>
+              <span className="fact-modal-title-period">
+                {qualifiedTicker ? <TickerLabel value={qualifiedTicker} /> : null}
+                {qualifiedTicker ? " · " : ""}
+                {selectedFactPeriod.fiscalYear} {selectedFactPeriod.periodType.toUpperCase()}
+                {selectedFactPeriod.periodEndDate
+                  ? ` (${text("as of")} ${selectedFactPeriod.periodEndDate})`
+                  : ""}
+              </span>
+            </span>
+          ) : (
+            ""
+          )
+        }
+        footer={
+          selectedFact ? (
+            isFinancialFactEditMode ? (
+              <ActionRow className="fact-detail-actions">
+                <Button
+                  className="compact-button"
+                  onClick={() => deleteFinancialFact(selectedFact.id)}
+                  variant="danger"
+                >
+                  <Trash2 size={15} />
+                  {text("Delete")}
+                </Button>
+                <Button className="compact-button" onClick={cancelEditingFinancialFact}>
+                  <X size={15} />
+                  {text("Cancel")}
+                </Button>
+                <Button
+                  className="compact-button"
+                  form="fact-edit-form"
+                  type="submit"
+                  variant="primary"
+                >
+                  <Save size={15} />
+                  {text("Save")}
+                </Button>
+              </ActionRow>
+            ) : confirmDeleteFact ? (
+              <InlineConfirm
+                cancelLabel={text("Cancel")}
+                confirmLabel={text("Remove")}
+                onCancel={() => setConfirmDeleteFact(false)}
+                onConfirm={() => {
+                  void deleteFinancialFact(selectedFact.id);
+                  setConfirmDeleteFact(false);
+                }}
+              >
+                {text("Remove this fact?")}
+              </InlineConfirm>
+            ) : (
+              <ActionRow className="fact-detail-actions">
+                <Button
+                  className="compact-button"
+                  onClick={() => setConfirmDeleteFact(true)}
+                  variant="danger"
+                >
+                  <Trash2 size={15} />
+                  {text("Remove")}
+                </Button>
+                <Button className="compact-button" onClick={startEditingFinancialFact}>
+                  <Pencil size={15} />
+                  {text("Edit")}
+                </Button>
+                <Button className="compact-button" onClick={cancelEditingFinancialFact}>
+                  {text("Close")}
+                </Button>
+              </ActionRow>
+            )
+          ) : null
+        }
+      >
+        {selectedFact && selectedFactDefinition && selectedFactPeriod ? (
+          isFinancialFactEditMode ? (
+            <form id="fact-edit-form" className="fact-form-grid" onSubmit={saveFinancialFact}>
+              <TextField
+                label={text("Value")}
+                aria-label={text("Numeric value")}
+                type="number"
+                step="any"
+                value={financialFactForm.valueNumeric}
+                onChange={(event) => updateFinancialFactForm("valueNumeric", event.target.value)}
+              />
+              <TextField
+                label={text("Currency")}
+                aria-label={text("Currency")}
+                value={financialFactForm.currency}
+                onChange={(event) => updateFinancialFactForm("currency", event.target.value)}
+                placeholder="USD"
+              />
+              <TextField
+                label={text("Annotation")}
+                aria-label={text("Annotation")}
+                value={financialFactForm.annotation}
+                onChange={(event) => updateFinancialFactForm("annotation", event.target.value)}
+                placeholder={text("One-off event note")}
+              />
+            </form>
+          ) : (
+            <>
+              <div className="fact-modal-value">
+                <span className="fact-modal-value-big">
+                  {formatFinancialValue(
+                    {
+                      valueNumeric: selectedFact.valueNumeric,
+                      currency: selectedFact.currency,
+                      asReportedValue: selectedFact.asReportedValue,
+                      asReportedScale: selectedFact.asReportedScale,
+                      valueKind: selectedFactDefinition.valueKind,
+                      unit: selectedFactDefinition.unit,
+                    },
+                    locale,
+                  )}
+                </span>
+                {selectedFact.asReportedValue ? (
+                  <span className="fact-modal-as-reported">
+                    {text("As reported")}: {selectedFact.asReportedValue}
+                    {selectedFact.asReportedScale ? ` (${selectedFact.asReportedScale})` : ""}
+                  </span>
+                ) : null}
+              </div>
+              <div className="fact-modal-chips">
+                <StatusChip tone={factQualityTone(selectedFact.dataQuality)}>
+                  {factQualityLabel(selectedFact.dataQuality, text)}
+                </StatusChip>
+                {selectedProvenance ? (
+                  <StatusChip tone="accent">{tierLabel(selectedProvenance.sourceTier, text)}</StatusChip>
+                ) : null}
+                {selectedProvenance ? (
+                  <StatusChip tone={validationTone(selectedProvenance.validationStatus)}>
+                    {validationLabel(selectedProvenance.validationStatus)}
+                  </StatusChip>
+                ) : null}
+              </div>
+              <InfoGrid
+                className="fact-detail-grid"
+                items={[
+                  {
+                    label: text("Basis"),
+                    value: `${selectedFact.statementBasis} · ${selectedFact.attribution} · ${selectedFact.variant}`,
+                  },
+                  { label: text("Extraction method"), value: selectedFact.extractionMethod },
+                  { label: text("Created"), value: selectedFact.createdAt },
+                  { label: text("Updated"), value: selectedFact.updatedAt },
+                  ...(selectedFact.annotation
+                    ? [{ label: text("Annotation"), value: `* ${selectedFact.annotation}` }]
+                    : []),
+                  ...(selectedFact.supersedesId
+                    ? [
+                        {
+                          label: text("Supersession"),
+                          value: `${text("Supersedes")} ${factQualityLabel(
+                            financialFacts.find((f) => f.id === selectedFact.supersedesId)
+                              ?.dataQuality ?? "preliminary",
+                            text,
+                          ).toLowerCase()}`,
+                        },
+                      ]
+                    : selectedFact.dataQuality !== "final"
+                      ? [{ label: text("Supersession"), value: text("Awaiting the final report") }]
+                      : []),
+                ]}
+              />
+              {selectedProvenance?.citation ? (
+                <div className="fact-citation">
+                  <span className="fact-citation-label">
+                    {text("Source citation")}
+                    {selectedFact.sourceDocumentRef && documentTitleById[selectedFact.sourceDocumentRef]
+                      ? ` · ${documentTitleById[selectedFact.sourceDocumentRef]}`
+                      : ""}
+                  </span>
+                  <span>{selectedProvenance.citation}</span>
+                </div>
+              ) : null}
+              {selectedFactRow && chartPointsFor(selectedFactRow).length > 1 ? (
+                <div className="fact-detail-chart">
+                  <span className="eyebrow">
+                    {localizedKpiLabel(selectedFactDefinition, locale)} {text("by period")}
+                  </span>
+                  <TrendChart
+                    ariaLabel={`${localizedKpiLabel(selectedFactDefinition, locale)} ${text("by period")}`}
+                    points={chartPointsFor(selectedFactRow)}
+                    formatValue={(value) =>
+                      formatFinancialValue(
+                        {
+                          valueNumeric: String(value),
+                          currency: selectedFact.currency,
+                          valueKind: selectedFactDefinition.valueKind,
+                          unit: selectedFactDefinition.unit,
+                        },
+                        locale,
+                      )
+                    }
+                  />
+                </div>
+              ) : null}
+              {selectedDrift ? (
+                <section className="fact-detail-drift" aria-label={text("Structure changed")}>
+                  <SectionHeader
+                    level="h4"
+                    title={text("Structure changed")}
+                    description={text(
+                      "The report layout differs from the confirmed profile — verify before trusting this value.",
+                    )}
+                  />
+                  <DriftDiff drift={selectedDrift} />
+                </section>
+              ) : null}
+            </>
+          )
+        ) : null}
+      </Modal>
 
       {/* Periods × deltas (v0.61 §A5, storyboard surface 2): the N=1 case of the
           comparison read model, complementing the deltas-free matrix above with

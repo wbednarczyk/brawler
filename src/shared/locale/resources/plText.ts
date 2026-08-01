@@ -1326,6 +1326,23 @@ export const plText: Record<string, string> = {
   "Select a period": "Wybierz okres",
   "Remove this fact?": "Usunąć ten fakt?",
   "Please select a reporting period": "Wybierz okres sprawozdawczy",
+  // Fact detail modal (card #307): replaces the below-table detail section.
+  "As reported": "Wg raportu",
+  "Basis": "Podstawa",
+  "Extraction method": "Metoda ekstrakcji",
+  "Updated": "Zaktualizowano",
+  "Supersession": "Supersesja",
+  "Supersedes": "Zastępuje",
+  "Awaiting the final report": "Oczekuje na finalny raport",
+  "Source citation": "Cytat źródłowy",
+  // ("as of" is a shared key defined later in this map.)
+  // Grouped fundamentals matrix (card #307): collapsible display-group headers.
+  "Income statement": "Rachunek wyników",
+  "Balance sheet": "Bilans",
+  "Cash flow": "Przepływy pieniężne",
+  "Per share": "Na akcję",
+  "Company operating KPIs": "KPI operacyjne spółki",
+  "Other metrics": "Pozostałe",
   "Investor relations reports page": "Strona raportów relacji inwestorskich",
   "Used to fetch reports when a filing has no attachment. The URL rarely changes.":
     "Używana do pobierania raportów, gdy komunikat nie ma załącznika. Adres URL rzadko się zmienia.",

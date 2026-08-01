@@ -814,6 +814,119 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Fact detail modal (card #307): the popup that replaces the below-table
+   detail/edit section. Reuses .fact-detail-grid/-actions/-chart/-drift as-is
+   (unchanged CSS, just a new host); the body needs its own vertical rhythm
+   since .ui-modal-body carries none by default. */
+.fact-detail-modal .ui-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fact-modal-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.fact-modal-title-metric {
+  font-weight: 650;
+}
+
+.fact-modal-title-period {
+  font-size: var(--font-sm);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.fact-modal-value {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.fact-modal-value-big {
+  font-size: var(--font-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.fact-modal-as-reported {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
+.fact-modal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Source citation — visually distinct from the InfoGrid rows (accent rail,
+   tinted surface), matching the approved mockup. */
+.fact-citation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  font-size: var(--font-sm);
+}
+
+.fact-citation-label {
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Grouped matrix rows (card #307): a clickable header row per display group
+   (Rachunek wyników / Bilans / Przepływy pieniężne / Na akcję / KPI operacyjne
+   spółki / Pozostałe), collapsible, metric count shown, empty groups omitted
+   by the builder (factMatrix.ts) so no CSS hiding is needed here. */
+.facts-matrix-group-header {
+  padding: 0;
+  background: var(--surface-raised);
+  text-align: left;
+}
+
+.facts-matrix-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.facts-matrix-group-chevron {
+  display: inline-flex;
+  color: var(--accent);
+  transition: transform 0.12s ease;
+}
+
+.facts-matrix-group-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.facts-matrix-group-count {
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 /* Price context section (v0.53 T5, ADR 0067) — fundamentals-adjacent, same
    card idiom as the fact-detail blocks above. */
 .price-context-section {

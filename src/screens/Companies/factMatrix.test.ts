@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFactMatrix, periodSortKey } from "./factMatrix";
+import { buildFactMatrix, groupFactMatrixRows, periodSortKey } from "./factMatrix";
+import type { FactMatrixRow } from "./factMatrix";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 
 function period(id: string, fiscalYear: number, periodType: string, periodEndDate: string | null): FinancialPeriod {
@@ -16,10 +17,15 @@ function period(id: string, fiscalYear: number, periodType: string, periodEndDat
   };
 }
 
-function definition(id: string, metricKey: string, label: string): KpiDefinition {
+function definition(
+  id: string,
+  metricKey: string,
+  label: string,
+  overrides: Partial<Pick<KpiDefinition, "scope" | "statementGroup">> = {},
+): KpiDefinition {
   return {
     id,
-    scope: "global",
+    scope: overrides.scope ?? "global",
     companyId: null,
     sector: null,
     metricKey,
@@ -30,6 +36,7 @@ function definition(id: string, metricKey: string, label: string): KpiDefinition
     formula: null,
     displayFormat: null,
     origin: "seed",
+    statementGroup: overrides.statementGroup ?? "other",
     createdAt: "",
     updatedAt: "",
   };
@@ -171,5 +178,106 @@ describe("buildFactMatrix", () => {
 
       expect(matrix.rows[0].cells.p1?.id).toBe("f_final");
     });
+  });
+});
+
+// Grouped matrix rows (card #307): rows collapse under a display group driven
+// by the KPI definition's `statementGroup` (backend catalog field, migration
+// `0130`) — income / balance / cash_flow / per_share / company / other, in
+// that fixed order, with a company-scoped definition winning the "KPI
+// operacyjne spółki" group ahead of `statementGroup`, and any group with no
+// rows omitted entirely.
+function rowFor(def: KpiDefinition): FactMatrixRow {
+  return { definition: def, cells: {} };
+}
+
+describe("groupFactMatrixRows", () => {
+  it("groups rows in the fixed approved order: income, balance, cash_flow, per_share, company, other", () => {
+    // Deliberately supplied out of order to prove the grouper — not the
+    // caller — imposes the display order.
+    const rows = [
+      rowFor(definition("d_other", "roe", "ROE", { statementGroup: "other" })),
+      rowFor(definition("d_ps", "eps_basic", "EPS", { statementGroup: "per_share" })),
+      rowFor(definition("d_bal", "total_assets", "Total assets", { statementGroup: "balance" })),
+      rowFor(definition("d_inc", "revenue", "Revenue", { statementGroup: "income" })),
+      rowFor(definition("d_cf", "operating_cash_flow", "OCF", { statementGroup: "cash_flow" })),
+      rowFor(
+        definition("d_co", "broker_client_count", "Broker clients", {
+          scope: "company",
+          statementGroup: "other",
+        }),
+      ),
+    ];
+
+    const groups = groupFactMatrixRows(rows);
+
+    expect(groups.map((g) => g.key)).toEqual([
+      "income",
+      "balance",
+      "cash_flow",
+      "per_share",
+      "company",
+      "other",
+    ]);
+    expect(groups.find((g) => g.key === "income")?.rows[0].definition.id).toBe("d_inc");
+    expect(groups.find((g) => g.key === "company")?.rows[0].definition.id).toBe("d_co");
+  });
+
+  it("routes a company-scoped definition into the company group regardless of its statementGroup default", () => {
+    const rows = [
+      rowFor(
+        definition("d_co", "cfd_lots_traded", "CFD lots", {
+          scope: "company",
+          statementGroup: "other",
+        }),
+      ),
+    ];
+
+    const groups = groupFactMatrixRows(rows);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBe("company");
+  });
+
+  it("sorts a company-scoped definition into its OWN statement group when it carries an explicit non-other value", () => {
+    const rows = [
+      rowFor(
+        definition("d_co_income", "own_revenue_concept", "Own revenue concept", {
+          scope: "company",
+          statementGroup: "income",
+        }),
+      ),
+    ];
+
+    const groups = groupFactMatrixRows(rows);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBe("income");
+  });
+
+  it("omits every group with no rows", () => {
+    const rows = [rowFor(definition("d_inc", "revenue", "Revenue", { statementGroup: "income" }))];
+
+    const groups = groupFactMatrixRows(rows);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBe("income");
+  });
+
+  it("returns no groups for an empty row set", () => {
+    expect(groupFactMatrixRows([])).toEqual([]);
+  });
+
+  it("is exposed on buildFactMatrix's result, staying in sync with rows", () => {
+    const periods = [period("p1", 2025, "annual", "2025-12-31")];
+    const definitions = [
+      definition("d_rev", "revenue", "Revenue", { statementGroup: "income" }),
+      definition("d_co", "broker_clients", "Broker clients", { scope: "company" }),
+    ];
+    const facts = [fact("f1", "p1", "d_rev"), fact("f2", "p1", "d_co")];
+
+    const matrix = buildFactMatrix(periods, facts, definitions);
+
+    expect(matrix.groups.map((g) => g.key)).toEqual(["income", "company"]);
   });
 });

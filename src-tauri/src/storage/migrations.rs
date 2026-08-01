@@ -653,6 +653,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "kpi_definition_origin",
         sql: include_str!("../../migrations/0129_kpi_definition_origin.sql"),
     },
+    Migration {
+        version: 130,
+        name: "kpi_definition_statement_group",
+        sql: include_str!("../../migrations/0130_kpi_definition_statement_group.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

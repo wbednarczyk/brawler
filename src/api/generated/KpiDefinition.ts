@@ -8,4 +8,13 @@ export type KpiDefinition = { id: string, scope: string, companyId: string | nul
  * characteristic-KPI UI; minted definitions are extras, never
  * completeness-denominator entries.
  */
-origin: string, createdAt: string, updatedAt: string, };
+origin: string, 
+/**
+ * `income | balance | cash_flow | per_share | other` (migration `0130`,
+ * card #307): which statement a KPI belongs to — the single source of
+ * truth the grouped fundamentals matrix renders rows by (frontend
+ * `factMatrix.ts`). `other` is also the DEFAULT for every non-canonical
+ * row (company/user/agent-created); the matrix's own display rule routes
+ * `scope='company'` rows into "KPI operacyjne spółki" ahead of this field.
+ */
+statementGroup: string, createdAt: string, updatedAt: string, };

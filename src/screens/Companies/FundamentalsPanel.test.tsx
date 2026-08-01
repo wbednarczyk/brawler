@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -6,6 +7,7 @@ import { FundamentalsPanel, factsRecordedLabel, tierLabel } from "./Fundamentals
 import { getPriceContext } from "../../api/marketData";
 import { getKpiComparison } from "../../api/comparison";
 import type { KpiComparison } from "../../api/comparison";
+import { listFactProvenance } from "../../api/fundamentalsExtraction";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { buildScenario } from "../../test/scenarios/scenarios";
 
@@ -46,6 +48,15 @@ vi.mock("../../api/comparison", () => ({
 // so the periods-section tests (which supply facts) don't hit the raw invoke.
 vi.mock("../../api/fundamentalsExtraction", () => ({
   listFactProvenance: vi.fn(() => Promise.resolve([])),
+}));
+
+// The fact-detail modal's citation-document-title resolution (card #307) runs
+// on every render (fetches the company's report documents); stub it so the
+// fetch never hits the raw (unconfigured, synchronous) `invoke` mock.
+vi.mock("../../api/reportDocuments", () => ({
+  getReportDocumentsView: vi.fn(() =>
+    Promise.resolve({ companyId: "company_gpw_cdr", rows: [], totals: {} }),
+  ),
 }));
 
 const identity = (value: string) => value;
@@ -237,6 +248,7 @@ function kpiDef(id: string, metricKey: string, valueKind: string): KpiDefinition
     formula: null,
     displayFormat: null,
     origin: "seed",
+    statementGroup: "other",
     createdAt: "",
     updatedAt: "",
   };
@@ -531,5 +543,127 @@ describe("FundamentalsPanel preliminary-data marker and detail chip (ADR 0093 de
     const detail = screen.getByLabelText("Financial fact detail");
     expect(within(detail).getByText("Final")).toBeInTheDocument();
     expect(document.querySelector(".fact-quality-marker")).toBeNull();
+  });
+});
+
+// Card #307: the fact detail moves into a `Modal` popup — clicking a matrix
+// cell opens it (value + chips + citation), and the below-table detail
+// section is gone entirely (no `.fact-detail-grid` rendered outside a dialog).
+describe("FundamentalsPanel fact detail modal (card #307)", () => {
+  // A stateful harness: the dumb `FundamentalsPanel` only calls the
+  // `selectFinancialFact`/`cancelEditingFinancialFact` props it is given, so a
+  // click-driven "does the modal open" test needs a real setter behind them —
+  // mirrors what `useFundamentalsController` provides in production.
+  function StatefulHarness(
+    props: Omit<typeof periodsProps, "selectedFinancialFactId"> & {
+      selectedFinancialFactId?: string | null;
+    },
+  ) {
+    const [selectedId, setSelectedId] = useState<string | null>(
+      props.selectedFinancialFactId ?? null,
+    );
+    return (
+      <FundamentalsPanel
+        {...props}
+        selectedFinancialFactId={selectedId}
+        selectFinancialFact={setSelectedId}
+        cancelEditingFinancialFact={() => setSelectedId(null)}
+      />
+    );
+  }
+
+  it("opens the modal on a matrix cell click, showing the value, chips, and citation", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    vi.mocked(listFactProvenance).mockResolvedValueOnce([
+      {
+        factId: "f_rev",
+        sourceTier: "esef",
+        validationStatus: "passed",
+        driftJson: null,
+        citation: "p.4, row Revenue = 100",
+        witnessValue: null,
+        witnessPageUrl: null,
+        corroboratedAt: null,
+      },
+    ]);
+    const user = userEvent.setup();
+    const { container } = render(<StatefulHarness {...periodsProps} />);
+
+    // No dialog, and no detail grid anywhere, before a cell is clicked.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container.querySelector(".fact-detail-grid")).toBeNull();
+
+    const cell = await screen.findByRole("button", { name: /revenue, 2024 ANNUAL/i });
+    await user.click(cell);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Final")).toBeInTheDocument();
+    expect(within(dialog).getByText("ESEF (tagged)")).toBeInTheDocument();
+    expect(within(dialog).getByText("Validated")).toBeInTheDocument();
+    expect(within(dialog).getByText(/p\.4, row Revenue = 100/)).toBeInTheDocument();
+    // The below-table section is gone: the detail grid only exists inside the
+    // dialog now, never as a sibling of the matrix.
+    expect(container.querySelector(".fact-detail-grid")).toBeNull();
+    expect(within(dialog).getByRole("heading")).toBeInTheDocument();
+  });
+
+  it("closes the modal on the Zamknij/Close action, deselecting the fact", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const user = userEvent.setup();
+    render(<StatefulHarness {...periodsProps} selectedFinancialFactId="f_rev" />);
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
+  it("shows the edit-form fields inside the SAME modal when isFinancialFactEditMode is true", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const editingProps = {
+      ...periodsProps,
+      selectedFinancialFactId: "f_rev",
+      isFinancialFactEditMode: true,
+      financialFactForm: {
+        definitionId: "def_revenue",
+        valueNumeric: "1",
+        currency: "PLN",
+        periodId: "p_2024",
+        annotation: "",
+        dataQuality: "final",
+      },
+    };
+    render(<FundamentalsPanel {...editingProps} />);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Numeric value")).toHaveValue(1);
+    expect(within(dialog).getByLabelText("Currency")).toHaveValue("PLN");
+    expect(within(dialog).getByRole("button", { name: /Save/ })).toBeInTheDocument();
+  });
+});
+
+// Card #307: rows collapse under a display group derived from the KPI
+// definition's statementGroup; the toggle is a real, keyboard/click-reachable
+// button (jsdom-testable — the tier width switch itself stays browser-only).
+describe("FundamentalsPanel grouped matrix rows (card #307)", () => {
+  it("toggles a group's collapsed state on header click, hiding then re-showing its rows", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    const user = userEvent.setup();
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+
+    // All three sample definitions default to statementGroup "other" — one group.
+    const toggle = await screen.findByRole("button", { name: /Other/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector(".facts-matrix-kpi")).not.toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(container.querySelector(".facts-matrix-kpi")).toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector(".facts-matrix-kpi")).not.toBeNull();
   });
 });

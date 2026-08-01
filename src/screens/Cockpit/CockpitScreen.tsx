@@ -636,6 +636,7 @@ function CockpitWorkspace({
         return (
           <CockpitFundamentalsPanel
             companyId={companyId}
+            qualifiedTicker={companyById.get(companyId)?.qualifiedTicker}
             revision={fundamentalsRevision}
             onOpenRecommendations={() => openPinned(companyId, "analystRecommendations")}
           />
@@ -1318,17 +1319,27 @@ function InspectorPanel({
 // works for any pinned company with no AppStateRoot coupling.
 function CockpitFundamentalsPanel({
   companyId,
+  qualifiedTicker,
   revision,
   onOpenRecommendations,
 }: {
   companyId: string;
+  // Card #307: the fact-detail modal's header line. Omitted when the pinned
+  // company isn't (yet) resolvable in `companyById`.
+  qualifiedTicker?: string;
   // Bumped by a sibling report-documents extraction; forces a facts refetch.
   revision: number;
   // Opens/pins the analyst-recommendations panel from the "vs target" readout.
   onOpenRecommendations?: () => void;
 }) {
   const props = useCockpitFundamentals(companyId, revision);
-  return <FundamentalsPanel {...props} onOpenRecommendations={onOpenRecommendations} />;
+  return (
+    <FundamentalsPanel
+      {...props}
+      qualifiedTicker={qualifiedTicker}
+      onOpenRecommendations={onOpenRecommendations}
+    />
+  );
 }
 
 // Company-scoped feed panel for the curated dashboard (ADR 0057). It reuses the

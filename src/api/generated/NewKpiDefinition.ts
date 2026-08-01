@@ -9,4 +9,12 @@ export type NewKpiDefinition = { scope: string, companyId?: string, sector?: str
  * regardless of caller input — same pattern as `NewFinancialFact.
  * extraction_method`.
  */
-origin?: string, };
+origin?: string, 
+/**
+ * `income | balance | cash_flow | per_share | other` (default, card
+ * #307). Optional on every live writer (UI create command and the MCP
+ * `create_kpi_definition` act both leave it to the caller/default —
+ * unlike `origin`, nothing forces this field); validated against the
+ * fixed vocabulary, never freeform.
+ */
+statementGroup?: string, };

@@ -2614,7 +2614,7 @@ Rules:
 Initial local commands:
 
 - `list_kpi_definitions(input)`: returns KPI definitions, optionally filtered by scope, sector, or company. `companyId` WITHOUT a scope means "the catalog this company can see": shared rows (canonical/sector/user, `companyId` NULL) PLUS that company's own company-scoped rows — never another company's customs (owner-dogfooding fix 2026-07-22; a bare company filter used to hide the whole canonical catalog and the fact matrix synthesized placeholder definitions). With an explicit `scope` the exact filter applies unchanged.
-- `create_kpi_definition(input)`: creates one KPI definition at any scope level.
+- `create_kpi_definition(input)`: creates one KPI definition at any scope level. `statementGroup` (card #307, optional, default `other`): `income` | `balance` | `cash_flow` | `per_share` | `other` — validated vocabulary, typed refusal on any other value; unlike `origin`, nothing forces this field over MCP, so a caller may set it directly.
 - `list_financial_periods(input)`: returns financial periods for one company, optionally filtered by fiscal year.
 - `create_financial_period(input)`: creates one financial period record.
 - `update_financial_period(input)`: updates period end date and report evidence reference.

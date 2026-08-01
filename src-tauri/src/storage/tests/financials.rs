@@ -258,6 +258,7 @@ fn creates_company_custom_kpi_definition() {
             formula: Some("metric_a / metric_b".to_owned()),
             display_format: None,
             origin: None,
+            statement_group: None,
         })
         .expect("custom KPI definition should create");
 
@@ -293,6 +294,7 @@ fn new_kpi_definition_with_origin(
         formula: None,
         display_format: None,
         origin: origin.map(str::to_owned),
+        statement_group: None,
     }
 }
 
@@ -359,6 +361,92 @@ fn create_kpi_definition_rejects_an_unknown_origin_token() {
 }
 
 // ---------------------------------------------------------------------------
+// `kpi_definitions.statement_group` vocabulary guard (card #307): `income |
+// balance | cash_flow | per_share | other` — validated the same way as
+// `origin`, absent/empty normalizing to the `other` default.
+// ---------------------------------------------------------------------------
+
+fn new_kpi_definition_with_statement_group(
+    company_id: &str,
+    metric_key: &str,
+    statement_group: Option<&str>,
+) -> NewKpiDefinition {
+    NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: Some(company_id.to_owned()),
+        sector: None,
+        metric_key: metric_key.to_owned(),
+        label: metric_key.to_owned(),
+        value_kind: "count".to_owned(),
+        unit: None,
+        computation: "reported".to_owned(),
+        formula: None,
+        display_format: None,
+        origin: None,
+        statement_group: statement_group.map(str::to_owned),
+    }
+}
+
+#[test]
+fn create_kpi_definition_accepts_every_statement_group_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    for (index, token) in ["income", "balance", "cash_flow", "per_share", "other"]
+        .into_iter()
+        .enumerate()
+    {
+        let definition = state
+            .create_kpi_definition(new_kpi_definition_with_statement_group(
+                &company.id,
+                &format!("statement_group_metric_{index}"),
+                Some(token),
+            ))
+            .expect("a vocabulary token is a valid statement_group");
+        assert_eq!(definition.statement_group, token);
+    }
+}
+
+#[test]
+fn create_kpi_definition_defaults_absent_statement_group_to_other() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let definition = state
+        .create_kpi_definition(new_kpi_definition_with_statement_group(
+            &company.id,
+            "no_group_metric",
+            None,
+        ))
+        .expect("absent statement_group defaults");
+    assert_eq!(definition.statement_group, "other");
+}
+
+#[test]
+fn create_kpi_definition_rejects_an_unknown_statement_group_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .create_kpi_definition(new_kpi_definition_with_statement_group(
+            &company.id,
+            "garbage_group_metric",
+            Some("garbage"),
+        ))
+        .expect_err("an unknown statement_group token must never be silently stored");
+    assert!(matches!(
+        error,
+        StorageError::InvalidFinancialsValue {
+            key: "statement_group",
+            ..
+        }
+    ));
+}
+
+// ---------------------------------------------------------------------------
 // kpi_definitions id scoping (issue #149, T7 slice 2). The unique INDEX is
 // (metric_key, scope, company_id, sector) — a metric key legitimately exists
 // once per scope bucket. The PRIMARY KEY must therefore carry the same
@@ -400,6 +488,7 @@ fn company_scoped_definition_coexists_with_canonical_same_metric_key() {
             formula: None,
             display_format: None,
             origin: None,
+            statement_group: None,
         })
         .expect("a company-scoped definition must not collide with the canonical row");
 
@@ -460,6 +549,7 @@ fn sector_scoped_definition_coexists_with_canonical_same_metric_key() {
             formula: None,
             display_format: None,
             origin: None,
+            statement_group: None,
         })
         .expect("a sector-scoped definition must not collide with the canonical row");
 
@@ -495,6 +585,7 @@ fn two_companies_may_each_scope_the_same_metric_key() {
         formula: None,
         display_format: None,
         origin: None,
+        statement_group: None,
     };
 
     let a = state
@@ -526,6 +617,7 @@ fn company_scoped_facts_do_not_leak_into_canonical_metric_history() {
             formula: None,
             display_format: None,
             origin: None,
+            statement_group: None,
         })
         .expect("company-scoped definition should create");
 
@@ -1999,6 +2091,7 @@ fn company_scoped_definition_list_includes_the_canonical_catalog() {
                 formula: None,
                 display_format: None,
                 origin: None,
+                statement_group: None,
             })
             .expect("custom definition");
     }

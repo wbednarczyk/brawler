@@ -145,6 +145,7 @@ function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
     formula: null,
     displayFormat: null,
     origin: "seed",
+    statementGroup: "other",
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
   };

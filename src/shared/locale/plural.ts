@@ -54,3 +54,10 @@ export const ITEM_FORMS: PluralForms = {
   en: ["item", "items"],
   pl: ["pozycja", "pozycje", "pozycji"],
 };
+
+// Grouped fundamentals matrix (card #307): "N metryk" in a collapsible
+// group's header.
+export const METRIC_FORMS: PluralForms = {
+  en: ["metric", "metrics"],
+  pl: ["metryka", "metryki", "metryk"],
+};

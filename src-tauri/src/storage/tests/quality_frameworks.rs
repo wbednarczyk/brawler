@@ -504,6 +504,7 @@ fn frameworks_round_trip_through_export_import_with_custom_metric() {
             formula: Some("operating_margin + fcf_margin".to_owned()),
             display_format: None,
             origin: None,
+            statement_group: None,
         })
         .expect("custom metric creates");
 
