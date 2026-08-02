@@ -37,8 +37,8 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
             "limit": {
               "description": "Maximum number of matches to return (default 50).",
               "format": "int64",
-              "maximum": 200.0,
-              "minimum": 1.0,
+              "maximum": 200,
+              "minimum": 1,
               "type": "integer"
             },
             "query": {
@@ -602,8 +602,8 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
             "limit": {
               "description": "Maximum number of runs to return.",
               "format": "int64",
-              "maximum": 200.0,
-              "minimum": 1.0,
+              "maximum": 200,
+              "minimum": 1,
               "type": "integer"
             }
           },
@@ -673,8 +673,8 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
             "limit": {
               "description": "Maximum filings to return (default 50, max 200).",
               "format": "int64",
-              "maximum": 200.0,
-              "minimum": 1.0,
+              "maximum": 200,
+              "minimum": 1,
               "type": "integer"
             }
           },

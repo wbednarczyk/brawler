@@ -47,10 +47,12 @@ regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 # MCP tool input/output JSON Schemas are GENERATED from the serde types (ADR
-# 0088 dec. 1) — never hand-written. Version 0.8.x is already resolved in the
-# lockfile transitively, so promoting it to a direct dependency adds no new
-# crate version. Pure Rust; cross-compiles to windows-msvc via cargo-xwin.
-schemars = "0.8"
+# 0088 dec. 1) — never hand-written. 1.x is already resolved in the lockfile
+# transitively (Tauri's side of the tree), so tracking it adds no new crate
+# version and drops a duplicate. Pure Rust; cross-compiles to windows-msvc via
+# cargo-xwin. The emitted schemas are the frozen tool contract (ADR 0078 G-1) —
+# see `mcp::tools::tool_schema` for what this version's defaults required.
+schemars = "1"
 scraper = "0.22"
 semver = "1"
 similar = "3"

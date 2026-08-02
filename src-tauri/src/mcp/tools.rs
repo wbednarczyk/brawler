@@ -80,8 +80,7 @@ pub struct GetQualityAssessmentInput {
 /// The insta snapshot of `tools/list` freezes whatever this produces (ADR 0078
 /// G-1): regeneration is a reviewed spec change.
 pub fn tool_schema<T: JsonSchema>() -> Value {
-    let mut settings = schemars::gen::SchemaSettings::draft07();
-    settings.option_add_null_type = false;
+    let settings = schemars::generate::SchemaSettings::draft07();
     let root = settings.into_generator().into_root_schema_for::<T>();
     let mut value = serde_json::to_value(root).expect("schema serializes to JSON");
     if let Some(object) = value.as_object_mut() {
@@ -92,25 +91,58 @@ pub fn tool_schema<T: JsonSchema>() -> Value {
         // duplicate at the schema root (nested field descriptions are kept).
         object.remove("description");
     }
-    // `#[serde(default)]` on an `Option` field makes schemars advertise
-    // `"default": null` — pure noise on the external contract; drop it.
-    strip_null_defaults(&mut value);
+    normalize_generated_schema(&mut value);
     value
 }
 
-/// Recursively remove `"default": null` keys left by schemars for
-/// optional-by-`serde(default)` fields.
-fn strip_null_defaults(value: &mut Value) {
+/// Recursively bring schemars' raw output onto the shape the tool contract
+/// promises. Four normalizations, each one a contract property rather than a
+/// cosmetic preference:
+///
+/// - **`"default": null` is dropped.** `#[serde(default)]` on an `Option` field
+///   makes schemars advertise a null default — pure noise on an external wire
+///   contract.
+/// - **`"null"` is removed from `type` unions.** An optional input is
+///   optional-by-absence: schemars 1.x makes every `Option<T>` nullable, which
+///   would invite agents to send `"company": null` instead of omitting the key.
+///   (0.8 expressed this as the `option_add_null_type` setting, which 1.x
+///   dropped — hence the explicit pass.)
+/// - **`required` is sorted.** JSON Schema treats it as a set, and schemars 1.x
+///   emits declaration order, so reordering two struct fields would otherwise
+///   churn the frozen snapshot for no wire-visible reason.
+/// - **`description` is unwrapped to one line.** schemars 1.x keeps the doc
+///   comment's newlines, which are rustfmt's wrapping, not authored structure —
+///   without this, re-wrapping a comment would edit the external contract.
+fn normalize_generated_schema(value: &mut Value) {
     match value {
         Value::Object(map) => {
             if map.get("default") == Some(&Value::Null) {
                 map.remove("default");
             }
+            if let Some(Value::String(description)) = map.get_mut("description") {
+                if description.contains('\n') {
+                    *description = description.split_whitespace().collect::<Vec<_>>().join(" ");
+                }
+            }
+            if let Some(Value::Array(types)) = map.get_mut("type") {
+                // Guard the union case only: a lone `"type": "null"` stays as-is
+                // rather than collapsing into an empty, meaningless array.
+                if types.len() > 1 {
+                    types.retain(|entry| entry != "null");
+                    if let [single] = types.as_slice() {
+                        let single = single.clone();
+                        map.insert("type".into(), single);
+                    }
+                }
+            }
+            if let Some(Value::Array(required)) = map.get_mut("required") {
+                required.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+            }
             for child in map.values_mut() {
-                strip_null_defaults(child);
+                normalize_generated_schema(child);
             }
         }
-        Value::Array(items) => items.iter_mut().for_each(strip_null_defaults),
+        Value::Array(items) => items.iter_mut().for_each(normalize_generated_schema),
         _ => {}
     }
 }
@@ -615,6 +647,68 @@ mod tests {
             serde_json::from_value::<GetQualityAssessmentInput>(json!({"company":"GPW:TST"}))
                 .is_ok()
         );
+    }
+
+    /// The four normalizations `tool_schema` applies to schemars' raw output.
+    /// The `tools/list` snapshot (ADR 0078 G-1) would also redden if one of
+    /// these regressed, but only as an opaque 77 KB diff — this names the
+    /// property that broke. Each was a real difference in schemars 1.x.
+    #[test]
+    fn generated_schemas_are_normalized_onto_the_wire_contract() {
+        // An optional input is optional-by-absence: no `null` in the union, and
+        // no `"default": null` riding along with `#[serde(default)]`.
+        let search = tool_schema::<SearchResearchInput>();
+        assert_eq!(
+            search["properties"]["company"]["type"],
+            json!("string"),
+            "Option<String> must stay a plain string, not become nullable: {search}"
+        );
+        assert!(
+            search["properties"]["company"].get("default").is_none(),
+            "a null default must not reach the wire contract: {search}"
+        );
+
+        // `required` is a set — emit it sorted so reordering struct fields does
+        // not churn the frozen contract.
+        let dossier = tool_schema::<GetCompanyDossierInput>();
+        let required = dossier["required"].as_array().expect("required array");
+        let mut sorted = required.clone();
+        sorted.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+        assert_eq!(
+            required, &sorted,
+            "required must be emitted sorted: {dossier}"
+        );
+
+        // Descriptions carry no rustfmt line wrapping — otherwise re-wrapping a
+        // doc comment would edit the external contract.
+        let mut descriptions = Vec::new();
+        collect_descriptions(&search, &mut descriptions);
+        assert!(
+            !descriptions.is_empty(),
+            "the fixture must carry descriptions"
+        );
+        for description in descriptions {
+            assert!(
+                !description.contains('\n'),
+                "description must be unwrapped to one line: {description:?}"
+            );
+        }
+    }
+
+    fn collect_descriptions(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(Value::String(description)) = map.get("description") {
+                    out.push(description.clone());
+                }
+                map.values()
+                    .for_each(|child| collect_descriptions(child, out));
+            }
+            Value::Array(items) => items
+                .iter()
+                .for_each(|item| collect_descriptions(item, out)),
+            _ => {}
+        }
     }
 
     #[test]
