@@ -47,7 +47,7 @@ export function CompanyAutopilotField({ companyId }: CompanyAutopilotFieldProps)
   }
 
   return (
-    <section className="fundamentals-section" aria-label={text("Autopilot")}>
+    <div role="group" className="fundamentals-section" aria-label={text("Autopilot")}>
       <SectionHeader level="h4" title={text("Autopilot")} />
       <p className="ai-analysis-empty">
         {text(
@@ -66,6 +66,6 @@ export function CompanyAutopilotField({ companyId }: CompanyAutopilotFieldProps)
         <option value="autopilot">{text("Autopilot — auto-confirm (unreviewed)")}</option>
       </SelectField>
       {error ? <ErrorText>{error}</ErrorText> : null}
-    </section>
+    </div>
   );
 }

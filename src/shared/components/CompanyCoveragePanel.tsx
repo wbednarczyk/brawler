@@ -440,7 +440,7 @@ export function CompanyCoveragePanel({
   // pinned to other companies) — tests and live probes MUST scope by company, or
   // a read can silently land on a neighbour's pane (found live, 2026-07-10).
   return (
-    <section className="company-coverage" data-company-id={companyId} aria-label={text("Coverage")}>
+    <div role="group" className="company-coverage" data-company-id={companyId} aria-label={text("Coverage")}>
       <SectionHeader paneLead title={text("Coverage")} meta={periods.length} />
       {error ? <ErrorText>{error}</ErrorText> : null}
       {periods.length === 0 && !error ? (
@@ -574,6 +574,6 @@ export function CompanyCoveragePanel({
         {modeOff ? <Hint>{text("Enable automation to extract history.")}</Hint> : null}
         {actionError ? <ErrorText>{actionError}</ErrorText> : null}
       </div>
-    </section>
+    </div>
   );
 }

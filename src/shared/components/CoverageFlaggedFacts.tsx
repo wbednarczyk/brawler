@@ -135,7 +135,7 @@ export function CoverageFlaggedFacts({ companyId, reloadKey = 0 }: CoverageFlagg
   };
 
   return (
-    <section className="coverage-flagged-figures" aria-label={text("Flagged figures")}>
+    <div role="group" className="coverage-flagged-figures" aria-label={text("Flagged figures")}>
       <SectionHeader
         level="h3"
         title={text("Flagged figures")}
@@ -145,6 +145,6 @@ export function CoverageFlaggedFacts({ companyId, reloadKey = 0 }: CoverageFlagg
         {text("Values the app recorded but couldn't fully verify — shown with where they came from.")}
       </Hint>
       {renderBody()}
-    </section>
+    </div>
   );
 }

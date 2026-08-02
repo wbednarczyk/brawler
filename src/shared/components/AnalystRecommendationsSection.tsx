@@ -204,7 +204,7 @@ export function AnalystRecommendationsSection({
         </EmptyState>
       ) : (
         <>
-          <section className="analyst-recs-summary" aria-label={text("Recommendations summary")}>
+          <div role="group" className="analyst-recs-summary" aria-label={text("Recommendations summary")}>
             {latestTarget ? (
               <div className="analyst-recs-stat">
                 <span className="analyst-recs-stat-value num-tabular">
@@ -228,7 +228,7 @@ export function AnalystRecommendationsSection({
               </span>
               <span className="analyst-recs-stat-label">{text("Last change")}</span>
             </div>
-          </section>
+          </div>
 
           <ul className="analyst-recs-list" aria-label={text("Analyst recommendations")}>
             {entries.map(renderRow)}

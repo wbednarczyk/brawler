@@ -96,12 +96,12 @@ export function CompanyFeedSection({
               <div>
                 <span className="eyebrow">{text("Selected item")}</span>
                 <h3>{selectedFeedItem.title}</h3>
-                <section className="feed-body-section" aria-label={text("Feed summary")}>
+                <div role="group" className="feed-body-section" aria-label={text("Feed summary")}>
                   <div className="feed-body-heading">
                     <span>{text("Summary")}</span>
                   </div>
                   <p className="feed-detail-body">{feedItemSummary(selectedFeedItem)}</p>
-                </section>
+                </div>
                 <details className="feed-body-section feed-body-disclosure" aria-label={text("Official report body")}>
                   <summary className="feed-body-heading">
                     <span>{text("Official report body")}</span>

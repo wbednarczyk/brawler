@@ -87,7 +87,7 @@ export function ShortPositionsSection({ company, view, error }: ShortPositionsSe
         </ErrorText>
       ) : null}
 
-      <section className="short-positions-summary" aria-label={text("Short-selling summary")}>
+      <div role="group" className="short-positions-summary" aria-label={text("Short-selling summary")}>
         <div>
           <strong className={aggregatePct > 1e-9 ? "short-positions-stat-danger" : ""}>
             {formatFixedPercent(aggregatePct, locale)}
@@ -102,7 +102,7 @@ export function ShortPositionsSection({ company, view, error }: ShortPositionsSe
           <strong className={deltaTone}>{deltaLabel}</strong>
           <span>{text("Change / 30 days")}</span>
         </div>
-      </section>
+      </div>
 
       {isEmpty ? (
         <EmptyState className="short-positions-empty" wrapText={false}>

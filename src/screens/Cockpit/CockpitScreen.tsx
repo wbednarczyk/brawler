@@ -1216,7 +1216,7 @@ function FeedPanel({
     : items;
 
   return (
-    <section className="cockpit-feed" aria-label={text("Cockpit feed")}>
+    <div role="group" className="cockpit-feed" aria-label={text("Cockpit feed")}>
       <div className="cockpit-feed-filter">
         <SearchField
           ariaLabel={text("Filter feed items")}
@@ -1254,7 +1254,7 @@ function FeedPanel({
           {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
         </button>
       ))}
-    </section>
+    </div>
   );
 }
 
@@ -1276,7 +1276,7 @@ function InspectorPanel({
     /\.pdf(?:$|[?#])/i.test(attachment.url),
   );
   return (
-    <section className="cockpit-inspector" aria-label={text("Feed item inspector")}>
+    <div role="group" className="cockpit-inspector" aria-label={text("Feed item inspector")}>
       <header className="cockpit-inspector-head">
         <TickerLabel value={item.company} />
         <h3 className="cockpit-inspector-title">{item.title}</h3>
@@ -1293,7 +1293,7 @@ function InspectorPanel({
       {item.summary ? <p className="cockpit-inspector-summary">{item.summary}</p> : null}
       {item.bodyText ? <p className="cockpit-inspector-body">{item.bodyText}</p> : null}
       {pdfAttachments.length > 0 ? (
-        <section className="cockpit-inspector-attachments" aria-label={text("Attachments")}>
+        <div role="group" className="cockpit-inspector-attachments" aria-label={text("Attachments")}>
           <SectionHeader level="h4" title={text("Attachments")} />
           <ul>
             {pdfAttachments.map((attachment) => (
@@ -1304,12 +1304,12 @@ function InspectorPanel({
               </li>
             ))}
           </ul>
-        </section>
+        </div>
       ) : null}
       <a className="secondary-button compact-button cockpit-inspector-open" href={item.sourceUrl} target="_blank" rel="noreferrer">
         {text("Open source")}
       </a>
-    </section>
+    </div>
   );
 }
 

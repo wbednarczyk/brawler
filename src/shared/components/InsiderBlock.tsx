@@ -69,17 +69,18 @@ export function InsiderBlock({ data, error, className }: InsiderBlockProps) {
   };
 
   const heading = (
-    <SectionHeader level="h4" title={text("Insiders")} titleId="insider-title" />
+    <SectionHeader level="h4" title={text("Insiders")} />
   );
 
   const wrap = (children: React.ReactNode) => (
-    <section
-      aria-labelledby="insider-title"
+    <div
+      role="group"
+      aria-label={text("Insiders")}
       className={["insider-section", className].filter(Boolean).join(" ")}
     >
       {heading}
       {children}
-    </section>
+    </div>
   );
 
   if (error) {

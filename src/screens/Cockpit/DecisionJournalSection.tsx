@@ -220,7 +220,8 @@ export function DecisionJournalSection({
                 ariaLabel={text("Decision rationale")}
                 body={selectedEntry.rationaleMd}
               />
-              <section
+              <div
+                role="group"
                 className="decision-journal-evidence"
                 aria-label={text("Link supporting evidence")}
               >
@@ -247,7 +248,7 @@ export function DecisionJournalSection({
                 {evidenceCandidates.length === 0 ? (
                   <EmptyState>{text("No evidence to link yet.")}</EmptyState>
                 ) : null}
-              </section>
+              </div>
             </>
           ) : (
             <EmptyState>{text("Select a decision to review it.")}</EmptyState>

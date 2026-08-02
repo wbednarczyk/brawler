@@ -441,7 +441,7 @@ export function CoverageFlaggedPeriods({
   };
 
   return (
-    <section className="coverage-flagged" aria-label={text("Flagged periods")}>
+    <div role="group" className="coverage-flagged" aria-label={text("Flagged periods")}>
       <SectionHeader
         level="h3"
         title={text("Flagged periods")}
@@ -452,6 +452,6 @@ export function CoverageFlaggedPeriods({
       </Hint>
       {renderBody()}
       {actionError ? <ErrorText>{actionError}</ErrorText> : null}
-    </section>
+    </div>
   );
 }

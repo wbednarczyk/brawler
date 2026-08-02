@@ -442,7 +442,7 @@ export function FundamentalsPanel({
       ) : null}
 
       {/* Financial Facts List and Detail */}
-      <section className="fundamentals-section" aria-label={text("Financial facts")}>
+      <div role="group" className="fundamentals-section" aria-label={text("Financial facts")}>
         <SectionHeader level="h4" title={text("Financial facts")} />
 
         <div className="fundamentals-workspace">
@@ -578,7 +578,7 @@ export function FundamentalsPanel({
           )}
 
         </div>
-      </section>
+      </div>
 
       {/* Fact detail modal (card #307): replaces the old below-table detail/edit
           section — clicking a matrix cell opens the SAME modal Edytuj switches
@@ -795,7 +795,7 @@ export function FundamentalsPanel({
                 </div>
               ) : null}
               {selectedDrift ? (
-                <section className="fact-detail-drift" aria-label={text("Structure changed")}>
+                <div role="group" className="fact-detail-drift" aria-label={text("Structure changed")}>
                   <SectionHeader
                     level="h4"
                     title={text("Structure changed")}
@@ -804,7 +804,7 @@ export function FundamentalsPanel({
                     )}
                   />
                   <DriftDiff drift={selectedDrift} />
-                </section>
+                </div>
               ) : null}
             </>
           )
@@ -825,7 +825,7 @@ export function FundamentalsPanel({
       ) : null}
 
       {/* Financial Periods List */}
-      <section className="fundamentals-section" aria-label={text("Reporting periods")}>
+      <div role="group" className="fundamentals-section" aria-label={text("Reporting periods")}>
         <SectionHeader level="h4" title={text("Reporting periods")} />
         {financialPeriods.length > 0 ? (
           <div className="periods-list">
@@ -840,7 +840,7 @@ export function FundamentalsPanel({
         ) : (
           <EmptyState>{text("No reporting periods yet.")}</EmptyState>
         )}
-      </section>
+      </div>
 
       {/* Autopilot section (U7-A): folds to a summary row + expand at the S tier
           (container query), inline field at M/L. */}
@@ -879,7 +879,7 @@ export function FundamentalsPanel({
           {text("Reporting forms")}
         </button>
         <div className="fundamentals-forms-grid">
-          <section className="fundamentals-section" aria-label={text("Create reporting period")}>
+          <div role="group" className="fundamentals-section" aria-label={text("Create reporting period")}>
             <SectionHeader level="h4" title={text("New reporting period")} />
             <form className="fundamentals-form" onSubmit={createFinancialPeriod}>
               <div className="fundamentals-form-row">
@@ -920,10 +920,10 @@ export function FundamentalsPanel({
                 </Button>
               </div>
             </form>
-          </section>
+          </div>
 
           {financialPeriods.length > 0 ? (
-            <section className="fundamentals-section" aria-label={text("Add financial fact")}>
+            <div role="group" className="fundamentals-section" aria-label={text("Add financial fact")}>
               <SectionHeader level="h4" title={text("Add financial fact")} />
           <form
             className="fundamentals-form"
@@ -1003,7 +1003,7 @@ export function FundamentalsPanel({
               </Button>
             </div>
               </form>
-            </section>
+            </div>
           ) : null}
         </div>
       </div>

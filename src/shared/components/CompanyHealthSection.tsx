@@ -269,7 +269,7 @@ export function CompanyHealthSection({ companyId }: Props) {
   }
 
   return (
-    <section className="company-health-section" aria-label={text("Company health")}>
+    <div role="group" className="company-health-section" aria-label={text("Company health")}>
       <SectionHeader
         level="h4"
         title={text("Company health")}
@@ -313,6 +313,6 @@ export function CompanyHealthSection({ companyId }: Props) {
           </li>
         </ul>
       ) : null}
-    </section>
+    </div>
   );
 }
