@@ -319,11 +319,15 @@ describe("Research cockpit — view company context (U-Ra)", () => {
       }),
     ).toBeInTheDocument();
     expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
-    expect(
-      within(cockpit).queryByRole("button", {
-        name: "Open company feed item: Current report placeholder for watchlist company",
-      }),
-    ).toBeNull();
+    // Same reason as the unpin swap below: the outgoing company's item can survive
+    // one render past the incoming one, so wait for it to go rather than sample.
+    await waitFor(() => {
+      expect(
+        within(cockpit).queryByRole("button", {
+          name: "Open company feed item: Current report placeholder for watchlist company",
+        }),
+      ).toBeNull();
+    });
   });
 
   it("keeps a PINNED panel frozen on its company across a view-company switch", async () => {
@@ -374,7 +378,12 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     // pinned → follow rejoins the view company (now KGH): kind-only title returns.
     await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
     expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
-    expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
+    // The unpin swaps the tab node, so the prefixed title can outlive the arrival
+    // of the kind-only one by a render: await its *removal* instead of sampling
+    // the single tick after the positive assertion resolves.
+    await waitFor(() => {
+      expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
+    });
     expect(
       await within(cockpit).findByRole("button", {
         name: "Open company feed item: Transcript-derived note candidate waits for future provider work",
