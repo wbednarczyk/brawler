@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.4 - 2026-08-02
+
+
+### Bug Fixes
+
+- **a11y**: a cockpit panel is a group, not a landmark — plus the two harness cards reality had already closed (#142, #158, #120) (#315)
+
 ## v0.63.3 - 2026-08-02
 
 
