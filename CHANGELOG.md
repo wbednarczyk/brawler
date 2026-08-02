@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.2 - 2026-08-02
+
+
+### Bug Fixes
+
+- **fundamentals**: good-first-issue batch — WDF cover-note KPI seeds, honest bank denominator, GPW listing titles, live-spec contention, dependency-scan gate (#312)
+
 ## v0.63.1 - 2026-08-01
 
 
