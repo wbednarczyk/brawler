@@ -5,9 +5,7 @@ import { expect, renderApp, screen } from "../test/appWorkflowHarness";
 // Screen-level accessibility regression guard (ADR 0048): render the app, walk
 // each primary screen, and assert axe finds no violations — extending the
 // primitive-gallery a11y baseline (src/ui/primitives.a11y.test.tsx) up to the
-// composed screens. Same jsdom-disabled rules as the gallery: region /
-// color-contrast (no layout/contrast in jsdom) and heading-order. Real-browser
-// contrast (axe-playwright) is a tracked follow-up.
+// composed screens.
 // Every primary screen is guarded against a11y regressions (U9: the previously
 // excluded Inbox/Companies/Sources/Events were remediated — aria-allowed-role and
 // nested-interactive fixed at the DOM/ARIA level, not by disabling rules). Zero
@@ -24,10 +22,16 @@ const SCREENS = [
   "Events",
 ] as const;
 
+// Only two rules stay off, each for a reason that cannot be engineered away here
+// (#177). `region` and `heading-order` used to be off too, inherited from the
+// gallery's rule set — they were re-enabled once measured: all nine screens pass
+// them, so the suppression was hiding nothing and now guards real structure.
 const AXE_RULES = {
-  region: { enabled: false },
+  // jsdom computes no colors, so this rule can only ever be vacuous here. Contrast
+  // is checked where it is real: `expectNoA11yViolations` (@axe-core/playwright)
+  // runs the WCAG A/AA set in a real browser, across the viewport matrix and the
+  // light-theme project — both palettes.
   "color-contrast": { enabled: false },
-  "heading-order": { enabled: false },
   // Notebooks/Research render their detail pane as an in-workspace complementary
   // <aside>; this rule wants complementary landmarks at top level, which does not
   // fit a multi-pane desktop workspace where the rail is intentionally nested in

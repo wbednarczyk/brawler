@@ -1,5 +1,14 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { vi } from "vitest";
+
+// Testing Library's `waitFor`/`findBy*` default budget is 1 SECOND — generous on
+// a dev box, marginal on a 4-vCPU CI runner running four vitest workers over a
+// full app render. That gap produced a mystery flake in CI (`CockpitScreen`'s
+// pin/unpin tab swap, PR #316) that no local run could reproduce, and nothing in
+// the suite overrode it. Raise it once, here: a real failure still fails — it
+// just no longer races the machine. Only failing assertions pay the extra wait.
+configure({ asyncUtilTimeout: 5_000 });
 
 // Tauri module mocks for the whole frontend test run. These live here (the
 // configured `setupFiles` entry in vitest.config.ts) rather than in
