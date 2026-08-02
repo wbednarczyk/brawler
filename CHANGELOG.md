@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.1 - 2026-08-01
+
+
+### Features
+
+- **ui**: fact detail in a Modal + fundamentals matrix grouped by statement (kpi_definitions.statement_group) (#310)
+
 ## v0.63.0 - 2026-08-01
 
 
