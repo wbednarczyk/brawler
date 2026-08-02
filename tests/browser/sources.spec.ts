@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./helpers/harness";
+import { test, expect, expectNoA11yViolations, openApp } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Clickable Sources journey against the stateful browser mock runtime
@@ -29,5 +29,17 @@ test.describe("sources", { tag: "@clickable" }, () => {
     // ...and re-enabling flips it back.
     await page.getByRole("switch", { name: onName }).click({ force: true });
     await expect(page.getByRole("switch", { name: offName })).toHaveCount(1);
+  });
+
+  // Real-browser a11y (#158): the jsdom guard (src/app/screens.a11y.test.tsx)
+  // covers Sources for role/label/structure, but only a real browser computes
+  // colors — so contrast on the adapter switches and status chips is checked
+  // here, across the viewport matrix and both themes.
+  test("Sources has no WCAG A/AA violations", async ({ page }) => {
+    await openApp(page);
+    await navTo(page, "Sources").click();
+    await expect(page.getByRole("switch").first()).toBeVisible();
+
+    await expectNoA11yViolations(page, "Sources");
   });
 });

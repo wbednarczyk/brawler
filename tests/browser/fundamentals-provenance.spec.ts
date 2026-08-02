@@ -30,7 +30,7 @@ test.describe("structured-first fundamentals provenance (ADR 0061)", () => {
     await expect(detail.getByText("ESEF (tagged)")).toBeVisible();
     await expect(detail.getByText("Validated", { exact: true })).toBeVisible();
     // A clean fact does NOT render the drift card.
-    await expect(page.getByRole("region", { name: "Structure changed" })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Structure changed" })).toHaveCount(0);
   });
 
   test("a drifted fact shows the 'structure changed' label diff card @clickable", async ({
@@ -39,7 +39,7 @@ test.describe("structured-first fundamentals provenance (ADR 0061)", () => {
     await openFundamentals(page);
     await page.getByRole("button", { name: "Net profit, 2025 Q3" }).click();
 
-    const drift = page.getByRole("region", { name: "Structure changed" });
+    const drift = page.getByRole("group", { name: "Structure changed" });
     await expect(drift).toBeVisible();
     // The clean label diff: the new line added, the profile line removed.
     await expect(drift.getByText("Zysk netto z działalności kontynuowanej")).toBeVisible();

@@ -138,7 +138,7 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
       </>
     );
     return (
-      <section className="company-report-documents report-diff-panel" aria-label={text("Report comparison")}>
+      <div role="group" className="company-report-documents report-diff-panel" aria-label={text("Report comparison")}>
         <SectionHeader
           title={diffHeading}
           actions={
@@ -162,12 +162,12 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
         >
           {diffBody}
         </FocusOverlay>
-      </section>
+      </div>
     );
   }
 
   return (
-    <section className="company-report-documents report-diff-panel" aria-label={text("Report comparison")}>
+    <div role="group" className="company-report-documents report-diff-panel" aria-label={text("Report comparison")}>
       <SectionHeader
         paneLead
         title={text("Report comparison")}
@@ -179,7 +179,8 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
       ) : null}
       {candidates && candidates.length > 0
         ? groupCandidatesByStatement(candidates).map(({ statementType, items }) => (
-            <section
+            <div
+              role="group"
               key={statementType}
               className="report-diff-group"
               aria-label={statementTypeLabel(statementType, text)}
@@ -209,10 +210,10 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
                   );
                 })}
               </ul>
-            </section>
+            </div>
           ))
         : null}
-    </section>
+    </div>
   );
 }
 

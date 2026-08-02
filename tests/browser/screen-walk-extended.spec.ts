@@ -1,4 +1,11 @@
-import { test, expect, openApp, openCockpitPanel, expectNoPageOverflow } from "./helpers/harness";
+import {
+  test,
+  expect,
+  openApp,
+  openCockpitPanel,
+  expectNoA11yViolations,
+  expectNoPageOverflow,
+} from "./helpers/harness";
 
 // The screens that moved off the sidebar into the cockpit (ADR 0054) —
 // Research / Notebook / Events / Report Season — no longer have their own nav
@@ -37,6 +44,19 @@ test.describe("cockpit-hosted screens lay out without overflow", () => {
       await expectNoPageOverflow(page);
     }
   });
+
+  // Real-browser a11y (#158): the jsdom guard covers these screens for
+  // role/label/structure; only a real browser computes colors, so contrast in
+  // their cockpit-hosted form is checked here — across the viewport matrix and
+  // both theme projects.
+  for (const { tab } of PANELS) {
+    test(`the ${tab} panel has no WCAG A/AA violations`, async ({ page }) => {
+      await openApp(page);
+      await openCockpitPanel(page, tab);
+
+      await expectNoA11yViolations(page, `${tab} cockpit panel`);
+    });
+  }
 
   // Compact header (ADR 0076 Decision 6, K3 double panel chrome): a cockpit-hosted
   // panel must NOT repeat the dock tab's title as a visible in-panel H1. The

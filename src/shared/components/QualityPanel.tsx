@@ -145,7 +145,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   // behind a disclosure and folds by default in the short height tier. The tier
   // is read from the hosting pane (the `@container pane` queries resolve against
   // it); a manual toggle wins once the user interacts.
-  const panelRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [paneShort, setPaneShort] = useState(false);
   const [historyManual, setHistoryManual] = useState<boolean | null>(null);
   const historyOpen = historyManual ?? !paneShort;
@@ -500,7 +500,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   }
 
   return (
-    <section ref={panelRef} className="company-tab-panel quality-panel" aria-label={text("Quality frameworks")}>
+    <div role="group" ref={panelRef} className="company-tab-panel quality-panel" aria-label={text("Quality frameworks")}>
       <SectionHeader
         paneLead
         title={text("Quality")}
@@ -784,6 +784,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
           placeholder={text("My quality checklist")}
         />
       </Modal>
-    </section>
+    </div>
   );
 }

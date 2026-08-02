@@ -503,7 +503,7 @@ export function CompanyReportDocumentsPanel({
   const hasDocuments = rows.length > 0;
 
   return (
-    <section className="company-report-documents" aria-label={text("Report documents")}>
+    <div role="group" className="company-report-documents" aria-label={text("Report documents")}>
       <SectionHeader
         paneLead
         title={text("Report documents")}
@@ -635,6 +635,6 @@ export function CompanyReportDocumentsPanel({
       ) : (
         <ul className="doc-rows doc-rows-flat">{filteredRows.map(renderRow)}</ul>
       )}
-    </section>
+    </div>
   );
 }

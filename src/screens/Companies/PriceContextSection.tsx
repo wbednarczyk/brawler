@@ -81,11 +81,12 @@ export function PriceContextSection({
         : text("No price data is available for this company yet.");
 
     return (
-      <section
-        aria-labelledby="price-context-title"
+      <div
+        role="group"
+        aria-label={text("Price context")}
         className={["price-context-section", className].filter(Boolean).join(" ")}
       >
-        <SectionHeader level="h4" title={text("Price context")} titleId="price-context-title" />
+        <SectionHeader level="h4" title={text("Price context")} />
         <EmptyState
           actions={
             data.emptyReason === "unmapped_ticker" && onViewSourceHealth ? (
@@ -98,7 +99,7 @@ export function PriceContextSection({
         >
           {message}
         </EmptyState>
-      </section>
+      </div>
     );
   }
 
@@ -117,14 +118,15 @@ export function PriceContextSection({
   }));
 
   return (
-    <section
-      aria-labelledby="price-context-title"
+    <div
+      role="group"
+      aria-label={text("Price context")}
       className={["price-context-section", className].filter(Boolean).join(" ")}
     >
       <SectionHeader
         level="h4"
         title={text("Price context")}
-        titleId="price-context-title"
+       
         meta={<span className="price-context-staleness">{staleness}</span>}
       />
 
@@ -231,6 +233,6 @@ export function PriceContextSection({
           />
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }

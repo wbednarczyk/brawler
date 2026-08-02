@@ -75,6 +75,17 @@ Rules:
 - Rows that read as cards use the shared card idiom: a `var(--border)`-ish border, `border-radius: 8px`, and a `color-mix(... var(--surface-raised) …)` fill (see `.event-week-day`, `.report-season-row`). A selectable/expandable row gets a visible hover and active state; use the `ExpandableRow` primitive for expand-in-place — it renders its own rotating disclosure chevron (▸/▾), so consumers must not add one.
 - **Focus after a destructive action** never falls back to `<body>` (ADR 0076 D9): when a list row is deleted/hidden, move focus to the next sibling row via the shared `useFocusAfterRemove(itemKeys, { rowSelector, focusSelector? })` hook (`src/shared/focus/focusAfterRemove.ts`). Attach its `listRef` to the list container; it auto-detects the removed row from the keys and only reclaims focus when the departed row (or the list) held it.
 
+### Landmarks: one per screen, none inside a panel
+
+A landmark (`<section>`/`<aside>` **with an accessible name**, `role="region"`, `main`, `nav`) is a page-level navigation target, and axe requires each one's role + name to be **unique**. A cockpit panel can be hosted twice at once — two companies' report diffs side by side, or a pinned panel next to the follow panel of the same kind — so a landmark inside a panel body is a duplicate waiting to happen (issue #142).
+
+- The **screen root** owns the landmark (`<section className="feed-panel" aria-labelledby=…>`). So does the cockpit shell itself.
+- **Inside a panel, a titled block is a group, not a landmark**: `<div role="group" aria-label={text("…")}>`. The name is still announced; the landmark list stays short and unambiguous. `<section role="group">` does **not** work — axe still counts a named `<section>` as a landmark.
+- A dock pane needs no landmark of its own: its **tab** names it, and tab titles are unique by construction (kind-keyed ids; a pinned panel's title carries the ticker).
+- Never label a block with a **fixed** `aria-labelledby` id (`aria-labelledby="ownership-title"`) — a second instance duplicates the id. Use `aria-label` directly.
+
+Guarded by `src/screens/Cockpit/paneLandmarks.test.tsx`, which opens every company-scoped panel kind and fails if its pane contributes a landmark.
+
 ## Primitive catalog (what to use instead of hand-rolling)
 
 | You are building… | Use | Do NOT hand-roll |
@@ -230,6 +241,7 @@ Primitive-first authoring is policy ([ADR 0037](adr/0037-ui-component-framework-
 - **Pluralization** — counts render their noun through `pluralNoun(locale, n, forms)` (`src/shared/locale/plural.ts`); a `n === 1 ? a : b` ternary is wrong for Polish (3 forms).
 - **Layout/containment** — `src/styles/layoutContracts.test.ts` and the browser-smoke viewport matrix in `playwright.config.ts`. `expectNoPageOverflow` additionally fails on any *panel-internal* horizontal scrollbar not marked `data-hscroll` (see Styling rules above). Add a sample there when introducing a new layout shape; sample data must include realistic long content (the Kroeze-length guidance seed exists precisely so the gate has something to bite on).
 - **Primitive contracts + a11y** — `src/ui/primitives.test.tsx` covers each primitive's render/behavior contract (e.g. `SectionHeader`'s `level` prop renders the right heading, `Checkbox` fires `onChange`), and `src/ui/primitives.a11y.test.tsx` runs `jest-axe` over the whole `PrimitiveGallery` so the library keeps a clean accessibility baseline (this caught a real `aria-selected`-on-`<article>` bug in `DenseRow`). Add the primitive to the gallery + the contract test when you add one. `tests/browser/gallery.spec.ts` additionally checks the gallery for horizontal overflow across the viewport matrix.
+- **Pane landmarks** — `src/screens/Cockpit/paneLandmarks.test.tsx` walks every company-scoped cockpit panel and fails if its pane contributes a landmark of its own (see [Landmarks](#landmarks-one-per-screen-none-inside-a-panel)); duplicate-kind panes would otherwise collide on the same accessible name.
 - **Barrel imports** — `no-restricted-imports` (in `eslint.config.js`) requires consumers to import primitives from the `…/ui` barrel, never a deep `…/ui/Button` path, so the public surface stays in `src/ui/index.ts`.
 - **CSS hygiene (`npm run stylelint`)** — bans hardcoded hex colors outside `tokens.css`/`themes.css` (use design tokens), and flags duplicate selectors, duplicate properties, and empty rules. Runs in the gate.
 - **Dead code (`npm run knip`)** — finds unused files, exports, and dependencies. Kept as a periodic audit script rather than a gate step (its native `oxc-parser` binding makes a hard CI gate riskier), but it runs on the same nix Node 22 toolchain as everything else. The export/type surface of `src/api` and `src/ui` is intentionally excluded as public contract/library surface.

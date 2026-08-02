@@ -65,7 +65,7 @@ export function CustomKpiManager({ companyId, onDefinitionsChange }: CustomKpiMa
   );
 
   return (
-    <section className="fundamentals-section custom-kpi-manager" aria-label={text("Custom KPIs")}>
+    <div role="group" className="fundamentals-section custom-kpi-manager" aria-label={text("Custom KPIs")}>
       <SectionHeader level="h4" title={text("Custom KPIs")} />
 
       {definitions.length > 0 ? (
@@ -128,6 +128,6 @@ export function CustomKpiManager({ companyId, onDefinitionsChange }: CustomKpiMa
       </form>
 
       {error ? <ErrorText>{text("Failed to create custom KPI")}: {error}</ErrorText> : null}
-    </section>
+    </div>
   );
 }

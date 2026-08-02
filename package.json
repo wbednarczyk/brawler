@@ -21,6 +21,7 @@
     "test:browser:install": "playwright install chromium",
     "test:browser": "playwright test",
     "test:browser:screens": "playwright test fundamentals-ai",
+    "test:browser:clickable": "playwright test --grep @clickable",
     "test:watch": "vitest",
     "release:commit-msg-check": "scripts/release/check-commit-message-validator.sh",
     "release:version-check": "scripts/release/check-version-sync.sh",

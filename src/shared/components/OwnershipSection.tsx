@@ -136,7 +136,6 @@ export function OwnershipSection({
     <SectionHeader
       level="h4"
       title={text("Ownership")}
-      titleId="ownership-title"
       meta={
         data?.asOf ? (
           <span className="ownership-as-of">
@@ -149,13 +148,14 @@ export function OwnershipSection({
   );
 
   const wrap = (children: React.ReactNode) => (
-    <section
-      aria-labelledby="ownership-title"
+    <div
+      role="group"
+      aria-label={text("Ownership")}
       className={["ownership-section", className].filter(Boolean).join(" ")}
     >
       {heading}
       {children}
-    </section>
+    </div>
   );
 
   if (error) {

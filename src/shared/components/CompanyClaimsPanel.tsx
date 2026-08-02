@@ -137,7 +137,8 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
   const topDue = (queue?.due ?? []).slice(0, 3);
 
   return (
-    <section
+    <div
+      role="group"
       className="company-claims-panel"
       aria-label={text("Management claims")}
       {...(composerOpen ? { "data-composer-open": "" } : {})}
@@ -268,7 +269,7 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
         </div>
 
         {hasQueue ? (
-          <aside className="claims-verdict-column claims-review-queue" aria-label={text("Claims to verify")}>
+          <div role="group" className="claims-verdict-column claims-review-queue" aria-label={text("Claims to verify")}>
             <SectionHeader level="h4" title={text("Claims to verify")} />
             {queueBuckets.map(({ key, label }) =>
               queue && queue[key].length > 0 ? (
@@ -306,7 +307,7 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
                 </div>
               ) : null,
             )}
-          </aside>
+          </div>
         ) : null}
       </div>
 
@@ -315,6 +316,6 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
           {text("Claims command failed")}: {error}
         </ErrorText>
       ) : null}
-    </section>
+    </div>
   );
 }
