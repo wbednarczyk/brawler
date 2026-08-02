@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.3 - 2026-08-02
+
+
+### Bug Fixes
+
+- **deps**: take over the three stuck dependabot majors — reqwest 0.13, schemars 1.2, and a refused @types/node (#313)
+
 ## v0.63.2 - 2026-08-02
 
 
