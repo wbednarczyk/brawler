@@ -539,11 +539,16 @@ pub(super) fn list_attention_events(
             -- resolved by evidence-type-guarded LEFT JOINs so every row can state
             -- WHAT happened, not just its category. Single query, no N+1.
             feed_items.title AS signal_title,
-            -- The missed report's title. The live GPW registry parser leaves
-            -- `witness_title` empty on fresh rows (separate parser card), but
-            -- `report_type`+`report_number` ARE parsed — fall back to their
-            -- trimmed concatenation (two raw registry strings, no invented words;
-            -- both absent → NULL → generic FE copy). Owner ledger 2026-07-23.
+            -- The missed report's title. The registry parser fills
+            -- `witness_title` again since issue #191 (its selectors had never
+            -- matched GPW's live markup), so fresh CURRENT reports carry one —
+            -- but the fallback stays, for two standing cases: GPW publishes no
+            -- title at all for PERIODIC reports (empty `<p>`, nothing to parse),
+            -- and rows reconciled before the fix keep their empty title unless
+            -- the report is still inside GPW's 15-row listing window. Fall back
+            -- to `report_type`+`report_number` trimmed and concatenated (two raw
+            -- registry strings, no invented words; both absent → NULL → generic
+            -- FE copy). Owner ledger 2026-07-23.
             NULLIF(
                 COALESCE(
                     NULLIF(recon.witness_title, ''),

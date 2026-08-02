@@ -234,6 +234,27 @@ jobs:
       # asserts behavior/layout, not baselines.
       - run: make check-browser SHARD=${{ matrix.shard }}
 
+  # Dependency scanning (issue #167). Code-scoped like the other code jobs: a
+  # docs-only PR changes no dependency tree. Unlike every other check job this
+  # one is deliberately NETWORK-dependent — cargo-deny fetches the RustSec
+  # advisory DB and `npm audit` queries the registry — which is why it lives in
+  # the full gate only and never in `make check-fast`.
+  deps:
+    name: Dependency scan (cargo-deny + npm audit)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
+      - run: make check-deps
+
   docs-gates:
     name: Docs gates (gate-integrity + docs-drift)
     runs-on: ubuntu-latest

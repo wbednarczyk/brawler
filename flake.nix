@@ -68,6 +68,7 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
+            pkgsUnstable.cargo-deny
             cargo-llvm-cov
             cargo-mutants
             cargo-nextest

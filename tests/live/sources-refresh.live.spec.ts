@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { startSourcesRefresh } from "./helpers/sourcesRefresh";
 
 // Live regression for the 2026-07-14 owner report "refresh does not work":
 // a manual sources refresh raced concurrent writers and died with
@@ -32,13 +33,10 @@ test("manual sources refresh completes without a database-locked failure and sta
   await page.getByRole("button", { name: /Źródła|Sources/ }).first().click();
   await expect(page.getByRole("heading", { name: /Źródła|Sources/ })).toBeVisible();
 
-  // Kick a manual refresh-all (the action that failed with database-locked).
-  // Two controls share this label (topbar icon + the screen button) — use the
-  // screen-level button.
-  await page
-    .getByRole("button", { name: /Odśwież źródła|Refresh sources/ })
-    .last()
-    .click();
+  // Kick a manual refresh-all (the action that failed with database-locked),
+  // or join one the owner's app already has in flight (issue #308).
+  const mode = await startSourcesRefresh(page);
+  console.log(`live sources sweep ${mode}`);
 
   // The refresh includes the Yahoo 50-company sweep — give it real time, and
   // watch that the failure banner never appears while it runs.

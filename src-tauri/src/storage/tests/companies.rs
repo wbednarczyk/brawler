@@ -843,15 +843,23 @@ fn creating_a_recognised_bank_seeds_core_plus_the_banking_pack() {
             "net_fee_commission_income",
             "net_interest_income",
             "net_profit",
-            "operating_profit",
-            "revenue",
             "total_assets",
             "total_deposits",
             "total_equity",
             "total_loans",
         ],
-        "core five + the conservative banking pack"
+        "core five MINUS the two keys a bank does not file (issue #284) + the \
+         conservative banking pack"
     );
+    // The honest-denominator carve-out: expecting these of a bank could only
+    // ever cap recall and paint Coverage permanently red — a bank files no
+    // comparable revenue or operating-profit line (migration 0132).
+    for excluded in crate::storage::financials::BANKING_EXCLUDED_CORE_KEYS {
+        assert!(
+            !keys.contains(&excluded),
+            "a bank must not be seeded the dead `{excluded}` expectation"
+        );
+    }
     for (key, source, rank) in &rows {
         let expected_source = if CORE_KPI_KEYS.contains(&key.as_str()) {
             "core"

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
 import { clearCompaniesFilter } from "./helpers/companiesList";
+import { settleSourcesRefresh, startSourcesRefresh } from "./helpers/sourcesRefresh";
 
 // v0.55 live validation (ADR 0069): drives the owner's REAL packaged app — real
 // backend, real local SQLite DB — through the milestone's new source paths:
@@ -63,18 +64,12 @@ test("manual sweep refreshes KNF + witness without an error state", async () => 
   // Issue #164 calibration: full-sweep contention (see sources-refresh spec).
   test.setTimeout(480_000);
   await openScreen(/Źródła|Sources/);
-  // Two controls carry this label (shell icon-button + the Sources panel
-  // button) — drive the Sources panel one.
-  await page
-    .getByRole("button", { name: /Odśwież źródła|Refresh sources/ })
-    .last()
-    .click();
-  // The sweep fetches several real sources; wait for the button to leave the
-  // in-flight state ("Odświeżanie") and settle, then assert no failure banner.
+  // Start the sweep, or join one the owner's app already has in flight (#308).
+  await startSourcesRefresh(page);
+  // The sweep fetches several real sources; wait for the button to leave its
+  // in-flight state and settle, then assert no failure banner.
   // Budget matches the raised test timeout minus the assertion tail (#164).
-  await expect(
-    page.getByRole("button", { name: /Odświeżanie|Refreshing/ }),
-  ).toHaveCount(0, { timeout: 420_000 });
+  await settleSourcesRefresh(page, 420_000);
   await expect(
     page.getByText(/Source refresh failed|Odświeżanie źródła nie powiodło się/),
   ).toHaveCount(0);

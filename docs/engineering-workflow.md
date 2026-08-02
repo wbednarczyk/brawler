@@ -81,7 +81,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §A — Always
 - [ ] Implemented to spec: read the canonical doc(s) for the area (the [Required Reading](../CLAUDE.md) map) — don't infer architecture/field/command names from code alone. ADR added/confirmed if durable architecture or policy changed.
-- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): `npm run check` (Rust fmt/clippy/nextest/doc + typecheck/lint/Vitest/build) → `knip` → `make types-check` (ts-rs drift) → the **full Playwright browser suite** → `gate-integrity`. Every step hard-fails; the **full gate runs in CI on every PR + local pre-push to `master`** (§ gate split) — run it yourself before "done". A host pass is a hint, not a verdict. **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
+- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)). Its composition is the `check-*` targets in the Command Reference, every one hard-failing. It **runs in CI on every PR + local pre-push to `master`** (§ gate split) — run it yourself before "done". A host pass is a hint, not a verdict. **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
 - [ ] Canonical doc(s) whose behavior changed are updated **in this change** (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
 - [ ] Nothing committed or pushed unless the user asked, or via the release workflow.
 
@@ -156,7 +156,7 @@ Avoid for normal iteration: `rtk proxy ...` (bypasses filtering, no token saving
 | --- | --- | --- |
 | `install` | `npm ci` | Set up deps. |
 | `check` | composes the `check-*` targets (§ CI Posture) | **Mandatory gate**; runs on every PR (`full-check.yml`) + local pre-push to master. `check-fast` (no browser) is the per-commit gate. |
-| `check-rust-lint` · `check-rust-test` · `check-frontend-static` · `check-frontend-test` · `check-frontend-build` · `check-browser` · `check-docs-gates` · `check-commits` · `check-release-label` | granular gate wrappers | One per `full-check.yml` job (job name mirrors the target); `make check`/`check-fast` compose subsets. |
+| `check-rust-lint` · `check-rust-test` · `check-frontend-static` · `check-frontend-test` · `check-frontend-build` · `check-browser` · `check-deps` · `check-docs-gates` · `check-commits` · `check-release-label` | granular gate wrappers | One per `full-check.yml` job (job name mirrors the target); `make check`/`check-fast` compose subsets. `check-deps` policy/exceptions: `src-tauri/deny.toml` (network-bound → not in `check-fast`). |
 | `docs-drift` | `node scripts/check/docs-drift.mjs` | Spec↔code drift gate standalone (also a `check` step); `--write-adr-index` regenerates `docs/adr/INDEX.md`. |
 | `check-fast` | `npm run check:parallel` | Inner-loop only, never proof of done. |
 | `disk-clean` | caches, mutants artifacts, old nix generations, fstrim | Run when `disk-guard` warns. |

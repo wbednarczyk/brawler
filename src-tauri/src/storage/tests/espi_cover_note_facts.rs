@@ -40,6 +40,19 @@ II. Zysk netto 1801500\n\
 III. Aktywa razem 500 000 480 000 116 279 111 628\n\
 Zastosowane kursy: 4,3000\n";
 
+/// A cover table carrying the three rows whose catalog definitions migration
+/// 0131 seeds (issue #309). Per-share rows are never scaled by the document
+/// unit; `EBITDA przed odpisami` is (12 000 tys → 12 000 000).
+const PER_SHARE_BODY: &str = "RAPORT OKRESOWY\n\
+Spis: WYBRANE DANE FINANSOWE\n\
+Skonsolidowany raport kwartalny\n\
+WYBRANE DANE FINANSOWE w tys. PLN w tys. EUR\n\
+I. Przychody ze sprzedaży 100 000 90 000 23 256 20 930\n\
+II. EBITDA przed odpisami aktualizującymi netto 12 000 11 000 2 791 2 558\n\
+III. Wartość księgowa na jedną akcję (w PLN/EUR) 125,28 134,67 29,14 31,32\n\
+IV. Rozwodniona wartość księgowa na jedną akcję (w PLN/EUR) 125,28 134,67 29,14 31,32\n\
+Zastosowane kursy: 4,3000\n";
+
 /// A periodic report whose body carries no cover table at all.
 const NO_TABLE_BODY: &str = "Skonsolidowany raport kwartalny\n\
 Zarząd informuje, że treść raportu została przekazana w formie załącznika.\n\
@@ -369,6 +382,40 @@ fn ingesting_a_periodic_komunikat_persists_cover_note_facts_with_feed_item_prove
         citation.contains(&feed_item_id),
         "the citation must identify the source komunikat (the carrier body is prunable), got {citation}"
     );
+}
+
+/// Issue #309: `classify` mapped these three rows for as long as the tier has
+/// shipped, but no migration seeded their catalog definitions, so
+/// `record_structured_fact` dropped every one at its defensive `NoDefinition`
+/// skip — a silent zero-effect path with no user-visible symptom. Migration 0131
+/// seeds them; this reddens (facts missing) if that seed is ever lost, the way
+/// only an end-to-end persist assertion can.
+#[test]
+fn cover_note_per_share_and_writedown_ebitda_rows_persist_as_facts() {
+    let connection = open_in_memory_database().expect("database initializes");
+    let state = AppState::new(connection);
+    let company = company(&state, "PEO");
+
+    state
+        .ingest_bankier_company_items(&[q1_item(&company, "9100009", PER_SHARE_BODY)])
+        .expect("ingest succeeds");
+
+    let facts = facts_by_metric(&state, &company.id);
+    let (book_value, _) = facts
+        .get("wdf_book_value_per_share")
+        .expect("the book-value-per-share row landed as a fact");
+    assert_eq!(
+        book_value.value_numeric, "125.28",
+        "a per-share figure is never scaled by the document's `w tys.` unit"
+    );
+    let (diluted_book_value, _) = facts
+        .get("wdf_rozwodniona_wartosc_ksiegowa_na_jedna_akcje")
+        .expect("the diluted book-value-per-share row landed as a fact");
+    assert_eq!(diluted_book_value.value_numeric, "125.28");
+    let (ebitda, _) = facts
+        .get("wdf_ebitda_przed_odpisami_aktualizujacymi_netto")
+        .expect("the EBITDA-before-writedowns row landed as a fact");
+    assert_eq!(ebitda.value_numeric, "12000000");
 }
 
 // -- Test 2: tier precedence --------------------------------------------------

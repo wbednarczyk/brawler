@@ -1,0 +1,74 @@
+# cargo-deny policy for the Rust dependency tree (issue #167).
+#
+# Run by `make check-deps` as a hard-fail step of `make check` (never of
+# `check-fast` — both scanners need the network, see the Makefile note).
+#
+# Posture: a security gate is only worth having if it is honest about what it
+# cannot fix. Everything here is either enforced or carries a written reason;
+# nothing is silenced to make the gate green.
+
+[graph]
+# We ship Windows first and build/test on Linux; those are the trees worth
+# scanning. Scanning every target would drag in advisories for platforms this
+# app is never built for.
+targets = [
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "x86_64-unknown-linux-gnu" },
+]
+
+[advisories]
+# Vulnerabilities and yanked crates always fail — that is the point of the gate.
+yanked = "deny"
+
+# `unmaintained` is scoped to crates WE chose, not the whole transitive closure.
+# Rationale, measured 2026-08-01: the full closure reports 18 unmaintained
+# crates, and all of them arrive through Tauri's Linux stack (10 gtk-rs GTK3
+# bindings, 5 `unic-*`, plus `proc-macro-error`, `ttf-parser`, `fxhash`). None
+# is actionable here — the fix is upstream Tauri moving off GTK3 — so denying
+# them would leave the gate permanently red for a reason no PR can address,
+# which trains everyone to ignore it. Scoped to `workspace`, an unmaintained
+# crate that WE add still fails, which is the signal we actually act on.
+unmaintained = "workspace"
+
+ignore = [
+    # quick-xml 0.39.4, reached only as tauri-utils → plist → quick-xml.
+    # Both advisories are DoS-class parser issues (quadratic duplicate-attribute
+    # scan; unbounded namespace-declaration allocation) and RustSec reports "no
+    # safe upgrade is available" — the 0.39 line has no patch and `plist` pins
+    # below 0.40, so nothing in this repo can move it.
+    #
+    # Not reachable from Brawler's own untrusted-XML path: every XML document
+    # the app parses (ESEF iXBRL, RSS) goes through our DIRECT quick-xml
+    # dependency, which is 0.41.0 and unaffected. `plist` is macOS-bundle
+    # metadata handling inside tauri-utils — Brawler ships Windows and Linux.
+    #
+    # Re-check trigger: drop these the moment `plist` accepts quick-xml >= 0.41
+    # (or Tauri drops plist); `cargo tree -i quick-xml@0.39.4` proves whether
+    # the path is still there.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
+
+[licenses]
+# Permissive-only allow-list. Measured against the real tree 2026-08-01: every
+# crate resolves under these, so there is no copyleft obligation to reason about
+# — the few crates naming LGPL-2.1 do so in a disjunction
+# (`MIT OR Apache-2.0 OR LGPL-2.1-or-later`), which MIT already satisfies.
+# A new dependency under a license not listed here fails the gate on purpose:
+# adding one is a deliberate decision, not a silent transitive arrival.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]

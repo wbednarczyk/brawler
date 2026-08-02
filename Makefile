@@ -128,6 +128,7 @@ check:
 	$(MAKE) check-frontend-build
 	$(MAKE) types-check
 	$(MAKE) check-browser
+	$(MAKE) check-deps
 	$(MAKE) check-docs-gates
 
 # --- Granular gate targets (the CI/Makefile parity contract, ADR 0090) ---------
@@ -170,6 +171,25 @@ check-frontend-build:
 check-browser:
 	$(NIX) npm run test:browser:install
 	$(NIX) $(if $(SHARD),npx playwright test --shard=$(SHARD),npm run test:browser)
+
+# Dependency-scanning gate (issue #167): known vulnerabilities, yanked crates and
+# license policy on the Rust side (cargo-deny, policy in src-tauri/deny.toml),
+# plus the npm advisory database on the frontend side. Both hard-fail.
+#
+# NOT in `check-fast`, deliberately: both scanners hit the network (cargo-deny
+# fetches the RustSec advisory DB, `npm audit` queries the registry), so putting
+# them in the per-commit inner loop would break offline work and make the fast
+# path depend on someone else's uptime. They belong to the full gate, which runs
+# in every PR's CI. Consequence to expect, and the point of the gate: a newly
+# published advisory can turn a PR red without that PR changing a dependency.
+#
+# `npm audit --audit-level=high` fails on high/critical only; moderate and below
+# are reported without failing (the frontend tree is dev-tooling-heavy, and a
+# moderate advisory in a build-time-only package is not worth blocking a merge
+# over — `npm audit` alone, unfiltered, shows the full picture).
+check-deps:
+	$(NIX) bash -c 'cd src-tauri && cargo deny check advisories licenses'
+	$(NIX) npm audit --audit-level=high
 
 # Docs gates: gate-integrity meta-guard (ADR 0062/0063) + spec↔code drift
 # (ADR 0065) + version sync (manifests agree with each other and, when tags are

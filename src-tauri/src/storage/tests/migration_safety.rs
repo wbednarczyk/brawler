@@ -3193,8 +3193,8 @@ fn migration_0111_seeds_the_parent_attributable_kpi_definitions() {
 /// definition — an unseeded key makes `record_structured_fact` silently drop the
 /// fact at its defensive `NoDefinition` skip (the bug that ate every
 /// parent-attributable WDF metric until migration 0111). The keys are scanned
-/// FROM THE MAPPER SOURCES at test time, so a future `Some("new_key")` or
-/// dictionary entry reddens this test until its seed migration lands.
+/// FROM THE MAPPER SOURCES at test time, so a future mapper return or dictionary
+/// entry reddens this test until its seed migration lands.
 #[test]
 fn every_emittable_metric_key_has_a_canonical_definition() {
     use std::collections::BTreeSet;
@@ -3217,16 +3217,51 @@ fn every_emittable_metric_key_has_a_canonical_definition() {
         keys.insert(capture[1].to_owned());
     }
 
-    // 2. The WDF cover-note row mapper: `Some("metric_key")` returns.
+    // 2. The WDF cover-note row mapper. `classify` returns `Option<&'static str>`,
+    //    so every key it can emit is a string literal in ITS BODY — which is what
+    //    this scans, rather than the `Some("literal")` shape it used to match.
+    //    That shape was blind to `Some(if cond { "a" } else { "b" })`, and three
+    //    keys shipped unseeded behind the blind spot (issue #309:
+    //    `wdf_book_value_per_share`, its rozwodniona twin, and
+    //    `wdf_ebitda_przed_odpisami_aktualizujacymi_netto`). A body scan is
+    //    shape-independent, so a future `match` arm, `unwrap_or`, or lookup table
+    //    is covered too. The literals in the body that are NOT keys are the label
+    //    predicates' arguments and the row wording quoted in comments; both are
+    //    stripped first, leaving exactly the returned vocabulary.
     let wdf_src = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/fundamentals/extraction/espi_cover_note.rs"
     ));
-    let some_re = regex::Regex::new(r#"Some\(\s*\n?\s*"([a-z][a-z0-9_]{2,})",?\s*\n?\s*\)"#)
-        .expect("some regex");
-    for capture in some_re.captures_iter(wdf_src) {
+    let classify_body = {
+        let start = wdf_src
+            .find("\nfn classify(")
+            .expect("espi_cover_note must define `fn classify(` at top level");
+        let rest = &wdf_src[start + 1..];
+        let end = rest
+            .find("\n}\n")
+            .expect("`fn classify` body must end at a column-0 brace");
+        &rest[..end]
+    };
+    let comment_re = regex::Regex::new(r"//[^\n]*").expect("comment regex");
+    let predicate_re = regex::Regex::new(r#"(?:contains|starts_with|ends_with)\(\s*"[^"]*"\s*\)"#)
+        .expect("predicate regex");
+    let comparison_re = regex::Regex::new(r#"==\s*"[^"]*""#).expect("comparison regex");
+    let body = comment_re.replace_all(classify_body, "");
+    let body = predicate_re.replace_all(&body, "");
+    let body = comparison_re.replace_all(&body, "");
+    let literal_re = regex::Regex::new(r#""([a-z][a-z0-9_]{2,})""#).expect("literal regex");
+    let mut wdf_key_count = 0usize;
+    for capture in literal_re.captures_iter(&body) {
         keys.insert(capture[1].to_owned());
+        wdf_key_count += 1;
     }
+    // The mapper's vocabulary is ~40 keys; a scan that suddenly sees a handful
+    // means `classify` was split or restructured and the body no longer holds the
+    // returns — the scan must be re-pointed, not silently narrowed.
+    assert!(
+        wdf_key_count >= 30,
+        "the cover-note body scan must find the mapper vocabulary; got only {wdf_key_count}"
+    );
 
     // 3. The ESEF concept map: `"Concept" => "metric_key"` match arms.
     let esef_src = include_str!(concat!(
@@ -4441,4 +4476,104 @@ fn migration_0130_backfills_statement_group_by_metric_key_bare_ids_only() {
     // Idempotent re-run: no error, backfill is stable.
     apply_migrations(&mut connection).expect("re-run must be safe");
     assert_eq!(group_of(&connection, "kpidef_revenue"), "income");
+}
+
+#[test]
+fn migration_0132_prunes_the_dead_banking_core_expectations_only() {
+    // Issue #284: the ADR 0092 layer-1 core floor expected `revenue` and
+    // `operating_profit` of every company, but a bank files neither as a
+    // comparable statement line — measured on the maintainer's database, both
+    // tracked banks have ZERO `revenue` facts, and the single PKO
+    // `operating_profit` fact is the ESEF operating-INCOME concept. So bank
+    // recall was capped at a ceiling nothing could ever fill.
+    //
+    // What must hold: the `core` rows for a BANK are archived; a curated
+    // (`user`) expectation for the same metric survives untouched (ADR 0092
+    // layer 4 always wins); and no other company type is touched.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 130).expect("apply schema through 0130");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies
+                (id, exchange, ticker, qualified_ticker, display_name, sector, statement_type)
+             VALUES
+                ('pko', 'GPW', 'PKO', 'GPW:PKO', 'PKO BP S.A.', 'banki komercyjne', 'banking'),
+                ('peo', 'GPW', 'PEO', 'GPW:PEO', 'Bank Pekao S.A.', 'banki komercyjne', 'banking'),
+                ('pzu', 'GPW', 'PZU', 'GPW:PZU', 'PZU S.A.', 'firmy ubezpieczeniowe', 'insurance'),
+                ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.', 'Gry', 'industrial');
+
+             INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+             VALUES
+                -- the dead bank expectations
+                ('kpirel_core_pko_revenue', 'pko', 'kpidef_revenue', 'active', 'core', 'primary'),
+                ('kpirel_core_pko_operating_profit', 'pko', 'kpidef_operating_profit',
+                 'active', 'core', 'primary'),
+                -- a bank expectation that IS fillable: never touched
+                ('kpirel_core_pko_net_profit', 'pko', 'kpidef_net_profit',
+                 'active', 'core', 'primary'),
+                -- the owner curated `revenue` back for the OTHER bank
+                ('kpirel_user_peo_revenue', 'peo', 'kpidef_revenue', 'active', 'user', 'primary'),
+                ('kpirel_core_peo_operating_profit', 'peo', 'kpidef_operating_profit',
+                 'active', 'core', 'primary'),
+                -- controls: every other statement type reports both keys
+                ('kpirel_core_pzu_revenue', 'pzu', 'kpidef_revenue', 'active', 'core', 'primary'),
+                ('kpirel_core_cdr_revenue', 'cdr', 'kpidef_revenue', 'active', 'core', 'primary');",
+        )
+        .expect("seed the pre-prune state");
+
+    let rows_before: i64 = connection
+        .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row.get(0))
+        .expect("count");
+
+    apply_migrations(&mut connection).expect("apply migration 0132");
+
+    let status = |conn: &rusqlite::Connection, id: &str| -> String {
+        conn.query_row(
+            "SELECT status FROM kpi_relevance WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .expect("status")
+    };
+
+    assert_eq!(status(&connection, "kpirel_core_pko_revenue"), "archived");
+    assert_eq!(
+        status(&connection, "kpirel_core_pko_operating_profit"),
+        "archived"
+    );
+    assert_eq!(
+        status(&connection, "kpirel_core_peo_operating_profit"),
+        "archived"
+    );
+    assert_eq!(
+        status(&connection, "kpirel_core_pko_net_profit"),
+        "active",
+        "only the two unfillable keys are pruned, never the rest of the floor"
+    );
+    assert_eq!(
+        status(&connection, "kpirel_user_peo_revenue"),
+        "active",
+        "curation outranks the prune — the owner asked for this expectation"
+    );
+    assert_eq!(
+        status(&connection, "kpirel_core_pzu_revenue"),
+        "active",
+        "an insurer reports revenue normally; the prune is banking-only"
+    );
+    assert_eq!(status(&connection, "kpirel_core_cdr_revenue"), "active");
+
+    assert_eq!(
+        rows_before,
+        connection
+            .query_row("SELECT COUNT(*) FROM kpi_relevance", [], |row| row
+                .get::<_, i64>(0))
+            .expect("count"),
+        "archiving keeps the history — the prune deletes nothing"
+    );
+
+    // Idempotent: a re-run matches nothing new.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(status(&connection, "kpirel_user_peo_revenue"), "active");
+    assert_eq!(status(&connection, "kpirel_core_pko_net_profit"), "active");
 }
