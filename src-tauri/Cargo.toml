@@ -31,7 +31,11 @@ ed25519-dalek = "2"
 # already in the tree transitively (same 0.3.x line) — promoted to a direct
 # dependency; no new version enters the lockfile.
 getrandom = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
+# `form` is explicit since 0.13: url-encoded bodies moved behind their own
+# feature, and the GPW listing / KNF short-selling adapters POST forms. The
+# other three carry over unchanged — note `default-tls` switched to rustls in
+# 0.13, which is why `native-tls` stays spelled out rather than implied.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "form", "json", "native-tls"] }
 keyring = { version = "3", features = ["windows-native"] }
 log = "0.4"
 quick-xml = "0.41"
