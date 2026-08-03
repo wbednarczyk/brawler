@@ -494,11 +494,19 @@ invariants: **idempotence** (`f(f(x)) == f(x)`), **order-independence /
 commutativity** (same canonical set regardless of arrival order — the core
 property for "the same entity arrives from multiple sources"), **round-trip**
 (`normalize ∘ parse` preserves meaning), **determinism & stable identity** (same
-input → same output and same canonical id; no wall-clock/random leakage),
-**associativity of merge** (multi-source unification cannot depend on grouping),
-and **totality / no-panic** (a result or typed error for every input, never a
+input → same output and same canonical id; no wall-clock/random leakage), and
+**totality / no-panic** (a result or typed error for every input, never a
 panic). Property tests run in the normal stable test binary and are part of
 `make check` (bounded case counts); heavier counts run under `make check-epic`.
+
+**Associativity of merge** — ADR 0049's sixth invariant, "multi-source
+unification cannot depend on grouping" — is **not committed yet** (#194). It is
+not merely unasserted: `storage::insider::merge_attachment_units` measurably
+depends on grouping today, because its matching is NULL-tolerant and each call
+re-reads rows the previous call filled. The same units, in the same order, split
+into one batch versus two, yield two transaction rows versus one (repro on
+#194). Which of those is correct is a product-semantics question, so the
+invariant test lands with that decision, not before.
 
 ### Golden snapshots (`insta`)
 
