@@ -23,6 +23,21 @@ async function openBasicInfo(page: Page) {
   return pane;
 }
 
+// ADR 0072 decision 5: a threshold crossing is a marker on the trajectory. The
+// component test pins which points get marked; this pins that they actually
+// reach the rendered chart in a real browser, across the viewport matrix — the
+// tick is small enough to slip under the visual baseline's pixel tolerance, so
+// the screenshot alone would not notice it disappearing.
+test("threshold crossings tick the stakes-over-time chart @clickable", async ({ page }) => {
+  await openApp(page);
+  const pane = await openBasicInfo(page);
+
+  const chart = pane.locator(".ui-multi-line-chart");
+  await expect(chart).toBeVisible();
+  // The rich scenario seeds both founders with one ESPI-sourced point each.
+  await expect(chart.locator("line.ui-multi-line-marker")).toHaveCount(2);
+});
+
 test("ownership section does not overflow horizontally in a narrow pane", async ({ page }) => {
   await openApp(page);
   const pane = await openBasicInfo(page);

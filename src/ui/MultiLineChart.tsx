@@ -13,7 +13,15 @@ export type MultiLineSeries = {
    * four-series cap.
    */
   neutral?: boolean;
-  points: { label: string; value: number }[];
+  /**
+   * `marked` singles a point out as an event on the line — a disclosure that
+   * matters, not just another sample (ownership: an ESPI threshold crossing,
+   * ADR 0072 decision 5). Rendered as a dot in the series' own hue, so the
+   * event reads as belonging to that holder rather than as a separate layer.
+   */
+  points: { label: string; value: number; marked?: boolean }[];
+  /** Accessible description of what a marked point means on this series. */
+  markerLabel?: string;
 };
 
 export type MultiLineChartProps = {
@@ -97,6 +105,30 @@ export function MultiLineChart({
               .join(" ")}
           />
         ))}
+        {/* Event markers are drawn after every line so a crossing is never hidden
+            by a later series painted over it. A short VERTICAL tick rather than a
+            dot: the chart scales non-uniformly (`preserveAspectRatio="none"`), so
+            a circle would render as a stretched ellipse, while a vertical segment
+            keeps its shape and reads as "something happened on this date". */}
+        {drawable.flatMap((serie, index) =>
+          serie.points
+            .filter((point) => point.marked)
+            .map((point) => {
+              const y = yFor(point.value);
+              return (
+                <line
+                  key={`${serie.key}:${point.label}`}
+                  className={`ui-multi-line-marker ${serie.neutral ? "ui-multi-line-series-neutral" : `ui-multi-line-series-${index}`}`}
+                  x1={xFor(point.label).toFixed(2)}
+                  x2={xFor(point.label).toFixed(2)}
+                  y1={Math.max(0, y - 4).toFixed(2)}
+                  y2={Math.min(VIEW, y + 4).toFixed(2)}
+                >
+                  <title>{`${serie.markerLabel ?? serie.label}: ${point.label} · ${format(point.value)}`}</title>
+                </line>
+              );
+            }),
+        )}
       </svg>
       <div className="ui-line-chart-xlabels" aria-hidden="true">
         <span>{xLabels[0]}</span>

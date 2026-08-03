@@ -243,9 +243,11 @@ export function PrimitiveGallery() {
               key: "duch",
               label: "Jacek Duch",
               legendValue: "25,2%",
+              markerLabel: "Jacek Duch — threshold crossing",
               points: [
                 { label: "2024-12-31", value: 25.5 },
-                { label: "2025-12-31", value: 25.5 },
+                // `marked` renders the event tick (a threshold crossing here).
+                { label: "2025-12-31", value: 25.5, marked: true },
                 { label: "2026-03-31", value: 25.2 },
               ],
             },

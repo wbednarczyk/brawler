@@ -259,9 +259,18 @@ export function OwnershipSection({
       key: holder.holderKey,
       label: holder.name,
       legendValue: formatPct(holder.capitalPct ?? "0", locale),
+      markerLabel: `${holder.name} — ${text("threshold crossing")}`,
+      // An ESPI filing is compelled only when a holder crosses a statutory band,
+      // so an `espi_filing`-sourced point IS the threshold-crossing event ADR 0072
+      // decision 5 asks to mark. Aggregator and periodic-report points are ordinary
+      // samples and stay unmarked.
       points: serie.points
         .filter((p) => p.capitalPct !== null)
-        .map((p) => ({ label: p.asOf, value: parsePct(p.capitalPct) })),
+        .map((p) => ({
+          label: p.asOf,
+          value: parsePct(p.capitalPct),
+          marked: p.source === "espi_filing",
+        })),
     }));
   // The derived free float joins the chart as a NEUTRAL dashed series (owner
   // dogfooding round 3) — concentration trend at a glance, visually consistent

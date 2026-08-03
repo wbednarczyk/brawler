@@ -249,6 +249,42 @@ describe("MultiLineChart", () => {
     expect(container.textContent).toContain("2026-03-31");
   });
 
+  it("ticks a marked point in its own series hue and names it (ADR 0072 D5)", () => {
+    const marked = [
+      {
+        ...series[0],
+        markerLabel: "Holder A — threshold crossing",
+        points: [
+          { label: "2024-12-31", value: 25.5, marked: true },
+          { label: "2026-03-31", value: 25.2 },
+        ],
+      },
+      series[1],
+    ];
+    const { container } = render(
+      <MultiLineChart ariaLabel="Top holders — capital % over time" series={marked} />,
+    );
+
+    // One tick, only for the marked point, carrying the owning series' slot hue
+    // so the event reads as that holder's — not as a separate chart layer.
+    const markers = container.querySelectorAll("line.ui-multi-line-marker");
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toHaveClass("ui-multi-line-series-0");
+    // A vertical segment, not a circle: the chart scales non-uniformly, so a dot
+    // would render as a stretched ellipse.
+    expect(markers[0].getAttribute("x1")).toBe(markers[0].getAttribute("x2"));
+    expect(markers[0].querySelector("title")?.textContent).toContain(
+      "Holder A — threshold crossing",
+    );
+  });
+
+  it("renders no markers when no point is marked", () => {
+    const { container } = render(
+      <MultiLineChart ariaLabel="Top holders — capital % over time" series={series} />,
+    );
+    expect(container.querySelectorAll("line.ui-multi-line-marker")).toHaveLength(0);
+  });
+
   it("renders a legend with the value beside each series label", () => {
     const { container, getByText } = render(
       <MultiLineChart ariaLabel="Top holders — capital % over time" series={series} />,

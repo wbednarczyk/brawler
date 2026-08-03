@@ -4,4 +4,13 @@ export type OwnershipSeriesPoint = { asOf: string,
 /**
  * Decimal-exact capital %; `None` when only votes were disclosed that period.
  */
-capitalPct?: string, };
+capitalPct?: string, 
+/**
+ * Which disclosure this point came from (`espi_filing` / `report_document`
+ * / `aggregator` / `manual`). An `espi_filing` point is a **threshold
+ * crossing**: Polish law only compels that filing when a holder crosses one
+ * of the statutory bands, so the UI marks those dates on the trajectory
+ * (ADR 0072 decision 5). Carries the source of the row that won the
+ * per-`as_of` dedup, i.e. the latest disclosure for that date.
+ */
+source: string, };

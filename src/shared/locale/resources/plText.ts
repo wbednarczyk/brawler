@@ -1828,6 +1828,7 @@ export const plText: Record<string, string> = {
   "Free float is derived: 100% − sum of disclosed stakes; stakes below the 5% disclosure threshold stay hidden in it.":
     "Free float jest pochodną: 100% − suma ujawnionych pakietów; pakiety poniżej progu ujawnień 5% pozostają w nim niewidoczne.",
   "Stakes over time": "Pakiety w czasie",
+  "threshold crossing": "przekroczenie progu",
   "Top holders — capital % over time": "Najwięksi akcjonariusze — % kapitału w czasie",
   "capital % over time": "% kapitału w czasie",
   "type? to confirm": "typ? do potwierdzenia",
