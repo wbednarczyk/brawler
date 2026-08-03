@@ -293,8 +293,9 @@ coverage:
 	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov nextest --summary-only --json --output-path ../coverage/rust-summary.json'
 	$(NIX) npm run coverage:ratchet
 
-# Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049): the
-# similarity scan, RSS parse, and formula parse. Runs criterion, then the
+# Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049): RSS
+# parse and formula parse. (The similarity scan was the third until ADR 0080
+# retired the embedding model with it.) Runs criterion, then the
 # bench-ratchet flags any kernel that regressed beyond tolerance against
 # bench-baseline.json. Machine-dependent and slow — NEVER part of `make check`;
 # run on the reference machine and update the baseline deliberately.
