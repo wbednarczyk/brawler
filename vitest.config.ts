@@ -16,6 +16,11 @@ export default defineConfig({
     // are safe). NOTE: the suite's wall-clock is dominated by module-graph
     // import/transform, not the pool.
     pool: "threads",
+    // Must stay comfortably above Testing Library's `asyncUtilTimeout` (5s, set
+    // in src/test/setup.ts): when the per-test budget equals the per-wait budget,
+    // a wait that uses its full allowance dies as a bare "timed out" instead of
+    // the assertion message that says what actually differed.
+    testTimeout: 15_000,
     // Measured 2026-07-29 (#51, full `vitest run src`, 1013 tests, warm cache):
     // wall ~18s; aggregate import ~100s / transform ~40s / environment ~85s
     // across workers. Cheap levers were tried and rejected: prebundling
