@@ -105,7 +105,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **A new refresh/ingest path calls `record_source_outcome`** + a test that `last_success_at` gets set — else Sources shows "never refreshed" (harvest 2026-07-15).
 - [ ] **A background/derived-index job has every trigger it needs** — it (re)runs on the events that invalidate it *and* on app startup; verified to populate from a cold/persisted-but-stale state.
 - [ ] **No timer/background path deletes or overwrites user data** — destructive actions are user-triggered or owner-approved (product-spec § feed retention).
-- [ ] **A new data transform** (dedup / normalization / matching / merge) ships with its **invariants** (idempotence, order-independence, round-trip, stable identity, associativity, no-panic — the `proptest` helpers) and a **golden `insta` snapshot** of its output. A new **hot path** adds a **behavioral scale gate** (offloaded + algorithmically bounded over a volume dataset, not wall-clock). [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md), [Testing](testing.md#data-transform-correctness-property-golden-scale-fuzz-fidelity-pipeline).
+- [ ] **A new data transform** (dedup / normalization / matching / merge) ships with the `proptest` **invariants** it must satisfy (the committed list, and which one is still open: [Testing](testing.md#data-transform-correctness-property-golden-scale-fuzz-fidelity-pipeline)) plus a **golden `insta` snapshot** of its output. A new **hot path** adds a **behavioral scale gate** (offloaded + algorithmically bounded over a volume dataset, not wall-clock). [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md).
 - [ ] **A new IPC command** adds a step to the **dual-execution mock-fidelity corpus** (replayed against both the TS mock runtime and the real Rust `AppState`/storage layer) so the mock cannot silently drift from backend behavior.
 
 ### §D — If feature-gated code
@@ -185,8 +185,8 @@ Strategy, test layers/pyramid, per-area minimum gates, and smoke procedures live
 Committed screenshot baselines under `tests/browser/visual/`: each panel × S/M/L pane widths on `chromium-visual` (dark) + one M pass on `chromium-visual-light`; only these two projects run `tests/browser/visual/**` (others `testIgnore` it).
 
 - **Run:** `rtk npx playwright test --project=chromium-visual --project=chromium-visual-light`. A red diff (> `maxDiffPixelRatio: 0.01`) is either an intended change (update below) or a regression (fix the code). Determinism: animations off, fixed `SAMPLE_NOW`, `document.fonts.ready` per shot.
-- **Deliberate update:** re-run with `--update-snapshots`, commit the PNGs with a message naming **which screens changed and why** — an unexplained update is a review rejection. **A small intended change can slip under `maxDiffPixelRatio`: the compare passes, `--update-snapshots` rewrites nothing, and the stale baseline re-legitimizes the old UI — `rm` the affected PNGs first, then regenerate** (harvested 2026-07-16).
-- **CI:** `ignoreSnapshots: !!process.env.CI` — CI executes the specs (layout/console gates hold) but skips pixel compare (font rendering differs across machines; pixels are a local check).
+- **Deliberate update:** `make visual-update SCREEN=<name> REASON="…"`; commit the PNGs naming **which screens changed and why**. **`rm` the affected PNGs first**: a small intended change slips under `maxDiffPixelRatio`, so the compare passes, nothing is rewritten, and the stale baseline re-legitimizes the old UI (harvest 2026-07-16).
+- **CI:** `ignoreSnapshots: !!process.env.CI` — CI runs the specs (layout/console gates hold) but skips pixel compare (font rendering varies by machine). **So no gate catches a stale baseline: changing a paneled screen means running these projects locally in that change.** Two drifted unnoticed (harvest 2026-08-03, #314).
 
 ### UX quality loop v2 handover checks (ADR 0081 — post-pilot only)
 
