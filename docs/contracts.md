@@ -994,7 +994,7 @@ Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownershi
     { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "capitalPct": "25.5", "votesPct": "25.5", "asOf": "2025-12-31", "source": "report_document", "skinInTheGame": { "person": "Jacek Duch" } }
   ],
   "history": [
-    { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "points": [ { "asOf": "2024-12-31", "capitalPct": "24.0" }, { "asOf": "2025-12-31", "capitalPct": "25.5" } ] }
+    { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "points": [ { "asOf": "2024-12-31", "capitalPct": "24.0", "source": "espi_filing" }, { "asOf": "2025-12-31", "capitalPct": "25.5", "source": "report_document" } ] }
   ],
   "residuals": [
     { "reportDocumentId": "doc_…", "parseState": "glyph_encoded", "detectedAsOf": "2023-12-31", "matchedHeading": "Akcjonariat" }
@@ -1006,7 +1006,7 @@ Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownershi
 ```
 
 - Percentages are **decimal-exact TEXT** (the `financial_facts.value_numeric` convention), not floats. `freeFloatPct` is always present (`"100"` when nothing disclosed); `disclosedSum` is Σ of disclosed `capitalPct` across current holders; `asOf`/`source` are omitted when there are no stakes yet. `holderType`/`capitalPct`/`votesPct` are omitted when absent (never a fabricated value).
-- `holders` is the current state (latest disclosed stake per holder); `history` is each current holder's chronological capital-% trajectory; `residuals` are documents whose shareholders table the deterministic parser could not read (awaiting OCR/AI, whose results always require confirmation); `pendingProposals` are AI holder-type classifications awaiting confirmation (never auto-applied).
+- `holders` is the current state (latest disclosed stake per holder); `history` is each current holder's chronological capital-% trajectory — each point carrying the `source` that disclosed it, deduped per `asOf` to the latest disclosure for that date. An `espi_filing` point is a **threshold crossing** (Polish law compels that filing only when a holder crosses a statutory band), which is what the stake-over-time chart marks per [ADR 0072](adr/0072-ownership-structure.md) decision 5; `report_document` / `aggregator` / `manual` points are ordinary samples. `residuals` are documents whose shareholders table the deterministic parser could not read (awaiting OCR/AI, whose results always require confirmation); `pendingProposals` are AI holder-type classifications awaiting confirmation (never auto-applied).
 - `skinInTheGame` (v0.57, ADR 0083 D6) is present on a holder corroborated by a parsed management-holdings row or an insider transaction — by exact person name, or as the `via` vehicle a founder holds through (`{ person, via? }`). It drives the Ownership "skin in the game" badge; omitted when there is no management/insider match. Founder-name stamping (`founder_insider`) and this corroboration are joined by canonical holder identity — never a shared surname.
 
 Mutations return the **freshly recomputed** `OwnershipOverview` so the UI updates in one round-trip:

@@ -3,8 +3,10 @@
   "companyId": "company_gpw_cbf",
   "disclosedSum": "31.5",
   "freeFloatHistory": [
-    { "asOf": "2024-12-31", "pct": "74.5" },
-    { "asOf": "2025-12-31", "pct": "68.5" }
+    {
+      "asOf": "2025-12-31",
+      "pct": "68.5"
+    }
   ],
   "freeFloatPct": "68.5",
   "history": [
@@ -13,7 +15,8 @@
       "name": "Itema Ventures UAB",
       "points": [
         {
-          "asOf": "2025-12-31"
+          "asOf": "2025-12-31",
+          "source": "report_document"
         }
       ]
     },
@@ -24,11 +27,13 @@
       "points": [
         {
           "asOf": "2024-12-31",
-          "capitalPct": "25.5"
+          "capitalPct": "25.5",
+          "source": "espi_filing"
         },
         {
           "asOf": "2025-12-31",
-          "capitalPct": "25.5"
+          "capitalPct": "25.5",
+          "source": "report_document"
         }
       ]
     },
@@ -39,7 +44,8 @@
       "points": [
         {
           "asOf": "2025-12-31",
-          "capitalPct": "6.0"
+          "capitalPct": "6.0",
+          "source": "report_document"
         }
       ]
     }

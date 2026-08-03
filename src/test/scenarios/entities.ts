@@ -277,10 +277,14 @@ export function makeSignal(
 // stakes-over-time charts), one holder awaiting AI classification (pending
 // proposal), and one unreadable document (residual → OCR/AI review queue).
 export function makeOwnershipOverview(spec: CompanySpec): OwnershipOverview {
+  // The middle point is an `espi_filing`: a holder files one only on crossing a
+  // statutory band, so it renders as a threshold-crossing marker on the
+  // trajectory (ADR 0072 decision 5). The surrounding points are ordinary
+  // periodic-report samples, so the seed exercises both marked and unmarked.
   const founderPoints = (pct: string) => [
-    { asOf: "2023-12-31", capitalPct: pct },
-    { asOf: "2024-12-31", capitalPct: pct },
-    { asOf: "2025-12-31", capitalPct: pct },
+    { asOf: "2023-12-31", capitalPct: pct, source: "report_document" },
+    { asOf: "2024-12-31", capitalPct: pct, source: "espi_filing" },
+    { asOf: "2025-12-31", capitalPct: pct, source: "report_document" },
   ];
   return {
     companyId: companyId(spec),

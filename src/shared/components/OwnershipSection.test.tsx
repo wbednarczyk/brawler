@@ -49,8 +49,9 @@ const OVERVIEW: OwnershipOverview = {
       name: "Jacek Duch",
       holderType: "founder_insider",
       points: [
-        { asOf: "2024-12-31", capitalPct: "24.0" },
-        { asOf: "2025-12-31", capitalPct: "25.5" },
+        // Disclosed by an ESPI filing → a threshold crossing the chart marks.
+        { asOf: "2024-12-31", capitalPct: "24.0", source: "espi_filing" },
+        { asOf: "2025-12-31", capitalPct: "25.5", source: "report_document" },
       ],
     },
   ],
@@ -94,6 +95,39 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
     expect(screen.getByText("NN PTE")).toBeInTheDocument();
     // Founder type chip label surfaces (legend + row).
     expect(screen.getAllByText(/Founders?\/insiders?/).length).toBeGreaterThan(0);
+  });
+
+  // ADR 0072 decision 5: threshold crossings are markers on the stake-over-time
+  // chart. A holder files an ESPI major-holdings notification only when it
+  // crosses a statutory band, so an `espi_filing`-sourced point IS the crossing —
+  // and a periodic-report point beside it must NOT be marked, or every sample
+  // would read as an event.
+  it("marks only the ESPI-sourced points on the stakes-over-time chart", () => {
+    const { container } = render(<OwnershipSection data={OVERVIEW} {...NOOPS} />);
+
+    const markers = container.querySelectorAll("line.ui-multi-line-marker");
+    expect(markers).toHaveLength(1);
+    expect(markers[0].querySelector("title")?.textContent).toContain(
+      "Jacek Duch — threshold crossing",
+    );
+    expect(markers[0].querySelector("title")?.textContent).toContain("2024-12-31");
+  });
+
+  it("marks nothing when every disclosure is a periodic report", () => {
+    const noFilings: OwnershipOverview = {
+      ...OVERVIEW,
+      history: [
+        {
+          ...OVERVIEW.history[0],
+          points: OVERVIEW.history[0].points.map((point) => ({
+            ...point,
+            source: "report_document",
+          })),
+        },
+      ],
+    };
+    const { container } = render(<OwnershipSection data={noFilings} {...NOOPS} />);
+    expect(container.querySelectorAll("line.ui-multi-line-marker")).toHaveLength(0);
   });
 
   // ADR 0084 decision 4: tier-4 OCR is retired. An unreadable document is a

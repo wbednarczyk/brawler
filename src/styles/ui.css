@@ -1205,6 +1205,15 @@
 .ui-multi-line-series-2 { stroke: var(--own-tfi); }
 .ui-multi-line-series-3 { stroke: var(--own-misc); }
 
+/* Event marker on a trend line (ADR 0072 D5 threshold crossings): a thicker,
+   full-opacity tick in the series' own hue, so the event reads as belonging to
+   that holder instead of forming a separate visual layer. */
+.ui-multi-line-marker {
+  stroke-width: 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
 .ui-multi-line-legend {
   list-style: none;
   margin: 0;

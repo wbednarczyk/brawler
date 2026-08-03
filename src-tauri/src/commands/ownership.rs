@@ -141,6 +141,13 @@ pub struct OwnershipSeriesPoint {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub capital_pct: Option<String>,
+    /// Which disclosure this point came from (`espi_filing` / `report_document`
+    /// / `aggregator` / `manual`). An `espi_filing` point is a **threshold
+    /// crossing**: Polish law only compels that filing when a holder crosses one
+    /// of the statutory bands, so the UI marks those dates on the trajectory
+    /// (ADR 0072 decision 5). Carries the source of the row that won the
+    /// per-`as_of` dedup, i.e. the latest disclosure for that date.
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -189,7 +196,12 @@ pub struct OwnershipResidual {
 
 /// Per-holder history accumulator: `(raw name, holder type, as_of → capital %)`.
 /// A `type` alias keeps the grouping map readable (clippy::type_complexity).
-type HolderSeriesAccumulator = (String, Option<String>, BTreeMap<String, Option<String>>);
+/// `(holder display name, holder type, as_of -> (capital %, source))`.
+type HolderSeriesAccumulator = (
+    String,
+    Option<String>,
+    BTreeMap<String, (Option<String>, String)>,
+);
 
 /// Assemble the ownership overview for one company. Reads the current state
 /// (+ derived free float), the full snapshot history (grouped per holder into a
@@ -278,7 +290,7 @@ pub fn compute_ownership_overview(
         entry
             .2
             .entry(row.as_of.clone())
-            .or_insert_with(|| row.capital_pct.clone());
+            .or_insert_with(|| (row.capital_pct.clone(), row.source.clone()));
     }
     let history: Vec<OwnershipHolderSeries> = series_map
         .into_iter()
@@ -289,7 +301,11 @@ pub fn compute_ownership_overview(
                 holder_type,
                 points: points
                     .into_iter()
-                    .map(|(as_of, capital_pct)| OwnershipSeriesPoint { as_of, capital_pct })
+                    .map(|(as_of, (capital_pct, source))| OwnershipSeriesPoint {
+                        as_of,
+                        capital_pct,
+                        source,
+                    })
                     .collect(),
             },
         )
@@ -498,6 +514,59 @@ mod tests {
         assert_eq!(duch.points.len(), 2);
         assert_eq!(duch.points[0].as_of, "2024-12-31");
         assert_eq!(duch.points[1].as_of, "2025-12-31");
+    }
+
+    /// A series point carries the source of the disclosure it came from, which is
+    /// what lets the chart mark threshold crossings (ADR 0072 decision 5): an
+    /// `espi_filing` is compelled only when a holder crosses a statutory band,
+    /// while `report_document` points are ordinary periodic samples. Dropping the
+    /// field, or letting the per-`as_of` dedup keep the wrong row's source, would
+    /// silently un-mark every crossing in the UI.
+    #[test]
+    fn series_points_carry_the_source_that_disclosed_them() {
+        let s = state();
+        let c = company(&s, "CBF");
+        let filing = |as_of: &str, pct: &str| NewOwnershipStake {
+            company_id: c.clone(),
+            holder_name_raw: "Jacek Duch".to_owned(),
+            holder_type: Some("founder_insider".to_owned()),
+            capital_pct: Some(pct.to_owned()),
+            votes_pct: Some(pct.to_owned()),
+            as_of: as_of.to_owned(),
+            source: "espi_filing".to_owned(),
+            report_document_id: None,
+            feed_item_id: None,
+        };
+        // 2024 disclosed by an ESPI filing (a crossing), 2025 by a periodic report.
+        s.ownership()
+            .append_snapshot(filing("2024-12-31", "24.9"))
+            .expect("espi stake");
+        stake(
+            &s,
+            &c,
+            "Jacek Duch",
+            Some("founder_insider"),
+            "25.5",
+            "25.5",
+            "2025-12-31",
+        );
+
+        let overview = compute_ownership_overview(&s, &c).expect("overview");
+        let duch = overview
+            .history
+            .iter()
+            .find(|serie| serie.name == "Jacek Duch")
+            .expect("duch series");
+        assert_eq!(
+            duch.points
+                .iter()
+                .map(|point| (point.as_of.as_str(), point.source.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("2024-12-31", "espi_filing"),
+                ("2025-12-31", "report_document"),
+            ],
+        );
     }
 
     #[test]
@@ -712,15 +781,23 @@ mod tests {
         let c = company(&s, "CBF");
         // Two years of a founder (a 2-point trajectory) + one OFE + one holder
         // awaiting AI classification (no capital, so it stays in the free float).
-        stake(
-            &s,
-            &c,
-            "Jacek Duch",
-            Some("founder_insider"),
-            "25.5",
-            "25.5",
-            "2024-12-31",
-        );
+        // The older founder point comes from an ESPI filing — the disclosure a
+        // holder is only compelled to make on crossing a statutory band — so the
+        // fixture carries one threshold-crossing point beside ordinary
+        // periodic-report ones (ADR 0072 decision 5; the chart marks it).
+        s.ownership()
+            .append_snapshot(NewOwnershipStake {
+                company_id: c.clone(),
+                holder_name_raw: "Jacek Duch".to_owned(),
+                holder_type: Some("founder_insider".to_owned()),
+                capital_pct: Some("25.5".to_owned()),
+                votes_pct: Some("25.5".to_owned()),
+                as_of: "2024-12-31".to_owned(),
+                source: "espi_filing".to_owned(),
+                report_document_id: None,
+                feed_item_id: None,
+            })
+            .expect("duch espi stake");
         stake(
             &s,
             &c,
