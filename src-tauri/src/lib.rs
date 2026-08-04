@@ -517,7 +517,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.63.6");
+        assert_eq!(response.version, "0.63.7");
     }
 
     #[test]

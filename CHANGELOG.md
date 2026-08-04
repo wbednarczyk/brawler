@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.7 - 2026-08-04
+
+
+### Bug Fixes
+
+- **insider**: make attachment merge batching-independent via durable unit provenance (#318) (#322)
+
 ## v0.63.6 - 2026-08-03
 
 
