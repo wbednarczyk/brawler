@@ -502,13 +502,16 @@ panic). Property tests run in the normal stable test binary and are part of
 `make check` (bounded case counts); heavier counts run under `make check-epic`.
 
 **Associativity of merge** — ADR 0049's sixth invariant, "multi-source
-unification cannot depend on grouping" — is **not committed yet** (#194). It is
-not merely unasserted: `storage::insider::merge_attachment_units` measurably
-depends on grouping today, because its matching is NULL-tolerant and each call
-re-reads rows the previous call filled. The same units, in the same order, split
-into one batch versus two, yield two transaction rows versus one (repro on
-#194). Which of those is correct is a product-semantics question, so the
-invariant test lands with that decision, not before.
+unification cannot depend on grouping" — is committed for
+`storage::insider::merge_attachment_units`, for batches with unique
+`(source_document_id, source_unit_ord)` tags (the job guarantees this by
+construction; in-batch duplicates are defensively dropped keeping the first).
+The DB-backed proptest
+`storage::tests::insider::attachment_merge_associativity_proptest` asserts that
+partitioned and single-batch attachment merges produce the same row multiset,
+and that re-merging the full batch is idempotent; directed regressions cover
+the released-claim and duplicate-tag corners. The remaining #194 scope is
+other transforms, not insider attachment provenance.
 
 ### Golden snapshots (`insta`)
 

@@ -35,7 +35,7 @@ use crate::app_state::AppState;
 use crate::document_fetcher::DocumentFetcher;
 use crate::fundamentals::insider::attachment::{parse_notification_text, AttachmentParse};
 use crate::report_diff::extraction::{extract_report, ExtractionState};
-use crate::storage::AttachmentMergeOutcome;
+use crate::storage::{AttachmentMergeOutcome, SourcedAttachmentUnit};
 
 /// Aggregate result of one attachment-tier sweep (surfaced in logs + the closure
 /// report; the per-filing diagnostics persist on `insider_attachment_attempts`).
@@ -223,13 +223,19 @@ fn process_filing(
     // Candidate notification documents: registered ESPI/EBI attachments that are not
     // digital-signature files. The parser rejects a non-notification document, so we
     // do not need a title heuristic here.
-    let candidates: Vec<_> = docs
+    let mut candidates: Vec<_> = docs
         .into_iter()
         .filter(|doc| {
             doc.source_type == "espi_attachment"
                 && !crate::source_adapters::bankier_company::is_signature_attachment_url(&doc.url)
         })
         .collect();
+    candidates.sort_by(|left, right| {
+        right
+            .created_at
+            .cmp(&left.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     if candidates.is_empty() {
         return Ok(FilingResult::NoAttachment);
@@ -306,8 +312,17 @@ fn process_filing(
             ExtractionState::Extracted => {
                 any_extracted = true;
                 let text = flatten_sections(&extracted.sections);
-                if let AttachmentParse::Units(mut parsed) = parse_notification_text(&text) {
-                    units.append(&mut parsed);
+                if let AttachmentParse::Units(parsed) = parse_notification_text(&text) {
+                    units.extend(
+                        parsed
+                            .into_iter()
+                            .enumerate()
+                            .map(|(source_unit_ord, unit)| SourcedAttachmentUnit {
+                                source_document_id: doc.id.clone(),
+                                source_unit_ord,
+                                unit,
+                            }),
+                    );
                 }
             }
             // Scanned / image / unreadable: parked for the vision path — never guessed.

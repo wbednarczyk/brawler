@@ -668,6 +668,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "prune_banking_core_relevance",
         sql: include_str!("../../migrations/0132_prune_banking_core_relevance.sql"),
     },
+    Migration {
+        version: 133,
+        name: "insider_tx_provenance",
+        sql: include_str!("../../migrations/0133_insider_tx_provenance.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
