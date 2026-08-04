@@ -44,6 +44,12 @@ pub mod html_positional;
 pub mod pipeline;
 pub mod text_numbers;
 
+/// Real committed ESPI filing sample tests (ADR 0094, epic #40 / #139): exercises
+/// the container/ESEF/PDF-honesty seams against actual issuer filings instead of
+/// inline string literals. Test-only; never compiled into the shipped binary.
+#[cfg(test)]
+mod real_report_samples;
+
 /// Which tier of the pipeline produced a fact. Ordered highest-trust first so
 /// `SourceTier::Esef < SourceTier::Pdf` reflects precedence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

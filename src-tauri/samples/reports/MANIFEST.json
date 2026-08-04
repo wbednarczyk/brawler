@@ -1,0 +1,49 @@
+{
+  "$schema_note": "Canonical attribution manifest for committed real ESPI filing samples (ADR 0094). Machine-checked by the manifest guard test: total <= 5 MB, every file listed, hash/size/container match, no unmanifested report binary under samples/. expected_text_marker (nullable): a string the sample's extracted text must contain — binds bytes to attribution by CONTENT, not filename (guardrail: the first committed PDF candidate turned out to carry another issuer's auditor letter under a mismatched distributor URL).",
+  "budget_bytes_max": 5242880,
+  "files": [
+    {
+      "file": "cbf_2025_annual_esef.xbri",
+      "issuer": "cyber_Folks S.A. (GPW: CBF)",
+      "report": "Annual report 2025 — consolidated financial statements, ESEF report package (iXBRL)",
+      "period_end": "2025-12-31",
+      "original_filename": "CBF-2025-12-31-1-pl.xbri",
+      "source_url": "https://bonnier.pl/static/att/emitent/2026-03/20260318_071304_1180624026_CBF-2025-12-31-1-pl.xbri",
+      "distributor": "ESPI attachment distributed via Bonnier (Bankier.pl) static host",
+      "retrieved": "2026-07-03",
+      "bytes": 4239726,
+      "sha256": "4a4d6c0f28e95cdf48a76ac1e94070dc8509cb9f638963dd395491637a9dcbdc",
+      "expected_container": "zip_report_package",
+      "purpose": "Facts-bearing sample: detect_container -> esef_package::extract_instance -> parse_esef -> exact expected-value compare"
+    },
+    {
+      "file": "sfinks_2026_q1_selected_data.pdf",
+      "issuer": "Sfinks Polska S.A. (GPW: SFS)",
+      "report": "QSr 1/2026 quarterly report — selected financial data (WYBRANE DANE) of GK Sfinks and Sfinks Polska, PDF",
+      "period_end": "2026-03-31",
+      "original_filename": "2026.03_WYBRANE_DANE_GK_SFINKS_i_SFINKS_POLSKA.pdf",
+      "source_url": "https://bonnier.pl/static/att/emitent/2026-05/20260529_173856_2086170678_2026.03_WYBRANE_DANE_GK_SFINKS_i_SFINKS_POLSKA.pdf",
+      "distributor": "ESPI attachment distributed via Bonnier (Bankier.pl) static host",
+      "retrieved": "2026-06-21",
+      "bytes": 127087,
+      "sha256": "9983d89f499db8aca82f4d44b97ead745dd8e11aca840d5cc6a3e88ec22203b9",
+      "expected_container": "pdf",
+      "expected_text_marker": "SFINKS",
+      "purpose": "Container detection + report_diff text extraction on a real text-layer PDF (PDF fact extraction is retired, ADR 0086 — asserted benign-empty); text marker binds bytes to attribution"
+    },
+    {
+      "file": "editel_annual_no_text_layer.pdf",
+      "issuer": "EDITEL S.A. (NewConnect, EBI)",
+      "report": "Annual report — scanned PDF without a text layer",
+      "period_end": null,
+      "original_filename": "20260527_121911_0000002949_0000075780.pdf",
+      "source_url": "https://bonnier.pl/static/att/ebi/2026-05/20260527_121911_0000002949_0000075780.pdf",
+      "distributor": "EBI attachment distributed via Bonnier (Bankier.pl) static host",
+      "retrieved": "2026-06-21",
+      "bytes": 27506,
+      "sha256": "41a1b60a39d395d8fd71dfe6b64fd99672ee89db817fe60b68eb0d7b001044b6",
+      "expected_container": "pdf",
+      "purpose": "Honest-failure sample: report_diff returns NoTextLayer; fundamentals route stays benign-empty; never fabricated facts. Attribution claim is deliberately narrow: a scan has no text to bind, so identity rests on the recorded provenance + hash only (adversarial-review finding 4, accepted)"
+    }
+  ]
+}
