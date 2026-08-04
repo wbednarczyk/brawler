@@ -1,6 +1,6 @@
 # ADR 0091: Failure-Path & Real-State Test Layer — chaos seam, job-failure visibility, honesty harness
 
-Status: Accepted (2026-07-29, owner sign-off at epic #40 planning — Polish plan approved in chat)
+Status: Accepted (2026-07-29, owner sign-off at epic #40 planning — Polish plan approved in chat). Decision 4 narrowly amended by [ADR 0094](0094-committed-public-espi-report-samples.md) (official ESPI/EBI filing files as committed test samples; everything else unchanged).
 
 Deciders: maintainer. Area: testing, jobs, storage, frontend.
 

@@ -1,0 +1,668 @@
+---
+source: src/fundamentals/extraction/real_report_samples.rs
+expression: actual
+---
+[
+    FactProjection {
+        metric_key: "cash",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "70322000",
+        tier: "esef",
+        citation: "CashAndCashEquivalents",
+    },
+    FactProjection {
+        metric_key: "cash",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "70322000",
+        tier: "esef",
+        citation: "CashAndCashEquivalents",
+    },
+    FactProjection {
+        metric_key: "cash",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "142936000",
+        tier: "esef",
+        citation: "CashAndCashEquivalents",
+    },
+    FactProjection {
+        metric_key: "cash",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "142936000",
+        tier: "esef",
+        citation: "CashAndCashEquivalents",
+    },
+    FactProjection {
+        metric_key: "cash",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "142936000",
+        tier: "esef",
+        citation: "CashAndCashEquivalents",
+    },
+    FactProjection {
+        metric_key: "cash",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "351031000",
+        tier: "esef",
+        citation: "CashAndCashEquivalents",
+    },
+    FactProjection {
+        metric_key: "cash",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "351031000",
+        tier: "esef",
+        citation: "CashAndCashEquivalents",
+    },
+    FactProjection {
+        metric_key: "current_assets",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "110335000",
+        tier: "esef",
+        citation: "CurrentAssets",
+    },
+    FactProjection {
+        metric_key: "current_assets",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "239882000",
+        tier: "esef",
+        citation: "CurrentAssets",
+    },
+    FactProjection {
+        metric_key: "current_assets",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "426493000",
+        tier: "esef",
+        citation: "CurrentAssets",
+    },
+    FactProjection {
+        metric_key: "current_liabilities",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "190526000",
+        tier: "esef",
+        citation: "CurrentLiabilities",
+    },
+    FactProjection {
+        metric_key: "current_liabilities",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "216215000",
+        tier: "esef",
+        citation: "CurrentLiabilities",
+    },
+    FactProjection {
+        metric_key: "current_liabilities",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "350317000",
+        tier: "esef",
+        citation: "CurrentLiabilities",
+    },
+    FactProjection {
+        metric_key: "eps_basic",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "8.23",
+        tier: "esef",
+        citation: "BasicEarningsLossPerShare",
+    },
+    FactProjection {
+        metric_key: "eps_basic",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "4.38",
+        tier: "esef",
+        citation: "BasicEarningsLossPerShare",
+    },
+    FactProjection {
+        metric_key: "eps_diluted",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "8.22",
+        tier: "esef",
+        citation: "DilutedEarningsLossPerShare",
+    },
+    FactProjection {
+        metric_key: "eps_diluted",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "4.37",
+        tier: "esef",
+        citation: "DilutedEarningsLossPerShare",
+    },
+    FactProjection {
+        metric_key: "financing_cash_flow",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "-130571000",
+        tier: "esef",
+        citation: "CashFlowsFromUsedInFinancingActivities",
+    },
+    FactProjection {
+        metric_key: "financing_cash_flow",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "496894000",
+        tier: "esef",
+        citation: "CashFlowsFromUsedInFinancingActivities",
+    },
+    FactProjection {
+        metric_key: "investing_cash_flow",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "15378000",
+        tier: "esef",
+        citation: "CashFlowsFromUsedInInvestingActivities",
+    },
+    FactProjection {
+        metric_key: "investing_cash_flow",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "-546186000",
+        tier: "esef",
+        citation: "CashFlowsFromUsedInInvestingActivities",
+    },
+    FactProjection {
+        metric_key: "long_term_debt",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "179051000",
+        tier: "esef",
+        citation: "LongtermBorrowings",
+    },
+    FactProjection {
+        metric_key: "long_term_debt",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "143471000",
+        tier: "esef",
+        citation: "LongtermBorrowings",
+    },
+    FactProjection {
+        metric_key: "long_term_debt",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "536913000",
+        tier: "esef",
+        citation: "LongtermBorrowings",
+    },
+    FactProjection {
+        metric_key: "net_profit",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "153767000",
+        tier: "esef",
+        citation: "ProfitLoss",
+    },
+    FactProjection {
+        metric_key: "net_profit",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "127848000",
+        tier: "esef",
+        citation: "ProfitLoss",
+    },
+    FactProjection {
+        metric_key: "operating_cash_flow",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "187480000",
+        tier: "esef",
+        citation: "CashFlowsFromUsedInOperatingActivities",
+    },
+    FactProjection {
+        metric_key: "operating_cash_flow",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "261193000",
+        tier: "esef",
+        citation: "CashFlowsFromUsedInOperatingActivities",
+    },
+    FactProjection {
+        metric_key: "operating_profit",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "133618000",
+        tier: "esef",
+        citation: "ProfitLossFromOperatingActivities",
+    },
+    FactProjection {
+        metric_key: "operating_profit",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "207078000",
+        tier: "esef",
+        citation: "ProfitLossFromOperatingActivities",
+    },
+    FactProjection {
+        metric_key: "revenue",
+        period_end: "2024-12-31",
+        period_start: Some(
+            "2024-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "656331000",
+        tier: "esef",
+        citation: "Revenue",
+    },
+    FactProjection {
+        metric_key: "revenue",
+        period_end: "2025-12-31",
+        period_start: Some(
+            "2025-01-01",
+        ),
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "855151000",
+        tier: "esef",
+        citation: "Revenue",
+    },
+    FactProjection {
+        metric_key: "total_assets",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "832928000",
+        tier: "esef",
+        citation: "Assets",
+    },
+    FactProjection {
+        metric_key: "total_assets",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "942660000",
+        tier: "esef",
+        citation: "Assets",
+    },
+    FactProjection {
+        metric_key: "total_assets",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "1793461000",
+        tier: "esef",
+        citation: "Assets",
+    },
+    FactProjection {
+        metric_key: "total_equity",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "421750000",
+        tier: "esef",
+        citation: "Equity",
+    },
+    FactProjection {
+        metric_key: "total_equity",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "421750000",
+        tier: "esef",
+        citation: "Equity",
+    },
+    FactProjection {
+        metric_key: "total_equity",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "543296000",
+        tier: "esef",
+        citation: "Equity",
+    },
+    FactProjection {
+        metric_key: "total_equity",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "543296000",
+        tier: "esef",
+        citation: "Equity",
+    },
+    FactProjection {
+        metric_key: "total_equity",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "543296000",
+        tier: "esef",
+        citation: "Equity",
+    },
+    FactProjection {
+        metric_key: "total_equity",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "821142000",
+        tier: "esef",
+        citation: "Equity",
+    },
+    FactProjection {
+        metric_key: "total_equity",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "821142000",
+        tier: "esef",
+        citation: "Equity",
+    },
+    FactProjection {
+        metric_key: "total_liabilities",
+        period_end: "2023-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "411178000",
+        tier: "esef",
+        citation: "Liabilities",
+    },
+    FactProjection {
+        metric_key: "total_liabilities",
+        period_end: "2024-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "399364000",
+        tier: "esef",
+        citation: "Liabilities",
+    },
+    FactProjection {
+        metric_key: "total_liabilities",
+        period_end: "2025-12-31",
+        period_start: None,
+        basis: Some(
+            "consolidated",
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        value: "972319000",
+        tier: "esef",
+        citation: "Liabilities",
+    },
+]

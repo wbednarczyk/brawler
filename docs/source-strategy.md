@@ -349,6 +349,10 @@ Accepted Bankier company-komunikaty slice:
 - Dedupe policy: use Bankier article ID for adapter-local dedupe and title/company comparison to avoid creating a second visible item if `gpw-espi-ebi` is later re-enabled.
 - Source-policy note: Bankier Company Komunikaty is the active v1 official-report source while `gpw-espi-ebi` remains registered but disabled until a later reliability pass proves it should be re-enabled.
 
+## ESPI/EBI Filing Samples In The Public Repo
+
+A narrow, deliberate carve-out ([ADR 0094](adr/0094-committed-public-espi-report-samples.md), amending [ADR 0091](adr/0091-failure-path-and-real-state-testing.md) decision 4): complete, selected **official ESPI/EBI periodic filing files** (mandated-public disclosures) may be committed as test samples under `src-tauri/samples/reports/` — ≤ 5 MB total, machine-checked `MANIFEST.json` attribution (issuer, period, truthful distributor URL, sha256). Aggregator/API content stays non-redistributable (ADR 0072/0082/0085/0086 unaffected); nothing from the maintainer's research database ever enters the repo.
+
 ## ESPI/EBI Filing Classification
 
 Typed ESPI/EBI event classification (`v0.40.0`, [ADR 0034](adr/0034-espi-event-classification.md)) runs over the **active official-report feed**, currently `bankier-company-komunikaty`, which exposes the ESPI/EBI category label, report title, and body text needed to classify. The classifier is source-neutral: it reads whichever official-report adapter is enabled, so a future `gpw-espi-ebi` re-enable feeds the same classifier without changes. Classification produces typed `company_signals` (insider transaction, dividend, profit warning, significant contract, buyback, guidance change, other) rather than altering the source adapter contract. The deferred ESPI/EBI **attachment ingestion** and **on-track backfill** work (milestone `v0.41.0`) likewise targets the active Bankier article/attachment path, not the disabled GPW detail flow.
