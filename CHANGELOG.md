@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.6 - 2026-08-03
+
+
+### Features
+
+- **ownership**: mark threshold crossings on the stakes-over-time chart, and unstick two visual baselines (#145, #314) (#320)
+
 ## v0.63.4 - 2026-08-02
 
 
