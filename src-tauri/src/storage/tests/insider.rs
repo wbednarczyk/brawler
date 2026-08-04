@@ -8,6 +8,123 @@
 //! verbatim from `private/`.
 
 use super::*;
+use proptest::prelude::*;
+
+use crate::fundamentals::insider::attachment::AttachmentTxUnit;
+use crate::fundamentals::insider::{Direction, InsiderRole, Instrument};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AttachmentRowSnapshot {
+    id: String,
+    company_id: String,
+    feed_item_id: String,
+    unit_index: i64,
+    person_name_raw: String,
+    person_normalized: String,
+    role: Option<String>,
+    related_pdmr_raw: Option<String>,
+    related_pdmr_normalized: Option<String>,
+    related_pdmr_role: Option<String>,
+    direction: Option<String>,
+    instrument: Option<String>,
+    volume: Option<String>,
+    price: Option<String>,
+    currency: Option<String>,
+    tx_date: Option<String>,
+    source_document_id: Option<String>,
+    source_unit_ord: Option<i64>,
+}
+
+fn attachment_rows(state: &AppState, feed_item_id: &str) -> Vec<AttachmentRowSnapshot> {
+    let connection = state.checkout_for_tests().expect("connection");
+    let mut statement = connection
+        .prepare(
+            "SELECT id, company_id, feed_item_id, unit_index, person_name_raw, \
+             person_normalized, role, related_pdmr_raw, related_pdmr_normalized, \
+             related_pdmr_role, direction, instrument, volume, price, currency, tx_date, \
+             source_document_id, source_unit_ord FROM insider_transactions \
+             WHERE feed_item_id = ?1 ORDER BY unit_index ASC",
+        )
+        .expect("prepare insider snapshot");
+    statement
+        .query_map([feed_item_id], |row| {
+            Ok(AttachmentRowSnapshot {
+                id: row.get(0)?,
+                company_id: row.get(1)?,
+                feed_item_id: row.get(2)?,
+                unit_index: row.get(3)?,
+                person_name_raw: row.get(4)?,
+                person_normalized: row.get(5)?,
+                role: row.get(6)?,
+                related_pdmr_raw: row.get(7)?,
+                related_pdmr_normalized: row.get(8)?,
+                related_pdmr_role: row.get(9)?,
+                direction: row.get(10)?,
+                instrument: row.get(11)?,
+                volume: row.get(12)?,
+                price: row.get(13)?,
+                currency: row.get(14)?,
+                tx_date: row.get(15)?,
+                source_document_id: row.get(16)?,
+                source_unit_ord: row.get(17)?,
+            })
+        })
+        .expect("query insider snapshot")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read insider snapshot")
+}
+
+fn attachment_unit(
+    person_raw: &str,
+    person_normalized: &str,
+    direction: Option<Direction>,
+    tx_date: Option<&str>,
+    volume: Option<&str>,
+) -> AttachmentTxUnit {
+    AttachmentTxUnit {
+        person_raw: person_raw.to_owned(),
+        person_normalized: person_normalized.to_owned(),
+        role: None,
+        related_pdmr_raw: None,
+        related_pdmr_normalized: None,
+        direction,
+        instrument: None,
+        volume: volume.map(str::to_owned),
+        price: None,
+        currency: None,
+        tx_date: tx_date.map(str::to_owned),
+    }
+}
+
+fn sourced(
+    source_document_id: &str,
+    source_unit_ord: usize,
+    unit: AttachmentTxUnit,
+) -> SourcedAttachmentUnit {
+    SourcedAttachmentUnit {
+        source_document_id: source_document_id.to_owned(),
+        source_unit_ord,
+        unit,
+    }
+}
+
+fn attachment_state(ticker: &str, article_id: &str) -> (AppState, Company, String) {
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let c = company(&state, ticker);
+    state
+        .ingest_bankier_company_items(&[item(
+            &c,
+            article_id,
+            "Informacja o transakcjach uzyskana w trybie art. 19 MAR",
+            SINGLE_PDMR_BODY,
+        )])
+        .expect("ingest cover note");
+    (
+        state,
+        c,
+        format!("feed_bankier_company_komunikatyarticle{article_id}"),
+    )
+}
 
 fn company(state: &AppState, ticker: &str) -> Company {
     state
@@ -303,8 +420,6 @@ fn insider_no_unit_parks_once() {
 /// merge is idempotent (fill-NULLs; the append matches on the second pass).
 #[test]
 fn attachment_merge_fills_then_appends_new_unit() {
-    use crate::fundamentals::insider::attachment::AttachmentTxUnit;
-    use crate::fundamentals::insider::{Direction, InsiderRole, Instrument};
     use std::collections::BTreeSet;
 
     let connection = open_in_memory_database().expect("db");
@@ -339,7 +454,10 @@ fn attachment_merge_fills_then_appends_new_unit() {
         currency: Some("PLN".to_owned()),
         tx_date: Some(date.to_owned()),
     };
-    let units = vec![mk("275000", "2026-07-03"), mk("40000", "2026-07-07")];
+    let units = vec![
+        sourced("doc-cmp", 0, mk("275000", "2026-07-03")),
+        sourced("doc-cmp", 1, mk("40000", "2026-07-07")),
+    ];
 
     let outcome = state
         .insider()
@@ -378,4 +496,583 @@ fn attachment_merge_fills_then_appends_new_unit() {
         2,
         "re-merge creates zero new rows"
     );
+}
+
+/// Two separately parsed documents are two transactions even when the first
+/// document filled the cover-note row's NULLs before the second merge call.
+#[test]
+fn attachment_merge_is_batching_independent() {
+    let (split_state, split_company, feed_item_id) = attachment_state("BIN", "9300200");
+    let a = sourced(
+        "doc-1",
+        0,
+        attachment_unit("Jan Testowy", "JAN TESTOWY", None, Some("2026-07-03"), None),
+    );
+    let b = sourced(
+        "doc-2",
+        0,
+        attachment_unit(
+            "Jan Testowy",
+            "JAN TESTOWY",
+            Some(Direction::Buy),
+            None,
+            None,
+        ),
+    );
+
+    split_state
+        .insider()
+        .merge_attachment_units(&split_company.id, &feed_item_id, std::slice::from_ref(&a))
+        .expect("merge A");
+    split_state
+        .insider()
+        .merge_attachment_units(&split_company.id, &feed_item_id, std::slice::from_ref(&b))
+        .expect("merge B");
+    let split_rows = attachment_rows(&split_state, &feed_item_id);
+
+    let (single_state, single_company, single_feed_item_id) = attachment_state("BIN", "9300200");
+    single_state
+        .insider()
+        .merge_attachment_units(&single_company.id, &single_feed_item_id, &[a, b])
+        .expect("merge A+B");
+    let single_rows = attachment_rows(&single_state, &single_feed_item_id);
+
+    assert_eq!(split_rows, single_rows);
+    assert_eq!(split_rows.len(), 2, "the split path must retain both units");
+    assert_eq!(split_rows[0].unit_index, 0);
+    assert_eq!(split_rows[0].direction.as_deref(), Some("buy"));
+    assert_eq!(split_rows[0].tx_date.as_deref(), Some("2026-07-03"));
+    assert_eq!(split_rows[1].unit_index, 1);
+    assert_eq!(split_rows[1].direction.as_deref(), Some("buy"));
+    assert!(split_rows[1].tx_date.is_none());
+}
+
+// The merge invariant is checked against real in-memory SQLite state rather
+// than only against a pure model: arbitrary units and arbitrary contiguous
+// batch partitions converge to the same rows, and a full re-merge is stable.
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 24, .. ProptestConfig::default() })]
+
+    #[test]
+    fn attachment_merge_associativity_proptest(
+        specs in prop::collection::vec(
+            (
+                0usize..3,
+                prop::option::of(prop::sample::select(vec!["buy", "sell"])),
+                prop::option::of(prop::sample::select(vec![
+                    InsiderRole::Management,
+                    InsiderRole::Supervisory,
+                ])),
+                prop::option::of(prop::sample::select(vec![
+                    "2026-07-01", "2026-07-02", "2026-07-03",
+                ])),
+                prop::option::of(prop::sample::select(vec!["10", "20", "30"])),
+                0usize..2,
+            ),
+            0..7,
+        ),
+        partition_count in 1usize..=3,
+    ) {
+        let names = [
+            ("Jan Testowy", "JAN TESTOWY"),
+            ("Anna Nowak", "ANNA NOWAK"),
+            ("Piotr Kowalski", "PIOTR KOWALSKI"),
+        ];
+        let mut next_ord = [0usize; 2];
+        let units: Vec<SourcedAttachmentUnit> = specs
+            .into_iter()
+            .map(|(person, direction, role, tx_date, volume, document)| {
+                let (person_raw, person_normalized) = names[person];
+                let direction = direction.map(|value| match value {
+                    "buy" => Direction::Buy,
+                    "sell" => Direction::Sell,
+                    _ => unreachable!("strategy only yields buy/sell"),
+                });
+                let ordinal = next_ord[document];
+                next_ord[document] += 1;
+                let mut unit = attachment_unit(
+                    person_raw,
+                    person_normalized,
+                    direction,
+                    tx_date,
+                    volume,
+                );
+                unit.role = role;
+                sourced(
+                    &format!("doc-{document}"),
+                    ordinal,
+                    unit,
+                )
+            })
+            .collect();
+
+        let batch_count = partition_count.min(units.len().max(1));
+        let mut batches = Vec::new();
+        if units.is_empty() {
+            batches.push(Vec::new());
+        } else {
+            for batch_index in 0..batch_count {
+                let start = units.len() * batch_index / batch_count;
+                let end = units.len() * (batch_index + 1) / batch_count;
+                batches.push(units[start..end].to_vec());
+            }
+        }
+
+        let (sequential_state, sequential_company, sequential_feed_item_id) =
+            attachment_state("PRO", "9300300");
+        for batch in &batches {
+            sequential_state
+                .insider()
+                .merge_attachment_units(
+                    &sequential_company.id,
+                    &sequential_feed_item_id,
+                    batch,
+                )
+                .expect("sequential merge");
+        }
+        let before_remerge = attachment_rows(&sequential_state, &sequential_feed_item_id);
+        sequential_state
+            .insider()
+            .merge_attachment_units(
+                &sequential_company.id,
+                &sequential_feed_item_id,
+                &units,
+            )
+            .expect("full re-merge");
+        prop_assert_eq!(
+            before_remerge,
+            attachment_rows(&sequential_state, &sequential_feed_item_id),
+            "re-merging the full batch must be idempotent",
+        );
+
+        let (single_state, single_company, single_feed_item_id) =
+            attachment_state("PRO", "9300300");
+        single_state
+            .insider()
+            .merge_attachment_units(
+                &single_company.id,
+                &single_feed_item_id,
+                &units,
+            )
+            .expect("single merge");
+        prop_assert_eq!(
+            attachment_rows(&sequential_state, &sequential_feed_item_id),
+            attachment_rows(&single_state, &single_feed_item_id),
+            "partitioned and single-batch merges must converge",
+        );
+    }
+}
+
+#[test]
+fn attachment_merge_identical_fully_filled_units_stay_two_rows() {
+    let mut unit = attachment_unit(
+        "Anna Nowak",
+        "ANNA NOWAK",
+        Some(Direction::Buy),
+        Some("2026-07-03"),
+        Some("100"),
+    );
+    unit.role = Some(InsiderRole::Management);
+    unit.instrument = Some(Instrument::Shares);
+    unit.price = Some("10".to_owned());
+    unit.currency = Some("PLN".to_owned());
+    unit.related_pdmr_raw = Some("Jan Testowy".to_owned());
+    unit.related_pdmr_normalized = Some("JAN TESTOWY".to_owned());
+    let units = vec![sourced("doc-1", 0, unit.clone()), sourced("doc-1", 1, unit)];
+
+    let (single_state, single_company, single_feed_item_id) = attachment_state("FUL", "9300400");
+    single_state
+        .insider()
+        .merge_attachment_units(&single_company.id, &single_feed_item_id, &units)
+        .expect("single merge");
+
+    let (split_state, split_company, split_feed_item_id) = attachment_state("FUL", "9300400");
+    for unit in &units {
+        split_state
+            .insider()
+            .merge_attachment_units(
+                &split_company.id,
+                &split_feed_item_id,
+                std::slice::from_ref(unit),
+            )
+            .expect("singleton merge");
+    }
+
+    let single_rows: Vec<_> = attachment_rows(&single_state, &single_feed_item_id)
+        .into_iter()
+        .filter(|row| row.source_document_id.as_deref() == Some("doc-1"))
+        .collect();
+    let split_rows: Vec<_> = attachment_rows(&split_state, &split_feed_item_id)
+        .into_iter()
+        .filter(|row| row.source_document_id.as_deref() == Some("doc-1"))
+        .collect();
+    assert_eq!(single_rows.len(), 2);
+    assert_eq!(split_rows.len(), 2);
+    assert_eq!(single_rows, split_rows);
+}
+
+#[test]
+fn attachment_merge_provenance_person_mismatch_never_fills() {
+    let (state, company, feed_item_id) = attachment_state("PMM", "9300450");
+    {
+        let connection = state.checkout_for_tests().expect("connection");
+        connection
+            .execute(
+                "DELETE FROM insider_transactions WHERE feed_item_id = ?1",
+                [&feed_item_id],
+            )
+            .expect("clear cover-note row");
+    }
+
+    let anna = attachment_unit(
+        "Anna Nowak",
+        "ANNA NOWAK",
+        Some(Direction::Buy),
+        Some("2026-07-03"),
+        Some("100"),
+    );
+    state
+        .insider()
+        .merge_attachment_units(&company.id, &feed_item_id, &[sourced("doc-1", 0, anna)])
+        .expect("claim Anna row");
+
+    let jan = attachment_unit(
+        "Jan Testowy",
+        "JAN TESTOWY",
+        Some(Direction::Buy),
+        Some("2026-07-03"),
+        Some("200"),
+    );
+    state
+        .insider()
+        .merge_attachment_units(&company.id, &feed_item_id, &[sourced("doc-1", 0, jan)])
+        .expect("append person-mismatched row");
+
+    let rows = attachment_rows(&state, &feed_item_id);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].person_normalized, "ANNA NOWAK");
+    assert_eq!(rows[0].volume.as_deref(), Some("100"));
+    assert!(rows[0].source_document_id.is_none());
+    assert!(rows[0].source_unit_ord.is_none());
+    assert_eq!(rows[1].person_normalized, "JAN TESTOWY");
+    assert_eq!(rows[1].volume.as_deref(), Some("200"));
+    assert_eq!(rows[1].source_document_id.as_deref(), Some("doc-1"));
+    assert_eq!(rows[1].source_unit_ord, Some(0));
+}
+
+/// Adversarial-review regression (2026-08-04): a claim released by a person
+/// mismatch must return to the unclaimed pool *within the same batch*, so a
+/// later compatible unit can claim it — otherwise the released-row outcome
+/// depends on batching (3 rows in one call vs 2 rows split).
+#[test]
+fn attachment_merge_released_claim_is_reclaimable_same_batch() {
+    let build_state = || {
+        let (state, company, feed_item_id) = attachment_state("RCL", "9300460");
+        {
+            let connection = state.checkout_for_tests().expect("connection");
+            connection
+                .execute(
+                    "DELETE FROM insider_transactions WHERE feed_item_id = ?1",
+                    [&feed_item_id],
+                )
+                .expect("clear cover-note row");
+        }
+        let anna = attachment_unit(
+            "Anna Nowak",
+            "ANNA NOWAK",
+            Some(Direction::Buy),
+            Some("2026-07-03"),
+            Some("100"),
+        );
+        state
+            .insider()
+            .merge_attachment_units(&company.id, &feed_item_id, &[sourced("doc-1", 0, anna)])
+            .expect("seed Anna claim");
+        (state, company, feed_item_id)
+    };
+    // U1: parser change put Jan at (doc-1, 0) — releases Anna's stale claim.
+    // U2: Anna re-appears from doc-2, compatible with her released row.
+    let u1 = sourced(
+        "doc-1",
+        0,
+        attachment_unit(
+            "Jan Testowy",
+            "JAN TESTOWY",
+            Some(Direction::Buy),
+            Some("2026-07-03"),
+            Some("200"),
+        ),
+    );
+    let u2 = sourced(
+        "doc-2",
+        0,
+        attachment_unit("Anna Nowak", "ANNA NOWAK", Some(Direction::Buy), None, None),
+    );
+
+    let (single_state, single_company, single_feed_item_id) = build_state();
+    single_state
+        .insider()
+        .merge_attachment_units(
+            &single_company.id,
+            &single_feed_item_id,
+            &[u1.clone(), u2.clone()],
+        )
+        .expect("single-batch merge");
+
+    let (split_state, split_company, split_feed_item_id) = build_state();
+    split_state
+        .insider()
+        .merge_attachment_units(
+            &split_company.id,
+            &split_feed_item_id,
+            std::slice::from_ref(&u1),
+        )
+        .expect("merge U1");
+    split_state
+        .insider()
+        .merge_attachment_units(
+            &split_company.id,
+            &split_feed_item_id,
+            std::slice::from_ref(&u2),
+        )
+        .expect("merge U2");
+
+    let single_rows = attachment_rows(&single_state, &single_feed_item_id);
+    let split_rows = attachment_rows(&split_state, &split_feed_item_id);
+    assert_eq!(
+        single_rows.len(),
+        2,
+        "released row must be reclaimed, not tripled"
+    );
+    assert_eq!(single_rows, split_rows);
+    let anna_row = single_rows
+        .iter()
+        .find(|row| row.person_normalized == "ANNA NOWAK")
+        .expect("Anna row");
+    assert_eq!(anna_row.source_document_id.as_deref(), Some("doc-2"));
+    assert_eq!(anna_row.source_unit_ord, Some(0));
+}
+
+/// Defensive guard: a duplicated (document, ordinal) tag inside one batch is
+/// the same parse artifact twice — the first occurrence wins and the merge
+/// must not trip the partial unique provenance index.
+#[test]
+fn attachment_merge_duplicate_tags_in_batch_keep_first() {
+    let (state, company, feed_item_id) = attachment_state("DUP", "9300470");
+    {
+        let connection = state.checkout_for_tests().expect("connection");
+        connection
+            .execute(
+                "DELETE FROM insider_transactions WHERE feed_item_id = ?1",
+                [&feed_item_id],
+            )
+            .expect("clear cover-note row");
+    }
+    let first = sourced(
+        "doc-1",
+        0,
+        attachment_unit(
+            "Anna Nowak",
+            "ANNA NOWAK",
+            Some(Direction::Buy),
+            Some("2026-07-03"),
+            Some("100"),
+        ),
+    );
+    let duplicate = sourced(
+        "doc-1",
+        0,
+        attachment_unit(
+            "Anna Nowak",
+            "ANNA NOWAK",
+            Some(Direction::Buy),
+            Some("2026-07-03"),
+            Some("999"),
+        ),
+    );
+    state
+        .insider()
+        .merge_attachment_units(&company.id, &feed_item_id, &[first, duplicate])
+        .expect("duplicate tag must not fail the merge");
+
+    let rows = attachment_rows(&state, &feed_item_id);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].volume.as_deref(),
+        Some("100"),
+        "first occurrence wins"
+    );
+    assert_eq!(rows[0].source_document_id.as_deref(), Some("doc-1"));
+    assert_eq!(rows[0].source_unit_ord, Some(0));
+}
+
+#[test]
+fn attachment_merge_legacy_rows_self_heal() {
+    let (legacy_state, legacy_company, legacy_feed_item_id) = attachment_state("LEG", "9300500");
+    {
+        let connection = legacy_state.checkout_for_tests().expect("connection");
+        connection
+            .execute(
+                "UPDATE insider_transactions SET volume = '100', price = '10', \
+                 currency = 'PLN', tx_date = '2026-07-03', source_document_id = NULL, \
+                 source_unit_ord = NULL WHERE feed_item_id = ?1",
+                [&legacy_feed_item_id],
+            )
+            .expect("seed legacy filled row");
+    }
+    let mut unit = attachment_unit(
+        "Jan Testowy",
+        "JAN TESTOWY",
+        Some(Direction::Buy),
+        Some("2026-07-03"),
+        Some("100"),
+    );
+    unit.role = Some(InsiderRole::Management);
+    unit.instrument = Some(Instrument::Shares);
+    unit.price = Some("10".to_owned());
+    unit.currency = Some("PLN".to_owned());
+    let sourced_unit = sourced("doc-legacy", 0, unit.clone());
+    legacy_state
+        .insider()
+        .merge_attachment_units(
+            &legacy_company.id,
+            &legacy_feed_item_id,
+            std::slice::from_ref(&sourced_unit),
+        )
+        .expect("self-heal legacy row");
+
+    let (clean_state, clean_company, clean_feed_item_id) = attachment_state("LEG", "9300500");
+    clean_state
+        .insider()
+        .merge_attachment_units(&clean_company.id, &clean_feed_item_id, &[sourced_unit])
+        .expect("clean merge");
+
+    assert_eq!(
+        attachment_rows(&legacy_state, &legacy_feed_item_id),
+        attachment_rows(&clean_state, &clean_feed_item_id),
+    );
+    let healed = attachment_rows(&legacy_state, &legacy_feed_item_id);
+    assert_eq!(healed.len(), 1);
+    assert_eq!(healed[0].source_document_id.as_deref(), Some("doc-legacy"));
+    assert_eq!(healed[0].source_unit_ord, Some(0));
+}
+
+#[test]
+fn attachment_merge_three_partial_units_stay_distinct() {
+    let units = vec![
+        sourced(
+            "doc-three",
+            0,
+            attachment_unit(
+                "Jan Testowy",
+                "JAN TESTOWY",
+                Some(Direction::Buy),
+                Some("2026-07-01"),
+                None,
+            ),
+        ),
+        sourced(
+            "doc-three",
+            1,
+            attachment_unit(
+                "Jan Testowy",
+                "JAN TESTOWY",
+                Some(Direction::Buy),
+                None,
+                None,
+            ),
+        ),
+        sourced(
+            "doc-three",
+            2,
+            attachment_unit(
+                "Jan Testowy",
+                "JAN TESTOWY",
+                Some(Direction::Buy),
+                Some("2026-07-02"),
+                None,
+            ),
+        ),
+    ];
+
+    let (single_state, single_company, single_feed_item_id) = attachment_state("THR", "9300600");
+    single_state
+        .insider()
+        .merge_attachment_units(&single_company.id, &single_feed_item_id, &units)
+        .expect("single merge");
+
+    let (split_state, split_company, split_feed_item_id) = attachment_state("THR", "9300600");
+    for unit in &units {
+        split_state
+            .insider()
+            .merge_attachment_units(
+                &split_company.id,
+                &split_feed_item_id,
+                std::slice::from_ref(unit),
+            )
+            .expect("singleton merge");
+    }
+
+    assert_eq!(
+        attachment_rows(&single_state, &single_feed_item_id),
+        attachment_rows(&split_state, &split_feed_item_id),
+    );
+    assert_eq!(
+        attachment_rows(&single_state, &single_feed_item_id).len(),
+        3,
+        "the three source units stay distinct",
+    );
+}
+
+#[test]
+fn attachment_merge_progressive_fill_same_identity() {
+    let (state, company, feed_item_id) = attachment_state("PRG", "9300700");
+    let first = attachment_unit("Anna Nowak", "ANNA NOWAK", Some(Direction::Buy), None, None);
+    let second = attachment_unit(
+        "Anna Nowak",
+        "ANNA NOWAK",
+        Some(Direction::Buy),
+        Some("2026-07-03"),
+        None,
+    );
+    let third = attachment_unit(
+        "Anna Nowak",
+        "ANNA NOWAK",
+        Some(Direction::Buy),
+        Some("2026-07-03"),
+        Some("100"),
+    );
+
+    state
+        .insider()
+        .merge_attachment_units(
+            &company.id,
+            &feed_item_id,
+            &[sourced("doc-progressive", 0, first)],
+        )
+        .expect("initial partial unit");
+    state
+        .insider()
+        .merge_attachment_units(
+            &company.id,
+            &feed_item_id,
+            &[sourced("doc-progressive", 0, second)],
+        )
+        .expect("date fill");
+    state
+        .insider()
+        .merge_attachment_units(
+            &company.id,
+            &feed_item_id,
+            &[sourced("doc-progressive", 0, third)],
+        )
+        .expect("volume fill");
+
+    let rows: Vec<_> = attachment_rows(&state, &feed_item_id)
+        .into_iter()
+        .filter(|row| row.source_document_id.as_deref() == Some("doc-progressive"))
+        .collect();
+    assert_eq!(rows.len(), 1, "progressive fills keep one source row");
+    assert_eq!(rows[0].tx_date.as_deref(), Some("2026-07-03"));
+    assert_eq!(rows[0].volume.as_deref(), Some("100"));
 }

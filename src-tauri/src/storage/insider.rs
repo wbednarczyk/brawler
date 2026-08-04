@@ -82,6 +82,8 @@ pub(super) fn upsert_transaction(
     company_id: &str,
     feed_item_id: &str,
     unit_index: usize,
+    source_document_id: Option<&str>,
+    source_unit_ord: Option<usize>,
     unit: &ParsedInsiderUnit,
 ) -> StorageResult<InsiderTransactionRow> {
     let id = transaction_id(feed_item_id, unit_index);
@@ -90,8 +92,9 @@ pub(super) fn upsert_transaction(
         INSERT INTO insider_transactions (
             id, company_id, feed_item_id, unit_index, person_name_raw, person_normalized,
             role, related_pdmr_raw, related_pdmr_normalized, related_pdmr_role,
-            direction, instrument, volume, price, currency, tx_date
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            direction, instrument, volume, price, currency, tx_date,
+            source_document_id, source_unit_ord
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
         ON CONFLICT(id) DO UPDATE SET
             person_name_raw = excluded.person_name_raw,
             person_normalized = excluded.person_normalized,
@@ -124,6 +127,8 @@ pub(super) fn upsert_transaction(
             unit.price,
             unit.currency,
             unit.tx_date,
+            source_document_id,
+            source_unit_ord.map(|ord| ord as i64),
         ],
     )?;
     connection
@@ -274,6 +279,8 @@ pub(super) fn parse_insider_transactions(connection: &Connection) -> StorageResu
                             &filing.company_id,
                             &filing.feed_item_id,
                             index,
+                            None,
+                            None,
                             parsed,
                         )?;
                         written += 1;
@@ -343,10 +350,21 @@ pub struct AttachmentMergeOutcome {
     pub conflicts: Vec<AttachmentConflict>,
 }
 
+/// An attachment parser unit together with the durable identity of the source
+/// document and its ordinal within that document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourcedAttachmentUnit {
+    pub source_document_id: String,
+    pub source_unit_ord: usize,
+    pub unit: AttachmentTxUnit,
+}
+
 /// One existing `insider_transactions` row's fields the merge reads/fills.
 struct ExistingUnit {
     id: String,
     unit_index: i64,
+    source_document_id: Option<String>,
+    source_unit_ord: Option<i64>,
     person_normalized: String,
     role: Option<String>,
     related_pdmr_raw: Option<String>,
@@ -403,7 +421,8 @@ fn load_existing_units(
     let mut statement = connection.prepare(
         "SELECT id, unit_index, person_normalized, role, related_pdmr_raw, \
          related_pdmr_normalized, related_pdmr_role, direction, instrument, volume, price, \
-         currency, tx_date FROM insider_transactions WHERE feed_item_id = ?1 ORDER BY unit_index ASC",
+         currency, tx_date, source_document_id, source_unit_ord FROM insider_transactions \
+         WHERE feed_item_id = ?1 ORDER BY unit_index ASC",
     )?;
     let rows = statement.query_map([feed_item_id], |row| {
         Ok(ExistingUnit {
@@ -420,47 +439,120 @@ fn load_existing_units(
             price: row.get(10)?,
             currency: row.get(11)?,
             tx_date: row.get(12)?,
+            source_document_id: row.get(13)?,
+            source_unit_ord: row.get(14)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
 }
 
+fn set_provenance(
+    connection: &Connection,
+    existing: &ExistingUnit,
+    source_document_id: &str,
+    source_unit_ord: usize,
+) -> StorageResult<()> {
+    connection.execute(
+        "UPDATE insider_transactions SET source_document_id = ?2, source_unit_ord = ?3, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
+        params![existing.id, source_document_id, source_unit_ord as i64],
+    )?;
+    Ok(())
+}
+
+fn release_mismatched_provenance(
+    connection: &Connection,
+    existing: &ExistingUnit,
+) -> StorageResult<()> {
+    connection.execute(
+        "UPDATE insider_transactions SET source_document_id = NULL, source_unit_ord = NULL, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
+        [&existing.id],
+    )?;
+    Ok(())
+}
+
 /// Merge parsed notification-document units into a filing's transaction rows.
 ///
-/// Matching: each PDF unit is matched (greedy, one-to-one) to an existing unit by
-/// **(person, direction, tx_date)** with NULL-tolerant fields (a NULL existing
-/// field matches anything). On a match, only still-NULL existing fields are filled;
-/// a disagreement with an existing non-NULL value changes nothing and is recorded
-/// as a typed [`AttachmentConflict`]. A PDF unit that matches no existing unit is
-/// appended as a new unit whose index extends `max(existing.unit_index)`.
+/// Matching is greedy and one-to-one: person-guarded exact source provenance, an
+/// unclaimed cover-note compatibility match, then append. Exact/claim matches
+/// fill only still-NULL fields; disagreements with existing non-NULL values are
+/// recorded as typed [`AttachmentConflict`] values. A unit that matches no
+/// existing row is appended at `max(existing.unit_index) + 1` with its source
+/// provenance. An old claim whose person no longer matches is released before
+/// append so the partial unique provenance index can preserve the new claim
+/// without overwriting the old row's payload.
 pub(super) fn merge_attachment_units(
-    connection: &Connection,
+    connection: &mut Connection,
     company_id: &str,
     feed_item_id: &str,
-    units: &[AttachmentTxUnit],
+    units: &[SourcedAttachmentUnit],
 ) -> StorageResult<AttachmentMergeOutcome> {
-    let existing = load_existing_units(connection, feed_item_id)?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    // A batch carries unique (document, ordinal) tags by construction (the job
+    // enumerates each document's parse exactly once). Defensively keep only the
+    // first occurrence of a duplicated tag: a duplicate is the same parse
+    // artifact, and writing it twice would trip the partial unique provenance
+    // index and fail the whole merge.
+    let mut seen_tags = std::collections::HashSet::new();
+    let units: Vec<&SourcedAttachmentUnit> = units
+        .iter()
+        .filter(|sourced| {
+            seen_tags.insert((sourced.source_document_id.as_str(), sourced.source_unit_ord))
+        })
+        .collect();
+    let mut existing = load_existing_units(&transaction, feed_item_id)?;
     let mut consumed = vec![false; existing.len()];
     let mut outcome = AttachmentMergeOutcome::default();
     let mut next_index = existing.iter().map(|u| u.unit_index).max().unwrap_or(-1) + 1;
 
-    for unit in units {
+    for sourced_unit in units {
+        let unit = &sourced_unit.unit;
         let pdf_direction = unit.direction.map(|d| d.as_str().to_owned());
         let pdf_tx_date = unit.tx_date.clone();
         let pdf_key = person_key(&unit.person_normalized);
 
-        let matched = existing.iter().enumerate().position(|(i, e)| {
+        let provenance_match = existing.iter().enumerate().position(|(i, existing)| {
             !consumed[i]
-                && names_match(&pdf_key, &person_key(&e.person_normalized))
-                && field_compatible(&e.direction, &pdf_direction)
-                && field_compatible(&e.tx_date, &pdf_tx_date)
+                && existing.source_document_id.as_deref()
+                    == Some(sourced_unit.source_document_id.as_str())
+                && existing.source_unit_ord == Some(sourced_unit.source_unit_ord as i64)
+                && names_match(&pdf_key, &person_key(&existing.person_normalized))
+        });
+        let provenance_person_mismatch = provenance_match.is_none()
+            && existing.iter().enumerate().any(|(i, existing)| {
+                !consumed[i]
+                    && existing.source_document_id.as_deref()
+                        == Some(sourced_unit.source_document_id.as_str())
+                    && existing.source_unit_ord == Some(sourced_unit.source_unit_ord as i64)
+            });
+        let matched = provenance_match.or_else(|| {
+            if provenance_person_mismatch {
+                return None;
+            }
+            existing.iter().enumerate().position(|(i, existing)| {
+                !consumed[i]
+                    && existing.source_document_id.is_none()
+                    && names_match(&pdf_key, &person_key(&existing.person_normalized))
+                    && field_compatible(&existing.direction, &pdf_direction)
+                    && field_compatible(&existing.tx_date, &pdf_tx_date)
+            })
         });
 
         match matched {
             Some(i) => {
                 consumed[i] = true;
-                fill_matched_unit(connection, &existing[i], unit, feed_item_id, &mut outcome)?;
+                if existing[i].source_document_id.is_none() {
+                    set_provenance(
+                        &transaction,
+                        &existing[i],
+                        &sourced_unit.source_document_id,
+                        sourced_unit.source_unit_ord,
+                    )?;
+                }
+                fill_matched_unit(&transaction, &existing[i], unit, feed_item_id, &mut outcome)?;
             }
             None => {
                 // Append: a personless unit is never written (never guess).
@@ -481,11 +573,30 @@ pub(super) fn merge_attachment_units(
                     currency: unit.currency.clone(),
                     tx_date: unit.tx_date.clone(),
                 };
+                if provenance_person_mismatch {
+                    if let Some(row) = existing.iter_mut().find(|row| {
+                        row.source_document_id.as_deref()
+                            == Some(sourced_unit.source_document_id.as_str())
+                            && row.source_unit_ord == Some(sourced_unit.source_unit_ord as i64)
+                    }) {
+                        release_mismatched_provenance(&transaction, row)?;
+                        // Mirror the release into the in-memory snapshot and leave
+                        // the row unconsumed: it returns to the unclaimed pool
+                        // immediately, so a later compatible unit in this same
+                        // batch can claim it — exactly what a later call would
+                        // see. Consuming it here would make the outcome depend
+                        // on batching again (adversarial-review finding, 2026-08-04).
+                        row.source_document_id = None;
+                        row.source_unit_ord = None;
+                    }
+                }
                 upsert_transaction(
-                    connection,
+                    &transaction,
                     company_id,
                     feed_item_id,
                     next_index as usize,
+                    Some(&sourced_unit.source_document_id),
+                    Some(sourced_unit.source_unit_ord),
                     &parsed,
                 )?;
                 next_index += 1;
@@ -494,6 +605,7 @@ pub(super) fn merge_attachment_units(
         }
     }
 
+    transaction.commit()?;
     Ok(outcome)
 }
 
@@ -752,10 +864,10 @@ impl InsiderStore {
         &self,
         company_id: &str,
         feed_item_id: &str,
-        units: &[AttachmentTxUnit],
+        units: &[SourcedAttachmentUnit],
     ) -> StorageResult<AttachmentMergeOutcome> {
-        let connection = self.db.checkout()?;
-        merge_attachment_units(&connection, company_id, feed_item_id, units)
+        let mut connection = self.db.checkout()?;
+        merge_attachment_units(&mut connection, company_id, feed_item_id, units)
     }
 
     /// Record the once-per-filing terminal attachment attempt (with diagnostics).

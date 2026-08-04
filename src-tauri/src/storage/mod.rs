@@ -139,7 +139,7 @@ pub use import_export::ImportExportStore;
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
 pub use insider::{
     AttachmentConflict, AttachmentMergeOutcome, AttachmentPendingFiling, InsiderOverviewSource,
-    InsiderStore, InsiderTransactionRow,
+    InsiderStore, InsiderTransactionRow, SourcedAttachmentUnit,
 };
 pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore, JobStatusRow};
 pub use kpi_extraction::KpiExtractionStore;
