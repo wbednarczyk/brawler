@@ -24,7 +24,7 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci bench-compare live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -525,10 +525,15 @@ pr-binary:
 	if [ -z "$$run_id" ]; then printf "No full-check run found for PR #$(PR) head SHA %s.\n" "$$head_sha" >&2; exit 1; fi; \
 	run_url="$$(printf '%s' "$$runs_json" | jq -r --arg id "$$run_id" '.[] | select((.databaseId|tostring)==$$id) | .url')"; \
 	printf "pr-binary: PR #$(PR) head %s, run %s (%s)\n" "$$head_sha" "$$run_id" "$$run_url"; \
-	tmp_dest="$$(mktemp -d)"; \
+	tmp_dest="$$(mktemp -d /mnt/d/Brawler/Builds/.pr-$(PR)-download.XXXXXX)"; \
+	trap 'rm -rf "$$tmp_dest"' EXIT; \
 	gh run download "$$run_id" --name windows-build --dir "$$tmp_dest"; \
+	if ! find "$$tmp_dest" -maxdepth 1 -type f -name '*.exe' | grep -q .; then \
+		printf "pr-binary: downloaded artifact contains no .exe — refusing to replace %s.\n" "$$dest" >&2; exit 1; \
+	fi; \
 	rm -rf "$$dest"; \
 	mv "$$tmp_dest" "$$dest"; \
+	trap - EXIT; \
 	printf "Downloaded PR #$(PR) Windows artifact to %s\n" "$$dest"
 
 # Stamp the release version into the manifests/binary/UI at build time WITHOUT
@@ -730,7 +735,8 @@ live-up:
 # from /etc/resolv.conf's nameserver line — the same resolution order as
 # tests/live/helpers/liveConnect.ts.
 live-wait:
-	@rm -f "$(LIVE_CDP_URL_FILE)"; \
+	@set -e; \
+	rm -f "$(LIVE_CDP_URL_FILE)"; \
 	gw_ip="$$(ip route show default 2>/dev/null | sed -n 's/^default via \([^[:space:]]*\).*/\1/p' | head -1)"; \
 	ns_ip="$$(sed -n 's/^nameserver[[:space:]]*\([^[:space:]]*\).*/\1/p' /etc/resolv.conf 2>/dev/null | head -1)"; \
 	deadline=$$((SECONDS + 90)); url=""; \
@@ -770,7 +776,8 @@ pr-live-cycle:
 	@if command -v powershell.exe >/dev/null 2>&1; then \
 		powershell.exe -ExecutionPolicy Bypass -Command '$$ErrorActionPreference = "SilentlyContinue"; Get-Process | Where-Object { $$_.ProcessName -like "brawler*" } | Stop-Process -Force; exit 0'; \
 	fi
-	@src_dir="/mnt/d/Brawler/Builds/pr-$(PR)"; \
+	@set -e; \
+	src_dir="/mnt/d/Brawler/Builds/pr-$(PR)"; \
 	matches="$$(find "$$src_dir" -maxdepth 1 -type f -name 'brawler-*portable.exe' ! -name 'brawler-mcp-stdio.exe')"; \
 	count="$$(printf '%s\n' "$$matches" | grep -c .)"; \
 	if [ "$$count" -ne 1 ]; then \
@@ -778,7 +785,8 @@ pr-live-cycle:
 		exit 1; \
 	fi; \
 	mkdir -p "$(WINDOWS_OUT_DIR)"; \
-	cp -f "$$matches" "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe"; \
+	cp -f "$$matches" "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe.staging"; \
+	mv -f "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe.staging" "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe"; \
 	printf "Copied PR #$(PR) binary to %s/brawler-pr-live.exe\n" "$(WINDOWS_OUT_DIR)"
 	@if ! command -v powershell.exe >/dev/null 2>&1; then \
 		printf "powershell.exe not found. pr-live-cycle is intended for WSL on Windows.\n"; \

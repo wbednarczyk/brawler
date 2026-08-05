@@ -345,7 +345,7 @@ jobs:
   live-drive-hint:
     name: Live-drive hint (advisory)
     needs: changes
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container: ghcr.io/wbednarczyk/brawler-devshell:latest
     timeout-minutes: 10
