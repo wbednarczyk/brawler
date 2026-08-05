@@ -47,7 +47,18 @@ decision 2026-08-05, sol consultation + adversarial review) reworks the gate arc
    `commit-msg` (Conventional Commits validation) is the only surviving git hook. `make
    check-local` (renamed from `check-fast`) is the developer inner loop and the pre-handover DoD
    step — invoked deliberately, never hook-triggered. Heavy suites (full gate, coverage, mutants,
-   bench) never run locally, unchanged from prior practice.
+   the bench audit) never run locally, unchanged from prior practice; `make audit-bench` (a quick
+   local criterion run self-comparing against the previous local run) stays allowed as advisory.
+
+**Amendment (2026-08-05, #336/#337).** The performance audit is `bench-audit.yml`: one manually
+dispatched runner benches the merge-base (in a detached worktree, head's orchestration
+authoritative), then head (`--baseline-lenient`), and `bench-compare.mjs` flags a kernel only when
+criterion's median-change confidence interval sits entirely above +30%. This supersedes
+[ADR 0049](0049-test-architecture-v2-data-transform-correctness.md)'s committed-floor ratchet
+(`bench-baseline.json` + `bench-ratchet.mjs`, deleted — cross-machine floors compare apples to
+oranges on hosted runners). Principle 5's advisory owner evidence gains its tooling: the
+`Live-drive hint (advisory)` PR job (dumb path→hint list; says, never checks) and
+`make pr-live-cycle PR=n` (drives the PR's cross-built exe over the real data with no WSL rebuild).
 
 **Supersedes** the closure-cadence portions of [ADR 0048](0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)
 (coverage as a periodic/closure-cadence run), [ADR 0062](0062-mandatory-test-gate-and-test-driven-loop.md)
