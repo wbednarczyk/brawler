@@ -4,9 +4,11 @@ name: Mutation audit (advisory)
 # cards, never a merge blocker. Auto-triggers on master pushes touching the
 # five risk paths below, plus manual dispatch:
 #   gh workflow run mutation-audit.yml [-f shard=1/8] [-f build_jobs=4]
-# cargo-mutants sweeps take 30 min-2 h and rebuild+retest per mutant, so they
-# run on a standard ubuntu-latest runner (the owner's WSL box OOM-froze twice
-# running this locally), never in the PR-blocking gate.
+# The sweep is ALWAYS sharded: a push trigger (and a dispatch with no shard
+# input) fans out to the full 0/8..7/8 matrix — an unsharded full sweep does
+# not fit the 180-min job cap. cargo-mutants rebuilds+retests per mutant, so
+# shards run on standard ubuntu-latest runners (the owner's WSL box OOM-froze
+# twice running this locally), never in the PR-blocking gate.
 on:
   push:
     branches: [master]
@@ -27,20 +29,45 @@ on:
         required: false
         default: "4"
 
-# Per-shard group, split by triggering event: a full dispatch sweep runs all 8
-# shards AT ONCE in parallel (~1h wall instead of ~6h sequential); duplicate
-# dispatches of the SAME shard still cancel each other (#241, 2026-07-29).
-# Keying on event_name too keeps push-triggered sweeps from cancelling an
-# in-flight manual dispatch (or vice versa).
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.shard || 'push' }}
-  cancel-in-progress: true
-
 jobs:
+  # Resolves the shard list ONCE: an explicit dispatch shard runs alone;
+  # anything else (push trigger, dispatch with the input empty) fans out to
+  # the full 8-way matrix — the only shape that fits the 180-min job cap.
+  plan:
+    name: Plan shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.set.outputs.shards }}
+    steps:
+      - name: Resolve shard list
+        id: set
+        env:
+          SHARD_INPUT: ${{ inputs.shard }}
+        run: |
+          if [ -n "$SHARD_INPUT" ]; then
+            printf 'shards=["%s"]\n' "$SHARD_INPUT" >>"$GITHUB_OUTPUT"
+          else
+            echo 'shards=["0/8","1/8","2/8","3/8","4/8","5/8","6/8","7/8"]' >>"$GITHUB_OUTPUT"
+          fi
+
   mutants:
-    name: cargo-mutants sweep
+    name: cargo-mutants sweep ${{ matrix.shard }}
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    strategy:
+      # Every shard reports its own verdict; one red shard must not kill the
+      # others' evidence.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    # Per-shard group, split by triggering event: all shards of one sweep run
+    # AT ONCE in parallel; a duplicate run of the SAME shard cancels its
+    # predecessor, and push sweeps never cancel an in-flight manual dispatch.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ matrix.shard }}
+      cancel-in-progress: true
     steps:
       - name: Reclaim disk space
         # Headroom for the sweep's scratch tree + per-mutant rebuild artifacts
@@ -110,18 +137,13 @@ jobs:
         # the only channel that survives a runner death (artifacts and later
         # steps do not run when the agent is lost).
         #
-        # BUILD_JOBS/SHARD resolve here, not inline: on a push trigger the
-        # `inputs` context is entirely empty (it only exists for
-        # workflow_dispatch), so an inline `${{ inputs.build_jobs }}` would pass
-        # `MUTANTS_BUILD_JOBS=` (empty) on the make command line — an empty
-        # command-line variable still overrides the Makefile's `?= 2` default
-        # and exports an empty, unbounded CARGO_BUILD_JOBS. BUILD_JOBS falls
-        # back to 4; SHARD is passed to make only when non-empty, so an unset
-        # shard runs the Makefile's own default (full sweep) instead of an
-        # explicit empty override.
+        # BUILD_JOBS falls back to 4 because the `inputs` context is empty on
+        # a push trigger, and an empty make command-line variable would
+        # override the Makefile default and export an empty CARGO_BUILD_JOBS.
+        # SHARD comes from the matrix and is always non-empty.
         env:
           BUILD_JOBS: ${{ inputs.build_jobs || '4' }}
-          SHARD: ${{ inputs.shard }}
+          SHARD: ${{ matrix.shard }}
         run: |
           sudo mkdir -p /sys/fs/cgroup/mutants
           echo 12G | sudo tee /sys/fs/cgroup/mutants/memory.max
@@ -135,7 +157,7 @@ jobs:
           rc=0
           make audit-mutants MUTANTS_JAIL=off \
             MUTANTS_BUILD_JOBS="$BUILD_JOBS" \
-            ${SHARD:+MUTANTS_SHARD="$SHARD"} || rc=$?
+            MUTANTS_SHARD="$SHARD" || rc=$?
           kill "$TELEM_PID" 2>/dev/null || true
           # GNU make maps every failed recipe to its own exit 2, swallowing
           # cargo-mutants' code (the 2026-07-31 sweep failed 3 timeout-only
@@ -164,7 +186,7 @@ jobs:
         # (a dispatch input is caller-controlled text, not shell).
         env:
           RC: ${{ steps.sweep.outputs.rc }}
-          SHARD: ${{ inputs.shard }}
+          SHARD: ${{ matrix.shard }}
         run: |
           rc="$RC"
           missed_file=src-tauri/mutants.out/missed.txt
@@ -175,7 +197,7 @@ jobs:
             if [ -s "$missed_file" ]; then missed=$(grep -c '' "$missed_file"); fi
           fi
           {
-            echo "### cargo-mutants sweep — ${SHARD:-full sweep}"
+            echo "### cargo-mutants sweep — shard ${SHARD}"
             echo ""
             echo "- cargo-mutants exit code: \`${rc:-<unset>}\`"
             echo "- missed mutants: \`$missed\`"
@@ -197,7 +219,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mutants-out
+          # Slashes are invalid in artifact names — the job index (0..7)
+          # identifies the shard.
+          name: mutants-out-${{ strategy.job-index }}
           path: src-tauri/mutants.out
           retention-days: 7
           if-no-files-found: warn
