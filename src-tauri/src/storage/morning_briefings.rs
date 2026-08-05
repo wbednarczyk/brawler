@@ -1,21 +1,14 @@
 //! Morning briefing (ADR 0068 decision 4, plan v0.54-attention-routing-briefing §T5).
 //!
-//! A daily/on-demand briefing has two layers:
-//!
-//! 1. A **deterministic composed item list** — new confirmed signals + completed
-//!    autopilot runs + fired attention events whose DOMAIN date is strictly after
-//!    the previous briefing's boundary, plus the current claims-due and
-//!    upcoming-report snapshot. Ordered by domain date (NEVER `created_at`). This
-//!    layer is a pure function ([`compose_briefing`]) over reads gathered by the
-//!    job, so it is snapshot-stable and unit-testable offline.
-//! 2. (removed) The AI narrative half — retired with the in-app AI layer
-//!    (ADR 0084 decision 5; its three columns are dropped by migration 0102).
-//!    contract (capability `morning_briefing`, ADR 0060). With no provider
-//!    configured the briefing still persists as the structured list (narrative
-//!    absent) — never blocked, never an error. A narrative is stored ONLY when
-//!    every citation it references resolves to a composed item
-//!    ([`build_briefing_narrative`]); an uncited/unknown-citation narrative is
-//!    rejected and the briefing is stored without it (tripwire, ADR 0068).
+//! A daily/on-demand briefing has one layer: a **deterministic composed item
+//! list** — new confirmed signals + completed autopilot runs + fired
+//! attention events whose DOMAIN date is strictly after the previous
+//! briefing's boundary, plus the current claims-due and upcoming-report
+//! snapshot. Ordered by domain date (NEVER `created_at`). This layer is a
+//! pure function ([`compose_briefing`]) over reads gathered by the job, so it
+//! is snapshot-stable and unit-testable offline (the AI narrative half is
+//! retired, ADR 0084 decision 5; its three columns were dropped by migration
+//! 0102).
 
 use rusqlite::{params, Connection};
 use serde::Serialize;

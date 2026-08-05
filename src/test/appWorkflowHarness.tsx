@@ -31,8 +31,7 @@ export { vi };
 // is a getter/setter over a `ScenarioData` collection, so a test that assigns
 // `appTestState.feedItemsResponse = [...]` mutates the same store the command
 // router reads. A few fields (`searchResponse`, `refreshSourcesError`) are
-// canned command-output overrides the old harness exposed; they live as plain
-// slots honored by `handleAppCommand`.
+// canned command-output overrides, honored as plain slots by `handleAppCommand`.
 const runtime = createMockRuntime("minimal");
 
 interface CannedOverrides {
@@ -199,11 +198,10 @@ export const initialTranscriptJobs = SEED.transcriptJobs;
 export const invalidLicenseStatus = legacyInvalidLicenseStatus;
 export const missingLicenseStatus = legacyMissingLicenseStatus;
 
-// Most workflow tests were written against the historical landing screen (Inbox),
-// so the harness defaults there to keep them focused on their subject. The
-// PRODUCTION default is Today/Pulse (ADR 0054) — asserted directly in
-// App.test. Pass `section` to land on a specific screen (e.g. one the
-// sidebar spine reaches but a focused test wants to bypass).
+// The harness defaults to Inbox to keep workflow tests focused on their
+// subject. The PRODUCTION default is Today/Pulse (ADR 0054) — asserted
+// directly in App.test. Pass `section` to land on a specific screen (e.g. one
+// the sidebar spine reaches but a focused test wants to bypass).
 export function renderApp(options?: { section?: Section }) {
   return render(
     <App

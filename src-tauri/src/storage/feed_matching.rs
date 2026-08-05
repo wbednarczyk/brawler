@@ -80,10 +80,8 @@ pub(super) fn media_duplicate_signature(
 }
 
 // The pure text-normalization transforms below are the SSOT for how every
-// adapter normalizes names/media text before matching (ADR 0050; relocated here
-// from the retired `entity_resolution` module by ADR 0080 — its other half, the
-// write-only story-key path, was removed). Property-tested in `proptests` at the
-// end of this file.
+// adapter normalizes names/media text before matching (ADR 0050). Property-tested
+// in `proptests` at the end of this file.
 
 /// Fold a single character toward the matching alphabet: Polish diacritics map
 /// to their base Latin letter, everything else upper-cases. The canonical

@@ -31,7 +31,7 @@ describe("pluralNoun", () => {
     expect(pluralNoun("pl", 40, FACT_FORMS)).toBe("faktów");
   });
 
-  // Today's per-company group count-chip units (owner dogfooding 2026-07-23).
+  // Today's per-company group count-chip units.
   it("declines EVENT_FORMS and RUN_FORMS units", () => {
     expect(pluralNoun("pl", 1, EVENT_FORMS)).toBe("zdarzenie");
     expect(pluralNoun("pl", 4, EVENT_FORMS)).toBe("zdarzenia");

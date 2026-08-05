@@ -17,9 +17,9 @@
 //! concept slot is `Created`. So a re-run adds nothing and alters no confirmed
 //! fact.
 //!
-//! **Deterministic-only.** The whole pipeline is deterministic (ADR 0084 — the
-//! tier-4 OCR fallback is retired), so the backfill never guesses; only the ESEF
-//! (and positional-xHTML) deterministic tier runs.
+//! **Deterministic-only.** The whole pipeline is deterministic (ADR 0084), so
+//! the backfill never guesses; only the ESEF (and positional-xHTML)
+//! deterministic tier runs.
 //! PDF-only reports are skipped — the new concepts are ESEF/structured-xHTML
 //! mapped (ADR 0083 Decision 5).
 //!

@@ -1089,10 +1089,10 @@ fn migration_0070_drops_feed_items_story_key_and_index() {
 
 #[test]
 fn migration_0088_deletes_aggregator_stakes_only() {
-    // Repair migration 0088 (parser-defect reset, 2026-07-16): the old aggregator
-    // parser ingested summary/"razem" rows and the sub-5% fund table, so every
-    // aggregator basis is garbage. 0088 deletes ALL `aggregator` stakes (the fixed
-    // parser rewrites clean bases on the next refresh) and touches nothing else.
+    // Repair migration 0088: the old aggregator parser ingested summary/"razem"
+    // rows and the sub-5% fund table, making every aggregator basis garbage, so
+    // 0088 deletes ALL `aggregator` stakes and touches nothing else (the fixed
+    // parser rewrites clean bases on the next refresh).
     let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
     apply_migrations_up_to(&mut connection, 87).expect("apply schema through 0087");
 
@@ -1239,11 +1239,11 @@ fn migration_0095_maps_financial_sectors_only_from_industrial_default() {
 
 #[test]
 fn migration_0098_maps_debt_collectors_but_not_investment_holdings() {
-    // ADR 0083 D4 amendment (owner decision 2026-07-18): the debt-collector
-    // sector ('Wierzytelności' — KRU) that 0095 conservatively left alone is now
-    // mapped to specialty_finance, so Altman Z″ / Piotroski F return NotApplicable.
-    // Investment holdings ('Działalność Inwestycyjna' — GKI) STAY untouched (still
-    // an open owner decision). Only rows at the 'industrial' default are rewritten.
+    // ADR 0083 D4 amendment: the debt-collector sector ('Wierzytelności' — KRU)
+    // that 0095 left alone is now mapped to specialty_finance, so Altman Z″ /
+    // Piotroski F return NotApplicable; investment holdings ('Działalność
+    // Inwestycyjna' — GKI) stay untouched. Only rows at the 'industrial'
+    // default are rewritten.
     let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
     apply_migrations_up_to(&mut connection, 97).expect("apply schema through 0097");
 
@@ -1521,11 +1521,9 @@ fn migration_0099_repairs_only_the_misscaled_cdr_q3_2023_facts() {
         )
         .expect("seed facts");
 
-    // Isolated to exactly migration 0099: `apply_migrations` would now also
-    // run 0135 (ADR 0095 — html_positional facts are retired outright),
-    // which would delete every fact this test seeds before it ever gets to
-    // read them back. This test's own subject is 0099's scale repair, not
-    // the later retirement.
+    // Capped at 99: `apply_migrations` would also run 0135 (ADR 0095 —
+    // html_positional facts are retired outright), which would delete every
+    // fact this test seeds before it ever gets to read them back.
     apply_migrations_up_to(&mut connection, 99).expect("apply migration 0099");
 
     fn val(conn: &rusqlite::Connection, id: &str) -> String {
@@ -3243,14 +3241,11 @@ fn every_emittable_metric_key_has_a_canonical_definition() {
     }
 
     // 2. The WDF cover-note row mapper. `classify` returns `Option<&'static str>`,
-    //    so every key it can emit is a string literal in ITS BODY — which is what
-    //    this scans, rather than the `Some("literal")` shape it used to match.
-    //    That shape was blind to `Some(if cond { "a" } else { "b" })`, and three
-    //    keys shipped unseeded behind the blind spot (issue #309:
-    //    `wdf_book_value_per_share`, its rozwodniona twin, and
-    //    `wdf_ebitda_przed_odpisami_aktualizujacymi_netto`). A body scan is
-    //    shape-independent, so a future `match` arm, `unwrap_or`, or lookup table
-    //    is covered too. The literals in the body that are NOT keys are the label
+    //    so every key it can emit is a string literal in ITS BODY, which is what
+    //    this scans: a body scan is shape-independent, covering any `match` arm,
+    //    `unwrap_or`, or lookup table, unlike a pattern match on `Some("literal")`
+    //    alone, which is blind to `Some(if cond { "a" } else { "b" })` (issue
+    //    #309). The literals in the body that are NOT keys are the label
     //    predicates' arguments and the row wording quoted in comments; both are
     //    stripped first, leaving exactly the returned vocabulary.
     let wdf_src = include_str!(concat!(
@@ -4372,11 +4367,10 @@ fn migration_0134_repairs_only_esef_tier_html_positional_method_mismatch() {
         )
         .expect("seed mismatched + control rows");
 
-    // Isolated to exactly migration 0134: `apply_migrations` would now also
-    // run 0135 (ADR 0095 — html_positional facts are retired outright),
-    // which would delete both rows this test seeds before it ever gets to
-    // read their corrected tier back. This test's own subject is 0134's
-    // tier/method coherence re-stamp, not the later retirement.
+    // Capped at 134: `apply_migrations` would also run 0135 (ADR 0095 —
+    // html_positional facts are retired outright), which would delete both
+    // rows this test seeds before it ever gets to read their corrected tier
+    // back.
     apply_migrations_up_to(&mut connection, 134).expect("apply migration 0134");
 
     let tier_of = |conn: &rusqlite::Connection, fact_id: &str| -> String {
@@ -4674,19 +4668,17 @@ fn migration_0132_prunes_the_dead_banking_core_expectations_only() {
     assert_eq!(status(&connection, "kpirel_core_pko_net_profit"), "active");
 }
 
-/// Migration `0135` (ADR 0095 retirement, superseding the never-shipped
-/// `013[5-7]` draft repair migrations from the earlier #182 fix round — all
-/// three uncommitted, never run on any installation, legitimately rewritten
-/// in place): the `html_positional` extraction tier is retired outright.
-/// Every `html_positional` fact + its provenance is deleted (including a
-/// pre-existing ORPHAN `pdf`-tier provenance row whose fact was deleted
-/// before the migration ran — provenance has no FK); a `financial_periods`
-/// row is cleaned up ONLY when it becomes fully orphaned by that deletion
-/// (every fact it held was positional, and NOTHING else references it — no
-/// `report_documents` row, no `management_claims.source_period_id` link, no
-/// `framework_evaluations.period_id` link; both period FKs are ON DELETE
-/// SET NULL and would be silently severed, not rejected) — never a
-/// pre-existing or otherwise-still-referenced period.
+/// Migration `0135` (ADR 0095): the `html_positional` extraction tier is
+/// retired outright. Every `html_positional` fact + its provenance is
+/// deleted (including a pre-existing ORPHAN `pdf`-tier provenance row whose
+/// fact was deleted before the migration ran — provenance has no FK); a
+/// `financial_periods` row is cleaned up ONLY when it becomes fully orphaned
+/// by that deletion (every fact it held was positional, and NOTHING else
+/// references it — no `report_documents` row, no
+/// `management_claims.source_period_id` link, no
+/// `framework_evaluations.period_id` link; both period FKs are ON DELETE SET
+/// NULL and would be silently severed, not rejected) — never a pre-existing
+/// or otherwise-still-referenced period.
 #[test]
 fn migration_0135_retires_every_html_positional_fact_and_only_its_orphaned_periods() {
     let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");

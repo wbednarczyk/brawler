@@ -591,10 +591,8 @@ fn recreated_run_rearms_stale_terminal_stage_jobs() {
     // Bug dce9ce8: stage job ids are deterministic (`autopilot:{run_id}:{stage}`).
     // When a run row is deleted and later recreated under the SAME id (e.g. an
     // out-of-band recovery/reset), its stage jobs from the prior life are already
-    // `succeeded` in `job_queue`. `enqueue_stage` used to call plain `enqueue`
-    // (`INSERT OR IGNORE`), a silent no-op against an existing row, so the
-    // recreated run's jobs were never re-armed — it stuck at pending/fetch forever
-    // with nothing left to drive it.
+    // `succeeded` in `job_queue`; `enqueue_stage` must re-arm them rather than
+    // silently no-op (`INSERT OR IGNORE`) against the existing row.
     let connection = open_in_memory_database().expect("db");
     connection
         .execute(
@@ -706,9 +704,9 @@ fn detection_sweep_rearms_an_existing_stuck_pending_run() {
     );
     let run_id = format!("autopilot_run:{}:{}", company.id, doc_id);
 
-    // Create the run WITHOUT enqueuing its first stage (simulating the historical
-    // silent no-op), then seed a stale `succeeded` job_queue row under the exact
-    // deterministic stage id an unrelated prior life would have left behind.
+    // Create the run WITHOUT enqueuing its first stage, then seed a stale
+    // `succeeded` job_queue row under the exact deterministic stage id an
+    // unrelated prior life would have left behind.
     state
         .autopilot()
         .create_run_if_absent(

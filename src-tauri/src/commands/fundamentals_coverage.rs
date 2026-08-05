@@ -140,12 +140,12 @@ fn period_type_for_index(index: u8) -> Option<&'static str> {
     }
 }
 
-/// Canonicalize a stored `period_type` label for coverage grouping. Stored data
-/// drifts (the owner's live DB carries a legacy out-of-spec `annual` beside
-/// `FY`; seeds carried `q3` vs `Q3`), and keying the period union on raw labels
-/// splits one period into two rows. Uppercase everything and alias `ANNUAL` to
-/// `FY` (the only observed legacy synonym; data-model.md's label set is the
-/// spec). Cells merged under one canonical key are summed by the callers.
+/// Canonicalize a stored `period_type` label for coverage grouping. Stored
+/// data drifts (a legacy out-of-spec `annual` label beside spec `FY`; `q3`
+/// vs `Q3`), and keying the period union on raw labels splits one period into
+/// two rows. Uppercase everything and alias `ANNUAL` to `FY` (the only
+/// observed legacy synonym; data-model.md's label set is the spec). Cells
+/// merged under one canonical key are summed by the callers.
 fn canonical_period_label(raw: &str) -> String {
     let upper = raw.trim().to_uppercase();
     if upper == "ANNUAL" {
@@ -558,11 +558,8 @@ mod tests {
         assert_eq!(r.facts.total, 0);
     }
 
-    /// Live-DB harvest 2026-07-09: the owner's database carries a legacy
-    /// out-of-spec `annual` period label next to spec `FY` (data-model allows
-    /// `FY, H1, H2, Q1–Q4, 9M, M01–M12`), and mock seeds carried `q3` vs `Q3`.
-    /// Keying the union on raw labels split one period into two rows. Labels
-    /// must group case-insensitively with `ANNUAL` aliased to `FY`, and merged
+    /// Period labels must group case-insensitively with `ANNUAL` aliased to
+    /// `FY` (data-model allows `FY, H1, H2, Q1–Q4, 9M, M01–M12`), and merged
     /// cells must SUM (not overwrite).
     #[test]
     fn period_labels_group_case_insensitively_and_annual_aliases_to_fy() {
@@ -570,11 +567,10 @@ mod tests {
         let state = AppState::new(connection);
         let company = company(&state);
 
-        // A legacy out-of-spec 'annual' row can no longer be CREATED — the
-        // create boundary folds the label to FY (F6a) and migration 0066 folds
-        // shipped rows. Coverage's tolerant-read grouping still guards a DB the
-        // migration has not visited, so seed the legacy shape via raw SQL, the
-        // same way migration tests seed pre-migration data.
+        // A legacy out-of-spec 'annual' row can no longer be CREATED (the create
+        // boundary folds it to FY, F6a; migration 0066 folds shipped rows), so
+        // seed the legacy shape via raw SQL to exercise coverage's tolerant-read
+        // grouping.
         let annual = seed_legacy_period_row(&state, &company, 2023, "annual");
         let fy = period(&state, &company, 2023, "FY");
         fact(&state, &company, &annual, Some("passed"));

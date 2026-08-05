@@ -9,8 +9,7 @@ import type { Company } from "../api/types";
 // `requestVersionRef.current === requestVersion`). Q8 (66621c9) moved this from a
 // skipped Playwright case to here: the per-company `list_research_evidence` fetch
 // is a controller concern with no cheaper authoritative surface than the hook
-// itself (the standalone Research screen is retired as a nav destination, epic
-// c793ca1), so a controlled-async renderHook test is the authoritative layer.
+// itself, so a controlled-async renderHook test is the authoritative layer.
 
 vi.mock("../api/research", () => ({
   listResearchEvidence: vi.fn(),

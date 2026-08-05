@@ -2,10 +2,9 @@
 //!
 //! The handler gathers domain reads and runs the DETERMINISTIC composer
 //! ([`storage::compose_briefing`]). The composed structured item list is the
-//! ONLY briefing: the AI narrative-phrasing half is retired with the in-app
-//! analysis layer (ADR 0084, amending ADR 0068 — the briefing is
-//! deterministic-list only). The composed briefing is persisted to
-//! `morning_briefings` (+ `morning_briefing_items`).
+//! ONLY briefing (ADR 0084 amending ADR 0068 — deterministic-list only). The
+//! composed briefing is persisted to `morning_briefings` (+
+//! `morning_briefing_items`).
 
 use serde::Deserialize;
 

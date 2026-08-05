@@ -7,7 +7,6 @@
 //! rules), and reads every period column the page carries.
 //!
 //! ## Role: PRIMARY for core KPIs, witnessed in REVERSE (ADR 0086 dec. 2/4)
-//! The original ADR 0061 posture ("witness, not source of truth") is **retired**.
 //! BiznesRadar is the primary, daily source of the core KPI history
 //! ([`crate::jobs::aggregator_fundamentals_pull`]): its facts are written under
 //! `source_tier = html_aggregator`, which sits at the BOTTOM of the precedence
@@ -171,7 +170,7 @@ pub fn parse_period_header(header: &str) -> Option<AggregatorPeriod> {
     // Annual column: the "(mon YY)" marker, if present, gives the fiscal-year end
     // month; default December when absent.
     let (month, day) = month_end(&lowered).unwrap_or((12, 31));
-    // February fiscal-year ends land on the 29th in leap years (review 2026-07-22).
+    // February fiscal-year ends land on the 29th in leap years.
     let day = if month == 2 && is_leap_year(fiscal_year) {
         29
     } else {
@@ -223,7 +222,7 @@ fn quarter_marker(lowered: &str) -> Option<u8> {
             }
             // A STANDALONE digit immediately after ("q1", "q3 2024") — but never
             // the leading digit of a longer number ("q2024", and the year in a
-            // glued "3q2024", whose '2' would otherwise win — review 2026-07-22).
+            // glued "3q2024", whose '2' would otherwise win).
             if let Some(d) = digit_at(i + 1) {
                 if (1..=4).contains(&d) && digit_at(i + 2).is_none() {
                     return Some(d as u8);

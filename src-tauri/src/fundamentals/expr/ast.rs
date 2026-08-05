@@ -45,7 +45,7 @@ pub enum Func {
     /// `coalesce(a, b, ...)` — the first argument that evaluates to an
     /// available value; unavailable only when every argument is. Encodes
     /// ratio fallback recipes ("compute from whichever inputs exist") in a
-    /// single formula (owner decision 2026-07-14).
+    /// single formula.
     Coalesce,
 }
 

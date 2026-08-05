@@ -8,10 +8,9 @@ type TranscriptSettingsProps = {
   onYoutubeTranscriptionTimeoutChange: (timeoutSeconds: number) => void;
 };
 
-// The transcript provider is the only remaining model-backed capability
-// (ADR 0084 decision 3): transcription is data acquisition, not interpretation.
-// The in-app analysis layer and its per-capability routing were retired with
-// ADR 0084 — intelligence now arrives through the MCP port.
+// The transcript provider is the only remaining model-backed capability (ADR
+// 0084 decision 3): transcription is data acquisition, not interpretation —
+// intelligence now arrives through the MCP port.
 export function TranscriptSettings({
   settings,
   onYoutubeTranscriptionModelChange,

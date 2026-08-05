@@ -92,7 +92,7 @@ Flow:
 4. User opens an item in the detail pane.
 5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) (a stored pre-retirement AI analysis remains readable as legacy data — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 6. User marks item read, saves it, opens the original source, or creates a note from it.
-7. Signals are typed by the deterministic rule classifier only — the AI fallback is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); an unclassifiable filing simply carries no typed signal.
+7. Signals are typed by the deterministic rule classifier only ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); an unclassifiable filing simply carries no typed signal.
 
 Acceptance criteria:
 
@@ -195,16 +195,16 @@ Flow:
 1. The user opens a company's cockpit dashboard; the **Ownership ("Akcjonariat") section** sits under the Basic info identity facts — no navigation, it is just there. Once the company's periodic reports are fetched, deterministic extraction has already populated it (zero interaction).
 2. The populated section shows a donut by holder type with the derived free-float slice, a stakes-over-time chart, and holder rows with type chips; the derived free float also appears as a Basic-info rowline.
 3. If nothing is disclosed yet, the section shows an empty state with a **"Wydobądź z raportów"** CTA that force-enqueues deterministic extraction across the company's reports (`backfill_ownership_extraction`), with per-document progress; normally the automatic post-backfill run makes this unnecessary.
-4. Holder types are assigned deterministically from a dictionary; the AI holder-type classification path is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)), so no type-confirmation chip appears — types come from the dictionary or the user's own edit.
+4. Holder types are assigned deterministically from a dictionary ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); no type-confirmation chip appears — types come from the dictionary or the user's own edit.
 5. The user can manually re-type any holder (its current type shows its source — dictionary / AI (legacy) / manual); a manual label is authoritative and offers an immediate Undo (`set_ownership_holder_type`). Stake history is untouched — only the type label changes.
-6. A report the deterministic parser can't read (glyph-encoded font / image table) is reported as an **honest flagged gap** with no run-action — the OCR/AI rescue path is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the document is named, never guessed, and partial ESPI data stays visible.
+6. A report the deterministic parser can't read (glyph-encoded font / image table) is reported as an **honest flagged gap** with no run-action ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the document is named, never guessed, and partial ESPI data stays visible.
 
 Acceptance criteria:
 
 - The section populates automatically from fetched reports with zero user interaction; the backfill CTA only force-kicks the same deterministic job.
 - Free float is always derived (`100 − Σ disclosed capital`), rendered as a neutral hatched "uncertain" donut slice and a "Free float (derived)" rowline with an uncertainty hint (the 5% disclosure threshold hides smaller stakes).
 - Holder-type colors are fixed per holder TYPE, never cycled; more than four types fold into "Other".
-- Holder types are deterministic (dictionary) or the user's own edit — a manual re-type is authoritative and never overwritten by automation ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) retired the AI classification path).
+- Holder types are deterministic (dictionary) or the user's own edit — a manual re-type is authoritative and never overwritten by automation ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 - A residual (unreadable) document is never fabricated into data — it is disclosed as an honest flagged gap (the Review queue is retired); partial ESPI data stays visible.
 - The section stays usable in a ~340px narrow pane (donut over legend, full-width chart, rows wrap without horizontal scroll).
 
@@ -346,11 +346,7 @@ Acceptance criteria:
 
 ## Journey: AI Capability Routing — retired
 
-The per-capability AI provider routing journey (mix providers per capability, ordered failover
-rows) is **retired with the in-app AI analysis layer** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md),
-superseding [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)): the only
-AI setting left is the transcript provider (Settings → AI, Gemini key for YouTube transcription).
-Intelligence arrives through the user's own agent over the MCP port (BYOA).
+Per-capability AI provider routing is retired with the in-app AI analysis layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the only AI setting left is the transcript provider (Settings → AI, Gemini key for YouTube transcription). Intelligence arrives through the user's own agent over the MCP port (BYOA).
 
 ## Journey: Connect An AI Assistant (MCP Server)
 

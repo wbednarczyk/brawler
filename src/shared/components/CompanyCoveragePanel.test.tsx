@@ -269,9 +269,8 @@ describe("CompanyCoveragePanel", () => {
     expect(onOpenDocuments).toHaveBeenCalledTimes(1);
   });
 
-  // ADR 0084 clean cut: `kpi_extraction_proposals` is dropped, so the review cell
-  // no longer shows proposal counts. Flagged facts survive and become the only —
-  // and after the cut, the most important — review surface in this column.
+  // ADR 0084: the review cell shows only flagged facts, never proposal counts
+  // (`kpi_extraction_proposals` is dropped).
   it("shows flagged facts in the review cell, never proposal counts (ADR 0084)", async () => {
     getFundamentalsCoverageMock.mockResolvedValue(
       coverage([
@@ -480,8 +479,7 @@ describe("CompanyCoveragePanel", () => {
   // by id, never "the latest sweep". When it sits behind a busy job queue the row
   // may be absent for many ticks; the panel must keep "Extracting…" (no 4-tick
   // give-up) and settle ONLY when our sweep appears terminal+drained — and the
-  // AI-budget footer then reflects that settled sweep. Reddens on the old code,
-  // which gave up after 4 ticks without a sweep row and false-settled.
+  // AI-budget footer then reflects that settled sweep.
   it("keeps polling while the expected sweep is absent, then settles when it appears", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

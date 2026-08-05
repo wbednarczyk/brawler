@@ -32,8 +32,8 @@ export function useWorkspaceNavigationController({
   setCockpitInitialCompanyId,
 }: WorkspaceNavigationControllerInput) {
   // Opening a company lands the curated dashboard scoped to it (ADR 0057): the
-  // cockpit is the single company deep-dive, replacing the retired tabbed
-  // workspace. The library selection is kept in sync so the row stays highlighted.
+  // cockpit is the single company deep-dive. The library selection is kept in
+  // sync so the row stays highlighted.
   function openCompanyWorkspace(company: Company) {
     setSelectedCompanyId(company.id);
     setCockpitInitialCompanyId(company.id);

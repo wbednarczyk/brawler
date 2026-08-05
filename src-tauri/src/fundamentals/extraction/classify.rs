@@ -497,10 +497,9 @@ pub fn is_management_report(title: &str, url: &str) -> bool {
 /// `storage::report_documents` runs it through `empty_string_to_none`, and both
 /// the write seam and `reclassify_all` classify with `unwrap_or("")`; there is no
 /// basename fallback at registration, and the user-URL capture path
-/// (`report_documents_capture`) can supply no title at all. It is inert on
-/// today's corpus (0 of 9,658 rows) and, since a silent title no longer takes its
-/// URL's classification, both arms of the branch now answer `Other` for an empty
-/// title anyway — but the branch documents the intent and costs nothing.
+/// (`report_documents_capture`) can supply no title at all. Both arms of the
+/// branch answer `Other` for an empty title — but the branch documents the
+/// intent and costs nothing.
 /// Callers decide trust with
 /// [`crate::storage::TrackedIssuerIndex::url_slug_names_foreign_issuer`], so a
 /// slug is only ever dropped on positive evidence that it names someone else.
@@ -759,9 +758,9 @@ mod tests {
     /// Epic #229 T3 (#171): a foreign issuer's slug must not classify the
     /// owner's document. Real strings from the maintainer's database — XTB's own
     /// H1-2025 statements are served under DataWalk slugs (content-verified: the
-    /// stored bytes name XTB). Case (a) still needs slug distrust to recover the
-    /// document; case (b) no longer does — the title-first precedence (#275)
-    /// decides the consolidated/standalone axis before trust is consulted.
+    /// stored bytes name XTB). Case (a) needs slug distrust to recover the
+    /// document; case (b) is decided by title-first precedence (#275) before
+    /// trust is consulted.
     #[test]
     fn foreign_slug_does_not_classify_the_owners_document() {
         // (a) A signature-companion slug demotes a real consolidated statement to

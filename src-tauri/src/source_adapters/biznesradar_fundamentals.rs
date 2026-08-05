@@ -2,8 +2,8 @@
 //! realizing [ADR 0061](../../../docs/adr/0061-deterministic-fundamentals-data-gathering.md)
 //! decision 4).
 //!
-//! With the in-app AI tier retired (ADR 0084), this is the fundamentals
-//! pipeline's LAST layer — and it is deliberately the weakest-privileged one.
+//! This is the fundamentals pipeline's LAST layer (ADR 0084) — and it is
+//! deliberately the weakest-privileged one.
 //! Its entire job is **corroboration**:
 //!
 //! - it may never create a fact on its own from this seam,
@@ -129,8 +129,8 @@ pub enum WitnessResolution {
 
 impl WitnessResolution {
     /// The witness facts, if any — the shape [`crate::fundamentals::extraction::pipeline::PipelineInput`]
-    /// takes. `Skipped`/`Unavailable` both yield `None`, which is exactly the
-    /// pre-ADR-0085 behavior: the pipeline decides without a witness.
+    /// takes. `Skipped`/`Unavailable` both yield `None`: the pipeline decides
+    /// without a witness.
     pub fn facts(&self) -> Option<&[ExtractedFact]> {
         match self {
             WitnessResolution::Facts { facts, .. } => Some(facts),
@@ -259,9 +259,7 @@ fn period_hint(period_type: &str) -> Option<&'static str> {
 ///
 /// The cache read goes through `storage::get_fresh_witness_page` and the
 /// parse/period-selection through `parse_witness_page`/`facts_or_unavailable`,
-/// so a cached page is always read and interpreted the same way. (The pipeline's
-/// fetching `resolve_witness` is retired with ADR 0086 — this ingest-time
-/// comparison is the surviving ADR 0085 witness seam.)
+/// so a cached page is always read and interpreted the same way.
 pub fn resolve_witness_from_cache(
     connection: &rusqlite::Connection,
     company_id: &str,

@@ -23,10 +23,8 @@ describe("Research cockpit shell", () => {
   });
 
   it("keeps only the Preset select from the legacy layout toolbar (issue 432de51)", async () => {
-    // The pre-ADR-0057 toolbar's saved-layout load select, free-text layout name
-    // field, save button, and delete select duplicated the sidebar saved-views
-    // flow (same cockpit_layouts storage, conflicting "układ"/"widok" vocabulary).
-    // Option B keeps only the Preset select; the rest must never come back.
+    // Only the Preset select belongs in the toolbar (issue 432de51) — saved-layout
+    // load/save/delete controls duplicate the sidebar saved-views flow.
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
@@ -162,12 +160,11 @@ describe("Research cockpit shell", () => {
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
-    // The retired standalone Research screen becomes a Dashboard preset (epic
-    // c793ca1). Selecting the "evidence" preset composes the research evidence
-    // panel as the sole global — proven here by its tab title. The panel's
-    // real evidence render (following the view company) is proven in the browser
-    // spec cockpit-view-company.spec.ts (jsdom dockview does not mount panel
-    // bodies after a layout rebuild).
+    // Selecting the "evidence" preset composes the research evidence panel as
+    // the sole global — proven here by its tab title. The panel's real evidence
+    // render (following the view company) is proven in the browser spec
+    // cockpit-view-company.spec.ts (jsdom dockview does not mount panel bodies
+    // after a layout rebuild).
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
     await user.selectOptions(within(cockpit).getByLabelText("Preset"), "evidence");
 
@@ -219,8 +216,7 @@ describe("Research cockpit shell", () => {
     await user.type(await screen.findByLabelText("Search commands"), "Fundamentals");
     await user.keyboard("{Enter}");
 
-    // The editable panel's period form proves we render the real FundamentalsPanel
-    // (the old cockpit version was a read-only matrix with no forms).
+    // The editable panel's period form proves we render the real FundamentalsPanel.
     expect(
       await within(cockpit).findByRole("heading", { name: "New reporting period" }),
     ).toBeInTheDocument();
@@ -267,8 +263,7 @@ describe("Research cockpit shell", () => {
     renderApp();
 
     // Named layouts are created via the sidebar "+ New view" creator (ADR 0057
-    // decision 5) — the legacy toolbar's free-text save/load/delete controls were
-    // removed as a duplicate of this flow (issue 432de51).
+    // decision 5).
     const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
     await user.click(within(nav).getByRole("button", { name: "New view" }));
     await user.type(await screen.findByLabelText("View name"), "Deep dive");
@@ -334,8 +329,8 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     const user = userEvent.setup();
     const cockpit = await openCdrDashboard(user);
 
-    // Freeze the follow Feed panel onto CD PROJEKT via its tab pin toggle. The
-    // add-panel surface no longer offers per-company entries (card 106f8a7), so
+    // Freeze the follow Feed panel onto CD PROJEKT via its tab pin toggle: the
+    // add-panel surface only lists generic panel types (card 106f8a7), so
     // pinning is reached through the panel's own "Pin company" affordance.
     const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
       ".cockpit-tab",
@@ -421,10 +416,8 @@ describe("Research cockpit — view company context (U-Ra)", () => {
   });
 });
 
-// Card 106f8a7 (owner dogfooding): the add-panel surface must list GENERIC
-// company-scoped panel TYPES (bound to the view company) plus global panels —
-// never a per-company entry for every tracked company (the old flow bloated the
-// palette to hundreds of "Open panel: <TICKER> · <Kind>" rows).
+// Card 106f8a7: the add-panel surface lists GENERIC company-scoped panel TYPES
+// (bound to the view company) plus global panels — never a per-company entry.
 describe("Research cockpit — add-panel surface (card 106f8a7)", () => {
   async function openCdrDashboard(user: ReturnType<typeof userEvent.setup>) {
     renderApp();

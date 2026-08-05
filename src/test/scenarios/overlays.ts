@@ -123,10 +123,8 @@ function applyPartialData(data: ScenarioData): ScenarioData {
  * also render with nothing to prefer over. Facts are ordered `created_at`
  * DESC, matching the real backend contract: the final fact (created later —
  * the audited report lands after the preliminary release) sorts BEFORE its
- * preliminary sibling, which is exactly the ordering that used to trip the
- * fact matrix's old "last object in the array wins" bug (factMatrix.ts)
- * before the ADR 0093 dec. 2 fix. Reproduces the state so it renders in CI
- * forever (docs/testing.md "UI dogfooding finding ⇒ overlay").
+ * preliminary sibling. Reproduces the state so it renders in CI forever
+ * (docs/testing.md "UI dogfooding finding ⇒ overlay").
  */
 function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
   const company = makeCompany(PRELIMINARY_SPEC);
@@ -458,10 +456,9 @@ function applyTodayDense(data: ScenarioData): ScenarioData {
   return { ...data, autopilotRuns: [...runs, ...data.autopilotRuns] };
 }
 
-// UI dogfooding finding ⇒ overlay (docs/testing.md standing rule; owner
-// dogfooding 2026-07-23). The two data states the owner's real database exposed
-// on Today. Each carries a fixed `*_overlay_orphan_*` / `*_overlay_pruned_*` id
-// and is additive (prepended), never replacing base rows.
+// UI dogfooding finding ⇒ overlay (docs/testing.md standing rule). Each carries
+// a fixed `*_overlay_orphan_*` / `*_overlay_pruned_*` id and is additive
+// (prepended), never replacing base rows.
 
 // One fixed CompanySpec per orphan row so simultaneous overlays never collide.
 const ORPHAN_SPECS: CompanySpec[] = [
@@ -482,10 +479,10 @@ export const PRUNED_GLUED_HUMAN = "Jednostkowe Sprawozdanie Finansowe AB S.A.";
 export const PRUNED_GLUED_FILENAME = "Y24_25_Sprawozdanie jednostkowe.xhtml";
 
 /**
- * Orphaned attention evidence (owner dogfooding 2026-07-23: 27 real orphans). A
- * signal-triggered attention event whose `evidenceTitle` is null AND whose rule +
- * signal rows are GONE (a cascade-pruned rule id that no longer resolves): the FE
- * must render the category fallback, never a blank statement or a crash. A
+ * Orphaned attention evidence: a signal-triggered attention event whose
+ * `evidenceTitle` is null AND whose rule + signal rows are GONE (a
+ * cascade-pruned rule id that no longer resolves): the FE must render the
+ * category fallback, never a blank statement or a crash. A
  * REPRESENTATIVE few (the real count is immaterial; the null-title + dangling-rule
  * STATE is what regresses) across distinct companies so each stays its own
  * `notable` row (below the notable cross-company fold threshold), not an aggregate.
@@ -515,10 +512,10 @@ function applyOrphanedEvidence(data: ScenarioData): ScenarioData {
 }
 
 /**
- * Pruned feed with a surviving snapshot title (owner dogfooding 2026-07-23). An
- * attention event whose `evidenceTitle` was snapshotted at fire time but whose
- * live feed item was later pruned (`evidenceRef` no longer resolves): the row must
- * render the SNAPSHOT, not blank. Two rows on distinct companies: a CLEAN human
+ * Pruned feed with a surviving snapshot title: an attention event whose
+ * `evidenceTitle` was snapshotted at fire time but whose live feed item was
+ * later pruned (`evidenceRef` no longer resolves): the row must render the
+ * SNAPSHOT, not blank. Two rows on distinct companies: a CLEAN human
  * snapshot (renders verbatim) and a GLUED filename+title snapshot (the row splits
  * it so the extension never lands in the statement — the anti-filename gate's
  * adversarial case). `notable` so both stay their own rows.

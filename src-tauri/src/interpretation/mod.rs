@@ -9,9 +9,9 @@
 //!   "classify this", never for a concrete implementation. Implementations are
 //!   selected at runtime through the registry.
 //! - **Static is the shipped baseline.** Deterministic implementations (rules)
-//!   are the default and, since ADR 0080 retired the embedding model, the only
-//!   shipped strategy. A future model-backed implementation re-enters behind
-//!   the same capability trait through a fresh eval-gated ADR.
+//!   are the default and the only shipped strategy (ADR 0080). A future
+//!   model-backed implementation re-enters behind the same capability trait
+//!   through a fresh eval-gated ADR.
 //!
 //! The embedding model, the vector index, and the similarity/matcher/search
 //! capabilities were removed by ADR 0080: no per-capability eval ever beat the

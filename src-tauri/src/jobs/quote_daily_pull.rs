@@ -1,6 +1,6 @@
-//! Post-session daily EOD quote pull (Yahoo, ADR 0082 as amended 2026-07-14 —
-//! the Twelve Data fallback was removed: GPW quotes are paid-plan-only there,
-//! so a free key could never serve; a free degraded fallback is card ee81afe).
+//! Post-session daily EOD quote pull (Yahoo, ADR 0082 — GPW quotes are
+//! paid-plan-only on Twelve Data, so the fallback was removed; a free key
+//! could never serve).
 //!
 //! Not a standalone job kind: driven by the existing Rust-side scheduler
 //! through the normal `scheduled_source_refresh` dispatch for the `yahoo-eod`
@@ -656,11 +656,6 @@ mod tests {
 
     #[test]
     fn yahoo_failure_records_a_diagnostic_skips_the_company_and_writes_nothing() {
-        // The Twelve Data fallback was removed (ADR 0082 amendment 2026-07-14):
-        // a Yahoo 429/999/parse failure now records a source-health diagnostic,
-        // returns Err for that company (counted as unmatched), and writes no
-        // bar — the sweep continues. This is the ONLY coverage of the failure
-        // branch (the deleted fallback test used to exercise it).
         let state = AppState::new(open_in_memory_database().expect("db"));
         state
             .set_developer_mode_enabled(true)

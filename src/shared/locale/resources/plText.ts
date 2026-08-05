@@ -999,9 +999,9 @@ export const plText: Record<string, string> = {
   "Witness": "Świadek",
   "Reconciliation": "Uzgadnianie",
   "Official report missed by the primary source": "Raport oficjalny pominięty przez źródło główne",
-  // v0.60 D6 — every Today row states WHAT concretely happened (owner dogfooding
-  // 2026-07-23). The reconciliation statement names the missed report and the
-  // registry that caught it; the autopilot event statement carries the run status.
+  // v0.60 D6: every Today row states WHAT concretely happened. The
+  // reconciliation statement names the missed report and the registry that
+  // caught it; the autopilot event statement carries the run status.
   "{title} — missed by the primary source, backfilled from {source}":
     "{title} — pominięty przez źródło główne, dociągnięty z {source}",
   "the official registry": "oficjalnego rejestru",
@@ -1540,8 +1540,6 @@ export const plText: Record<string, string> = {
   // ("Period" and "Validated" are shared keys defined earlier in this map.)
   "Coverage": "Pokrycie",
   "Data": "Dane",
-  // "Flagged" (ADR 0086 dec. 5) is an informational origin label, not a review
-  // to-do — the coverage "To review" bucket was retired with review-free facts.
   "Flagged": "Oflagowane",
   "To review": "Do przeglądu",
   "Coverage map": "Mapa pokrycia",

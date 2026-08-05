@@ -201,11 +201,8 @@ export function useAppLifecycleEffects({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch each week once (guarded by eventWeekFetchAttemptedRef); the non-memoized refreshBankierCalendarWeek identity is intentionally excluded
   }, [licenseCanUseApp, activeSection, companyEventViewMode, companyEventWeekRange.start]);
 
-  // Feed cleanup is manual-only (owner decision 2026-07-19). The app must never
-  // delete feed items on a timer — an automatic 30-day prune silently removed
-  // ~3,900 items (incl. researched periodic reports) before it was disabled. The
-  // capability lives on as a user-triggered action in Settings; the future
-  // retention mechanism is tracked as a backlog card.
+  // Feed cleanup is manual-only — no lifecycle effect triggers it on a timer
+  // (sourceScheduler.ts, product-spec.md § Ingestion).
 
   // Source/registry refresh cadence is owned by the Rust-side scheduler (ADR 0055
   // / AV5) — a webview timer is throttled when the window is hidden/suspended, so

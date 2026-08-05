@@ -10,10 +10,9 @@ const GEMINI_ACCOUNT: &str = "provider_gemini:api_key";
 const GEMINI_ENV_VAR: &str = "GEMINI_API_KEY";
 
 // The Claude / OpenAI / OpenAI-compatible / Mistral credentials are removed
-// with the in-app AI analysis layer (ADR 0084 decision 7): every adapter that
-// used them is gone, so Gemini — which powers **transcription only** — is the
+// (ADR 0084 decision 7): Gemini, which powers **transcription only**, is the
 // last provider key the app asks for. Existing OS-keychain entries for the
-// retired providers are deliberately NOT deleted (outside app scope, harmless).
+// removed providers are deliberately NOT deleted (outside app scope, harmless).
 
 // The MCP server bearer token (ADR 0078 decision 4) generalizes the credential
 // boundary beyond AI providers: same keychain service, same descriptor flow,
@@ -42,8 +41,8 @@ pub(crate) fn scrub_provider_env_fallbacks() {
     }
 }
 
-// Legacy purpose-scoped entries removed in ADR 0028. They are best-effort
-// cleared once so no orphaned secrets linger; we never read or fall back to them.
+// Legacy purpose-scoped entries (ADR 0028): best-effort cleared once so no
+// orphaned secrets linger; never read or fallen back to.
 const LEGACY_GEMINI_PURPOSE_TARGET: &str = "brawler/gemini/youtube_transcription/api_key";
 const LEGACY_GEMINI_PURPOSE_ACCOUNT: &str = "provider_gemini:youtube_transcription:api_key";
 
@@ -209,7 +208,7 @@ pub fn read_provider_api_key(provider_id: &str) -> Result<Option<String>, Creden
 }
 
 /// Best-effort, one-time removal of legacy purpose-scoped keychain entries
-/// replaced by the one-key-per-provider model. Errors are ignored.
+/// (ADR 0028). Errors are ignored.
 pub fn clear_legacy_credentials() {
     if let Ok(entry) = keyring::Entry::new_with_target(
         LEGACY_GEMINI_PURPOSE_TARGET,

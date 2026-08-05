@@ -130,9 +130,9 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
     expect(container.querySelectorAll("line.ui-multi-line-marker")).toHaveLength(0);
   });
 
-  // ADR 0084 decision 4: tier-4 OCR is retired. An unreadable document is a
-  // FLAGGED gap the user can see — never silently absent, never guessed — but
-  // the panel offers no OCR run action any more.
+  // ADR 0084 decision 4: an unreadable document is a FLAGGED gap the user can
+  // see — never silently absent, never guessed — and the panel offers no OCR
+  // run action.
   it("flags an unreadable residual document with no OCR run action (ADR 0084)", () => {
     render(
       <OwnershipSection

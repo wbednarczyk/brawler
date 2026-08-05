@@ -296,12 +296,10 @@ describe("useFundamentalsController", () => {
     expect(result.current.selectedFinancialFactId).toBeNull();
   });
 
-  // ADR 0093 dec. 2 (epic #285 T5): the update path used to hardcode
-  // `dataQuality: "final"` regardless of the fact being edited — which would
-  // attempt an illegal quality flip on every edit of a preliminary/estimated
-  // fact and trip the backend's typed `FinancialFactDataQualityLocked`
-  // conflict. It must send the ROW'S OWN existing quality instead (a no-op
-  // resend the backend passes straight through).
+  // ADR 0093 dec. 2 (epic #285 T5): the update path must send the ROW'S OWN
+  // existing dataQuality (a no-op resend the backend passes straight through),
+  // never hardcode "final" — that would trip the backend's typed
+  // `FinancialFactDataQualityLocked` conflict on a preliminary/estimated fact.
   it("preserves a preliminary fact's dataQuality on update instead of hardcoding final", async () => {
     vi.mocked(financialsApi.updateFinancialFact).mockResolvedValue(preliminaryFact);
     const { result } = renderHook(() =>

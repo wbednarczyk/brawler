@@ -651,7 +651,7 @@ mod tests {
             .unwrap_or(false));
     }
 
-    /// Faithful ABE live shape (F-A1, owner dogfooding 2026-07-17): a founder's
+    /// Faithful ABE live shape (F-A1): a founder's
     /// most-recent disclosed stake (`founder_insider`, materially above 5%) sits at
     /// an OLDER `as_of` than the newest full-picture basis, because that newest
     /// report's shareholder table was only partially extracted (OFE funds only,

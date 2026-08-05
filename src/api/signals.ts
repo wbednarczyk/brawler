@@ -17,9 +17,9 @@ export function rejectCompanySignal(id: string) {
   return callCommand<void>("reject_company_signal", { input: { id } });
 }
 
-// The opt-in AI classification and event-date fallbacks are retired (ADR 0084):
-// the deterministic ESPI rule classifier and `signal_dates` are the whole path,
-// and a filing neither can classify lands in an explicit unclassified bucket.
+// ADR 0084: the deterministic ESPI rule classifier and `signal_dates` are the
+// whole classification path; a filing neither can classify lands in an
+// explicit unclassified bucket.
 
 // Confirms a proposed derived calendar event onto the calendar, or rejects it (ADR 0036).
 export function confirmDerivedEvent(eventId: string, action: "confirm" | "reject") {

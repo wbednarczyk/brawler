@@ -36,9 +36,8 @@ export type MultiLineChartProps = {
 const VIEW = 100;
 export const MULTI_LINE_MAX_SERIES = 4;
 
-/// Multi-series trend lines on ONE shared scale (owner dogfooding 2026-07-16:
-/// stacked per-holder charts hid the relative picture — separate y-scales made
-/// a 7% stake look like a 17% one). Hue follows the series slot (validated
+/// Multi-series trend lines on ONE shared scale — separate y-scales would make
+/// a 7% stake look like a 17% one. Hue follows the series slot (validated
 /// categorical set, never cycled); series beyond four must be folded by the
 /// caller before rendering. The x-domain is the sorted union of point labels,
 /// so series with different disclosure dates still align.

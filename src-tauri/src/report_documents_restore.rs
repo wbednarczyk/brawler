@@ -1,5 +1,4 @@
-//! Restore the report documents migration `0107` wrongly deleted (epic #229 T3,
-//! owner decision 2026-07-30).
+//! Restore the report documents migration `0107` wrongly deleted (epic #229 T3).
 //!
 //! `0107_repair_misassociation_and_note_ref_facts.sql` deleted every
 //! `espi_attachment` row matching `company_id = 'company_gpw_cbf' AND url LIKE

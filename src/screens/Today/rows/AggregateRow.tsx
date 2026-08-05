@@ -28,7 +28,7 @@ export function AggregateRow({
   const newestGroup = aggregate.members[0];
   const isAttention = aggregate.category === "attention";
   // Alert-rule indicator on the collapsed head only when every underlying member
-  // (across all folded companies) is rule-fired (owner dogfooding 2026-07-23).
+  // (across all folded companies) is rule-fired.
   const descriptor = {
     ...describePayload(newestGroup.members[0].payload, ctx),
     ruleOrigin: everyMemberFromAlertRule(

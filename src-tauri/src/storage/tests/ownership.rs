@@ -797,10 +797,9 @@ fn count_source_rows(state: &AppState, company_id: &str, source: &str) -> i64 {
     .expect("count")
 }
 
-// ADR 0072 §2c amended 2026-07-16: the aggregator is now the automatic BREADTH
-// source. `refresh_with` writes the parsed table as `aggregator` snapshots, then
-// witnesses it against the DISCLOSED-only reference (reports/ESPI). This replaces
-// the old compare-only `witness_flags_divergence_records_diagnostic_and_never_writes_stakes`.
+// ADR 0072 §2c: the aggregator is now the automatic BREADTH source.
+// `refresh_with` writes the parsed table as `aggregator` snapshots, then
+// witnesses it against the DISCLOSED-only reference (reports/ESPI).
 #[test]
 fn aggregator_refresh_writes_basis_and_divergence_witnessed_by_disclosed() {
     let state = AppState::new(open_in_memory_database().expect("db"));
@@ -1272,10 +1271,10 @@ fn witness_end_to_end_sample_html_vs_seeded_state_records_result_without_writing
 
 #[test]
 fn current_state_merges_abbreviations_and_parenthetical_variants() {
-    // Owner dogfooding 2026-07-16 (live CBF): the same holder printed as
-    // "nn pte" and "Nationale-Nederlanden PTE S.A." (dictionary-alias identity,
-    // migration 0086) and as "cyber_Folks S.A." vs "cyber_Folks S.A. (akcje
-    // własne)" (parenthetical qualifier) must be ONE current-state row each.
+    // The same holder printed as "nn pte" and "Nationale-Nederlanden PTE S.A."
+    // (dictionary-alias identity, migration 0086) and as "cyber_Folks S.A." vs
+    // "cyber_Folks S.A. (akcje własne)" (parenthetical qualifier) must be ONE
+    // current-state row each.
     let state = AppState::new(open_in_memory_database().expect("db"));
     let company = tracked_company(&state);
     let store = state.ownership();

@@ -9,10 +9,9 @@
 //! 2. **HTML aggregator** — as a last structured resort, act as the source
 //!    (an inconclusive-but-uncontradicted set is accepted unreviewed).
 //!
-//! The PDF fact-extraction arm (parse-with-profile + drift) is RETIRED
-//! (ADR 0086 dec. 1): no tier reads financial facts out of PDF statements
-//! anymore. Core KPIs arrive from the BiznesRadar-primary daily pull; the
-//! positional xHTML reader persists separately in the job layer.
+//! The PDF fact-extraction arm (parse-with-profile + drift) is RETIRED (ADR
+//! 0086 dec. 1): no tier reads financial facts out of PDF statements. Core
+//! KPIs arrive from the BiznesRadar-primary daily pull.
 //!
 //! Pure and IO-free: callers pass the already-fetched bytes and (lazily) the
 //! witness facts, so the whole chain is deterministic and unit-testable.
@@ -191,9 +190,7 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
                 // Tagged data is authoritative unless it self-contradicts — the
                 // shared acceptance table decides (a `Failed` set is `Flagged` and
                 // emits no facts; ADR 0061 dec. 2: what objected stays reviewable,
-                // never a silent empty. The aggregator-as-last-resort arm is retired
-                // with ADR 0086 — BiznesRadar sources core KPIs through its own
-                // primary pull, never through this pipeline).
+                // never a silent empty).
                 let acceptance = acceptance_for(report.status, report.completeness.as_ref());
                 let facts = if acceptance.emits() {
                     facts_for_period(facts, input.period_end)

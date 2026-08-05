@@ -1,8 +1,7 @@
 //! End-to-end pipeline test (ADR 0061 S5, closes the ADR 0049 "no e2e ingestion
 //! pipeline test" gap): the surviving chain — ESEF source-of-truth, the HTML
 //! aggregator resort, the completeness downgrade and the comparative cross-check
-//! — exercised deterministically over sample bytes. The PDF fact arm (parse +
-//! profile + drift) is retired (ADR 0086 dec. 1), so those tiers no longer exist.
+//! — exercised deterministically over sample bytes.
 
 use super::*;
 use crate::fundamentals::extraction::SourceTier;
@@ -72,9 +71,6 @@ fn nothing_available_is_empty() {
 
 #[test]
 fn corrupt_esef_is_an_honest_empty_gap() {
-    // With the PDF fact arm and the aggregator-fallback arm retired (ADR 0086),
-    // an unparsable ESEF leaves nothing to source — an honest empty gap (the
-    // BR-primary pull fills the period from its own job, never this pipeline).
     let out = run_pipeline(&PipelineInput {
         period_end: END,
         esef_bytes: Some(b"<html>not xbrl</html>"),

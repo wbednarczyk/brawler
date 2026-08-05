@@ -196,8 +196,8 @@ export function AppStateRoot({
   const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<
     string | null
   >(null);
-  // The built-in preset the Dashboard opens on (epic c793ca1); null = its default
-  // (company overview). The retired Research screen redirects here with "evidence".
+  // The built-in preset the Dashboard opens on (epic c793ca1); null = its
+  // default (company overview).
   const [cockpitInitialPresetId, setCockpitInitialPresetId] = useState<
     string | null
   >(null);
@@ -1344,9 +1344,9 @@ export function AppStateRoot({
         setActiveSection("Notebooks");
         break;
       case "research":
-        // The standalone Research screen is retired (epic c793ca1): open the
-        // company Dashboard on the "evidence" preset, which hosts the research
-        // evidence timeline following the view company.
+        // Evidence deep-links land on the Dashboard "evidence" preset, which
+        // hosts the research evidence timeline following the view company
+        // (ADR 0057 decision 5 amendment).
         if (item.evidenceType === "research_question") {
           if (researchMode !== "company") {
             setResearchMode("company");

@@ -95,10 +95,8 @@ describe("Inbox screen workflows", () => {
     expect(detailPane.queryByRole("link", { name: "Polityka Cookies" })).not.toBeInTheDocument();
   });
 
-  // ADR 0084 decision 5 (clean cut, revised 2026-07-20): the AI analysis tables
-  // are DROPPED, so the read-only viewer the earlier slice kept has nothing to
-  // display and is gone too. The detail rail must render no AI-analysis surface
-  // at all, and no retired AI command may be reachable from it.
+  // ADR 0084 decision 5: the detail rail must render no AI-analysis surface at
+  // all, and no retired AI command may be reachable from it.
   it("renders no AI-analysis surface in the detail rail (ADR 0084 clean cut)", async () => {
     renderApp();
 

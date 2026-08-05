@@ -123,7 +123,7 @@ export function OwnershipSection({
 
   // Ownership basis (ADR 0072 amended 2026-07-16): stakes can come from several
   // sources — label each honestly, falling back to the raw value for anything
-  // unrecognised rather than the old hardcoded "periodic report".
+  // unrecognised.
   const sourceLabels: Record<string, string> = {
     report_document: text("periodic report"),
     espi_filing: text("ESPI filing"),

@@ -206,10 +206,9 @@ fn signal_rule_daily_throttle_coalesces_distinct_fresh_evidence_per_wall_clock_d
         .expect("rule");
 
     // Two DISTINCT fresh insider filings with DIFFERENT domain dates (3 and 6 days
-    // ago), ingested in the same pass. The throttle now keys on the WALL-CLOCK
+    // ago), ingested in the same pass. The throttle keys on the WALL-CLOCK
     // firing day, not the evidence's domain date, so distinct recent dates
-    // coalesce to a single ping (the old domain-date throttle fired twice — the
-    // toast-wall regression this closes).
+    // coalesce to a single ping.
     state
         .ingest_bankier_company_items(&[
             insider_item_dated(&company, "9300040", &days_ago(3)),
@@ -478,10 +477,8 @@ fn price_week52_low_rule_fires_on_new_low() {
 
 #[test]
 fn attention_event_writer_stamps_trigger_type_on_the_row() {
-    // W4: the writer stamps `trigger_type` directly on the row (previously NULL
-    // for rule-backed events, derived only via COALESCE at read). A direct read of
-    // the column — the path grouping/diagnostics use without joining alert_rules —
-    // now carries the real trigger.
+    // W4: `trigger_type` is stamped directly on the row so it can be read
+    // directly — without joining `alert_rules` — by grouping/diagnostics.
     let connection = open_in_memory_database().expect("database should initialize");
     connection
         .execute(
@@ -630,7 +627,7 @@ fn creating_an_identical_rule_is_a_typed_duplicate_error() {
 #[test]
 fn list_attention_events_carries_the_signal_filing_title_as_evidence_title() {
     // A signal-category event must state its own filing title (the specific
-    // statement), not just its category — owner dogfooding 2026-07-23.
+    // statement), not just its category.
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
     let company = tracked_company(&state);
@@ -992,8 +989,8 @@ fn list_attention_events_leaves_evidence_title_none_for_pruned_evidence() {
 
 #[test]
 fn signal_event_title_survives_feed_item_prune_via_durable_snapshot() {
-    // Owner dogfooding 2026-07-23: GPW:XTB profit-warning events rendered a bare
-    // category because their feed items were pruned. `company_signals.feed_item_id`
+    // GPW:XTB profit-warning events rendered a bare category because their
+    // feed items were pruned. `company_signals.feed_item_id`
     // is ON DELETE CASCADE, so pruning the feed item cascade-deletes the SIGNAL row
     // too — the attention event survives (its evidence_ref is plain TEXT), but the
     // read-time join to `feed_items.title` finds nothing. The fix snapshots the

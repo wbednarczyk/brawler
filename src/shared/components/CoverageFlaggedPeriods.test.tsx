@@ -235,7 +235,7 @@ describe("CoverageFlaggedPeriods", () => {
   // Epic #229 T5 (#192 residual): a re-extraction that read a DIFFERENT value
   // than the one on file writes a durable `value_divergence` outcome. Its typed
   // reason must translate, and the stored-vs-re-read pair must render as a
-  // sentence — the divergence was previously invisible outside developer mode.
+  // sentence.
   it("renders a value_divergence with the stored and the re-read figure", async () => {
     listFlaggedExtractionOutcomesMock.mockResolvedValue([
       outcome({

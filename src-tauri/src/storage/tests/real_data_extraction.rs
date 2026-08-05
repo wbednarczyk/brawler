@@ -1251,15 +1251,13 @@ fn mislabeled_container_routing_before_after() {
 // audit-verdict summary: docs/testing.md § "#182 ESEF / positional
 // ground-truth scorer".
 //
-// ADR 0095 (2026-08-05): the html_positional/`pdf`-tier extraction route is
-// RETIRED and migration 0135 deletes every stored `pdf`-tier fact. The
-// positional arm below now scores against a permanently-empty app-side set —
-// its GT rows stay historical evidence (never re-labeled), and its
-// precision/recall are no longer a live measurement of anything the parser
-// can still do. What the arm DOES still prove, and is asserted unconditionally
-// below: that the retirement actually took effect on real, production-shaped
-// data (zero `pdf`-tier facts remain in the scored DB) — a stored-state
-// auditor, not a ratchet.
+// ADR 0095: the html_positional/`pdf`-tier extraction route is RETIRED and
+// migration 0135 deletes every stored `pdf`-tier fact. The positional arm
+// below scores against a permanently-empty app-side set — its GT rows stay
+// historical evidence (never re-labeled). What it asserts unconditionally is
+// that the retirement took effect on real, production-shaped data (zero
+// `pdf`-tier facts remain in the scored DB) — a stored-state auditor, not a
+// ratchet.
 //
 // Unlike every harness above, this one never runs the pipeline: it scores
 // facts ALREADY STORED in the database against the labels, via the real read
@@ -1458,11 +1456,10 @@ struct Gt182TierAggregate {
     spurious_count: usize,
     /// Value-equal to the GT row, but the app fact carries NO currency at
     /// all (`financial_facts.currency` is `NULL`) — a distinct failure from
-    /// `CURRENCY_MISMATCH` (audit blocker: matching used to be currency-blind).
+    /// `CURRENCY_MISMATCH`.
     currency_missing_count: usize,
     /// Value-equal to the GT row, but the app fact's currency differs from
-    /// the GT row's currency (audit blocker: matching used to be
-    /// currency-blind, so this used to silently count as `MATCH`).
+    /// the GT row's currency.
     currency_mismatch_count: usize,
     unverified_count: usize,
     /// `MATCH / (MATCH + WRONG_VALUE + SPURIOUS + CURRENCY_MISSING + CURRENCY_MISMATCH)`.
@@ -1999,12 +1996,12 @@ fn esef_positional_ground_truth_scores() {
         panic!("open scoring-worktest.sqlite3 (migrations must apply cleanly to the copy): {e}")
     });
 
-    // ADR 0095 stored-state audit (adversarial-review item C): the
-    // html_positional/`pdf`-tier extraction route is retired and migration
-    // 0135 deletes every stored `pdf`-tier fact — unconditionally, on every
-    // real DB, not just this corpus's own documents. This is a correctness
-    // invariant about the migration, not a diagnostic about extraction
-    // quality, so it is asserted regardless of `BRAWLER_GT_REQUIRED`.
+    // ADR 0095 stored-state audit: the html_positional/`pdf`-tier extraction
+    // route is retired and migration 0135 deletes every stored `pdf`-tier
+    // fact — unconditionally, on every real DB, not just this corpus's own
+    // documents. This is a correctness invariant about the migration, not a
+    // diagnostic about extraction quality, so it is asserted regardless of
+    // `BRAWLER_GT_REQUIRED`.
     let remaining_pdf_tier_facts: i64 = connection
         .query_row(
             "SELECT COUNT(*) FROM financial_facts f \

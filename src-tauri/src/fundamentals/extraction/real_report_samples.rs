@@ -13,9 +13,8 @@
 //! - the manifest guard (attribution/hash/size/container/budget/completeness);
 //! - the ESEF tier end to end (container -> package unzip -> iXBRL parse)
 //!   against a cross-source-verified pinned expected-values file;
-//! - the PDF text-extraction path on a real text-layer report (ADR 0086: PDF
-//!   FACT extraction is retired, so this only proves deterministic TEXT
-//!   extraction, never facts);
+//! - the PDF text-extraction path on a real text-layer report — proves
+//!   deterministic TEXT extraction only, never facts (ADR 0086);
 //! - the honest no-text-layer path, on both the report_diff text extractor and
 //!   the fundamentals routing seam (a Pdf container is a documented
 //!   benign-empty route, never a fabricated fact).
@@ -438,8 +437,6 @@ fn cbf_2025_esef_sample_matches_pinned_expected_values() {
 
 // ============================================================================
 // PDF sample: real text-layer report -- report_diff text extraction only.
-// PDF FACT extraction is retired (ADR 0086); this proves deterministic TEXT
-// extraction, never facts.
 // ============================================================================
 
 /// `vercom_2024_q2_ssf.pdf` (the original candidate here) was DROPPED: its
@@ -544,8 +541,8 @@ fn editel_no_text_layer_pdf_is_honestly_flagged_on_both_paths() {
     assert_eq!(outcome.state, ExtractionState::NoTextLayer);
     assert!(outcome.sections.is_empty());
 
-    // fundamentals side: a Pdf container routes to the retired PDF fact arm
-    // (ADR 0086 dec. 1) -- proven at the routing seam...
+    // fundamentals side: a Pdf container routes to the PDF fact arm, retired
+    // by ADR 0086 dec. 1 -- proven at the routing seam...
     assert_eq!(
         crate::jobs::structured_extraction::route_document(&bytes),
         crate::jobs::structured_extraction::DocumentRoute::Pdf

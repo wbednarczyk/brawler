@@ -278,8 +278,7 @@ type CoverageFlaggedPeriodsProps = {
 /// tier can read a document or the validation gate refuses a value, the period is
 /// flagged with a typed reason, and this section is where a human sees it and
 /// acts. Lives inside the Coverage panel: coverage is the company's "what do we
-/// have / what is missing / what needs review" surface, and the Review queue
-/// panel that used to host human review was retired with the in-app AI layer.
+/// have / what is missing / what needs review" surface.
 export function CoverageFlaggedPeriods({
   companyId,
   reloadKey = 0,

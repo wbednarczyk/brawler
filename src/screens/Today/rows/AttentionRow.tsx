@@ -53,9 +53,9 @@ export function attentionDescriptor(
 ): RowDescriptor {
   const rule = event.ruleId ? ctx.attention.attentionRulesById.get(event.ruleId) : undefined;
   const company = event.companyId ? ctx.companyById.get(event.companyId) : undefined;
-  // A report-document evidence title may be a filename glued onto the human title
-  // (owner dogfooding 2026-07-23). Split it: the human statement flows into the
-  // composed sentence; the filename moves to a quiet secondary link line. A
+  // A report-document evidence title may be a filename glued onto the human
+  // title. Split it: the human statement flows into the composed sentence; the
+  // filename moves to a quiet secondary link line. A
   // filename-only title leaves `statement` null, so the composer falls back to its
   // generic copy — mirroring the autopilot row.
   const { statement, filename } = splitDocumentTitle(event.evidenceTitle);
@@ -97,7 +97,7 @@ export function ArchivedAttentionRow({ event, ctx }: { event: AttentionEvent; ct
  * Does EVERY member payload come from a user alert rule? True only for a non-empty
  * set of attention events that all carry a non-null `ruleId`. A collapsed
  * group/aggregate header shows the alert-rule indicator only when this holds — a
- * single system member (reconciliation) suppresses it (owner dogfooding 2026-07-23).
+ * single system member (reconciliation) suppresses it.
  */
 export function everyMemberFromAlertRule(payloads: StreamPayload[]): boolean {
   return (

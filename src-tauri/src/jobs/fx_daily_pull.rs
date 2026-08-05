@@ -10,9 +10,8 @@
 //!
 //! - **Backfill**: a needed currency with no rows drags the fetch start back
 //!   to [`NBP_HISTORY_START`], so its full available history lands on the next
-//!   daily run. (The synchronous first-need entry point `ensure_fx_backfilled`
-//!   was removed unused, #159 — re-introduce deliberately with the first
-//!   non-PLN adapter.)
+//!   daily run. (`ensure_fx_backfilled` was removed unused, #159 — re-introduce
+//!   deliberately with the first non-PLN adapter.)
 //! - **Daily recent**: when every needed currency is already current, the start
 //!   is the latest stored date, so a steady-state pull is a single small window.
 //!

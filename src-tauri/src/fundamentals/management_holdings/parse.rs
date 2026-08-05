@@ -604,11 +604,11 @@ fn flush(pending: &mut Option<Pending>, rows: &mut Vec<MgmtHoldingRow>) {
         }
         let person_raw = strip_title_prefix(&p.person_raw);
         let shares = shares_from(&p.numbers);
-        // Person-plausibility gate (F-A2, owner dogfooding 2026-07-17): a name that
-        // is a company / legal form / counterparty / street address / office /
-        // role-boilerplate string, a genitive-case surname fragment, or a YEAR
-        // mis-captured as a share count is NEVER a natural person — drop the row
-        // rather than emit junk into the founder-stamping substrate.
+        // Person-plausibility gate (F-A2): a name that is a company / legal
+        // form / counterparty / street address / office / role-boilerplate
+        // string, a genitive-case surname fragment, or a YEAR mis-captured as
+        // a share count is NEVER a natural person — drop the row rather than
+        // emit junk into the founder-stamping substrate.
         if is_implausible_person(&person_raw, shares.as_deref()) {
             return;
         }

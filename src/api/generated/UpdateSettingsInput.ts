@@ -6,22 +6,7 @@ export type UpdateSettingsInput = { theme?: "dark" | "light" | "system", accentP
  * Requested backfill depth in years (ADR 0077 §3); clamped to `[1, 10]` on
  * write rather than rejected.
  */
-backfillYears?: number, 
-/**
- * Requested per-history-sweep tier-4 AI call budget (ADR 0077 §6); clamped
- * to `[0, 500]` on write rather than rejected (0 = off).
- */
-youtubeTranscriptionProvider?: string, youtubeTranscriptionModel?: string, youtubeTranscriptionTimeoutSeconds?: number, 
-/**
- * Base URL for the generic OpenAI-compatible provider (ADR 0060).
- */
-logLevel?: string, logMaxFiles?: number, logMaxFileBytes?: number, shortcutBindings?: { [key in string]: ShortcutBindingSetting }, 
-/**
- * (removed) capability routing map (ADR 0060, retired by ADR 0084). The
- * frontend sends the complete desired map, so this overwrites rather than
- * merges — same contract as `shortcut_bindings`.
- */
-dbMaxConnections?: number, dbBusyTimeoutMs?: number, dbAcquireTimeoutMs?: number, sourcesWorkers?: number, autopilotWorkers?: number, 
+backfillYears?: number, youtubeTranscriptionProvider?: string, youtubeTranscriptionModel?: string, youtubeTranscriptionTimeoutSeconds?: number, logLevel?: string, logMaxFiles?: number, logMaxFileBytes?: number, shortcutBindings?: { [key in string]: ShortcutBindingSetting }, dbMaxConnections?: number, dbBusyTimeoutMs?: number, dbAcquireTimeoutMs?: number, sourcesWorkers?: number, autopilotWorkers?: number, 
 /**
  * Replace the full pinned-company list (ADR 0054). The frontend sends the
  * complete desired order, so this overwrites rather than merges.

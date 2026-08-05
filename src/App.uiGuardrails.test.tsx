@@ -30,9 +30,9 @@ function expectNoForbiddenNormalUserTerms(section: string) {
 
 describe("normal user UI guardrails", () => {
   it("does not expose implementation wording in normal app sections", async () => {
-    // Render each section in isolation via its initial section. The slimmed
-    // top-nav (ADR 0053 phase 6) no longer has buttons for Notebooks/Events
-    // (they are Cockpit panels), but the wording guard must still cover them.
+    // Render each section in isolation via its initial section, including
+    // Notebooks/Events (Cockpit panels, not top-nav buttons, ADR 0053 phase 6)
+    // — the wording guard must still cover them.
     const sectionHeadings = [
       "Inbox",
       "Companies",

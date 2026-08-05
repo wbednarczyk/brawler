@@ -1,13 +1,10 @@
 //! The source-adapter registry — the realized `SourceAdapter` port (Architecture
 //! v2 / ADR 0050, declared in [ADR 0039] and `architecture.md`).
 //!
-//! Historically each adapter's identity and capability metadata was scattered:
-//! per-adapter `&'static str` constants, a 100-line `CASE` ladder in the catalog
-//! SQL (`storage/registry.rs`), and hardcoded id lists for visibility/dispatch.
-//! Adding a source meant editing several places. This module is the **single
-//! source of truth**: one [`SourceAdapterDescriptor`] per adapter, exposed
-//! through the [`SourceAdapter`] trait, with the catalog and the refresh
-//! dispatch reading from [`REGISTRY`]. Adding a source becomes one descriptor
+//! This module is the **single source of truth**: one [`SourceAdapterDescriptor`]
+//! per adapter, exposed through the [`SourceAdapter`] trait, with the catalog
+//! and the refresh dispatch reading from [`REGISTRY`]. Adding a source becomes
+//! one descriptor
 //! entry here (plus its parser and the append-only seed migration for the
 //! mutable runtime row).
 //!

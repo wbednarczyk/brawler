@@ -27,9 +27,9 @@ export type RowDescriptor = {
   extraChips?: ReactNode;
   /**
    * A quiet indicator that THIS event exists because the user's own alert rule
-   * fired (owner dogfooding 2026-07-23): a bell glyph in a fixed chip slot. On a
-   * collapsed group/aggregate header it is set only when EVERY member is
-   * rule-fired; expanded members carry their own. System events never set it.
+   * fired: a bell glyph in a fixed chip slot. On a collapsed group/aggregate
+   * header it is set only when EVERY member is rule-fired; expanded members
+   * carry their own. System events never set it.
    */
   ruleOrigin?: boolean;
   date: string | null;
@@ -37,9 +37,9 @@ export type RowDescriptor = {
   /** Optional dimmer second line (mockup `.sub`). */
   subtitle?: string | null;
   /**
-   * A leading filename split off the document title (owner dogfooding
-   * 2026-07-23): metadata, not prose, so it renders as a quiet secondary link
-   * line rather than in the statement. `onOpen` reveals the document's surface.
+   * A leading filename split off the document title: metadata, not prose, so
+   * it renders as a quiet secondary link line rather than in the statement.
+   * `onOpen` reveals the document's surface.
    */
   documentLink?: { filename: string; onOpen: () => void } | null;
   onReview: () => void;

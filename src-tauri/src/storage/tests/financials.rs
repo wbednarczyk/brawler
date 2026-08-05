@@ -2583,8 +2583,8 @@ fn derived_rows_never_enter_the_completeness_denominator() {
 // ---------------------------------------------------------------------------
 // ADR 0093 T4 (epic #285): making the data_quality-blind readers
 // preliminary-aware. One shared fixture, driven through every reader that
-// used to double-count or last-wins its way past the `preliminary`/`final`
-// coexistence ADR 0093 dec. 2 introduced.
+// must respect the `preliminary`/`final` coexistence ADR 0093 dec. 2
+// introduced.
 // ---------------------------------------------------------------------------
 
 /// One company, one FY2025 period, three metrics covering every quality shape

@@ -255,8 +255,6 @@ pub(super) fn transaction_delete_feed_item(
     connection: &Connection,
     feed_item_id: &str,
 ) -> StorageResult<()> {
-    // The `ai_analysis_*` cascade that used to run here is gone with those tables
-    // (ADR 0084 decision 5, migration 0102).
     connection.execute(
         "DELETE FROM feed_item_attachments WHERE feed_item_id = ?1",
         [feed_item_id],

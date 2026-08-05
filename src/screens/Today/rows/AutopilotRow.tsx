@@ -58,9 +58,9 @@ export function autopilotDescriptor(run: AutopilotRun, ctx: RowContext): RowDesc
       ) : null}
     </>
   );
-  // The statement is WHICH report the run processed (v0.60 D6, owner dogfooding
-  // 2026-07-23): the document title leads, the token-composed "what changed"
-  // summary drops to the sub-line. A run whose document identity is unknown
+  // The statement is WHICH report the run processed (v0.60 D6): the document
+  // title leads, the token-composed "what changed" summary drops to the
+  // sub-line. A run whose document identity is unknown
   // (legacy row / pruned document) keeps the summary as the statement — the bare
   // "Przetworzono nowy raport." never appears alone once the report is named.
   //

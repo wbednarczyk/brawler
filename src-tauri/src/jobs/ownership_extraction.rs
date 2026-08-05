@@ -2,7 +2,7 @@
 //!
 //! Turns the mandatory "shareholders holding ≥5%" table of an already-stored
 //! periodic report into `ownership_stakes` snapshots. **Deterministic and final
-//! by design** (owner decision 2026-07-16): the T1 deterministic parser
+//! by design**: the T1 deterministic parser
 //! ([`parse_shareholders`]) writes stakes directly with `source='report_document'`
 //! and provenance to the exact document — no confirmation queue. Only the
 //! *residual* it cannot parse (glyph-mangled text layers, image tables, a missing

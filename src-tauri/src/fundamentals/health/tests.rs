@@ -261,11 +261,11 @@ fn altman_band_thresholds() {
 }
 
 // ---- missing current_liabilities: strict completeness withholds both -------
-// F5's leverage input is now non-current liabilities (`total_liabilities −
-// current_liabilities`, ADR 0083 D4 amendment), so a missing `long_term_debt`
-// no longer withholds F. A missing `current_liabilities` instead breaks F5
-// (leverage) + F6 (current_ratio) and Altman X1 (working_capital) — strict
-// completeness must yield `insufficient_data` for both, never a silent zero.
+// F5's leverage input is non-current liabilities (`total_liabilities −
+// current_liabilities`, ADR 0083 D4 amendment). A missing `current_liabilities`
+// breaks F5 (leverage) + F6 (current_ratio) and Altman X1 (working_capital) —
+// strict completeness must yield `insufficient_data` for both, never a silent
+// zero.
 #[test]
 fn missing_current_liabilities_yields_insufficient_both() {
     let ctx = rebuilt_without(&full_sample(), &["current_liabilities"]);
@@ -300,10 +300,10 @@ fn missing_current_liabilities_yields_insufficient_both() {
     }
 }
 
-// ---- a missing `long_term_debt` no longer withholds F (basis swap) ----------
+// ---- `long_term_debt` does not withhold F (basis swap) ----------
 #[test]
 fn missing_long_term_debt_still_computes_headline() {
-    // long_term_debt is retained in the catalog but no longer a health input.
+    // long_term_debt is retained in the catalog but is not a health input.
     let ctx = rebuilt_without(&full_sample(), &["long_term_debt"]);
     let piotroski = piotroski_f(&ctx, &coords_latest(&ctx), INDUSTRIAL_STATEMENT_TYPE);
     assert!(

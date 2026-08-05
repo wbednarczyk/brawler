@@ -25,7 +25,7 @@ export function SegmentedControlOption({ active = false, children, onClick }: Se
     <button
       className={active ? "segment-active" : undefined}
       // A single-select toggle group: `aria-pressed` exposes which segment is
-      // active to assistive tech (the active state was previously class-only).
+      // active to assistive tech.
       aria-pressed={active}
       onClick={onClick}
       type="button"

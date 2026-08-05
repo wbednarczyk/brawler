@@ -239,8 +239,7 @@ mod tests {
     }
 
     /// Epic #229 T2: 24 of the maintainer's stored files are markup under a `.pdf`
-    /// name. The extension used to pick the PDF reader, which fails on every one of
-    /// them; the sniffed container picks the markup reader and the sections land.
+    /// name; the sniffed container picks the markup reader and the sections land.
     #[test]
     fn markup_stored_under_a_pdf_name_extracts_as_markup() {
         let state = app_with_dir("liar");

@@ -11,20 +11,7 @@ export type UserSettings = { theme: "dark" | "light" | "system", locale: "en" | 
  * Years of company history the on-track backfill covers (ADR 0077 §3).
  * Clamped to `[1, 10]`; an absent row reads the default `3`.
  */
-backfillYears: number, 
-/**
- * Per-history-sweep tier-4 AI call budget (ADR 0077 §6). Clamped to
- * `[0, 500]` (0 = off); an absent row reads the default `30`. Snapshotted
- * onto each sweep at creation, so a change only affects future sweeps.
- */
-settingsSource: string, settingsImportExportFormat: string, yamlImportExportStatus: string, aiProviders: AiProviderSettings, logs: LogSettings, shortcutBindings: { [key in string]: ShortcutBindingSetting }, 
-/**
- * Per-capability ordered (provider, model) fallback pool (ADR 0060 as
- * amended), keyed by `AiCapability::key`. An absent key or an empty list
- * means "use the global fallback" — no seed row, so a database that
- * predates this key loads an empty map rather than failing.
- */
-database: DatabaseSettings, queue: QueueSettings, 
+backfillYears: number, settingsSource: string, settingsImportExportFormat: string, yamlImportExportStatus: string, aiProviders: AiProviderSettings, logs: LogSettings, shortcutBindings: { [key in string]: ShortcutBindingSetting }, database: DatabaseSettings, queue: QueueSettings, 
 /**
  * Company IDs the user has pinned to the sidebar spine (ADR 0054). A simple
  * local UI preference stored as a JSON array in the `settings` KV table;
