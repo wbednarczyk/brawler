@@ -126,8 +126,7 @@ describe("buildFactMatrix", () => {
   // period + definition, distinguished only by `dataQuality`). The matrix
   // shows ONE fact per period, and it must be the final one — mirrors the
   // backend's final-preferred idiom (`metric_history`,
-  // `stored_fact_set_filtered`) instead of the old "last object in the facts
-  // array wins" behavior.
+  // `stored_fact_set_filtered`).
   describe("final-preferred cell selection (ADR 0093 dec. 2)", () => {
     it("prefers the final sibling when the preliminary fact comes LAST in the array (facts arrive created_at DESC — final first)", () => {
       const periods = [period("p1", 2025, "annual", "2025-12-31")];

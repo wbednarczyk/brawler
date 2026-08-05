@@ -60,9 +60,9 @@ function autopilotStatusLabel(status: string | null, text: Translate): string {
 }
 
 /**
- * The "what happened" statement for a fired attention event — the CONCRETE event,
- * never a bare category (v0.60 D6, owner dogfooding 2026-07-23). Each event now
- * carries its evidence specifics from the backend join (`evidenceTitle` /
+ * The "what happened" statement for a fired attention event — the CONCRETE
+ * event, never a bare category (v0.60 D6). Each event carries its evidence
+ * specifics from the backend join (`evidenceTitle` /
  * `evidenceDetail`, raw source data); this composes the localized sentence
  * client-side (ADR 0087 dec. 4 / ui-authoring §6 — the backend never bakes
  * prose). A missing `evidenceTitle` (legacy row / pruned evidence) falls back to

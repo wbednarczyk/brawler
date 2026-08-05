@@ -159,9 +159,8 @@ function numberField(source: Record<string, unknown>, key: string): number | nul
 }
 
 // Tier-4 KPI-extraction degrade reasons carried on an `extractionAvailable:false`
-// delta (jobs/autopilot.rs, jobs/structured_extraction.rs). Each stored reason
-// maps to an honest, product-facing line rather than one blanket "no AI provider"
-// string (card b85ba3c). Keep the copy short and free of implementation vocabulary
+// delta (jobs/autopilot.rs, jobs/structured_extraction.rs): each stored reason
+// maps to an honest, product-facing line, free of implementation vocabulary
 // (dev-speak locale guard). `sweep_deterministic_only` covers legacy rows.
 const EXTRACTION_UNAVAILABLE_TEXT: Record<string, string> = {
   no_ai_provider: "KPI extraction unavailable (no AI provider configured)",
@@ -181,7 +180,7 @@ const EXTRACTION_UNAVAILABLE_TEXT: Record<string, string> = {
  * reasons get a specific message; a `provider_error:<code>` reason (prefix match)
  * gets the generic provider-error text; an unknown/new reason surfaces its RAW
  * code so it is never silently swallowed into a blanket message; a delta with no
- * reason recorded (oldest legacy rows) keeps the historical generic line.
+ * reason recorded (older rows lacking the field) falls back to the generic line.
  */
 function extractionUnavailableText(delta: Record<string, unknown>, text: TextFn): string {
   const reason = typeof delta.reason === "string" ? delta.reason : null;

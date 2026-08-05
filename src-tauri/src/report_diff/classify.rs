@@ -146,19 +146,18 @@ fn marker_period(tokens: &[String], lowered: &str) -> Option<(i32, u8)> {
     if index == 0 {
         return None;
     }
-    // Bug #325, tightened (adversarial-review blocker #5): prefer the year
-    // paired with the SAME day+month calendar marker that named THIS index,
-    // over `parse_year`'s "first standalone year anywhere in the text" below
-    // — but ONLY when the index itself came from that calendar marker
-    // (`PeriodIndexSource::MonthCalendarMarker`). When the index instead came
-    // from an EXPLICIT marker (`rok obrotowy`, `QSr 4`, `roczny`, …), an
-    // unrelated day+month mention elsewhere in the same text must never
-    // donate ITS year to that marker's index: a non-calendar filer's cover
-    // page can read "rok obrotowy zakończony 30 września 2025 [...] 31
-    // grudnia 2024" (the true FYE stated next to September, a comparative or
-    // otherwise unrelated December date mentioned separately) — pairing the
-    // "rok obrotowy" index with the December marker's 2024 would resolve
-    // FY2024, silently wrong by a year. See `month_end_year_for_index`.
+    // Bug #325: prefer the year paired with the SAME day+month calendar marker
+    // that named THIS index, over `parse_year`'s "first standalone year
+    // anywhere in the text" below — but ONLY when the index itself came from
+    // that calendar marker (`PeriodIndexSource::MonthCalendarMarker`). When
+    // the index instead came from an EXPLICIT marker (`rok obrotowy`, `QSr 4`,
+    // `roczny`, …), an unrelated day+month mention elsewhere in the same text
+    // must never donate ITS year to that marker's index: a non-calendar
+    // filer's cover page can read "rok obrotowy zakończony 30 września 2025
+    // [...] 31 grudnia 2024" (the true FYE stated next to September, an
+    // unrelated December date mentioned separately) — pairing the "rok
+    // obrotowy" index with the December marker's 2024 would resolve FY2024,
+    // silently wrong by a year. See `month_end_year_for_index`.
     if matches!(source, PeriodIndexSource::MonthCalendarMarker) {
         if let Some(year) = month_end_year_for_index(&normalized, index) {
             return Some((year, index));
@@ -173,9 +172,9 @@ fn marker_period(tokens: &[String], lowered: &str) -> Option<(i32, u8)> {
 /// word) or the day+month CALENDAR fallback (`months`, e.g. bare "31
 /// grudnia"). [`marker_period`] uses this to decide whether
 /// [`month_end_year_for_index`] may safely donate its year to this index
-/// (adversarial-review blocker #5, tightening bug #325's fix): the calendar
-/// marker's own nearby year is trustworthy evidence about ITS OWN index, but
-/// says nothing about an index an unrelated EXPLICIT marker already settled.
+/// (bug #325): the calendar marker's own nearby year is trustworthy evidence
+/// about ITS OWN index, but says nothing about an index an unrelated
+/// EXPLICIT marker already settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PeriodIndexSource {
     ExplicitMarker,
@@ -194,15 +193,12 @@ enum PeriodIndexSource {
 /// Bug #325 (DNP, 202512 Dino Polska SF UoR.xhtml): the cover page states the
 /// reporting year TWICE as "31 grudnia 20 25" (broken by the extraction
 /// artifact in both places), while an unrelated signing dateline nearby
-/// states "26 marca 2026" with a CLEAN "2026". The old grammar paired
-/// whichever index `parse_period` found with `parse_year`'s document-wide
-/// "first clean year anywhere" — which skipped past both broken "2025"s and
-/// landed on the signing date's "2026" instead (fiscal_year 2026 / period_end
-/// 2026-12-31, wrong). Tying the year to the SAME marker that named the index
-/// is the fix. When the nearby year is ALSO broken beyond this one-space
+/// states "26 marca 2026" with a CLEAN "2026". Pairing the year to the SAME
+/// marker that named the index avoids resolving to the signing date's year
+/// instead. When the nearby year is ALSO broken beyond this one-space
 /// tolerance (or absent), this returns `None` and the caller falls back to
-/// the old global scan — the same "never guess" doctrine as every other pass,
-/// never worse than before the fix.
+/// the document-wide "first clean year" scan — the same "never guess"
+/// doctrine as every other pass.
 fn month_end_year_for_index(normalized: &str, index: u8) -> Option<i32> {
     let g = grammar();
     let (regex, _) = g.months_with_year.iter().find(|(_, i)| *i == index)?;
@@ -581,7 +577,7 @@ fn compact_period(tokens: &[String]) -> Option<(i32, u8)> {
 /// [`period_from_title_url`] turns into `None`. Quarter and half-year markers are
 /// tested before the annual arm: an interim report often carries both. Also
 /// reports WHICH pass matched ([`PeriodIndexSource`]) — `marker_period` uses
-/// this to gate `month_end_year_for_index` (adversarial-review blocker #5).
+/// this to gate `month_end_year_for_index`.
 /// A `0` index pairs with `PeriodIndexSource::ExplicitMarker` as a
 /// placeholder; callers must check the index, never branch on the source
 /// alone.
@@ -833,8 +829,6 @@ mod tests {
 
     #[test]
     fn derives_roman_and_word_quarter_forms_across_separators() {
-        // Underscore-separated roman numerals never matched (the old arms assumed a
-        // space), and `III kwartał` fell into the `i kwarta` arm when it did.
         assert_eq!(
             period_sort_key("Raport_kwartalny_Grupa_ABS_III_kwartal_2025.pdf", ""),
             Some((2025, 3))
@@ -940,9 +934,7 @@ mod tests {
     //
     // A stored statement's SFP header pairs the current period-end with the prior
     // one — both calendar boundaries, current listed FIRST (and therefore later):
-    // "31.03.2025 31.12.2024", or annual "31.12.2024 31.12.2023". This explicitly
-    // names the period; the old code abstained (NonCalendarWindow) and lost it on
-    // exactly the card-fc692da documents this milestone recovered.
+    // "31.03.2025 31.12.2024", or annual "31.12.2024 31.12.2023".
     // -----------------------------------------------------------------------
 
     #[test]

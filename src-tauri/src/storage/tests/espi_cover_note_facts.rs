@@ -427,8 +427,7 @@ fn a_cover_note_never_outranks_esef_and_always_outranks_the_aggregator() {
     let company = company(&state, "PKN");
 
     // An ESEF fact and an aggregator fact already occupy their Q1 2026 slots,
-    // both with values the cover note disagrees with (ADR 0095: the pdf tier
-    // this test originally exercised is retired and unwritable).
+    // both with values the cover note disagrees with.
     seed_fact(&state, &company.id, "revenue", "111111111", "esef");
     seed_fact(
         &state,
@@ -499,8 +498,7 @@ fn upgrading_a_lower_tier_value_records_the_disagreement_in_detail() {
         .set_developer_mode_enabled(true)
         .expect("developer mode enables");
 
-    // An aggregator-tier value the cover note disagrees with (ADR 0095: the
-    // pdf tier this test originally seeded is retired and unwritable).
+    // An aggregator-tier value the cover note disagrees with.
     seed_fact(
         &state,
         &company.id,
@@ -741,10 +739,9 @@ fn every_zero_effect_cover_note_state_names_a_reason() {
     );
 }
 
-/// The re-scan verdict must be able to say why too. It used to reduce every
-/// inner outcome to `carriers_scanned` / `facts_written` / `errors`, so a
-/// rebuild that re-read hundreds of stored komunikaty and wrote nothing
-/// reported a bare zero — the zero-effect-success class (epic #40 S5).
+/// The re-scan verdict must be able to say why too — a rebuild that re-read
+/// hundreds of stored komunikaty and wrote nothing must not report a bare
+/// zero (the zero-effect-success class, epic #40 S5).
 #[test]
 fn every_zero_effect_cover_note_rescan_state_names_a_reason() {
     use crate::effects_honesty::{EffectVerdict, ExplainsEffect};

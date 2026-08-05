@@ -379,8 +379,7 @@ export type CockpitScreenProps = {
   initialCompanyId?: string | null;
   /** When set, the cockpit opens with this saved layout activated (ADR 0057). */
   initialLayoutId?: string | null;
-  /** When set, the Dashboard opens on this built-in preset (epic c793ca1) — e.g.
-   * the retired Research screen redirects here with the "evidence" preset. */
+  /** When set, the Dashboard opens on this built-in preset (epic c793ca1). */
   initialPresetId?: string | null;
   /** Notifies the host when saved layouts change (create/save/delete) so the
    * sidebar named-views list (ADR 0057 decision 5) stays in sync. */
@@ -542,10 +541,8 @@ function CockpitWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per company after layouts load; non-memoized fns intentionally excluded
   }, [dashboardCompanyId, layoutsLoaded, savedLayouts, initialLayoutId]);
 
-  // Open on a requested preset (epic c793ca1): the retired Research screen
-  // redirects into the Dashboard with the "evidence" preset. Applied once per
-  // mount after the view company is seeded, so the preset's panels (e.g. the
-  // research evidence timeline) render for that company.
+  // Open on a requested preset (epic c793ca1), applied once per mount after the
+  // view company is seeded, so the preset's panels render for that company.
   const appliedPresetRef = useRef(false);
   useEffect(() => {
     if (appliedPresetRef.current || !initialPresetId) return;

@@ -444,14 +444,7 @@ Error codes: `claim_not_found`, `company_not_found`, `invalid_due_period`, `inva
 
 ## Claim Extraction — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-In-app AI claim extraction is removed with the analysis layer: the start / retry
-/ list / confirm-proposal / reject-proposal claim-extraction commands and the
-claim-extraction job no longer exist. The **manual claims path stays** — creating
-a management claim (see [Management Claims](#management-claims)) is how a claim is
-recorded now, and claim proposals a previous version stored remain in the
-claim-extraction jobs and proposals tables as readable user data (no table drop,
-no row deletion — ADR 0084 decision 5). Agent-proposed claims with mandatory
-provenance return via MCP write-tools (v0.60.0).
+In-app AI claim extraction is removed; the `claim_extraction_proposals` and `claim_extraction_jobs` tables were dropped by migration `0102` (decision 5 — no readable history survives). The **manual claims path stays** — creating a management claim (see [Management Claims](#management-claims)) is how a claim is recorded now. Agent-proposed claims with mandatory provenance return via MCP write-tools (v0.60.0).
 
 ## Claims Review Queue
 
@@ -1116,7 +1109,7 @@ Initial local commands:
 - `list_unclassified_filings(input)`: the explicit **unclassified** bucket — official-report feed items with no `company_signals` row (the rule classifier could not place them; absence is the definition, never a flag). Takes `{ companyId?, limit? }` (default 50, max 200), newest first. Materializes `UnclassifiedFiling { feedItemId, companyId, title, bodyText, signalDate }`. Headless/MCP-first (`v0.60.0`, [ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) decision 4); no UI entry point yet (Today/Inbox surfacing is future scope).
 - `classify_filing(input)`: agent-driven classification of one unclassified official filing into a `confirmed` signal. Takes `{ feedItemId, category }`; the mandatory `feedItemId` is the signal's evidence anchor. Validates `category` against the seeded taxonomy, that the item is an official filing matched to a company, and that no signal already exists (a second attempt is a `conflict`); unknown category / non-official item are `invalid_input`. The created signal carries **honest provenance** — `classified_by = agent` (never `rule`; the CHECK set is extended to `rule | ai | agent` by migration `0113`), `status = confirmed`, `confidence = 1.0`. Headless/MCP-first (`v0.60.0`, [ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) decision 4).
 
-The opt-in **AI fallbacks** — `run_ai_signal_classification` (classify filings the rule classifier left unknown) and `run_ai_event_derivation` (date signals the deterministic parser could not) — are retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2). The deterministic ESPI rule classifier and `signal_dates` date parsing stay; filings they cannot classify land in an explicit **unclassified** bucket, surfaced by `list_unclassified_filings` and resolved by `classify_filing` (both exist as of `v0.60.0`, [ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) decision 4), never guessed. The `espiAiFallbackEnabled` toggle is removed.
+The opt-in **AI fallbacks** (`run_ai_signal_classification`, `run_ai_event_derivation`) are retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2). The deterministic ESPI rule classifier and `signal_dates` date parsing stay; filings they cannot classify land in an explicit **unclassified** bucket, surfaced by `list_unclassified_filings` and resolved by `classify_filing` ([ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) decision 4), never guessed.
 
 Confirm/reject input:
 
@@ -1295,7 +1288,7 @@ Rules:
 
 Rules:
 
-- **Generation retired** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decisions 1/2): `start_ai_analysis` / `retry_ai_analysis` and the `ai_analysis` job are removed — no new feed-item analysis is produced in-app (intelligence arrives through the MCP port, BYOA). `list_ai_analysis(feedItemId)` **survives read-only**: analysis a previous version stored stays listable (decision 5 — no table drop, no row deletion).
+- **Generation retired** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)): no new feed-item analysis is produced in-app (intelligence arrives through the MCP port, BYOA). `list_ai_analysis(feedItemId)` **survives read-only** — analysis a previous version stored stays listable.
 - `promptPresetId` is stable and may represent a built-in prompt preset.
 - `customQuestion` is optional and stores the user's local question text for the selected feed item.
 - Persisted statuses are `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
@@ -1815,21 +1808,14 @@ Commands:
   "developerMode": false,
   "pollIntervalSeconds": 900,
   "backfillYears": 3,
-  "historySweepAiCallLimit": 30,
   "settingsSource": "sqlite",
   "settingsImportExportFormat": "yaml",
   "aiProviders": {
     "youtubeTranscriptionProvider": "provider_gemini",
     "youtubeTranscriptionModel": "gemini-2.5-flash",
-    "youtubeTranscriptionTimeoutSeconds": 300,
-    "generalAnalysisProvider": null,
-    "generalAnalysisModel": "gemini-2.5-flash",
-    "generalAnalysisTimeoutSeconds": 90,
-    "openaiCompatibleBaseUrl": ""
+    "youtubeTranscriptionTimeoutSeconds": 300
   },
-  "aiAnalysisMode": "source_grounded",
   "shortcutBindings": {},
-  "capabilityProviders": {},
   "database": {
     "maxConnections": 4,
     "busyTimeoutMs": 5000,
@@ -1837,64 +1823,23 @@ Commands:
   },
   "queue": {
     "sourcesWorkers": 2,
-    "autopilotWorkers": 3,
-    "aiWorkers": 2,
-    "aiProviderConcurrency": 2
+    "autopilotWorkers": 3
   },
-  "pinnedCompanyIds": []
+  "pinnedCompanyIds": [],
+  "mcp": { "enabled": false, "port": 8317, "writesEnabled": false }
 }
 ```
+
+The `aiProviders` block carries ONLY the YouTube-transcription provider fields — the sole in-app AI dependency ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the former analysis-provider fields, `aiAnalysisMode`, `capabilityProviders`, `historySweepAiCallLimit`, and the `queue.aiWorkers`/`aiProviderConcurrency` knobs no longer exist in the settings shape (stored legacy rows are ignored on read).
 
 `update_settings` is atomic: a validation failure on any field rolls back the whole request, leaving every setting (including fields earlier in the same request) untouched.
 
 `backfillYears` (ADR 0077 §3) is the years of company history the on-track backfill fetches. `update_settings` accepts an optional `backfillYears`, clamped to `[1, 10]` on write (never rejected); omitting it leaves the current depth unchanged. No seed row: reads default to `3` and clamp an out-of-range stored value. The Sources settings section exposes it as clickable presets (1/3/5/10) bound to a slider + numeric input.
 
-`historySweepAiCallLimit` (ADR 0077 §6) is the per-history-sweep tier-4 AI call budget (one unit = one tier-4 invocation for one document; `0` = unlimited). `update_settings` accepts an optional `historySweepAiCallLimit`, clamped to `[0, 500]` on write (never rejected); omitting it leaves the current budget unchanged. No seed row: reads default to `30` and clamp an out-of-range stored value. The value is **snapshotted onto each sweep at creation**, so a change only governs future sweeps. Settings → AI exposes it as clickable presets (0/10/30/100) bound to a slider + numeric input; the Coverage panel footer echoes the latest sweep's spend ("AI: {used}/{limit}", or "AI: {used} (no limit)" when the limit is `0`).
-
 `pinnedCompanyIds` (ADR 0054) is the ordered list of company IDs pinned to the
 sidebar IA spine. `update_settings` accepts an optional `pinnedCompanyIds`
 (full-replacement array, de-duplicated, blanks dropped); omitting it leaves the
 current pins unchanged. Defaults to `[]`.
-
-`capabilityProviders` (ADR 0060 as amended, ADR 0061 decision 5) is a map from
-capability key to an **ordered** list of `{ provider, model }` entries — the
-capability's failover pool, tried in list order. `update_settings` accepts an
-optional `capabilityProviders` (full-replacement map, same overwrite contract
-as `shortcutBindings`); omitting it leaves the current map unchanged. Defaults
-to `{}`. An absent key or an empty list for a key means "use
-`generalAnalysisProvider` / `generalAnalysisModel`" — every capability is
-backward-compatible with a single global provider.
-
-Capability keys (`AiCapability::key`, fixed set of 10):
-
-| Key | Kind | Provider call |
-|---|---|---|
-| `kpi_extraction` | document | `complete_document` — reserved: valid stored key, non-routable from the UI ([ADR 0080](adr/0080-retire-embedding-model.md), card `db9a292`) |
-| `claim_extraction` | document | `complete_document` |
-| `feed_analysis` | text | `analyze` |
-| `research_brief` | text | `generate_research_brief` |
-| `research_digest` | text | `generate_research_digest` |
-| `morning_briefing` | text | `generate_research_digest` (ADR 0068 decision 4 — narrative phrasing over the deterministically composed briefing item list; UI-routable as of v0.54) |
-| `event_date` | text | `complete_document` (extracted text) |
-| `signal_classification` | text | text |
-| `qualitative_assessment` | text | `complete_document` (self-contained prompt) |
-| `vision_extraction` | document | OCR (tier-4 last-resort, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §4) |
-
-Validation rules for `capabilityProviders`:
-
-- Every map key must be one of the 10 capability keys above; an unknown key is rejected.
-- Every entry's `provider` must be a currently selectable analysis provider id (the AI Provider Catalog below); an entry's `model` must be non-empty.
-- `model` must belong to the provider's curated model list, except for `provider_openai_compatible`, which has no curated list and accepts any non-empty freeform model id (same exemption as `generalAnalysisModel`).
-- An empty entry list for a key is valid — it is the explicit "use the global fallback" state.
-- A `document`-kind capability (`kpi_extraction`, `claim_extraction`, `vision_extraction`) rejects any entry whose provider is not **document-native** (`provider_gemini`, `provider_anthropic`, `provider_mistral`): `provider_openai` and `provider_openai_compatible` are text-only and would hard-fail every document call and poison pool failover, so `update_settings` rejects the combination outright with `"<capability>: provider <id> cannot accept document input; route a document-capable provider (Gemini or Claude)"` rather than letting it surface only at job-run time.
-
-Pool (failover) semantics at run time (ADR 0061 decision 5):
-
-- The list order is the failover order: the first entry is tried first.
-- A member is skipped over to the next only on an **availability error** (429 / 5xx / timeout / connection error); a valid 200 response with unparsable/bad content is never a failover trigger — it surfaces immediately.
-- A member that just failed an availability error enters a 60-second cooldown: it is tried last (deprioritized), never excluded — the pool always tries every member, so it never dead-ends even when all members are cooling.
-- Cooldown state is runtime-only (in-memory), never persisted to settings or the database.
-- A pool member with no configured credential (or the compatible provider with no configured base URL) is skipped when the pool is built, with a warning logged.
 
 Allowed theme values:
 
@@ -1922,18 +1867,13 @@ Field defaults and validation ranges:
 | `developerMode` | `false` | enabled only via `BRAWLER_DEVELOPER_MODE` env or runtime unlock passphrase, never a plain toggle |
 | runtime log level | `info` | |
 | runtime log rotation | 5 files × 5 MiB | |
-| `aiAnalysisMode` | `source_grounded` | `opinionated` mode requires explicit opt-in and still excludes buy/sell/hold output |
-| `aiProviders.generalAnalysisTimeoutSeconds` | `90` | options: 45\|90\|180\|300\|600 |
-| `aiProviders.openaiCompatibleBaseUrl` | `""` (unconfigured) | ADR 0060; must start with `http://`/`https://` when set; consulted only when the resolved provider is `provider_openai_compatible` |
 | `aiProviders.youtubeTranscriptionModel` | `gemini-2.5-flash` | cheapest M10-validated model; options: gemini-2.5-flash-lite\|gemini-2.5-flash\|gemini-3.1-flash-lite\|gemini-3.5-flash |
 | `aiProviders.youtubeTranscriptionTimeoutSeconds` | `300` | options: 45\|90\|180\|300\|600 |
 | `database.maxConnections` | `4` | clamped 1–16 |
 | `database.busyTimeoutMs` | `5000` | clamped 0–60000 |
 | `database.acquireTimeoutMs` | `10000` | clamped 1000–60000; database pool ADR 0032; applied at pool build (next launch) |
 | `queue.sourcesWorkers` | `2` | clamped 1–16 |
-| `queue.autopilotWorkers` | `3` | clamped 1–16 |
-| `queue.aiWorkers` | `2` | clamped 1–16 |
-| `queue.aiProviderConcurrency` | `2` | clamped 1–10; queue tuning ADR 0059; indexing stays a constant 1 worker, not user-tunable; applied at next launch |
+| `queue.autopilotWorkers` | `3` | clamped 1–16; queue tuning ADR 0059 — indexing stays a constant 1 worker; applied at next launch |
 
 A missing or invalid value for any clamped field falls back to its default so the app always opens. Settings must offer a reset-to-defaults action for the database pool block, and disclose that pool/queue changes take effect on next launch.
 
@@ -1942,7 +1882,6 @@ Other rules:
 - `theme` controls brightness mode only; `accentPalette` controls the semantic color palette. Accent palettes must be added through the settings validation and theme-token registry, not as component-local color overrides.
 - Developer mode may be enabled only through intentional local developer mechanisms, not a normal always-visible Settings toggle. Startup activation uses `BRAWLER_DEVELOPER_MODE=1`, `true`, `yes`, or `on`. Runtime author unlock (`unlock_developer_mode({ passphrase })`) may enable Developer mode after the app is already running only when `BRAWLER_DEVELOPER_UNLOCK_CODE` is present in the app process environment and the submitted passphrase matches it; the entry point is hidden from normal UI and must not be registered as a configurable shortcut. Once active, Diagnostics may show status and a disable action (`disable_developer_mode()`).
 - Settings must let the user switch the app locale between English and Polish; locale handling is an extensible app-locale boundary so future locales are added through resources/configuration, not per-screen rewrites. Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies retain their original or user-entered language.
-- General AI analysis runs through asynchronous local job state so provider calls do not block the UI; the provider contract stays provider-neutral so OpenAI/Anthropic/others can be added without rewiring the UI. Settings must let the user choose the general analysis provider/model/timeout from supported configured options.
 - Settings must show that `provider_gemini` is selected only for YouTube transcription; must show whether transcription credentials are configured; must let the user save/replace/clear the Gemini API key used only for transcription; must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
 - Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs. Shortcut binding overrides are stored as a JSON object keyed by action ID (missing entries use the current default). Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
 - Settings/About must show local license status and allow valid users to inspect safe metadata, replace the token, and clear the token.
@@ -1978,13 +1917,11 @@ Rules:
 
 ## AI Provider Catalog — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-The selectable analysis-provider catalog and `list_ai_provider_catalog()` are
-removed with the in-app AI analysis layer (decision 1): there is no in-app
-provider/model selection UI any more, and the Claude / OpenAI / OpenAI-compatible
-/ Mistral adapters, credentials, and `capabilityProviders` routing are gone
-(decision 7). The **only** remaining AI dependency is the Gemini transcript
-provider (see [Credentials](#credentials) and the transcript settings) — data
-acquisition, not analysis. The app runs fully featured with zero API keys.
+The selectable analysis-provider catalog, `list_ai_provider_catalog()`, and
+capability-provider routing are removed with the in-app AI analysis layer
+(decisions 1/7). The **only** remaining AI dependency is the Gemini transcript
+provider (see [Credentials](#credentials)) — data acquisition, not analysis.
+The app runs fully featured with zero API keys.
 
 ## Research Evidence Boundary
 
@@ -2659,7 +2596,7 @@ Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamen
 
 #### History Sweep (`v0.51.0`, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §3)
 
-The history sweep is the backfill/manual counterpart to the refresh-time detection sweep: it enqueues a full autopilot run (`trigger='history_sweep'`, with the sweep's row id stamped as the run's `sweep_id`) for every canonical periodic report whose period still lacks accepted facts. It runs only for a company opted into automation (mode ≠ `off`); a company in mode `off` ends the sweep with `skippedReason='automation_off'` — never a silent skip. Sweep runs are **AI-budget-gated** (F3b, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §6): the `HistorySweep` DTO carries `aiCallsUsed` / `aiCallLimit` (the budget snapshotted from `historySweepAiCallLimit` at creation; `0` = unlimited) — a run whose deterministic pipeline emits nothing enters tier-4 only while a unit remains, and otherwise records `skipped_budget` on its `kpiDeltaJson`. Durable state lives in the `history_sweeps` table ([data-model.md](data-model.md)). DTOs `HistorySweep` / `HistorySweepProgress`.
+The history sweep is the backfill/manual counterpart to the refresh-time detection sweep: it enqueues a full autopilot run (`trigger='history_sweep'`, with the sweep's row id stamped as the run's `sweep_id`) for every canonical periodic report whose period still lacks accepted facts. It runs only for a company opted into automation (mode ≠ `off`); a company in mode `off` ends the sweep with `skippedReason='automation_off'` — never a silent skip. Sweep runs are fully deterministic — no AI tier, no per-sweep budget ([ADR 0084](adr/0084-retire-in-app-ai-layer.md); legacy `skipped_budget` markers on stored runs stay readable). Durable state lives in the `history_sweeps` table ([data-model.md](data-model.md)). DTOs `HistorySweep` / `HistorySweepProgress`.
 
 - `run_history_sweep(companyId)`: starts a **manual** history sweep ("Extract missing periods" — the case where documents are already fetched and only extraction is missing, no re-download). Gates on the company existing and mode ≠ `off` (`company_not_found` / `automation_off` errors; the UI disables the button in mode `off`, the command stays honest for a direct call), creates a `manual` sweep row, enqueues the durable `history_sweep` job, and returns the `HistorySweep`. Offloaded (`spawn_blocking`). **UI entry point**: the Coverage panel footer's "Extract missing periods" action.
 - `get_history_sweep_progress(companyId)`: returns `HistorySweepProgress { sweep: HistorySweep | null, runsTotal, runsDone, runsFailed }` — the company's latest sweep plus per-run progress derived from its enqueued run ids (terminal = `succeeded`/`partial`/`failed`; `runsFailed` counts `failed`). A null `sweep` means the company has never been swept. Offloaded (`spawn_blocking`). **UI entry point**: polled by the Coverage panel footer's status line after a backfill or sweep.
@@ -2717,11 +2654,8 @@ AI KPI extraction ([ADR 0028](adr/0028-multi-provider-ai-boundary.md), [ADR 0029
 
 An extraction job carries the detected primary period (`detectedFiscalYear`, `detectedPeriodType`, `detectedPeriodEndDate`), default currency/language, and its proposals. Each proposal carries `metricKey`, `label`, `valueNumeric` (decimal base-units text), `asReportedValue`/`asReportedScale`, `confidence` (`low|medium|high`), `sourceSnippet`, `isProposedKpi` (true for metrics beyond the supplied taxonomy), `status` (`pending|confirmed|rejected`), and `factId` once confirmed. Only the primary period is extracted; prior-year comparative columns are ignored.
 
-KPI extraction is **removed entirely** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)
-decision 5, clean cut): generation, the staging ledger, and the review surface
-all go. Migration 0102 drops `kpi_extraction_jobs` and `kpi_extraction_proposals`
-— confirmed proposals had already been materialised into `financial_facts`, so
-only the staging rows and unreviewed OCR/AI-origin proposals are lost. The
+AI-generated KPI extraction is **removed entirely** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)
+decision 5): generation, the staging ledger, and the review surface all go. The
 deterministic fundamentals pipeline (ESEF → EspiCoverNote → `html_aggregator`,
 BiznesRadar-primary) is the only extractor now; the PDF fact-extraction arm
 AND the positional/tier-3b arm are both retired ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md)

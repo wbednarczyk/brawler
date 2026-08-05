@@ -12,9 +12,7 @@
 //    command surface (CLAUDE.md: "a capability is not done until a user can
 //    reach it") and fails here.
 // 2. EXPORT level: `knip --include exports` must report no unused value export
-//    under `src/api/` (types stay excluded). Export-level was originally
-//    rejected as cry-wolf, but the 2026-07-28 sweep proved every hit (24 of 24)
-//    was genuinely dead code — deliberately parked wrappers go in
+//    under `src/api/` (types stay excluded). Deliberately parked wrappers go in
 //    EXPORT_ALLOWLIST with an issue/ADR reference instead, so the gate stays
 //    precise (ADR 0045: never a broad gate that flags legitimate code).
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
@@ -25,14 +23,13 @@ const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const API_DIR = join(ROOT, "src", "api");
 
 // Documented exemptions — each entry needs an ADR/owner-decision reference.
-// (Empty: the one historical entry, `src/api/claimExtraction.ts`, was retired
-// with the in-app AI analysis layer — ADR 0084, which reverses ADR 0080 §6.)
+// intentionally empty
 const PARKED_ALLOWLIST = new Set([]);
 
 // Export-level exemptions: "src/api/<file>.ts#<exportName>" — a wrapper kept
 // on purpose for an approved upcoming slice. Each entry needs an issue/ADR
-// reference in a comment beside it. (Empty: the 2026-07-28 sweep removed every
-// orphaned export instead of parking it.)
+// reference in a comment beside it.
+// intentionally empty
 const EXPORT_ALLOWLIST = new Set([]);
 
 /** Recursively collect .ts/.tsx files under dir. */

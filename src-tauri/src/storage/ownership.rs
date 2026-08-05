@@ -317,7 +317,7 @@ pub(super) fn current_state(
     let mut rows = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)?;
-    // Founder-insider sticky overlay (F-A1, owner dogfooding 2026-07-17). The
+    // Founder-insider sticky overlay (F-A1). The
     // disclosure-basis rule above legitimately drops an OFE that vanished below
     // the 5% threshold in a newer report. A `founder_insider` is categorically
     // different: a founder crossing below the disclosure threshold is itself an
@@ -436,7 +436,7 @@ pub(super) fn disclosed_reference_state(
 /// Same-basis documents (e.g. the quarterly report and its attachment) print the
 /// same holder with cosmetic name variants ("PTE Allianz Polska" vs "PTE Allianz
 /// Polska S.A."), which are distinct `holder_name_normalized` identities by design
-/// (append-only ids stay stable). Merge by IDENTITY (owner dogfooding 2026-07-16):
+/// (append-only ids stay stable). Merge by IDENTITY:
 /// a shared dictionary `display_name` when the name resolves to a seeded alias
 /// ("NN PTE" and "Nationale-Nederlanden PTE S.A." are one entity), else the
 /// parenthetical-stripped canonical key ("cyber_Folks S.A." vs "cyber_Folks S.A.

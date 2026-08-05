@@ -774,9 +774,8 @@ mod tests {
     fn directory_outcome_fetcher_maps_through_dispatch_and_skips_sweep() {
         // ADR 0069 T2: a directory-style adapter returns `RefreshOutcome::Directory`,
         // which the dispatch half maps onto the unified `SourceIngestionResult` shape
-        // (entries_fetched -> items_fetched, etc.) exactly as the retired `Directory`
-        // arm did — and it stays OUT of the full-refresh sweep (`joins_full_refresh`
-        // = false), matching the pre-migration membership.
+        // (entries_fetched -> items_fetched, etc.) and stays OUT of the full-refresh
+        // sweep (`joins_full_refresh` = false).
         use super::{Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome, RuntimeAdapter};
         use crate::app_state::AppState;
         use crate::storage::{open_in_memory_database, CompanyRegistryRefreshResult};
@@ -829,7 +828,7 @@ mod tests {
     #[test]
     fn calendar_style_fetcher_receives_ctx_date() {
         // ADR 0069 T2: the calendar adapter needs the optional date; the trait carries
-        // it through `RefreshContext`, replacing the retired `Calendar` fn-pointer arm.
+        // it through `RefreshContext`.
         use super::{
             empty_source_result, Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome,
             RuntimeAdapter,

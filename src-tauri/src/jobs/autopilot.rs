@@ -242,14 +242,10 @@ fn stage_fetch(
 
 /// How many of a structured-extraction result's produced facts are recorded
 /// (`confirmed`). Facts are review-free (ADR 0086 dec. 5): every emitted fact
-/// lands `confirmed` in **both** modes, so every produced fact is counted. Bug
-/// e77a1a2 context: the run's `kpi_delta_json` used to carry only `produced` (a
-/// raw fact count) with no honest "confirmed" figure — the Today card then read a
-/// *different* branch's key (always absent here) and silently showed "0 of 0" for
-/// a run that had just committed dozens of facts; this figure keeps the count
-/// honest. `acceptance`/`mode` no longer change the answer (every emit confirms)
-/// but stay in the signature so callers pass them uniformly. `Flagged`/`Empty`
-/// never reach this (nothing was emitted).
+/// lands `confirmed` in **both** modes, so every produced fact is counted.
+/// `acceptance`/`mode` do not change the answer but stay in the signature so
+/// callers pass them uniformly. `Flagged`/`Empty` never reach this (nothing
+/// was emitted).
 fn structured_facts_auto_confirmed(
     _acceptance: crate::fundamentals::extraction::pipeline::Acceptance,
     produced: usize,
@@ -259,8 +255,7 @@ fn structured_facts_auto_confirmed(
 }
 
 /// Stage 2 — extract the report's KPIs through the **deterministic** pipeline
-/// (ADR 0061 dec. 3/8/9). The tier-4 OCR fallback is retired with the in-app AI
-/// layer (ADR 0084 decision 4), so this stage has no AI branch at all: either a
+/// (ADR 0061 dec. 3/8/9; no AI branch, ADR 0084 decision 4): either a
 /// deterministic tier emits validated facts, or the run records an honest
 /// `extractionAvailable:false` delta carrying a typed
 /// [`KpiUnavailableReason`] — flagged for the user via the run's notification,
@@ -285,8 +280,6 @@ fn stage_extract(state: &AppState, run: &storage::AutopilotRun) -> Result<(), St
         // A raw-PDF document is the EXPECTED gap (machine fact-reading retired,
         // ADR 0086 dec. 1: core KPIs arrive from the BR-primary pull), reported
         // with its own reason so the Today card never frames it as a failure.
-        // (The aggregator-fallback reason is retired with ADR 0086; stored
-        // `witness_fallback` deltas stay readable as legacy.)
         Ok(Some(_result)) => gap_reason(state, run, no_tier),
         // Not eligible for the deterministic path (no derivable period, unparsable).
         Ok(None) => gap_reason(state, run, no_tier),
@@ -318,19 +311,12 @@ fn stage_extract(state: &AppState, run: &storage::AutopilotRun) -> Result<(), St
 }
 
 /// Why a run could not produce KPI facts, as a **typed code** rather than an
-/// English sentence (ADR 0084 decision 6).
+/// English sentence (ADR 0084 decision 6). The backend emits the code and the
+/// frontend renders it through the translation layer.
 ///
-/// `compose_summary` used to hardcode "KPI extraction unavailable (no AI
-/// provider configured)" for every cause, which misdiagnosed a real quota
-/// exhaustion as a missing configuration during owner dogfooding (2026-07-19).
-/// The backend now emits the code and the frontend renders it through the
-/// translation layer, so distinct causes can never collapse into one wrong
-/// sentence again.
-///
-/// After the AI retirement the only cause this app can still produce is
-/// [`Self::NoDeterministicTier`]; the provider-shaped variants remain so that
-/// **stored** AI-era deltas (which are user data and stay readable, ADR 0084
-/// decision 5) keep reporting their original, distinguishable cause.
+/// The only cause this app can still produce is [`Self::NoDeterministicTier`];
+/// provider-shaped variants remain so stored AI-era deltas keep reporting
+/// their original cause (ADR 0084 decision 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KpiUnavailableReason {
     /// A third-party quota/rate limit was exhausted (historical runs only).
@@ -348,8 +334,7 @@ pub(crate) enum KpiUnavailableReason {
     /// The document is a raw PDF — machine fact-reading is retired by design
     /// (ADR 0086 dec. 1), so the gap is EXPECTED: core KPIs arrive from the
     /// BiznesRadar-primary daily pull. Distinct from `NoDeterministicTier`
-    /// so the Today card never frames a by-design gap as a per-report failure
-    /// (review 2026-07-22).
+    /// so the Today card never frames a by-design gap as a per-report failure.
     PdfDocument,
 }
 
@@ -566,10 +551,9 @@ fn compose_summary(run: &storage::AutopilotRun) -> String {
                 KpiUnavailableReason::from_delta_reason(reason).as_str()
             ));
         } else {
-            // Normalized counts (bug e77a1a2): both extraction branches write
-            // these keys now. Only emit a KPI count token when the delta actually
-            // carries the counts — never fabricate "0 of 0" for a shape that never
-            // reported them (that is bug e77a1a2's symptom).
+            // Both extraction branches write these keys now. Only emit a KPI
+            // count token when the delta actually carries the counts — never
+            // fabricate "0 of 0" for a shape that never reported them.
             // Review-free (ADR 0086 dec. 5): facts land `confirmed` in BOTH
             // modes, so both emit the same `kpi_confirmed` token — there is no
             // `kpi_pending`/awaiting-confirmation semantics anymore.
@@ -739,8 +723,8 @@ pub(crate) fn enqueue_extraction_run(
 /// now extractable** ([`history_sweep::document_is_extractable`], reused not
 /// duplicated). `document_is_extractable` is constant-true for any well-formed
 /// PDF, so on its own it re-armed every flagged period on every sweep pass,
-/// forever (the extraction storm, owner dogfooding 2026-07-21). The version gate
-/// —`stored_pipeline_version(run) < EXTRACTION_PIPELINE_VERSION`— is what makes a
+/// forever. The version gate —`stored_pipeline_version(run) <
+/// EXTRACTION_PIPELINE_VERSION`— is what makes a
 /// capability upgrade (a newly landed/changed deterministic tier) retry a period
 /// **once**: after the re-run stamps the current version the period settles. A
 /// still-dead file (unreadable/zero-byte, or one no tier can parse) stays
@@ -748,10 +732,9 @@ pub(crate) fn enqueue_extraction_run(
 /// `rerun_extraction_outcome`) does NOT route through here — it calls
 /// `run_structured_extraction` directly and stays unconditional.
 ///
-/// The AI-era reasons (`no_vision_provider`, `skipped_budget`) are no longer
-/// produced (ADR 0084) but remain readable on stored runs; they re-arm on the
-/// same extractability test as any other gap — the retired provider budget no
-/// longer gates anything.
+/// The AI-era reasons (`no_vision_provider`, `skipped_budget`) remain readable
+/// on stored runs (ADR 0084); they re-arm on the same extractability test as
+/// any other gap.
 ///
 /// Deterministic-emitted outcomes (`extractionAvailable:true`) return `None` from
 /// [`extraction_unavailable_reason`] and are therefore never re-armed.
@@ -762,16 +745,6 @@ fn terminal_run_should_rearm(state: &AppState, run: &storage::AutopilotRun) -> b
     let Some(reason) = extraction_unavailable_reason(run.kpi_delta_json.as_deref()) else {
         return false;
     };
-    // VERSION GATE (owner dogfooding 2026-07-21): a couldn't-extract verdict only
-    // becomes stale when the pipeline gains the ability to read a document it
-    // previously could not — signalled by a bump of
-    // `EXTRACTION_PIPELINE_VERSION`. Re-arm ONLY when this build's version is
-    // newer than the one the run recorded; once the re-run stamps the current
-    // version, the next enqueue dedups. Without this gate,
-    // `document_is_extractable` is constant-true for any well-formed PDF, so
-    // every sweep pass re-armed every flagged period forever (attempt_count
-    // reached ~1100+ in a day). Missing field = version 0 (pre-versioning era) →
-    // eligible for exactly one re-arm under the current build.
     if stored_pipeline_version(run.kpi_delta_json.as_deref())
         >= crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION
     {
@@ -964,10 +937,10 @@ fn prefers_candidate(
 /// re-deriving it (F3 decides the final home).
 ///
 /// Container truth decides it (epic #229 T2): the maintainer's corpus stores 38
-/// XML statements under a `.pdf` name, and the old name-based resolution ranked
-/// every one of them *below* a companion PDF — handing the canonical slot to the
-/// document with less extractable data. A ZIP counts as structured because the
-/// structured path unpacks its inner iXBRL instance.
+/// XML statements under a `.pdf` name — name alone would misrank them below a
+/// companion PDF, handing the canonical slot to the document with less
+/// extractable data. A ZIP counts as structured because the structured path
+/// unpacks its inner iXBRL instance.
 pub(crate) fn is_structured_document(document: &storage::ReportDocument) -> bool {
     use crate::fundamentals::extraction::container::Container;
     use crate::report_documents_container::resolved_container_named;
@@ -1044,8 +1017,6 @@ fn disclosure_month_from_url(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // MODE_AUTOPILOT is now test-only (production no longer branches on mode for
-    // confirmation state — facts are review-free, ADR 0086 dec. 5).
     use crate::storage::{
         open_in_memory_database, CaptureReportDocumentInput, NewCompany, MODE_AUTOPILOT,
     };
@@ -1287,11 +1258,6 @@ mod tests {
             delta.contains("esef"),
             "delta should name the tier: {delta}"
         );
-        // Bug e77a1a2: the structured tier used to carry only a raw `produced`
-        // count, with no honest "auto-confirmed" figure — the notification then
-        // read the AI branch's `autoConfirmed` key (always absent here) and
-        // silently defaulted to 0 (live evidence: a real run reported "0 KPI
-        // auto-confirmed of 0 extracted" while 40 structured facts were stored).
         assert!(
             delta.contains("\"factsProposed\":3"),
             "delta should carry the normalized proposed count: {delta}"
@@ -1327,9 +1293,7 @@ mod tests {
             "facts: {facts:?}"
         );
 
-        // The composed notification summary itself must reflect the honest count,
-        // not "0 KPI auto-confirmed (unreviewed) of 0 extracted" — the exact
-        // real-world symptom of bug e77a1a2.
+        // The composed notification summary must reflect the honest count.
         let summary = compose_summary(&after);
         assert!(
             summary.contains("kpi_confirmed:3:3"),
@@ -1337,13 +1301,10 @@ mod tests {
         );
     }
 
-    /// Bug e77a1a2 — direct regression for `compose_summary`, isolated from the
-    /// full structured-extraction pipeline: a structured-tier delta shaped
-    /// exactly like the live report (40 facts stored, `autopilot` mode) must
-    /// summarize with the real count, not silently default to "0 KPI
-    /// auto-confirmed (unreviewed) of 0 extracted" because the structured tier
-    /// used to omit the AI-only `proposed`/`autoConfirmed` keys `compose_summary`
-    /// read.
+    /// Regression for `compose_summary`, isolated from the full
+    /// structured-extraction pipeline: a structured-tier delta shaped like a
+    /// live report (40 facts stored, `autopilot` mode) must summarize with the
+    /// real count.
     #[test]
     fn compose_summary_reports_honest_counts_for_a_structured_tier_delta() {
         let connection = open_in_memory_database().expect("db");
@@ -1395,8 +1356,7 @@ mod tests {
     /// stream** for every fragment, not just the extraction-unavailable branch.
     /// A run with KPI counts, claims-to-verify and open questions must serialize
     /// as machine tokens the frontend translates, with NO user-visible English
-    /// prose reaching the stored summary (the misdiagnosis class the dogfooding
-    /// screenshot exposed, generalized to every fragment).
+    /// prose reaching the stored summary.
     #[test]
     fn compose_summary_emits_only_typed_tokens_with_no_english_prose() {
         let connection = open_in_memory_database().expect("db");
@@ -1530,14 +1490,10 @@ mod tests {
         );
     }
 
-    /// ADR 0084 decision 6 — honest failure reporting. `compose_summary` used to
-    /// hardcode the English sentence "KPI extraction unavailable (no AI provider
-    /// configured)" for *any* unavailability, which misdiagnosed a real quota
-    /// exhaustion as a missing configuration during owner dogfooding
-    /// (2026-07-19). The summary must now carry a **typed reason code** from the
-    /// fixed vocabulary, and distinct causes must stay distinguishable — never
-    /// collapsed into one. Rendering the code into a sentence is the frontend's
-    /// job (the v0.60.0 Today seam); the backend emits typed data.
+    /// ADR 0084 decision 6 — honest failure reporting. The summary carries a
+    /// **typed reason code** from the fixed vocabulary, and distinct causes
+    /// stay distinguishable — never collapsed into one. Rendering the code
+    /// into a sentence is the frontend's job; the backend emits typed data.
     #[test]
     fn compose_summary_emits_typed_reason_codes_that_stay_distinguishable() {
         let connection = open_in_memory_database().expect("db");
@@ -2036,10 +1992,6 @@ mod tests {
         document.id
     }
 
-    /// Configure the keyless `test_sample` provider as the `VisionExtraction` pool
-    /// member, bypassing settings validation (test_sample is not a *selectable*
-    /// provider) exactly like `build_capability_provider`'s own tests — so the full
-    /// tier-4 path builds a deterministic offline OCR provider.
     /// ADR 0084 decision 4 — flagged, never silent. With the AI layer retired,
     /// a report document that **no deterministic tier can parse** must still
     /// produce a completed run carrying an unread notification whose summary
@@ -2122,8 +2074,7 @@ mod tests {
         );
         assert!(
             // A raw-PDF document reports the BY-DESIGN `pdf_document` gap
-            // (ADR 0086 dec. 1, review 2026-07-22) — the honest replacement for
-            // the generic no_deterministic_tier this test originally pinned.
+            // (ADR 0086 dec. 1).
             delta.contains("pdf_document"),
             "the delta must carry the typed reason code, got: {delta}"
         );
@@ -2183,13 +2134,10 @@ mod tests {
         state.autopilot().get_run(run_id).expect("get run")
     }
 
-    /// THE STORM (owner dogfooding 2026-07-21): a couldn't-extract run whose
-    /// delta already carries the CURRENT `pipelineVersion` must NOT re-arm on a
-    /// subsequent enqueue — nothing about the pipeline's read capability changed,
-    /// so re-running the full file IO + PDF parse with identical inputs is pure
-    /// waste (attempt_count reached ~1100+ in one day). Before the version gate,
-    /// `document_is_extractable` was constant-true for any PDF, so every sweep
-    /// pass re-armed every flagged period forever.
+    /// A couldn't-extract run whose delta already carries the CURRENT
+    /// `pipelineVersion` must NOT re-arm on a subsequent enqueue — nothing
+    /// about the pipeline's read capability changed, so re-running the full
+    /// file IO + PDF parse with identical inputs is pure waste.
     #[test]
     fn a_current_version_couldnt_extract_run_is_not_re_armed() {
         let dir = unique_temp_dir("rearm-current-version");
@@ -2272,9 +2220,9 @@ mod tests {
         );
     }
 
-    /// ADR 0086 dec. 1 (review 2026-07-22): `pdf_document` is the BY-DESIGN gap —
-    /// machine fact-reading of PDFs is retired, so no pipeline upgrade ever makes
-    /// the document readable. Even a lower-version delta must never re-arm.
+    /// ADR 0086 dec. 1: `pdf_document` is the BY-DESIGN gap — machine
+    /// fact-reading of PDFs is retired, so no pipeline upgrade ever makes the
+    /// document readable. Even a lower-version delta must never re-arm.
     #[test]
     fn a_pdf_document_gap_is_never_rearmed() {
         let dir = unique_temp_dir("rearm-pdf-doc");
@@ -2370,10 +2318,10 @@ mod tests {
     }
 
     /// Epic #229 T2: `pdf_document` is the **never-re-armed** verdict (ADR 0086
-    /// dec. 1) — "core KPIs arrive from the aggregator". Only bytes that really are
-    /// a PDF may earn it. 45 of the maintainer's stored `.pdf` files are XML or ZIP
-    /// inside; stamping those `pdf_document` on the strength of their extension
-    /// retired documents a deterministic tier can still read.
+    /// dec. 1). Only bytes that really are a PDF may earn it. 45 of the
+    /// maintainer's stored `.pdf` files are XML or ZIP inside; stamping those
+    /// `pdf_document` on the strength of their extension would wrongly retire
+    /// documents a deterministic tier can still read.
     #[test]
     fn gap_reason_earns_pdf_document_only_from_the_sniffed_container() {
         let dir = unique_temp_dir("gap-reason-container");

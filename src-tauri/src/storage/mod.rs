@@ -1563,10 +1563,6 @@ impl AppState {
         self.settings().set_developer_mode_enabled(enabled)
     }
 
-    /// Read the legacy similarity-strategy setting, mapping the retired
-    /// `embedding` value to `static` (ADR 0080): the embedding model is gone,
-    /// so `static` is the only strategy — but an old database may still hold
-    /// the `embedding` row and must never error or resurrect the old behavior.
     pub fn get_similarity_strategy(&self) -> StorageResult<String> {
         self.settings().get_similarity_strategy()
     }

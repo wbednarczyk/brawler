@@ -6,9 +6,7 @@ import { expect, renderApp, screen } from "../test/appWorkflowHarness";
 // each primary screen, and assert axe finds no violations — extending the
 // primitive-gallery a11y baseline (src/ui/primitives.a11y.test.tsx) up to the
 // composed screens.
-// Every primary screen is guarded against a11y regressions (U9: the previously
-// excluded Inbox/Companies/Sources/Events were remediated — aria-allowed-role and
-// nested-interactive fixed at the DOM/ARIA level, not by disabling rules). Zero
+// Every primary screen is guarded against a11y regressions (U9). Zero
 // exclusions: a new screen with violations reddens this guard.
 const SCREENS = [
   "Watchlists",
@@ -22,10 +20,8 @@ const SCREENS = [
   "Events",
 ] as const;
 
-// Only two rules stay off, each for a reason that cannot be engineered away here
-// (#177). `region` and `heading-order` used to be off too, inherited from the
-// gallery's rule set — they were re-enabled once measured: all nine screens pass
-// them, so the suppression was hiding nothing and now guards real structure.
+// Only two rules stay off, each for a reason that cannot be engineered away
+// here (#177).
 const AXE_RULES = {
   // jsdom computes no colors, so this rule can only ever be vacuous here. Contrast
   // is checked where it is real: `expectNoA11yViolations` (@axe-core/playwright)

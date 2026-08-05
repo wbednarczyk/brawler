@@ -1,7 +1,6 @@
-//! Research surface. Brief/digest **generation** is retired with the in-app AI
-//! analysis layer (ADR 0084 decision 1); the `list_research_briefs` /
-//! `list_research_digests` reads survive because already-stored briefs and
-//! digests are user data that stays readable (decision 5).
+//! Research surface. Brief/digest **generation** is retired (ADR 0084
+//! decision 1); `list_research_briefs` / `list_research_digests` reads
+//! survive as already-stored user data (decision 5).
 
 use crate::{app_state, storage};
 

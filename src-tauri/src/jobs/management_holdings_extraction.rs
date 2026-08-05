@@ -764,10 +764,8 @@ mod tests {
     }
 
     /// Epic #229 T2: the holdings table arrives as markup stored under a `.pdf`
-    /// name (24 such files in the maintainer's corpus). The extension used to send
-    /// it to the PDF reader, which produced nothing and left the company with zero
-    /// management-holdings rows; the sniffed container routes it to the markup
-    /// reader and it parses.
+    /// name (24 such files in the maintainer's corpus); the sniffed container
+    /// routes it to the markup reader and it parses.
     #[test]
     fn markup_stored_under_a_pdf_name_parses_management_holdings() {
         let s = state_with_dir();

@@ -1,12 +1,10 @@
 //! The shared ingestion-pipeline spine (Architecture v2 / ADR 0050).
 //!
-//! Brawler ingests many sources into one unified set. Historically each adapter's
-//! `ingest_*` function re-implemented the same downstream spine — the unified
-//! feed-item upsert and the per-adapter run outcome (last-success + item
-//! counters). This module owns those shared stages so every adapter feeds the
-//! *same* pipeline rather than copying it. (The story-key stage that once lived
-//! here was write-only — its consumer, story clustering, was dropped — and was
-//! removed together with `feed_items.story_key` by ADR 0080.)
+//! Brawler ingests many sources into one unified set. This module owns the
+//! shared downstream spine — the unified feed-item upsert and the per-adapter
+//! run outcome (last-success + item counters) — so every adapter feeds the
+//! *same* pipeline rather than copying it. (The write-only story-key stage was
+//! removed together with `feed_items.story_key`, ADR 0080.)
 //!
 //! The adapter-specific parse/normalize/match stages still live in each adapter's
 //! ingest path; they migrate behind this spine one at a time (strangler). The

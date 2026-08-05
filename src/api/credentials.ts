@@ -2,9 +2,8 @@ import { callCommand } from "./tauri";
 import type { CredentialStatus } from "./types";
 
 /**
- * The transcript provider's OS-keychain API key (ADR 0084 decision 7): since the
- * in-app analysis layer was retired, Gemini transcription is the only
- * credentialed provider left.
+ * The transcript provider's OS-keychain API key (ADR 0084 decision 7) — Gemini
+ * transcription is the only credentialed provider.
  */
 const GEMINI_PROVIDER_ID = "provider_gemini";
 

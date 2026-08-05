@@ -26,10 +26,9 @@ fn lists_seeded_source_adapters() {
         .expect("source adapters should list");
 
     // The DB-seeded rows must match the code registry's non-developer set
-    // (guardrail 2026-07-19: expected counts are DERIVED from `REGISTRY`, never
-    // hand-counted — a new adapter previously required bumping three scattered
-    // constants, and fan-out agents missed one). Registry↔seed *content* parity
-    // is guarded separately by `registry_matches_seeded_catalog`.
+    // (expected counts are DERIVED from `REGISTRY`, never hand-counted).
+    // Registry↔seed *content* parity is guarded separately by
+    // `registry_matches_seeded_catalog`.
     let non_developer_expected = crate::source_adapters::registry::REGISTRY
         .iter()
         .filter(|descriptor| {
@@ -66,8 +65,6 @@ fn lists_seeded_source_adapters() {
     assert_eq!(ownership_source.source_type, "ownership");
     assert!(ownership_source.enabled);
 
-    // market_data EOD quote source (v0.53, ADR 0082 as amended 2026-07-14:
-    // the twelvedata-eod fallback was removed — GPW is paid-plan-only there).
     let yahoo_eod = adapters
         .iter()
         .find(|adapter| adapter.id == "yahoo-eod")

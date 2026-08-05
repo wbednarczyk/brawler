@@ -806,9 +806,6 @@ mod tests {
 
         #[test]
         fn ttm_never_sums_across_period_granularities() {
-            // #271: the old four-slot index walk summed Q1 + FY + Q3 + Q1 here
-            // (880 — nearly three years of profit labeled "trailing twelve
-            // months"). Span arithmetic replaces it outright.
             let ctx = ctx_with(dbc_shaped_series());
             let ttm = ctx.resolver().value("net_profit_ttm");
             assert_ne!(ttm, Some(dec(880, 0)), "index-walk sum must be dead");

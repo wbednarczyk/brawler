@@ -300,11 +300,10 @@ fn pull_records_witness_disagreement_against_an_issuer_slot_without_overwriting(
 
 #[test]
 fn pull_records_witness_disagreement_against_a_cover_note_slot() {
-    // FINDING 1 (originally pinned against the now-retired positional `pdf`
-    // tier, ADR 0095): the ESPI cover-note tier is ALSO the issuer's own
-    // filing read deterministically (ADR 0086 dec. 4) — it counts as an
-    // issuer tier, so a diverging aggregator value must be flagged, not
-    // silently dropped, the same way the ESEF case above already proves.
+    // FINDING 1: the ESPI cover-note tier is ALSO the issuer's own filing read
+    // deterministically (ADR 0086 dec. 4) — it counts as an issuer tier, so a
+    // diverging aggregator value must be flagged, not silently dropped, the
+    // same way the ESEF case above already proves.
     let (state, company_id) = state_with_company();
     seed_fact(
         &state,
@@ -862,8 +861,8 @@ fn every_zero_effect_aggregator_state_names_a_reason() {
             reason: reason::NO_KPI_DEFINITION
         }
     );
-    // A page that resolved but parsed to zero cells (issue #244 — formerly the
-    // pinned unexplained state): layout change or empty table, now counted.
+    // A page that resolved but parsed to zero cells (issue #244): layout
+    // change or empty table, now counted.
     assert_eq!(
         with(|s| {
             s.pages_resolved = 24;

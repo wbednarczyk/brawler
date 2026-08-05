@@ -71,10 +71,8 @@ export type DockPanelSpec = {
   pin?: DockPanelPin;
 };
 
-// The OS-window pop-out path (`popOutOrFloat`/`addPopoutGroup`, ADR 0053
-// decision 2A's gated capability) was removed by ADR 0080 decision 5: it was
-// never validated on native Windows and silently degraded. In-app floating
-// groups (`addFloatingGroup`) are the kept multi-pane affordance.
+// No OS-window pop-out (ADR 0080 decision 5) — in-app floating groups
+// (`addFloatingGroup`) are the kept multi-pane affordance.
 
 const PanelContentContext = createContext<Map<string, () => ReactNode>>(new Map());
 // Per-panel pin affordance keyed by panel id (U-Ra). Rebuilt each render so the

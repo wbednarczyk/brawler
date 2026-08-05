@@ -207,15 +207,13 @@ describe("FundamentalsPanel section order", () => {
     // compareDocumentPosition: FOLLOWING = the argument comes after the receiver.
     expect(price.compareDocumentPosition(facts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(facts.compareDocumentPosition(periods) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // The sector/IR fields no longer live in this panel.
+    // No Sector field renders in this panel.
     expect(container.querySelector('[aria-label="Sector"]')).toBeNull();
   });
 });
 
-// Price context load failure (minor fix, code review): a rejected
-// `get_price_context` fetch used to swallow the error into `null`, so the
-// section simply vanished with no signal. It must now surface an inline
-// error instead of silently disappearing.
+// A rejected `get_price_context` fetch must surface an inline error, never
+// silently disappear.
 describe("FundamentalsPanel price context error state", () => {
   it("renders an inline error when the price context fetch rejects", async () => {
     vi.mocked(getPriceContext).mockRejectedValueOnce(new Error("network unreachable"));

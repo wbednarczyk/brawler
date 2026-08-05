@@ -463,9 +463,8 @@ describe("Settings screen workflows", () => {
     try {
       renderApp();
 
-      // Advance well past the retired auto-prune initial delay (2 min + up to 60s
-      // jitter = ≤3 min) — the exact window that fired today's silent purge. The
-      // timer is gone, so the prune command must never be invoked on its own.
+      // Advance well past the retired auto-prune initial delay (2 min + up to
+      // 60s jitter = ≤3 min): the prune command must never be invoked on its own.
       await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 
       expect(

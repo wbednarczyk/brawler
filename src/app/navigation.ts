@@ -13,18 +13,11 @@ import {
 } from "lucide-react";
 import type { LocaleKey } from "../shared/locale";
 
-// The full set of app sections. Note: several values (ReportSeason, Research,
-// Notebooks, Events) are no longer top-level nav destinations — they are hosted
-// as panels inside the Cockpit / Company workspace (ADR 0053/0054) — but remain
-// valid `activeSection` values because deep links / programmatic navigation
-// still use them and AppStateRoot still renders them. ADR 0057 decision 5
-// removed the standalone *blank-canvas* "Cockpit" nav item; it is otherwise
-// reached via a saved named view (rendered as its own nav item, see AppShell),
-// the "+ New view" creator, or a company's curated dashboard. Amended
-// 2026-07-13 (owner, card 47d5fbb): a single "Research" cockpit entry is
-// restored in Modes — but it is never blank (the cockpit seeds a first
-// company/feed item and resumes the last layout), so ADR 0057's "no empty
-// mode" rationale is preserved rather than reversed.
+// The full set of app sections. ReportSeason, Research, Notebooks, and Events
+// are not top-level nav destinations — they are hosted as panels inside the
+// Cockpit / Company workspace (ADR 0053/0054) — but remain valid
+// `activeSection` values because deep links / programmatic navigation still
+// use them and AppStateRoot still renders them.
 export type Section =
   | "Today"
   | "Inbox"
@@ -59,7 +52,7 @@ export type NavGroup = {
 //     Company workspace, Compare), followed by the saved named views (a
 //     data-driven list, rendered by AppShell from `cockpit_layouts`) and the
 //     "+ New view" creator — the composable-views entry point (ADR 0057
-//     decision 5) that replaces the old standalone blank "Cockpit" item.
+//     decision 5).
 //   • Library — the named reference surfaces the modes draw on (Inbox bulk
 //     triage, Watchlists, Transcripts, Sources).
 //   • Utilities — Settings + Diagnostics (developer-gated).
@@ -71,11 +64,10 @@ export const navGroups: NavGroup[] = [
     localeKey: "nav.group.modes",
     items: [
       { label: "Today", icon: Home, localeKey: "nav.today" },
-      // Dashboard — the one company-scoped cockpit, entered ONLY from here (owner
-      // redesign 2026-07-13, epic c793ca1). Two selectors inside: company (scope) +
-      // preset (panel arrangement); every preset follows the view company. The
-      // standalone Research screen is retired into a Dashboard preset. Amends ADR
-      // 0057 decision 5: never a blank canvas (seeds a company / resumes layout).
+      // Dashboard — the one company-scoped cockpit, entered ONLY from here (epic
+      // c793ca1). Two selectors inside: company (scope) + preset (panel
+      // arrangement); every preset follows the view company. Amends ADR 0057
+      // decision 5: never a blank canvas (seeds a company / resumes layout).
       { label: "Cockpit", icon: FlaskConical, localeKey: "nav.dashboard" },
       // Compare — the cross-company mode (ADR 0089), restored to the spine in
       // v0.61 now that the comparison read model + FX substrate give it real
@@ -88,14 +80,13 @@ export const navGroups: NavGroup[] = [
     id: "library",
     localeKey: "nav.group.library",
     items: [
-      // Companies dropped from Modes into Library (owner 2026-07-13, epic c793ca1):
-      // the Dashboard is the company workspace; the list is a reference surface.
+      // Companies lives in Library, not Modes (epic c793ca1): the Dashboard is
+      // the company workspace; the list is a reference surface.
       { label: "Companies", icon: Building2, localeKey: "nav.companies" },
       { label: "Inbox", icon: Inbox, localeKey: "nav.inbox" },
       { label: "Watchlists", icon: ListChecks, localeKey: "nav.watchlists" },
-      // Alerts (ADR 0068 T3): relocated from a Settings section into its own
-      // Library destination (owner decision 2026-07-15, v0.54) — the alert-rule
-      // manager + fired-alerts review are a reference surface, not a preference.
+      // Alerts (ADR 0068 T3): a Library destination — the alert-rule manager +
+      // fired-alerts review are a reference surface, not a preference.
       { label: "Alerts", icon: BellRing, localeKey: "nav.alerts" },
       { label: "Transcripts", icon: Video, localeKey: "nav.transcripts" },
       { label: "Sources", icon: Activity, localeKey: "nav.sources" },

@@ -585,7 +585,7 @@ pub(super) fn merge_attachment_units(
                         // immediately, so a later compatible unit in this same
                         // batch can claim it — exactly what a later call would
                         // see. Consuming it here would make the outcome depend
-                        // on batching again (adversarial-review finding, 2026-08-04).
+                        // on batching again.
                         row.source_document_id = None;
                         row.source_unit_ord = None;
                     }

@@ -31,7 +31,7 @@ describe("Alerts screen — rules manager (T3, ADR 0068; relocated v0.54)", () =
 
     await expect(screen.getByRole("heading", { name: /^Alerts$/ })).toBeVisible();
 
-    // The Settings screen no longer hosts an "Alerts" section tab.
+    // The Settings screen does not host an "Alerts" section tab.
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
     expect(within(settingsRegion).queryByRole("button", { name: "Alerts" })).not.toBeInTheDocument();
@@ -168,8 +168,7 @@ describe("Alerts screen — rules manager (T3, ADR 0068; relocated v0.54)", () =
   });
 
   // Issue #71 (same class as toast D3): the rule row title must resolve every
-  // category through the shared display-name map — the old hand-rolled ternary
-  // covered 4 legacy categories and leaked raw enum codes for the rest.
+  // category through the shared display-name map, never leak a raw enum code.
   it("renders a non-legacy category rule with its display name, never the raw code", async () => {
     const user = userEvent.setup();
     renderApp();

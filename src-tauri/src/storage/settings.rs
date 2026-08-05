@@ -150,19 +150,12 @@ pub struct UserSettings {
     /// Years of company history the on-track backfill covers (ADR 0077 §3).
     /// Clamped to `[1, 10]`; an absent row reads the default `3`.
     pub backfill_years: i64,
-    /// Per-history-sweep tier-4 AI call budget (ADR 0077 §6). Clamped to
-    /// `[0, 500]` (0 = off); an absent row reads the default `30`. Snapshotted
-    /// onto each sweep at creation, so a change only affects future sweeps.
     pub settings_source: &'static str,
     pub settings_import_export_format: String,
     pub yaml_import_export_status: &'static str,
     pub ai_providers: AiProviderSettings,
     pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
-    /// Per-capability ordered (provider, model) fallback pool (ADR 0060 as
-    /// amended), keyed by `AiCapability::key`. An absent key or an empty list
-    /// means "use the global fallback" — no seed row, so a database that
-    /// predates this key loads an empty map rather than failing.
     pub database: DatabaseSettings,
     pub queue: QueueSettings,
     /// Company IDs the user has pinned to the sidebar spine (ADR 0054). A simple
@@ -213,9 +206,6 @@ pub struct SettingsUpdate {
     pub log_max_files: Option<i64>,
     pub log_max_file_bytes: Option<i64>,
     pub shortcut_bindings: Option<HashMap<String, ShortcutBindingSetting>>,
-    /// (removed) capability routing map (ADR 0060, retired by ADR 0084). The
-    /// frontend sends the complete desired map, so this overwrites rather than
-    /// merges — same contract as `shortcut_bindings`.
     pub db_max_connections: Option<i64>,
     pub db_busy_timeout_ms: Option<i64>,
     pub db_acquire_timeout_ms: Option<i64>,
@@ -307,12 +297,10 @@ pub(crate) fn set_developer_mode_enabled(
     get_settings(connection)
 }
 
-/// The legacy interpretative-layer similarity strategy, kept as a tolerant read
-/// shim (ADR 0080): the embedding model was retired, so `static` is the only
-/// strategy. A missing row reads as `static` (a database that recorded migration
-/// 0049 before the seed row materialized must never fail to load, ADR 0035) and
-/// the retired persisted `embedding` value maps to `static` — never an error,
-/// never a resurrected strategy. There is no setter anymore.
+/// The legacy interpretative-layer similarity-strategy read, kept as a
+/// tolerant shim (ADR 0080): a missing row or the legacy `embedding` value
+/// both read as `static` — never an error, never a resurrected strategy.
+/// There is no setter anymore.
 pub(crate) fn get_similarity_strategy(connection: &Connection) -> StorageResult<String> {
     match connection.query_row(
         "SELECT value FROM settings WHERE key = 'similarity_strategy'",

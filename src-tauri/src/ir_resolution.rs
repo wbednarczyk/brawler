@@ -1,12 +1,12 @@
-//! IR-page report resolution (v0.36.0, ADR 0029; AI pick retired by ADR 0084).
+//! IR-page report resolution (ADR 0029; AI pick retired by ADR 0084).
 //!
 //! Source ladder fallback: when a filing carries no usable attachment, locate the
 //! specific report on a company's durable IR reports page. Generic link
 //! extraction (no per-company scrapers) ranks the candidate links deterministically
-//! and **always returns them for the user to choose** — the in-app AI pick and its
-//! confidence-gated auto-capture are retired with the analysis layer (ADR 0084
-//! decision 1). Ranking a candidate list is deterministic; choosing from it is the
-//! user's (or their MCP agent's) call.
+//! and **always returns them for the user to choose** (ADR 0084 decision 1
+//! retired the AI pick and its confidence-gated auto-capture). Ranking a
+//! candidate list is deterministic; choosing from it is the user's (or their
+//! MCP agent's) call.
 
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};

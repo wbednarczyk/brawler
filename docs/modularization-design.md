@@ -4,7 +4,7 @@ This document defines Brawler's code organization rules — the operating guide 
 
 Doc map: [CLAUDE.md](../CLAUDE.md) Required Reading. Related references: [Architecture](architecture.md), [Engineering Workflow](engineering-workflow.md), and [Contracts](contracts.md).
 
-**Do not mirror the code tree in this document.** For the live structure use `repoctx overview`, `repoctx outline <file>`, and `repoctx modules` — a prose copy of the tree rots (the one this section used to hold had already drifted from the code). This doc carries only the durable part: ownership rules, principles, and checklists.
+**Do not mirror the code tree in this document.** For the live structure use `repoctx overview`, `repoctx outline <file>`, and `repoctx modules` — a prose copy of the tree rots. This doc carries only the durable part: ownership rules, principles, and checklists.
 
 ## Goals
 

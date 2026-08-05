@@ -377,8 +377,8 @@ export function makeOwnershipOverview(spec: CompanySpec): OwnershipOverview {
         detectedAsOf: "2023-12-31",
         matchedHeading: "Akcjonariat",
       },
-      // A second unreadable residual — after ADR 0084 both are honest flagged
-      // gaps with no OCR action (the retired tier-4 path used to offer one).
+      // A second unreadable residual: an honest flagged gap with no OCR action
+      // (ADR 0084).
       {
         reportDocumentId: `doc_${spec.key}_2022`,
         parseState: "glyph_encoded",

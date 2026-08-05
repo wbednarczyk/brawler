@@ -1,16 +1,10 @@
 //! Shared numeric + label helpers for the deterministic extraction tiers.
 //!
-//! These primitives were extracted from the retired PDF fact-arm (ADR 0086
-//! decision 1) because they serve the HTML aggregator
-//! ([`super::html`], BiznesRadar-primary), reusing the Polish/English
-//! unit-scale detector, the Polish number grammar (space/NBSP/dot thousands,
-//! comma decimal, accounting parentheses, note-ref rejection) and the Polish
-//! label dictionary. The tier-3b positional xHTML reader that used to also
-//! stand on this module is retired too (ADR 0095).
-//!
-//! Pure over `&str` (text, not bytes), so every rule is unit-testable. No tier
-//! reads financial FACTS out of PDF statements anymore (ADR 0086 dec. 1); this
-//! module is the number/label substrate the html tier stands on.
+//! Serves the HTML aggregator ([`super::html`], BiznesRadar-primary): the
+//! Polish/English unit-scale detector, the Polish number grammar
+//! (space/NBSP/dot thousands, comma decimal, accounting parentheses,
+//! note-ref rejection), and the Polish label dictionary. Pure over `&str`
+//! (text, not bytes), so every rule is unit-testable.
 
 use std::sync::OnceLock;
 
@@ -215,8 +209,8 @@ impl UnitScale {
 /// scale caption (`(tys. zł)` / `mln zł`). When the document declares **no**
 /// unit anywhere, the scale is [`UnitScale::Ones`] — raw złoty, no multiplier.
 ///
-/// **Owner rule (2026-07-21, dogfooding on real data).** The unit is READ from
-/// the document, never guessed: "in every report, for every company, somewhere
+/// The unit is READ from the document, never guessed: "in every report, for
+/// every company, somewhere
 /// it is written what unit the report is in; if nothing is written, assume no
 /// multiplier; needing to guess a multiplier means the reader failed to read the
 /// declaration." So the silent default is Ones (raw złoty) — NOT Thousands.
@@ -331,7 +325,7 @@ fn strip_currency_suffix(s: &str) -> String {
 /// `None` if the column is not a clean number. Handles accounting parentheses,
 /// ASCII and Unicode minus/dash (`-`, `–`, `—`, `−`), space/NBSP/dot thousands
 /// grouping and a trailing currency word; a bare dash (`–`, "no data") yields
-/// `None`. Shared with the HTML aggregator tier (the tier-3b positional reader that used to also share this is retired, ADR 0095).
+/// `None`. Shared with the HTML aggregator tier.
 pub(super) fn parse_amount(tok: &str) -> Option<Decimal> {
     // Normalize a leading Unicode minus/dash to ASCII '-'.
     let mut s = tok.trim().to_string();
@@ -387,7 +381,7 @@ pub(super) fn is_per_share(metric_key: &str) -> bool {
 }
 
 /// Matches a normalized label against the default Polish dictionary
-/// (longest-label-first). Shared with the HTML aggregator tier (the tier-3b positional reader that used to also share this is retired, ADR 0095).
+/// (longest-label-first). Shared with the HTML aggregator tier.
 pub(super) fn match_dictionary_label(label: &str) -> Option<&'static str> {
     let mut entries: Vec<&(&str, &str)> = default_dictionary().iter().collect();
     entries.sort_by_key(|(l, _)| std::cmp::Reverse(l.len()));
@@ -406,16 +400,15 @@ mod tests {
     // -----------------------------------------------------------------------
     // Unit scale — the dominance rule (Polish + English declarations, silent =
     // raw złoty). These regressions MUST survive the PDF-fact-arm retirement
-    // (ADR 0086 dec. 1): the html tier stands on this detector (the tier-3b
-    // positional reader that used to also stand on it is retired, ADR 0095).
+    // (ADR 0086 dec. 1): the html tier stands on this detector.
     // -----------------------------------------------------------------------
 
     #[test]
     fn detects_thousands_and_millions() {
         assert_eq!(detect_unit_scale("dane w tys. zł"), UnitScale::Thousands);
         assert_eq!(detect_unit_scale("wartości w mln zł"), UnitScale::Millions);
-        // Owner rule 2026-07-21: nothing declared ⇒ NO multiplier (raw złoty), not
-        // the historical Thousands. Scale must be READ, never guessed.
+        // Nothing declared ⇒ NO multiplier (raw złoty). Scale must be READ,
+        // never guessed.
         assert_eq!(detect_unit_scale("bez jednostki"), UnitScale::Ones);
     }
 
@@ -447,8 +440,7 @@ mod tests {
 
     /// Regression (Digital Network Q1 2025): a cover table with NO unit
     /// declaration anywhere (bare "PLN PLN EUR EUR" header) and values carrying
-    /// groszy. Owner rule 2026-07-21: nothing declared ⇒ NO multiplier — the
-    /// values are raw złoty (not the old ×1000 silent default).
+    /// groszy. Nothing declared ⇒ NO multiplier — the values are raw złoty.
     #[test]
     fn no_declaration_groszy_values_are_raw_zloty() {
         let text = "WYBRANE SKONSOLIDOWANE DANE FINANSOWE\n\
@@ -457,9 +449,8 @@ mod tests {
         assert_eq!(detect_unit_scale(text), UnitScale::Ones);
     }
 
-    /// Owner rule 2026-07-21, the pure default: a document with NO declaration and
-    /// NO scale caption anywhere — and no groszy either — is still raw units. This
-    /// flips the historical silent default (was Thousands).
+    /// The pure default: a document with NO declaration and NO scale caption
+    /// anywhere — and no groszy either — is still raw units.
     #[test]
     fn no_declaration_no_groszy_defaults_to_units() {
         let text = "Sprawozdanie finansowe\nAktywa razem  4 500 000  4 000 000\n";
@@ -519,8 +510,7 @@ mod tests {
 
     // -----------------------------------------------------------------------
     // Number grammar (parse_amount) — the leading-zero decimal guard + dot
-    // thousands rule the html tier relies on (the tier-3b positional reader
-    // that used to also rely on it is retired, ADR 0095).
+    // thousands rule the html tier relies on.
     // -----------------------------------------------------------------------
 
     #[test]

@@ -158,7 +158,7 @@ export function useFeedController({
     }
 
     // Opening a company from a feed item lands the curated cockpit dashboard
-    // scoped to it (ADR 0057), replacing the retired tabbed workspace.
+    // scoped to it (ADR 0057).
     setSelectedCompanyId(company.id);
     setSelectedCompanyFeedItemId(item.id);
     setCockpitInitialCompanyId(company.id);

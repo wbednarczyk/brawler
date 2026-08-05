@@ -37,9 +37,9 @@ export const COMPANY_FORMS: PluralForms = {
   pl: ["spółka", "spółki", "spółek"],
 };
 
-// Today's per-company group count chips carry their unit so "×4" is not opaque
-// (owner dogfooding 2026-07-23): attention groups count fired events, autopilot
-// groups count runs; any other category falls back to a generic item noun.
+// Today's per-company group count chips carry their unit so "×4" is not
+// opaque: attention groups count fired events, autopilot groups count runs;
+// any other category falls back to a generic item noun.
 export const EVENT_FORMS: PluralForms = {
   en: ["event", "events"],
   pl: ["zdarzenie", "zdarzenia", "zdarzeń"],

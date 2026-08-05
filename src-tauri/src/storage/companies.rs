@@ -257,11 +257,11 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
     // nothing to key off, and — worse — the ADR 0083 D4 gate would let a
     // meaningless Altman Z″ compute for it.
     //
-    // Brokers/exchanges and debt collectors are DIFFERENT types (owner decision
-    // 2026-07-31, migration 0127): 0095 originally mapped both onto
-    // `specialty_finance`, which made that type's debt-collection KPI pack
-    // (`recoveries`, `erc`, …) unusable for everyone. `brokerage` has no sector
-    // pack of its own, so a broker keeps the ADR 0092 core floor only.
+    // Brokers/exchanges and debt collectors are DIFFERENT types (migration
+    // 0127): 0095 originally mapped both onto `specialty_finance`, which made
+    // that type's debt-collection KPI pack (`recoveries`, `erc`, …) unusable
+    // for everyone. `brokerage` has no sector pack of its own, so a broker
+    // keeps the ADR 0092 core floor only.
     transaction.execute(
         "
         UPDATE companies

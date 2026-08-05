@@ -148,8 +148,6 @@ const BR_REAL_PRZEPLYWY: &str = include_str!("../../../../samples/biznesradar_pr
 
 #[test]
 fn reads_value_span_ignoring_in_cell_change_percentages() {
-    // A single real column, selected the old single-column way. Without the
-    // value-span read the "Zapasy" cell parses as garbage and yields no fact.
     let facts = parse_html_financials(
         BR_REAL_BILANS,
         &AggregatorColumn {
@@ -292,9 +290,8 @@ fn period_header_parsing_handles_shifted_fiscal_year_month() {
 
 #[test]
 fn glued_quarter_headers_read_the_quarter_digit_not_the_years_leading_digit() {
-    // Review finding (2026-07-22): in "3q2024" the digit AFTER 'q' is the
-    // year's leading '2', which must never win over the quarter digit before
-    // the 'q' — every glued NQyyyy header used to resolve to H1.
+    // In "3q2024" the digit AFTER 'q' is the year's leading '2', which must
+    // never win over the quarter digit before the 'q'.
     let q1 = parse_period_header("1Q2024").expect("glued Q1 parses");
     assert_eq!(
         (q1.period_type, q1.period_end.as_str()),

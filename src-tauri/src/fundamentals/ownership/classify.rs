@@ -136,7 +136,7 @@ fn strip_parentheticals(name: &str) -> String {
 /// merge cosmetic variants of one holder ("cyber_Folks S.A." vs "cyber_Folks
 /// S.A. (akcje własne)") while `canonical_holder_key` — which keeps qualifier
 /// tokens — stays the CLASSIFICATION key (the treasury heuristic needs "akcje
-/// własne" to survive). Owner dogfooding 2026-07-16.
+/// własne" to survive).
 pub fn canonical_holder_identity(name: &str) -> String {
     canonical_holder_key(&strip_parentheticals(name))
 }
@@ -267,8 +267,8 @@ pub fn heuristic_holder_type(name: &str) -> Option<&'static str> {
         return Some("ofe_pension");
     }
     // Pension-fund manager (PTE) holding on behalf of its funds — disclosure
-    // tables routinely name the PTE for the aggregated OFE/DFE stakes (owner
-    // dogfooding 2026-07-16: "NN PTE" sat unclassified).
+    // tables routinely name the PTE for the aggregated OFE/DFE stakes ("NN
+    // PTE" sat unclassified until this rule).
     if padded.contains(" PTE ") || key.contains("POWSZECHNE TOWARZYSTWO EMERYTALNE") {
         return Some("ofe_pension");
     }

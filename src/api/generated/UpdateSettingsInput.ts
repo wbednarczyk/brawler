@@ -15,13 +15,7 @@ youtubeTranscriptionProvider?: string, youtubeTranscriptionModel?: string, youtu
 /**
  * Base URL for the generic OpenAI-compatible provider (ADR 0060).
  */
-logLevel?: string, logMaxFiles?: number, logMaxFileBytes?: number, shortcutBindings?: { [key in string]: ShortcutBindingSetting }, 
-/**
- * (removed) capability routing map (ADR 0060, retired by ADR 0084). The
- * frontend sends the complete desired map, so this overwrites rather than
- * merges — same contract as `shortcut_bindings`.
- */
-dbMaxConnections?: number, dbBusyTimeoutMs?: number, dbAcquireTimeoutMs?: number, sourcesWorkers?: number, autopilotWorkers?: number, 
+logLevel?: string, logMaxFiles?: number, logMaxFileBytes?: number, shortcutBindings?: { [key in string]: ShortcutBindingSetting }, dbMaxConnections?: number, dbBusyTimeoutMs?: number, dbAcquireTimeoutMs?: number, sourcesWorkers?: number, autopilotWorkers?: number, 
 /**
  * Replace the full pinned-company list (ADR 0054). The frontend sends the
  * complete desired order, so this overwrites rather than merges.

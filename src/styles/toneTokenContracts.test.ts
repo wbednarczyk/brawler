@@ -70,12 +70,10 @@ describe("StatusChip tone CSS contract", () => {
 });
 
 describe("StatusPill contrast contract", () => {
-  // WCAG AA regression (a11y fix, Radicle 9416da8): -ok originally used the raw
-  // --success token as text color on a 10%-tinted background and failed 4.5:1
-  // contrast in the light theme. The fix mixes the tone 72% toward --text so
-  // the pill darkens/lightens with the active palette. -warn and -danger use
-  // the identical construction (raw tokens are otherwise indistinguishable
-  // from an accidental revert of the same class of bug).
+  // WCAG AA regression guard (Radicle 9416da8): pill text must mix the tone 72%
+  // toward --text so it darkens/lightens with the active palette — a raw tone
+  // token fails 4.5:1 contrast in the light theme. -ok/-warn/-danger use the
+  // identical construction (indistinguishable from an accidental revert).
   it("mixes ok/warn/danger pill text 72% toward --text, never a raw tone token", () => {
     const pillTones = ["ok", "warn", "danger"] as const;
     const tokenFor: Record<(typeof pillTones)[number], string> = {

@@ -35,9 +35,8 @@ describe("Research screen workflows", () => {
     // Opening AI-analysis research evidence routes to the Inbox scoped to the
     // company via `scopeInboxToCompany`, which first clears any stale filters
     // (`clearInboxFilters`; the clear itself is covered by InboxScreen "clears
-    // active inbox filters"). Reached via the kept standalone Research render — the
-    // Inbox→Research navigation the pre-retirement test used no longer exists
-    // (epic c793ca1: the user path to this timeline is the Dashboard evidence preset).
+    // active inbox filters"). Reached here via the kept standalone Research
+    // render (epic c793ca1).
     renderApp({ section: "Research" });
 
     const researchRegion = await screen.findByLabelText("Evidence timeline");
@@ -192,9 +191,8 @@ describe("Research screen workflows", () => {
   it("opens research question evidence in the Dashboard evidence preset (not Notebooks)", async () => {
     const user = userEvent.setup();
 
-    // Dashboard redesign (epic c793ca1): the standalone Research screen is retired
-    // as a destination; clicking a research_question evidence item now opens the
-    // company Dashboard on the "evidence" preset (never Notebooks).
+    // Clicking a research_question evidence item opens the company Dashboard on
+    // the "evidence" preset, never Notebooks (epic c793ca1).
     renderApp({ section: "Research" });
 
     await user.click(await screen.findByRole("button", { name: "Add question" }));

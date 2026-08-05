@@ -5,16 +5,13 @@
 //! with their provenance (source tier + validation verdict + citation). The
 //! pipeline is deterministic end to end.
 //!
-//! The **PDF fact-extraction arm is retired** (ADR 0086 dec. 1) and the
-//! **positional (tier-3b pdf2htmlEX) arm is retired** (ADR 0095, epic
-//! #40/#182: its first ground-truth measurement found currency-aware
-//! precision/recall of 5.6%/2.0% against ESEF's 99.3%/72.4%): a real PDF, or
+//! The PDF fact-extraction arm is retired (ADR 0086 dec. 1) and the
+//! positional (tier-3b pdf2htmlEX) arm is retired (ADR 0095): a real PDF, or
 //! bare non-iXBRL markup, spawns NO extraction attempt here — both routes
 //! survive only so [`derive_report_period`] can group the registry. Core
 //! KPIs for such a company arrive from the BiznesRadar-primary daily pull (a
 //! separate job), not from this seam. A markup/ESEF document no tier parses
-//! is an honest gap; the former tier-4 OCR fallback was already retired with
-//! the in-app AI layer (ADR 0084 decision 4).
+//! is an honest gap.
 
 use std::collections::BTreeSet;
 
@@ -66,16 +63,14 @@ pub(crate) mod reason {
     pub const EMITTED: &str = "emitted";
     /// The validation gate found a contradiction (identity or comparative).
     pub const VALIDATION_FAILED: &str = "validation_failed";
-    // The `structure_drift` reason (PDF profile-drift arm) is retired with the
-    // PDF fact arm (ADR 0086 dec. 1): no new row carries it. Already-stored rows
-    // keep the literal string; there is no producing constant anymore.
+    // `structure_drift` is retired (ADR 0086 dec. 1): no new row carries it;
+    // already-stored rows keep the literal string.
     /// The aggregator disagreed with an issuer-held value — recorded by the
     /// reversed-witnessing paths (the BR-primary pull and the WDF ingest seam),
     /// never by this pipeline (ADR 0086 dec. 4).
     pub const WITNESS_DISAGREEMENT: &str = "witness_disagreement";
-    // The `witness_fallback` reason (ADR 0085 aggregator gap-fill) is retired
-    // with ADR 0086: BiznesRadar sources core KPIs through its own primary
-    // pull. Already-stored rows keep the literal string; readers stay tolerant.
+    // `witness_fallback` is retired (ADR 0086); already-stored rows keep the
+    // literal string, and readers stay tolerant.
     /// A re-read of an already-stored slot disagreed with the committed value
     /// (migration `0123`, epic #229 T5 / #192). The stored value is KEPT — this
     /// records the disagreement so it can be ratified instead of evaporating
@@ -93,8 +88,7 @@ pub(crate) mod reason {
 /// `Flagged` is deliberately disambiguated: "the numbers contradict each other"
 /// (`validation_failed`) and "the witness disagrees" (`witness_disagreement`)
 /// are different problems with different fixes, and a single `flagged` label
-/// would hide that. (The `structure_drift` reason is retired with the PDF fact
-/// arm, ADR 0086 dec. 1.)
+/// would hide that.
 fn reason_for(
     outcome: &crate::fundamentals::extraction::pipeline::PipelineOutcome,
 ) -> &'static str {
@@ -103,10 +97,9 @@ fn reason_for(
     }
     match outcome.acceptance {
         Acceptance::Empty => reason::NO_DETERMINISTIC_TIER,
-        // A non-emitting non-empty outcome is a failed gate. (`structure_drift`
-        // died with the PDF fact arm and `witness_disagreement` is recorded by
-        // the aggregator pull's reversed witnessing, never by this pipeline —
-        // ADR 0086 dec. 1/4.)
+        // A non-emitting non-empty outcome is a failed gate: `witness_disagreement`
+        // is recorded by the aggregator pull's reversed witnessing, never by this
+        // pipeline (ADR 0086 dec. 4).
         _ => reason::VALIDATION_FAILED,
     }
 }
@@ -375,8 +368,7 @@ pub struct StructuredExtractionResult {
     /// Slots re-observed with a value that disagrees with the stored fact.
     pub divergences: Vec<FactDivergence>,
     /// Whether a deterministic **issuer** tier emitted facts this run.
-    /// (The ADR 0085 aggregator-fallback flag is retired with ADR 0086 —
-    /// BiznesRadar sources facts through its own primary pull; stored
+    /// (The ADR 0085 aggregator-fallback flag is retired — ADR 0086; stored
     /// `witness_fallback` outcome rows remain readable as legacy.)
     pub emitted: bool,
     /// The typed `reason_code` this run recorded on its outcome row (the
@@ -392,8 +384,8 @@ pub struct StructuredExtractionResult {
 /// (`Accepted`/`AcceptedViaWitness`) or it was merely uncontradicted
 /// (`AcceptedUnreviewed`) is provenance, not a review to-do: it lives in the
 /// fact's `validation_status` + `source_tier` + citation, surfaced as labels.
-/// `confirmation_state` is a frozen compatibility column. `mode` no longer
-/// affects it — the parameter stays so callers pass it uniformly. `Flagged`/
+/// `confirmation_state` is a frozen compatibility column; `mode` does not
+/// affect it — the parameter stays so callers pass it uniformly. `Flagged`/
 /// `Empty` never reach here (`Acceptance::emits()` is `false`).
 fn confirmation_state_for(_acceptance: Acceptance, _mode: &str) -> &'static str {
     "confirmed"
@@ -451,9 +443,7 @@ fn quarantine_detail(quarantined: &[QuarantinedFact], base: Option<String>) -> O
 /// cover-page document whose true reporting year was split by a pdf2htmlEX
 /// extraction artifact (e.g. "20 25") landing on an unrelated nearby year
 /// (e.g. a signing dateline's "2026") instead. Bumping re-derives any cached
-/// period this could have affected (the facts written from the stale `1`
-/// derivation were all positional-tier rows, deleted outright by the ADR
-/// 0095 retirement migration `0135`).
+/// period this could have affected.
 pub const DERIVATION_VERSION: i64 = 2;
 
 /// The extraction-pipeline capability version stamped into an autopilot run's
@@ -467,13 +457,8 @@ pub const DERIVATION_VERSION: i64 = 2;
 /// flagged period **once**, then it settles (dedup) until the next bump.
 ///
 /// Bump this whenever a tier/parser/derivation change alters what documents can
-/// be read. **Do not** bump for changes that cannot affect readability.
-///
-/// `2` is the first stamped era; `1` is the implicit pre-versioning era, so a
-/// legacy stored run (delta with no `pipelineVersion`, read as `0`) re-arms
-/// once under this build and then settles. `3` versions the ADR 0086 dec. 1
-/// ladder change (PDF fact arm retired) — it re-arms nothing PDF-wise, since a
-/// PDF document no longer arms any extraction attempt.
+/// be read. **Do not** bump for changes that cannot affect readability. A
+/// legacy stored run with no `pipelineVersion` reads as `0` and re-arms once.
 pub const EXTRACTION_PIPELINE_VERSION: u32 = 3;
 
 /// Re-intern a cached `period_type` string back to the `&'static str` the
@@ -631,11 +616,11 @@ fn period_from_cover_page(
         return None;
     }
     let local_path = document.local_path.as_deref()?;
-    // Container truth (epic #229 T2): a `.pdf` holding markup is read as markup,
-    // where the PDF reader used to return nothing. A ZIP package or an
-    // unrecognised container yields no cover text at all — the ESEF route above
-    // already self-derives a package's period from its iXBRL contexts — so it
-    // stays a measured `no_period_derived` gap rather than a garbage parse.
+    // Container truth (epic #229 T2): a `.pdf` holding markup is read as
+    // markup. A ZIP package or an unrecognised container yields no cover text
+    // at all — the ESEF route above already self-derives a package's period
+    // from its iXBRL contexts — so it stays a measured `no_period_derived`
+    // gap rather than a garbage parse.
     let format = crate::report_documents_container::resolved_source_format(document)?;
     let bytes = std::fs::read(state.data_dir().join(local_path)).ok()?;
     let outcome = extract_report(&bytes, format);
@@ -754,9 +739,9 @@ pub(crate) enum DocumentRoute {
     /// Markup that is inline-XBRL → the ESEF tier reads it as its own instance.
     IxbrlInstance,
     /// Bare markup that is NOT inline-XBRL (a pdf2htmlEX render, an HTML
-    /// export) → NO extraction attempt (ADR 0095: the tier-3b positional
-    /// parser that used to read this shape is retired). The classification
-    /// survives only for period-grouping purposes, mirroring [`Self::Pdf`].
+    /// export) → NO extraction attempt (ADR 0095: the positional tier is
+    /// retired). The classification survives only for period-grouping
+    /// purposes, mirroring [`Self::Pdf`].
     Positional,
     /// A ZIP → an ESEF/eSprawozdanie report package; the inner instance is
     /// unpacked before the ESEF tier reads it.
@@ -877,13 +862,10 @@ pub(crate) fn run_structured_extraction(
     // classification-only since ADR 0095). An unsupported
     // container is an explicit outcome row, never an error that aborts the sweep.
     let esef_opt: Option<Vec<u8>> = match route_document(&bytes) {
-        // Bare markup that is NOT iXBRL — a pdf2htmlEX visual render or an HTML
-        // export. NO extraction attempt (ADR 0095: the tier-3b positional
-        // parser is retired — its first ground-truth measurement found
-        // currency-aware precision/recall of 5.6%/2.0%, the app's most
-        // defect-dense surface per fact produced, against ESEF's 99.3%/72.4%).
-        // Mirrors the `DocumentRoute::Pdf` idiom below exactly: the route
-        // survives so the registry/period derivation still group this
+        // Bare markup that is NOT iXBRL — a pdf2htmlEX visual render or an
+        // HTML export. NO extraction attempt: the positional tier is retired
+        // (ADR 0095). Mirrors the `DocumentRoute::Pdf` idiom below exactly: the
+        // route survives so the registry/period derivation still group this
         // document, but no tier reads financial facts out of it. Returns a
         // benign empty result and records NO outcome, so this document never
         // generates a `no_deterministic_tier` extraction-outcome row.
@@ -915,12 +897,11 @@ pub(crate) fn run_structured_extraction(
                 }
             }
         }
-        // A real PDF → NO extraction attempt (ADR 0086 dec. 1: the PDF fact arm is
-        // retired). The route survives so the registry/period derivation still
-        // group this document, but no tier reads financial facts out of it — core
-        // KPIs for a PDF-only company arrive from the BiznesRadar-primary daily
-        // pull. Returns a benign empty result and records NO outcome, so a PDF
-        // never generates a `no_deterministic_tier` extraction-outcome row.
+        // A real PDF → NO extraction attempt (ADR 0086 dec. 1: the PDF fact
+        // arm is retired). The route survives for period grouping only; core
+        // KPIs for a PDF-only company arrive from the BiznesRadar-primary
+        // daily pull. Records NO outcome, so a PDF never generates a
+        // `no_deterministic_tier` row.
         DocumentRoute::Pdf => {
             return Ok(StructuredExtractionResult {
                 acceptance: Acceptance::Empty,
@@ -952,12 +933,6 @@ pub(crate) fn run_structured_extraction(
         .map_err(|e| e.to_string())?;
     let expected_keys = expected_primary_keys(state, company_id)?;
 
-    // The ADR 0085 pipeline witness seam is retired with ADR 0086: only ESEF
-    // routes reach this point (positional and PDF routes early-return above),
-    // and issuer-tagged ESEF was always out of witness scope. BiznesRadar
-    // corroboration now runs reversed — the aggregator's own primary pull
-    // (`jobs::aggregator_fundamentals_pull`) records `witness_disagreement`
-    // against issuer-held slots.
     let input = PipelineInput {
         period_end,
         esef_bytes: esef_opt.as_deref(),
@@ -981,10 +956,8 @@ pub(crate) fn run_structured_extraction(
         outcome.acceptance = Acceptance::AcceptedUnreviewed;
     }
 
-    // The PDF profile-drift arm is retired (ADR 0086 dec. 1), so the pipeline no
-    // longer produces a drift diff. The provenance `drift_json` column + the
-    // extraction-outcome `drift_json` param are kept (append-only) and simply
-    // carry `None` — the dead result/summary plumbing is gone (F7).
+    // The PDF profile-drift arm is retired (ADR 0086 dec. 1) — `drift_json` is
+    // kept (append-only) and always `None`.
     let drift_json: Option<String> = None;
 
     // --- Persist accepted facts + provenance ----------------------------
@@ -1126,9 +1099,6 @@ pub(crate) fn run_structured_extraction(
         }
     }
 
-    // The ADR 0085 aggregator gap-fill fallback is retired with ADR 0086:
-    // BiznesRadar sources core KPIs through its own primary pull, under the tier
-    // precedence, never through this extraction run.
     let issuer_emitted = !produced_fact_ids.is_empty();
 
     // --- Persist the OUTCOME, emitting or not (ADR 0061 dec. 2 guardrail) ---
@@ -1243,18 +1213,16 @@ fn base_document_ref(slot_ref: &str) -> &str {
 mod tests {
     use super::*;
     use crate::app_state::AppState;
-    // MODE_AUTOPILOT is now test-only (production no longer branches on mode for
-    // confirmation state — facts are review-free, ADR 0086 dec. 5).
+    // MODE_AUTOPILOT is test-only — production does not branch on mode for
+    // confirmation state (ADR 0086 dec. 5).
     use crate::storage::{
         open_in_memory_database, CaptureReportDocumentInput, ListKpiDefinitionsInput, NewCompany,
         NewFinancialFact, NewFinancialPeriod, MODE_ASSIST, MODE_AUTOPILOT,
     };
 
-    /// Zero-effects honesty (epic #40 S5, ADR 0091): the outcome row records the
-    /// facts AT the slot, so a re-run that re-observed everything cannot
-    /// overwrite a healthy count with `0` while still claiming `emitted`. That
-    /// row is what the #155 report-documents indicator reads — it used to render
-    /// "contains extractable data" beside "0 facts".
+    /// The outcome row records the facts AT the slot, so a re-run that
+    /// re-observed everything cannot overwrite a healthy count with `0` while
+    /// still claiming `emitted`.
     #[test]
     fn slot_fact_count_counts_reobservations_not_only_new_facts() {
         let produced = vec!["fact_1".to_owned(), "fact_2".to_owned()];
@@ -1389,11 +1357,9 @@ mod tests {
         // stored as `*.pdf`. Routing must key on the MAGIC BYTES, not the
         // filename — this document must never be handed to the PDF reader
         // (which would either fail outright or silently produce nothing).
-        // ADR 0095: the tier-3b positional parser that used to extract this
-        // shape is retired, so the correctly-routed outcome is now the SAME
-        // benign-empty result `DocumentRoute::Pdf` returns — the point this
-        // test still proves is that routing itself is byte-driven, not that
-        // extraction happens.
+        // ADR 0095: the positional parser is retired, so the correctly-routed
+        // outcome is the same benign-empty result `DocumentRoute::Pdf`
+        // returns — this test proves routing is byte-driven.
         let bytes = POSITIONAL_XHTML.as_bytes();
         assert_eq!(
             route_document(bytes),
@@ -1731,11 +1697,8 @@ mod tests {
         );
     }
 
-    /// Epic #229 T2: `is_esef_route` decides — without reading the file — whether
-    /// a document goes down the ESEF/iXBRL path. It used to answer from the
-    /// extension alone, so the corpus's markup and ZIP packages stored under a
-    /// `.pdf` name were routed to the PDF tier and never reached the structured
-    /// path at all.
+    /// `is_esef_route` decides — without reading the file — whether a document
+    /// goes down the ESEF/iXBRL path.
     #[test]
     fn esef_route_follows_the_sniffed_container_not_the_pdf_name() {
         let (state, _company_id, document_id) = seed_document_with_bytes(
@@ -1745,8 +1708,7 @@ mod tests {
             "ssf_2024_signed.pdf",
             POSITIONAL_XHTML.as_bytes(),
         );
-        // Never sniffed: the `.pdf` name still decides (the pre-T2 fallback), so a
-        // legacy row routes exactly as it did before.
+        // Never sniffed: the `.pdf` name decides when no container is stamped.
         let unsniffed = state.get_report_document(&document_id).expect("document");
         assert!(!is_esef_route(&unsniffed));
 
@@ -2128,17 +2090,9 @@ mod tests {
         (state, company.id, document.id)
     }
 
-    /// ADR 0095 (adversarial-review scope expansion, epic #40/#182): the
-    /// tier-3b positional parser is retired outright — its first
-    /// ground-truth measurement found currency-aware precision/recall of
-    /// 5.6%/2.0%, the app's most defect-dense surface per fact produced,
-    /// against ESEF's 99.3%/72.4%. A document that USED TO route to the
-    /// positional parser and extract (this test's own name, before this
-    /// fix) must now yield the SAME benign-empty result the retired PDF
-    /// arm already returns: no tier, no facts, no outcome row — mirroring
-    /// `DocumentRoute::Pdf`'s idiom exactly (the route still classifies the
-    /// document for period-grouping purposes; nothing reads facts out of it
-    /// anymore).
+    /// A non-iXBRL document yields the same benign-empty result the retired
+    /// PDF arm returns: no tier, no facts, no outcome row (ADR 0095) — the
+    /// route still classifies the document for period-grouping purposes.
     #[test]
     fn non_ixbrl_xhtml_no_longer_extracts_via_the_retired_positional_tier() {
         let (state, company_id, document_id) = seed_positional();
@@ -2320,11 +2274,9 @@ mod tests {
 
     #[test]
     fn a_value_divergence_leaves_a_durable_flagged_outcome_that_upserts() {
-        // Epic #229 T5 (#192 residual): a divergence used to live only in the
-        // in-memory result and a developer-mode diagnostic (7-day trimmed), so
-        // "two reads of the issuer's own filing disagree" evaporated. It now
-        // records a durable `value_divergence` outcome, keyed per (document,
-        // metric) so a re-extraction refreshes the row instead of duplicating it.
+        // A divergence records a durable `value_divergence` outcome, keyed per
+        // (document, metric), so a re-extraction refreshes the row instead of
+        // duplicating it.
         let (state, company_id, document_id) = seed_esef_package();
         run_structured_extraction(
             &state,

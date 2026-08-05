@@ -10,11 +10,11 @@ import { sanitizeGeometry } from "./DockLayout";
 //
 // A saved `cockpit_layouts` row stores dockview geometry that names panels by id
 // (`follow:<PinnedKind>`). `normalizePinned` and the `openGlobals` filter already
-// drop unknown pinned/global kinds when rebuilding panel STATE — but the geometry
-// replay (`DockLayout.restore`) used to hand dockview the stored tree verbatim.
-// `DockPanel` renders `null` when no content is registered for a panel id, so a
-// removed kind did not crash: it left an EMPTY TILE WITH A TAB occupying grid
-// space in the user's real dashboard.
+// drop unknown pinned/global kinds when rebuilding panel STATE, but the geometry
+// replay (`DockLayout.restore`) must sanitize the stored tree too: `DockPanel`
+// renders `null` when no content is registered for a panel id, so an unfiltered
+// removed kind would not crash — it would leave an EMPTY TILE WITH A TAB
+// occupying grid space in the user's real dashboard.
 //
 // Found live: the owner's database held `dashboard:company_gpw_acp` with
 // `"views":["follow:review"]` after ADR 0084 removed the `review` pane kind.

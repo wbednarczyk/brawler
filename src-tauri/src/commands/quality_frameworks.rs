@@ -166,12 +166,9 @@ pub fn list_available_metric_keys(
 
 // ---- Qualitative assessment (ADR 0075, as amended by ADR 0084) -------------
 //
-// The in-app AI analysis layer is retired: the `qualitative_assessment` job, its
-// enqueue/follow-up machinery and the run/re-run commands are gone. Criterion
-// verdicts are agent-written with provenance through the MCP write-tools
-// (`set_qualitative_verdicts`, shipped v0.60, ADR 0088). The read below survives
-// under ADR 0084 decision 5 — verdicts a previous version stored are user data
-// and stay readable.
+// Criterion verdicts are agent-written with provenance through the MCP
+// write-tools (`set_qualitative_verdicts`, ADR 0088); the read below survives
+// under ADR 0084 decision 5 as user data a previous version stored.
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -187,13 +184,13 @@ pub struct GetQualitativeAssessmentInput {
 
 // ---- set_qualitative_verdicts (MCP-first write, ADR 0088 M3 / ADR 0084 dec. 5)
 //
-// The qualitative-verdict WRITE path. The in-app agent writer was retired with
-// the AI layer (ADR 0084); verdicts now arrive through the provenance-gated MCP
-// `act` tier — every criterion result must carry a non-empty `citationsJson`
-// evidence array (the registry classifies this command Act + `CitationsJson`).
-// Headless / MCP-only: no UI entry point (verdicts are authored by a connected
-// agent, not in-app). The MCP act handler and this typed command share
-// [`build_persist_qualitative_input`] so their behavior can never diverge.
+// The qualitative-verdict WRITE path: verdicts arrive through the
+// provenance-gated MCP `act` tier — every criterion result must carry a
+// non-empty `citationsJson` evidence array (the registry classifies this
+// command Act + `CitationsJson`). Headless / MCP-only: no UI entry point
+// (verdicts are authored by a connected agent, not in-app). The MCP act
+// handler and this typed command share [`build_persist_qualitative_input`]
+// so their behavior can never diverge.
 
 /// One agent-authored qualitative criterion verdict. `ordinal` and `label` are
 /// resolved from the framework's criteria (not supplied by the caller);
@@ -230,7 +227,7 @@ pub struct SetQualitativeVerdictsInput {
 }
 
 /// Provenance marker written to each criterion result's `prompt_version` for
-/// verdicts authored over the MCP act tier (vs. the retired in-app agent).
+/// verdicts authored over the MCP act tier.
 pub const MCP_VERDICT_PROMPT_VERSION: &str = "mcp";
 
 /// Map a [`SetQualitativeVerdictsInput`] onto the storage

@@ -158,10 +158,8 @@ The labeled harness above measures precision where hand labels exist; it cannot 
 of the owner's real filing corpus the deterministic-only pipeline actually reads**. That is what
 `storage::tests::real_data_extraction::deterministic_pipeline_real_data_sweep` measures. Since
 [ADR 0084](adr/0084-retire-in-app-ai-layer.md) retired the AI tier, this is the *official*
-fundamentals coverage number. The ratification question it once gated — whether cover-note facts
-graduate from `auto_unreviewed` — is now closed: facts are review-free
-([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) dec. 5), landing `confirmed` regardless
-of tier.
+fundamentals coverage number. Facts are review-free and land `confirmed` regardless of tier
+([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5).
 
 It drives the **real job-layer path** (`jobs::structured_extraction::run_structured_extraction`),
 not just the pure pipeline, because the typed `reason_code` vocabulary and the aggregator
@@ -171,7 +169,7 @@ to start against `brawler.sqlite3` or any path under `/mnt/d/` — point it at a
 | Reports | Meaning |
 | --- | --- |
 | Eligible by `doc_kind`, with the no-period-derivable share | Documents stored but not routable to a reporting period. Split by kind because a `governance` document legitimately has none and a `periodic_ssf` that has none is a real gap. |
-| Attempts by route, `read_rate` | ESEF vs non-ESEF route (the non-ESEF fact arms are all retired — PDF by ADR 0086, structured-xHTML/positional by ADR 0095 — so non-ESEF rows are historical attempts only; PDF documents spawn no attempt), and the share that yielded ≥1 tracked fact. Counts produced **and** re-observed facts — on the owner's DB most slots are already filled, so "newly created" would read as 0. |
+| Attempts by route, `read_rate` | ESEF vs non-ESEF route (non-ESEF fact arms are retired — ADR 0086/ADR 0095 — so those rows are historical attempts only), and the share that yielded ≥1 tracked fact. Counts produced **and** re-observed facts — on the owner's DB most slots are already filled, so "newly created" would read as 0. |
 | Document-level recall | Attempted documents yielding ≥1 tracked fact, plus facts per reading document. The recall denominator that *is* available (see below). |
 | Resolved tier / validation-gate verdict | Which tier read the document; `accepted` / `accepted_unreviewed` / `flagged` / `empty`. |
 | Flagged-gap breakdown by `reason_code` | `emitted`, `validation_failed`, `structure_drift`, `witness_disagreement`, `no_deterministic_tier`, `document_unreadable` (plus legacy-only `witness_fallback` rows, retained readable — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md)). |
@@ -212,16 +210,10 @@ number it hopes for is worse than no harness.
 
 ### #182 ESEF / positional ground-truth scorer — DIAGNOSTIC (floors deferred to measurement v2)
 
-**html_positional is RETIRED ([ADR 0095](adr/0095-retire-html-positional-tier.md), 2026-08-05).**
-The measurement below (5.6%/2.0% currency-aware precision/recall) is what triggered the decision —
-kept as the audit record. The parser, its routing arm, and `positional_statement_basis` are removed;
-migration `0135` deletes every stored `pdf`-tier fact (both `html_positional` and the legacy retired
-PDF-arm's `api`-marked rows); the coherence guard refuses `source_tier='pdf'` on any new write. The
-positional arm of THIS scorer now runs against a permanently-empty app side — it stays wired, no
-longer as a precision/recall measurement (there is nothing left to measure) but as a **stored-state
-auditor**: it asserts, unconditionally and DB-wide, that zero `pdf`-tier facts remain after every
-scoring run. The corpus's positional ground truth stays historical evidence; no new positional
-labeling.
+**html_positional is RETIRED ([ADR 0095](adr/0095-retire-html-positional-tier.md)).** The positional
+arm of this scorer no longer measures precision/recall — it runs as a **stored-state auditor**: it
+asserts, unconditionally and DB-wide, that zero `pdf`-tier facts remain after every scoring run. No
+new positional labeling.
 
 `storage::tests::real_data_extraction::esef_positional_ground_truth_scores` (`#[ignore]`) scores
 facts **already stored** in a throwaway DB copy against the hand-merged #182 corpus
@@ -319,7 +311,9 @@ gaps — a first-pass measurement is otherwise deflated by things that are not e
    `machine`-verified rows only, split stored-vs-not (existence, not a value check) — since whether
    the app ALSO retains the comparative column is a different question from whether it read the
    current filing correctly. `SPURIOUS` is scoped the same way: an app fact only counts against
-   precision when its OWN period is the document's current period.
+   precision when its OWN period is the document's current period. In practice both tiers measure
+   0 comparatives stored — the app never retains a filing's prior-period comparative column at all,
+   a gap distinct from current-period accuracy.
 
 Verdicts within scope: `MATCH` (value AND currency agree) / `CURRENCY_MISSING` (value agrees, app
 currency is `NULL`) / `CURRENCY_MISMATCH` (value agrees, app currency disagrees) / `WRONG_VALUE`
@@ -342,67 +336,27 @@ a bare percentage).
 written) — **no precision/recall floor** (see "Status" above). `BRAWLER_GT_REQUIRED=1` additionally
 asserts the manifest period-agreement guard and non-zero denominators.
 
-**Measurement that triggered ADR 0095 (2026-08-05, pre-retirement — the audit record, frozen):**
-
-| tier         | MATCH | WRONG_VALUE | MISSING | SPURIOUS | CURRENCY_MISSING | CURRENCY_MISMATCH | UNVERIFIED | precision      | recall         |
-|--------------|------:|------------:|--------:|---------:|------------------:|-------------------:|-----------:|---------------:|---------------:|
-| `esef`       |   142 |           0 |      53 |        0 |                  0 |                   1 |          0 | 142/143 (99.3%) | 142/196 (72.4%) |
-| `positional` |     5 |           0 |     169 |        7 |                 78 |                   0 |          0 |   5/90 (5.6%)  |  5/252 (2.0%)  |
-
-Corpus: 32 report documents (15 ESEF, 17 `html_positional`), 1035 ground-truth rows, all
-`machine`-verified (479 esef-tier, 556 positional-tier).
-
-**Post-retirement measurement (2026-08-05, after migration `0135` + the parser/route removal — a
-snapshot for orientation, NOT a pinned baseline; re-run `make realdata-gt-score` for the current
-numbers):**
-
-| tier         | MATCH | WRONG_VALUE | MISSING | SPURIOUS | CURRENCY_MISSING | CURRENCY_MISMATCH | UNVERIFIED | precision  | recall        |
-|--------------|------:|------------:|--------:|---------:|------------------:|-------------------:|-----------:|-----------:|--------------:|
-| `esef`       |   142 |           0 |      53 |        0 |                  0 |                   1 |          0 | 142/143 (99.3%) | 142/196 (72.4%) |
-| `positional` |     0 |           0 |     252 |        0 |                  0 |                   0 |          0 | n/a (0/0)  | 0/252 (0.0%)  |
-
-`esef` is untouched by the retirement (its route/writer never named `pdf`). `positional` is now
-uniformly `MISSING` — the app side is permanently empty by design, so precision has no denominator
-(informational `n/a`, never a required-mode failure for this tier specifically) and recall is a flat
-0.0%. This IS the expected, correct steady state — not a regression to chase.
-
-**Per-ticker match counts from the PRE-retirement measurement** (historical evidence — the currency-aware pass that drove [ADR 0095](adr/0095-retire-html-positional-tier.md); the current steady state above is uniformly `MISSING`, and these counts will never recur):
-
-| ticker | MATCH | MISSING | SPURIOUS | CURRENCY_MISSING |
-|--------|------:|--------:|---------:|------------------:|
-| CAR    |     0 |      11 |        0 |                  3 |
-| CDR    |     0 |     104 |        0 |                 75 |
-| DBC    |     0 |      30 |        7 |                  0 |
-| DNP    |     0 |      14 |        0 |                  0 |
-| GKI    |     5 |      10 |        0 |                  0 |
-
-**What the currency fix found:** the positional tier's match rate collapsed from a currency-blind
-77/196 to a currency-aware 5/90 precision — almost all of the previous "matches" were value-equal
-facts with **no currency stored at all** (`CURRENCY_MISSING`=78, 75 of them CD Projekt), not
-genuinely verified matches. This is exactly the audit's currency-blind-matching blocker made
-concrete: the `html_positional` extractor does not reliably persist `currency` on its facts. `esef`
-barely moved (143→142 MATCH, 1 new `CURRENCY_MISMATCH`) — the ESEF extractor does carry currency.
+**Positional tier is now uniformly `MISSING`** — the app side is permanently empty by design, so
+precision has no denominator (informational `n/a`, never a required-mode failure for this tier
+specifically) and recall is a flat 0.0%. This IS the expected, correct steady state — not a
+regression to chase. `esef` is untouched by the retirement (its route/writer never named `pdf`).
+Historical pre-retirement measurement evidence: [ADR 0095](adr/0095-retire-html-positional-tier.md).
 
 **Observation buckets (informational, off both denominators):** `esef` — `out_of_gt_scope`=25,
 `app_has_no_concept`=51 (the `__owners` NCI-split variants the app has no KPI for at all),
 comparative_total=232 / stored=0 / missing=232; `positional` — `out_of_gt_scope`=9,
-`app_has_no_concept`=0, comparative_total=304 / stored=0 / missing=304 (up from 221 after the DNP
-period fix moved its 14 comparative-period rows into the comparative bucket for real). Both tiers
-measured **0 comparatives stored** — the app never retains a filing's prior-period comparative
-column at all, a real, clean gap distinct from current-period accuracy.
+`app_has_no_concept`=0, comparative_total=304 / stored=0 / missing=304.
 
 `html_aggregator` remains unmeasured by this harness — the corpus has no `html_aggregator` ground
 truth to score against. The private corpus never enters CI or the public repo (ADR 0091); this
 measurement is reproduced locally via `make realdata-gt-score` on the maintainer's machine only —
 an on-demand DIAGNOSTIC (no floor to fail).
 
-**Successor-ratchet note:** this scorer replaces `storage::tests::extraction_metrics`'s CBF
-recall/precision ratchet (`RECALL_FLOOR`/`PRECISION_FLOOR` 0.30/0.98, graded the deterministic
-PDF-positional parser ADR 0086 retired) — that harness, its floors, and its `make
-realdata-extraction-metrics` target are deleted; the measurement is preserved as historical
-evidence in [ADR 0095](adr/0095-retire-html-positional-tier.md). THIS scorer itself currently
-carries no floor either, per the audit above — "successor" describes which harness supersedes the
-retired one, not that #182 is gating yet.
+**Successor-ratchet note:** this scorer supersedes `storage::tests::extraction_metrics`'s retired
+CBF recall/precision ratchet — deleted along with its floors and `make realdata-extraction-metrics`
+target ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) / [ADR 0095](adr/0095-retire-html-positional-tier.md)).
+THIS scorer itself currently carries no floor either, per the audit above — "successor" describes
+which harness supersedes the retired one, not that #182 is gating yet.
 
 ### Data-trust audit (epic #229 T1) — sizing a repair before writing it
 
@@ -489,14 +443,6 @@ The same target also runs the T7-F **double-extraction idempotency anchor**
 over the real `.xbri` filing and asserts the second run creates nothing, reports its re-observed
 slots as skipped, and leaves `financial_facts` unchanged. It **writes to the corpus DB** — the
 corpus copy is throwaway by contract (refresh it from the live DB when in doubt).
-
-### Ground-truth metrics ratchet (recall/precision, G-3) — RETIRED
-
-The CBF recall/precision ratchet (`storage::tests::extraction_metrics`, floors 0.30/0.98) graded
-the deterministic PDF-positional parser [ADR 0086](adr/0086-aggregator-primary-fundamentals.md)
-retired; its `make realdata-extraction-metrics` target and the `extraction_metrics` module are
-deleted, superseded by the #182 ESEF/positional ground-truth scorer above. Historical measurement
-evidence: [ADR 0095](adr/0095-retire-html-positional-tier.md).
 
 The **report-over-report diff** (`v0.47.0`, [ADR 0052](adr/0052-report-over-report-diff.md))
 followed this rule and is the worked example of it paying off: a pure-Rust
@@ -716,8 +662,7 @@ plus a golden snapshot over a synthetic body authored in the test itself, never
 copied from `private/` real data. Its acceptance bar is a separate `#[ignore]`
 real-data test against the hand-labeled spike corpus (347 facts; recall and
 precision both pinned at 347/347, zero false values), skipping cleanly when
-`private/` is absent. The retired tier-4 OCR parser's tests were removed with the
-layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
+`private/` is absent.
 
 ### Scale & performance gates
 
@@ -849,8 +794,7 @@ is covered by the unified `upsert_feed_item`, exercised by every feed-item
 adapter's ingest test. Adding an ingest path keeps it on the spine
 (`upsert_feed_item` + `record_source_outcome`); a new identity/matching
 transform in `storage::feed_matching` (the normalization SSOT) ships with the
-ADR 0049 invariant treatment. (The story-key stage and its golden/proptest
-suites were removed with the write-only story-key path, [ADR 0080](adr/0080-retire-embedding-model.md).)
+ADR 0049 invariant treatment.
 
 ### Mutation testing scope
 

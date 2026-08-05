@@ -21,18 +21,16 @@
 //!    (`source_tier='html_aggregator'`, pulled daily by a separate job).
 //!
 //! The PDF fact-extraction arm is RETIRED (ADR 0086 dec. 1) and the
-//! structured-xHTML/positional "wybrane dane" tier is RETIRED (ADR 0095,
-//! epic #40/#182): no tier reads financial facts out of PDF statements or
-//! bare pdf2htmlEX renders anymore — the PDF arm's shared number/label
-//! helpers moved to [`text_numbers`], still serving the html tier.
-//! `SourceTier::Pdf` and `extraction_method='html_positional'` stay
-//! recognized as legacy READ values only (migration 0135 deleted every
-//! stored `pdf`-tier fact; the coherence guard,
+//! structured-xHTML/positional "wybrane dane" tier is RETIRED (ADR 0095): no
+//! tier reads financial facts out of PDF statements or bare pdf2htmlEX
+//! renders — the PDF arm's shared number/label helpers moved to
+//! [`text_numbers`], still serving the html tier. `SourceTier::Pdf` and
+//! `extraction_method='html_positional'` stay recognized as legacy READ
+//! values only; the coherence guard,
 //! `storage::kpi_extraction::write_fact_provenance_fields`, refuses
-//! `source_tier='pdf'` on every NEW write). The pipeline is deterministic
+//! `source_tier='pdf'` on every NEW write. The pipeline is deterministic
 //! end to end; a document no deterministic tier parses is flagged, never
-//! guessed. (The tier-5 "AI over extracted text" was already retired with
-//! the in-app AI layer, ADR 0084 decision 4.)
+//! guessed.
 
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -67,13 +65,9 @@ pub enum SourceTier {
     /// tiers — issuer cover-note figures are untagged — and above the PDF
     /// parser. ADR 0061 decision 1 tier 2a.
     EspiCoverNote,
-    /// Structured/positional xHTML reader token. Historically the deterministic
-    /// PDF-fact parser (retired, ADR 0086 dec. 1) and the tier-3b positional
-    /// pdf2htmlEX parser it later also covered under
-    /// `extraction_method='html_positional'` (ALSO retired, ADR 0095: its
-    /// first ground-truth measurement found currency-aware precision/recall
-    /// of 5.6%/2.0% against ESEF's 99.3%/72.4%; migration 0135 deleted every
-    /// stored `pdf`-tier fact). The token is KEPT only as a legacy READ
+    /// Structured/positional xHTML reader token — the deterministic PDF-fact
+    /// parser (ADR 0086 dec. 1) and the tier-3b positional pdf2htmlEX parser
+    /// (ADR 0095) are both retired. The token is KEPT only as a legacy READ
     /// value — `storage::kpi_extraction::write_fact_provenance_fields`
     /// refuses `source_tier='pdf'` on every NEW write.
     Pdf,
@@ -94,8 +88,7 @@ pub enum SourceTier {
     /// fills every slot no issuer (or agent) tier owns, never overwrites one
     /// that is owned, and against an owned slot it acts as a reversed witness —
     /// recording a `witness_disagreement` outcome on divergence and a
-    /// corroboration stamp on agreement (epic #229 T5). "Witness, not source of
-    /// truth" (ADR 0061) is retired: it is both, in different places.
+    /// corroboration stamp on agreement (epic #229 T5).
     HtmlAggregator,
 }
 
@@ -135,9 +128,9 @@ impl SourceTier {
     }
 
     /// Whether this tier is an ISSUER-produced tier — one read DETERMINISTICALLY
-    /// from the issuer's own filing (ADR 0086 decision 4, amended 2026-07-22:
-    /// the positional `Pdf` tier is the issuer's filing read deterministically
-    /// and counts as an issuer tier). Amended again by ADR 0093 decision 1: the
+    /// from the issuer's own filing (ADR 0086 decision 4: the positional `Pdf`
+    /// tier is the issuer's filing read deterministically and counts as an
+    /// issuer tier). Amended by ADR 0093 decision 1: the
     /// `Agent` tier also reads the issuer's own document, but no deterministic
     /// pipeline verified it, so it is **not** an issuer tier either — it is
     /// distinguished from `HtmlAggregator` (third-party) elsewhere by rank, not
@@ -181,10 +174,8 @@ impl SourceTier {
             "mcp_agent" => self == SourceTier::Agent,
             // The deterministic tiered pipeline's generic write (esef /
             // structured_xhtml / espi_cover_note / html_aggregator, all
-            // `jobs::structured_extraction`), PLUS the retired PDF fact arm's
-            // legacy rows — historically also stamped `pdf` + `api` before
-            // ADR 0086 dec. 1 retired that arm (still readable, never written
-            // fresh).
+            // `jobs::structured_extraction`), plus the retired PDF fact arm's
+            // legacy rows (still readable, never written fresh).
             "api" => matches!(
                 self,
                 SourceTier::Esef

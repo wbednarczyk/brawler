@@ -1874,12 +1874,10 @@ mod tests {
         (company.id, period.id)
     }
 
-    /// ADR 0093 decision 1 honesty rule (epic #285 T9): before this fix, the
-    /// legacy MCP `create_financial_fact` handler called storage verbatim — no
-    /// `financial_fact_provenance` row, `extraction_method` defaulted
-    /// `'manual'`. The agent's write masqueraded as the owner's own entry,
-    /// sitting at the untouchable top of the trust ladder. RED (pre-fix):
-    /// `provenance` was `None` and `extraction_method` was `"manual"`.
+    /// ADR 0093 decision 1 honesty rule (epic #285 T9): an MCP-authored
+    /// `create_financial_fact` write must stamp a `financial_fact_provenance`
+    /// row and `extraction_method` != `'manual'` — never masquerading as the
+    /// owner's own entry at the untouchable top of the trust ladder.
     #[test]
     fn create_financial_fact_over_mcp_stamps_agent_provenance() {
         let state = act_state();

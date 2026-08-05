@@ -113,10 +113,9 @@ function formatThreshold(
 /// never become the panel's quantitative "latest" — the summary chips and
 /// per-criterion verdicts would silently show non-engine tallies instead of the
 /// engine scorecard. The quant current-state read is the newest snapshot that
-/// carries engine results. The AI assessor is retired (ADR 0084) and its rows
-/// were dropped, but the guard stays: MCP-written verdicts (`set_qualitative_verdicts`,
-/// shipped v0.60 per ADR 0088) land in the same history with a non-`engine`
-/// (`source: "agent"`) source and must never be read as the quantitative latest.
+/// carries engine results. MCP-written verdicts (`set_qualitative_verdicts`,
+/// ADR 0088) land in the same history with a non-`engine` (`source: "agent"`)
+/// source and must never be read as the quantitative latest.
 function latestQuantitativeEvaluation(
   rows: FrameworkEvaluation[],
 ): FrameworkEvaluation | null {
@@ -460,10 +459,9 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   }
 
   // A qualitative criterion (ADR 0075, amended by ADR 0084): a user-authored
-  // check with written guidance and NO in-app verdict. The AI assessor and every
-  // verdict it stored were removed in the clean cut (ADR 0084 decision 5), so the
-  // row shows the criterion and its guidance; verdicts arrive as agent writes
-  // over MCP with provenance (`set_qualitative_verdicts`, shipped v0.60, ADR 0088).
+  // check with written guidance and NO in-app verdict — the row shows the
+  // criterion and its guidance; verdicts arrive as agent writes over MCP with
+  // provenance (`set_qualitative_verdicts`, ADR 0088).
   function renderQualitativeCriterion(criterion: QualityFramework["criteria"][number]) {
     const expanded = expandedCriterionId === criterion.id;
     const verdict = qualitativeVerdictByCriterion.get(criterion.id) ?? null;

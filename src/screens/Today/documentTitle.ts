@@ -1,6 +1,6 @@
 /**
  * Splits a stored report-document title into a human statement and a leading
- * filename token (owner dogfooding 2026-07-23). Source `report_documents.title`
+ * filename token. Source `report_documents.title`
  * values are sometimes a filename fused directly onto the human title
  * (e.g. "Y24_25_Sprawozdanie jednostkowe.xhtmlJednostkowe Sprawozdanie Finansowe
  * AB S.A.") or a raw filename alone ("2410_Passus_2023_PSSF_MSSF_skrócone_PL-sig.pdf").
@@ -23,15 +23,15 @@
 // ".html" over ".htm". Case-insensitive. The extension need not be followed by a
 // separator — it may be glued directly to the human title (…".xhtmlJednostkowe…").
 //
-// EXPORTED as the single source for this pattern (owner dogfooding 2026-07-23):
-// the anti-filename CI gate (`streamCopy.test.tsx`) and the live specificity probe
+// EXPORTED as the single source for this pattern: the anti-filename CI gate
+// (`streamCopy.test.tsx`) and the live specificity probe
 // (`ux-checkpoint.live.spec.ts`) reuse THIS regex to assert no rendered row
 // statement ever carries a document extension — a statement is prose, a filename
 // is metadata. Never `/g` (would make `.test()`/`.exec()` stateful); `/i` only.
 export const FILENAME_EXTENSION = /\.(?:xhtml|html|htm|pdf|zip)/i;
 
 /**
- * A stricter GLUE probe (owner dogfooding 2026-07-23): a document extension
+ * A stricter GLUE probe: a document extension
  * immediately fused to a following word character (`"…jednostkowe.xhtmlJednostkowe…"`)
  * — the exact class that leaked a filename into a row statement. Reused by the
  * anti-filename gate so the glue case reddens on its own, independent of the

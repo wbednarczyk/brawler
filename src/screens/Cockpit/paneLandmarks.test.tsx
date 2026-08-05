@@ -3,10 +3,10 @@ import { expect, renderApp, screen, userEvent, within } from "../../test/appWork
 
 // Duplicate-kind panel landmarks (issue #142). Hosting two panels of the same
 // kind — two companies' report diffs side by side, or a pinned panel next to the
-// follow panel of the same kind — used to render two
+// follow panel of the same kind — must never render two
 // `<section aria-label="Report comparison">` landmarks carrying the SAME
-// accessible name: an axe `landmark-unique` violation, and real navigation noise
-// for a screen-reader user who cannot tell the two apart.
+// accessible name: that would be an axe `landmark-unique` violation, and real
+// navigation noise for a screen-reader user who cannot tell the two apart.
 //
 // The strategy (docs/ui-authoring.md § Landmarks): a landmark belongs to the
 // SCREEN, never to a panel hosted in a dock pane. Inside a pane a titled block is

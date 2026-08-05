@@ -7,11 +7,10 @@ import credentialProviderIds from "../test/scenarios/credentialProviders.json";
 // `CREDENTIAL_PROVIDER_IDS` enumeration (providers::credentials tests); this
 // side asserts every enumerated provider has a Settings entry point.
 //
-// Since ADR 0084 the in-app analysis layer (and its Claude/OpenAI/Mistral
-// keychain targets) is retired: transcription is the only remaining model-backed
-// capability, so `provider_gemini` and its dedicated Settings → Credentials form
-// are the whole surface. Adding a backend credential descriptor without a
-// Settings form must redden here, not ship un-enterable.
+// ADR 0084: transcription is the only remaining model-backed capability, so
+// `provider_gemini` and its Settings → Credentials form are the whole surface.
+// Adding a backend credential descriptor without a Settings form must redden
+// here, not ship un-enterable.
 const PROVIDERS_WITH_A_SETTINGS_FORM: ReadonlyArray<string> = [
   // Settings → Credentials, the dedicated Gemini API-key form.
   "provider_gemini",

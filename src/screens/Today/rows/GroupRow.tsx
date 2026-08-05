@@ -45,8 +45,8 @@ export function GroupRow({
   const newest = group.members[0];
   const isAttention = group.category === "attention";
   // The header's alert-rule indicator reflects the WHOLE group, not just the
-  // newest member: shown only when every member is rule-fired (owner dogfooding
-  // 2026-07-23). Members render their own via `StreamRowView` when expanded.
+  // newest member: shown only when every member is rule-fired. Members render
+  // their own via `StreamRowView` when expanded.
   const descriptor = {
     ...describePayload(newest.payload, ctx),
     ruleOrigin: everyMemberFromAlertRule(group.members.map((member) => member.payload)),

@@ -342,8 +342,7 @@ describe("Today verify severity — the one FE-side severity entry (ADR 0087 dec
     await findCategoryRow(container as HTMLElement, "verify");
     await findCategoryRow(container as HTMLElement, "attention");
 
-    // The overdue claim escalated to notable (was routine before ADR 0087's
-    // FE-side entry).
+    // The overdue claim escalates to notable severity (ADR 0087's FE-side entry).
     expect(verifyRowSeverity(container as HTMLElement)).toBe("notable");
 
     // Ordering: the urgent attention row precedes the notable verify row, which
@@ -477,8 +476,8 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
   });
 
   it("labels a per-company autopilot group chip with its 'runs' unit", async () => {
-    // Same opaque-×N fix, autopilot side: a per-company group of runs counts runs,
-    // not events (owner dogfooding 2026-07-23).
+    // Same opaque-×N fix, autopilot side: a per-company group of runs counts
+    // runs, not events.
     appTestState.autopilotRunsResponse = [
       { ...baseAutopilotRun, id: "run_grp_0", companyId: pinnedCompanyId },
       { ...baseAutopilotRun, id: "run_grp_1", companyId: pinnedCompanyId },
@@ -828,7 +827,7 @@ describe("Today autopilot detail — undo / dismiss / drift behind the expandabl
 
       const title = await screen.findByText("Skonsolidowany raport kwartalny Q2 2026");
       expect(title).toHaveClass("today-row-title");
-      // The token summary is no longer the bare statement — it moves to the sub-line.
+      // The token summary moves to the sub-line, not the bare statement.
       const sub = container.querySelector(".today-row-sub");
       expect(sub?.textContent).toBe("New report processed.");
     });

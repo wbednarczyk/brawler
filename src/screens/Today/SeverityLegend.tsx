@@ -6,9 +6,9 @@ import { useLocale } from "../../shared/locale";
 import type { Severity } from "./streamModel";
 
 /**
- * In-app discoverability for the severity taxonomy (owner dogfooding 2026-07-23:
- * "had to ask what PILNE / UWAGA mean"). A quiet info toggle beside the counter
- * tiles opens a compact popover that mirrors the product-spec severity table —
+ * In-app discoverability for the severity taxonomy. A quiet info toggle beside
+ * the counter tiles opens a compact popover that mirrors the product-spec
+ * severity table —
  * the three levels with one-line meanings, plus the 3-day aging rule. Static,
  * typed, translated (en + pl via `text()`); no backend call. Keyboard-reachable
  * (button toggles; Escape closes) and aria-labelled.

@@ -13,15 +13,15 @@ import {
 } from "../../test/scenarios/overlays";
 import { FILENAME_EXTENSION, FILENAME_EXTENSION_GLUE } from "./documentTitle";
 
-// Anti-filename hard gate (owner dogfooding 2026-07-23; docs/testing.md "UI
-// dogfooding finding ⇒ overlay"). A row STATEMENT is prose; a filename is
-// metadata (documentTitle.splitDocumentTitle drops it to a quiet link line). This
+// Anti-filename hard gate (docs/testing.md "UI dogfooding finding ⇒ overlay").
+// A row STATEMENT is prose; a filename is metadata
+// (documentTitle.splitDocumentTitle drops it to a quiet link line). This
 // gate renders the Today stream across the scenarios that carry document-title
 // attention evidence — including the dogfooding-state overlays — and asserts NO
 // rendered `.today-row-title` ever carries a document extension (the single-source
-// FILENAME_EXTENSION pattern), and none carries a glued extension (the exact class
-// that leaked the owner's filename into a statement). Regressing the split — or
-// assuming an evidenceTitle is always clean prose — reddens here in CI forever.
+// FILENAME_EXTENSION pattern), and none carries a glued extension. Regressing the
+// split — or assuming an evidenceTitle is always clean prose — reddens here in
+// CI forever.
 
 /** The scenarios whose stream carries report-document titles worth policing. */
 const SCENARIOS: { label: string; spec: ScenarioSpec }[] = [

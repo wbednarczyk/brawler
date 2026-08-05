@@ -357,11 +357,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
 /// autopilot. Worker counts come from `config` (settings-driven, tolerant
 /// defaults). Every registered kind must appear in exactly one lane.
 ///
-/// The `ai` lane is gone with the in-app AI analysis layer (ADR 0084, amending
-/// ADR 0059): every kind it drained was retired, and the morning briefing —
-/// now a purely deterministic composition (`gather_sources` + `compose_briefing`)
-/// — joins the autopilot lane rather than keeping a lane named after a
-/// dependency it no longer has.
+/// The morning briefing runs on the autopilot lane (ADR 0084 amending ADR 0059).
 pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
     use crate::jobs::scheduler::{REGISTRY_REFRESH_KIND, SOURCE_REFRESH_KIND};
     use crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND;

@@ -82,8 +82,8 @@ pub fn run() {
                 })?;
             log::info!("local logging initialized at {}", logs_dir.display());
 
-            // One-key-per-provider migration (ADR 0028): drop legacy purpose-scoped
-            // keychain entries so no orphaned secrets linger. Best-effort, no fallback.
+            // One-key-per-provider migration (ADR 0028): best-effort cleanup of
+            // legacy purpose-scoped keychain entries, no fallback.
             providers::credentials::clear_legacy_credentials();
 
             // Repair report documents mis-associated onto the wrong company by
@@ -100,9 +100,9 @@ pub fn run() {
                 }
             }
 
-            // Restore the documents migration 0107 wrongly deleted (epic #229 T3,
-            // owner decision 2026-07-30): four cyber_Folks Q3-2024 filings removed
-            // on URL-slug evidence their own bytes contradict. Runs AFTER the
+            // Restore the documents migration 0107 wrongly deleted (epic #229 T3):
+            // four cyber_Folks Q3-2024 filings removed on URL-slug evidence their
+            // own bytes contradict. Runs AFTER the
             // mis-association repair (which keeps them — their titles name the
             // owner) and BEFORE the container sniff, which it pre-empts by
             // stamping the container itself. Idempotent, best-effort, never fatal.
