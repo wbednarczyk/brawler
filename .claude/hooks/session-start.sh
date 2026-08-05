@@ -34,7 +34,7 @@ dirty=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
 if [ "${dirty:-0}" -eq 0 ]; then
   echo "clean"
 else
-  echo "${dirty} uncommitted file(s) — do NOT commit/push unless the user asks or you are running the brawler-release skill"
+  echo "${dirty} uncommitted file(s) — do NOT commit/push unless the user asks"
   git status --short 2>/dev/null | head -12
 fi
 

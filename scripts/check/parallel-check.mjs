@@ -8,7 +8,7 @@
 // build. Output is captured per task and printed grouped; the first failing
 // stage hard-stops (its siblings finish so you see every result, then we exit).
 //
-// This is opt-in (`make check-fast` / `npm run check:parallel`); the canonical
+// This is opt-in (`make check-local` / `npm run check:parallel`); the canonical
 // sequential `make check` stays the release-gate parity path until a measured
 // before/after win promotes this to the default. Run it inside `nix develop`
 // so npm/cargo resolve to the pinned toolchain.

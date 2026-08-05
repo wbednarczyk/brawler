@@ -1,11 +1,21 @@
-name: Mutation testing sweep
+name: Mutation audit (advisory)
 
-# Manual-only (CI Posture, docs/engineering-workflow.md): no push/paths trigger,
-# no schedule. cargo-mutants sweeps take 30 min-2 h and rebuild+retest per
-# mutant, so they run off the owner's WSL box (which OOM-froze twice running
-# this locally) on a standard ubuntu-latest runner instead, on demand:
-#   gh workflow run mutants.yml [-f shard=1/8] [-f build_jobs=4]
+# Advisory, never blocking (ADR 0096 decision 5): findings become tracked
+# cards, never a merge blocker. Auto-triggers on master pushes touching the
+# five risk paths below, plus manual dispatch:
+#   gh workflow run mutation-audit.yml [-f shard=1/8] [-f build_jobs=4]
+# cargo-mutants sweeps take 30 min-2 h and rebuild+retest per mutant, so they
+# run on a standard ubuntu-latest runner (the owner's WSL box OOM-froze twice
+# running this locally), never in the PR-blocking gate.
 on:
+  push:
+    branches: [master]
+    paths:
+      - 'src-tauri/src/fundamentals/expr/**'
+      - 'src-tauri/src/storage/migrations.rs'
+      - 'src-tauri/src/storage/feed_matching.rs'
+      - 'src-tauri/src/source_adapters/parsing.rs'
+      - 'src-tauri/src/entity_resolution.rs'
   workflow_dispatch:
     inputs:
       shard:
@@ -17,11 +27,13 @@ on:
         required: false
         default: "4"
 
-# Per-shard group: a full sweep dispatches all 8 shards AT ONCE and they run in
-# parallel (~1h wall instead of ~6h sequential); duplicate dispatches of the
-# SAME shard still cancel each other (#241, 2026-07-29).
+# Per-shard group, split by triggering event: a full dispatch sweep runs all 8
+# shards AT ONCE in parallel (~1h wall instead of ~6h sequential); duplicate
+# dispatches of the SAME shard still cancel each other (#241, 2026-07-29).
+# Keying on event_name too keeps push-triggered sweeps from cancelling an
+# in-flight manual dispatch (or vice versa).
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.shard || 'full' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.shard || 'push' }}
   cancel-in-progress: true
 
 jobs:
@@ -62,8 +74,8 @@ jobs:
             ${{ runner.os }}-cargo-mutants-
             ${{ runner.os }}-cargo-
 
-      # Nix (not a bare rust-toolchain action) because `make mutants` shells
-      # out via `$(NIX) = nix develop -c`: the default devShell (flake.nix)
+      # Nix (not a bare rust-toolchain action) because `make audit-mutants`
+      # shells out via `$(NIX) = nix develop -c`: the default devShell (flake.nix)
       # already pins the Rust toolchain, cargo-mutants, cargo-nextest, and the
       # Linux Tauri system libraries (gtk3, webkitgtk_4_1, ...) needed to
       # compile src-tauri, so no separate rustup/apt-get step is needed here —
@@ -97,6 +109,19 @@ jobs:
         # The TELEMETRY loop streams disk/memory into the live log every 60s —
         # the only channel that survives a runner death (artifacts and later
         # steps do not run when the agent is lost).
+        #
+        # BUILD_JOBS/SHARD resolve here, not inline: on a push trigger the
+        # `inputs` context is entirely empty (it only exists for
+        # workflow_dispatch), so an inline `${{ inputs.build_jobs }}` would pass
+        # `MUTANTS_BUILD_JOBS=` (empty) on the make command line — an empty
+        # command-line variable still overrides the Makefile's `?= 2` default
+        # and exports an empty, unbounded CARGO_BUILD_JOBS. BUILD_JOBS falls
+        # back to 4; SHARD is passed to make only when non-empty, so an unset
+        # shard runs the Makefile's own default (full sweep) instead of an
+        # explicit empty override.
+        env:
+          BUILD_JOBS: ${{ inputs.build_jobs || '4' }}
+          SHARD: ${{ inputs.shard }}
         run: |
           sudo mkdir -p /sys/fs/cgroup/mutants
           echo 12G | sudo tee /sys/fs/cgroup/mutants/memory.max
@@ -108,9 +133,9 @@ jobs:
             done ) &
           TELEM_PID=$!
           rc=0
-          make mutants MUTANTS_JAIL=off \
-            MUTANTS_BUILD_JOBS=${{ inputs.build_jobs }} \
-            MUTANTS_SHARD=${{ inputs.shard }} || rc=$?
+          make audit-mutants MUTANTS_JAIL=off \
+            MUTANTS_BUILD_JOBS="$BUILD_JOBS" \
+            ${SHARD:+MUTANTS_SHARD="$SHARD"} || rc=$?
           kill "$TELEM_PID" 2>/dev/null || true
           # GNU make maps every failed recipe to its own exit 2, swallowing
           # cargo-mutants' code (the 2026-07-31 sweep failed 3 timeout-only

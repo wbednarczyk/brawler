@@ -5,7 +5,7 @@ description: Build and smoke-test Brawler release artifacts — portable Windows
 
 # Brawler Packaging
 
-Reference for building and smoke-testing Brawler release artifacts. See [engineering-workflow.md](../../../docs/engineering-workflow.md) for the WSL/Windows runtime split this sits inside, and the `brawler-release` skill for when packaging runs as part of a release.
+Reference for building and smoke-testing Brawler release artifacts. See [engineering-workflow.md](../../../docs/engineering-workflow.md) for the WSL/Windows runtime split this sits inside; releases ship automatically from merged PRs ([ADR 0090](../../../docs/adr/0090-github-canonical-forge-and-continuous-release.md)).
 
 ## Windows-from-Linux portable
 

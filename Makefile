@@ -24,13 +24,13 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: commit help install dev frontend-preview build check check-fast check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust bench report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
 	@printf "  make install             Install npm dependencies inside nix develop\n"
 	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (pre-commit runs this)\n"
-	@printf "  make check-fast          Fast inner-loop check (parallel core, no browser) — iteration only, NOT proof of done\n"
+	@printf "  make check-local         Developer inner-loop / pre-handover check (parallel core, no browser) — NOT proof of done\n"
 	@printf "  make check-docs          Docs-only gate: mandatory-read budgets + docs drift, no code suites (pre-commit uses this for docs-only commits)\n"
 	@printf "  make check-rust-lint / check-rust-test / check-frontend-static / check-frontend-test / check-frontend-build / check-browser [SHARD=i/N] / check-docs-gates\n"
 	@printf "                            Granular CI-parity gate targets — each is one full-check.yml job; 'make check' composes them\n"
@@ -44,7 +44,6 @@ help:
 	@printf "                            Emergency local equivalent of the release.yml release job\n"
 	@printf "  make disk-clean          Safe temp cleanup: caches, mutants artifacts, old nix generations, journal, fstrim\n"
 	@printf "  make disk-clean-deep     disk-clean + cargo target dir (full rebuild next time) + full nix GC\n"
-	@printf "  make check-epic          Closure suite: the full gate + heavy periodic suites (coverage ratchet, real-data honesty ratchet)\n"
 	@printf "  make realdata-honesty-check\n"
 	@printf "                            Real-data honesty ratchet on the maintainer's own DB copy (ADR 0091); loud SKIP without it, never in \`make check\`\n"
 	@printf "  make shape-inventory-scan\n"
@@ -103,23 +102,15 @@ frontend-preview:
 build:
 	$(NIX) npm run build
 
-# The SINGLE mandatory gate (ADR 0062). Every deterministic/hermetic suite runs
-# here as a hard-fail step — nothing exit-ignored — and `.githooks/pre-commit`
-# runs this whole target before every commit, so a green commit is proof the gate
-# passed. This is a deliberate promotion (ADR 0048 Decision 6) of the browser
-# suite + knip + ts-rs drift guard from the old closure-only cadence into the
-# per-commit gate, because a suite that is not a hard-fail step of the one gate
-# ROTS (the browser suite went 28-red for two sessions in `check-epic`, masked by
-# `-`-prefixed steps). Suites deliberately EXCLUDED stay periodic, each for a
-# reason that disqualifies it from a per-commit hard gate: `coverage` (slow
-# instrumented build), `mutants` (30m–2h), `bench` (machine-dependent wall-clock),
-# the live Gemini/keyring smokes (credentials/network/OS), `live-drive` (ADR 0066
-# — needs a real running Windows app with remote debugging enabled, unavailable
-# in default/CI environments), and packaging (OS/toolchain). gate-integrity fails
-# the gate if any mandatory suite is
-# dropped or any step is `-`-prefixed (silent red); docs-drift (ADR 0065, last
-# step) fails it if contracts.md/ui-information-architecture.md/data-model.md
-# drift from the code, or ADR hygiene (Status: lines, INDEX.md) rots.
+# The single mandatory gate composition, run as PR required checks (ADR 0090,
+# ADR 0096) — the only pre-ship gate under continuous release. Every
+# deterministic/hermetic suite runs here as a hard-fail step, nothing
+# exit-ignored; gate-integrity fails the gate if any mandatory suite is dropped
+# or any step is `-`-prefixed (silent red). Excluded, advisory/audit only:
+# `audit-mutants` (30m–2h, risk-path-triggered), `bench` (machine-dependent
+# wall-clock), the live Gemini/keyring smokes (credentials/network/OS),
+# `live-drive` (ADR 0066 — needs a real running Windows app), and packaging
+# (OS/toolchain).
 check:
 	@node scripts/check/disk-guard.mjs
 	$(MAKE) check-rust-lint
@@ -131,6 +122,8 @@ check:
 	$(MAKE) check-browser
 	$(MAKE) check-deps
 	$(MAKE) check-docs-gates
+	$(MAKE) coverage-frontend
+	$(MAKE) coverage-rust
 
 # --- Granular gate targets (the CI/Makefile parity contract, ADR 0090) ---------
 # Each CI job in .github/workflows/full-check.yml runs exactly ONE of these
@@ -177,12 +170,12 @@ check-browser:
 # license policy on the Rust side (cargo-deny, policy in src-tauri/deny.toml),
 # plus the npm advisory database on the frontend side. Both hard-fail.
 #
-# NOT in `check-fast`, deliberately: both scanners hit the network (cargo-deny
+# NOT in `check-local`, deliberately: both scanners hit the network (cargo-deny
 # fetches the RustSec advisory DB, `npm audit` queries the registry), so putting
-# them in the per-commit inner loop would break offline work and make the fast
-# path depend on someone else's uptime. They belong to the full gate, which runs
-# in every PR's CI. Consequence to expect, and the point of the gate: a newly
-# published advisory can turn a PR red without that PR changing a dependency.
+# them in the inner loop would break offline work and make it depend on someone
+# else's uptime. They belong to the PR's required checks (ADR 0096). Consequence
+# to expect, and the point of the gate: a newly published advisory can turn a PR
+# red without that PR changing a dependency.
 #
 # `npm audit --audit-level=high` fails on high/critical only; moderate and below
 # are reported without failing (the frontend tree is dev-tooling-heavy, and a
@@ -250,10 +243,11 @@ check-docs:
 
 # Staged concurrent check (ADR 0048): fast-fail static stage, then the heavy
 # suites (Rust clippy+nextest+doc, Vitest, build) concurrently — overlaps the
-# Rust compile with the JS suites. Inner-loop iteration ONLY — it omits knip, the
-# ts-rs drift guard, the browser suite, and gate-integrity, so it is NEVER proof
-# of done; `make check` is the gate.
-check-fast:
+# Rust compile with the JS suites. Developer inner loop + pre-handover DoD step
+# (ADR 0096 decision 6), invoked deliberately — never hook-triggered. Omits
+# knip, the ts-rs drift guard, the browser suite, and gate-integrity, so it is
+# NEVER proof of done; the PR's required checks are the gate.
+check-local:
 	@node scripts/check/disk-guard.mjs
 	$(NIX) npm run check:parallel
 
@@ -279,19 +273,24 @@ disk-clean-deep: disk-clean
 	@sudo -n fstrim -v / 2>/dev/null || true
 	@node scripts/check/disk-guard.mjs
 
-# Coverage measurement + ratchet (ADR 0048): frontend (Vitest v8) + Rust
-# (cargo-llvm-cov) line coverage, then fail if either drops below the committed
-# floor in coverage-baseline.json. Periodic (slow instrumented Rust build), not
-# part of `make check`.
+# Coverage ratchet, split into two scoped PR required checks (ADR 0096
+# decision 4): frontend (Vitest v8) and Rust (cargo-llvm-cov) line coverage,
+# each failing if it drops below its floor in coverage-baseline.json.
 # Rust coverage runs under NEXTEST (process-per-test), not plain `cargo test`
 # (threads-in-one-process): env-mutating hermetic tests (credential scrubs,
 # BRAWLER_MCP_TOKEN) and the loopback-socket test group rely on process
 # isolation + .config/nextest.toml — under threaded cargo-test they race each
 # other (5 tests reddened the v0.52 closure run exactly this way, 2026-07-12).
-coverage:
+coverage-frontend:
 	$(NIX) npm run test:coverage
+	$(NIX) npm run coverage:ratchet -- --layer=frontend
+
+coverage-rust:
+	@mkdir -p coverage
 	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov nextest --summary-only --json --output-path ../coverage/rust-summary.json'
-	$(NIX) npm run coverage:ratchet
+	$(NIX) npm run coverage:ratchet -- --layer=rust
+
+coverage: coverage-frontend coverage-rust
 
 # Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049): RSS
 # parse and formula parse. (The similarity scan was the third until ADR 0080
@@ -337,9 +336,10 @@ visual-update:
 # not prove this). Scope follows the highest-risk pure transform logic: the DSL
 # parser/evaluator, the migration runner, feed dedup/matching, and the source
 # normalization core (slug/Polish/link normalizers, now invariant-tested in T1).
-# Uses nextest for a fast per-mutant test pass. Periodic/manual — slow (rebuilds
-# + runs the suite per mutant), never in `make check`; run at epic/milestone
-# closure cadence and triage every survivor by adding an assertion.
+# Uses nextest for a fast per-mutant test pass. Advisory, never in `make
+# check` (ADR 0096): slow (rebuilds + runs the suite per mutant), auto-runs on
+# `master` pushes touching the scoped risk paths plus manual dispatch
+# (mutation-audit.yml); triage every survivor by adding an assertion.
 # BRAWLER_SCENARIOS_DIR: cargo-mutants copies only src-tauri/ into a scratch
 # tree, so the shared fixtures dir (one level above the workspace) doesn't
 # exist there. Export an absolute path to the real directory so build.rs
@@ -352,7 +352,7 @@ visual-update:
 # (below). Test threads: the `mutants` profile in src-tauri/.config/nextest.toml
 # (an env NEXTEST_TEST_THREADS would leak into cargo-mutants' internal
 # `nextest --no-run` build call, which rejects it). Override for a dedicated
-# box: make mutants MUTANTS_BUILD_JOBS=8 (+ edit the nextest profile).
+# box: make audit-mutants MUTANTS_BUILD_JOBS=8 (+ edit the nextest profile).
 # MUTANTS_SHARD (e.g. 1/8) runs one shard — split a sweep across quiet moments.
 # MUTANTS_MEMORY_MAX: hard memory jail via a systemd user scope — when the
 # sweep's builds spike past it, the OOM killer takes the SCOPE, not the whole
@@ -362,8 +362,8 @@ visual-update:
 # cheaply probes `systemd-run --user --scope true` and jails only if that
 # succeeds — WSL has a user systemd manager, so this is a no-op behavior
 # change there; `off` skips the jail unconditionally (a GitHub-hosted
-# ubuntu-latest runner has no user systemd manager, so the manual mutants.yml
-# workflow passes MUTANTS_JAIL=off instead of relying on the probe to fail).
+# ubuntu-latest runner has no user systemd manager, so mutation-audit.yml
+# passes MUTANTS_JAIL=off instead of relying on the probe to fail).
 MUTANTS_BUILD_JOBS ?= 2
 MUTANTS_MEMORY_MAX ?= 11G
 MUTANTS_SHARD ?=
@@ -372,9 +372,9 @@ MUTANTS_JAIL ?= auto
 # 3 timed out), but GNU make maps EVERY failed recipe to its own exit 2 — the
 # true code never reaches a caller through make's status. The recipe therefore
 # persists it to mutants.out/cargo-mutants-exit-code (the MAKE_CHECK_EXIT=
-# marker pattern); mutants.yml's verdict reads the file, never make's status.
+# marker pattern); mutation-audit.yml's verdict reads the file, never make's status.
 # MUTANTS_SHARD is cargo-mutants k/n syntax: k is 0-INDEXED (valid: 0/8..7/8).
-mutants:
+audit-mutants:
 	@jail_cmd=""; \
 	case "$(MUTANTS_JAIL)" in \
 	  off) jail_cmd="" ;; \
@@ -419,20 +419,6 @@ types-check:
 	  printf "✖ src/api/generated was stale — 'make types' changed it. Review and include the regenerated files.\n"; \
 	  exit 1; \
 	fi
-
-# Epic/milestone-closure suite (ADR 0062): the full mandatory gate, then the
-# heavy periodic deterministic suite too slow for per-commit — the coverage
-# ratchet (slow instrumented build). Every step HARD-FAILS (no `-` prefix): a
-# closure gate that ignores exit codes is exactly how the browser suite rotted
-# silently red. `make mutants` (30m–2h) and `make bench` (machine-dependent) stay
-# separate closure-cadence targets (see docs/engineering-workflow.md §I); the
-# live/keyring/packaging smokes stay opt-in.
-check-epic:
-	$(MAKE) check
-	$(MAKE) coverage
-	$(MAKE) realdata-honesty-check
-	$(MAKE) realdata-gt-check
-	@printf "\ncheck-epic complete: full gate + coverage ratchet + real-data honesty ratchet + #182 ground-truth diagnostic green. Run \`make mutants\` and (if a hot kernel changed) \`make bench\` for the remaining closure-cadence suites.\n"
 
 test:
 	$(NIX) npm run test
@@ -582,19 +568,6 @@ REALDATA_DIR ?= private/realdata/t7-cbf
 realdata-extraction-check:
 	$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(REALDATA_DB)) BRAWLER_REAL_DATA_DIR=$(abspath $(REALDATA_DIR)) cargo test t7_cbf -- --ignored --nocapture'
 
-# T0.1 recall/precision ratchet (guardrail G-3, ADR 0077; docs/testing.md
-# § Ground-truth metrics): grades the deterministic pipeline's emitted fact
-# VALUES against the hand-labeled ground truth in
-# private/realdata/t7-cbf/ground_truth/*.json (double-pass: agent proposes,
-# owner verifies). ARCHIVED 2026-08-05 (ADR 0086 retired the PDF-positional
-# parser this graded): the floors in src-tauri/src/storage/tests/
-# extraction_metrics.rs are no longer enforced, only printed — this target
-# stays runnable and informational. Successor ratchet: `make realdata-gt-score`
-# / `make realdata-gt-check` (#182). Inert without the corpus or the
-# ground-truth dir.
-realdata-extraction-metrics:
-	$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(REALDATA_DB)) BRAWLER_REAL_DATA_DIR=$(abspath $(REALDATA_DIR)) cargo test extraction_metrics -- --ignored --nocapture'
-
 # #182 ESEF/positional ground-truth scorer — DIAGNOSTIC, no floor (2026-08-05
 # methodology audit deferred floors to measurement v2; see docs/testing.md);
 # storage::tests::real_data_extraction::esef_positional_ground_truth_scores.
@@ -610,34 +583,17 @@ GT_DIR ?= private/realdata/spikes/esef-positional-gt
 realdata-gt-score:
 	$(NIX) bash -c 'cd src-tauri && BRAWLER_GT_DIR=$(abspath $(GT_DIR)) cargo test esef_positional_ground_truth_scores -- --ignored --nocapture'
 
-# #182 required-mode closure DIAGNOSTIC — same scorer as `realdata-gt-score`
-# but with BRAWLER_GT_REQUIRED=1, which turns a missing corpus/db-snapshot, a
-# manifest document with zero ground-truth rows at its declared current
-# period, or a zero-denominator tier into a hard failure instead of a loud
-# warning. No floor either way — this only confirms the diagnostic runs
-# cleanly against the corpus. Owner-only (the private corpus never enters CI,
-# ADR 0091): mirrors realdata-honesty-check's integration pattern exactly —
-# the SKIP-vs-run decision happens here, at the Makefile level, by checking
-# the corpus is actually present, so composing this into `check-epic` stays
-# safe on any machine without the corpus.
-realdata-gt-check:
-	@if [ -f $(GT_DIR)/db-snapshot.sqlite3 ]; then \
-		$(NIX) bash -c 'cd src-tauri && BRAWLER_GT_DIR=$(abspath $(GT_DIR)) BRAWLER_GT_REQUIRED=1 cargo test esef_positional_ground_truth_scores -- --ignored --nocapture'; \
-	else \
-		printf "\n!! SKIP realdata-gt-check: no #182 corpus at %s.\n!! The #182 scorer measures the owner's OWN corpus and runs on the maintainer's machine only (ADR 0091 dec. 4); the private corpus never enters CI. See private/realdata/spikes/esef-positional-gt/HANDOVER.md.\n\n" "$(GT_DIR)"; \
-	fi
-
 # Real-data honesty ratchet (epic #40 S4, ADR 0091 dec. 4-5; docs/testing.md
 # § Real-data honesty harness): measures — through the real read models — how
 # honest the Today stream is on the maintainer's own database (specificity floor,
 # orphaned-evidence ceiling, filename-as-statement hard zero) and judges the run
 # against the committed aggregate baseline.
 #
-# LOCAL ONLY, and deliberately NOT part of `make check`: the real database never
-# enters the public repo or default CI (ADR 0091 dec. 4). It runs as a step of
-# `check-epic`, loudly SKIPPING when the master snapshot is absent (any machine
-# but the owner's); CI-side coverage of the same invariants comes from the
-# synthetic shape corpus (epic #40 S6).
+# LOCAL ONLY, owner-only, and deliberately NOT part of `make check`: the real
+# database never enters the public repo or default CI (ADR 0091 dec. 4),
+# loudly SKIPPING when the master snapshot is absent (any machine but the
+# owner's); CI-side coverage of the same invariants comes from the synthetic
+# shape corpus (epic #40 S6).
 #
 # The harness MIGRATES the database it opens, so this target always works on a
 # fresh throwaway copy (private/realdata/README.md) and the harness itself
@@ -681,7 +637,7 @@ shape-inventory-scan:
 # DevTools Protocol, replacing most manual click-through testing. Requires a live
 # app already running with remote debugging enabled (`make live-up`, or
 # `scripts/windows/dev-live.ps1` directly on Windows). Deliberately excluded from
-# `make check`/`check-epic`: it needs a live GUI app reachable over CDP, which no
+# `make check`: it needs a live GUI app reachable over CDP, which no
 # default/CI environment has, and it is not hermetic (it can observe/act on
 # whatever real data the app currently holds).
 LIVE_CDP_PORT ?= 9222

@@ -8,7 +8,7 @@ Apply at all times, in every session state, before anything else.
 
 ### 1. Token discipline
 
-Prefix every shell/file command with `rtk` (`rtk git`, `rtk grep`, `rtk read`, `rtk ls`, `rtk cargo`, `rtk npm`, `rtk rad`, `rtk make`, `rtk npx playwright`) — it compresses output before it reaches context. `rtk proxy <cmd>` runs raw; avoid for normal work. Run `rtk trust` once per checkout so `.rtk/` filters apply. Use **repoctx** for structural code questions (definition, callers, outline, impact, changed) instead of grep/find/whole-file reads — full reference in the `repoctx` skill; fall back to `rtk grep` for prose/string-literal scans. Read targeted ranges; never re-read a file just edited. Reserve the strongest model for hard reasoning; prefer cheaper models for routine edits/lookups. Batch independent tool calls in one turn. **Delegation (owner standing rule, 2026-07-10):** the strong model orchestrates and quality-gates; implementation slices go to cheaper-model subagents from written contracts (tests-that-redden enumerated, red evidence pasted), **up to 3 subagents concurrently** for independent slices — but never stacking heavy builds (testing.md § Resource discipline: one cargo/nextest/vitest at a time, `CARGO_BUILD_JOBS=8`, scoped nextest). Every subagent uses rtk + repoctx too, and never runs `git checkout`/`git restore` on tracked files — surgical edits only (harvested 2026-07-23).
+Prefix every shell/file command with `rtk` (`rtk git`, `rtk grep`, `rtk read`, `rtk ls`, `rtk cargo`, `rtk npm`, `rtk rad`, `rtk make`, `rtk npx playwright`) — it compresses output before it reaches context. `rtk proxy <cmd>` runs raw; avoid for normal work. Run `rtk trust` once per checkout so `.rtk/` filters apply. Use **repoctx** for structural code questions (definition, callers, outline, impact, changed) instead of grep/find/whole-file reads — full reference in the `repoctx` skill; fall back to `rtk grep` for prose/string-literal scans. Read targeted ranges; never re-read a file just edited. Reserve the strongest model for hard reasoning; prefer cheaper models for routine edits/lookups. Batch independent tool calls in one turn. **Delegation (owner standing rule):** the strong model orchestrates and quality-gates; implementation slices go to cheaper-model subagents from written contracts (tests-that-redden enumerated, red evidence pasted), **up to 3 subagents concurrently** for independent slices — but never stacking heavy builds (testing.md § Resource discipline: one cargo/nextest/vitest at a time, `CARGO_BUILD_JOBS=8`, scoped nextest). Every subagent uses rtk + repoctx too, and never runs `git checkout`/`git restore` on tracked files — surgical edits only.
 
 ### 2. Doc-first
 
@@ -29,21 +29,21 @@ Then load only what the task needs:
 - Implementing a planned milestone task: the per-milestone execution plan in [docs/plans/](docs/plans/) (start at its README — non-normative; ADRs/canonical docs win on conflict).
 - Area docs: architecture/boundaries → [docs/architecture.md](docs/architecture.md) + [docs/adr/](docs/adr/) · commands/IPC → [docs/contracts.md](docs/contracts.md) · data/DB/migrations → [docs/data-model.md](docs/data-model.md) · product behavior → [docs/product-spec.md](docs/product-spec.md) · UI flows/IA → [docs/ui-flows.md](docs/ui-flows.md) / [docs/ui-information-architecture.md](docs/ui-information-architecture.md) · sources → [docs/source-strategy.md](docs/source-strategy.md) · module ownership → [docs/modularization-design.md](docs/modularization-design.md) · tests → [docs/testing.md](docs/testing.md) · completed-card history (rarely) → [docs/kanban-archive.md](docs/kanban-archive.md).
 - **Any frontend UI work: [docs/ui-authoring.md](docs/ui-authoring.md) first** — primitive-first ([ADR 0037](docs/adr/0037-ui-component-framework-and-authoring-contract.md)): compose from `src/ui` primitives; never hand-roll a control, section, badge, row, or layout a primitive provides; no inline `style={{…}}`. Run the pre-write self-check before writing JSX. New panels/redesigns are mockup-first (approved mockup saved in `docs/mockups/`, gitignored).
-- Milestone/release closure → `brawler-release` skill. Packaging → `packaging` skill.
+- Epic closure → [kanban.md](docs/kanban.md) § Epic closure. Packaging → `packaging` skill.
 
 ## Single Source Of Truth
 
 Every fact has exactly one canonical home; update it there, do not duplicate it elsewhere (duplication is what causes drift):
 
 - **Milestone intent + the active/upcoming plan** → [docs/roadmap.md](docs/roadmap.md) (forward-looking only; deferred scope's one home: roadmap *Not In V1*).
-- **Delivered/release history** → [CHANGELOG.md](CHANGELOG.md) (authoritative per-version) and [docs/kanban-archive.md](docs/kanban-archive.md) (completed-card detail); never normative.
+- **Delivered/release history** → [CHANGELOG.md](CHANGELOG.md) (per-version) and [docs/kanban-archive.md](docs/kanban-archive.md) (completed-card detail); never normative.
 - **Live epic/task status** → GitHub Issues + the "Brawler board" Project (`gh issue list`; state = the board `Status`, never a label).
 - **Commands/IPC** → contracts; **data shapes/DB/migrations** → data-model; **product behavior** → product-spec; **UI flows/IA** → ui-flows / ui-information-architecture; **architecture/boundaries + decisions** → architecture + ADRs; **source policy** → source-strategy; **build/test/CI** → engineering-workflow; **test strategy** → testing; **module ownership** → modularization-design.
-- **Decision rationale, rejected options, investigation evidence** → ADRs (normative); execution chronicle → CHANGELOG/kanban-archive (never normative).
+- **Decision rationale, rejected options, investigation evidence** → ADRs (normative); execution chronicle → CHANGELOG/kanban-archive.
 
 ## Product Intent
 
-Brawler is a personal investor newsfeed workspace: one place where an individual investor follows public companies — watchlists, official reports (GPW ESPI/EBI first; US/EU adapters later without changing the core feed model) plus allowed RSS media, a per-ticker notebook with notes that preserve their origin (a claim traces back to its report/article/transcript), management-claim tracking, and decision support via deterministic analytics plus the local MCP port (**BYOA** — the in-app AI analysis layer is retired, [ADR 0084](docs/adr/0084-retire-in-app-ai-layer.md); video transcription is the only in-app AI). **V1 is not a portfolio tracker, trading tool, or recommendation engine.** Source attribution stays visible and durable; the ticker-based UI stays simple while storage stays collision-safe; dark theme is the default. Detail (markets, source priorities, open-core posture): [docs/project-brief.md](docs/project-brief.md).
+Brawler is a personal investor newsfeed workspace: one place where an individual investor follows public companies — watchlists, official reports (GPW ESPI/EBI first; US/EU later) plus allowed RSS media, a per-ticker notebook with notes that preserve their origin (a claim traces back to its report/article/transcript), management-claim tracking, and decision support via deterministic analytics plus the local MCP port (**BYOA** — the in-app AI analysis layer is retired, [ADR 0084](docs/adr/0084-retire-in-app-ai-layer.md); video transcription is the only in-app AI). **V1 is not a portfolio tracker, trading tool, or recommendation engine.** Source attribution stays visible and durable; the ticker-based UI stays simple while storage stays collision-safe; dark theme is the default. Detail: [docs/project-brief.md](docs/project-brief.md).
 
 ## Working Rules
 
@@ -57,17 +57,18 @@ Process:
 - Prefer small, reviewable changes. Commit at meaningful checkpoints (a coherent slice + tests + docs), only when the user asks or at a natural milestone. Never commit or push unattended.
 - **After implementing a milestone, write a retrospective before closure sign-off**: both domains (app + development loop) × what went well / what went wrong (especially unexpected gaps) / what to stop / what to improve; mark each item closed or still-open honestly — the human decides what needs action. Feed still-open items into the guardrail-harvest loop.
 - **Guardrail harvest (mandatory feedback loop).** When a defect is flagged — by the user, a review, a gate, or your own noticing — fixing the instance is not enough: convert the **class** into a durable guardrail in the same change (a precise automated gate when cleanly detectable, otherwise a documented rule + checklist line). Never add a broad gate that flags legitimate code. Put the guardrail where every agent reads it, not in private memory. Ritual: the `guardrail-harvest` skill; policy: [ADR 0045](docs/adr/0045-guardrail-harvest-loop.md).
-- Create a GitHub issue for every reported/discovered bug not fixed immediately (`bug` + priority/area labels; `epic` for parenting).
-- **Continuous release** ([ADR 0090](docs/adr/0090-github-canonical-forge-and-continuous-release.md)): every PR carries one `release:major|minor|patch|skip` label and merge auto-ships it — agents **never** bump versions, tag, edit the changelog, or force a release via a label (owner's call). Update `wiki/` in the behavior-changing PR. Epic closure (retro, DoD §I): `brawler-release` skill.
+- File a GitHub issue for every reported/found bug not fixed immediately (`bug` + priority/area labels; `epic` to parent).
+- **Continuous release** ([ADR 0090](docs/adr/0090-github-canonical-forge-and-continuous-release.md)): every PR carries one `release:major|minor|patch|skip` label and merge auto-ships it — agents **never** bump versions, tag, edit the changelog, or force a release via a label (owner's call). Update `wiki/` in the behavior-changing PR. Epic closure is a post-delivery audit, never a gate: [kanban.md](docs/kanban.md) § Epic closure.
+- **Anti-archaeology**: code comments state only live constraints (one sentence + ADR pointer, at the site); canonical docs describe the present, a retirement is one pointer line; retreat ledger: [bad-ideas.md](docs/bad-ideas.md).
 
 Architecture and design:
 
-- Treat modularity, extensibility, pluggability, and configurability as first-class constraints: expose provider/source/model/credential/collector/renderer/storage boundaries that are easy to extend, without premature complexity. Surface concrete architecture improvements (options + tradeoffs) when working near a module; verify premises (e.g. a dependency's maintenance) before recommending.
+- Treat modularity, extensibility, pluggability, and configurability as first-class constraints: expose provider/source/model/credential/collector/renderer/storage boundaries that are easy to extend, without premature complexity. Surface concrete architecture improvements (options + tradeoffs) near a module; verify premises before recommending.
 - Treat very large source files as architecture debt: extract cohesive modules as part of the feature slice.
 - No in-app AI analysis ([ADR 0084](docs/adr/0084-retire-in-app-ai-layer.md)): intelligence arrives through the MCP port; the only AI dependency is the transcript provider behind its trait. Future in-app inference re-enters only via an eval-gated ADR that beats the deterministic baseline on real data (the ADR 0080 bar).
 - **Keep non-trivial work off the UI thread**: any command doing meaningful CPU work or blocking IO is an `async fn` offloading via `tauri::async_runtime::spawn_blocking`; read persisted derived indexes instead of recomputing the corpus per call. Checklist: [Definition of Done §C](docs/engineering-workflow.md#definition-of-done-the-handover-gate).
 - Migrations are **append-only and immutable once applied**: never reuse a version number for different content, never edit a shipped migration (the runner skips it silently). Repair via a new forward, idempotent, self-healing migration; reads of newer settings/columns tolerate a missing row with a safe default. Rules: [docs/data-model.md](docs/data-model.md).
-- Keep runtime dependency additions conservative and justified, but not needlessly so when one genuinely fits.
+- Keep runtime dependency additions conservative and justified, not needlessly so when one fits.
 
 Product and policy:
 
@@ -77,7 +78,7 @@ Product and policy:
 - AI output is decision support only — never phrase analysis as buy/sell/hold advice.
 - Secrets use the OS keychain in runtime code; `.env` is dev/tests only. Strict Tauri permissions: typed commands only, no arbitrary shell, no broad FS access.
 - GitHub is the canonical forge (code, issues, board, CI, releases); Radicle is a code mirror only (`make sync-rad`, no process role). `gh issue`/`gh pr create` may run unattended; **merges, `release:*` labelling, and repo-setting mutations may not.** `rad init` stays `--private` unless an approved publication task. Label conventions: [docs/kanban.md](docs/kanban.md).
-- The private sibling `../brawler-private` (when present) is readable for owner-only context; never copy its content into this public repo unless explicitly asked.
+- The private sibling `../brawler-private` (when present) is readable for owner context; never copy its content into this public repo unless asked.
 - Local build/test commands are primary; CI runs the same `make` targets, conservative (standard runners, no macOS, no scheduled workflows). Nix from the first scaffold; no secrets in Nix files/`.envrc`.
 - Agents may always drive the owner's real Windows app live from WSL: `make live-cycle` ([testing.md](docs/testing.md) § Live drive). A WSL Tauri build is a Linux app — never desktop evidence.
 
@@ -94,7 +95,7 @@ Canonical strategy/layers: [docs/testing.md](docs/testing.md). Which-test-where 
 
 ## Claude-Native Ecosystem
 
-- Repository-owned workflows are skills under `.claude/skills/` (`repoctx`, `brawler-release`, `guardrail-harvest`, `packaging`) — loaded on demand; invoke them instead of re-deriving the mechanics.
+- Repository-owned workflows are skills under `.claude/skills/` (`repoctx`, `guardrail-harvest`, `packaging`) — loaded on demand, not re-derived.
 - The session hook (`.claude/hooks/session-context.sh`, all four SessionStart matchers) re-grounds the always-on rules after start/resume/clear/compact. Gate-integrity enforces this file's and the hook's byte budgets and parity markers ([ADR 0063](docs/adr/0063-claude-native-context-architecture.md)).
 - Durable rules/decisions live in this repo (this file, ADRs, canonical docs) — not agent-private memory. No AI/agent attribution in commits, co-authors, or trailers; commit history stays authored by the human maintainer.
 

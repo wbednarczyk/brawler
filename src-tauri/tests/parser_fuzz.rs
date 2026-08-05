@@ -13,8 +13,9 @@
 //! shrinking). `arbitrary` (raw-bytes → structured input) and coverage-guided
 //! `cargo-fuzz` earn their keep on byte-oriented parsers, which this codebase
 //! does not have; adding either would mean a second nightly toolchain in the Nix
-//! shell for no gain (full rationale in ADR 0049). Heavier runs: set
-//! `PROPTEST_CASES` higher under `make check-epic`.
+//! shell for no gain (full rationale in ADR 0049). The standard gate runs a
+//! bounded 128 cases per test; set the `PROPTEST_CASES` env var higher for a
+//! heavier on-demand run.
 
 use brawler_lib::source_adapters::{
     bankier_calendar, bankier_company, bankier_rss, company_directory, gpw_company_registry,

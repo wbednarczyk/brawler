@@ -10,7 +10,7 @@
 // The composable-shell→cockpit migration left the browser suite 28-red for two
 // sessions exactly this way.
 //
-// This guard parses the `check` and `check-epic` recipes in the Makefile and
+// This guard parses the `check` and `check-docs` recipes in the Makefile and
 // FAILS the gate when the anti-rot contract is violated:
 //   1. No recipe line in either target is `-`-prefixed (exit-ignored). A gate
 //      step that cannot fail the gate is not a gate.
@@ -50,10 +50,12 @@ const MANDATORY_SUITES = [
   { target: "check-browser", marker: "test:browser", label: "Playwright browser UI suite (full)" },
   { target: "check-docs-gates", marker: "gate-integrity", label: "this meta-guard (self-referential)" },
   { target: "check-docs-gates", marker: "docs-drift", label: "spec↔code drift gate (ADR 0065)" },
+  { target: "coverage-frontend", marker: "npm run test:coverage", label: "frontend coverage ratchet (ADR 0096)" },
+  { target: "coverage-rust", marker: "cargo llvm-cov", label: "rust coverage ratchet (ADR 0096)" },
 ];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.
-const GUARDED_TARGETS = ["check", "check-epic", "check-docs"];
+const GUARDED_TARGETS = ["check", "check-docs"];
 
 /**
  * Extract the recipe lines (tab-indented commands) for a Makefile target. The
@@ -105,7 +107,7 @@ for (const target of GUARDED_TARGETS) {
           `    A gate step whose exit code is ignored can print FAILURES and still exit 0 (silent red).\n` +
           `    Remove the leading \`-\` so the step hard-fails the gate. If a suite genuinely cannot be\n` +
           `    a hard-fail gate step (non-deterministic / credentialed / network / OS-specific), it does\n` +
-          `    not belong in \`check\`/\`check-epic\` at all — move it to a dedicated periodic target.`,
+          `    not belong in \`check\` at all — move it to a dedicated advisory/audit target.`,
       );
     }
   }
@@ -284,19 +286,19 @@ if (claudeMdContent === null) {
   }
 }
 
-const releaseSkillContent = readIfExists(".claude/skills/brawler-release/SKILL.md");
-if (releaseSkillContent === null) {
+const kanbanContent = readIfExists("docs/kanban.md");
+if (kanbanContent === null) {
   contextArchErrors.push(
-    "`.claude/skills/brawler-release/SKILL.md` not found — the release skill is part of the enforcement" +
-      " surface and must not drift from the closure contract.",
+    "`docs/kanban.md` not found — the epic-closure checklist is part of the enforcement surface" +
+      " and must not drift from the closure contract (ADR 0096).",
   );
 } else {
-  const RELEASE_SKILL_MARKERS = ["sync-rad", "check-epic", "retrospective", "gh issue close"];
-  for (const marker of RELEASE_SKILL_MARKERS) {
-    if (!releaseSkillContent.includes(marker)) {
+  const KANBAN_CLOSURE_MARKERS = ["Epic closure", "retrospective", "gh issue close"];
+  for (const marker of KANBAN_CLOSURE_MARKERS) {
+    if (!kanbanContent.includes(marker)) {
       contextArchErrors.push(
-        `\`.claude/skills/brawler-release/SKILL.md\` is missing the required literal "${marker}" (ADR 0062/0038).\n` +
-          `    The release skill is part of the enforcement surface and must not drift from the closure contract.`,
+        `\`docs/kanban.md\` is missing the required literal "${marker}" (ADR 0096) — epic closure is a` +
+          ` post-delivery audit, and this checklist is part of the enforcement surface.`,
       );
     }
   }

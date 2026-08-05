@@ -1,11 +1,12 @@
 # Dogfooding script (per release)
 
-A ~15-minute owner walk of the real app with the real database before every release
+A ~15-minute owner walk of the real app with the real database
 (v0.50 U12, [ADR 0074](adr/0074-ux-journeys-and-anti-rot.md)). The journey E2E suite
 proves the paths work against the mock; this run proves they work — and feel right —
 against reality. Under continuous release ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md))
-run it at epic closure, before merging the epic's last release-labeled PR, on the
-platform you actually use (Windows build for hands-on, per engineering-workflow).
+this is a **cumulative audit** run after an epic closes or every ~10 shippable PRs —
+never a pre-merge gate ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) —
+on the platform you actually use (Windows build for hands-on, per engineering-workflow).
 
 ## Script
 
@@ -25,7 +26,7 @@ anything that felt slow, confusing, or wrong. A feeling counts as a finding.
 
 ## Recording findings
 
-- Anything broken or jarring → GitHub issue (`bug` + labels) the same day; P1s block the release.
+- Anything broken or jarring → GitHub issue (`bug` + labels) the same day; P1s get a follow-up fix PR immediately (a post-delivery audit, so it cannot block an already-shipped release).
 - UX friction that is not a bug → the milestone retro's **UX section** (journeys shorter/longer)
   and, when it names a defect class, the [guardrail-harvest](../.claude/skills/guardrail-harvest/SKILL.md) loop.
 - The run itself is a release-prep step: note date + build + verdict in the release notes draft.
