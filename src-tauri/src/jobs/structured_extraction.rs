@@ -1,25 +1,26 @@
 //! Structured-first fundamentals extraction service (ADR 0061 S5).
 //!
 //! Loads a stored report document, runs the deterministic tiered pipeline
-//! (ESEF → positional xHTML → EspiCoverNote → HTML aggregator), and persists
-//! the accepted facts with their provenance (source tier + validation verdict +
-//! citation). The pipeline is deterministic end to end.
+//! (ESEF → EspiCoverNote → HTML aggregator), and persists the accepted facts
+//! with their provenance (source tier + validation verdict + citation). The
+//! pipeline is deterministic end to end.
 //!
-//! The **PDF fact-extraction arm is retired** (ADR 0086 dec. 1): a real PDF
-//! document spawns NO extraction attempt here — its route survives only so
-//! [`derive_report_period`] can group the registry. Core KPIs for a PDF-only
-//! company arrive from the BiznesRadar-primary daily pull (a separate job), not
-//! from this seam. A markup/ESEF document no tier parses is an honest gap; the
-//! former tier-4 OCR fallback was already retired with the in-app AI layer
-//! (ADR 0084 decision 4).
+//! The **PDF fact-extraction arm is retired** (ADR 0086 dec. 1) and the
+//! **positional (tier-3b pdf2htmlEX) arm is retired** (ADR 0095, epic
+//! #40/#182: its first ground-truth measurement found currency-aware
+//! precision/recall of 5.6%/2.0% against ESEF's 99.3%/72.4%): a real PDF, or
+//! bare non-iXBRL markup, spawns NO extraction attempt here — both routes
+//! survive only so [`derive_report_period`] can group the registry. Core
+//! KPIs for such a company arrive from the BiznesRadar-primary daily pull (a
+//! separate job), not from this seam. A markup/ESEF document no tier parses
+//! is an honest gap; the former tier-4 OCR fallback was already retired with
+//! the in-app AI layer (ADR 0084 decision 4).
 
 use std::collections::BTreeSet;
 
 use crate::app_state::AppState;
 use crate::fundamentals::extraction::container::{detect_container, Container};
-use crate::fundamentals::extraction::pipeline::{
-    run_pipeline, validate_parsed_set_report, Acceptance, PipelineInput,
-};
+use crate::fundamentals::extraction::pipeline::{run_pipeline, Acceptance, PipelineInput};
 use crate::fundamentals::extraction::SourceTier;
 use crate::storage::StructuredFactInput;
 
@@ -443,7 +444,17 @@ fn quarantine_detail(quarantined: &[QuarantinedFact], base: Option<String>) -> O
 /// ([`derive_report_period_uncached`] — the ESEF/title/cover-page rules). Bump
 /// this when that grammar changes: any cached row stamped with an older version
 /// is re-derived and overwritten on next read (self-healing).
-pub const DERIVATION_VERSION: i64 = 1;
+///
+/// `2` (bug #325): `report_diff::classify`'s marker grammar now pairs a
+/// day+month calendar marker with the year found in the SAME match rather
+/// than the first clean year anywhere in the text — fixes a positional
+/// cover-page document whose true reporting year was split by a pdf2htmlEX
+/// extraction artifact (e.g. "20 25") landing on an unrelated nearby year
+/// (e.g. a signing dateline's "2026") instead. Bumping re-derives any cached
+/// period this could have affected (the facts written from the stale `1`
+/// derivation were all positional-tier rows, deleted outright by the ADR
+/// 0095 retirement migration `0135`).
+pub const DERIVATION_VERSION: i64 = 2;
 
 /// The extraction-pipeline capability version stamped into an autopilot run's
 /// `kpi_delta_json` on the `extractionAvailable:false` path. A document's bytes
@@ -742,8 +753,10 @@ pub(crate) enum DocumentRoute {
     Pdf,
     /// Markup that is inline-XBRL → the ESEF tier reads it as its own instance.
     IxbrlInstance,
-    /// Bare markup that is NOT inline-XBRL (a pdf2htmlEX render, an HTML export)
-    /// → the deterministic positional parser (ADR 0077 T-B2).
+    /// Bare markup that is NOT inline-XBRL (a pdf2htmlEX render, an HTML
+    /// export) → NO extraction attempt (ADR 0095: the tier-3b positional
+    /// parser that used to read this shape is retired). The classification
+    /// survives only for period-grouping purposes, mirroring [`Self::Pdf`].
     Positional,
     /// A ZIP → an ESEF/eSprawozdanie report package; the inner instance is
     /// unpacked before the ESEF tier reads it.
@@ -860,23 +873,30 @@ pub(crate) fn run_structured_extraction(
     // "PDF" documents are XML/ZIP/HTML under a `.pdf` name and fail 100% when
     // handed to the PDF reader (19 of 430 periodic filings, 7 companies). The
     // bytes decide; several of those XMLs carry real financial data, so correct
-    // routing ADDS coverage via the ESEF/iXBRL/positional tiers. An unsupported
+    // routing ADDS coverage via the ESEF/iXBRL route (the positional route is
+    // classification-only since ADR 0095). An unsupported
     // container is an explicit outcome row, never an error that aborts the sweep.
     let esef_opt: Option<Vec<u8>> = match route_document(&bytes) {
         // Bare markup that is NOT iXBRL — a pdf2htmlEX visual render or an HTML
-        // export. The deterministic positional parser (ADR 0077 T-B2) persists
-        // its own result, so this arm early-returns just as before.
+        // export. NO extraction attempt (ADR 0095: the tier-3b positional
+        // parser is retired — its first ground-truth measurement found
+        // currency-aware precision/recall of 5.6%/2.0%, the app's most
+        // defect-dense surface per fact produced, against ESEF's 99.3%/72.4%).
+        // Mirrors the `DocumentRoute::Pdf` idiom below exactly: the route
+        // survives so the registry/period derivation still group this
+        // document, but no tier reads financial facts out of it. Returns a
+        // benign empty result and records NO outcome, so this document never
+        // generates a `no_deterministic_tier` extraction-outcome row.
         DocumentRoute::Positional => {
-            return run_positional_extraction(
-                state,
-                company_id,
-                report_document_id,
-                fiscal_year,
-                period_type,
-                period_end,
-                mode,
-                &bytes,
-            );
+            return Ok(StructuredExtractionResult {
+                acceptance: Acceptance::Empty,
+                tier: None,
+                produced_fact_ids: Vec::new(),
+                skipped_fact_ids: Vec::new(),
+                divergences: Vec::new(),
+                emitted: false,
+                reason_code: None,
+            });
         }
         // Markup that IS inline-XBRL → the ESEF tier reads it as its own instance
         // (a bare `.xhtml` instance stored under any name).
@@ -1219,225 +1239,6 @@ pub(crate) fn rerun_extraction_outcome(
 fn base_document_ref(slot_ref: &str) -> &str {
     slot_ref.split('#').next().unwrap_or(slot_ref)
 }
-
-/// Tier-3b positional route (ADR 0077 T-B2): parse a non-iXBRL pdf2htmlEX XHTML
-/// render with the deterministic positional parser, run its facts through the
-/// **same** [`validate_parsed_set`] identity gate every tier uses, and persist a
-/// clean set under `source_tier='pdf'` with the identifiable
-/// `extraction_method='html_positional'` provenance marker. A flagged/empty set
-/// emits nothing (like any deterministic tier) — never `validation_status='none'`
-/// (G-1).
-#[allow(clippy::too_many_arguments)]
-fn run_positional_extraction(
-    state: &AppState,
-    company_id: &str,
-    report_document_id: &str,
-    fiscal_year: i64,
-    period_type: &str,
-    period_end: &str,
-    mode: &str,
-    html_bytes: &[u8],
-) -> Result<StructuredExtractionResult, String> {
-    use crate::fundamentals::extraction::html_positional::{
-        parse_html_positional, PositionalColumn,
-    };
-
-    let html = String::from_utf8_lossy(html_bytes);
-    let facts = parse_html_positional(&html, &PositionalColumn::new(period_end));
-
-    // The SAME comparative cross-check + completeness inputs and gate the
-    // structured pipeline and tier-4 assemble — the balance-sheet identity and the
-    // prior-period magnitude cross-check catch a mis-read or mis-scale here too.
-    let prior_end = prior_period_end(period_end);
-    let stored_prior = state
-        .financials()
-        .stored_fact_set_for_cross_check(company_id, fiscal_year - 1, period_type, SourceTier::Pdf)
-        .map_err(|e| e.to_string())?;
-    let expected_keys = expected_primary_keys(state, company_id)?;
-    let (acceptance, validation) = validate_parsed_set_report(
-        &facts,
-        period_end,
-        stored_prior.as_ref(),
-        prior_end.as_deref(),
-        expected_keys.as_ref(),
-    );
-
-    let mut produced_fact_ids = Vec::new();
-    let mut skipped_fact_ids = Vec::new();
-    let mut divergences = Vec::new();
-    // Same per-fact history-plausibility quarantine as the tiered path: a
-    // positional-tier fact grossly off its own history is held back while its
-    // siblings emit, and any quarantine flags the set.
-    let mut quarantined: Vec<QuarantinedFact> = Vec::new();
-    if acceptance.emits() {
-        let validation_status = acceptance.validation_status();
-        let confirmation_state = confirmation_state_for(acceptance, mode);
-        let store = state.kpi_extraction();
-        // Same batched history read as the tiered path: one company-wide read, not
-        // one per positional fact (bit-identical to N single `metric_history`s).
-        let history_keys: BTreeSet<String> = facts.iter().map(|f| f.metric_key.clone()).collect();
-        let histories = state
-            .financials()
-            .metric_histories(company_id, &history_keys, fiscal_year, period_type)
-            .map_err(|e| e.to_string())?;
-        let mut seen_keys = BTreeSet::new();
-        for fact in &facts {
-            if !seen_keys.insert(fact.metric_key.clone()) {
-                continue;
-            }
-            let empty_history = Vec::new();
-            let history = histories.get(&fact.metric_key).unwrap_or(&empty_history);
-            if crate::fundamentals::validation::implausible_against_history(
-                &fact.metric_key,
-                fact.value,
-                history,
-            ) {
-                if let Some(history_median) =
-                    crate::fundamentals::validation::history_median(history)
-                {
-                    quarantined.push(QuarantinedFact {
-                        metric_key: fact.metric_key.clone(),
-                        value: fact.value,
-                        history_median,
-                    });
-                }
-                continue;
-            }
-            let value = fact.value.to_string();
-            let commit = store
-                .record_structured_fact(StructuredFactInput {
-                    company_id,
-                    fiscal_year,
-                    period_type,
-                    period_end: Some(period_end),
-                    report_document_id,
-                    metric_key: &fact.metric_key,
-                    value_numeric: &value,
-                    currency: fact.currency.as_deref(),
-                    confirmation_state,
-                    // Reuse the deterministic PDF tier (no new trust-order variant);
-                    // the positional sub-tier is identified by `extraction_method`.
-                    source_tier: SourceTier::Pdf.as_str(),
-                    extraction_method: "html_positional",
-                    validation_status,
-                    drift_json: None,
-                    citation: Some(&fact.citation),
-                    attribution: None,
-                    measure_window: None,
-                    data_quality: None,
-                })
-                .map_err(|e| e.to_string())?;
-            match commit {
-                crate::storage::StructuredFactCommit::Created(id) => produced_fact_ids.push(id),
-                // The positional tier outranks html_aggregator (ADR 0086 dec. 3)
-                // — a takeover of an aggregator-held slot is this run's emit. A
-                // VALUE overwrite leaves upgrade evidence as a diagnostic (F6).
-                crate::storage::StructuredFactCommit::Upgraded {
-                    fact_id,
-                    previous_value,
-                    previous_tier,
-                } => {
-                    record_tier_upgrade_diagnostic(
-                        state,
-                        company_id,
-                        &fact.metric_key,
-                        previous_value.as_deref(),
-                        &previous_tier,
-                        &value,
-                    );
-                    produced_fact_ids.push(fact_id);
-                }
-                crate::storage::StructuredFactCommit::Reobserved(id) => skipped_fact_ids.push(id),
-                crate::storage::StructuredFactCommit::Divergent {
-                    fact_id,
-                    metric_key,
-                    existing,
-                    incoming,
-                } => {
-                    skipped_fact_ids.push(fact_id.clone());
-                    let divergence = FactDivergence {
-                        fact_id,
-                        metric_key,
-                        existing,
-                        incoming,
-                    };
-                    record_value_divergence_outcome(
-                        state,
-                        &DivergenceSlot {
-                            company_id,
-                            report_document_id,
-                            fiscal_year,
-                            period_type,
-                            period_end,
-                            // The positional route reuses the deterministic PDF
-                            // tier (identified by `extraction_method`).
-                            tier: SourceTier::Pdf.as_str(),
-                        },
-                        &divergence,
-                    );
-                    divergences.push(divergence);
-                }
-                crate::storage::StructuredFactCommit::NoDefinition => {}
-            }
-        }
-    }
-
-    let tier = (!facts.is_empty()).then_some(SourceTier::Pdf);
-    // The positional route is a full deterministic tier, so it records its
-    // outcome on the same terms as the tiered pipeline — a non-emitting
-    // positional parse must not be the one silent path left.
-    let positional_outcome = crate::fundamentals::extraction::pipeline::PipelineOutcome {
-        acceptance,
-        tier,
-        facts: Vec::new(),
-        status: validation
-            .as_ref()
-            .map(|r| r.status)
-            .unwrap_or(crate::fundamentals::validation::Status::Inconclusive),
-        validation,
-    };
-    let recorded_acceptance = if quarantined.is_empty() {
-        acceptance
-    } else {
-        Acceptance::Flagged
-    };
-    let (reason_code, detail_json) = if quarantined.is_empty() {
-        (
-            reason_for(&positional_outcome),
-            failing_check_detail(&positional_outcome),
-        )
-    } else {
-        (
-            reason::VALIDATION_FAILED,
-            quarantine_detail(&quarantined, failing_check_detail(&positional_outcome)),
-        )
-    };
-    record_outcome(
-        state,
-        company_id,
-        report_document_id,
-        fiscal_year,
-        period_type,
-        period_end,
-        tier.map(|t| t.as_str()),
-        recorded_acceptance,
-        reason_code,
-        detail_json.as_deref(),
-        None,
-        slot_fact_count(&produced_fact_ids, &skipped_fact_ids),
-    );
-
-    Ok(StructuredExtractionResult {
-        acceptance: recorded_acceptance,
-        tier,
-        emitted: !produced_fact_ids.is_empty(),
-        produced_fact_ids,
-        skipped_fact_ids,
-        divergences,
-        reason_code: Some(reason_code),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1583,17 +1384,29 @@ mod tests {
     }
 
     #[test]
-    fn xml_content_under_pdf_name_routes_to_structured_tier_and_extracts() {
-        // The maintainer's real failure: a pdf2htmlEX render stored as `*.pdf`.
-        // Before this card the `.pdf` name sent it to the PDF reader, where it
-        // produced nothing; now the XML magic routes it to the positional tier and
-        // it EXTRACTS. Coverage the extension was silently throwing away.
+    fn xml_content_under_pdf_name_routes_on_bytes_not_the_pdf_reader() {
+        // The maintainer's real failure (card eb71488): a pdf2htmlEX render
+        // stored as `*.pdf`. Routing must key on the MAGIC BYTES, not the
+        // filename — this document must never be handed to the PDF reader
+        // (which would either fail outright or silently produce nothing).
+        // ADR 0095: the tier-3b positional parser that used to extract this
+        // shape is retired, so the correctly-routed outcome is now the SAME
+        // benign-empty result `DocumentRoute::Pdf` returns — the point this
+        // test still proves is that routing itself is byte-driven, not that
+        // extraction happens.
+        let bytes = POSITIONAL_XHTML.as_bytes();
+        assert_eq!(
+            route_document(bytes),
+            DocumentRoute::Positional,
+            "magic bytes must route this as bare markup, never DocumentRoute::Pdf"
+        );
+
         let (state, company_id, document_id) = seed_document_with_bytes(
             "xml-under-pdf",
             "CDR",
             "Interim condensed consolidated statement Q3 2024",
             "raport_q3_2024_signed.pdf",
-            POSITIONAL_XHTML.as_bytes(),
+            bytes,
         );
         let result = run_structured_extraction(
             &state,
@@ -1604,10 +1417,10 @@ mod tests {
             "2024-09-30",
             MODE_AUTOPILOT,
         )
-        .expect("routes to the structured tier despite the .pdf name");
+        .expect("routing on bytes must never error, whatever the filename says");
         assert!(
-            result.emitted && !result.produced_fact_ids.is_empty(),
-            "an XML-content file named .pdf must extract via the positional tier, not fail on the PDF reader"
+            !result.emitted && result.produced_fact_ids.is_empty(),
+            "the retired positional route must emit nothing — never a PDF-reader failure either"
         );
     }
 
@@ -2315,14 +2128,19 @@ mod tests {
         (state, company.id, document.id)
     }
 
+    /// ADR 0095 (adversarial-review scope expansion, epic #40/#182): the
+    /// tier-3b positional parser is retired outright — its first
+    /// ground-truth measurement found currency-aware precision/recall of
+    /// 5.6%/2.0%, the app's most defect-dense surface per fact produced,
+    /// against ESEF's 99.3%/72.4%. A document that USED TO route to the
+    /// positional parser and extract (this test's own name, before this
+    /// fix) must now yield the SAME benign-empty result the retired PDF
+    /// arm already returns: no tier, no facts, no outcome row — mirroring
+    /// `DocumentRoute::Pdf`'s idiom exactly (the route still classifies the
+    /// document for period-grouping purposes; nothing reads facts out of it
+    /// anymore).
     #[test]
-    fn non_ixbrl_xhtml_routes_to_the_positional_tier_and_persists_pdf_provenance() {
-        // ADR 0077 T-B2: a non-iXBRL XHTML no longer falls through as
-        // not-extractable — it routes to the tier-3b positional parser, whose facts
-        // clear the SAME validate gate and persist under `source_tier='pdf'` with an
-        // identifiable `extraction_method='html_positional'` (never validation_status
-        // 'none', G-1). Revenue reads the YTD (652 375) via automatic column
-        // selection, not the 3M column.
+    fn non_ixbrl_xhtml_no_longer_extracts_via_the_retired_positional_tier() {
         let (state, company_id, document_id) = seed_positional();
         let result = run_structured_extraction(
             &state,
@@ -2333,17 +2151,21 @@ mod tests {
             "2024-09-30",
             MODE_AUTOPILOT,
         )
-        .expect("positional extraction runs");
+        .expect("routing a positional-shaped document must never error");
 
         assert_eq!(
-            result.tier,
-            Some(SourceTier::Pdf),
-            "reuses the deterministic Pdf tier"
+            result.tier, None,
+            "no tier reads a positional document anymore"
         );
-        assert!(result.emitted, "the positional render emits facts");
-        assert!(!result.produced_fact_ids.is_empty());
+        assert!(!result.emitted, "the retired route must never emit");
+        assert!(result.produced_fact_ids.is_empty());
+        assert!(result.skipped_fact_ids.is_empty());
+        assert!(result.divergences.is_empty());
+        assert_eq!(
+            result.reason_code, None,
+            "mirrors the DocumentRoute::Pdf idiom — no outcome row either"
+        );
 
-        // Revenue is the current YTD, and provenance is honest + identifiable.
         let facts = state
             .list_financial_facts(crate::storage::ListFinancialFactsInput {
                 company_id: Some(company_id.clone()),
@@ -2351,26 +2173,10 @@ mod tests {
                 definition_id: None,
             })
             .expect("list facts");
-        let revenue = facts
-            .iter()
-            .find(|f| f.value_numeric.starts_with("652375"))
-            .expect("revenue reads the YTD column (652 375 × 1000), not the 3M column");
-        assert_eq!(
-            revenue.extraction_method, "html_positional",
-            "the positional sub-tier is identifiable via extraction_method"
+        assert!(
+            facts.is_empty(),
+            "the retired positional route must write no facts at all: {facts:?}"
         );
-        for id in &result.produced_fact_ids {
-            let provenance = state
-                .fundamentals_provenance()
-                .get_fact_provenance(id)
-                .expect("provenance query")
-                .expect("every positional fact carries provenance");
-            assert_eq!(provenance.source_tier, "pdf");
-            assert_ne!(
-                provenance.validation_status, "none",
-                "the positional path clears the validation gate — never 'none' (G-1)"
-            );
-        }
     }
 
     #[test]

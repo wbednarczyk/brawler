@@ -1798,14 +1798,28 @@ pub(super) fn create_or_reobserve_financial_fact(
     let dims = slot_dims(&input)?;
     if let Some(existing) = find_fact_by_slot(connection, &period_id, &definition_id, &dims)? {
         let incoming = input.value_numeric.trim().to_owned();
-        let same = match (
+        let same_value = match (
             Decimal::from_str(existing.value_numeric.trim()),
             Decimal::from_str(incoming.trim()),
         ) {
             (Ok(a), Ok(b)) => a == b,
             _ => existing.value_numeric.trim() == incoming.trim(),
         };
-        return Ok(if same {
+        // A same-number observation in a CONTRADICTING currency is NOT an
+        // agreement (sol review, ADR 0095 round): 1 000 000 EUR and
+        // 1 000 000 PLN are different figures that happen to share digits.
+        // Agreement requires the currencies to not contradict — equal, or one
+        // side unstated (the Reobserved safe-merge fills that gap, it never
+        // contradicts it). A contradiction takes the Divergent path instead:
+        // a higher tier corrects the slot under its own currency + evidence,
+        // peers surface a divergence — no path relabels the row while
+        // silently keeping the other side's currency.
+        let incoming_currency = normalize_currency(input.currency.clone())?;
+        let currency_contradicts = matches!(
+            (existing.currency.as_deref(), incoming_currency.as_deref()),
+            (Some(stored), Some(new)) if stored != new
+        );
+        return Ok(if same_value && !currency_contradicts {
             FactWriteOutcome::Reobserved(existing)
         } else {
             FactWriteOutcome::Divergent { existing, incoming }
@@ -1845,6 +1859,12 @@ pub(super) fn create_financial_fact(
         .filter(|s| !s.is_empty())
         .unwrap_or("manual")
         .to_owned();
+    // ADR 0095: the positional parser is removed and its method marker is
+    // retired — no new fact row may carry it, from ANY caller (this create
+    // path passes caller input through verbatim, including the MCP act).
+    if extraction_method == "html_positional" {
+        return Err(StorageError::RetiredExtractionMethod);
+    }
     let confidence = empty_string_to_none(input.confidence.map(|s| s.trim().to_owned()));
     let confirmation_state = input
         .confirmation_state

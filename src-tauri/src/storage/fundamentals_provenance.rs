@@ -149,6 +149,40 @@ pub(super) fn set_fact_provenance(
     connection: &Connection,
     input: NewFactProvenance<'_>,
 ) -> StorageResult<()> {
+    // ADR 0095 + bug #324, single-chokepoint completion (sol review): this
+    // free function is the ONE provenance upsert every writer shares —
+    // `kpi_extraction::write_fact_provenance_fields` delegates here after
+    // syncing the fact row's method, and the store method wraps it — so the
+    // retired-tier refusal and the tier/method coherence check live HERE,
+    // not only on the structured path. Coherence is judged against the fact
+    // row's STORED `extraction_method`; a missing fact row fails open (the
+    // pair cannot be judged without it), exactly like an unknown tier.
+    if input.source_tier == "pdf" {
+        return Err(StorageError::RetiredSourceTier {
+            fact_id: input.fact_id.to_owned(),
+        });
+    }
+    let stored_method = match connection.query_row(
+        "SELECT extraction_method FROM financial_facts WHERE id = ?1",
+        params![input.fact_id],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(method) => Some(method),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(error) => return Err(error.into()),
+    };
+    if let Some(method) = stored_method {
+        if !crate::fundamentals::extraction::SourceTier::parse(input.source_tier)
+            .map(|tier| tier.matches_extraction_method(&method))
+            .unwrap_or(true)
+        {
+            return Err(StorageError::IncoherentFactProvenance {
+                fact_id: input.fact_id.to_owned(),
+                source_tier: input.source_tier.to_owned(),
+                extraction_method: method,
+            });
+        }
+    }
     connection.execute(
         "
         INSERT INTO financial_fact_provenance

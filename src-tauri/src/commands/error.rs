@@ -134,6 +134,20 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::AlertRuleNotFound { .. } => NotFound,
         // Internal ML/derivation step failure — no more specific code.
         StorageError::Classification(_) => Internal,
+        // A provenance write path stamped a source_tier/extraction_method
+        // pair that does not cohere (bug #324 guard) — every caller passes
+        // both internally (never as raw MCP/UI input), so tripping this is a
+        // programming error in the write path, not a shape problem with
+        // caller-supplied data.
+        StorageError::IncoherentFactProvenance { .. } => Internal,
+        // Same rationale: no caller ever passes `source_tier` as raw input,
+        // so tripping the ADR 0095 retired-tier refusal is a programming
+        // error in the write path, not a shape problem with caller data.
+        StorageError::RetiredSourceTier { .. } => Internal,
+        // Unlike the two above, `extraction_method` IS caller-suppliable on
+        // the plain create path (UI/MCP manual entry) — a request naming the
+        // retired positional method is a shape problem with the input.
+        StorageError::RetiredExtractionMethod => InvalidInput,
     }
 }
 

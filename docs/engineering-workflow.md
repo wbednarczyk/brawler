@@ -129,7 +129,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **Journey E2E + budgets green** — `tests/browser/journeys/` covers the milestone's new user-facing paths via the `journey()` counter; the `budgets.json` floor is tightened when a journey got measurably shorter (ADR 0074).
 - [ ] **Owner dogfooding run before release** — the ~15-min real-app journey walk in [dogfooding.md](dogfooding.md); P1 findings block the release, friction feeds the retro's UX section.
 - [ ] **Spec-conformance audit against the epic's ADR(s), decision by decision.** For every ADR decision, verify a **live-path invocation exists** (`repoctx callers` from the real job/command/UI entry, not only unit tests) and record a verdict (conforms / partial / deviates / not built). Unit-green modules with no live wiring are the recurring failure this catches (harvest 2026-07-02). "A capability is not done until a user can reach it" applies to every ADR decision.
-- [ ] `make check-epic` — the full gate + both ratchets, **all hard-fail** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md); no `-`-prefixed steps — `gate-integrity` fails if any return). Triage every failure (fix or file a tracked issue). · Retrospective written (both domains, still-open items honest). · `wiki/` updated for every user-facing change. · Version bump via the release workflow — **only on explicit user sign-off**.
+- [ ] `make check-epic` — the full gate + both ratchets + the `realdata-gt-check` #182 ground-truth diagnostic, **all hard-fail** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md); no `-`-prefixed steps — `gate-integrity` fails if any return). Triage every failure (fix or file a tracked issue). · Retrospective written (both domains, still-open items honest). · `wiki/` updated for every user-facing change. · Version bump via the release workflow — **only on explicit user sign-off**.
 - [ ] **Mutants** (ADR 0049; owner rule 2026-07-29): agent may run `gh workflow run mutants.yml` when worthwhile — at least once per epic closure — and must triage findings into cards (never blockers); never on WSL, no cron; expand `-f` to new transform modules. · **`make bench`** when a hot kernel changed — bench-ratchet vs `bench-baseline.json` (informational, machine-dependent, never a hard gate).
 
 ### §K — Honest handover report — always
@@ -161,7 +161,7 @@ Avoid for normal iteration: `rtk proxy ...` (bypasses filtering, no token saving
 | `check-fast` | `npm run check:parallel` | Inner-loop only, never proof of done. |
 | `disk-clean` | caches, mutants artifacts, old nix generations, fstrim | Run when `disk-guard` warns. |
 | `disk-clean-deep` | + `src-tauri/target` + full nix GC | Space emergencies; full rebuild after. |
-| `check-epic` | `check` + `coverage` + `realdata-honesty-check` | Epic closure: gate + both ratchets. |
+| `check-epic` | `check` + `coverage` + `realdata-honesty-check` + `realdata-gt-check` | Epic closure: gate + both ratchets + the #182 ground-truth diagnostic. |
 | `test` | `npm run test` | Frontend unit tests (Vitest, `src`). |
 | `build` | `npm run build` | Frontend production build. |
 | `dev` | `npm run dev` | Tauri dev mode; needs Linux GUI forwarding. |

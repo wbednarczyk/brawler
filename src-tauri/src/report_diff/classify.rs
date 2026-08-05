@@ -136,9 +136,80 @@ fn marker_period(tokens: &[String], lowered: &str) -> Option<(i32, u8)> {
     if let Some(resolved) = compact_period(tokens) {
         return Some(resolved);
     }
+    // The intra-year index keeps its EXISTING precedence unchanged: an
+    // explicit q1-q4/annual marker (`rok obrotowy`, `QSr 3`, …) still wins
+    // over a bare day+month calendar date — this is what lets a marker like
+    // "rok obrotowy" correctly override a non-calendar fiscal year-end (e.g.
+    // Synektik's 30 September) being misread as a mere Q3.
+    let normalized = normalize(tokens);
+    let (index, source) = parse_period_with_source(&normalized);
+    if index == 0 {
+        return None;
+    }
+    // Bug #325, tightened (adversarial-review blocker #5): prefer the year
+    // paired with the SAME day+month calendar marker that named THIS index,
+    // over `parse_year`'s "first standalone year anywhere in the text" below
+    // — but ONLY when the index itself came from that calendar marker
+    // (`PeriodIndexSource::MonthCalendarMarker`). When the index instead came
+    // from an EXPLICIT marker (`rok obrotowy`, `QSr 4`, `roczny`, …), an
+    // unrelated day+month mention elsewhere in the same text must never
+    // donate ITS year to that marker's index: a non-calendar filer's cover
+    // page can read "rok obrotowy zakończony 30 września 2025 [...] 31
+    // grudnia 2024" (the true FYE stated next to September, a comparative or
+    // otherwise unrelated December date mentioned separately) — pairing the
+    // "rok obrotowy" index with the December marker's 2024 would resolve
+    // FY2024, silently wrong by a year. See `month_end_year_for_index`.
+    if matches!(source, PeriodIndexSource::MonthCalendarMarker) {
+        if let Some(year) = month_end_year_for_index(&normalized, index) {
+            return Some((year, index));
+        }
+    }
     let year = parse_year(lowered)?;
-    let index = parse_period(&normalize(tokens));
-    (index != 0).then_some((year, index))
+    Some((year, index))
+}
+
+/// Which pass inside [`parse_period_with_source`] resolved the intra-year
+/// index — an EXPLICIT marker (`rok obrotowy`, `QSr 4`, `roczny`, a quarter
+/// word) or the day+month CALENDAR fallback (`months`, e.g. bare "31
+/// grudnia"). [`marker_period`] uses this to decide whether
+/// [`month_end_year_for_index`] may safely donate its year to this index
+/// (adversarial-review blocker #5, tightening bug #325's fix): the calendar
+/// marker's own nearby year is trustworthy evidence about ITS OWN index, but
+/// says nothing about an index an unrelated EXPLICIT marker already settled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PeriodIndexSource {
+    ExplicitMarker,
+    MonthCalendarMarker,
+}
+
+/// The year paired with the day+month calendar marker for THIS `index`
+/// (1..=4), tolerant of exactly one embedded space in the year — the
+/// pdf2htmlEX glyph-run artifact that `tokenize`/`normalize` cannot repair (a
+/// stray space mid-digit survives as a token boundary, so "2025" re-emerges
+/// as two tokens "20"+"25", rejoined by `normalize` with exactly one space).
+/// `None` when this index names no day+month marker (e.g. it came from an
+/// explicit `QSr`/`rok obrotowy` marker instead) or that marker has no year
+/// right next to it.
+///
+/// Bug #325 (DNP, 202512 Dino Polska SF UoR.xhtml): the cover page states the
+/// reporting year TWICE as "31 grudnia 20 25" (broken by the extraction
+/// artifact in both places), while an unrelated signing dateline nearby
+/// states "26 marca 2026" with a CLEAN "2026". The old grammar paired
+/// whichever index `parse_period` found with `parse_year`'s document-wide
+/// "first clean year anywhere" — which skipped past both broken "2025"s and
+/// landed on the signing date's "2026" instead (fiscal_year 2026 / period_end
+/// 2026-12-31, wrong). Tying the year to the SAME marker that named the index
+/// is the fix. When the nearby year is ALSO broken beyond this one-space
+/// tolerance (or absent), this returns `None` and the caller falls back to
+/// the old global scan — the same "never guess" doctrine as every other pass,
+/// never worse than before the fix.
+fn month_end_year_for_index(normalized: &str, index: u8) -> Option<i32> {
+    let g = grammar();
+    let (regex, _) = g.months_with_year.iter().find(|(_, i)| *i == index)?;
+    let captures = regex.captures(normalized)?;
+    let year_text = captures[1].replace(' ', "");
+    let year: i32 = year_text.parse().ok()?;
+    (2000..=2099).contains(&year).then_some(year)
 }
 
 /// The full reporting period `(fiscal_year, period_type, period_end)` a
@@ -406,6 +477,13 @@ struct Grammar {
     q3: Regex,
     q4: Regex,
     months: Vec<(Regex, u8)>,
+    /// The SAME day+month calendar markers as `months`, but additionally
+    /// capturing the year immediately following — tolerant of exactly one
+    /// embedded space in the 4 digits (bug #325: `tokenize`/`normalize`
+    /// rejoin every original token gap as a single space, so a pdf2htmlEX
+    /// glyph-run artifact that split a year mid-digit re-emerges this way).
+    /// See [`month_end_year`].
+    months_with_year: Vec<(Regex, u8)>,
 }
 
 fn grammar() -> &'static Grammar {
@@ -440,6 +518,15 @@ fn grammar() -> &'static Grammar {
                 (compile(r"\b30 (czerwca|june)\b"), 2),
                 (compile(r"\b30 (wrzesnia|września|september)\b"), 3),
                 (compile(r"\b31 (grudnia|december)\b"), 4),
+            ],
+            months_with_year: vec![
+                (compile(r"\b31 (?:marca|march) (\d{4}|\d{2} \d{2})\b"), 1),
+                (compile(r"\b30 (?:czerwca|june) (\d{4}|\d{2} \d{2})\b"), 2),
+                (
+                    compile(r"\b30 (?:wrzesnia|września|september) (\d{4}|\d{2} \d{2})\b"),
+                    3,
+                ),
+                (compile(r"\b31 (?:grudnia|december) (\d{4}|\d{2} \d{2})\b"), 4),
             ],
         }
     })
@@ -492,21 +579,26 @@ fn compact_period(tokens: &[String]) -> Option<(i32, u8)> {
 
 /// The intra-year period a marker names, or `0` when none does — the abstention
 /// [`period_from_title_url`] turns into `None`. Quarter and half-year markers are
-/// tested before the annual arm: an interim report often carries both.
-fn parse_period(normalized: &str) -> u8 {
+/// tested before the annual arm: an interim report often carries both. Also
+/// reports WHICH pass matched ([`PeriodIndexSource`]) — `marker_period` uses
+/// this to gate `month_end_year_for_index` (adversarial-review blocker #5).
+/// A `0` index pairs with `PeriodIndexSource::ExplicitMarker` as a
+/// placeholder; callers must check the index, never branch on the source
+/// alone.
+fn parse_period_with_source(normalized: &str) -> (u8, PeriodIndexSource) {
     let g = grammar();
     for (regex, index) in [(&g.q1, 1), (&g.q3, 3), (&g.q2, 2), (&g.q4, 4)] {
         if regex.is_match(normalized) {
-            return index;
+            return (index, PeriodIndexSource::ExplicitMarker);
         }
     }
     for (regex, index) in &g.months {
         if regex.is_match(normalized) {
-            return *index;
+            return (*index, PeriodIndexSource::MonthCalendarMarker);
         }
     }
     // Unknown intra-year period; sort before Q1 so it is not mistaken for newer.
-    0
+    (0, PeriodIndexSource::ExplicitMarker)
 }
 
 #[cfg(test)]
@@ -886,6 +978,114 @@ mod tests {
         );
         // A non-December fiscal-year window (Synektik) still abstains.
         assert_eq!(period_from_text("01.10.2024 31.03.2025"), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug #325 — a day+month calendar marker pairs with ITS OWN nearby year,
+    // not the first clean year anywhere in the (possibly extraction-mangled)
+    // text.
+    // -----------------------------------------------------------------------
+
+    /// Real cover-page shape from the flagged DNP (Dino Polska) document
+    /// (`202512 Dino Polska SF UoR.xhtml`, an html_positional pdf2htmlEX
+    /// render): the reporting year is stated as "31 grudnia 20 25" — a stray
+    /// space pdf2htmlEX's glyph-run rendering inserted mid-digit, TWICE on the
+    /// cover page — while an unrelated signing dateline a few words later
+    /// states "26 marca 2026" with a clean, unbroken year. Before the fix this
+    /// derived fiscal_year=2026 / period_end=2026-12-31 (the exact wrong
+    /// values recorded on the maintainer's DB); the correct period is
+    /// FY 2025-12-31.
+    #[test]
+    fn positional_cover_text_pairs_the_year_next_to_its_own_month_marker() {
+        let cover_text = "sprawozdanie finansowe za rok zakonczony dnia 31 grudnia 20 25 roku \
+             Krotoszyn, dn. 26 marca 2026 roku \
+             \u{201e}dino polska\u{201d} s.a. sprawozdanie finansowe za rok zakonczony \
+             dnia 31 grudnia 202 5 roku";
+        assert_eq!(
+            period_from_text(cover_text),
+            Some((2025, "FY", "2025-12-31".to_owned())),
+            "the year next to '31 grudnia' must win over the clean-but-unrelated \
+             signing-date year found later in the text"
+        );
+    }
+
+    /// A month-year pairing that is broken beyond the one-space tolerance (or
+    /// simply absent) still abstains rather than falling back to a
+    /// wrong-but-clean year elsewhere — "never guess" holds even for this new
+    /// pass. `marker_period`'s existing fallback (first standalone year +
+    /// `parse_period`) still applies once `month_end_year` itself finds
+    /// nothing, so a document naming ONLY a clean global year is unaffected
+    /// (`period_from_text`'s many other passing tests already pin that).
+    #[test]
+    fn a_year_split_other_than_two_plus_two_next_to_the_month_marker_still_abstains_there() {
+        // "202 5" (a 3+1 digit split — the OTHER real occurrence on this same
+        // DNP cover page, "dnia 31 grudnia 202 5 roku") is not the single
+        // clean-2+2-split shape the tolerance covers; nothing else in the text
+        // names a year or an intra-year marker, so the whole derivation
+        // abstains rather than guessing.
+        assert_eq!(
+            period_from_text("zakonczony dnia 31 grudnia 202 5 roku"),
+            None
+        );
+    }
+
+    /// Non-calendar fiscal year end (Synektik: 1 October – 30 September) with
+    /// a CLEAN year must resolve exactly as before this fix — the new
+    /// month+year pairing only changes WHICH year a match uses, never which
+    /// index wins or introduces a new interpretation. Mapping a bare Sep-30
+    /// date to period_type `Q3` (rather than a non-calendar FY) is a
+    /// pre-existing grammar limitation, unrelated to bug #325.
+    #[test]
+    fn synektik_like_non_calendar_year_end_with_a_clean_year_is_unaffected() {
+        assert_eq!(
+            period_from_text("sprawozdanie finansowe zakonczone dnia 30 wrzesnia 2025 roku"),
+            Some((2025, "Q3", "2025-09-30".to_owned())),
+            "a clean year next to the month marker must resolve the same as \
+             the pre-existing (year-anywhere) grammar did"
+        );
+    }
+
+    /// An explicit annual/fiscal-year MARKER ("rok obrotowy") still wins over
+    /// a bare day+month date, unaffected by this fix — the intra-year INDEX
+    /// keeps its existing precedence (`parse_period` checked first, unchanged
+    /// by `month_end_year_for_index`, which only ever supplies a YEAR for
+    /// whichever index that precedence already settled on). This is what lets
+    /// a non-calendar filer's "rok obrotowy zakończony 30 września" name its
+    /// annual marker rather than being misread as a mere Q3 quarter.
+    #[test]
+    fn an_explicit_annual_marker_still_overrides_a_bare_month_end_date() {
+        assert_eq!(
+            period_from_text("sprawozdanie za rok obrotowy zakonczony 30 wrzesnia 2025 roku"),
+            Some((2025, "FY", "2025-12-31".to_owned())),
+            "'rok obrotowy' must still win the index over '30 wrzesnia', \
+             exactly as before this fix"
+        );
+    }
+
+    /// Adversarial-review blocker #5, tightening bug #325's fix: an EXPLICIT
+    /// annual marker ("rok obrotowy") settles the index at FY — but the text
+    /// ALSO happens to mention an unrelated December date ("31 grudnia 2024",
+    /// e.g. a comparative or otherwise unrelated calendar-year figure) with
+    /// its OWN nearby year, different from the true fiscal year end stated
+    /// next to September. `month_end_year_for_index` must NOT donate that
+    /// December marker's year to the "rok obrotowy" index — that pairing
+    /// never came from the December marker in the first place. Before this
+    /// fix the December mention silently won, resolving FY2024 (wrong); the
+    /// correct resolution keeps the pre-#325 fallback (first standalone year
+    /// anywhere), landing on 2025 — the year actually stated next to the
+    /// real (non-calendar) fiscal year end.
+    #[test]
+    fn an_explicit_annual_marker_ignores_an_unrelated_december_mentions_year() {
+        assert_eq!(
+            period_from_text(
+                "rok obrotowy zakonczony 30 wrzesnia 2025 roku, \
+                 poprzedni rok obrotowy zakonczony 31 grudnia 2024 roku"
+            ),
+            Some((2025, "FY", "2025-12-31".to_owned())),
+            "the 'rok obrotowy' index must resolve the YEAR via the pre-#325 \
+             fallback (first standalone year anywhere), never via the \
+             unrelated '31 grudnia 2024' marker's own nearby year"
+        );
     }
 
     // -----------------------------------------------------------------------

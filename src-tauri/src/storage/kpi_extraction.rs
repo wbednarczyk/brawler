@@ -13,7 +13,7 @@ use super::financials::{
     UpdateFinancialFact,
 };
 use super::fundamentals_provenance::fact_source_tier;
-use super::{slug_part, FinancialFact, NewFinancialFact, StorageResult};
+use super::{slug_part, FinancialFact, NewFinancialFact, StorageError, StorageResult};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -322,6 +322,13 @@ fn prepare_fact_write(
         return Ok(None);
     };
 
+    // ADR 0095: the html_positional tier (the only writer that ever derived
+    // a document-evidence-based basis here) is retired — every remaining
+    // extraction_method keeps the default (`None` → `slot_dims`'s
+    // `or_default` resolves to 'consolidated'), unchanged from before that
+    // tier existed.
+    let statement_basis = None;
+
     // Slot-aware write: a re-extraction of a period whose facts already landed
     // re-observes each slot instead of raising its UNIQUE violation (owner T7).
     let outcome = create_or_reobserve_financial_fact(
@@ -332,7 +339,7 @@ fn prepare_fact_write(
             definition_id,
             value_numeric: input.value_numeric.to_owned(),
             currency: input.currency.map(str::to_owned),
-            statement_basis: None,
+            statement_basis,
             attribution: input.attribution.map(str::to_owned),
             variant: None,
             measure_window: input.measure_window.map(str::to_owned),
@@ -374,6 +381,37 @@ pub(super) fn record_structured_fact(
             if let Some(previous_tier) =
                 outranked_stored_tier_of(connection, &existing.id, input.source_tier)?
             {
+                // Adversarial-review should-fix #7: the VALUE already agreed
+                // (that is what `Reobserved` means) but the lower tier's
+                // write may have left metadata gaps a higher tier's write
+                // now closes — merge SAFELY, never clobber. `currency` fills
+                // in ONLY when the stored slot has none: only value_numeric
+                // agreement is actually proven here, so an already-set
+                // currency is left alone rather than overwritten by a value
+                // that was never cross-checked. `source_document_ref` always
+                // repoints to the new tier's own document — it is now this
+                // slot's authoritative evidence, same as a value-changing
+                // upgrade already does below.
+                update_financial_fact(
+                    connection,
+                    UpdateFinancialFact {
+                        id: existing.id.clone(),
+                        value_numeric: None,
+                        currency: existing
+                            .currency
+                            .is_none()
+                            .then(|| input.currency.map(str::to_owned))
+                            .flatten(),
+                        data_quality: None,
+                        confirmation_state: None,
+                        supersedes_id: None,
+                        source_document_ref: Some(input.report_document_id.to_owned()),
+                        annotation: None,
+                    },
+                )?;
+                // write_fact_provenance syncs financial_facts.extraction_method
+                // to input.extraction_method in the SAME call (bug #324 class,
+                // adversarial-review blocker #4) — no separate sync needed.
                 write_fact_provenance(connection, &existing.id, &input)?;
                 return Ok(StructuredFactCommit::Upgraded {
                     fact_id: existing.id,
@@ -404,6 +442,9 @@ pub(super) fn record_structured_fact(
                         annotation: None,
                     },
                 )?;
+                // write_fact_provenance syncs financial_facts.extraction_method
+                // to input.extraction_method in the SAME call (bug #324 class,
+                // adversarial-review blocker #4) — no separate sync needed.
                 write_fact_provenance(connection, &existing.id, &input)?;
                 return Ok(StructuredFactCommit::Upgraded {
                     fact_id: existing.id,
@@ -423,7 +464,8 @@ pub(super) fn record_structured_fact(
 
 /// Outcome of committing one BiznesRadar-primary aggregator fact into its slot,
 /// applying the ADR 0086 decision 3 precedence (`agent` added by ADR 0093
-/// decision 1): `manual` > `esef` > `espi_cover_note` > positional > `agent` >
+/// decision 1; positional retired by ADR 0095): `manual` > `esef` >
+/// `espi_cover_note` > `agent` >
 /// `html_aggregator`. The aggregator only ever overwrites its OWN
 /// (`html_aggregator`, non-manual) slot and NEVER a manual or higher-tier fact.
 #[derive(Debug, Clone)]
@@ -446,7 +488,7 @@ pub enum AggregatorFactCommit {
         existing_method: String,
     },
     /// The slot is held by a higher-precedence fact (manual / esef /
-    /// structured_xhtml / espi_cover_note / positional / agent) — left
+    /// structured_xhtml / espi_cover_note / agent) — left
     /// untouched. The caller decides whether the divergence warrants an informational
     /// `witness_disagreement` outcome (issuer tiers only).
     SkippedHigherTier {
@@ -649,6 +691,7 @@ fn write_fact_provenance(
         connection,
         fact_id,
         input.source_tier,
+        input.extraction_method,
         input.validation_status,
         input.drift_json,
         input.citation,
@@ -661,36 +704,83 @@ fn write_fact_provenance(
 /// decision 1 honesty rule, epic #285 T9), which has no natural
 /// [`StructuredFactInput`] to build (it writes by already-resolved
 /// `period_id`/`definition_id`, never by `metric_key`).
+///
+/// Bug #324 class, adversarial-review blocker #4: `source_tier` and
+/// `financial_facts.extraction_method` are TWO writes of one fact about a
+/// slot's origin, and a caller writing one without the other is exactly what
+/// produced 7 tier/method-incoherent rows on the maintainer's DB (an issuer
+/// tier taking over a positional slot rewrote the provenance tier but left
+/// the stale `extraction_method='html_positional'` on the fact row) — and,
+/// separately, what let the MCP takeover path (`update_financial_fact_handler`)
+/// stamp `source_tier='agent'` onto a fact whose `extraction_method` stayed
+/// whatever the ORIGINAL writer used. This function closes both classes at
+/// once by construction: `extraction_method` is a REQUIRED parameter here
+/// (never an afterthought synced separately), the two are validated for
+/// coherence before either is written, and both are written together in the
+/// same call — so no caller of this shared primitive can produce an
+/// incoherent pair, or forget to sync the fact row at all. A release build
+/// enforces this exactly like a debug build: a `debug_assert!` silently
+/// vanishes in release and would not have caught the takeover path (it calls
+/// this primitive directly, with no `StructuredFactInput` to assert against),
+/// so the check is a real, always-on typed error instead.
+///
+/// `manual` and any extraction_method this map does not recognize are exempt
+/// (`SourceTier::matches_extraction_method` fails OPEN there) — this can
+/// never block a legitimate new writer, only the enumerated known-incoherent
+/// pairs.
 fn write_fact_provenance_fields(
     connection: &Connection,
     fact_id: &str,
     source_tier: &str,
+    extraction_method: &str,
     validation_status: &str,
     drift_json: Option<&str>,
     citation: Option<&str>,
 ) -> StorageResult<()> {
+    // ADR 0095: `pdf` (the html_positional tier's storage marker) is
+    // retired — migration 0135 deleted every stored `pdf`-tier fact, and
+    // `SourceTier::Pdf` stays in the enum only as a legacy READ value
+    // (historical snapshots / MCP surfaces may still name it). No NEW write
+    // may ever produce it again, regardless of which extraction_method
+    // accompanies it — a runtime refusal, not a debug_assert, so a release
+    // build enforces this exactly like a debug build.
+    if source_tier == "pdf" {
+        return Err(StorageError::RetiredSourceTier {
+            fact_id: fact_id.to_owned(),
+        });
+    }
+    if !crate::fundamentals::extraction::SourceTier::parse(source_tier)
+        .map(|tier| tier.matches_extraction_method(extraction_method))
+        .unwrap_or(true)
+    {
+        return Err(StorageError::IncoherentFactProvenance {
+            fact_id: fact_id.to_owned(),
+            source_tier: source_tier.to_owned(),
+            extraction_method: extraction_method.to_owned(),
+        });
+    }
+
+    // Sync the fact row's extraction_method FIRST — see the function doc:
+    // this is what makes an incoherent pair structurally impossible rather
+    // than merely asserted against — then delegate the actual upsert to the
+    // shared `set_fact_provenance` seam, so the codebase has exactly ONE
+    // provenance upsert (sol review, single-chokepoint completion); its
+    // stored-method coherence re-check sees the just-synced value.
     connection.execute(
-        "
-        INSERT INTO financial_fact_provenance
-            (fact_id, source_tier, validation_status, drift_json, citation)
-        VALUES (?1, ?2, ?3, ?4, ?5)
-        ON CONFLICT(fact_id) DO UPDATE SET
-            source_tier = excluded.source_tier,
-            validation_status = excluded.validation_status,
-            drift_json = excluded.drift_json,
-            citation = excluded.citation,
-            witness_value = NULL,
-            witness_page_url = NULL,
-            corroborated_at = NULL,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        ",
-        params![
+        "UPDATE financial_facts \
+         SET extraction_method = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE id = ?1",
+        params![fact_id, extraction_method],
+    )?;
+    super::fundamentals_provenance::set_fact_provenance(
+        connection,
+        super::NewFactProvenance {
             fact_id,
             source_tier,
             validation_status,
             drift_json,
-            citation
-        ],
+            citation,
+        },
     )?;
     Ok(())
 }
@@ -765,21 +855,41 @@ impl KpiExtractionStore {
     /// Stamps honest MCP-agent provenance on a fact written through the
     /// LEGACY single-fact `create_financial_fact`/`update_financial_fact` MCP
     /// act path (ADR 0093 decision 1 honesty rule, epic #285 T9):
-    /// `source_tier='agent'`, `validation_status='unreviewed'` (no validation
-    /// gate runs on this single-fact path — the honest label;
-    /// `record_financial_facts`/T7 is the validated batch path), no drift.
-    /// Reuses the exact upsert `record_structured_fact`/`record_aggregator_fact`
-    /// share, so a slot this stamps is a real rung on the trust ladder: a
-    /// later issuer-tier write still upgrades it in place — the "no
-    /// provenance = untouchable forever" hole an MCP write used to leave
-    /// behind is closed.
+    /// `source_tier='agent'`, `extraction_method='mcp_agent'`,
+    /// `validation_status='unreviewed'` (no validation gate runs on this
+    /// single-fact path — the honest label; `record_financial_facts`/T7 is
+    /// the validated batch path), no drift. `update_financial_fact_handler`
+    /// (the TAKEOVER path) calls this on a fact another writer may have
+    /// created, so `extraction_method` is corrected here too — never left at
+    /// whatever the original writer used, which would otherwise leave
+    /// `source_tier='agent'` paired with a stale, incoherent method (e.g.
+    /// `'api'`) on the fact row. Reuses the exact upsert
+    /// `record_structured_fact`/`record_aggregator_fact` share, so a slot
+    /// this stamps is a real rung on the trust ladder: a later issuer-tier
+    /// write still upgrades it in place — the "no provenance = untouchable
+    /// forever" hole an MCP write used to leave behind is closed.
     pub fn stamp_agent_fact_provenance(
         &self,
         fact_id: &str,
         citation: Option<&str>,
     ) -> StorageResult<()> {
         let connection = self.db.checkout()?;
-        write_fact_provenance_fields(&connection, fact_id, "agent", "unreviewed", None, citation)
+        // extraction_method='mcp_agent' is written in the SAME call as
+        // source_tier='agent' (adversarial-review blocker #4): this is the
+        // MCP takeover path (`update_financial_fact_handler` calls this on a
+        // fact another writer originally created), so the fact row's
+        // extraction_method must be corrected here too, not left at whatever
+        // the original writer used — `write_fact_provenance_fields` refuses
+        // any other pairing as incoherent.
+        write_fact_provenance_fields(
+            &connection,
+            fact_id,
+            "agent",
+            "mcp_agent",
+            "unreviewed",
+            None,
+            citation,
+        )
     }
 
     /// Idempotently ensures a fiscal period exists and returns its id (ADR 0093
@@ -913,13 +1023,14 @@ mod tests {
     /// `validation_status='none'`. Post-ADR-0084 the surviving write paths are
     /// the deterministic ones — the manual-confirm and autopilot auto-confirm
     /// proposal paths went with the KPI staging ledger — so this now pins the
-    /// structured tier and the tier-3b positional tier.
+    /// structured (ESEF) and ESPI cover-note tiers (ADR 0095: the tier-3b
+    /// positional tier this used to also pin is retired).
     #[test]
     fn no_production_path_writes_validation_status_none() {
         let connection = open_in_memory_database().expect("db");
         let (company_id, document_id) = seed_company_and_document(&connection);
 
-        // Structured-pipeline emission.
+        // Structured-pipeline (ESEF) emission.
         record_structured_fact(
             &connection,
             StructuredFactInput {
@@ -932,7 +1043,7 @@ mod tests {
                 value_numeric: "1000000",
                 currency: Some("PLN"),
                 confirmation_state: "confirmed",
-                source_tier: "pdf",
+                source_tier: "esef",
                 extraction_method: "api",
                 validation_status: "passed",
                 drift_json: None,
@@ -944,9 +1055,8 @@ mod tests {
         )
         .expect("structured emit");
 
-        // Tier-3b positional emission (ADR 0077 T-B2): the pdf2htmlEX render path
-        // persists under `source_tier='pdf'` with `extraction_method='html_positional'`
-        // and a real validation status — it must clear the G-1 no-`none` guard too.
+        // ESPI cover-note tier emission: its own identifiable
+        // extraction_method marker — must clear the G-1 no-`none` guard too.
         record_structured_fact(
             &connection,
             StructuredFactInput {
@@ -959,8 +1069,8 @@ mod tests {
                 value_numeric: "900000",
                 currency: Some("PLN"),
                 confirmation_state: "confirmed",
-                source_tier: "pdf",
-                extraction_method: "html_positional",
+                source_tier: "espi_cover_note",
+                extraction_method: "espi_cover_note",
                 validation_status: "passed",
                 drift_json: None,
                 citation: Some("Sales revenue"),
@@ -969,19 +1079,19 @@ mod tests {
                 data_quality: None,
             },
         )
-        .expect("positional emit");
+        .expect("cover-note emit");
 
-        // The positional path's provenance is identifiable and honest.
-        let positional_method: String = connection
+        // The cover-note path's provenance is identifiable and honest.
+        let cover_note_method: String = connection
             .query_row(
                 "SELECT f.extraction_method FROM financial_facts f \
                  JOIN financial_fact_provenance p ON p.fact_id = f.id \
-                 WHERE p.source_tier = 'pdf' AND f.extraction_method = 'html_positional'",
+                 WHERE p.source_tier = 'espi_cover_note' AND f.extraction_method = 'espi_cover_note'",
                 [],
                 |row| row.get(0),
             )
-            .expect("the positional fact carries an identifiable extraction_method");
-        assert_eq!(positional_method, "html_positional");
+            .expect("the cover-note fact carries an identifiable extraction_method");
+        assert_eq!(cover_note_method, "espi_cover_note");
 
         let none_count: i64 = connection
             .query_row(
@@ -1019,7 +1129,7 @@ mod tests {
                     value_numeric: "1000000",
                     currency: Some("PLN"),
                     confirmation_state: "confirmed",
-                    source_tier: "pdf",
+                    source_tier: "esef",
                     extraction_method: "api",
                     validation_status: "flagged",
                     drift_json: Some(drift),
@@ -1034,7 +1144,7 @@ mod tests {
 
         let (source_tier, validation_status, stored_drift, citation) =
             fact_provenance_row(&connection, &id).expect("a structured fact must carry provenance");
-        assert_eq!(source_tier, "pdf");
+        assert_eq!(source_tier, "esef");
         assert_eq!(validation_status, "flagged");
         assert_eq!(stored_drift.as_deref(), Some(drift));
         assert_eq!(citation.as_deref(), Some("Przychody netto ze sprzedazy"));
@@ -1067,7 +1177,7 @@ mod tests {
                     value_numeric: "1000000",
                     currency: Some("PLN"),
                     confirmation_state: "flagged",
-                    source_tier: "pdf",
+                    source_tier: "esef",
                     extraction_method: "api",
                     validation_status: "flagged",
                     drift_json: Some(
@@ -1244,6 +1354,312 @@ mod tests {
             .expect("fact row");
         assert_eq!(value, "1000123", "the issuer's number must win its slot");
         assert_eq!(tier, "esef");
+    }
+
+    /// Bug #324 (7 real rows on the maintainer's DB): an issuer tier
+    /// RE-OBSERVING (same value) a lower-tier slot must upgrade BOTH halves
+    /// of the provenance together — `financial_fact_provenance.source_tier`
+    /// to the issuer tier AND `financial_facts.extraction_method` to the
+    /// issuer's own marker (`api`), never leaving the stale lower tier's
+    /// method label stamped on a slot it no longer belongs to. Before the
+    /// fix, `record_structured_fact`'s Reobserved-upgrade arm called
+    /// `write_fact_provenance` (tier only) but never touched
+    /// `financial_facts.extraction_method` at all. Uses the ESPI cover-note
+    /// tier as the lower tier (ADR 0095: the original example, the
+    /// tier-3b positional tier, is retired) — it carries the same shape,
+    /// its own identifiable `extraction_method='espi_cover_note'` marker
+    /// distinct from the generic `api` the issuer tier writes.
+    #[test]
+    fn an_issuer_reobservation_upgrades_a_lower_tier_slots_extraction_method_too() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "espi_cover_note",
+                extraction_method: "espi_cover_note",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Sales revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("cover-note write");
+
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("issuer re-observation");
+
+        let (tier, method): (String, String) = connection
+            .query_row(
+                "SELECT p.source_tier, f.extraction_method \
+                 FROM financial_facts f JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact + provenance row");
+        assert_eq!(tier, "esef");
+        assert_eq!(
+            method, "api",
+            "extraction_method must move with the tier upgrade, never stay stale"
+        );
+    }
+
+    /// Adversarial-review should-fix #7: an issuer tier RE-OBSERVING (same
+    /// value) a lower-tier slot that was written with NO currency must fill
+    /// in the gap from the incoming ESEF write, which does carry one — never
+    /// leave the fact permanently currency-less just because the value
+    /// happened to already agree. Uses the aggregator tier as the lower tier
+    /// (ADR 0095: the original example, the positional tier, is retired).
+    #[test]
+    fn an_issuer_reobservation_fills_a_currency_gap_left_by_a_lower_tier() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: None,
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("aggregator write with no currency");
+
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("issuer re-observation");
+
+        let currency: Option<String> = connection
+            .query_row("SELECT currency FROM financial_facts", [], |row| row.get(0))
+            .expect("fact row");
+        assert_eq!(
+            currency.as_deref(),
+            Some("PLN"),
+            "a same-value tier upgrade must fill a currency gap the lower tier left, \
+             not leave the fact permanently currency-less"
+        );
+    }
+
+    /// Companion to the currency-gap test (sol review, ADR 0095 round): a
+    /// same NUMBER in a CONTRADICTING currency is not an agreement — EUR
+    /// 1 000 000 and PLN 1 000 000 are different figures sharing digits. The
+    /// old behavior classified this as `Reobserved` and relabeled the row as
+    /// the issuer's while silently keeping the aggregator's EUR. Now it takes
+    /// the Divergent path: the HIGHER tier corrects the slot under its own
+    /// currency and evidence.
+    #[test]
+    fn a_same_number_in_a_different_currency_is_a_divergence_the_higher_tier_corrects() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("EUR"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/page | Przychody"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("aggregator write with EUR");
+
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("issuer re-observation");
+
+        let (currency, tier): (Option<String>, String) = connection
+            .query_row(
+                "SELECT f.currency, p.source_tier
+                 FROM financial_facts f
+                 JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("fact row");
+        assert_eq!(
+            currency.as_deref(),
+            Some("PLN"),
+            "a same-number observation in a contradicting currency is a \
+             divergence: the higher tier corrects the slot under its OWN \
+             currency instead of relabeling the row around the aggregator's EUR"
+        );
+        assert_eq!(
+            tier, "esef",
+            "the correcting tier owns the slot's provenance"
+        );
+    }
+
+    /// Bug #324, the DIVERGENT-value half: an issuer tier OVERWRITING a
+    /// lower-tier slot with a different value must sync `extraction_method`
+    /// alongside the value + tier — the exact `StructuredFactCommit::Upgraded`
+    /// path whose `update_financial_fact` call never carried an
+    /// `extraction_method` field. Uses the ESPI cover-note tier as the lower
+    /// tier (ADR 0095: the original example, the positional tier, is
+    /// retired) — its own identifiable `extraction_method='espi_cover_note'`
+    /// marker distinct from the generic `api` the issuer tier writes.
+    #[test]
+    fn an_issuer_divergence_upgrades_a_lower_tier_slots_extraction_method_too() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "999000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "espi_cover_note",
+                extraction_method: "espi_cover_note",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Sales revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("cover-note write");
+
+        record_structured_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: &company_id,
+                fiscal_year: 2024,
+                period_type: "FY",
+                period_end: Some("2024-12-31"),
+                report_document_id: &document_id,
+                metric_key: "revenue",
+                value_numeric: "1000123",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "esef",
+                extraction_method: "api",
+                validation_status: "passed",
+                drift_json: None,
+                citation: Some("Revenue"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("issuer divergence");
+
+        let (value, tier, method): (String, String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier, f.extraction_method \
+                 FROM financial_facts f JOIN financial_fact_provenance p ON p.fact_id = f.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("fact + provenance row");
+        assert_eq!(value, "1000123");
+        assert_eq!(tier, "esef");
+        assert_eq!(
+            method, "api",
+            "extraction_method must move with the tier upgrade, never stay stale"
+        );
     }
 
     /// A fact with NO provenance row is a manual entry — untouchable by every
@@ -1761,6 +2177,90 @@ mod tests {
                 } if value == "garbage"
             ),
             "expected a typed invalid-data_quality error, got {error:?}"
+        );
+    }
+
+    /// Adversarial-review blocker #4: `record_structured_fact` (and every
+    /// other caller funnelled through `write_fact_provenance_fields`) must
+    /// REFUSE an explicit source_tier/extraction_method pair the tier's own
+    /// allowlist (`SourceTier::matches_extraction_method`) does not
+    /// recognize as coherent — a typed error at RUNTIME, not a
+    /// `debug_assert!` that silently vanishes in a release build (bug #324's
+    /// 7 real incoherent rows were never caught by anything before this).
+    #[test]
+    fn record_structured_fact_refuses_an_incoherent_tier_method_pair() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        // `esef` paired with `mcp_agent` is incoherent (the agent marker
+        // pairs only with tier `agent`). Bug #324's original shape —
+        // `esef` + `html_positional` — is now refused EARLIER by the ADR
+        // 0095 `RetiredExtractionMethod` guard on the create path, so this
+        // test exercises the coherence guard with a live incoherent pair.
+        let mut input = quality_input(&company_id, &document_id, "1", "final");
+        input.source_tier = "esef";
+        input.extraction_method = "mcp_agent";
+
+        let error = record_structured_fact(&connection, input)
+            .expect_err("an incoherent source_tier/extraction_method pair must be refused");
+        assert!(
+            matches!(
+                error,
+                StorageError::IncoherentFactProvenance {
+                    ref source_tier,
+                    ref extraction_method,
+                    ..
+                } if source_tier == "esef" && extraction_method == "mcp_agent"
+            ),
+            "expected a typed IncoherentFactProvenance error, got {error:?}"
+        );
+
+        // No provenance row is left behind by the rejected write (the
+        // production write path wraps this in a transaction the caller rolls
+        // back on error — `KpiExtractionStore::record_structured_fact`).
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM financial_fact_provenance",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .expect("count"),
+            0,
+            "a refused write must leave no provenance row"
+        );
+    }
+
+    /// ADR 0095 scope expansion: `source_tier='pdf'` is retired outright —
+    /// migration 0135 deleted every stored `pdf`-tier fact, and no NEW write
+    /// may ever produce it again, regardless of which extraction_method
+    /// accompanies it (a runtime refusal in the shared writer, not a
+    /// `debug_assert` that vanishes in a release build).
+    #[test]
+    fn record_structured_fact_refuses_a_retired_pdf_source_tier() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let mut input = quality_input(&company_id, &document_id, "1", "final");
+        input.source_tier = "pdf";
+        input.extraction_method = "api";
+
+        let error = record_structured_fact(&connection, input)
+            .expect_err("a write naming the retired pdf tier must be refused");
+        assert!(
+            matches!(error, StorageError::RetiredSourceTier { .. }),
+            "expected a typed RetiredSourceTier error, got {error:?}"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM financial_fact_provenance",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .expect("count"),
+            0,
+            "a refused write must leave no provenance row"
         );
     }
 

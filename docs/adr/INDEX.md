@@ -94,3 +94,4 @@
 - [0092](0092-kpi-relevance-lifecycle.md) — kpi_relevance lifecycle — layered expectations, no self-referential gate — Accepted (2026-07-31, layers 2–3 implementation PR
 - [0093](0093-agent-acquisition-tier-and-preliminary-lifecycle.md) — Agent acquisition tier and the preliminary-data lifecycle — Proposed (2026-07-31, epic #285 T1; owner decisions ratified at plan approval)
 - [0094](0094-committed-public-espi-report-samples.md) — Committed public ESPI/EBI report samples for the real-format CI test tier — Accepted (2026-08-04, epic #40 / #139; owner sign-off in chat
+- [0095](0095-retire-html-positional-tier.md) — Retire the html_positional extraction tier — Accepted (2026-08-05, owner decision in chat after the #182 measurement; scope w

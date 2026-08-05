@@ -43,6 +43,15 @@ fn record_as(
     validation_status: &str,
     source_tier: &str,
 ) {
+    // Bug #324 guard: extraction_method must cohere with source_tier at every
+    // provenance write (`SourceTier::matches_extraction_method`) — `agent`
+    // pairs only with `mcp_agent`, every other tier this file exercises with
+    // the generic tiered-pipeline marker `api`.
+    let extraction_method = if source_tier == "agent" {
+        "mcp_agent"
+    } else {
+        "api"
+    };
     state
         .kpi_extraction()
         .record_structured_fact(StructuredFactInput {
@@ -56,7 +65,7 @@ fn record_as(
             currency: Some("PLN"),
             confirmation_state: "confirmed",
             source_tier,
-            extraction_method: "api",
+            extraction_method,
             validation_status,
             drift_json: None,
             citation: Some("ifrs-full:Assets"),
@@ -65,6 +74,79 @@ fn record_as(
             data_quality: None,
         })
         .expect("record fact");
+}
+
+/// ADR 0095 (sol review, single-chokepoint completion): the store's raw
+/// `set_fact_provenance` API is the shared upsert seam every provenance
+/// writer ends at — it must refuse the retired `pdf` tier itself, not rely
+/// on the structured path's wrapper having checked first.
+#[test]
+fn the_raw_provenance_upsert_refuses_the_retired_pdf_tier() {
+    let (state, company_id) = state_with_company("PDF");
+    record(&state, &company_id, "revenue", "1000000", "passed");
+    let fact_id = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts")
+        .first()
+        .expect("the recorded fact")
+        .id
+        .clone();
+
+    let error = state
+        .fundamentals_provenance()
+        .set_fact_provenance(NewFactProvenance {
+            fact_id: &fact_id,
+            source_tier: "pdf",
+            validation_status: "passed",
+            drift_json: None,
+            citation: None,
+        })
+        .expect_err("the retired pdf tier must be unwritable through the raw seam too");
+    assert!(
+        matches!(error, StorageError::RetiredSourceTier { .. }),
+        "expected the typed retired-tier error, got {error:?}"
+    );
+}
+
+/// Companion (bug #324 class): the raw seam also validates tier/method
+/// coherence against the fact row's STORED `extraction_method`, so a caller
+/// bypassing the structured wrapper cannot mint an incoherent pair.
+#[test]
+fn the_raw_provenance_upsert_refuses_an_incoherent_tier_for_the_stored_method() {
+    let (state, company_id) = state_with_company("AGT");
+    record_as(&state, &company_id, "revenue", "1000000", "passed", "agent");
+    let fact_id = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts")
+        .first()
+        .expect("the recorded fact")
+        .id
+        .clone();
+
+    // The stored method is `mcp_agent`; stamping tier `esef` onto it would
+    // recreate the #324 incoherence through the side door.
+    let error = state
+        .fundamentals_provenance()
+        .set_fact_provenance(NewFactProvenance {
+            fact_id: &fact_id,
+            source_tier: "esef",
+            validation_status: "passed",
+            drift_json: None,
+            citation: None,
+        })
+        .expect_err("an incoherent tier/stored-method pair must be refused at the raw seam");
+    assert!(
+        matches!(error, StorageError::IncoherentFactProvenance { .. }),
+        "expected the typed incoherence error, got {error:?}"
+    );
 }
 
 /// The flagged-facts review surface must be answerable PER COMPANY and must
@@ -240,5 +322,63 @@ fn count_facts_by_tier_buckets_an_agent_fact_under_its_own_tier() {
     assert_eq!(
         breakdown.manual_or_unprovenanced, 0,
         "an agent fact is not manual/unprovenanced: {breakdown:?}"
+    );
+}
+
+/// Adversarial-review blocker #4: the MCP TAKEOVER path
+/// (`update_financial_fact_handler` → `stamp_agent_fact_provenance`) must
+/// never produce a fact whose `financial_fact_provenance.source_tier='agent'`
+/// disagrees with `financial_facts.extraction_method` — the exact bug #324
+/// shape, but reachable over MCP: before the fix, taking over a fact another
+/// pipeline created (extraction_method='api') left that stale method in
+/// place while stamping tier='agent', an incoherent pair no `debug_assert`
+/// (which only ran inside `write_fact_provenance`, never on this direct
+/// `write_fact_provenance_fields` path) could catch in a release build.
+#[test]
+fn mcp_takeover_of_an_issuer_fact_leaves_a_coherent_agent_pair() {
+    let (state, company_id) = state_with_company("CDR");
+    // An issuer-tier pipeline creates the fact first (extraction_method='api').
+    record(&state, &company_id, "total_assets", "45000000", "passed");
+    let fact_id = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts")
+        .remove(0)
+        .id;
+
+    // The MCP takeover: `update_financial_fact_handler` calls exactly this
+    // after updating the fact's value — simulated directly here since the
+    // handler itself is a thin Tauri-arguments wrapper around this call.
+    state
+        .kpi_extraction()
+        .stamp_agent_fact_provenance(&fact_id, Some("agent read"))
+        .expect("stamp agent provenance");
+
+    let tier = state
+        .fundamentals_provenance()
+        .get_fact_provenance(&fact_id)
+        .expect("read")
+        .expect("provenance")
+        .source_tier;
+    assert_eq!(tier, "agent");
+
+    let method = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts")
+        .remove(0)
+        .extraction_method;
+    assert_eq!(
+        method, "mcp_agent",
+        "the takeover must sync extraction_method to the tier it just stamped — \
+         never leave the fact at the ORIGINAL writer's stale method \
+         (source_tier='agent' + extraction_method='{method}' would be the \
+         bug #324 shape, reachable over MCP)"
     );
 }

@@ -10,24 +10,29 @@
 //! Tiers, highest trust first (ADR 0086 dec. 3, superseding ADR 0061 dec. 1/3;
 //! `Agent` added by ADR 0093 dec. 1):
 //! 1. [`esef`] — ESEF/iXBRL inline-XBRL facts (tagged IFRS concepts). Tier 1.
-//! 2. Structured xHTML / positional "wybrane dane" tables ([`html_positional`],
-//!    persisted under `source_tier='pdf'`, `extraction_method='html_positional'`).
-//! 3. [`espi_cover_note`] — the ESPI cover-note "WYBRANE DANE FINANSOWE" table,
+//! 2. [`espi_cover_note`] — the ESPI cover-note "WYBRANE DANE FINANSOWE" table,
 //!    parsed from the already-ingested komunikat body (zero-fetch, WDF).
-//! 4. `Agent` — an MCP-connected agent's read of an issuer document, recorded
+//! 3. `Agent` — an MCP-connected agent's read of an issuer document, recorded
 //!    via the port's write tools (`source_tier='agent'`, `extraction_method=
 //!    'mcp_agent'`). NOT an issuer tier (no deterministic pipeline produced
 //!    it), but ranked above the aggregator: an agent reads the issuer's own
 //!    document, the aggregator is third-party. ADR 0093 decision 1.
-//! 5. [`html`] — the BiznesRadar aggregator, now the PRIMARY source for core KPIs
+//! 4. [`html`] — the BiznesRadar aggregator, now the PRIMARY source for core KPIs
 //!    (`source_tier='html_aggregator'`, pulled daily by a separate job).
 //!
-//! The PDF fact-extraction arm is RETIRED (ADR 0086 dec. 1): no tier reads
-//! financial facts out of PDF statements anymore — its shared number/label
-//! helpers moved to [`text_numbers`], serving the html + positional tiers. The
-//! pipeline is deterministic end to end; a document no deterministic tier parses
-//! is flagged, never guessed. (The tier-5 "AI over extracted text" was already
-//! retired with the in-app AI layer, ADR 0084 decision 4.)
+//! The PDF fact-extraction arm is RETIRED (ADR 0086 dec. 1) and the
+//! structured-xHTML/positional "wybrane dane" tier is RETIRED (ADR 0095,
+//! epic #40/#182): no tier reads financial facts out of PDF statements or
+//! bare pdf2htmlEX renders anymore — the PDF arm's shared number/label
+//! helpers moved to [`text_numbers`], still serving the html tier.
+//! `SourceTier::Pdf` and `extraction_method='html_positional'` stay
+//! recognized as legacy READ values only (migration 0135 deleted every
+//! stored `pdf`-tier fact; the coherence guard,
+//! `storage::kpi_extraction::write_fact_provenance_fields`, refuses
+//! `source_tier='pdf'` on every NEW write). The pipeline is deterministic
+//! end to end; a document no deterministic tier parses is flagged, never
+//! guessed. (The tier-5 "AI over extracted text" was already retired with
+//! the in-app AI layer, ADR 0084 decision 4.)
 
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -40,7 +45,6 @@ pub mod esef;
 pub mod esef_package;
 pub mod espi_cover_note;
 pub mod html;
-pub mod html_positional;
 pub mod pipeline;
 pub mod text_numbers;
 
@@ -64,11 +68,14 @@ pub enum SourceTier {
     /// parser. ADR 0061 decision 1 tier 2a.
     EspiCoverNote,
     /// Structured/positional xHTML reader token. Historically the deterministic
-    /// PDF-fact parser (retired, ADR 0086 dec. 1); the token is KEPT because the
-    /// surviving positional tier ([`html_positional`]) persists under it with
-    /// `extraction_method='html_positional'`. Legacy `extraction_method='api'`
-    /// rows under this tier are the retired PDF arm's output, distinguishable by
-    /// method.
+    /// PDF-fact parser (retired, ADR 0086 dec. 1) and the tier-3b positional
+    /// pdf2htmlEX parser it later also covered under
+    /// `extraction_method='html_positional'` (ALSO retired, ADR 0095: its
+    /// first ground-truth measurement found currency-aware precision/recall
+    /// of 5.6%/2.0% against ESEF's 99.3%/72.4%; migration 0135 deleted every
+    /// stored `pdf`-tier fact). The token is KEPT only as a legacy READ
+    /// value — `storage::kpi_extraction::write_fact_provenance_fields`
+    /// refuses `source_tier='pdf'` on every NEW write.
     Pdf,
     /// An MCP-connected agent's write, provenanced `source_tier='agent'` /
     /// `extraction_method='mcp_agent'` (ADR 0093 decision 1, epic #285). Ranked
@@ -146,6 +153,49 @@ impl SourceTier {
     /// witnessing/precedence must use `outranks`, not this method.
     pub fn is_issuer(self) -> bool {
         !matches!(self, SourceTier::HtmlAggregator | SourceTier::Agent)
+    }
+
+    /// Whether `extraction_method` (the `financial_facts` sub-tier marker) is a
+    /// route THIS tier can legitimately come from (bug #324 guard). Tier drives
+    /// trust semantics (ADR 0061/0086); a provenance write where the two
+    /// disagree silently mislabels a fact's real origin — e.g. 7 real rows on
+    /// the maintainer's DB carried `source_tier='esef'` while
+    /// `extraction_method='html_positional'` named the positional/`pdf` route
+    /// that actually produced them, because a tier-precedence UPGRADE
+    /// (`record_structured_fact`) rewrote the provenance tier without syncing
+    /// the fact's `extraction_method` to match.
+    ///
+    /// `manual` is exempt (always coherent): a production hand-entered fact
+    /// never gets a provenance row at all (untouchable, ADR 0086 decision 3),
+    /// so the marker only ever appears in a provenance row as an internal
+    /// test-harness seeding trick, never live data. An unrecognized
+    /// `extraction_method` is never asserted incoherent either — this map
+    /// fails open on an unmapped literal rather than tripping every write in a
+    /// future caller until the map is updated; see
+    /// `every_known_extraction_method_pairs_with_exactly_its_own_tiers` for
+    /// the exhaustive enumerated allowlist this guards.
+    pub fn matches_extraction_method(self, extraction_method: &str) -> bool {
+        match extraction_method {
+            "html_positional" => self == SourceTier::Pdf,
+            "espi_cover_note" => self == SourceTier::EspiCoverNote,
+            "mcp_agent" => self == SourceTier::Agent,
+            // The deterministic tiered pipeline's generic write (esef /
+            // structured_xhtml / espi_cover_note / html_aggregator, all
+            // `jobs::structured_extraction`), PLUS the retired PDF fact arm's
+            // legacy rows — historically also stamped `pdf` + `api` before
+            // ADR 0086 dec. 1 retired that arm (still readable, never written
+            // fresh).
+            "api" => matches!(
+                self,
+                SourceTier::Esef
+                    | SourceTier::StructuredXhtml
+                    | SourceTier::EspiCoverNote
+                    | SourceTier::Pdf
+                    | SourceTier::HtmlAggregator
+            ),
+            "manual" => true,
+            _ => true,
+        }
     }
 }
 
@@ -339,5 +389,58 @@ mod tests {
         // fact it belongs to is then never outranked (fails safe).
         assert_eq!(SourceTier::parse("ai_text"), None);
         assert_eq!(SourceTier::parse("ai"), None);
+    }
+
+    /// Bug #324 guard: the exhaustive `extraction_method` → allowed
+    /// `source_tier` set every provenance write must respect. Every known
+    /// `financial_facts.extraction_method` literal in the codebase is listed
+    /// here (see `storage::kpi_extraction::write_fact_provenance`'s
+    /// `debug_assert`); a tier NOT in a method's allowed set must be rejected —
+    /// this is the case that reddens on the reported incoherent pair
+    /// (`esef` + `html_positional`).
+    #[test]
+    fn every_known_extraction_method_pairs_with_exactly_its_own_tiers() {
+        let all_tiers = [
+            SourceTier::Esef,
+            SourceTier::StructuredXhtml,
+            SourceTier::EspiCoverNote,
+            SourceTier::Pdf,
+            SourceTier::Agent,
+            SourceTier::HtmlAggregator,
+        ];
+        let cases: &[(&str, &[SourceTier])] = &[
+            ("html_positional", &[SourceTier::Pdf]),
+            ("espi_cover_note", &[SourceTier::EspiCoverNote]),
+            ("mcp_agent", &[SourceTier::Agent]),
+            (
+                "api",
+                &[
+                    SourceTier::Esef,
+                    SourceTier::StructuredXhtml,
+                    SourceTier::EspiCoverNote,
+                    SourceTier::Pdf,
+                    SourceTier::HtmlAggregator,
+                ],
+            ),
+        ];
+        for (method, allowed) in cases {
+            for tier in all_tiers {
+                assert_eq!(
+                    tier.matches_extraction_method(method),
+                    allowed.contains(&tier),
+                    "tier {tier:?} x method {method:?}"
+                );
+            }
+        }
+        // The reported bug #324 pair, pinned directly.
+        assert!(
+            !SourceTier::Esef.matches_extraction_method("html_positional"),
+            "esef + html_positional is the exact incoherent pair bug #324 reported"
+        );
+        // `manual` and an unmapped literal are unconstrained (fail open).
+        for tier in all_tiers {
+            assert!(tier.matches_extraction_method("manual"));
+            assert!(tier.matches_extraction_method("some_future_method"));
+        }
     }
 }

@@ -119,13 +119,15 @@ pub(crate) fn history_sweep_candidates(
 /// near the top of the file, so a multi-MB body is never read whole per candidate.
 const IXBRL_SNIFF_BYTES: u64 = 64 * 1024;
 
-/// Whether a fetched periodic document could be extracted by SOME tier: a PDF
-/// (tier-4-eligible), an ESEF report package (a ZIP, unpacked to its inner
-/// instance), an iXBRL instance (markup carrying `ix:` tags), **or** a non-iXBRL
-/// XHTML — a pdf2htmlEX render — now that the tier-3b positional parser reads
-/// those (ADR 0077 T-B2). Non-extractable: a document with no stored file, one
-/// whose bytes cannot be read (a genuinely dead/empty file), or one whose bytes
-/// were sniffed and recognised as **no** container the pipeline can act on.
+/// Whether a fetched periodic document could be extracted by SOME tier: an
+/// ESEF report package (a ZIP, unpacked to its inner instance), an iXBRL
+/// instance (markup carrying `ix:` tags), or a real PDF (deliberately
+/// constant-true — see the arm comment). Non-extractable: a document with no
+/// stored file, one whose bytes cannot be read (a genuinely dead/empty file),
+/// a non-iXBRL markup render (ADR 0095 retired the tier-3b positional parser
+/// that used to read those — enqueueing it would only produce the router's
+/// deliberate no-outcome empty result forever), or bytes sniffed as **no**
+/// container the pipeline can act on.
 ///
 /// Container truth decides the branch (epic #229 T2): the stored
 /// `detected_container` beats the filename, so a `.pdf` holding garbage bytes is
@@ -141,18 +143,25 @@ pub(crate) fn document_is_extractable(state: &AppState, document: &ReportDocumen
         return false;
     };
     match resolved_container(document) {
-        // A real PDF and an ESEF/eSprawozdanie report package are extractable by
-        // construction — the PDF tier and the package unpack respectively — with
-        // no byte read.
+        // An ESEF/eSprawozdanie report package is extractable by construction
+        // (the package unpack), with no byte read. A real PDF stays
+        // constant-true DELIBERATELY even though machine fact-reading of PDFs
+        // is retired (ADR 0086 dec. 1): its run's period grouping survives,
+        // and the extraction-storm containment lives elsewhere — the
+        // `pdf_document` gap reason never re-arms and the pipeline version
+        // gate bounds every other legacy reason (see `jobs::autopilot::
+        // terminal_run_should_rearm`, owner dogfooding 2026-07-21).
         Container::Pdf | Container::Zip => true,
-        // Markup is extractable via ESEF (iXBRL) OR the positional tier
-        // (non-iXBRL). Either way, a *readable, non-empty* file is extractable;
-        // only an unreadable or zero-byte file (a genuinely dead document) is not
-        // — the deliberate T-B2 contract change from T-A2, where a non-iXBRL XHTML
-        // was itself treated as not-extractable (see the sibling-fallback tests).
+        // Markup is extractable ONLY when it is inline-XBRL — judged by the
+        // ESEF tier's own instance sniff (`is_inline_xbrl`, the same one the
+        // router uses, so routing and extractability can never disagree).
+        // ADR 0095 retired the tier-3b positional parser that used to read
+        // non-iXBRL renders: a pdf2htmlEX visual render is no longer
+        // machine-extractable, and the sweep must not keep enqueueing runs
+        // the router answers with a deliberate no-outcome empty result.
         Container::Xml | Container::Html => {
             read_file_prefix(&state.data_dir().join(local_path), IXBRL_SNIFF_BYTES)
-                .map(|prefix| !prefix.is_empty())
+                .map(|prefix| crate::fundamentals::extraction::esef::is_inline_xbrl(&prefix))
                 .unwrap_or(false)
         }
         // We read these bytes and recognised no container: no tier can extract
@@ -549,10 +558,26 @@ mod tests {
             !document_is_extractable(&state, &seed("junk.pdf", b"\x00\x01\x02junk", "unknown")),
             "bytes we sniffed and did not recognise are NOT extractable"
         );
-        // Markup under a `.pdf` name: readable by the ESEF/positional tiers.
+        // Non-iXBRL markup under a `.pdf` name: the positional parser that
+        // used to read this shape is retired (ADR 0095) — NOT extractable,
+        // so the sweep stops enqueueing runs the router answers with a
+        // deliberate no-outcome empty result.
+        assert!(
+            !document_is_extractable(
+                &state,
+                &seed("markup.pdf", b"<?xml version=\"1.0\"?><html/>", "xml")
+            ),
+            "a non-iXBRL markup render is not machine-extractable post-ADR 0095"
+        );
+        // Markup that IS inline-XBRL under a `.pdf` name: the ESEF tier reads
+        // it as its own instance.
         assert!(document_is_extractable(
             &state,
-            &seed("markup.pdf", b"<?xml version=\"1.0\"?><html/>", "xml")
+            &seed(
+                "instance.pdf",
+                b"<?xml version=\"1.0\"?><html xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\"><ix:nonFraction/></html>",
+                "xml"
+            )
         ));
         // A ZIP package under a `.pdf` name: the structured path unpacks it.
         assert!(document_is_extractable(
@@ -785,18 +810,19 @@ mod tests {
       <ix:nonFraction name="ifrs-full:Equity" contextRef="c" unitRef="pln" scale="3">25 000</ix:nonFraction>
     </html>"#;
 
-    /// (a) **T-B2 contract change (deliberate, was T-A2).** A period whose coverage
-    /// canonical is a non-iXBRL XHTML (a pdf2htmlEX render) is now KEPT — the tier-3b
-    /// positional parser reads it, so it is extractable and the sweep no longer
-    /// falls back to a PDF sibling. Under T-A2 this same fixture attacked the PDF;
-    /// the positional tier reverses that.
+    /// (a) **ADR 0095 contract change (deliberate, reverses T-B2 back toward
+    /// T-A2).** A period whose coverage canonical is a non-iXBRL XHTML (a
+    /// pdf2htmlEX render) is NOT extractable anymore — the tier-3b positional
+    /// parser that read it is retired — so the sweep falls back to the PDF
+    /// sibling, exactly like the pre-T-B2 behavior this fixture originally
+    /// pinned.
     #[test]
-    fn non_ixbrl_xhtml_canonical_is_kept_now_extractable_via_positional_tier() {
+    fn non_ixbrl_xhtml_canonical_falls_back_to_pdf_sibling_post_retirement() {
         let s = state_with_dir();
         let c = company(&s);
         // ssf beats jsf → the ssf XHTML is the coverage canonical; a pdf2htmlEX
-        // render with no `ix:` tags — now extractable via the positional tier.
-        let xhtml = fetched_file_report(
+        // render with no `ix:` tags — no tier reads it since ADR 0095.
+        fetched_file_report(
             &s,
             &c,
             "Skonsolidowane sprawozdanie finansowe Q3 2024 SSF",
@@ -805,7 +831,7 @@ mod tests {
             NON_IXBRL_XHTML,
             "application/xhtml+xml",
         );
-        fetched_file_report(
+        let pdf = fetched_file_report(
             &s,
             &c,
             "Jednostkowe sprawozdanie finansowe Q3 2024 JSF",
@@ -818,8 +844,9 @@ mod tests {
         let candidates = history_sweep_candidates(&s, &c).expect("candidates");
         assert_eq!(candidates.len(), 1, "one Q3 2024 period");
         assert_eq!(
-            candidates[0].document_id, xhtml,
-            "T-B2: the non-iXBRL XHTML canonical is now extractable (positional tier), so it is kept over the PDF sibling"
+            candidates[0].document_id, pdf,
+            "ADR 0095: the non-iXBRL XHTML canonical is no longer extractable, \
+             so the sweep falls back to the PDF sibling"
         );
         assert_eq!(candidates[0].period_type, "Q3");
     }
