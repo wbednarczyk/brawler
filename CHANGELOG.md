@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.9 - 2026-08-05
+
+
+### Features
+
+- **fundamentals**: retire PDF fact extraction (ADR 0095) + first measured ground-truth baseline for the structured tiers (#182) (#333)
+
 ## v0.63.7 - 2026-08-04
 
 
