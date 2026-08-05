@@ -299,12 +299,12 @@ fn pull_records_witness_disagreement_against_an_issuer_slot_without_overwriting(
 }
 
 #[test]
-fn pull_records_witness_disagreement_against_a_positional_pdf_slot() {
-    // FINDING 1: the positional `pdf` tier is the issuer's OWN filing read
-    // deterministically (ADR 0086 dec. 4, amended 2026-07-22) — it counts as an
-    // issuer tier, so a diverging aggregator value must be flagged, not silently
-    // dropped as it was when `outranks_aggregator_tier` string-matched only
-    // esef/xhtml/wdf.
+fn pull_records_witness_disagreement_against_a_cover_note_slot() {
+    // FINDING 1 (originally pinned against the now-retired positional `pdf`
+    // tier, ADR 0095): the ESPI cover-note tier is ALSO the issuer's own
+    // filing read deterministically (ADR 0086 dec. 4) — it counts as an
+    // issuer tier, so a diverging aggregator value must be flagged, not
+    // silently dropped, the same way the ESEF case above already proves.
     let (state, company_id) = state_with_company();
     seed_fact(
         &state,
@@ -312,8 +312,8 @@ fn pull_records_witness_disagreement_against_a_positional_pdf_slot() {
         "current_assets",
         2008,
         999,
-        "pdf",
-        "html_positional",
+        "espi_cover_note",
+        "espi_cover_note",
     );
     let (fetcher, _) = MapFetcher::new(&[(AggregatorPageKind::Balance, BILANS)]);
     let state = state.with_fundamentals_witness_fetcher(fetcher);
@@ -323,11 +323,11 @@ fn pull_records_witness_disagreement_against_a_positional_pdf_slot() {
     assert_eq!(
         stored(&state, &company_id, 2008, "current_assets"),
         Some(Decimal::from(999)),
-        "a positional pdf slot is the issuer's filing — never overwritten"
+        "a cover-note slot is the issuer's filing — never overwritten"
     );
     assert!(
         summary.witness_disagreements >= 1,
-        "a divergent positional slot records a disagreement: {summary:?}"
+        "a divergent cover-note slot records a disagreement: {summary:?}"
     );
     let flagged = state
         .fundamentals_provenance()
@@ -337,8 +337,8 @@ fn pull_records_witness_disagreement_against_a_positional_pdf_slot() {
         flagged
             .iter()
             .any(|outcome| outcome.reason_code == "witness_disagreement"
-                && outcome.tier.as_deref() == Some("pdf")),
-        "an informational witness_disagreement for the positional slot: {flagged:?}"
+                && outcome.tier.as_deref() == Some("espi_cover_note")),
+        "an informational witness_disagreement for the cover-note slot: {flagged:?}"
     );
 }
 

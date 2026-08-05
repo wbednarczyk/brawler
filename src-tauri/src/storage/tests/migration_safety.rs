@@ -1521,7 +1521,12 @@ fn migration_0099_repairs_only_the_misscaled_cdr_q3_2023_facts() {
         )
         .expect("seed facts");
 
-    apply_migrations(&mut connection).expect("apply migration 0099");
+    // Isolated to exactly migration 0099: `apply_migrations` would now also
+    // run 0135 (ADR 0095 — html_positional facts are retired outright),
+    // which would delete every fact this test seeds before it ever gets to
+    // read them back. This test's own subject is 0099's scale repair, not
+    // the later retirement.
+    apply_migrations_up_to(&mut connection, 99).expect("apply migration 0099");
 
     fn val(conn: &rusqlite::Connection, id: &str) -> String {
         conn.query_row(
@@ -1554,8 +1559,9 @@ fn migration_0099_repairs_only_the_misscaled_cdr_q3_2023_facts() {
     );
 
     // Idempotent: a re-run corrects nothing further (the mis-scaled source values
-    // no longer match).
-    apply_migrations(&mut connection).expect("re-run must be safe");
+    // no longer match). Capped at 99, same as above — `apply_migrations` would
+    // now also run 0135 and delete these html_positional facts outright.
+    apply_migrations_up_to(&mut connection, 99).expect("re-run must be safe");
     assert_eq!(val(&connection, "f_ca"), "1137807000");
     assert_eq!(val(&connection, "f_cl"), "164335000");
 }
@@ -2734,7 +2740,11 @@ fn migration_0107_repairs_misassociation_and_note_ref_facts_and_spares_the_rest(
     apply_migrations_up_to(&mut connection, 106).expect("apply schema through 0106");
     seed_pre_0107_snapshot(&connection);
 
-    apply_migrations(&mut connection).expect("apply migration 0107");
+    // Capped at 107: `apply_migrations` would now also run 0135 (ADR 0095 —
+    // every pdf-tier fact is retired outright), which would delete this
+    // test's pdf-tier fixtures before it ever gets to assert 0107's own
+    // repair.
+    apply_migrations_up_to(&mut connection, 107).expect("apply migration 0107");
 
     let doc_ids = |conn: &rusqlite::Connection| -> Vec<String> {
         conn.prepare("SELECT id FROM report_documents ORDER BY id")
@@ -2857,13 +2867,20 @@ fn migration_0107_repairs_misassociation_and_note_ref_facts_and_spares_the_rest(
         "the claim's verification link to a deleted fact is cleared"
     );
 
-    // Idempotent + self-healing: re-running changes nothing further.
+    // Idempotent + self-healing: re-running changes nothing further. Capped
+    // at 107, matching the apply above — the broad "does the full migration
+    // set apply idempotently from any historical snapshot" concern is
+    // already covered by `rerunning_migrations_is_idempotent_and_preserves_data`
+    // / `older_database_upgrades_to_latest_without_losing_data`; jumping this
+    // narrowly-scoped 0107 test to the latest version would now also run
+    // 0135 (ADR 0095), which legitimately deletes this test's pdf-tier
+    // fixtures — a real behavior change, not a 0107 regression.
     let docs_after = docs.len();
     let facts_after = facts.len();
-    apply_migrations(&mut connection).expect("re-running migrations must be safe");
+    apply_migrations_up_to(&mut connection, 107).expect("re-running migrations must be safe");
     assert_eq!(
         count_applied_migrations(&connection).expect("count applied"),
-        expected_migration_count(),
+        107,
         "re-run must not add or drop migration rows",
     );
     assert_eq!(
@@ -3066,7 +3083,11 @@ fn migration_0108_deletes_esef_anchored_misscaled_pdf_facts_and_spares_the_rest(
     apply_migrations_up_to(&mut connection, 107).expect("apply schema through 0107");
     seed_pre_0108_snapshot(&connection);
 
-    apply_migrations(&mut connection).expect("apply migration 0108");
+    // Capped at 108: `apply_migrations` would now also run 0135 (ADR 0095 —
+    // every pdf-tier fact is retired outright), which would delete this
+    // test's pdf-tier fixtures before it ever gets to assert 0108's own
+    // repair.
+    apply_migrations_up_to(&mut connection, 108).expect("apply migration 0108");
 
     let fact_ids = |conn: &rusqlite::Connection| -> Vec<String> {
         conn.prepare("SELECT id FROM financial_facts ORDER BY id")
@@ -3151,12 +3172,16 @@ fn migration_0108_deletes_esef_anchored_misscaled_pdf_facts_and_spares_the_rest(
         "the deleted id is pruned from the run's produced list; the survivor stays"
     );
 
-    // Idempotent + self-healing: re-running changes nothing further.
+    // Idempotent + self-healing: re-running changes nothing further. Capped
+    // at 108, matching the apply above — see the identical note on the 0107
+    // test: jumping this narrowly-scoped test to the latest version would
+    // now also run 0135 (ADR 0095), which legitimately deletes this test's
+    // pdf-tier fixtures.
     let facts_after = facts.len();
-    apply_migrations(&mut connection).expect("re-running migrations must be safe");
+    apply_migrations_up_to(&mut connection, 108).expect("re-running migrations must be safe");
     assert_eq!(
         count_applied_migrations(&connection).expect("count applied"),
-        expected_migration_count(),
+        108,
         "re-run must not add or drop migration rows",
     );
     assert_eq!(
@@ -4310,6 +4335,77 @@ fn migration_0128_repairs_only_the_peo_wdf_bank_misclassified_facts() {
     assert!(fact_exists(&connection, "f_ok_liab"));
 }
 
+/// Migration `0134` (bug #324): 7 real rows on the maintainer's DB carried
+/// `financial_fact_provenance.source_tier='esef'` while
+/// `financial_facts.extraction_method='html_positional'` named the
+/// positional/`pdf` route that actually produced them — a tier-precedence
+/// upgrade rewrote the provenance tier without syncing `extraction_method`
+/// (fixed at the write path in the same change). This forward repair corrects
+/// ONLY that exact incoherent pair.
+#[test]
+fn migration_0134_repairs_only_esef_tier_html_positional_method_mismatch() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 133).expect("apply schema through 0133");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('dnp', 'GPW', 'DNP', 'GPW:DNP', 'DINO POLSKA S.A.');
+             INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+                VALUES ('per_dnp_2025_fy', 'dnp', 2025, 'FY', '2025-12-31');
+             INSERT INTO kpi_definitions (id, scope, metric_key, label, value_kind, computation)
+                VALUES ('kpidef_test_revenue', 'canonical', 'test_revenue', 'Revenue', 'monetary', 'reported'),
+                       ('kpidef_test_assets', 'canonical', 'test_assets', 'Total assets', 'monetary', 'reported');
+             INSERT INTO financial_facts
+                (id, company_id, period_id, definition_id, value_numeric, extraction_method, statement_basis)
+                VALUES
+                    -- The mismatched fact: tier='esef' but method='html_positional'.
+                    ('f_mismatched', 'dnp', 'per_dnp_2025_fy', 'kpidef_test_revenue', '1000000',
+                     'html_positional', 'consolidated'),
+                    -- Control: a coherent positional fact (tier already 'pdf') must
+                    -- never be touched.
+                    ('f_coherent_positional', 'dnp', 'per_dnp_2025_fy', 'kpidef_test_assets', '2000000',
+                     'html_positional', 'consolidated');
+             INSERT INTO financial_fact_provenance (fact_id, source_tier, validation_status, citation)
+                VALUES ('f_mismatched', 'esef', 'passed', 'Revenue'),
+                       ('f_coherent_positional', 'pdf', 'passed', 'Total assets');",
+        )
+        .expect("seed mismatched + control rows");
+
+    // Isolated to exactly migration 0134: `apply_migrations` would now also
+    // run 0135 (ADR 0095 — html_positional facts are retired outright),
+    // which would delete both rows this test seeds before it ever gets to
+    // read their corrected tier back. This test's own subject is 0134's
+    // tier/method coherence re-stamp, not the later retirement.
+    apply_migrations_up_to(&mut connection, 134).expect("apply migration 0134");
+
+    let tier_of = |conn: &rusqlite::Connection, fact_id: &str| -> String {
+        conn.query_row(
+            "SELECT source_tier FROM financial_fact_provenance WHERE fact_id = ?1",
+            [fact_id],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("provenance row for {fact_id} should exist"))
+    };
+
+    assert_eq!(
+        tier_of(&connection, "f_mismatched"),
+        "pdf",
+        "the incoherent esef/html_positional pair is corrected to pdf"
+    );
+    assert_eq!(
+        tier_of(&connection, "f_coherent_positional"),
+        "pdf",
+        "an already-coherent positional row is never touched"
+    );
+
+    // Idempotent: nothing left matches the incoherent-pair predicate. Capped
+    // at 134, same as above — `apply_migrations` would now also run 0135 and
+    // delete these html_positional facts (and their provenance) outright.
+    apply_migrations_up_to(&mut connection, 134).expect("re-run must be safe");
+    assert_eq!(tier_of(&connection, "f_mismatched"), "pdf");
+}
+
 /// Migration `0129` (ADR 0093 decision 4, epic #285 T9): `kpi_definitions`
 /// gains an `origin` column (`seed | user | agent`), backfilled by id shape —
 /// a bare id (`kpidef_<key>`, no `__<marker>_` discriminator) is
@@ -4576,4 +4672,245 @@ fn migration_0132_prunes_the_dead_banking_core_expectations_only() {
     apply_migrations(&mut connection).expect("re-run must be safe");
     assert_eq!(status(&connection, "kpirel_user_peo_revenue"), "active");
     assert_eq!(status(&connection, "kpirel_core_pko_net_profit"), "active");
+}
+
+/// Migration `0135` (ADR 0095 retirement, superseding the never-shipped
+/// `013[5-7]` draft repair migrations from the earlier #182 fix round — all
+/// three uncommitted, never run on any installation, legitimately rewritten
+/// in place): the `html_positional` extraction tier is retired outright.
+/// Every `html_positional` fact + its provenance is deleted (including a
+/// pre-existing ORPHAN `pdf`-tier provenance row whose fact was deleted
+/// before the migration ran — provenance has no FK); a `financial_periods`
+/// row is cleaned up ONLY when it becomes fully orphaned by that deletion
+/// (every fact it held was positional, and NOTHING else references it — no
+/// `report_documents` row, no `management_claims.source_period_id` link, no
+/// `framework_evaluations.period_id` link; both period FKs are ON DELETE
+/// SET NULL and would be silently severed, not rejected) — never a
+/// pre-existing or otherwise-still-referenced period.
+#[test]
+fn migration_0135_retires_every_html_positional_fact_and_only_its_orphaned_periods() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 134).expect("apply schema through 0134");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('c1', 'GPW', 'ABC', 'GPW:ABC', 'ABC S.A.');
+
+             INSERT INTO report_documents (id, company_id, source_type, url, fetch_status, title)
+                VALUES
+                    ('doc_pos_only', 'c1', 'espi_attachment', 'https://x/pos-only.xhtml', 'fetched', 'Positional only'),
+                    ('doc_pos_sibling', 'c1', 'espi_attachment', 'https://x/pos-sibling.xhtml', 'fetched', 'Positional with ESEF sibling'),
+                    ('doc_pos_doc_ref', 'c1', 'espi_attachment', 'https://x/pos-doc-ref.xhtml', 'fetched', 'Positional, doc still references period'),
+                    ('doc_non_positional', 'c1', 'espi_attachment', 'https://x/non-positional.xhtml', 'fetched', 'Non-positional'),
+                    ('doc_legacy_pdf', 'c1', 'espi_attachment', 'https://x/legacy-pdf.pdf', 'fetched', 'Legacy retired PDF-fact arm');
+
+             INSERT INTO financial_periods
+                (id, company_id, fiscal_year, period_type, period_end_date, report_evidence_ref)
+                VALUES
+                    -- Held ONLY by a positional fact, no document reference —
+                    -- must be deleted once its one fact is gone.
+                    ('per_pos_only', 'c1', 2023, 'FY', '2023-12-31', 'doc_pos_only'),
+                    -- Held by a positional fact AND a non-positional sibling
+                    -- (same slot family, different metric) — must SURVIVE
+                    -- (the sibling fact keeps it alive).
+                    ('per_pos_sibling', 'c1', 2024, 'FY', '2024-12-31', 'doc_pos_sibling'),
+                    -- Held ONLY by a positional fact, but a report_documents
+                    -- row still points at it — must SURVIVE (conservative
+                    -- guard: a period some other document still references
+                    -- is never guessed empty).
+                    ('per_pos_doc_ref', 'c1', 2022, 'FY', '2022-12-31', 'doc_pos_doc_ref'),
+                    -- Untouched control period.
+                    ('per_non_positional', 'c1', 2025, 'FY', '2025-12-31', 'doc_non_positional'),
+                    -- Held ONLY by a legacy retired-PDF-arm fact (tier='pdf',
+                    -- method='api' — the ADR 0086 dec. 1 arm, distinct from
+                    -- html_positional) — must ALSO be cleaned up: the
+                    -- expanded predicate keys on source_tier='pdf' too, not
+                    -- just the extraction_method marker.
+                    ('per_legacy_pdf', 'c1', 2021, 'FY', '2021-12-31', 'doc_legacy_pdf'),
+                    -- Held ONLY by a positional fact, but a management claim
+                    -- links to it (sol blocker: the FK is ON DELETE SET NULL,
+                    -- so a delete would silently sever the link) — must
+                    -- SURVIVE.
+                    ('per_pos_claim', 'c1', 2020, 'FY', '2020-12-31', NULL),
+                    -- Held ONLY by a positional fact, but a framework
+                    -- evaluation links to it — must SURVIVE for the same
+                    -- reason.
+                    ('per_pos_eval', 'c1', 2019, 'FY', '2019-12-31', NULL);
+
+             UPDATE report_documents SET period_id = 'per_pos_doc_ref' WHERE id = 'doc_pos_doc_ref';
+
+             INSERT INTO kpi_definitions (id, scope, metric_key, label, value_kind, computation)
+                VALUES ('kpidef_test_revenue', 'canonical', 'test_revenue', 'Revenue', 'monetary', 'reported'),
+                       ('kpidef_test_assets', 'canonical', 'test_assets', 'Total assets', 'monetary', 'reported');
+
+             INSERT INTO financial_facts
+                (id, company_id, period_id, definition_id, value_numeric, extraction_method,
+                 statement_basis, source_document_ref)
+                VALUES
+                    ('f_pos_only', 'c1', 'per_pos_only', 'kpidef_test_revenue',
+                     '1000000', 'html_positional', 'consolidated', 'doc_pos_only'),
+                    ('f_pos_sibling', 'c1', 'per_pos_sibling', 'kpidef_test_revenue',
+                     '2000000', 'html_positional', 'consolidated', 'doc_pos_sibling'),
+                    ('f_esef_sibling', 'c1', 'per_pos_sibling', 'kpidef_test_assets',
+                     '9000000', 'api', 'consolidated', 'doc_pos_sibling'),
+                    ('f_pos_doc_ref', 'c1', 'per_pos_doc_ref', 'kpidef_test_revenue',
+                     '3000000', 'html_positional', 'consolidated', 'doc_pos_doc_ref'),
+                    ('f_non_positional', 'c1', 'per_non_positional', 'kpidef_test_revenue',
+                     '4000000', 'api', 'consolidated', 'doc_non_positional'),
+                    -- Legacy retired-PDF-arm fact: extraction_method='api'
+                    -- (NOT 'html_positional'), but its provenance tier is
+                    -- 'pdf' — must be caught by the expanded predicate.
+                    ('f_legacy_pdf', 'c1', 'per_legacy_pdf', 'kpidef_test_revenue',
+                     '5000000', 'api', 'consolidated', 'doc_legacy_pdf'),
+                    ('f_pos_claim', 'c1', 'per_pos_claim', 'kpidef_test_revenue',
+                     '6000000', 'html_positional', 'consolidated', NULL),
+                    ('f_pos_eval', 'c1', 'per_pos_eval', 'kpidef_test_revenue',
+                     '7000000', 'html_positional', 'consolidated', NULL);
+
+             INSERT INTO financial_fact_provenance (fact_id, source_tier, validation_status, citation)
+                VALUES ('f_pos_only', 'pdf', 'passed', 'Revenue'),
+                       ('f_pos_sibling', 'pdf', 'passed', 'Revenue'),
+                       ('f_esef_sibling', 'esef', 'passed', 'Total assets'),
+                       ('f_pos_doc_ref', 'pdf', 'passed', 'Revenue'),
+                       ('f_non_positional', 'esef', 'passed', 'Revenue'),
+                       ('f_legacy_pdf', 'pdf', 'passed', 'Revenue'),
+                       ('f_pos_claim', 'pdf', 'passed', 'Revenue'),
+                       ('f_pos_eval', 'pdf', 'passed', 'Revenue'),
+                       -- Pre-existing ORPHAN pdf-tier provenance row: its fact
+                       -- was deleted long ago (provenance has no FK) — the
+                       -- retirement must sweep it too, or the tier never
+                       -- reaches zero rows (sol major).
+                       ('f_long_gone', 'pdf', 'passed', 'Revenue');
+
+             INSERT INTO management_claims (id, company_id, statement, source_period_id)
+                VALUES ('claim_1', 'c1', 'Zarzad obiecal wzrost przychodow', 'per_pos_claim');
+
+             INSERT INTO quality_frameworks (id, name, version)
+                VALUES ('qf_1', 'Test framework', 1);
+             INSERT INTO framework_evaluations
+                (id, framework_id, framework_version, company_id, period_id, engine_version)
+                VALUES ('fe_1', 'qf_1', 1, 'c1', 'per_pos_eval', 'v1');",
+        )
+        .expect("seed the pre-retirement state");
+
+    apply_migrations(&mut connection).expect("apply migration 0135");
+
+    let fact_exists = |conn: &rusqlite::Connection, id: &str| -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM financial_facts WHERE id = ?1",
+            [id],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("count")
+            > 0
+    };
+    let period_exists = |conn: &rusqlite::Connection, id: &str| -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM financial_periods WHERE id = ?1",
+            [id],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("count")
+            > 0
+    };
+
+    // Every html_positional fact is gone.
+    assert!(!fact_exists(&connection, "f_pos_only"));
+    assert!(!fact_exists(&connection, "f_pos_sibling"));
+    assert!(!fact_exists(&connection, "f_pos_doc_ref"));
+    // The legacy retired-PDF-arm fact (tier='pdf', method='api') is gone too
+    // — the expanded predicate catches it by source_tier, not just method.
+    assert!(!fact_exists(&connection, "f_legacy_pdf"));
+    // Every non-positional fact survives, value untouched.
+    assert!(fact_exists(&connection, "f_esef_sibling"));
+    assert!(fact_exists(&connection, "f_non_positional"));
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT value_numeric FROM financial_facts WHERE id = 'f_non_positional'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .expect("value"),
+        "4000000"
+    );
+
+    // No orphaned provenance rows anywhere (blocker #2 class, applied here too).
+    let orphaned_provenance_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM financial_fact_provenance p \
+             WHERE p.fact_id NOT IN (SELECT id FROM financial_facts)",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count orphaned provenance rows");
+    assert_eq!(
+        orphaned_provenance_count, 0,
+        "retiring the tier must never leave a dangling provenance row"
+    );
+
+    // Orphaned-period cleanup: only the fully-orphaned period is gone.
+    assert!(
+        !period_exists(&connection, "per_pos_only"),
+        "a period held ONLY by a deleted positional fact, with no document \
+         reference, must be cleaned up"
+    );
+    assert!(
+        period_exists(&connection, "per_pos_sibling"),
+        "a period still holding a non-positional sibling fact must survive"
+    );
+    assert!(
+        period_exists(&connection, "per_pos_doc_ref"),
+        "a period a report_documents row still references must survive \
+         even though its only fact was positional (conservative guard)"
+    );
+    assert!(period_exists(&connection, "per_non_positional"));
+    assert!(
+        !period_exists(&connection, "per_legacy_pdf"),
+        "a period held only by the legacy pdf-tier fact must also be cleaned up"
+    );
+    assert!(
+        period_exists(&connection, "per_pos_claim"),
+        "a period a management claim links to must survive — its FK is \
+         ON DELETE SET NULL and the delete would silently sever the link"
+    );
+    assert!(
+        period_exists(&connection, "per_pos_eval"),
+        "a period a framework evaluation links to must survive for the same reason"
+    );
+    let claim_link: Option<String> = connection
+        .query_row(
+            "SELECT source_period_id FROM management_claims WHERE id = 'claim_1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("claim row");
+    assert_eq!(
+        claim_link.as_deref(),
+        Some("per_pos_claim"),
+        "the claim's period link must be intact after the retirement"
+    );
+    // The pre-existing orphan pdf-tier provenance row is swept too: the
+    // retired tier ends at ZERO provenance rows, not just zero facts.
+    let pdf_provenance_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM financial_fact_provenance WHERE source_tier = 'pdf'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count pdf provenance rows");
+    assert_eq!(
+        pdf_provenance_count, 0,
+        "no source_tier='pdf' provenance row may survive — including orphans \
+         whose fact was deleted before the migration ran"
+    );
+
+    // Idempotent: nothing left matches the retirement predicate.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert!(!fact_exists(&connection, "f_pos_only"));
+    assert!(!fact_exists(&connection, "f_legacy_pdf"));
+    assert!(fact_exists(&connection, "f_non_positional"));
+    assert!(period_exists(&connection, "per_pos_sibling"));
+    assert!(period_exists(&connection, "per_pos_doc_ref"));
 }

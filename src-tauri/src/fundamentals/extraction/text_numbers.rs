@@ -1,15 +1,16 @@
 //! Shared numeric + label helpers for the deterministic extraction tiers.
 //!
 //! These primitives were extracted from the retired PDF fact-arm (ADR 0086
-//! decision 1) because they serve the SURVIVING tiers: the HTML aggregator
-//! ([`super::html`], BiznesRadar-primary) and the positional xHTML reader
-//! ([`super::html_positional`]) both reuse the Polish/English unit-scale
-//! detector, the Polish number grammar (space/NBSP/dot thousands, comma decimal,
-//! accounting parentheses, note-ref rejection) and the Polish label dictionary.
+//! decision 1) because they serve the HTML aggregator
+//! ([`super::html`], BiznesRadar-primary), reusing the Polish/English
+//! unit-scale detector, the Polish number grammar (space/NBSP/dot thousands,
+//! comma decimal, accounting parentheses, note-ref rejection) and the Polish
+//! label dictionary. The tier-3b positional xHTML reader that used to also
+//! stand on this module is retired too (ADR 0095).
 //!
 //! Pure over `&str` (text, not bytes), so every rule is unit-testable. No tier
 //! reads financial FACTS out of PDF statements anymore (ADR 0086 dec. 1); this
-//! module is the number/label substrate the html + positional tiers stand on.
+//! module is the number/label substrate the html tier stands on.
 
 use std::sync::OnceLock;
 
@@ -330,7 +331,7 @@ fn strip_currency_suffix(s: &str) -> String {
 /// `None` if the column is not a clean number. Handles accounting parentheses,
 /// ASCII and Unicode minus/dash (`-`, `–`, `—`, `−`), space/NBSP/dot thousands
 /// grouping and a trailing currency word; a bare dash (`–`, "no data") yields
-/// `None`. Shared with the HTML aggregator + positional tiers.
+/// `None`. Shared with the HTML aggregator tier (the tier-3b positional reader that used to also share this is retired, ADR 0095).
 pub(super) fn parse_amount(tok: &str) -> Option<Decimal> {
     // Normalize a leading Unicode minus/dash to ASCII '-'.
     let mut s = tok.trim().to_string();
@@ -386,7 +387,7 @@ pub(super) fn is_per_share(metric_key: &str) -> bool {
 }
 
 /// Matches a normalized label against the default Polish dictionary
-/// (longest-label-first). Shared with the HTML aggregator + positional tiers.
+/// (longest-label-first). Shared with the HTML aggregator tier (the tier-3b positional reader that used to also share this is retired, ADR 0095).
 pub(super) fn match_dictionary_label(label: &str) -> Option<&'static str> {
     let mut entries: Vec<&(&str, &str)> = default_dictionary().iter().collect();
     entries.sort_by_key(|(l, _)| std::cmp::Reverse(l.len()));
@@ -405,7 +406,8 @@ mod tests {
     // -----------------------------------------------------------------------
     // Unit scale — the dominance rule (Polish + English declarations, silent =
     // raw złoty). These regressions MUST survive the PDF-fact-arm retirement
-    // (ADR 0086 dec. 1): the html + positional tiers stand on this detector.
+    // (ADR 0086 dec. 1): the html tier stands on this detector (the tier-3b
+    // positional reader that used to also stand on it is retired, ADR 0095).
     // -----------------------------------------------------------------------
 
     #[test]
@@ -517,7 +519,8 @@ mod tests {
 
     // -----------------------------------------------------------------------
     // Number grammar (parse_amount) — the leading-zero decimal guard + dot
-    // thousands rule the html/positional tiers rely on.
+    // thousands rule the html tier relies on (the tier-3b positional reader
+    // that used to also rely on it is retired, ADR 0095).
     // -----------------------------------------------------------------------
 
     #[test]

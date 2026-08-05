@@ -673,6 +673,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "insider_tx_provenance",
         sql: include_str!("../../migrations/0133_insider_tx_provenance.sql"),
     },
+    Migration {
+        version: 134,
+        name: "repair_positional_esef_tier_mismatch",
+        sql: include_str!("../../migrations/0134_repair_positional_esef_tier_mismatch.sql"),
+    },
+    Migration {
+        version: 135,
+        name: "retire_html_positional_facts",
+        sql: include_str!("../../migrations/0135_retire_html_positional_facts.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

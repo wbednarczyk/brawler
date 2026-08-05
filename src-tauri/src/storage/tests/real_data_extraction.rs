@@ -32,7 +32,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::fundamentals::extraction::pipeline::{run_pipeline, PipelineInput};
@@ -1231,4 +1231,1380 @@ fn mislabeled_container_routing_before_after() {
         mislabeled > 0,
         "expected mislabeled containers in the corpus (card eb71488 measured 45; 19 periodic)"
     );
+}
+
+// ===========================================================================
+// #182 — ESEF / positional ground-truth scorer (DIAGNOSTIC — floors deferred
+// to measurement v2, 2026-08-05 methodology audit)
+// ===========================================================================
+//
+// Exhaustive, basis-aware precision/recall over the hand-labeled #182 corpus
+// (private/realdata/spikes/esef-positional-gt/, HANDOVER.md): 32 real report
+// documents (15 ESEF, 17 html_positional, CDR-dominated per the corpus's own
+// `honest_limitations` note) against the corpus's merged ground-truth rows
+// (label_esef.py's independent iXBRL parser for the ESEF tier; two
+// independent LLM passes reconciled for the positional tier — pass1 x pass2
+// agreement -> `machine`, disagreement or a single pass -> `needs_owner`).
+// Exact row/verified counts drift with the corpus and are NOT pinned here —
+// read them from the generated `scoring-report.json` (or the printed summary
+// this test emits) rather than a stale comment. Committed measurement table +
+// audit-verdict summary: docs/testing.md § "#182 ESEF / positional
+// ground-truth scorer".
+//
+// ADR 0095 (2026-08-05): the html_positional/`pdf`-tier extraction route is
+// RETIRED and migration 0135 deletes every stored `pdf`-tier fact. The
+// positional arm below now scores against a permanently-empty app-side set —
+// its GT rows stay historical evidence (never re-labeled), and its
+// precision/recall are no longer a live measurement of anything the parser
+// can still do. What the arm DOES still prove, and is asserted unconditionally
+// below: that the retirement actually took effect on real, production-shaped
+// data (zero `pdf`-tier facts remain in the scored DB) — a stored-state
+// auditor, not a ratchet.
+//
+// Unlike every harness above, this one never runs the pipeline: it scores
+// facts ALREADY STORED in the database against the labels, via the real read
+// models (`FinancialsStore::list_financial_facts` +
+// `FundamentalsProvenanceStore::get_many`) — the #182 question is "how good
+// is what's actually on the owner's database today", not "what would a fresh
+// run produce".
+//
+// **Inert in CI** — skips with a printed message unless the corpus dir (or
+// `BRAWLER_GT_DIR`) and `ground_truth.json` are both present. Writes nothing
+// to the corpus's `db-snapshot.sqlite3`: it copies to a throwaway
+// `scoring-worktest.sqlite3` first and opens ONLY the copy through the normal
+// `open_database` path, so every pending migration (0134 tier/method repair,
+// 0135 December year-shift repair) applies to the copy and the snapshot stays
+// a clean reference forever.
+//
+// **Refinement round (three metric-design artifacts the raw first pass
+// conflated with real pipeline gaps — fixed here, not just noted):**
+//
+// 1. **Key scope.** Only metric keys in the intersection of the GT labeler's
+//    covered set (`GT182_COVERED_BASE_KEYS` — the 15 mapped concepts) and the
+//    app's canonical keys are scored. An app fact for a key outside that set
+//    (e.g. `long_term_debt`, which the corpus never labels at all) is
+//    excluded entirely and tallied `out_of_gt_scope` — never `SPURIOUS`.
+// 2. **Variant translation** (`gt182_app_comparable_key`). `label_esef.py`'s
+//    `CONCEPT_MAP` deliberately keeps `ifrs-full:ProfitLoss` /
+//    `ifrs-full:Equity` as `net_profit__profitloss` / `total_equity__equity`
+//    rather than collapsing them at label time ("so both variants are
+//    visible in the proposed labels"); the app's own ESEF extractor
+//    (`fundamentals/extraction/esef.rs`: `"ProfitLoss" => "net_profit"`,
+//    `"Equity" => "total_equity"`) maps the SAME bare concepts to the SAME
+//    app keys, so those two variants translate to `net_profit` /
+//    `total_equity` at score time. `net_profit__owners` /
+//    `total_equity__owners` (`ifrs-full:…AttributableToOwnersOfParent`) have
+//    no app-side counterpart at all — the app has no NCI-split KPI — so they
+//    are NOT app-claimable: tallied `app_has_no_concept`, excluded from both
+//    denominators, never scored as MISSING.
+// 3. **Period scope.** The recall/precision denominator is the document's
+//    CURRENT period only (`MANIFEST.json`'s own `period_end` for that
+//    document — the period the pipeline was asked to extract). GT rows at a
+//    comparative period (the prior-year column an ESEF/positional statement
+//    also carries) go to a `comparative_coverage` observation bucket per
+//    tier instead — `machine`-verified rows only, split stored-vs-not — since
+//    whether the app ALSO retains the comparative column is a genuinely
+//    different question from whether it read the current filing correctly.
+//    `SPURIOUS` is scoped the same way: an app fact only counts against
+//    precision when its OWN period is the document's current period.
+//
+// Basis stays part of the match key throughout (HANDOVER.md: DBC x2, CAR,
+// DNP and CDR's "for_2024" filing are STANDALONE, not consolidated), near-
+// misses (`< 0.5%` relative diff) stay an evidence-only annotation on
+// `WRONG_VALUE`, and `needs_owner`/`uncertain` GT rows stay excluded from
+// every denominator (`UNVERIFIED`) — none of that changed.
+
+/// One row of `ground_truth.json` (schema fixed by the #182 contract).
+#[derive(Debug, Deserialize)]
+struct Gt182Row {
+    file: String,
+    ticker: String,
+    /// `esef` | `positional`.
+    tier: String,
+    /// Translated to the app's canonical `financial_facts.metric_key` via
+    /// `gt182_app_comparable_key` at score time — see the module doc comment
+    /// (refinement 2) for the `__profitloss`/`__equity`/`__owners` handling.
+    mapped_key: String,
+    period_end: String,
+    #[serde(default)]
+    #[allow(dead_code)] // carried through to the evidence JSON, not part of the match key
+    period_start: Option<String>,
+    statement_basis: String,
+    value: String,
+    currency: String,
+    source: String,
+    /// `machine` (independent-parser / pass1 x pass2 agreement) | `needs_owner`.
+    verification: String,
+    uncertain: bool,
+}
+
+/// `ground_truth.json` may be a bare array (like the `proposed_labels_*.json`
+/// intermediates it is merged from) or `{"rows": [...]}` — accept either
+/// rather than guess which the merge step settled on.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Gt182File {
+    Bare(Vec<Gt182Row>),
+    Wrapped { rows: Vec<Gt182Row> },
+}
+
+/// One `MANIFEST.json` document entry — only the fields the scorer needs;
+/// serde ignores the rest (sha256, byte counts, validation_status_counts…).
+#[derive(Debug, Deserialize)]
+struct Gt182ManifestDoc {
+    /// == `report_documents.id` == `financial_facts.source_document_ref`.
+    document_id: String,
+    file_name: String,
+    /// The period the pipeline was asked to extract for this document — the
+    /// PERIOD SCOPE anchor (refinement 3): a GT row at this `period_end` is
+    /// "current"; any other `period_end` for the same document is
+    /// "comparative".
+    period_end: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Gt182Manifest {
+    esef_tier: Vec<Gt182ManifestDoc>,
+    positional_tier: Vec<Gt182ManifestDoc>,
+}
+
+/// The GT labeler's covered concept set (task contract, refinement 1) — the
+/// 15 mapped concepts `label_esef.py`/the positional LLM passes both target.
+/// Any app fact whose `metric_key` is outside this set (e.g. `long_term_debt`)
+/// is out of the corpus's scope entirely, not a scoring gap.
+const GT182_COVERED_BASE_KEYS: &[&str] = &[
+    "revenue",
+    "gross_profit",
+    "operating_profit",
+    "net_profit",
+    "eps_basic",
+    "eps_diluted",
+    "operating_cash_flow",
+    "investing_cash_flow",
+    "financing_cash_flow",
+    "total_assets",
+    "current_assets",
+    "current_liabilities",
+    "total_liabilities",
+    "total_equity",
+    "cash",
+];
+
+/// Translates a ground-truth `mapped_key` to the app's canonical metric key
+/// (refinement 2), or `None` when the concept has no app-side counterpart at
+/// all. `net_profit__profitloss` / `total_equity__equity` collapse to the
+/// bare `net_profit` / `total_equity` app keys (the app's ESEF extractor maps
+/// the SAME underlying `ifrs-full:ProfitLoss` / `ifrs-full:Equity` concepts
+/// there); `net_profit__owners` / `total_equity__owners`
+/// (`…AttributableToOwnersOfParent`) are NOT app-claimable — the app has no
+/// NCI-split KPI — and return `None`.
+fn gt182_app_comparable_key(mapped_key: &str) -> Option<&str> {
+    match mapped_key {
+        "net_profit__profitloss" => Some("net_profit"),
+        "total_equity__equity" => Some("total_equity"),
+        "net_profit__owners" | "total_equity__owners" => None,
+        other if GT182_COVERED_BASE_KEYS.contains(&other) => Some(other),
+        _ => None,
+    }
+}
+
+/// `(report_documents.id, metric_key, period_end, statement_basis)` — the
+/// exhaustive match key. `statement_basis` is part of the key on purpose:
+/// per HANDOVER.md, DBC (x2), CAR, DNP and CDR's "for_2024" filing are
+/// STANDALONE statements, and collapsing basis would silently pair a
+/// consolidated app fact with a standalone label or vice versa.
+type Gt182Key = (String, String, String, String);
+
+#[derive(Debug, Clone)]
+struct Gt182AppValue {
+    value: Decimal,
+    currency: Option<String>,
+    ticker: String,
+    fact_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Gt182ScoreRow {
+    tier: String,
+    ticker: String,
+    document_id: String,
+    metric_key: String,
+    period_end: String,
+    statement_basis: String,
+    app_value: Option<String>,
+    gt_value: Option<String>,
+    app_currency: Option<String>,
+    gt_currency: Option<String>,
+    /// `MATCH` | `WRONG_VALUE` | `MISSING` | `SPURIOUS` | `CURRENCY_MISSING` |
+    /// `CURRENCY_MISMATCH` | `UNVERIFIED` (current-period, in-scope,
+    /// denominator-affecting) | `APP_HAS_NO_CONCEPT` (refinement 2, `__owners`
+    /// variants) | `COMPARATIVE` (refinement 3, non-current period —
+    /// informational only, see `comparative_*` on the tier aggregate).
+    verdict: String,
+    /// `WRONG_VALUE` whose relative difference is `< 0.5%` — informational
+    /// only; the verdict itself uses exact decimal equality (tolerance 0).
+    near_miss: bool,
+    gt_source: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Gt182TierAggregate {
+    tier: String,
+    match_count: usize,
+    wrong_value_count: usize,
+    missing_count: usize,
+    spurious_count: usize,
+    /// Value-equal to the GT row, but the app fact carries NO currency at
+    /// all (`financial_facts.currency` is `NULL`) — a distinct failure from
+    /// `CURRENCY_MISMATCH` (audit blocker: matching used to be currency-blind).
+    currency_missing_count: usize,
+    /// Value-equal to the GT row, but the app fact's currency differs from
+    /// the GT row's currency (audit blocker: matching used to be
+    /// currency-blind, so this used to silently count as `MATCH`).
+    currency_mismatch_count: usize,
+    unverified_count: usize,
+    /// `MATCH / (MATCH + WRONG_VALUE + SPURIOUS + CURRENCY_MISSING + CURRENCY_MISMATCH)`.
+    precision: Option<f64>,
+    /// `MATCH / (MATCH + WRONG_VALUE + MISSING + CURRENCY_MISSING + CURRENCY_MISMATCH)`.
+    recall: Option<f64>,
+    /// Denominator behind `precision` (0 when `precision` is `None`) —
+    /// counts-first reporting: every ratio is printed as `numerator/denominator`.
+    precision_denominator: usize,
+    /// Denominator behind `recall` (0 when `recall` is `None`).
+    recall_denominator: usize,
+    /// Refinement 1: app facts whose `metric_key` is outside
+    /// `GT182_COVERED_BASE_KEYS` — excluded entirely, never `SPURIOUS`.
+    out_of_gt_scope_count: usize,
+    /// Refinement 2: GT rows whose concept the app cannot claim at all
+    /// (`net_profit__owners` / `total_equity__owners`) — excluded from both
+    /// denominators.
+    app_has_no_concept_count: usize,
+    /// Refinement 3: `machine`-verified, in-scope GT rows at a comparative
+    /// (non-current) period — informational, excluded from both denominators.
+    comparative_total: usize,
+    /// Of `comparative_total`, how many the app ALSO has a fact for at that
+    /// exact (document, metric, period, basis) key — existence only, not a
+    /// value check.
+    comparative_stored: usize,
+    /// Of `comparative_total`, how many the app has no fact for at all.
+    comparative_missing: usize,
+    /// Counts-first reporting (audit): per-ticker breakdown so a
+    /// concentrated tier (e.g. positional is 12/17 CD Projekt documents)
+    /// doesn't hide behind one tier-wide number. Sorted by ticker.
+    ticker_counts: Vec<Gt182TickerCounts>,
+}
+
+/// Per-ticker verdict counts within one tier — see `Gt182TierAggregate::ticker_counts`.
+#[derive(Debug, Default, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Gt182TickerCounts {
+    ticker: String,
+    match_count: usize,
+    wrong_value_count: usize,
+    missing_count: usize,
+    spurious_count: usize,
+    currency_missing_count: usize,
+    currency_mismatch_count: usize,
+    unverified_count: usize,
+}
+
+/// Per-tier accumulator for the three refinement observation buckets, built
+/// while indexing app facts / grouping GT rows, then folded into the tier's
+/// [`Gt182TierAggregate`] and evidence rows after [`gt182_score_tier`] runs.
+#[derive(Debug, Default)]
+struct Gt182SideBuckets {
+    out_of_gt_scope: usize,
+    app_has_no_concept: usize,
+    comparative_total: usize,
+    comparative_stored: usize,
+    comparative_missing: usize,
+    /// `APP_HAS_NO_CONCEPT` + `COMPARATIVE` evidence rows for this tier.
+    extra_rows: Vec<Gt182ScoreRow>,
+}
+
+#[derive(Debug, Serialize)]
+struct Gt182Report {
+    generated_at_unix: u64,
+    gt_dir: String,
+    /// Ground-truth rows whose `file` did not resolve via `MANIFEST.json`
+    /// (excluded from scoring — a corpus-metadata mismatch, not a verdict).
+    unresolved_gt_rows: usize,
+    rows: Vec<Gt182ScoreRow>,
+    aggregates: Vec<Gt182TierAggregate>,
+}
+
+/// Relative difference `|actual - expected| / max(|actual|, |expected|)`,
+/// the same scale convention `tolerance_accepts` above uses. Used ONLY for
+/// the `near_miss` evidence annotation — the match verdict is exact equality.
+fn gt182_relative_diff(actual: Decimal, expected: Decimal) -> Decimal {
+    let scale = actual.abs().max(expected.abs());
+    if scale.is_zero() {
+        Decimal::ZERO
+    } else {
+        (actual - expected).abs() / scale
+    }
+}
+
+/// PERIOD SCOPE (refinement 3): the subset of `app_facts` whose OWN period
+/// (the key's `period_end`) is the document's current period per
+/// `doc_current_period_end` — the only app facts a `SPURIOUS` verdict can be
+/// charged against. A comparative-period app fact is real (and used by the
+/// `comparative_coverage` observation bucket), just never a precision hit.
+fn gt182_current_period_only(
+    app_facts: &BTreeMap<Gt182Key, Gt182AppValue>,
+    doc_current_period_end: &HashMap<String, String>,
+) -> BTreeMap<Gt182Key, Gt182AppValue> {
+    app_facts
+        .iter()
+        .filter(|(key, _)| {
+            let (doc_id, _, period_end, _) = key;
+            doc_current_period_end.get(doc_id).map(String::as_str) == Some(period_end.as_str())
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+/// Scores one tier exhaustively over the UNION of ground-truth keys and
+/// app-fact keys, per the #182 verdict contract. Both inputs are ALREADY
+/// scoped by the caller to the current-period, app-claimable slots
+/// (refinements 1-3: key scope, variant translation, period scope) — this
+/// function only decides MATCH/WRONG_VALUE/MISSING/SPURIOUS/CURRENCY_MISSING/
+/// CURRENCY_MISMATCH/UNVERIFIED within that scope; the
+/// `out_of_gt_scope`/`app_has_no_concept`/`comparative_*` buckets are
+/// populated by the caller, not here.
+///
+/// - `UNVERIFIED` — the GT row is `needs_owner` or `uncertain` (excluded from
+///   both denominators, listed for owner arbitration).
+/// - `MATCH` — a `machine`-verified GT row whose app fact has the SAME value
+///   AND the SAME currency (audit blocker, currency-aware matching).
+/// - `CURRENCY_MISSING` / `CURRENCY_MISMATCH` — value-equal to the GT row,
+///   but the app fact's currency is `NULL` / present-but-different. Counted
+///   in both denominators (a value-only match is not a full match) but never
+///   in `MATCH` itself.
+/// - `WRONG_VALUE` — a `machine`-verified GT row with a present, value-
+///   differing app fact.
+/// - `MISSING` — a `machine`-verified GT row with no app fact at that key
+///   (recall hit).
+/// - `SPURIOUS` — an app fact at a key with NO ground-truth row at all,
+///   machine or `needs_owner` (precision hit).
+fn gt182_score_tier(
+    tier: &str,
+    gt_rows: &BTreeMap<Gt182Key, &Gt182Row>,
+    app_facts: &BTreeMap<Gt182Key, Gt182AppValue>,
+) -> (Vec<Gt182ScoreRow>, Gt182TierAggregate) {
+    let near_threshold = Decimal::new(5, 3); // 0.005 = 0.5%
+    let mut keys: BTreeSet<Gt182Key> = gt_rows.keys().cloned().collect();
+    keys.extend(app_facts.keys().cloned());
+
+    let mut rows = Vec::with_capacity(keys.len());
+    let mut agg = Gt182TierAggregate {
+        tier: tier.to_owned(),
+        ..Default::default()
+    };
+    let mut ticker_counts: BTreeMap<String, Gt182TickerCounts> = BTreeMap::new();
+
+    for key in keys {
+        let (document_id, metric_key, period_end, statement_basis) = key.clone();
+        let gt = gt_rows.get(&key).copied();
+        let app = app_facts.get(&key);
+        let ticker = app
+            .map(|a| a.ticker.clone())
+            .or_else(|| gt.map(|g| g.ticker.clone()))
+            .unwrap_or_default();
+
+        let (verdict, near_miss) = match gt {
+            Some(gt_row) if gt_row.verification != "machine" || gt_row.uncertain => {
+                ("UNVERIFIED", false)
+            }
+            Some(gt_row) => {
+                let expected = Decimal::from_str(&gt_row.value).unwrap_or_else(|e| {
+                    panic!(
+                        "bad ground-truth decimal '{}' for {} {}: {e}",
+                        gt_row.value, gt_row.ticker, gt_row.mapped_key
+                    )
+                });
+                match app {
+                    // CURRENCY-AWARE MATCHING (audit blocker): a value match
+                    // alone is not enough — currency must agree too, or the
+                    // two "equal" numbers may be in different units.
+                    Some(app_val) if app_val.value == expected => match &app_val.currency {
+                        Some(app_currency) if app_currency == &gt_row.currency => ("MATCH", false),
+                        Some(_different) => ("CURRENCY_MISMATCH", false),
+                        None => ("CURRENCY_MISSING", false),
+                    },
+                    Some(app_val) => {
+                        let near = gt182_relative_diff(app_val.value, expected) < near_threshold;
+                        ("WRONG_VALUE", near)
+                    }
+                    None => ("MISSING", false),
+                }
+            }
+            None => {
+                // Union-of-keys invariant: a key absent from `gt_rows` was
+                // only added because it is present in `app_facts`.
+                debug_assert!(app.is_some(), "key with neither a gt row nor an app fact");
+                ("SPURIOUS", false)
+            }
+        };
+
+        let ticker_entry =
+            ticker_counts
+                .entry(ticker.clone())
+                .or_insert_with(|| Gt182TickerCounts {
+                    ticker: ticker.clone(),
+                    ..Default::default()
+                });
+        match verdict {
+            "MATCH" => {
+                agg.match_count += 1;
+                ticker_entry.match_count += 1;
+            }
+            "WRONG_VALUE" => {
+                agg.wrong_value_count += 1;
+                ticker_entry.wrong_value_count += 1;
+            }
+            "MISSING" => {
+                agg.missing_count += 1;
+                ticker_entry.missing_count += 1;
+            }
+            "SPURIOUS" => {
+                agg.spurious_count += 1;
+                ticker_entry.spurious_count += 1;
+            }
+            "CURRENCY_MISSING" => {
+                agg.currency_missing_count += 1;
+                ticker_entry.currency_missing_count += 1;
+            }
+            "CURRENCY_MISMATCH" => {
+                agg.currency_mismatch_count += 1;
+                ticker_entry.currency_mismatch_count += 1;
+            }
+            "UNVERIFIED" => {
+                agg.unverified_count += 1;
+                ticker_entry.unverified_count += 1;
+            }
+            _ => unreachable!("exhaustive verdict match above"),
+        }
+
+        rows.push(Gt182ScoreRow {
+            tier: tier.to_owned(),
+            ticker,
+            document_id,
+            metric_key,
+            period_end,
+            statement_basis,
+            app_value: app.map(|a| a.value.to_string()),
+            gt_value: gt.map(|g| g.value.clone()),
+            app_currency: app.and_then(|a| a.currency.clone()),
+            gt_currency: gt.map(|g| g.currency.clone()),
+            verdict: verdict.to_owned(),
+            near_miss,
+            gt_source: gt.map(|g| g.source.clone()),
+        });
+    }
+
+    rows.sort_by(|a, b| {
+        (
+            a.ticker.as_str(),
+            a.metric_key.as_str(),
+            a.period_end.as_str(),
+        )
+            .cmp(&(
+                b.ticker.as_str(),
+                b.metric_key.as_str(),
+                b.period_end.as_str(),
+            ))
+    });
+
+    // Currency-verdict keys are "an app fact was produced, but it doesn't
+    // fully match" — they count in BOTH denominators, same as WRONG_VALUE:
+    // a real GT row was there to recall, and a real app assertion was made
+    // to grade for precision.
+    let denom_precision = agg.match_count
+        + agg.wrong_value_count
+        + agg.spurious_count
+        + agg.currency_missing_count
+        + agg.currency_mismatch_count;
+    let denom_recall = agg.match_count
+        + agg.wrong_value_count
+        + agg.missing_count
+        + agg.currency_missing_count
+        + agg.currency_mismatch_count;
+    agg.precision_denominator = denom_precision;
+    agg.recall_denominator = denom_recall;
+    agg.precision = (denom_precision > 0).then(|| agg.match_count as f64 / denom_precision as f64);
+    agg.recall = (denom_recall > 0).then(|| agg.match_count as f64 / denom_recall as f64);
+    agg.ticker_counts = ticker_counts.into_values().collect();
+
+    (rows, agg)
+}
+
+/// **#182 B2 — the ground-truth scorer, a DIAGNOSTIC, not a ratchet.** See
+/// the module doc comment above for the full contract. **Inert in CI** —
+/// skips (loudly) unless the corpus dir, `ground_truth.json`, and
+/// `db-snapshot.sqlite3` are present.
+///
+/// Run it manually from `src-tauri/`, or via `make realdata-gt-score`:
+///
+/// ```text
+/// cargo test esef_positional_ground_truth_scores -- --ignored --nocapture
+/// ```
+///
+/// **Status (2026-08-05 methodology audit): floors deferred to measurement
+/// v2.** This scorer grades facts ALREADY STORED in a DB snapshot — a
+/// parser change does NOT move these numbers, only a fresh corpus/extraction
+/// run would — so pinning a regression floor on stored-state numbers would
+/// have gated the wrong thing. The audit also found the corpus is output-
+/// conditioned (GT rows only exist for what the pipeline already extracted),
+/// currency-blind (fixed here — see `CURRENCY_MISSING`/`CURRENCY_MISMATCH`),
+/// CDR-concentrated in the positional tier, and scored per-slot rather than
+/// per-document. See the "#182 is a DIAGNOSTIC" comment at the bottom of
+/// this function for the full list.
+///
+/// **Policy:** asserts harness sanity only (ground truth non-empty, both
+/// tiers scored at least one key, scoring report written) — no precision/
+/// recall floor. `BRAWLER_GT_REQUIRED=1` (`make realdata-gt-check`, the
+/// owner-only closure gate) turns every "corpus absent" skip, a zero-GT-rows-
+/// at-current-period manifest document, and a zero-denominator tier into a
+/// hard failure instead of a loud warning; unset, all three stay loud but
+/// non-failing (default local run / CI, which never sees the private corpus,
+/// ADR 0091).
+#[test]
+#[ignore = "requires the owner's private #182 corpus"]
+fn esef_positional_ground_truth_scores() {
+    // `BRAWLER_GT_REQUIRED=1` — the owner-only closure gate (`make
+    // realdata-gt-check`): turns every "SKIP, corpus absent" path below, the
+    // zero-GT-rows-at-current-period manifest guard, and the zero-denominator
+    // check further down into a hard panic instead of a loud warning. Off by
+    // default (and in CI, which never sees the private corpus, ADR 0091) so
+    // the plain `make realdata-gt-score` run stays a diagnostic, non-gating
+    // report (this harness has no precision/recall floor — see the function
+    // doc comment).
+    let required = std::env::var("BRAWLER_GT_REQUIRED")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    macro_rules! skip_or_require {
+        ($($arg:tt)*) => {{
+            let msg = format!($($arg)*);
+            if required {
+                panic!("REQUIRED esef_positional_ground_truth_scores: {msg}");
+            }
+            eprintln!("SKIP esef_positional_ground_truth_scores: {msg}");
+            return;
+        }};
+    }
+
+    let gt_dir = std::env::var("BRAWLER_GT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("private/realdata/spikes/esef-positional-gt")
+        });
+    if !gt_dir.is_dir() {
+        skip_or_require!(
+            "no corpus dir at {} \
+             (set BRAWLER_GT_DIR — this harness is inert without the owner's private #182 corpus)",
+            gt_dir.display()
+        );
+    }
+
+    let gt_path = gt_dir.join("ground_truth.json");
+    let Ok(raw) = std::fs::read_to_string(&gt_path) else {
+        skip_or_require!(
+            "no ground_truth.json at {} \
+             (the #182 label-merge job may not have produced it yet)",
+            gt_path.display()
+        );
+    };
+    let gt_rows: Vec<Gt182Row> = match serde_json::from_str::<Gt182File>(&raw) {
+        Ok(Gt182File::Bare(rows)) => rows,
+        Ok(Gt182File::Wrapped { rows }) => rows,
+        Err(err) => panic!(
+            "ground_truth.json at {} failed to parse: {err}",
+            gt_path.display()
+        ),
+    };
+
+    let manifest_path = gt_dir.join("MANIFEST.json");
+    let manifest_raw = std::fs::read_to_string(&manifest_path).unwrap_or_else(|e| {
+        panic!(
+            "MANIFEST.json missing at {} despite ground_truth.json being present \
+             (corpus integrity bug, not an env-gate case): {e}",
+            manifest_path.display()
+        )
+    });
+    let manifest: Gt182Manifest = serde_json::from_str(&manifest_raw).unwrap_or_else(|e| {
+        panic!(
+            "MANIFEST.json at {} failed to parse: {e}",
+            manifest_path.display()
+        )
+    });
+
+    // Adversarial-review should-fix #8: a duplicate `file_name` or
+    // `document_id` in MANIFEST.json (within a tier, or reused across the
+    // two tiers) would silently overwrite an earlier corpus document's
+    // mapping in the maps built below — a real corpus-integrity bug, not an
+    // "absent corpus" case, so it is a hard failure regardless of
+    // `BRAWLER_GT_REQUIRED`, exactly like the "MANIFEST.json missing" panic
+    // above.
+    {
+        let mut seen_files: HashMap<&str, &str> = HashMap::new();
+        let mut seen_doc_ids: HashMap<&str, &str> = HashMap::new();
+        let mut dup_errors: Vec<String> = Vec::new();
+        for (tier_name, docs) in [
+            ("esef_tier", &manifest.esef_tier),
+            ("positional_tier", &manifest.positional_tier),
+        ] {
+            for doc in docs {
+                if let Some(prev_tier) = seen_files.insert(doc.file_name.as_str(), tier_name) {
+                    dup_errors.push(format!(
+                        "duplicate MANIFEST file_name '{}': already seen in {prev_tier}, \
+                         reused in {tier_name}",
+                        doc.file_name
+                    ));
+                }
+                if let Some(prev_tier) = seen_doc_ids.insert(doc.document_id.as_str(), tier_name) {
+                    dup_errors.push(format!(
+                        "duplicate MANIFEST document_id '{}': already seen in {prev_tier}, \
+                         reused in {tier_name}",
+                        doc.document_id
+                    ));
+                }
+            }
+        }
+        assert!(
+            dup_errors.is_empty(),
+            "MANIFEST.json at {} has duplicate filenames/document ids (corpus integrity bug, \
+             not an env-gate case):\n  {}",
+            manifest_path.display(),
+            dup_errors.join("\n  ")
+        );
+    }
+
+    let mut file_to_doc_id: HashMap<String, String> = HashMap::new();
+    let mut esef_doc_ids: BTreeSet<String> = BTreeSet::new();
+    let mut positional_doc_ids: BTreeSet<String> = BTreeSet::new();
+    // PERIOD SCOPE anchor (refinement 3): the period the pipeline was asked
+    // to extract for each corpus document — a GT row at this period is
+    // "current", any other period for the same document is "comparative".
+    let mut doc_current_period_end: HashMap<String, String> = HashMap::new();
+    for doc in &manifest.esef_tier {
+        file_to_doc_id.insert(doc.file_name.clone(), doc.document_id.clone());
+        esef_doc_ids.insert(doc.document_id.clone());
+        doc_current_period_end.insert(doc.document_id.clone(), doc.period_end.clone());
+    }
+    for doc in &manifest.positional_tier {
+        file_to_doc_id.insert(doc.file_name.clone(), doc.document_id.clone());
+        positional_doc_ids.insert(doc.document_id.clone());
+        doc_current_period_end.insert(doc.document_id.clone(), doc.period_end.clone());
+    }
+    let all_corpus_doc_ids: BTreeSet<String> =
+        esef_doc_ids.union(&positional_doc_ids).cloned().collect();
+
+    // ---- MANIFEST/corpus period-agreement guard (audit blocker, #182) -----
+    // A document whose MANIFEST.json `period_end` disagrees with the corpus's
+    // OWN ground-truth labeling (every GT row for it lands at some OTHER
+    // period) silently contributes ZERO current-period signal — exactly the
+    // DNP bug found in the 2026-08-05 audit (period_end was 2026-12-31, a
+    // year-shift bug also repaired in the DB by migration 0135; every one of
+    // DNP's 28 GT rows fell into the comparative bucket instead of scoring).
+    // Count GT rows per document at the document's DECLARED current period —
+    // untranslated, unfiltered by verification — a manifest/corpus
+    // consistency check, not a scoring-refinement one.
+    let mut current_period_gt_rows_by_doc: HashMap<&str, usize> = HashMap::new();
+    for row in &gt_rows {
+        let Some(doc_id) = file_to_doc_id.get(&row.file) else {
+            continue;
+        };
+        if doc_current_period_end
+            .get(doc_id.as_str())
+            .map(String::as_str)
+            == Some(row.period_end.as_str())
+        {
+            *current_period_gt_rows_by_doc
+                .entry(doc_id.as_str())
+                .or_insert(0) += 1;
+        }
+    }
+    for doc_id in &all_corpus_doc_ids {
+        let count = current_period_gt_rows_by_doc
+            .get(doc_id.as_str())
+            .copied()
+            .unwrap_or(0);
+        if count == 0 {
+            let msg = format!(
+                "manifest document {doc_id} has ZERO ground-truth rows at its declared current \
+                 period {} — likely a MANIFEST.json period_end / corpus-labeling disagreement \
+                 (see the #182 DNP fix, 2026-08-05); every GT row for this document is silently \
+                 falling into the comparative bucket instead of scoring",
+                doc_current_period_end
+                    .get(doc_id.as_str())
+                    .map(String::as_str)
+                    .unwrap_or("?")
+            );
+            if required {
+                panic!("REQUIRED esef_positional_ground_truth_scores: {msg}");
+            }
+            eprintln!("WARN esef_positional_ground_truth_scores: {msg}");
+        }
+    }
+
+    // ---- copy db-snapshot.sqlite3 -> a throwaway worktest copy -----------
+    // NEVER open db-snapshot.sqlite3 itself: it is the immutable reference
+    // every future scoring run is compared against.
+    let snapshot_path = gt_dir.join("db-snapshot.sqlite3");
+    if !snapshot_path.is_file() {
+        skip_or_require!("no db-snapshot.sqlite3 at {}", gt_dir.display());
+    }
+    // Adversarial-review should-fix #8: a FIXED `scoring-worktest.sqlite3`
+    // path inside the shared corpus directory means two concurrent runs (or
+    // a crashed prior run's leftover WAL/SHM) can collide or cross-
+    // contaminate each other. Each run gets its OWN scratch directory in the
+    // system temp dir, named with the process id + a monotonic timestamp —
+    // never written into `gt_dir` at all. Best-effort cleanup at the end;
+    // leftovers are inert scratch files, never the corpus itself.
+    let run_id = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    let worktest_dir = std::env::temp_dir().join(format!("brawler-gt182-worktest-{run_id}"));
+    std::fs::create_dir_all(&worktest_dir).unwrap_or_else(|e| {
+        panic!(
+            "create worktest scratch dir {}: {e}",
+            worktest_dir.display()
+        )
+    });
+    let worktest_path = worktest_dir.join("scoring-worktest.sqlite3");
+    std::fs::copy(&snapshot_path, &worktest_path)
+        .unwrap_or_else(|e| panic!("copy db-snapshot.sqlite3 -> scoring-worktest.sqlite3: {e}"));
+    for suffix in ["-wal", "-shm"] {
+        let src = PathBuf::from(format!("{}{suffix}", snapshot_path.display()));
+        let dst = PathBuf::from(format!("{}{suffix}", worktest_path.display()));
+        if src.is_file() {
+            std::fs::copy(&src, &dst).unwrap_or_else(|e| panic!("copy {suffix} sidecar: {e}"));
+        }
+        // A unique per-run scratch dir never has a stale sidecar to clear.
+    }
+
+    // Opens the COPY; `open_database` applies every pending migration
+    // (incl. 0134/0135 in this working tree) to it.
+    let connection = open_database(&worktest_path).unwrap_or_else(|e| {
+        panic!("open scoring-worktest.sqlite3 (migrations must apply cleanly to the copy): {e}")
+    });
+
+    // ADR 0095 stored-state audit (adversarial-review item C): the
+    // html_positional/`pdf`-tier extraction route is retired and migration
+    // 0135 deletes every stored `pdf`-tier fact — unconditionally, on every
+    // real DB, not just this corpus's own documents. This is a correctness
+    // invariant about the migration, not a diagnostic about extraction
+    // quality, so it is asserted regardless of `BRAWLER_GT_REQUIRED`.
+    let remaining_pdf_tier_facts: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM financial_facts f \
+             LEFT JOIN financial_fact_provenance p ON p.fact_id = f.id \
+             WHERE f.extraction_method = 'html_positional' OR p.source_tier = 'pdf'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count remaining pdf-tier facts");
+    assert_eq!(
+        remaining_pdf_tier_facts, 0,
+        "ADR 0095: migration 0135 must delete every pdf-tier fact (html_positional \
+         extraction_method or source_tier='pdf') from the scored DB — found {remaining_pdf_tier_facts} still present"
+    );
+
+    let state = AppState::new(connection);
+
+    // ---- index every stored fact the corpus documents carry, per tier ----
+    // (both current AND comparative periods — the comparative-coverage
+    // bucket below needs comparative-period app facts too; period scoping
+    // happens later, only for the precision/recall denominator.)
+    let mut esef_app: BTreeMap<Gt182Key, Gt182AppValue> = BTreeMap::new();
+    let mut positional_app: BTreeMap<Gt182Key, Gt182AppValue> = BTreeMap::new();
+    // Per-tier accumulator for the refinement observation buckets (out-of-
+    // scope keys here; app-has-no-concept + comparative-coverage rows are
+    // added while grouping the GT rows, below).
+    let mut side: HashMap<&str, Gt182SideBuckets> = HashMap::new();
+
+    let companies = state.list_companies().expect("list companies");
+    for company in &companies {
+        let periods = state
+            .financials()
+            .list_financial_periods(ListFinancialPeriodsInput {
+                company_id: company.id.clone(),
+                fiscal_year: None,
+            })
+            .expect("list financial periods");
+        let period_end_by_id: HashMap<&str, &str> = periods
+            .iter()
+            .filter_map(|p| p.period_end_date.as_deref().map(|end| (p.id.as_str(), end)))
+            .collect();
+
+        let facts = state
+            .financials()
+            .list_financial_facts(ListFinancialFactsInput {
+                company_id: Some(company.id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list financial facts");
+        let relevant: Vec<&FinancialFact> = facts
+            .iter()
+            .filter(|f| {
+                f.source_document_ref
+                    .as_deref()
+                    .is_some_and(|r| all_corpus_doc_ids.contains(r))
+            })
+            .collect();
+        if relevant.is_empty() {
+            continue;
+        }
+
+        let ids: Vec<String> = relevant.iter().map(|f| f.id.clone()).collect();
+        let provenance = state
+            .fundamentals_provenance()
+            .get_many(&ids)
+            .expect("fact provenance");
+        let tier_by_fact: HashMap<&str, &str> = provenance
+            .iter()
+            .map(|p| (p.fact_id.as_str(), p.source_tier.as_str()))
+            .collect();
+
+        for fact in relevant {
+            let doc_id = fact.source_document_ref.clone().unwrap_or_default();
+            let Some(period_end) = period_end_by_id.get(fact.period_id.as_str()) else {
+                eprintln!(
+                    "  WARN {} fact {} (doc {doc_id}): period {} has no period_end_date, skipped",
+                    company.ticker, fact.id, fact.period_id
+                );
+                continue;
+            };
+            let Ok(value) = Decimal::from_str(&fact.value_numeric) else {
+                eprintln!(
+                    "  WARN {} fact {} (doc {doc_id}): bad decimal '{}', skipped",
+                    company.ticker, fact.id, fact.value_numeric
+                );
+                continue;
+            };
+            // esef tier: provenance.source_tier == 'esef' (matches the
+            // MANIFEST's own esef_tier selection rule).
+            let source_tier = tier_by_fact.get(fact.id.as_str()).copied();
+            let is_esef_tier_fact = source_tier == Some("esef") && esef_doc_ids.contains(&doc_id);
+            // positional tier: extraction_method == 'html_positional'
+            // regardless of stored tier (MANIFEST's positional_tier rule;
+            // ADR-documented #324 tier/method disagreement).
+            let is_positional_tier_fact =
+                fact.extraction_method == "html_positional" && positional_doc_ids.contains(&doc_id);
+            if !is_esef_tier_fact && !is_positional_tier_fact {
+                continue;
+            }
+
+            // KEY SCOPE (refinement 1): a metric key outside the GT
+            // labeler's covered set (e.g. `long_term_debt`) is out of the
+            // corpus's scope entirely — never SPURIOUS, just tallied.
+            if !GT182_COVERED_BASE_KEYS.contains(&fact.metric_key.as_str()) {
+                if is_esef_tier_fact {
+                    side.entry("esef").or_default().out_of_gt_scope += 1;
+                }
+                if is_positional_tier_fact {
+                    side.entry("positional").or_default().out_of_gt_scope += 1;
+                }
+                continue;
+            }
+
+            let key: Gt182Key = (
+                doc_id.clone(),
+                fact.metric_key.clone(),
+                period_end.to_string(),
+                fact.statement_basis.clone(),
+            );
+            let app_value = Gt182AppValue {
+                value,
+                currency: fact.currency.clone(),
+                ticker: company.ticker.clone(),
+                fact_id: fact.id.clone(),
+            };
+
+            if is_esef_tier_fact {
+                if let Some(prior) = esef_app.insert(key.clone(), app_value.clone()) {
+                    eprintln!(
+                        "  WARN duplicate esef app-fact key ({doc_id}, {}, {period_end}, {}): \
+                         {} superseded by {}",
+                        fact.metric_key, fact.statement_basis, prior.fact_id, fact.id
+                    );
+                }
+            }
+            if is_positional_tier_fact {
+                if let Some(prior) = positional_app.insert(key, app_value) {
+                    eprintln!(
+                        "  WARN duplicate positional app-fact key ({doc_id}, {}, {period_end}, {}): \
+                         {} superseded by {}",
+                        fact.metric_key, fact.statement_basis, prior.fact_id, fact.id
+                    );
+                }
+            }
+        }
+    }
+
+    // ---- group ground-truth rows by tier, resolved + translated + period-
+    // scoped (refinements 1-3) ----------------------------------------------
+    // Corpus-integrity violations (sol review, ADR 0095 round): every way a
+    // ground-truth row can silently FALL OUT of the denominator — an unknown
+    // tier, a `file` the manifest cannot resolve, a post-translation key
+    // collision — is collected here and FAILS the run under
+    // `BRAWLER_GT_REQUIRED=1` (after the report publishes, so the evidence
+    // survives). A closure gate that can pass by quietly shrinking what it
+    // measures is not a gate.
+    let mut integrity_violations: Vec<String> = Vec::new();
+    let mut gt_current_by_tier: HashMap<&str, BTreeMap<Gt182Key, &Gt182Row>> = HashMap::new();
+    let mut unresolved: Vec<&Gt182Row> = Vec::new();
+    for row in &gt_rows {
+        if row.tier != "esef" && row.tier != "positional" {
+            eprintln!(
+                "  WARN unknown ground-truth tier '{}' for {} {}, skipped",
+                row.tier, row.ticker, row.mapped_key
+            );
+            integrity_violations.push(format!(
+                "unknown ground-truth tier '{}' for {} {} (row fell out of every denominator)",
+                row.tier, row.ticker, row.mapped_key
+            ));
+            continue;
+        }
+        let Some(doc_id) = file_to_doc_id.get(&row.file) else {
+            unresolved.push(row);
+            continue;
+        };
+
+        // VARIANT TRANSLATION (refinement 2): `__owners` rows have no
+        // app-side concept at all — a distinct observation bucket, never a
+        // MISSING recall hit.
+        let Some(translated) = gt182_app_comparable_key(&row.mapped_key) else {
+            let bucket = side.entry(row.tier.as_str()).or_default();
+            bucket.app_has_no_concept += 1;
+            bucket.extra_rows.push(Gt182ScoreRow {
+                tier: row.tier.clone(),
+                ticker: row.ticker.clone(),
+                document_id: doc_id.clone(),
+                metric_key: row.mapped_key.clone(),
+                period_end: row.period_end.clone(),
+                statement_basis: row.statement_basis.clone(),
+                app_value: None,
+                gt_value: Some(row.value.clone()),
+                app_currency: None,
+                gt_currency: Some(row.currency.clone()),
+                verdict: "APP_HAS_NO_CONCEPT".to_owned(),
+                near_miss: false,
+                gt_source: Some(row.source.clone()),
+            });
+            continue;
+        };
+
+        // PERIOD SCOPE (refinement 3): only the document's CURRENT period
+        // (MANIFEST's own `period_end` for it) counts toward precision/
+        // recall; a comparative-period row is an informational observation.
+        let is_current = doc_current_period_end
+            .get(doc_id.as_str())
+            .map(String::as_str)
+            == Some(row.period_end.as_str());
+        let app_map = if row.tier == "esef" {
+            &esef_app
+        } else {
+            &positional_app
+        };
+        if !is_current {
+            let app_key: Gt182Key = (
+                doc_id.clone(),
+                translated.to_owned(),
+                row.period_end.clone(),
+                row.statement_basis.clone(),
+            );
+            let app_at_key = app_map.get(&app_key);
+            let bucket = side.entry(row.tier.as_str()).or_default();
+            if row.verification == "machine" && !row.uncertain {
+                bucket.comparative_total += 1;
+                if app_at_key.is_some() {
+                    bucket.comparative_stored += 1;
+                } else {
+                    bucket.comparative_missing += 1;
+                }
+            }
+            bucket.extra_rows.push(Gt182ScoreRow {
+                tier: row.tier.clone(),
+                ticker: row.ticker.clone(),
+                document_id: doc_id.clone(),
+                metric_key: translated.to_owned(),
+                period_end: row.period_end.clone(),
+                statement_basis: row.statement_basis.clone(),
+                app_value: app_at_key.map(|a| a.value.to_string()),
+                gt_value: Some(row.value.clone()),
+                app_currency: app_at_key.and_then(|a| a.currency.clone()),
+                gt_currency: Some(row.currency.clone()),
+                verdict: "COMPARATIVE".to_owned(),
+                near_miss: false,
+                gt_source: Some(row.source.clone()),
+            });
+            continue;
+        }
+
+        let key: Gt182Key = (
+            doc_id.clone(),
+            translated.to_owned(),
+            row.period_end.clone(),
+            row.statement_basis.clone(),
+        );
+        let bucket = gt_current_by_tier.entry(row.tier.as_str()).or_default();
+        if let Some(prior) = bucket.insert(key, row) {
+            eprintln!(
+                "  WARN duplicate ground-truth key (post-translation) in {} tier: {} {} -> {} {} \
+                 {} ({} superseded by {})",
+                row.tier,
+                row.ticker,
+                row.mapped_key,
+                translated,
+                row.period_end,
+                row.statement_basis,
+                prior.source,
+                row.source
+            );
+            integrity_violations.push(format!(
+                "duplicate post-translation ground-truth key in {} tier: {} {} -> {} {} {} \
+                 (one label silently overwrote another)",
+                row.tier,
+                row.ticker,
+                row.mapped_key,
+                translated,
+                row.period_end,
+                row.statement_basis
+            ));
+        }
+    }
+    if !unresolved.is_empty() {
+        integrity_violations.push(format!(
+            "{} ground-truth row(s) reference a `file` MANIFEST.json cannot resolve \
+             (excluded from every denominator)",
+            unresolved.len()
+        ));
+        eprintln!(
+            "-- {} ground-truth row(s) reference a `file` not in MANIFEST.json \
+             (excluded from scoring) --",
+            unresolved.len()
+        );
+        for row in &unresolved {
+            eprintln!(
+                "  {} {} {} : {}",
+                row.ticker, row.mapped_key, row.period_end, row.file
+            );
+        }
+    }
+
+    // Current-period-only app-fact views (refinement 3: SPURIOUS is scoped
+    // to an app fact's OWN period matching its document's current period).
+    let esef_app_current = gt182_current_period_only(&esef_app, &doc_current_period_end);
+    let positional_app_current =
+        gt182_current_period_only(&positional_app, &doc_current_period_end);
+
+    let empty_esef_gt = BTreeMap::new();
+    let empty_positional_gt = BTreeMap::new();
+    let esef_gt = gt_current_by_tier.get("esef").unwrap_or(&empty_esef_gt);
+    let positional_gt = gt_current_by_tier
+        .get("positional")
+        .unwrap_or(&empty_positional_gt);
+
+    let (esef_rows, mut esef_agg) = gt182_score_tier("esef", esef_gt, &esef_app_current);
+    let (positional_rows, mut positional_agg) =
+        gt182_score_tier("positional", positional_gt, &positional_app_current);
+
+    // Fold the three observation buckets into each tier's aggregate.
+    let default_side = Gt182SideBuckets::default();
+    for (tier_name, agg) in [("esef", &mut esef_agg), ("positional", &mut positional_agg)] {
+        let bucket = side.get(tier_name).unwrap_or(&default_side);
+        agg.out_of_gt_scope_count = bucket.out_of_gt_scope;
+        agg.app_has_no_concept_count = bucket.app_has_no_concept;
+        agg.comparative_total = bucket.comparative_total;
+        agg.comparative_stored = bucket.comparative_stored;
+        agg.comparative_missing = bucket.comparative_missing;
+    }
+
+    let mut all_rows = esef_rows;
+    all_rows.extend(positional_rows);
+    for tier_name in ["esef", "positional"] {
+        if let Some(bucket) = side.get(tier_name) {
+            all_rows.extend(bucket.extra_rows.iter().cloned());
+        }
+    }
+    all_rows.sort_by(|a, b| {
+        (
+            a.tier.as_str(),
+            a.ticker.as_str(),
+            a.metric_key.as_str(),
+            a.period_end.as_str(),
+        )
+            .cmp(&(
+                b.tier.as_str(),
+                b.ticker.as_str(),
+                b.metric_key.as_str(),
+                b.period_end.as_str(),
+            ))
+    });
+    let aggregates = vec![esef_agg, positional_agg];
+
+    // ---- the evidence table (full, sorted tier -> ticker -> metric) ------
+    eprintln!();
+    eprintln!("======================================================================");
+    eprintln!("#182 GROUND-TRUTH SCORER — ESEF / positional (DIAGNOSTIC, no floors — measurement v2 pending)");
+    eprintln!("======================================================================");
+    eprintln!("gt_dir={}", gt_dir.display());
+    eprintln!(
+        "ground-truth rows: {} ({} unresolved to a MANIFEST document)",
+        gt_rows.len(),
+        unresolved.len()
+    );
+    eprintln!();
+    eprintln!(
+        "{:<12}{:<8}{:<26}{:<12}{:<14}{:>16}{:>16}  {:<10}{:<10}VERDICT",
+        "TIER", "TICKER", "METRIC", "PERIOD", "BASIS", "APP VALUE", "GT VALUE", "APP CUR", "GT CUR"
+    );
+    for row in &all_rows {
+        eprintln!(
+            "{:<12}{:<8}{:<26}{:<12}{:<14}{:>16}{:>16}  {:<10}{:<10}{}{}",
+            row.tier,
+            row.ticker,
+            row.metric_key,
+            row.period_end,
+            row.statement_basis,
+            row.app_value.as_deref().unwrap_or("-"),
+            row.gt_value.as_deref().unwrap_or("-"),
+            row.app_currency.as_deref().unwrap_or("-"),
+            row.gt_currency.as_deref().unwrap_or("-"),
+            row.verdict,
+            if row.near_miss { " (near)" } else { "" },
+        );
+    }
+
+    // COUNTS-FIRST reporting (audit): every ratio prints as numerator/
+    // denominator alongside the percentage — never a bare percentage that
+    // hides how few (or how concentrated) the underlying facts are.
+    eprintln!();
+    eprintln!("-- per-tier aggregates (current period only, in-scope + app-claimable keys) --");
+    for agg in &aggregates {
+        let precision_str = match agg.precision {
+            Some(p) => format!(
+                "{}/{} ({:.1}%)",
+                agg.match_count,
+                agg.precision_denominator,
+                p * 100.0
+            ),
+            None => format!("n/a (0/{})", agg.precision_denominator),
+        };
+        let recall_str = match agg.recall {
+            Some(r) => format!(
+                "{}/{} ({:.1}%)",
+                agg.match_count,
+                agg.recall_denominator,
+                r * 100.0
+            ),
+            None => format!("n/a (0/{})", agg.recall_denominator),
+        };
+        eprintln!(
+            "{:<12} MATCH={:<5} WRONG_VALUE={:<5} MISSING={:<5} SPURIOUS={:<5} \
+             CURRENCY_MISSING={:<5} CURRENCY_MISMATCH={:<5} UNVERIFIED={:<5}",
+            agg.tier,
+            agg.match_count,
+            agg.wrong_value_count,
+            agg.missing_count,
+            agg.spurious_count,
+            agg.currency_missing_count,
+            agg.currency_mismatch_count,
+            agg.unverified_count,
+        );
+        eprintln!("             precision={precision_str}  recall={recall_str}");
+    }
+    eprintln!();
+    eprintln!(
+        "-- per-ticker match counts (visibility into tier concentration, e.g. positional's CDR share) --"
+    );
+    for agg in &aggregates {
+        eprintln!("{}:", agg.tier);
+        for t in &agg.ticker_counts {
+            eprintln!(
+                "  {:<8} MATCH={:<5} WRONG_VALUE={:<5} MISSING={:<5} SPURIOUS={:<5} \
+                 CURRENCY_MISSING={:<5} CURRENCY_MISMATCH={:<5} UNVERIFIED={:<5}",
+                t.ticker,
+                t.match_count,
+                t.wrong_value_count,
+                t.missing_count,
+                t.spurious_count,
+                t.currency_missing_count,
+                t.currency_mismatch_count,
+                t.unverified_count,
+            );
+        }
+    }
+    eprintln!();
+    eprintln!("-- observation buckets (informational, off the precision/recall denominators) --");
+    for agg in &aggregates {
+        eprintln!(
+            "{:<12} out_of_gt_scope={:<5} app_has_no_concept={:<5}  comparative: total={:<5} \
+             stored={:<5} missing={:<5}",
+            agg.tier,
+            agg.out_of_gt_scope_count,
+            agg.app_has_no_concept_count,
+            agg.comparative_total,
+            agg.comparative_stored,
+            agg.comparative_missing,
+        );
+    }
+    eprintln!("======================================================================");
+
+    // ---- write the structured report for the orchestrator's owner-
+    // arbitration render ----------------------------------------------------
+    let generated_at_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let report = Gt182Report {
+        generated_at_unix,
+        gt_dir: gt_dir.display().to_string(),
+        unresolved_gt_rows: unresolved.len(),
+        rows: all_rows,
+        aggregates: aggregates.clone(),
+    };
+    // Adversarial-review should-fix #8: publish atomically — write to a
+    // per-run temp file in the SAME directory (so the rename below is on one
+    // filesystem, hence atomic), then rename onto the stable published path.
+    // A reader (or a concurrent run) can never observe a partially-written
+    // `scoring-report.json`.
+    let report_path = gt_dir.join("scoring-report.json");
+    let report_tmp_path = gt_dir.join(format!("scoring-report.json.tmp-{run_id}"));
+    let report_json = serde_json::to_string_pretty(&report).expect("serialize scoring report");
+    std::fs::write(&report_tmp_path, report_json)
+        .unwrap_or_else(|e| panic!("write {}: {e}", report_tmp_path.display()));
+    std::fs::rename(&report_tmp_path, &report_path).unwrap_or_else(|e| {
+        panic!(
+            "publish {} <- {}: {e}",
+            report_path.display(),
+            report_tmp_path.display()
+        )
+    });
+    eprintln!("scoring report written to {}", report_path.display());
+
+    // Best-effort cleanup of the per-run worktest scratch dir — inert
+    // leftovers on failure are never the corpus itself (see above).
+    let _ = std::fs::remove_dir_all(&worktest_dir);
+
+    // ---- harness sanity ----------------------------------------------------
+    assert!(
+        !gt_rows.is_empty(),
+        "ground_truth.json at {} has no rows",
+        gt_path.display()
+    );
+    for agg in &aggregates {
+        // Adversarial-review should-fix #8: the total must count EVERY
+        // verdict bucket, including the currency-aware ones — a tier that
+        // scored only CURRENCY_MISSING/CURRENCY_MISMATCH rows (a real,
+        // if unlikely, shape) was wrongly flagged as "scored nothing" before
+        // this fix, since those two verdicts were missing from the sum.
+        let total = agg.match_count
+            + agg.wrong_value_count
+            + agg.missing_count
+            + agg.spurious_count
+            + agg.unverified_count
+            + agg.currency_missing_count
+            + agg.currency_mismatch_count;
+        assert!(
+            total > 0,
+            "{} tier scored nothing (0 keys) — check MANIFEST document-id resolution",
+            agg.tier
+        );
+    }
+
+    // ---- #182 is a DIAGNOSTIC, not a ratchet — NO precision/recall floors -
+    // An external methodology audit (2026-08-05) found floors premature and
+    // pulled them from this change; they land in measurement v2 once the
+    // audit's blockers are addressed. Two are fixed in THIS change (currency-
+    // aware matching above; the DNP MANIFEST.json period_end correction); the
+    // remaining ones are structural to how the corpus was built and need a
+    // v2 measurement design, not a code fix here:
+    //   - output-conditioned corpus: GT rows are only labeled for facts/
+    //     periods visible in documents the pipeline had ALREADY extracted,
+    //     which biases recall upward for whatever it already covers — the
+    //     corpus cannot see what the pipeline never touched.
+    //   - no fresh extraction: this harness scores a point-in-time DB
+    //     snapshot, never a live pipeline run — a parser change does NOT
+    //     move these numbers (only a fresh corpus/extraction run would), so
+    //     these numbers are evidence about STORED STATE, not about the
+    //     current parser.
+    //   - CDR concentration: 12 of the positional tier's 17 documents are CD
+    //     Projekt, so a tier-wide number is mostly CDR's number — see the
+    //     per-ticker breakdown printed above and in `scoring-report.json`.
+    //   - document-level vs single-slot estimand: precision/recall are
+    //     computed per (document, metric, period, basis) SLOT, not per
+    //     document, so a handful of chatty documents can dominate a tier.
+    // Until v2 lands, this harness asserts sanity only (below) plus, under
+    // `BRAWLER_GT_REQUIRED=1`, that neither denominator is zero (a genuine
+    // corpus/snapshot integrity signal, distinct from "the numbers are low").
+    for agg in &aggregates {
+        // ADR 0095: the positional tier's app side is now PERMANENTLY empty
+        // (migration 0135 deletes every pdf-tier fact; asserted DB-wide
+        // above) — a zero precision denominator for it is the correct,
+        // expected steady state from now on, never a corpus/snapshot
+        // integrity signal. Only `esef` still has a live app side that a
+        // zero denominator would say something real about.
+        if agg.precision.is_none() && agg.tier != "positional" {
+            let msg = format!(
+                "{} tier's precision denominator (MATCH+WRONG_VALUE+SPURIOUS+CURRENCY_MISSING+\
+                 CURRENCY_MISMATCH) is zero — the corpus/db-snapshot looks stale or broken, not \
+                 merely absent",
+                agg.tier
+            );
+            if required {
+                panic!("REQUIRED esef_positional_ground_truth_scores: {msg}");
+            }
+            eprintln!("WARN esef_positional_ground_truth_scores: {msg} (non-required run)");
+        } else if agg.precision.is_none() {
+            eprintln!(
+                "INFO esef_positional_ground_truth_scores: positional tier's precision \
+                 denominator is zero — expected post-ADR-0095 (the tier's app side is \
+                 permanently empty), not a corpus/snapshot integrity signal"
+            );
+        }
+        if agg.recall.is_none() {
+            let msg = format!(
+                "{} tier's recall denominator (MATCH+WRONG_VALUE+MISSING+CURRENCY_MISSING+\
+                 CURRENCY_MISMATCH) is zero — the corpus/db-snapshot looks stale or broken, not \
+                 merely absent",
+                agg.tier
+            );
+            if required {
+                panic!("REQUIRED esef_positional_ground_truth_scores: {msg}");
+            }
+            eprintln!("WARN esef_positional_ground_truth_scores: {msg} (non-required run)");
+        }
+    }
+
+    // Corpus-integrity enforcement (sol review): rows that silently fell out
+    // of the denominators fail the closure gate — AFTER the report published,
+    // so the run's evidence survives for diagnosis.
+    if !integrity_violations.is_empty() {
+        let listing = integrity_violations.join("\n  - ");
+        if required {
+            panic!(
+                "REQUIRED esef_positional_ground_truth_scores: {} corpus-integrity \
+                 violation(s) silently shrank the scoring denominator:\n  - {listing}",
+                integrity_violations.len()
+            );
+        }
+        eprintln!(
+            "WARN esef_positional_ground_truth_scores: {} corpus-integrity violation(s) \
+             (non-required run):\n  - {listing}",
+            integrity_violations.len()
+        );
+    }
 }

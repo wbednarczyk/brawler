@@ -19,10 +19,18 @@
 //! Values compare as numbers under the pipeline's own [`Tolerance`] (0.5%
 //! relative / 1 base-unit absolute), never as strings.
 //!
-//! **Ratchet rule:** the floors below are pinned at the first measured
-//! baseline (minus a small slack) and only move **deliberately** — raise them
-//! when an improvement lands and is verified, never lower them to make a
-//! regression pass (CLAUDE.md rule 3: a failing gate is a stop signal).
+//! **ARCHIVED ratchet (2026-08-05, #182).** ADR 0086 retired the deterministic
+//! PDF-positional parser this harness graded (`RECALL_FLOOR`/`PRECISION_FLOOR`
+//! below described *that* parser, not the current pipeline). The harness
+//! stays runnable and prints its recall/precision, but the floor asserts are
+//! gone — they no longer gate anything. Its successor is the #182
+//! ESEF/positional ground-truth scorer
+//! (`storage::tests::real_data_extraction::esef_positional_ground_truth_scores`,
+//! `make realdata-gt-score` / the required-mode closure diagnostic
+//! `make realdata-gt-check`) against a much larger hand-labeled corpus — a
+//! DIAGNOSTIC over stored DB state, not a fresh-pipeline ratchet either
+//! (floors deferred to measurement v2 per a 2026-08-05 methodology audit; see
+//! docs/testing.md § "#182 ESEF / positional ground-truth scorer").
 //!
 //! **Inert in CI** — skips unless `BRAWLER_REAL_DB` + `BRAWLER_REAL_DATA_DIR`
 //! point at the throwaway corpus copy and `ground_truth/` exists. Run it:
@@ -45,14 +53,18 @@ use crate::fundamentals::validation::Tolerance;
 use crate::report_diff::extraction::SourceFormat;
 
 // ---------------------------------------------------------------------------
-// Ratchet floors (G-3) — pinned at the measured baseline of 2026-07-08 after
-// the owner's pass-2 decisions (EBITDA Operacyjna is a company-specific KPI,
-// not plain `ebitda` — 3 labels removed; capex sign + net_profit total
-// confirmed): recall 12/37 = 0.3243, precision 12/12 = 1.0000 over 3 labeled
-// CBF SSF quarterlies (Q3 2023 flagged→0/11, Q3 2025 6/13, Q1 2026 6/13;
-// deterministic PDF tier misses operating_profit/EPS/cash-flow lines and
-// capex), minus 0.02 slack. Only move these deliberately: raise after a
-// verified improvement; never lower to absorb a regression.
+// ARCHIVED ratchet floors (G-3) — pinned at the measured baseline of
+// 2026-07-08 after the owner's pass-2 decisions (EBITDA Operacyjna is a
+// company-specific KPI, not plain `ebitda` — 3 labels removed; capex sign +
+// net_profit total confirmed): recall 12/37 = 0.3243, precision 12/12 =
+// 1.0000 over 3 labeled CBF SSF quarterlies (Q3 2023 flagged→0/11, Q3 2025
+// 6/13, Q1 2026 6/13; deterministic PDF tier misses operating_profit/EPS/
+// cash-flow lines and capex), minus 0.02 slack.
+//
+// RETIRED 2026-08-05 (ADR 0086: the PDF-positional parser these floors
+// graded no longer exists). Kept only for the informational eprintln below —
+// not enforced. Successor ratchet: #182 esef_positional_ground_truth_scores
+// (docs/testing.md § "#182 ESEF / positional ground-truth scorer").
 // ---------------------------------------------------------------------------
 const RECALL_FLOOR: f64 = 0.30;
 const PRECISION_FLOOR: f64 = 0.98;
@@ -352,20 +364,19 @@ fn extraction_metrics_recall_precision_ratchet() {
         "\n== overall: recall={:.4} ({total_matched}/{total_labeled})  precision={:.4} ({total_matched}/{total_emitted_for_labeled})  unlabeled_emitted={total_unlabeled_emitted} ==",
         recall, precision
     );
-    eprintln!("== floors: recall>={RECALL_FLOOR}  precision>={PRECISION_FLOOR} ==");
+    eprintln!(
+        "== ARCHIVED floors (retired PDF parser, ADR 0086, no longer enforced): \
+         recall>={RECALL_FLOOR}  precision>={PRECISION_FLOOR} — successor ratchet: #182 \
+         esef_positional_ground_truth_scores =="
+    );
 
     assert!(
         total_labeled > 0,
         "ground truth resolved but carries no labeled facts"
     );
-    assert!(
-        recall >= RECALL_FLOOR,
-        "recall {recall:.4} fell below the pinned floor {RECALL_FLOOR} — extraction regressed; \
-         fix the pipeline (or re-pin deliberately with the owner's sign-off, never to absorb a regression)"
-    );
-    assert!(
-        precision >= PRECISION_FLOOR,
-        "precision {precision:.4} fell below the pinned floor {PRECISION_FLOOR} — extraction regressed; \
-         fix the pipeline (or re-pin deliberately with the owner's sign-off, never to absorb a regression)"
-    );
+    // ARCHIVED (ADR 0086 retired the deterministic PDF-positional parser this
+    // ratchet graded): the floor asserts are intentionally gone. This harness
+    // stays runnable and informational only — it prints recall/precision
+    // above but no longer gates on them. See the module doc comment for the
+    // successor ratchet.
 }

@@ -1245,6 +1245,28 @@ fn create_financial_fact_rejects_a_non_iso_currency() {
     );
 }
 
+/// ADR 0095 (sol review, single-chokepoint completion): the plain create
+/// path passes caller `extraction_method` through verbatim — including from
+/// the MCP act — so the retired positional marker must be refused HERE, not
+/// only in the structured pipeline.
+#[test]
+fn create_financial_fact_refuses_the_retired_positional_method() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let (company_id, period_id, definition_id) = currency_guard_slot(&state);
+
+    let mut input = new_fact_with_currency(&company_id, &period_id, &definition_id, Some("PLN"));
+    input.extraction_method = Some("html_positional".to_owned());
+    let error = state
+        .create_financial_fact(input)
+        .expect_err("the retired html_positional method must never be stored on a new fact");
+
+    assert!(
+        matches!(error, StorageError::RetiredExtractionMethod),
+        "expected the typed retired-method error, got {error:?}"
+    );
+}
+
 #[test]
 fn create_financial_fact_normalizes_currency_case() {
     let connection = open_in_memory_database().expect("database should initialize");

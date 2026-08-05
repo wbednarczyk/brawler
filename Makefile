@@ -431,7 +431,8 @@ check-epic:
 	$(MAKE) check
 	$(MAKE) coverage
 	$(MAKE) realdata-honesty-check
-	@printf "\ncheck-epic complete: full gate + coverage ratchet + real-data honesty ratchet green. Run \`make mutants\` and (if a hot kernel changed) \`make bench\` for the remaining closure-cadence suites.\n"
+	$(MAKE) realdata-gt-check
+	@printf "\ncheck-epic complete: full gate + coverage ratchet + real-data honesty ratchet + #182 ground-truth diagnostic green. Run \`make mutants\` and (if a hot kernel changed) \`make bench\` for the remaining closure-cadence suites.\n"
 
 test:
 	$(NIX) npm run test
@@ -585,11 +586,46 @@ realdata-extraction-check:
 # § Ground-truth metrics): grades the deterministic pipeline's emitted fact
 # VALUES against the hand-labeled ground truth in
 # private/realdata/t7-cbf/ground_truth/*.json (double-pass: agent proposes,
-# owner verifies) and asserts recall/precision against the pinned floors in
-# src-tauri/src/storage/tests/extraction_metrics.rs. Inert without the corpus
-# or the ground-truth dir. Floors only move deliberately (ratchet).
+# owner verifies). ARCHIVED 2026-08-05 (ADR 0086 retired the PDF-positional
+# parser this graded): the floors in src-tauri/src/storage/tests/
+# extraction_metrics.rs are no longer enforced, only printed — this target
+# stays runnable and informational. Successor ratchet: `make realdata-gt-score`
+# / `make realdata-gt-check` (#182). Inert without the corpus or the
+# ground-truth dir.
 realdata-extraction-metrics:
 	$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(REALDATA_DB)) BRAWLER_REAL_DATA_DIR=$(abspath $(REALDATA_DIR)) cargo test extraction_metrics -- --ignored --nocapture'
+
+# #182 ESEF/positional ground-truth scorer — DIAGNOSTIC, no floor (2026-08-05
+# methodology audit deferred floors to measurement v2; see docs/testing.md);
+# storage::tests::real_data_extraction::esef_positional_ground_truth_scores.
+# Scores facts ALREADY IN a throwaway copy of the corpus's db-snapshot.sqlite3
+# against the hand-merged private/realdata/spikes/esef-positional-gt/
+# ground_truth.json — no pipeline run, no writes to the snapshot. Inert
+# without the owner's private #182 corpus (loud SKIP, non-failing). Prints the
+# full evidence table (incl. currency columns) + per-tier aggregates + a
+# per-ticker breakdown, writes scoring-report.json next to the corpus — no
+# precision/recall floor to assert (docs/testing.md § "#182 ESEF / positional
+# ground-truth scorer").
+GT_DIR ?= private/realdata/spikes/esef-positional-gt
+realdata-gt-score:
+	$(NIX) bash -c 'cd src-tauri && BRAWLER_GT_DIR=$(abspath $(GT_DIR)) cargo test esef_positional_ground_truth_scores -- --ignored --nocapture'
+
+# #182 required-mode closure DIAGNOSTIC — same scorer as `realdata-gt-score`
+# but with BRAWLER_GT_REQUIRED=1, which turns a missing corpus/db-snapshot, a
+# manifest document with zero ground-truth rows at its declared current
+# period, or a zero-denominator tier into a hard failure instead of a loud
+# warning. No floor either way — this only confirms the diagnostic runs
+# cleanly against the corpus. Owner-only (the private corpus never enters CI,
+# ADR 0091): mirrors realdata-honesty-check's integration pattern exactly —
+# the SKIP-vs-run decision happens here, at the Makefile level, by checking
+# the corpus is actually present, so composing this into `check-epic` stays
+# safe on any machine without the corpus.
+realdata-gt-check:
+	@if [ -f $(GT_DIR)/db-snapshot.sqlite3 ]; then \
+		$(NIX) bash -c 'cd src-tauri && BRAWLER_GT_DIR=$(abspath $(GT_DIR)) BRAWLER_GT_REQUIRED=1 cargo test esef_positional_ground_truth_scores -- --ignored --nocapture'; \
+	else \
+		printf "\n!! SKIP realdata-gt-check: no #182 corpus at %s.\n!! The #182 scorer measures the owner's OWN corpus and runs on the maintainer's machine only (ADR 0091 dec. 4); the private corpus never enters CI. See private/realdata/spikes/esef-positional-gt/HANDOVER.md.\n\n" "$(GT_DIR)"; \
+	fi
 
 # Real-data honesty ratchet (epic #40 S4, ADR 0091 dec. 4-5; docs/testing.md
 # § Real-data honesty harness): measures — through the real read models — how

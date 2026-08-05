@@ -490,7 +490,7 @@ mod tests {
                 .fundamentals_provenance()
                 .set_fact_provenance(crate::storage::NewFactProvenance {
                     fact_id: &fact.id,
-                    source_tier: "pdf",
+                    source_tier: "esef",
                     validation_status: status,
                     drift_json: None,
                     citation: None,

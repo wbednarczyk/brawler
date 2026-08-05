@@ -421,15 +421,22 @@ fn cover_note_per_share_and_writedown_ebitda_rows_persist_as_facts() {
 // -- Test 2: tier precedence --------------------------------------------------
 
 #[test]
-fn a_cover_note_never_outranks_esef_and_always_outranks_pdf() {
+fn a_cover_note_never_outranks_esef_and_always_outranks_the_aggregator() {
     let connection = open_in_memory_database().expect("database initializes");
     let state = AppState::new(connection);
     let company = company(&state, "PKN");
 
-    // An ESEF fact and a PDF fact already occupy their Q1 2026 slots, both with
-    // values the cover note disagrees with.
+    // An ESEF fact and an aggregator fact already occupy their Q1 2026 slots,
+    // both with values the cover note disagrees with (ADR 0095: the pdf tier
+    // this test originally exercised is retired and unwritable).
     seed_fact(&state, &company.id, "revenue", "111111111", "esef");
-    seed_fact(&state, &company.id, "total_assets", "222222222", "pdf");
+    seed_fact(
+        &state,
+        &company.id,
+        "total_assets",
+        "222222222",
+        "html_aggregator",
+    );
 
     state
         .ingest_bankier_company_items(&[q1_item(&company, "9100002", WDF_BODY)])
@@ -451,7 +458,7 @@ fn a_cover_note_never_outranks_esef_and_always_outranks_pdf() {
     let (assets, assets_provenance) = facts.get("total_assets").expect("total assets fact");
     assert_eq!(
         assets.value_numeric, "500000000",
-        "the cover note outranks the PDF tier and must replace its value"
+        "the cover note outranks the aggregator tier and must replace its value"
     );
     assert_eq!(
         assets_provenance.as_ref().expect("provenance").source_tier,
@@ -492,8 +499,15 @@ fn upgrading_a_lower_tier_value_records_the_disagreement_in_detail() {
         .set_developer_mode_enabled(true)
         .expect("developer mode enables");
 
-    // A PDF-tier value the cover note disagrees with.
-    seed_fact(&state, &company.id, "total_assets", "222222222", "pdf");
+    // An aggregator-tier value the cover note disagrees with (ADR 0095: the
+    // pdf tier this test originally seeded is retired and unwritable).
+    seed_fact(
+        &state,
+        &company.id,
+        "total_assets",
+        "222222222",
+        "html_aggregator",
+    );
 
     state
         .ingest_bankier_company_items(&[q1_item(&company, "9100010", WDF_BODY)])
@@ -516,7 +530,7 @@ fn upgrading_a_lower_tier_value_records_the_disagreement_in_detail() {
         "the diagnostic must record the PREVIOUS value, else the drift evidence is lost: {metadata}"
     );
     assert!(
-        metadata.contains("\"previousTier\":\"pdf\""),
+        metadata.contains("\"previousTier\":\"html_aggregator\""),
         "the diagnostic must record which tier was outranked: {metadata}"
     );
     assert!(

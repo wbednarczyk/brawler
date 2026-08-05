@@ -1082,8 +1082,9 @@ fn format_value(key: &str, value: Decimal) -> Decimal {
 /// `period_end` is the reporting period end (ISO `YYYY-MM-DD`) the caller
 /// already knows from the komunikat metadata — the cover table itself carries no
 /// machine-readable dates. Every emitted fact is stamped with it, following the
-/// [`super::html_positional`] precedent, so [`super::fact_set_for_period`]
-/// groups cover-note facts alongside the other tiers.
+/// precedent set by the retired tier-3b positional reader (ADR 0095), so
+/// [`super::fact_set_for_period`] groups cover-note facts alongside the
+/// other tiers.
 pub fn parse_espi_cover_note(body_text: &str, period_end: &str) -> WdfParseResult {
     let body = normalize(body_text);
 

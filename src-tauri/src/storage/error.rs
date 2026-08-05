@@ -78,6 +78,22 @@ pub enum StorageError {
     AlertRuleNotFound { id: String },
     #[error("an identical alert rule already exists: {id}")]
     DuplicateAlertRule { id: String },
+    #[error(
+        "fact {fact_id} provenance write refused: source_tier={source_tier:?} is incoherent with extraction_method={extraction_method:?} (bug #324 guard)"
+    )]
+    IncoherentFactProvenance {
+        fact_id: String,
+        source_tier: String,
+        extraction_method: String,
+    },
+    #[error(
+        "fact {fact_id} provenance write refused: source_tier='pdf' is retired (ADR 0095) — no new write may produce it, it is a legacy read-only value"
+    )]
+    RetiredSourceTier { fact_id: String },
+    #[error(
+        "financial fact write refused: extraction_method='html_positional' is retired (ADR 0095) — no new fact row may carry the removed positional parser's method"
+    )]
+    RetiredExtractionMethod,
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
