@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.63.11 - 2026-08-05
+
+
+### Bug Fixes
+
+- **ci**: mutation audit always shards — an unsharded full sweep dies at the 180-min cap (#340)
+
+
+### Features
+
+- **ci**: bench audit base-vs-head + live-drive hints and pr-live-cycle (#336, #337) (#342)
+
 ## v0.63.10 - 2026-08-05
 
 
