@@ -50,6 +50,19 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Cache npm
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      # `make coverage` runs vitest out of node_modules — without this step
+      # the ratchet dies with `vitest: command not found` (first live run of
+      # this workflow, epic #40 closure 2026-08-05).
+      - name: Install frontend dependencies
+        run: make install
+
       - name: Coverage ratchet
         run: make coverage
 
