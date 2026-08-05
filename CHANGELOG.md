@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.10 - 2026-08-05
+
+
+### Features
+
+- **ci**: gate architecture v2 — the PR is the only gate (ADR 0096) (#339)
+
 ## v0.63.9 - 2026-08-05
 
 
