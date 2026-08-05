@@ -5,7 +5,7 @@
 // the Nix devshell provides. CI catches this at `npm ci` (engine-strict=true in
 // .npmrc), but only AFTER push — and a host-installed node_modules can mask it
 // locally forever ("host green is not a verdict"). This check reddens in Stage
-// 1 of check-fast, which runs inside `nix develop`, so the process.version
+// 1 of check-local, which runs inside `nix develop`, so the process.version
 // being validated IS the flake's Node — the same one CI uses.
 //
 // Fix direction when this fails: raise the flake's Node (flake.nix devshells,

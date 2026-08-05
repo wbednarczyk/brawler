@@ -1,6 +1,6 @@
 # Release Workflow
 
-Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), [Kanban Archive](kanban-archive.md), [ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md). The epic-closure runbook is the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md); this doc is the policy the repo enforces.
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), [Kanban Archive](kanban-archive.md), [ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md). The epic-closure ritual is [kanban.md](kanban.md) § Epic closure; this doc is the release policy the repo enforces.
 
 ## Model: continuous release driven by a PR label ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md))
 
@@ -37,7 +37,7 @@ Brawler uses SemVer-style `0.x.y` before `1.0.0`. The `release:*` label maps to 
 
 ## Epic closure (retro cadence)
 
-Under continuous release, **versions are not "closed" — epics are.** Closing an epic runs the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md): retrospective (both domains, still-open items honest) presented inline to the owner, the [Definition of Done §I](engineering-workflow.md#definition-of-done-the-handover-gate) audit, `wiki/` confirmed updated (it is updated **in the behavior-changing PR**, not at release), and `gh issue close <n> --reason completed` for the delivered task/epic issues (the board automation moves them to Done). The owner signs off before the tracking is closed.
+Under continuous release, **versions are not "closed" — epics are.** Closing an epic is a **post-delivery audit, never a gate** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)): [kanban.md](kanban.md) § Epic closure runs the retrospective (both domains, still-open items honest) presented inline to the owner, the [Definition of Done §I](engineering-workflow.md#definition-of-done-the-handover-gate) audit, `wiki/` confirmed updated (it is updated **in the behavior-changing PR**, not at release), and `gh issue close <n> --reason completed` for the delivered task/epic issues (the board automation moves them to Done). The owner signs off before the tracking is closed.
 
 ## Release artifacts
 

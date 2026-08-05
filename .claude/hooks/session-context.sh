@@ -9,7 +9,7 @@ Three always-on rules (full statements in CLAUDE.md):
 2. Doc-first (spec-driven) — read the area's canonical doc before any non-trivial change; update it in the same change; propose + confirm a doc/ADR change when the spec is missing or contradicted.
 3. Enforcement is a hard stop — never weaken/skip/--no-verify a failing gate; fix it or surface it.
 
-Git: do NOT commit or push unless the user explicitly asks (or the brawler-release skill runs). Edit, stop, wait.
+Git: do NOT commit or push unless the user explicitly asks. Edit, stop, wait.
 
-Load per task: `gh issue view <n>` (active work; `gh issue list` / the "Brawler board" for the board) → only the area's canonical doc(s) from the CLAUDE.md map. UI work → docs/ui-authoring.md first. Release/packaging → the brawler-release / packaging skills.
+Load per task: `gh issue view <n>` (active work; `gh issue list` / the "Brawler board" for the board) → only the area's canonical doc(s) from the CLAUDE.md map. UI work → docs/ui-authoring.md first. Epic closure: docs/kanban.md § Epic closure. Packaging → the packaging skill.
 EOF

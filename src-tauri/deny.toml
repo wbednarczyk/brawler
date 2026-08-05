@@ -1,7 +1,7 @@
 # cargo-deny policy for the Rust dependency tree (issue #167).
 #
 # Run by `make check-deps` as a hard-fail step of `make check` (never of
-# `check-fast` — both scanners need the network, see the Makefile note).
+# `check-local` — both scanners need the network, see the Makefile note).
 #
 # Posture: a security gate is only worth having if it is honest about what it
 # cannot fix. Everything here is either enforced or carries a written reason;

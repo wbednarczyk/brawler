@@ -19,7 +19,6 @@ mod decision_journal;
 mod diagnostics;
 mod espi_cover_note_facts;
 mod events;
-mod extraction_metrics;
 mod feed_sources;
 mod financials;
 mod fundamentals_provenance;

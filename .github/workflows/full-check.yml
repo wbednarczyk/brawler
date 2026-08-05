@@ -1,9 +1,9 @@
-# Full check — the single distributed gate (ADR 0090).
+# Full check — the single distributed gate (ADR 0090, coverage jobs ADR 0096).
 #
 # One definition, run at every boundary: on each PR (required checks), on each
 # master push via release.yml (workflow_call), and on demand (workflow_dispatch).
-# There is no "fast" mode in CI — "fast" lives only in the local pre-commit
-# (`make check-fast`). Every check-executing step is a thin `make <target>`
+# There is no "fast" mode in CI — "fast" lives only in the local developer inner
+# loop (`make check-local`). Every check-executing step is a thin `make <target>`
 # wrapper (scripts/check/gate-integrity.mjs asserts this), so the same thing runs
 # identically here and locally.
 #
@@ -11,7 +11,7 @@
 # (devshell-image.yml → ghcr.io/wbednarczyk/brawler-devshell) so `nix develop -c`
 # resolves in ~seconds instead of installing Nix per job. If that image is
 # unavailable, the documented fallback is to drop the `container:` line and add
-# an `install-nix-action` step (see mutants.yml) to each job.
+# an `install-nix-action` step (see mutation-audit.yml) to each job.
 name: Full check
 
 on:
@@ -108,6 +108,37 @@ jobs:
         run: rm -rf /opt/hostedtoolcache || true
       - run: make check-rust-test
 
+  rust-coverage:
+    name: Rust coverage ratchet
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
+      # Second cache-writer family, key "coverage" (ADR 0096 amends ADR 0090's
+      # one-writer rule to one-writer-per-key-family): instrumented cargo-llvm-cov
+      # artifacts don't share with the plain test-build cache.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: coverage
+      - uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - name: Reclaim disk space
+        run: rm -rf /opt/hostedtoolcache || true
+      - run: make install
+      - run: make coverage-rust
+
   types-check:
     name: ts-rs binding drift
     needs: changes
@@ -174,6 +205,28 @@ jobs:
       - run: make install
       - run: make check-frontend-test
 
+  frontend-coverage:
+    name: Frontend coverage ratchet
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
+      - uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - run: make install
+      - run: make coverage-frontend
+
   frontend-build:
     name: Frontend build
     needs: changes
@@ -238,7 +291,7 @@ jobs:
   # docs-only PR changes no dependency tree. Unlike every other check job this
   # one is deliberately NETWORK-dependent — cargo-deny fetches the RustSec
   # advisory DB and `npm audit` queries the registry — which is why it lives in
-  # the full gate only and never in `make check-fast`.
+  # the full gate only and never in `make check-local`.
   deps:
     name: Dependency scan (cargo-deny + npm audit)
     needs: changes

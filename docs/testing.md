@@ -11,7 +11,7 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Engineering Wo
 The constraint is that the suite stays **lean and fast** — coverage of everything must never mean a bloated suite or a gate that takes hours. Two rules hold both at once:
 
 1. **Test behavior and contracts, not implementation details.** One clear test per behavior; assert the observable result (the command's output, the rendered state, the stored row), not internal mechanics. **Delete tests that no longer protect behavior, and never add a redundant or brittle test "to be safe"** (especially screenshot-diff tests) — that bloat is exactly what makes a suite slow, flaky, and ignored. More tests is not the goal; covering every behavior *once, well* is.
-2. **Keep the bulk in the fast layers; every *deterministic* suite is on the one mandatory gate, and only the genuinely-slow/flaky/credentialed ones stay out.** `make check` is the single hard-fail gate ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)) — frontend + Rust + `knip` + the ts-rs drift guard + the **full Playwright browser suite** + `gate-integrity` + `docs-drift` (spec↔code enforcement — contracts/IA/data-model vs. the real commands/screens/settings, [ADR 0065](adr/0065-spec-code-drift-gates.md)) — and `.githooks/pre-commit` runs it before every commit. It must stay in the seconds-to-low-minutes range (the browser suite parallelizes to ~tens of seconds). Only suites disqualified from a per-commit hard gate stay periodic/manual, each for a stated reason: `coverage` (slow instrumented build), `mutants` (30 min–2 h), `bench` (machine-dependent), live provider / OS-keyring smokes (credentials/network/OS), packaging (OS/toolchain). This is the anti-rot contract: a deterministic suite that is *not* on the gate rots (the browser suite went 28-red for two sessions when it lived only in `check-epic` behind `-`-prefixed steps). Default CI/local checks stay deterministic and secret-free.
+2. **Keep the bulk in the fast layers; every *deterministic* suite is on the one mandatory gate, and only the genuinely-slow/flaky/credentialed ones stay out.** `make check` is the single hard-fail gate ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)) — frontend + Rust + `knip` + the ts-rs drift guard + the **full Playwright browser suite** + `gate-integrity` + `docs-drift` (spec↔code enforcement — contracts/IA/data-model vs. the real commands/screens/settings, [ADR 0065](adr/0065-spec-code-drift-gates.md)) — and runs as the PR's required checks, the **only** gate under continuous release ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)); no local commit hook runs it (only `commit-msg` survives locally). It must stay in the seconds-to-low-minutes range (the browser suite parallelizes to ~tens of seconds). The **coverage ratchet** is two scoped PR required checks (`coverage-frontend`/`coverage-rust`, § Coverage ratchet); **mutation testing** is a risk-triggered advisory audit, auto-run on `master` pushes touching monitored modules (§ Mutation testing scope), never blocking a merge. Remaining periodic/manual suites, each for a stated reason: `bench` (machine-dependent), live provider / OS-keyring smokes (credentials/network/OS), packaging (OS/toolchain). This is the anti-rot contract: a deterministic suite that is *not* on the gate rots (the browser suite went 28-red for two sessions when it lived only in the now-retired `check-epic` behind `-`-prefixed steps). Default CI/local checks stay deterministic and secret-free.
 
 **Hermetic tests must not read the developer's shell.** A test asserting missing-credential behavior (provider skipped, "configure Settings" error) MUST call `providers::credentials::scrub_provider_env_fallbacks()` first — an exported dev-fallback var (e.g. `GEMINI_API_KEY` from direnv) otherwise gives the provider a credential and the test passes on one machine and fails on another (guardrail 2026-07-11: three `jobs::` tests). Same rule for any future env-fallback: hermetic tests scrub it at the top; scrubbing after the action under test is cleanup, not hermeticity. Safe under nextest's process-per-test model. **Sibling class — shared fixed network resources:** a test that binds a socket must probe a free port (`TcpListener::bind("127.0.0.1:0")` → read → drop) — never a fixed port and never settings-clamped `0` (the MCP clamp maps `0` to the 1024 floor, so every "ephemeral" test raced for the same port under parallel nextest; reddened a commit gate intermittently, 2026-07-12). The probe→bind window itself still races between socket tests, so every socket-binding test also joins the serialized `loopback-sockets` nextest group (`.config/nextest.toml`).
 
@@ -23,9 +23,9 @@ The constraint is that the suite stays **lean and fast** — coverage of everyth
 
 Harvested at the v0.50.0 closure (ADR 0045) — each rule saves a burned ~15-minute gate run:
 
-- **Pre-validate the commit subject.** The commit-msg hook runs *after* the pre-commit gate, so a bad subject wastes a green run: `scripts/release/validate-commit-message.sh --message "<subject>"` (Conventional Commits, **72-byte** subject cap — multibyte characters count as bytes).
+- **Pre-validate the commit subject.** A rejected `commit-msg` hook wastes the work of writing the commit: `scripts/release/validate-commit-message.sh --message "<subject>"` (Conventional Commits; no subject-length limit, ADR 0090).
 - **Regenerate generated files, never hand-edit.** `docs/adr/INDEX.md` → `node scripts/check/docs-drift.mjs --write-adr-index`; docs-drift is the gate's *last* step, so a stale index fails a full run at the finish line. Always-loaded docs (`CLAUDE.md`, `engineering-workflow.md`, the session hook) carry ADR 0063 byte budgets checked by gate-integrity — trim or move content rather than grow them.
-- **A runaway mutant must not abort the whole `mutants` run.** Some mutants loop and eat memory — that is exactly why the jail exists — but a systemd scope's default `OOMPolicy=stop` turns the jail's first OOM-kill into termination of the *entire* run (four consecutive runs died this way at the v0.50 closure; `journalctl --user` showed `Failed with result 'oom-kill'` on each, initially misread as an external process reaper). The jail therefore sets `-p OOMPolicy=continue`: the kernel reaps the runaway test process, cargo-mutants records that mutant as failed/timeout, and the run continues. Corollaries: diagnose a dead long run from `journalctl --user`/`dmesg` before blaming the environment, and when driving `make mutants` from an agent harness, launch it as an independent unit (`systemd-run --user --collect --unit=<name> -p WorkingDirectory=<repo> bash -lc 'make mutants > <log> 2>&1'`, login shell for the Nix PATH) so tool timeouts can't SIGTERM it mid-run, and avoid running it concurrently with a full gate on a small-RAM box.
+- **A runaway mutant must not abort the whole `audit-mutants` run.** Some mutants loop and eat memory — that is exactly why the jail exists — but a systemd scope's default `OOMPolicy=stop` turns the jail's first OOM-kill into termination of the *entire* run (four consecutive runs died this way at the v0.50 closure; `journalctl --user` showed `Failed with result 'oom-kill'` on each, initially misread as an external process reaper). The jail therefore sets `-p OOMPolicy=continue`: the kernel reaps the runaway test process, cargo-mutants records that mutant as failed/timeout, and the run continues. Corollaries: diagnose a dead long run from `journalctl --user`/`dmesg` before blaming the environment, and when driving `make audit-mutants` from an agent harness, launch it as an independent unit (`systemd-run --user --collect --unit=<name> -p WorkingDirectory=<repo> bash -lc 'make audit-mutants > <log> 2>&1'`, login shell for the Nix PATH) so tool timeouts can't SIGTERM it mid-run, and avoid running it concurrently with a full gate on a small-RAM box.
 
 **The layers (push coverage down to the cheapest layer that proves the behavior):**
 
@@ -64,7 +64,7 @@ Suites run in parallel within and across frameworks to keep the loop fast, with 
 
 ## Coverage ratchet
 
-`make coverage` measures line coverage — frontend via Vitest's v8 provider, Rust via `cargo-llvm-cov` — then runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if either layer drops below the committed floor in `coverage-baseline.json`. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. It is periodic (the instrumented Rust build is slow), not part of `make check`. Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
+`make coverage-frontend` (Vitest's v8 provider) and `make coverage-rust` (`cargo-llvm-cov`) measure line coverage per layer, then each runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if its layer drops below the committed floor in `coverage-baseline.json` — frontend 80.0%, Rust 86.5%. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. Both are **PR required checks** (`Frontend coverage ratchet` / `Rust coverage ratchet`), not periodic — the PR is the only gate under continuous release ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md), amending [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)). The instrumented Rust build's cache uses its own key, distinct from the plain test-build cache (ADR 0096 dec. 4).
 
 ## Real-data validation precedes implementation for matching/ranking features
 
@@ -277,14 +277,12 @@ ZERO ground-truth rows at its declared current period is a hard failure under
 missing `ground_truth.json`, or missing `db-snapshot.sqlite3` → SKIP, never fails CI. **The private
 corpus never enters CI** (ADR 0091): this harness is inert there by construction, not by an env
 flag CI happens to leave unset. `BRAWLER_GT_REQUIRED=1` flips every one of those SKIPs, the
-zero-GT-rows-at-current-period manifest guard, and a zero-denominator tier into a hard panic instead
-— the owner-only closure diagnostic, `make realdata-gt-check` (composed into `check-epic`,
-mirroring `realdata-honesty-check`'s loud-SKIP integration: the corpus-presence check lives in the
-Makefile target, so composing it into `check-epic` stays safe on any machine without the corpus).
-Neither target asserts a floor — both simply confirm the diagnostic runs cleanly against the corpus.
+zero-GT-rows-at-current-period manifest guard, and a zero-denominator tier into a hard panic
+instead — an owner-only, on-demand diagnostic mode, never a required check ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)).
+Neither mode asserts a floor — both simply confirm the diagnostic runs cleanly against the corpus.
 
-**Run:** `make realdata-gt-score` (diagnostic report, non-required) or `make realdata-gt-check`
-(required mode, closure diagnostic), or directly:
+**Run:** `make realdata-gt-score` (diagnostic report; prefix `BRAWLER_GT_REQUIRED=1` for the strict
+mode above), or directly:
 
 ```text
 BRAWLER_GT_DIR=private/realdata/spikes/esef-positional-gt \
@@ -395,16 +393,16 @@ column at all, a real, clean gap distinct from current-period accuracy.
 
 `html_aggregator` remains unmeasured by this harness — the corpus has no `html_aggregator` ground
 truth to score against. The private corpus never enters CI or the public repo (ADR 0091); this
-measurement is reproduced locally via `make realdata-gt-score` / `make realdata-gt-check` on the
-maintainer's machine only — both are closure DIAGNOSTICS (no floor to fail).
+measurement is reproduced locally via `make realdata-gt-score` on the maintainer's machine only —
+an on-demand DIAGNOSTIC (no floor to fail).
 
-**Successor-ratchet note (unchanged by this round):** this scorer replaces
-`storage::tests::extraction_metrics`'s CBF recall/precision ratchet, whose
-`RECALL_FLOOR`/`PRECISION_FLOOR` (0.30/0.98) graded the deterministic PDF-positional parser ADR 0086
-retired. That harness stays runnable (`make realdata-extraction-metrics`) and prints its numbers,
-but its floor asserts are archived — informational only, no longer enforced. (Note: THIS scorer
-itself currently carries no floor either, per the audit above — "successor" describes which harness
-supersedes the retired one, not that #182 is gating yet.)
+**Successor-ratchet note:** this scorer replaces `storage::tests::extraction_metrics`'s CBF
+recall/precision ratchet (`RECALL_FLOOR`/`PRECISION_FLOOR` 0.30/0.98, graded the deterministic
+PDF-positional parser ADR 0086 retired) — that harness, its floors, and its `make
+realdata-extraction-metrics` target are deleted; the measurement is preserved as historical
+evidence in [ADR 0095](adr/0095-retire-html-positional-tier.md). THIS scorer itself currently
+carries no floor either, per the audit above — "successor" describes which harness supersedes the
+retired one, not that #182 is gating yet.
 
 ### Data-trust audit (epic #229 T1) — sizing a repair before writing it
 
@@ -492,33 +490,13 @@ over the real `.xbri` filing and asserts the second run creates nothing, reports
 slots as skipped, and leaves `financial_facts` unchanged. It **writes to the corpus DB** — the
 corpus copy is throwaway by contract (refresh it from the live DB when in doubt).
 
-### Ground-truth metrics ratchet (recall/precision, G-3)
+### Ground-truth metrics ratchet (recall/precision, G-3) — RETIRED
 
-The value-level companion to the structural corpus net ([ADR 0077](adr/0077-trusted-extraction-foundations.md)
-T0.1): `storage::tests::extraction_metrics::extraction_metrics_recall_precision_ratchet` grades
-the deterministic pipeline's emitted fact **values** against hand-labeled ground truth.
-
-- **Ground truth** — one JSON per (document, period) in `private/realdata/t7-cbf/ground_truth/`
-  (gitignored, never committed): `{ document_file, company, fiscal_year, period_type,
-  facts: [{ metric_key, value, unit, statement, page }] }`. `metric_key`s come from the seeded
-  KPI catalog only; `value` is a decimal string in signed base units (tys.-PLN statements are
-  normalized ×1000). Labeling is **double-pass**: the agent proposes values read off the
-  statement pages, the owner verifies; anything not certain carries `"uncertain": true` (+
-  `why_uncertain`) instead of a silent guess.
-- **Metrics** — per document and overall: *recall* = labeled facts emitted with a matching value;
-  *precision* = emitted facts for labeled metrics that match the label (emitted facts nobody
-  labeled are excluded and reported as `unlabeled_emitted`). Values compare as numbers under the
-  pipeline's own `Tolerance` (0.5% relative / 1 base-unit absolute), never as strings. A
-  per-document `metric_key | labeled | extracted | match` table prints for eyeballing.
-- **Ratchet rule** — the floors (`RECALL_FLOOR`/`PRECISION_FLOOR` in `extraction_metrics.rs`) are
-  pinned at the measured baseline minus 0.02 slack (2026-07-08, after the owner's pass-2 label
-  decisions: recall 12/37 = 0.32, precision 12/12 = 1.00 → floors 0.30 / 0.98). They move only
-  **deliberately** — raise after a
-  verified improvement lands; never lower to absorb a regression.
-
-```bash
-make realdata-extraction-metrics   # same REALDATA_DB/REALDATA_DIR guards; skips without corpus/ground_truth
-```
+The CBF recall/precision ratchet (`storage::tests::extraction_metrics`, floors 0.30/0.98) graded
+the deterministic PDF-positional parser [ADR 0086](adr/0086-aggregator-primary-fundamentals.md)
+retired; its `make realdata-extraction-metrics` target and the `extraction_metrics` module are
+deleted, superseded by the #182 ESEF/positional ground-truth scorer above. Historical measurement
+evidence: [ADR 0095](adr/0095-retire-html-positional-tier.md).
 
 The **report-over-report diff** (`v0.47.0`, [ADR 0052](adr/0052-report-over-report-diff.md))
 followed this rule and is the worked example of it paying off: a pure-Rust
@@ -612,8 +590,9 @@ CI covers the same invariant class through the synthetic shape corpus (epic #40 
 make realdata-honesty-check   # self-test, refresh throwaway copy, measure, judge
 ```
 
-Local only, and **never part of `make check`**: it runs as a step of `check-epic`, printing a loud
-SKIP on any machine without the maintainer's snapshot (`HONESTY_MASTER_DB`, refreshed per
+Local only, and **never part of `make check`**: an owner-machine, on-demand advisory diagnostic
+([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)), printing a loud SKIP
+on any machine without the maintainer's snapshot (`HONESTY_MASTER_DB`, refreshed per
 `private/realdata/README.md`). Baseline numbers move only with the run that earned them.
 
 ### Synthetic shape corpus (epic #40 S6) — the public half
@@ -695,7 +674,7 @@ property for "the same entity arrives from multiple sources"), **round-trip**
 input → same output and same canonical id; no wall-clock/random leakage), and
 **totality / no-panic** (a result or typed error for every input, never a
 panic). Property tests run in the normal stable test binary and are part of
-`make check` (bounded case counts); heavier counts run under `make check-epic`.
+`make check` (bounded case counts).
 
 **Associativity of merge** — ADR 0049's sixth invariant, "multi-source
 unification cannot depend on grouping" — is committed for
@@ -768,7 +747,7 @@ structured generators** (`tests/parser_fuzz.rs`) that synthesize adversarial
 HTML/RSS/XML and assert the parser **never panics and never amplifies** (output
 item count bounded by input length; no unbounded loop/allocation). This runs in
 the normal stable test binary (deterministic, seeded, shrinking) — bounded
-iterations in `make check`, heavier via `PROPTEST_CASES` under `make check-epic`.
+iterations in `make check`.
 Every Brawler parser consumes `&str`, so a proptest text strategy is the right
 generator; **`arbitrary`/`cargo-fuzz` are deliberately not used** (raw-bytes
 deriving + coverage-guidance earn their keep on byte-oriented parsers Brawler
@@ -843,7 +822,7 @@ Files: the corpus is `src/test/scenarios/fidelity-corpus.json` (language-neutral
 `src/test/scenarios/fidelity.test.ts` (over `createMockRuntime`); the Rust
 replayer is `src-tauri/src/storage/tests/mock_fidelity.rs` (over `AppState` on a
 fresh `open_in_memory_database`); it loads the corpus via `BRAWLER_FIDELITY_CORPUS`
-(set by `src-tauri/build.rs` from `BRAWLER_SCENARIOS_DIR` — `make mutants`
+(set by `src-tauri/build.rs` from `BRAWLER_SCENARIOS_DIR` — `make audit-mutants`
 exports that dir as an absolute path since `cargo-mutants`' scratch copy
 excludes anything above the workspace). The same rule covers every shared
 fixture under `src/test/scenarios/`: Rust tests embed one via
@@ -875,13 +854,15 @@ suites were removed with the write-only story-key path, [ADR 0080](adr/0080-reti
 
 ### Mutation testing scope
 
-`make mutants` (`cargo-mutants`) is the strong signal that the property and
+`make audit-mutants` (`cargo-mutants`) is the strong signal that the property and
 golden tests actually *kill* defects — line coverage does not prove this. Its
-`-f` scope **follows the highest-risk transform logic**: it starts at
-`src/fundamentals/expr/**` + `src/storage/migrations.rs` and is **extended to the
-dedup/matching/normalization modules** as they land, rather than rotting at the
-original globs. It stays **periodic** (closure-cadence, in the `make check-epic`
-neighborhood — not the per-change gate). Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md).
+`-f` scope **follows the highest-risk transform logic**: the five monitored risk
+paths (`src/fundamentals/expr/**`, `src/storage/migrations.rs`,
+`src/storage/feed_matching.rs`, `src/source_adapters/parsing.rs`,
+`src/entity_resolution.rs`, [ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)
+dec. 5), extended as new dedup/matching/normalization modules land. It is a
+**risk-triggered advisory audit** — never the per-change gate — auto-run in CI on
+`master` pushes touching those paths, plus manual dispatch. Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md).
 
 The target is **resource-capped by default** (`nice -19`, `CARGO_BUILD_JOBS=2`,
 `test-threads=2` via the nextest `mutants` profile, one mutant at a time,
@@ -891,11 +872,13 @@ the jail OOMs only the sweep scope). Raise via `MUTANTS_BUILD_JOBS`/`MUTANTS_MEM
 on a dedicated box, or split a sweep across quiet moments with
 `make mutants MUTANTS_SHARD=k/n`.
 
-Sweeps also run off-box via the manual `mutants.yml` GitHub Actions workflow
-(`gh workflow run mutants.yml [-f shard=1/8]`) on standard `ubuntu-latest`,
-`MUTANTS_JAIL=off` since a hosted runner has no user systemd manager to jail —
-`make mutants` (jailed by default) stays the documented local equivalent for a
-dedicated box.
+Sweeps run in CI via **`mutation-audit.yml`** (renamed from `mutants.yml`) —
+auto-triggered on monitored-path `master` pushes, plus `gh workflow run
+mutation-audit.yml [-f shard=1/8]` for manual dispatch — on standard
+`ubuntu-latest`, `MUTANTS_JAIL=off` since a hosted runner has no user systemd
+manager to jail. `make audit-mutants` (jailed by default) stays the documented
+local equivalent for a dedicated box; findings are advisory and become tracked
+cards, never a blocker.
 
 **Red means a survivor, not a slow mutant** (#256). The workflow captures
 cargo-mutants' exit code and decides the job in a separate `Sweep verdict`
@@ -956,7 +939,7 @@ How it's wired (assertion-driven, not screenshot-only):
 Two harvested rules (ADR 0045), both from the `v0.47.0` report-diff panel:
 
 - **A no-horizontal-scroll check must assert the inner scroll containers, not just the document.** `document.documentElement.scrollWidth` is **0** when the overflow lives in an inner `overflow: auto` element (which shows *its own* scrollbar) — so a document-level check passes while the user sees a scrollbar. Assert `scrollWidth <= clientWidth + 1` on the actual scroll container(s) in the subtree (e.g. `.company-list`) and on the offending panel, across the narrow viewports. The report-diff overflow was invisible to the document check for several rounds because the scroll lived on `.company-list`.
-- **A new IPC command that drives a primary-screen panel ships with (a) its case in the shared runtime router and (b) a narrow-window layout assertion for that panel.** Vitest mocks the api module, so a panel can be green in Vitest yet untested for layout (the Playwright runtime didn't know the command, so the panel never rendered with data under `make check`/`check-epic`). Add the router case + a `tests/browser/*-layout.spec.ts` overflow assertion in the same change as the command. Example: `report-diff-layout.spec.ts`.
+- **A new IPC command that drives a primary-screen panel ships with (a) its case in the shared runtime router and (b) a narrow-window layout assertion for that panel.** Vitest mocks the api module, so a panel can be green in Vitest yet untested for layout (the Playwright runtime didn't know the command, so the panel never rendered with data under `make check`). Add the router case + a `tests/browser/*-layout.spec.ts` overflow assertion in the same change as the command. Example: `report-diff-layout.spec.ts`.
 
 **The harness also renders any screen for visual review** — drive a throwaway spec to the screen and `await page.screenshot(...)`. "No GUI in WSL" is not a reason to skip looking at a UI change (see [Engineering Workflow → Definition of Done](engineering-workflow.md#definition-of-done-the-handover-gate)).
 
@@ -1156,7 +1139,7 @@ Or the pieces separately:
 
 **Boot smoke against a given exe (#206).** `make live-smoke EXE=<portable .exe>` launches the exe with the CDP port open (same `dev-live.ps1`), waits for the endpoint, runs only the clean-DB-safe `tests/live/boot-smoke.live.spec.ts` (shell renders, version badge answers over IPC, one nav round-trip, no critical console errors, screenshots), and always stops the app. One recipe, two homes: CI's `windows-boot-smoke` job runs it on windows-latest against the `windows-build` artifact (the only gate that boots the real shipped .exe), and the owner can run it from WSL against any built exe. Its recipe is deliberately nix-less (it runs where the .exe runs); unlike the rest of `tests/live/` the boot spec must never assume the owner's populated DB.
 
-`BRAWLER_CDP_URL` overrides the connection target (default `http://localhost:9222`); the helper (`tests/live/helpers/liveConnect.ts`) applies the same localhost → nameserver-IP fallback order when it is unset. Dev-only; **never** part of `make check`/`make check-epic` — no default/CI environment has a live GUI app with an open debug port.
+`BRAWLER_CDP_URL` overrides the connection target (default `http://localhost:9222`); the helper (`tests/live/helpers/liveConnect.ts`) applies the same localhost → nameserver-IP fallback order when it is unset. Dev-only; **never** part of `make check` — no default/CI environment has a live GUI app with an open debug port.
 
 **Scoped runs + UX checkpoints (Q6, [ADR 0081](adr/0081-ux-quality-loop-v2.md)).** `make live-drive`/`live-cycle` default to the **full** historical live suite; set `LIVE_SPEC=<path>` to drive **one** spec (empty preserves the full-suite default), e.g. `make live-cycle LIVE_SPEC=tests/live/ux-checkpoint.live.spec.ts`. The generic UX checkpoint (`tests/live/ux-checkpoint.live.spec.ts`) drives the **mechanical** J1 path and records evidence for a human charter — it never judges clarity/usefulness ("UX good" is never emitted). It reads `BRAWLER_UX_JOURNEY`, `BRAWLER_UX_CARD`, `BRAWLER_UX_STAGE=vertical|mid|release` (`requireCheckpointMeta` **refuses** to run without them) and `BRAWLER_UX_DATASET` (optional non-sensitive label). Evidence (`manifest.json` + screenshots) is written under gitignored `test-results/live/checkpoints/<stage>-<card>/`; the manifest records build/version, Windows-native confirmation, viewport/DPR, locale/theme, and a **dataset LABEL only** — **never** the database path or contents. Outside a checkpoint run (no metadata) the spec skips, so an ordinary full live sweep is unaffected. Cadences + human charter: [dogfooding.md](dogfooding.md). The env-gated `tests/live/rebuild-fundamentals.live.spec.ts` driver (`BRAWLER_REBUILD=1`) runs the [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) wipe+rebuild path (BR-primary pull + ESEF/WDF re-scan) against a live app; off by default so an ordinary sweep never triggers it.
 

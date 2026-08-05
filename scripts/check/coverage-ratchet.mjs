@@ -1,11 +1,16 @@
 #!/usr/bin/env node
-// Coverage ratchet (ADR 0048). Reads the frontend (Vitest v8) and Rust
-// (cargo-llvm-cov) line-coverage summaries and fails if either drops below the
-// committed floor in coverage-baseline.json. This enforces the full-coverage
-// policy as a trend (never regress) without a brittle absolute target: when
-// coverage rises meaningfully it prints the new floors to commit.
+// Coverage ratchet (ADR 0048, scoped per-layer PR check per ADR 0096 decision
+// 4). Reads the frontend (Vitest v8) and/or Rust (cargo-llvm-cov)
+// line-coverage summary and fails if it drops below the committed floor in
+// coverage-baseline.json. Trend enforcement (never regress), not a brittle
+// absolute target: when coverage rises meaningfully it prints the new floor.
 //
-// Inputs (produced by `make coverage`):
+// --layer=frontend|rust scopes the check to one layer's input/floor only
+// (`make coverage-frontend` / `make coverage-rust`, each its own PR required
+// check) and does not require the OTHER layer's result file to exist. No
+// --layer enforces both (needs both summaries present).
+//
+// Inputs:
 //   coverage/frontend/coverage-summary.json  (.total.lines.pct)
 //   coverage/rust-summary.json               (.data[0].totals.lines.percent)
 
@@ -14,28 +19,37 @@ import { readFileSync } from "node:fs";
 const TOLERANCE = 0.5; // percentage points of slack for measurement noise
 const RAISE_BY = 1.0; // suggest raising the floor when current exceeds it by this
 
-function readJson(path) {
+const layerArg = process.argv.find((a) => a.startsWith("--layer="));
+const requestedLayer = layerArg ? layerArg.slice("--layer=".length) : null;
+if (requestedLayer !== null && !["frontend", "rust"].includes(requestedLayer)) {
+  console.error(`coverage-ratchet: --layer must be "frontend" or "rust" (got: ${requestedLayer})`);
+  process.exit(2);
+}
+const layers = requestedLayer ? [requestedLayer] : ["frontend", "rust"];
+
+function readJson(path, makeTarget) {
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch (err) {
     console.error(`coverage-ratchet: cannot read ${path}: ${err.message}`);
-    console.error("Run `make coverage` (it produces the summaries before this check).");
+    console.error(`Run \`make ${makeTarget}\` (it produces the summary before this check).`);
     process.exit(2);
   }
 }
 
-const baseline = readJson("coverage-baseline.json");
-const frontend = readJson("coverage/frontend/coverage-summary.json");
-const rust = readJson("coverage/rust-summary.json");
+const baseline = readJson("coverage-baseline.json", requestedLayer ? `coverage-${requestedLayer}` : "coverage");
 
-const current = {
-  frontend: frontend.total.lines.pct,
-  rust: rust.data[0].totals.lines.percent,
-};
+const current = {};
+if (layers.includes("frontend")) {
+  current.frontend = readJson("coverage/frontend/coverage-summary.json", "coverage-frontend").total.lines.pct;
+}
+if (layers.includes("rust")) {
+  current.rust = readJson("coverage/rust-summary.json", "coverage-rust").data[0].totals.lines.percent;
+}
 
 let failed = false;
 const raises = [];
-for (const layer of ["frontend", "rust"]) {
+for (const layer of layers) {
   const floor = baseline[layer].lines;
   const now = current[layer];
   const status = now + TOLERANCE < floor ? "FAIL" : "ok";

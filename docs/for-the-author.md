@@ -1,6 +1,6 @@
 # Brawler dla autora (human-only)
 
-> Dokument dla człowieka, nie dla agenta: zwięzły obraz tego, z czego składa się aplikacja i co potrafi DZIŚ. Aktualizowany przy każdym release (krok w skillu `brawler-release`). Wersja interaktywna: prywatny Artifact „Brawler — mapa systemu”. Normy i szczegóły są gdzie indziej (contracts, data-model, ADR-y) — tu ma być czytelnie, nie wyczerpująco.
+> Dokument dla człowieka, nie dla agenta: zwięzły obraz tego, z czego składa się aplikacja i co potrafi DZIŚ. Aktualizowany przy każdym release (krok w rytuale kanban.md § Epic closure). Wersja interaktywna: prywatny Artifact „Brawler — mapa systemu”. Normy i szczegóły są gdzie indziej (contracts, data-model, ADR-y) — tu ma być czytelnie, nie wyczerpująco.
 
 **Stan: v0.61** (implementacja gotowa) · 12 trybów/ekranów (**Porównaj** przywrócone jako żywa pozycja menu) · ~200 typowanych komend · 21 domen silnika (nowa: wycena porównawcza) · 116 migracji · **100 narzędzi MCP** (44 read + 56 act za przełącznikiem zapisu, proweniencja obowiązkowa) · ~3300 testów w jednej bramce · **zero AI w analizie** (BYOA przez MCP; w apce został tylko provider transkrypcji).
 
