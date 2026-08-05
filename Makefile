@@ -286,6 +286,7 @@ coverage-frontend:
 	$(NIX) npm run coverage:ratchet -- --layer=frontend
 
 coverage-rust:
+	@mkdir -p coverage
 	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov nextest --summary-only --json --output-path ../coverage/rust-summary.json'
 	$(NIX) npm run coverage:ratchet -- --layer=rust
 
