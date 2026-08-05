@@ -196,12 +196,9 @@ pub struct SettingsUpdate {
     /// Requested backfill depth in years (ADR 0077 §3); clamped to `[1, 10]` on
     /// write rather than rejected.
     pub backfill_years: Option<i64>,
-    /// Requested per-history-sweep tier-4 AI call budget (ADR 0077 §6); clamped
-    /// to `[0, 500]` on write rather than rejected (0 = off).
     pub youtube_transcription_provider: Option<String>,
     pub youtube_transcription_model: Option<String>,
     pub youtube_transcription_timeout_seconds: Option<i64>,
-    /// Base URL for the generic OpenAI-compatible provider (ADR 0060).
     pub log_level: Option<String>,
     pub log_max_files: Option<i64>,
     pub log_max_file_bytes: Option<i64>,

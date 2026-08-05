@@ -1045,7 +1045,7 @@ First-class management claims ([ADR 0040](adr/0040-management-claims-tracker.md)
 - `made_at`: date the statement was made (`YYYY-MM-DD`, optional); `source_period_id` → `financial_periods(id)` optional (the period it was stated in/about).
 - Due period (the resurfacing match key): `due_fiscal_year` (integer, optional) + `due_period_type` (reuses the `financial_periods` vocabulary: `FY`/`H1`/`H2`/`Q1`–`Q4`/`9M`/`M01`–`M12`, optional). A claim with no due period never resurfaces and stays user-managed.
 - `status` (verdict): `pending` (default) | `delivered` | `partially_delivered` | `missed` | `revised`. User-set; never auto-assigned.
-- Provenance: `source_evidence_type` (`report_document` | `transcript_segment` | `transcript` | `manual` | `feed_item`) + `source_evidence_id` (soft reference; a transcript-extracted claim is attributed to its transcript job, a report-extracted claim to its report document); `extraction_proposal_id` → `claim_extraction_proposals(id)` when AI-extracted (null for manual).
+- Provenance: `source_evidence_type` (`report_document` | `transcript_segment` | `transcript` | `manual` | `feed_item`) + `source_evidence_id` (soft reference; a transcript-extracted claim is attributed to its transcript job, a report-extracted claim to its report document); `extraction_proposal_id` is a legacy column — its referent table was dropped by migration `0102` ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)), so it is always NULL on new rows.
 - Quantitative target (optional, drives fact lookup): `target_metric_key`, `target_comparator` (`gte`/`lte`/`gt`/`lt`/`approx`/`eq`), `target_value_numeric` (decimal-exact text), `target_unit`.
 - Verification: `verifying_fact_id` → `financial_facts(id)` soft reference (set when a fact is linked from the review queue); `revises_claim_id` → `management_claims(id)` (set on a `revised` supersession, history kept).
 - `created_at`, `updated_at`.
@@ -1060,30 +1060,7 @@ Rules:
 
 ### Claim Extraction
 
-AI claim extraction with mandatory user confirmation ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`), mirroring the KPI extraction job→proposal→confirm/reject pattern. Sources are report documents **and** transcripts. Migration `0046_claim_extraction.sql`.
-
-`claim_extraction_jobs`:
-
-- `id`, `company_id` → `companies(id)`.
-- Source: `source_type` (`report_document` | `transcript`), `source_id` (→ `report_documents(id)` or `transcript_jobs(id)`).
-- `provider_id`, `model`, `prompt_version`.
-- `status`: `queued` | `running` | `succeeded` | `failed`; `error_code`, `error`.
-- `created_at`, `started_at`, `finished_at`.
-
-`claim_extraction_proposals`:
-
-- `id`, `job_id` → `claim_extraction_jobs(id)`.
-- `statement` (candidate claim text), suggested `due_fiscal_year`/`due_period_type`, optional quantitative target (`target_metric_key`/`target_comparator`/`target_value_numeric`/`target_unit`).
-- `confidence`, `source_snippet` (verbatim evidence), `source_evidence_type`/`source_evidence_id` (the document or transcript segment the snippet came from).
-- `status`: `pending` (default) | `confirmed` | `rejected`; `claim_id` → `management_claims(id)` (set on confirm).
-- `created_at`, `updated_at`.
-
-Rules:
-
-- Only a **confirmed** proposal materializes a `management_claims` row; confirmation may carry user overrides of the extracted fields. No claim is created without user review.
-- Rejected proposals are retained (audit, and to suppress re-proposal of the same statement).
-- One job targets one source document or transcript; extraction is idempotent per `(source_type, source_id, prompt_version)` for re-runs.
-- Provider/model/prompt provenance is recorded for audit and reversibility, consistent with KPI extraction and signal classification.
+Retired outright ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)): migration `0102` dropped `claim_extraction_jobs` and `claim_extraction_proposals`. The manual `management_claims` path is untouched; agent-proposed claims arrive through the MCP act tier.
 
 ### Report Preparations
 

@@ -1288,12 +1288,7 @@ Rules:
 
 Rules:
 
-- **Generation retired** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)): no new feed-item analysis is produced in-app (intelligence arrives through the MCP port, BYOA). `list_ai_analysis(feedItemId)` **survives read-only** — analysis a previous version stored stays listable.
-- `promptPresetId` is stable and may represent a built-in prompt preset.
-- `customQuestion` is optional and stores the user's local question text for the selected feed item.
-- Persisted statuses are `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
-- `errorCode` and `error` are recoverable local diagnostics and must not contain provider secrets or full source text.
-- Stored jobs may include the `AI Analysis Result` read model.
+- **Retired outright** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md), migration `0102`): no new feed-item analysis is produced in-app (intelligence arrives through the MCP port, BYOA), the `ai_analysis_*` tables are dropped, and `list_ai_analysis` no longer exists as a command.
 
 ## Video Transcript Job
 
@@ -1810,11 +1805,13 @@ Commands:
   "backfillYears": 3,
   "settingsSource": "sqlite",
   "settingsImportExportFormat": "yaml",
+  "yamlImportExportStatus": "accepted_deferred",
   "aiProviders": {
     "youtubeTranscriptionProvider": "provider_gemini",
     "youtubeTranscriptionModel": "gemini-2.5-flash",
     "youtubeTranscriptionTimeoutSeconds": 300
   },
+  "logs": { "level": "info", "maxFiles": 5, "maxFileBytes": 5242880 },
   "shortcutBindings": {},
   "database": {
     "maxConnections": 4,
