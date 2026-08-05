@@ -339,6 +339,27 @@ jobs:
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - run: make check-commits RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
 
+  # Advisory hint (ADR 0096 principle 5): says when a scoped live-drive of the
+  # owner's real app is worth it before merging. Classification only ever
+  # decides what is SAID, never what is CHECKED. Not a required check.
+  live-drive-hint:
+    name: Live-drive hint (advisory)
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
+      - run: make live-drive-hints BASE=${{ github.event.pull_request.base.sha }} HEAD=${{ github.event.pull_request.head.sha }} PR=${{ github.event.number }}
+
   # Windows = first-class platform (ADR 0090 §B2): cross-build the portable .exe
   # on every code-touching PR. Uses install-nix-action (the windows-cross devShell
   # is not in the default devshell image) + the same caches as the old

@@ -24,7 +24,7 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust bench report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -76,6 +76,8 @@ help:
 	@printf "  make live-up             Rebuild the portable exe, launch it on Windows with CDP open, wait until ready (ADR 0066)\n"
 	@printf "  make live-drive          Drive the real running Windows app via WebView2 CDP (ADR 0066), needs a live app\n"
 	@printf "  make live-cycle          live-up + live-drive: one command from WSL to rebuild, launch, and test live\n"
+	@printf "  make pr-live-cycle PR=<n> [LIVE_SPEC=<spec>]\n"
+	@printf "                            Download PR #<n>'s cross-built .exe and drive the live suite against it — no WSL rebuild\n"
 	@printf "  make tauri-build         Build the Linux Tauri app from WSL, not a Windows app\n"
 	@printf "  make package-linux-amd64\n"
 	@printf "                            Build Linux .deb, .rpm, and AppImage release artifacts\n"
@@ -107,8 +109,9 @@ build:
 # deterministic/hermetic suite runs here as a hard-fail step, nothing
 # exit-ignored; gate-integrity fails the gate if any mandatory suite is dropped
 # or any step is `-`-prefixed (silent red). Excluded, advisory/audit only:
-# `audit-mutants` (30m–2h, risk-path-triggered), `bench` (machine-dependent
-# wall-clock), the live Gemini/keyring smokes (credentials/network/OS),
+# `audit-mutants` (30m–2h, risk-path-triggered), `audit-bench` (machine-dependent
+# wall-clock; base-vs-head is audited on demand, see the bench block below),
+# the live Gemini/keyring smokes (credentials/network/OS),
 # `live-drive` (ADR 0066 — needs a real running Windows app), and packaging
 # (OS/toolchain).
 check:
@@ -193,6 +196,7 @@ check-deps:
 check-docs-gates:
 	$(NIX) node scripts/check/gate-integrity.mjs
 	$(NIX) node scripts/check/docs-drift.mjs
+	$(NIX) node --test "scripts/check/*.test.mjs"
 	$(NIX) npm run release:version-check
 
 # Commit-message gate (ADR 0090): validate every commit subject in RANGE against
@@ -292,15 +296,35 @@ coverage-rust:
 
 coverage: coverage-frontend coverage-rust
 
-# Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049): RSS
-# parse and formula parse. (The similarity scan was the third until ADR 0080
-# retired the embedding model with it.) Runs criterion, then the
-# bench-ratchet flags any kernel that regressed beyond tolerance against
-# bench-baseline.json. Machine-dependent and slow — NEVER part of `make check`;
-# run on the reference machine and update the baseline deliberately.
-bench:
-	$(NIX) bash -c 'cd src-tauri && cargo bench --bench transforms'
-	$(NIX) npm run bench:ratchet
+# Micro-benchmarks of the hot data-transform kernels (criterion). Local run is
+# advisory — criterion self-compares against the previous local run. The honest
+# regression signal is the base-vs-head audit on ONE runner:
+# .github/workflows/bench-audit.yml → audit-bench-ci (ADR 0096: advisory audit,
+# never a required check). Wall-clock is machine-dependent — NEVER part of `make check`.
+audit-bench:
+	$(NIX) bash -c 'cd src-tauri && cargo bench --locked --bench transforms'
+
+# CI-only (bench-audit.yml): bench BASE_SHA in a detached worktree and HEAD in
+# this tree, sharing one criterion dir so the head run produces change/ deltas
+# (--baseline-lenient tolerates head-added kernels). Head's Makefile/scripts
+# stay authoritative for both measurements. Requires full git history.
+audit-bench-ci:
+	@set -e; \
+	base="$${BASE:-}"; \
+	base_sha="$$(git rev-parse --verify "$${base:-$$(git merge-base origin/master HEAD)}^{commit}")"; \
+	head_sha="$$(git rev-parse --verify 'HEAD^{commit}')"; \
+	if [ "$$base_sha" = "$$head_sha" ]; then \
+		printf "✖ audit-bench-ci: base == head (%s) — dispatch from a branch, or pass BASE=<ref>.\n" "$$base_sha" >&2; exit 64; \
+	fi; \
+	printf "bench-audit: base=%s head=%s\n" "$$base_sha" "$$head_sha"; \
+	rm -rf src-tauri/target/criterion /tmp/bench-audit-base; \
+	git worktree prune; \
+	git worktree add --detach /tmp/bench-audit-base "$$base_sha"; \
+	trap 'git worktree remove --force /tmp/bench-audit-base 2>/dev/null || true' EXIT; \
+	$(NIX) bash -c 'cd /tmp/bench-audit-base/src-tauri && CARGO_TARGET_DIR="$(CURDIR)/src-tauri/target" cargo bench --locked --bench transforms -- --save-baseline audit-base'; \
+	find src-tauri/target/criterion -mindepth 1 -type d \( -name new -o -name change \) -exec rm -rf {} +; \
+	$(NIX) bash -c 'cd src-tauri && cargo bench --locked --bench transforms -- --baseline-lenient audit-base'; \
+	$(NIX) node scripts/check/bench-compare.mjs
 
 # Escaped-defect taxonomy trend report (ADR 0081, plan Q7). Advisory only,
 # never part of `make check`: counts escaped frontend/UX defects by origin
@@ -480,16 +504,36 @@ sync-rad:
 	git push rad master --follow-tags
 
 # Download a PR's cross-built Windows portable .exe for owner hands-on testing
-# (ADR 0090 §B2). Pulls the `windows-build` artifact from the latest full-check
-# run on the PR's head branch into /mnt/d/Brawler/Builds/pr-<n>/. Needs `gh`.
+# (ADR 0090 §B2). Pulls the `windows-build` artifact from the full-check run
+# that actually built the PR's CURRENT head SHA (not merely "latest run on the
+# branch" — a stale/failed run on an old push would silently serve an old
+# binary) into /mnt/d/Brawler/Builds/pr-<n>/. Needs `gh`.
 pr-binary:
 	@test -n "$(PR)" || { printf "Usage: make pr-binary PR=<number>\n" >&2; exit 64; }
-	@dest="/mnt/d/Brawler/Builds/pr-$(PR)"; \
-	branch="$$(gh pr view $(PR) --json headRefName --jq .headRefName)"; \
-	run_id="$$(gh run list --branch "$$branch" --workflow full-check.yml --json databaseId --jq '.[0].databaseId')"; \
-	if [ -z "$$run_id" ]; then printf "No full-check run found for PR #$(PR) (branch %s).\n" "$$branch" >&2; exit 1; fi; \
-	mkdir -p "$$dest"; \
-	gh run download "$$run_id" --name windows-build --dir "$$dest"; \
+	@set -e; \
+	dest="/mnt/d/Brawler/Builds/pr-$(PR)"; \
+	head_sha="$$(gh pr view $(PR) --json headRefOid --jq .headRefOid)"; \
+	if [ -z "$$head_sha" ]; then printf "Could not resolve head SHA for PR #$(PR).\n" >&2; exit 1; fi; \
+	runs_json="$$(gh run list --workflow full-check.yml --commit "$$head_sha" --json databaseId,status,conclusion,url)"; \
+	run_id="$$(printf '%s' "$$runs_json" | jq -r '[.[] | select(.conclusion=="success")][0].databaseId // empty')"; \
+	if [ -z "$$run_id" ]; then \
+		run_id="$$(printf '%s' "$$runs_json" | jq -r '.[0].databaseId // empty')"; \
+		if [ -n "$$run_id" ]; then \
+			printf "⚠ pr-binary: no green full-check run for %s yet — using the newest run for that SHA (may be in-flight or failed).\n" "$$head_sha" >&2; \
+		fi; \
+	fi; \
+	if [ -z "$$run_id" ]; then printf "No full-check run found for PR #$(PR) head SHA %s.\n" "$$head_sha" >&2; exit 1; fi; \
+	run_url="$$(printf '%s' "$$runs_json" | jq -r --arg id "$$run_id" '.[] | select((.databaseId|tostring)==$$id) | .url')"; \
+	printf "pr-binary: PR #$(PR) head %s, run %s (%s)\n" "$$head_sha" "$$run_id" "$$run_url"; \
+	tmp_dest="$$(mktemp -d /mnt/d/Brawler/Builds/.pr-$(PR)-download.XXXXXX)"; \
+	trap 'rm -rf "$$tmp_dest"' EXIT; \
+	gh run download "$$run_id" --name windows-build --dir "$$tmp_dest"; \
+	if ! find "$$tmp_dest" -maxdepth 1 -type f -name '*.exe' | grep -q .; then \
+		printf "pr-binary: downloaded artifact contains no .exe — refusing to replace %s.\n" "$$dest" >&2; exit 1; \
+	fi; \
+	rm -rf "$$dest"; \
+	mv "$$tmp_dest" "$$dest"; \
+	trap - EXIT; \
 	printf "Downloaded PR #$(PR) Windows artifact to %s\n" "$$dest"
 
 # Stamp the release version into the manifests/binary/UI at build time WITHOUT
@@ -632,6 +676,14 @@ shape-inventory-scan:
 		printf "\n!! SKIP shape-inventory-scan: no real database at %s.\n!! The scan reads the maintainer's OWN data and runs on the maintainer's machine only (ADR 0091 dec. 4);\n!! the committed src/test/scenarios/shape-inventory.json is the public artefact. Refresh the snapshot per private/realdata/README.md to enable it.\n\n" "$(HONESTY_MASTER_DB)"; \
 	fi
 
+# Advisory "worth a live-drive" hint (card #337, ADR 0096 principle 5): a dumb
+# path -> hint classifier over the PR's changed files, wired as the always-green
+# `live-drive-hint` CI job. Never part of `make check` — it decides only what is
+# SAID, never what is CHECKED. BASE/HEAD are commit SHAs; PR is optional (used
+# only to fill the suggested command).
+live-drive-hints:
+	$(NIX) env BASE="$(BASE)" HEAD="$(HEAD)" PR="$(PR)" node scripts/check/live-drive-hints.mjs
+
 # Live-drive (ADR 0066, docs/testing.md § Live drive): drives the REAL packaged
 # Windows app — real backend, real local SQLite DB — via WebView2's Chrome
 # DevTools Protocol, replacing most manual click-through testing. Requires a live
@@ -666,9 +718,6 @@ live-drive:
 # CDP port open, and wait until the endpoint answers. package-windows-from-linux
 # already force-stops any running brawler* process (via powershell.exe) before
 # replacing the artifact, so re-running live-up always tests the fresh build.
-# The wait loop probes localhost first, then the Windows-host IP from
-# /etc/resolv.conf's nameserver line — the same resolution order as
-# tests/live/helpers/liveConnect.ts.
 live-up:
 	$(MAKE) package-windows-from-linux
 	@if ! command -v powershell.exe >/dev/null 2>&1; then \
@@ -678,7 +727,16 @@ live-up:
 	@SCRIPT="$$(wslpath -w scripts/windows/dev-live.ps1)"; \
 	OUT_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)")"; \
 	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$$SCRIPT" -Port $(LIVE_CDP_PORT) -OutputDir "$$OUT_WIN"
-	@rm -f "$(LIVE_CDP_URL_FILE)"; \
+	$(MAKE) live-wait
+
+# CDP-ready wait loop, shared by live-up (after a rebuild+relaunch) and
+# pr-live-cycle (after launching an already-built PR exe) — extracted so
+# neither has to duplicate it. Probes localhost first, then the Windows-host IP
+# from /etc/resolv.conf's nameserver line — the same resolution order as
+# tests/live/helpers/liveConnect.ts.
+live-wait:
+	@set -e; \
+	rm -f "$(LIVE_CDP_URL_FILE)"; \
 	gw_ip="$$(ip route show default 2>/dev/null | sed -n 's/^default via \([^[:space:]]*\).*/\1/p' | head -1)"; \
 	ns_ip="$$(sed -n 's/^nameserver[[:space:]]*\([^[:space:]]*\).*/\1/p' /etc/resolv.conf 2>/dev/null | head -1)"; \
 	deadline=$$((SECONDS + 90)); url=""; \
@@ -689,7 +747,7 @@ live-up:
 		sleep 2; \
 	done; \
 	if [ -z "$$url" ]; then \
-		printf "✖ live-up: no CDP endpoint reachable on port $(LIVE_CDP_PORT) after 90s.\n"; \
+		printf "✖ live-wait: no CDP endpoint reachable on port $(LIVE_CDP_PORT) after 90s.\n"; \
 		printf "  Checked http://localhost:$(LIVE_CDP_PORT)/json/version"; \
 		if [ -n "$$gw_ip" ]; then printf ", http://%s:$(LIVE_CDP_PORT) (default gw)" "$$gw_ip"; fi; \
 		if [ -n "$$ns_ip" ]; then printf ", http://%s:$(LIVE_CDP_PORT) (resolv.conf)" "$$ns_ip"; fi; \
@@ -704,6 +762,40 @@ live-up:
 # Full cycle: rebuild + launch + wait (live-up), then run the live suite.
 live-cycle:
 	$(MAKE) live-up
+	$(MAKE) live-drive
+
+# Drive a PR's cross-built exe against the owner's REAL app data (#337, ADR
+# 0096 principle 5): the exe must sit in latest/ because the portable data dir
+# is the exe's parent (src-tauri/src/data_directory.rs). The versioned release
+# exe in latest/ is left untouched — the PR binary lands as brawler-pr-live.exe.
+pr-live-cycle:
+	@test -n "$(PR)" || { printf "Usage: make pr-live-cycle PR=<number> [LIVE_SPEC=<spec>]\n" >&2; exit 64; }
+	$(MAKE) pr-binary PR=$(PR)
+	@printf "⚠ pr-live-cycle: launching PR #$(PR)'s binary against the LIVE database in $(WINDOWS_OUT_DIR)/data —\n"
+	@printf "⚠ pending migrations in the PR will be applied to it. latest/ keeps running this PR binary until the next live-cycle/release copy.\n"
+	@if command -v powershell.exe >/dev/null 2>&1; then \
+		powershell.exe -ExecutionPolicy Bypass -Command '$$ErrorActionPreference = "SilentlyContinue"; Get-Process | Where-Object { $$_.ProcessName -like "brawler*" } | Stop-Process -Force; exit 0'; \
+	fi
+	@set -e; \
+	src_dir="/mnt/d/Brawler/Builds/pr-$(PR)"; \
+	matches="$$(find "$$src_dir" -maxdepth 1 -type f -name 'brawler-*portable.exe' ! -name 'brawler-mcp-stdio.exe')"; \
+	count="$$(printf '%s\n' "$$matches" | grep -c .)"; \
+	if [ "$$count" -ne 1 ]; then \
+		printf "pr-live-cycle: expected exactly one portable .exe under %s, found %d:\n%s\n" "$$src_dir" "$$count" "$$matches" >&2; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(WINDOWS_OUT_DIR)"; \
+	cp -f "$$matches" "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe.staging"; \
+	mv -f "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe.staging" "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe"; \
+	printf "Copied PR #$(PR) binary to %s/brawler-pr-live.exe\n" "$(WINDOWS_OUT_DIR)"
+	@if ! command -v powershell.exe >/dev/null 2>&1; then \
+		printf "powershell.exe not found. pr-live-cycle is intended for WSL on Windows.\n"; \
+		exit 1; \
+	fi
+	@SCRIPT="$$(wslpath -w scripts/windows/dev-live.ps1)"; \
+	EXE_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)/brawler-pr-live.exe")"; \
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$$SCRIPT" -Port $(LIVE_CDP_PORT) -ExePath "$$EXE_WIN"
+	$(MAKE) live-wait
 	$(MAKE) live-drive
 
 # Boot smoke against a GIVEN portable .exe (#206, ADR 0090 §B2): launch it with

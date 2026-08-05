@@ -1,12 +1,10 @@
-//! Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049, T5).
+//! Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049).
 //!
 //! These cover the kernels that the data-heavy roadmap leans on: source-feed
 //! parsing throughput and fundamentals formula parsing. They are **periodic
-//! and informational** — run
-//! with `make bench`; they NEVER fail `make check` (wall-clock is
-//! machine-dependent). The companion `scripts/check/bench-ratchet.mjs` compares
-//! the medians against the committed `bench-baseline.json` and flags relative
-//! regressions, mirroring the coverage ratchet.
+//! and informational** — they NEVER fail `make check` (wall-clock is
+//! machine-dependent). Kernels are measured by the base-vs-head bench audit,
+//! `.github/workflows/bench-audit.yml` (ADR 0096).
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 

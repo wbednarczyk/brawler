@@ -52,6 +52,7 @@ const MANDATORY_SUITES = [
   { target: "check-docs-gates", marker: "docs-drift", label: "spec↔code drift gate (ADR 0065)" },
   { target: "coverage-frontend", marker: "npm run test:coverage", label: "frontend coverage ratchet (ADR 0096)" },
   { target: "coverage-rust", marker: "cargo llvm-cov", label: "rust coverage ratchet (ADR 0096)" },
+  { target: "check-docs-gates", marker: "node --test", label: "check-script unit tests (bench-compare, live-drive-hints)" },
 ];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.

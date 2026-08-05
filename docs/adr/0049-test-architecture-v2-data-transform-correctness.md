@@ -136,6 +136,8 @@ gate stays deterministic** and machine-dependent timing never flakes CI:
   beyond a tolerance against a committed baseline. Because wall-clock is
   machine-dependent, this is **periodic and informational**; it never fails
   `make check`. Absolute ms budgets as a hard gate are explicitly rejected.
+  *Superseded ([ADR 0096](0096-quality-gate-architecture-under-continuous-release.md) amendment, #336):
+  the committed baseline is retired; the audit is base-vs-head on one runner (`bench-audit.yml`).*
 
 ### 5. Mock-runtime fidelity via a dual-execution contract
 

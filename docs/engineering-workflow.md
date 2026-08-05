@@ -51,7 +51,7 @@ The Makefile is the preferred local command surface from WSL; targets stay thin 
 | Data/extraction work (advisory) | `realdata-gt-score` / `realdata-extraction-check` / `realdata-honesty-check` / `make live-cycle` | Local, on demand |
 | Every PR (required checks) | `make check` composition + both coverage ratchets | CI only |
 | Risk-path pushes to `master` | mutation audit (advisory) | CI only |
-| Never locally | full gate, coverage, mutants, bench | CI only |
+| Never locally | full gate, coverage, mutants, bench audit | CI only |
 
 ## Test-Driven Development Loop
 
@@ -137,7 +137,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **Owner dogfooding run before release** — the ~15-min real-app journey walk in [dogfooding.md](dogfooding.md); P1 findings block the release, friction feeds the retro's UX section.
 - [ ] **Spec-conformance audit against the epic's ADR(s), decision by decision.** For every ADR decision, verify a **live-path invocation exists** (`repoctx callers` from the real job/command/UI entry, not only unit tests) and record a verdict (conforms / partial / deviates / not built). Unit-green modules with no live wiring are the recurring failure this catches (harvest 2026-07-02). "A capability is not done until a user can reach it" applies to every ADR decision.
 - [ ] **Epic PR evidence = green required checks** (incl. both coverage ratchets) on the exact tested tree — no separate closure gate ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)). Mutation audit auto-triggers on risk-path merges; triage findings into cards, never blockers. Retrospective written (both domains, still-open items honest). · `wiki/` updated. · Version bump via the release workflow — **only on explicit user sign-off**. Epic closure ritual (sub-issue check, ADR audit): [kanban.md](kanban.md) § Epic closure.
-- [ ] **`make bench`** when a hot kernel changed — bench-ratchet vs `bench-baseline.json` (informational, machine-dependent, never a hard gate); base-vs-head audit rework tracked separately (#336).
+- [ ] **Bench audit** when a hot kernel changed — dispatch `bench-audit.yml` (advisory; local `make audit-bench` self-compares).
 
 ### §K — Honest handover report — always
 - [ ] **A "gate green" claim requires the gate's own exit code as evidence** — for a backgrounded `make check`, grep the echoed `EXIT=`/`${PIPESTATUS[0]}` line from the saved output; a wrapper/task-notification exit code is **never** evidence (it reflects the last shell command, not `make`). A failed step also **aborts the steps after it** — a partially-green log proves nothing about suites that never ran (two S6 gate runs were mis-reported green this way).
@@ -181,7 +181,8 @@ Avoid: `rtk proxy ...` (bypasses filtering); shell-wrapped reads where `rtk grep
 | `install-git-hooks` | `git config core.hooksPath .githooks` | Wires the `commit-msg` hook (only survivor). |
 | `sync-rad` | `git push rad master` + tags | Async Radicle mirror (owner-run; not a process step). |
 | `audit-mutants` | `cargo mutants --test-tool nextest -f ...` | Risk-triggered mutation audit (renamed from `mutants`; auto on monitored-path `master` pushes, plus manual dispatch). |
-| `bench` | `cargo bench --bench transforms` + `bench:ratchet` | Periodic, informational benchmarks; base-vs-head audit rework tracked separately (#336). |
+| `audit-bench` | `cargo bench --bench transforms` | Advisory local run; honest signal: `bench-audit.yml`. |
+| `pr-live-cycle` | `pr-binary` + launch + live suite | Drive a PR's exe over the real data (no rebuild). |
 | `package-*`, `windows-package*`, `windows-test-help` | — | Packaging/Windows paths — the `packaging` skill. |
 
 ## Testing
