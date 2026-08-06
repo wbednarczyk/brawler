@@ -16,15 +16,16 @@ searchable text in the company notebook.
 2. **Settings → Credentials** — save your Gemini API key (the free tier is
    sufficient for occasional transcriptions).
 
-No other keys are used anywhere in the app. Saved outputs from the pre-v0.59
-AI features (old analyses, briefs, digests) remain readable — they are your
-data — but nothing generates new ones in-app.
+No other keys are used anywhere in the app. Outputs from the pre-v0.59 AI
+features (old analyses, briefs, digests) were deleted, not archived, when the
+layer retired — a deliberate clean cut, not a data-loss bug.
 
 ## Where the old AI features went
 
 - **KPI extraction** → deterministic readers + the BiznesRadar-primary daily
   pull ([Fundamentals & Coverage](fundamentals-coverage.md)). No AI, no keys.
-- **Claims, verdicts, narratives** → manual entry now; agent-assisted writes
-  arrive via MCP write-tools (with mandatory provenance) in a future release.
+- **Claims, verdicts, narratives** → manual entry, plus agent-assisted writes
+  via MCP write-tools with mandatory provenance ([The MCP server](mcp-server.md)) —
+  off by default, opt in from Settings.
 - **Talking to your research** → any MCP-capable agent (Claude, etc.) connected
   to the local MCP server.

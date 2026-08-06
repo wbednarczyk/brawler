@@ -16,7 +16,7 @@ anything that felt slow, confusing, or wrong. A feeling counts as a finding.
 | # | Journey | Walk | Minutes |
 |---|---------|------|---------|
 | 1 | J1 morning review | Open the app → triage the Today stream → open one item → back | 2 |
-| 2 | J2 report published | Latest report feed item → extract/review KPIs → confirm one → check Fundamentals | 3 |
+| 2 | J2 report published | Open the run card → review extracted KPIs (drift/diff) → resolve claims-to-verify → check Fundamentals | 3 |
 | 3 | J3 onboarding | Add (or dry-run) a company via registry lookup → first note "why watching" | 2 |
 | 4 | J4 season prep | Report Season → open one pre-report card → review → mark prepared | 2 |
 | 5 | J5 claim verification | Claims queue → verdict one due claim against its evidence | 1 |
@@ -29,7 +29,7 @@ anything that felt slow, confusing, or wrong. A feeling counts as a finding.
 - Anything broken or jarring → GitHub issue (`bug` + labels) the same day; P1s get a follow-up fix PR immediately (a post-delivery audit, so it cannot block an already-shipped release).
 - UX friction that is not a bug → the milestone retro's **UX section** (journeys shorter/longer)
   and, when it names a defect class, the [guardrail-harvest](../.claude/skills/guardrail-harvest/SKILL.md) loop.
-- The run itself is a release-prep step: note date + build + verdict in the release notes draft.
+- The run itself is entered in the epic-closure retrospective (or the audit's tracking issue, if run standalone): note date + build + verdict there — continuous release ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) has no release-prep step or hand-written release notes.
 
 ## Earlier exploratory checkpoints (ADR 0081)
 

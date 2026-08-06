@@ -66,7 +66,7 @@ Intent: open the app at the start of the day and learn what changed and whether 
 Flow:
 
 1. User lands on Today.
-2. At the top, the **morning briefing** summarizes what changed in the user's companies and what needs doing — new signals, autopilot runs, claims due, upcoming report dates, and fired alerts — as a structured list, or an AI narrative with citation links when a provider is configured. A **Generate briefing** action recomposes it on demand; it also auto-refreshes once per day while the app is open.
+2. At the top, the **morning briefing** summarizes what changed in the user's companies and what needs doing — new signals, autopilot runs, claims due, upcoming report dates, and fired alerts — as a deterministic structured list ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2 — no AI narrative). A **Generate briefing** action recomposes it on demand; it also auto-refreshes once per day while the app is open.
 3. Below it, the user triages the **attention stream** (autopilot runs, changed reports, claims to verify, upcoming reports, and fired alerts), optionally filtered by a counter tile.
 4. **Fired alerts** also raise a **persistent toast** the user can click through to the evidence; the **Today attention list** groups fired events by company, where each is marked seen or dismissed.
 5. User opens the 0–2 items that matter into the company workspace, then returns to Today.
@@ -90,7 +90,7 @@ Flow:
 2. Feed shows newest items first, with a typed-signal badge on classified official filings (e.g. insider transaction, dividend, profit warning).
 3. User filters by watchlist, company, item type, signal type, unread, saved, and significance when available.
 4. User opens an item in the detail pane.
-5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) (a stored pre-retirement AI analysis remains readable as legacy data — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
+5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) — no AI analysis panel ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5: stored AI analysis was dropped by migration `0102`).
 6. User marks item read, saves it, opens the original source, or creates a note from it.
 7. Signals are typed by the deterministic rule classifier only ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); an unclassifiable filing simply carries no typed signal.
 

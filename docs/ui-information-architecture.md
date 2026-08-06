@@ -403,7 +403,7 @@ Rules:
 - Event details must clearly show that metadata is redacted and local-only.
 - Metrics are operational health signals, not product analytics. Process-lifetime counters must be presented as runtime-only signals that reset on app restart.
 - Runtime log viewing is available only from Diagnostics while Developer mode is active, even though log configuration is visible in Settings.
-- The first rich timeline is AI analysis job progress, including queued, running, context loaded, provider resolved, credential checked, request sent, response received, parsed, stored, and failed.
+- The first rich timeline is video-transcript job progress ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 3 — the only remaining AI job kind), including queued, running, provider resolved, credential checked, request sent, response received, parsed, stored, and failed.
 - Non-AI modules may show lightweight baseline events where useful, while detailed logs and metrics remain separate observability surfaces.
 - Raw diagnostic JSON/file export is outside M14 scope.
 
@@ -417,7 +417,7 @@ Sections:
 
 - Appearance: dark/light/system brightness mode, separate accent palette with `night-neon` and `midnight-horizon`, extensible locale setting with English default and Polish as the first additional language
 - Sources: polling interval, **backfill history depth** (clickable presets 1/3/5/10 years bound to a slider + numeric input, clamped 1–10, default 3; ADR 0077 §3), feed cleanup status, import/export status
-- AI providers: Gemini configuration for YouTube transcription, selectable transcription model, credential configured/not-configured status, credential storage, secret kind, future general AI provider slots, and the **history-sweep AI call budget** (clickable presets 0/10/30/100 bound to a slider + numeric input, clamped 0–500, default 30, 0 = unlimited; ADR 0077 §6)
+- AI providers: Gemini configuration for YouTube transcription — the only in-app AI capability ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)) — selectable transcription model, credential configured/not-configured status, credential storage, secret kind
 - Credentials: credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation

@@ -742,7 +742,7 @@ Error codes: `company_not_found`, `report_document_not_found`, `statement_type_m
 
 ## Autonomous Report Pipeline (Autopilot)
 
-The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)) closes the loop: a tracked, opted-in company's new periodic report is detected, fetched, extracted, diffed, cross-referenced, and surfaced as a single notification — no manual steps. Orchestration is **chained durable-queue jobs** (`fetch → extract → diff → cross_reference → notify`) stamped with one `autopilot_run` id; each stage reuses the existing service (`fetch_report_document`, AI KPI extraction, `get_report_diff`, claims/research cross-reference). Detection is **event-driven off source-refresh completion** and runs **only while the app is open**. The global confirm-before-commit default never changes; automation is a per-company opt-in. Decision-support only — the result reports *what changed / to verify*, never buy/sell/hold ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)) closes the loop: a tracked, opted-in company's new periodic report is detected, fetched, extracted, diffed, cross-referenced, and surfaced as a single notification — no manual steps. Orchestration is **chained durable-queue jobs** (`fetch → extract → diff → cross_reference → notify`) stamped with one `autopilot_run` id; each stage reuses the existing service (`fetch_report_document`, the deterministic structured/aggregator-primary fundamentals extraction — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) — `get_report_diff`, claims/research cross-reference). Detection is **event-driven off source-refresh completion** and runs **only while the app is open**. The global confirm-before-commit default never changes; automation is a per-company opt-in. Decision-support only — the result reports *what changed / to verify*, never buy/sell/hold ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
 
 **Trust ladder (per-company mode).**
 
@@ -750,7 +750,7 @@ The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-auton
 
 `set_company_autopilot(input)` sets the mode. `input` is `{ companyId, mode }`. `off`: nothing automatic. `assist`: auto-fetch + auto-extract on detection. `autopilot`: full loop. Facts are **review-free** ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5): in **both** `assist` and `autopilot` every extracted fact lands `confirmed` (cited, reversible) — there is no pending-confirmation queue and no per-fact review to-do. `confirmationState` is a frozen compatibility column; origin lives in the provenance labels. Changing the mode never alters already-produced facts or runs. Error codes: `company_not_found`, `invalid_autopilot_mode`.
 
-**Structured-first extract stage ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) dec. 3/8/9).** The extract stage runs the deterministic structured pipeline (ESEF/iXBRL) **before AI, in both `assist` and `autopilot` modes** — not autopilot-only. A stored **PDF** document, or bare non-iXBRL markup (the positional shape — [ADR 0095](adr/0095-retire-html-positional-tier.md), 2026-08-05), is no longer a deterministic-tier candidate at all ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 — the PDF fact-extraction arm is retired; the positional parser that once read the latter shape is ALSO retired): both return a benign empty result with **no** `fundamentals_extraction_outcomes` row, so such a company's core KPIs arrive instead from the BiznesRadar-primary daily pull. Every emitted fact lands `confirmationState = confirmed` in **both** modes ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5, amending ADR 0061's mode ladder): facts are review-free, so acceptance strength (`accepted` / `accepted_via_witness` proved a value vs `accepted_unreviewed` merely uncontradicted) is recorded as provenance (`validationStatus` + `sourceTier` + citation), not as a `pending`/`auto_unreviewed` confirmation state. A `flagged` outcome (a contradiction) emits no structured facts. (The PDF profile-drift arm is retired — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 — so no producer sets `structureChanged`/`driftJson` on `kpiDeltaJson` anymore; the `fundamentals_extraction_outcomes` `driftJson`/`structureChanged` **columns** remain, tolerantly read on legacy rows.)
+**Structured-first extract stage ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) dec. 3/8/9).** The extract stage runs the deterministic structured pipeline (ESEF/iXBRL) **in both `assist` and `autopilot` modes** — not autopilot-only, and with no AI fallback ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)). A stored **PDF** document, or bare non-iXBRL markup (the positional shape — [ADR 0095](adr/0095-retire-html-positional-tier.md), 2026-08-05), is no longer a deterministic-tier candidate at all ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 — the PDF fact-extraction arm is retired; the positional parser that once read the latter shape is ALSO retired): both return a benign empty result with **no** `fundamentals_extraction_outcomes` row, so such a company's core KPIs arrive instead from the BiznesRadar-primary daily pull. Every emitted fact lands `confirmationState = confirmed` in **both** modes ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 5, amending ADR 0061's mode ladder): facts are review-free, so acceptance strength (`accepted` / `accepted_via_witness` proved a value vs `accepted_unreviewed` merely uncontradicted) is recorded as provenance (`validationStatus` + `sourceTier` + citation), not as a `pending`/`auto_unreviewed` confirmation state. A `flagged` outcome (a contradiction) emits no structured facts. (The PDF profile-drift arm is retired — [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 — so no producer sets `structureChanged`/`driftJson` on `kpiDeltaJson` anymore; the `fundamentals_extraction_outcomes` `driftJson`/`structureChanged` **columns** remain, tolerantly read on legacy rows.)
 
 `list_company_autopilot_modes()` returns every company with an explicit (non-`off`) autopilot mode set — `CompanyAutopilot[]`, each `{ companyId, mode }`. Companies with no row default to `off` and are omitted.
 
@@ -1123,7 +1123,7 @@ Rules:
 
 - Confirming or rejecting applies only to `proposed` signals; `confirmed` signals are terminal except for future reversal flows.
 - Confirmation must persist provider provenance and create at most one derived event, idempotently.
-- Derived-event date extraction (`v0.41.0`, dividend/general-meeting only) is **deterministic-first** over the fetched filing body, with the **opt-in async AI fallback** when the deterministic parse is not confident. The derived event is created `proposed` and requires `confirm_derived_event` before it appears on the calendar — a guessed-date event is never created. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
+- Derived-event date extraction (`v0.41.0`, dividend/general-meeting only) is **deterministic-only** over the fetched filing body (`signal_dates`) — the AI fallback is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2). The derived event is created `proposed` and requires `confirm_derived_event` before it appears on the calendar — a guessed-date event is never created. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
 
 ## Attention Routing (Alert Rules + Events)
 
@@ -2089,84 +2089,7 @@ Rules:
 - Question-to-evidence relationships use typed `evidence_links` with `fromType: "research_question"` and the target evidence type/id.
 - Deleting a research question removes that question and any evidence links attached to it. It must not delete linked feed items, notes, events, transcript segments, AI analysis, or other canonical evidence objects.
 
-Initial AI research brief job shape:
-
-```json
-{
-  "id": "research_brief_job_01",
-  "scopeType": "company",
-  "scopeId": "company_gpw_cdr",
-  "providerId": "provider_gemini",
-  "model": "gemini-2.5-flash",
-  "promptVersion": "m30.research_brief.v1",
-  "evidenceCollectorVersion": "m30.collector.v1",
-  "rendererVersion": "m30.renderer.v1",
-  "status": "queued",
-  "errorCode": null,
-  "error": null,
-  "createdAt": "2026-06-11T10:00:00Z",
-  "startedAt": null,
-  "finishedAt": null,
-  "brief": null
-}
-```
-
-Initial AI research brief shape:
-
-```json
-{
-  "id": "research_brief_company_gpw_cdr_01",
-  "jobId": "research_brief_job_01",
-  "scopeType": "company",
-  "scopeId": "company_gpw_cdr",
-  "providerId": "provider_gemini",
-  "model": "gemini-2.5-flash",
-  "promptVersion": "m30.research_brief.v1",
-  "evidenceCollectorVersion": "m30.collector.v1",
-  "rendererVersion": "m30.renderer.v1",
-  "title": "CD Projekt research brief",
-  "summary": "Neutral source-grounded summary.",
-  "contentMarkdown": "Rendered brief content with citation markers.",
-  "language": "en",
-  "generatedAt": "2026-06-11T10:03:00Z",
-  "createdAt": "2026-06-11T10:03:00Z",
-  "citations": [
-    {
-      "id": "research_brief_citation_01",
-      "briefId": "research_brief_company_gpw_cdr_01",
-      "citationKey": "E1",
-      "evidenceType": "feed_item",
-      "evidenceId": "feed_01",
-      "label": "Current report title",
-      "snippet": "Short cited snippet or evidence label"
-    }
-  ]
-}
-```
-
-Initial AI research brief input shape:
-
-```json
-{
-  "scopeType": "company",
-  "scopeId": "company_gpw_cdr"
-}
-```
-
-Rules:
-
-- Initial `scopeType` values are `company` and `watchlist`.
-- AI research brief generation is explicit and on-demand only.
-- Brief jobs use the existing provider-neutral AI configuration and credential boundary.
-- Brief generation is asynchronous and must not block the UI.
-- Allowed job statuses begin with `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
-- Briefs are immutable snapshots. Regeneration creates a new job and, on success, a new brief.
-- Briefs are dedicated research-owned entities, not notebook entries.
-- Briefs must not include buy/sell/hold recommendations or personalized portfolio advice.
-- Brief content must cite research evidence through citation keys mapped back to typed evidence items.
-- Citations store evidence references and short labels/snippets only; full copied source bodies should not be duplicated into citation rows.
-- Normal UI must show citations and enough provider/model/prompt provenance for source-grounded review without exposing implementation identifiers.
-- Creating a notebook note from a brief remains a separate explicit workflow and is not automatic.
+AI research briefs are retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5): brief generation and the `ai_research_brief*`/`ai_research_digest*` tables are gone (dropped by migration `0102`, no readable history). Talking to research evidence is now an MCP-connected agent's job (BYOA).
 
 Initial research reminder shape:
 
@@ -2586,7 +2509,7 @@ Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamen
 - `get_fundamentals_coverage(companyId)`: returns `FundamentalsCoverage { companyId, periods: CoveragePeriodRow[] }`, the per-company **coverage map** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §2). An **assembled read model** (the ADR 0044 pattern — the map itself is computed on demand from the live tables, **no stored projection**; cardinality is a handful of periods per company); offloaded (`spawn_blocking`, since a first-time period derivation reads the stored file). The **per-document period derivation** (`derive_report_period`) is served from a persisted cache (`document_derived_periods`, migration 0109), so repeat panel loads read the index instead of re-extracting bare-titled PDFs' cover pages (data-model). Each `CoveragePeriodRow` is one `{ fiscalYear, periodType }` period:
   - Cell `report` (`CoverageReportCell | null`) — the single **canonical periodic report** for the period (ssf-over-jsf, newest revision; ADR 0077 §1 selection over the **stored `doc_kind` column** + `derive_report_period` — the kind is never re-derived on the fly, so coverage cannot disagree with the documents panel; a `NULL` (unclassified) document is excluded until set-on-write / "Refresh classification" converges it). `{ documentId, docKind (periodic_ssf | periodic_jsf), title, structured, fetched }`; `fetched = fetch_status == "fetched"`, so a link-only (metadata-only) periodic report still yields a cell with `fetched: false` via the title/URL period fallback. `null` when no periodic report names the period.
   - Cell `facts` (`CoverageFactsCell`) — `{ total, validated, unvalidated, flagged }` over the period's `financial_facts` joined to `financial_fact_provenance`: `validated` = provenance `passed`/`witness_confirmed`, `flagged` = provenance `flagged`, `unvalidated` = everything else (no provenance row, `unreviewed`, `none`). `total = validated + unvalidated + flagged`.
-  - Cell `review` (`CoverageReviewCell`) — `{ pendingProposals, flaggedFacts }`: `pendingProposals` = `pending` `kpi_extraction_proposals` whose job detected this `(fiscalYear, periodType)`; `flaggedFacts` mirrors `facts.flagged`.
+  - Cell `review` (`CoverageReviewCell`) — `{ flaggedFacts }`: mirrors `facts.flagged` — flagged deterministic facts are the only review surface ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5 removed the proposals input with the KPI staging ledger).
   - Field `skippedBudget` (`boolean`) — `true` when the period's canonical report's `trigger='history_sweep'` autopilot run recorded `reason: "skipped_budget"` on its `kpiDeltaJson` (a budget-denied tier-4, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §6). Run ids are per-`(company, document)` deterministic, so there is at most one run per document; a later successful extraction clears the flag two ways (facts appear → non-gap; the run's delta is overwritten). Tolerant: an absent/garbled delta, or any other `reason`, reads `false`.
   - **Period-union rule**: a period appears iff at least one of {a canonical report, ≥1 fact, ≥1 pending proposal} names it; rows are sorted newest-first (DESC by `fiscalYear`, then period index `Q1<H1<Q3<FY`).
   - **UI entry point**: the **Coverage panel** (`src/shared/components/CompanyCoveragePanel.tsx`, T2.2) — a company-scoped cockpit pane (kind `coverage`, label "Coverage") seeded into the curated company dashboard. It renders one table row per period (Period / Report / Data / To review); clicking a row opens the company's Report documents pane. Fetched via the `getFundamentalsCoverage(companyId)` wrapper (`src/api/fundamentalsCoverage.ts`), reloading on `companyId` change. Its **history-actions footer** (T3.2) drives "Backfill history" and "Extract missing periods" (below); the footer's status line also echoes the latest sweep's **AI-call spend** (T5.3 — "AI: {used}/{limit}", or "AI: {used} (no limit)" when the budget is `0`).
@@ -2645,20 +2568,9 @@ Citations are rejected when they do not reference an evidence id supplied to the
 
 **Output language** (owner decision 2026-07-07): AI prose output follows the persisted app `locale` — the qualitative-assessment prompt instructs the model to write `reasoning` and citation `label` in Polish/English accordingly (prompt version `qualitative-assessment.v2`), while citation `snippet` stays **verbatim in the evidence's original language** (attribution durability — a quote must remain exact). Unknown locale codes degrade to English. Existing stored assessments keep the language they were generated in; only new runs follow the setting. The same rule now applies to every prose-producing prompt: feed analysis (`m13.source_grounded.v2` — `summary`/`reasoning`/`tags`/source-reference labels), research brief (`m30.research_brief.v2`), and research digest (`m31.research_digest.v2` — title/summary/section headings & bodies/citation labels; citation `snippet` stays verbatim). Each job reads the persisted `locale` and passes it as the request's `output_language`. **Structured-extraction prompts (KPI extraction, management-claim extraction) deliberately carry NO app-locale instruction**: their output is data traced to the source (verbatim `sourceSnippet` + a source-language `language` field), and the claim `statement` is a neutral paraphrase kept in the source language so a claim stays faithful and traceable to its report — the prose layers (brief/digest/assessment) render in the app locale on top of them.
 
-### AI KPI Extraction
+### AI KPI Extraction — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-AI KPI extraction ([ADR 0028](adr/0028-multi-provider-ai-boundary.md), [ADR 0029](adr/0029-ir-page-report-resolution.md)) reads a stored report document with the selected AI provider and produces **proposals**. A proposal never becomes a `financial_fact` until the user confirms it; confirming materialises the period, resolves (or, for accepted suggestions, creates) the KPI definition, and writes the fact with `extractionMethod = "ai"` and the source document reference. Confirmed proposals are retained as the provenance trail (provider, model, prompt version live on the job; the verbatim source snippet and confidence on the proposal). Rejected proposals never persist a value.
-
-An extraction job carries the detected primary period (`detectedFiscalYear`, `detectedPeriodType`, `detectedPeriodEndDate`), default currency/language, and its proposals. Each proposal carries `metricKey`, `label`, `valueNumeric` (decimal base-units text), `asReportedValue`/`asReportedScale`, `confidence` (`low|medium|high`), `sourceSnippet`, `isProposedKpi` (true for metrics beyond the supplied taxonomy), `status` (`pending|confirmed|rejected`), and `factId` once confirmed. Only the primary period is extracted; prior-year comparative columns are ignored.
-
-AI-generated KPI extraction is **removed entirely** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)
-decision 5): generation, the staging ledger, and the review surface all go. The
-deterministic fundamentals pipeline (ESEF → EspiCoverNote → `html_aggregator`,
-BiznesRadar-primary) is the only extractor now; the PDF fact-extraction arm
-AND the positional/tier-3b arm are both retired ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md)
-decision 1, [ADR 0095](adr/0095-retire-html-positional-tier.md)), so a stored
-PDF or a bare non-iXBRL render takes no rung at all, and a document no
-surviving tier parses is flagged rather than guessed.
+AI-generated KPI extraction is removed entirely (decision 5): generation, the staging ledger, and the review surface are gone, with `kpi_extraction_jobs`/`kpi_extraction_proposals` dropped by migration `0102`. The deterministic fundamentals pipeline (ESEF → EspiCoverNote → `html_aggregator` BiznesRadar-primary) is the only extractor now — the PDF fact-extraction arm and the positional/tier-3b arm are both retired too ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1, [ADR 0095](adr/0095-retire-html-positional-tier.md)) — so a stored PDF or a bare non-iXBRL render takes no rung at all, and a document no surviving tier parses is flagged rather than guessed.
 
 ### IR-Page Report Resolution
 

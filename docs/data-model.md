@@ -616,40 +616,13 @@ Rules:
 - Notes created from transcript segments reference them through origin links.
 - Transcript-derived notes are normal notebook entries; each selected segment creates a `transcript_segment` origin containing the segment ID, original video URL, and job/provider/timestamp context in the label.
 
-### AI Analysis Results
+### AI Analysis Results — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-Supports feed item summaries, significance labels, tags, and future provider-neutral analysis.
-
-Fields:
-
-- `id`
-- `feed_item_id`
-- `provider_id`
-- `model`
-- `prompt_version`
-- `summary`
-- `significance`
-- `reasoning`
-- `language`
-- `created_at`
-
-Related tables:
-
-- `ai_analysis_jobs`
-- `ai_analysis_tags`
-- `ai_analysis_source_references`
-
-Rules:
-
-- General AI analysis is implemented later through a provider-neutral boundary. Gemini may be the first live provider, but stored analysis records must not assume Gemini is the only provider.
-- M13 analysis runs through async job records with queued, running, succeeded, and failed states.
-- Job records preserve prompt preset/custom-question context, provider ID, model, prompt version, error state, and timestamps.
-- AI output must not contain buy/sell/hold recommendations.
-- Source references are required.
+In-app feed-item AI analysis is removed; `ai_analysis_results`/`ai_analysis_jobs`/`ai_analysis_tags`/`ai_analysis_source_references` were dropped by migration `0102` (decision 5 — no readable history survives). Intelligence over feed items arrives via the MCP port (BYOA).
 
 ### Research Evidence Boundary
 
-Supports future company timelines, watchlist review, changed-since-review views, evidence links, research questions, reminders, AI briefs, and digests.
+Supports future company timelines, watchlist review, changed-since-review views, evidence links, research questions, and reminders.
 
 This is a hybrid model governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md):
 
@@ -663,11 +636,7 @@ Likely durable tables:
 - `research_review_checkpoints`
 - `evidence_links`
 - `research_questions`
-- `ai_research_briefs`
-- `ai_research_brief_citations`
 - `research_reminders`
-- `ai_research_digests`
-- `ai_research_digest_citations`
 
 Recommended `research_review_checkpoints` fields:
 
@@ -727,58 +696,7 @@ Rules:
 - Questions may be linked to feed items, notebook entries, claims, events, transcript segments, AI analysis, and other accepted evidence through `evidence_links`.
 - Company-scoped questions appear in the backend research timeline as `research_question` evidence items.
 
-Initial `ai_research_brief_jobs` fields:
-
-- `id`
-- `scope_type`
-- `scope_id`
-- `provider_id`
-- `model`
-- `prompt_version`
-- `evidence_collector_version`
-- `renderer_version`
-- `status`
-- `error_code`
-- `error`
-- `created_at`
-- `started_at`
-- `finished_at`
-
-Initial `ai_research_briefs` fields:
-
-- `id`
-- `job_id`
-- `scope_type`
-- `scope_id`
-- `provider_id`
-- `model`
-- `prompt_version`
-- `evidence_collector_version`
-- `renderer_version`
-- `title`
-- `summary`
-- `content_markdown`
-- `language`
-- `generated_at`
-- `created_at`
-
-Initial `ai_research_brief_citations` fields:
-
-- `id`
-- `brief_id`
-- `citation_key`
-- `evidence_type`
-- `evidence_id`
-- `label`
-- `snippet`
-- `created_at`
-
-Rules:
-
-- AI research briefs are not notebook entries.
-- Initial `scope_type` values are `company` and `watchlist`.
-- Brief generation is explicit and asynchronous.
-- Brief jobs use the provider-neutral AI settings and credential boundary.
+AI research briefs are retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5): `ai_research_brief_jobs`/`ai_research_briefs`/`ai_research_brief_citations` were dropped by migration `0102` (no readable history survives).
 
 Initial `research_reminders` fields:
 
@@ -951,7 +869,6 @@ Structured-first extraction provenance ([ADR 0061](adr/0061-deterministic-fundam
 
 `company_ocr_extraction_profile` — dropped by migration `0102_clean_cut_ai_artifacts.sql` ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5). Distinct from `company_extraction_profile` above (ADR 0061 decision 3), which stays append-only with its read/write code retired ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1).
 
-`kpi_extraction_jobs.committed_fact_count` (`INTEGER NOT NULL DEFAULT 0`, migration `0064_kpi_extraction_committed_facts.sql`): how many validated facts the run committed directly (tier-4 profile path, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §4 / T4.5). `0` for the classic proposals-only path, so the review panel reads an honest outcome ("N facts committed" vs "N proposals"). Reads tolerate the default on old rows.
 
 `document_derived_periods` (migration `0109_document_derived_periods.sql`) — a **persisted derived index** for one document's reporting period, so the Coverage panel and re-extraction runs read the period instead of recomputing it (Model Principles; CLAUDE.md "read persisted derived indexes instead of recomputing the corpus per call").
 
@@ -1159,7 +1076,7 @@ User-owned quality checklists evaluated against the fundamentals facts by a dete
 - `id`, `evaluation_id` → `framework_evaluations(id)`, `criterion_id` → `framework_criteria(id)`.
 - `expression` (snapshot of the criterion text at run time), `verdict` (`pass` | `partial` | `fail` | `unavailable`).
 - `measured_value` (decimal-exact text, the leading metric's measured value), `measured_unit`, `threshold` (snapshot), `inputs_json` (the facts/periods/metric keys used, for audit), `note`.
-- Agent-assessed fields — `v0.50.0` ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), append-only columns in `0059_qualitative_criteria.sql`): `reasoning` (short), `citations` (JSON — typed evidence refs reusing the `ai_research_brief_citations` model: `evidence_type` from `ResearchEvidenceType`, `evidence_id`, `label`, `snippet`), `confidence` (`low` | `medium` | `high`), `prompt_version`, `source`. `source` follows the append-only safe-default pattern: added with `DEFAULT 'engine'` so the existing-table `ALTER … ADD COLUMN` succeeds and pre-migration quantitative rows read as engine-sourced; qualitative rows write `agent`. For qualitative rows `verdict` adds `insufficient_evidence` to the quantitative set. Agent results are opinion, never facts: visually distinct, regeneratable, and they never mutate quantitative data. The Quality panel's current-state read resolves, per criterion, the most-recent `source = agent` row across all snapshots — indexed by `idx_criterion_results_agent(criterion_id, source)` (`0060_qualitative_assessment_index.sql`).
+- Agent-assessed fields — `v0.50.0` ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), append-only columns in `0059_qualitative_criteria.sql`): `reasoning` (short), `citations` (JSON — typed evidence refs: `evidence_type` from `ResearchEvidenceType`, `evidence_id`, `label`, `snippet`), `confidence` (`low` | `medium` | `high`), `prompt_version`, `source`. `source` follows the append-only safe-default pattern: added with `DEFAULT 'engine'` so the existing-table `ALTER … ADD COLUMN` succeeds and pre-migration quantitative rows read as engine-sourced; qualitative rows write `agent`. For qualitative rows `verdict` adds `insufficient_evidence` to the quantitative set. Agent results are opinion, never facts: visually distinct, regeneratable, and they never mutate quantitative data. The Quality panel's current-state read resolves, per criterion, the most-recent `source = agent` row across all snapshots — indexed by `idx_criterion_results_agent(criterion_id, source)` (`0060_qualitative_assessment_index.sql`).
 - Immutable once written.
 
 Rules:
@@ -1523,20 +1440,20 @@ Company signals are typed classifications of official ESPI/EBI filings. A signal
 Identity and lifecycle:
 
 - A signal is produced by classifying a `feed_item` from an official report source (currently the active Bankier company-komunikaty feed; source-neutral for a future `gpw-espi-ebi` re-enable).
-- The rule classifier runs at ingestion and writes `confirmed` signals deterministically. Filings it cannot place go to the opt-in async AI fallback, which writes `proposed` signals that require user confirmation.
+- The rule classifier runs at ingestion and writes `confirmed` signals deterministically. Filings it cannot place land in the explicit **unclassified** bucket (`list_unclassified_filings`), resolved by `classify_filing` — the AI fallback is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2).
 - Signal identity is `(feed_item_id, category)`; re-classification updates the existing row rather than inserting a duplicate.
 - Derived calendar events link back via `derived_event_id`, and the event carries origin linkage to the signal and the originating filing.
 
 Derived calendar events (`v0.41.0`, [ADR 0036](adr/0036-report-document-storage-and-backfill.md)):
 
 - A `company_events` row is derived **only** for `dividend` and `general_meeting` signals that are **confirmed** and carry a real future date extracted from the filing body.
-- Date extraction is **deterministic-first** (labelled-pattern parse of the body), with the **opt-in async AI fallback** when the deterministic parse is not confident; the derived event is created as `status = 'proposed'` and requires user confirmation before it appears on the calendar. A guessed-date event is never created.
+- Date extraction is **deterministic-only** (labelled-pattern parse of the body) — the AI fallback is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2); the derived event is created as `status = 'proposed'` and requires user confirmation before it appears on the calendar. A guessed-date event is never created.
 - A derived event is represented additively (no migration): `source_type = 'derived_signal'`, `source_adapter_id` = the official-report adapter, and `source_event_key` = the originating signal id, so the event identity is stable and idempotent re-derivation upserts the same row. `company_signals.derived_event_id` points back to the event; the event's source key points back to the signal.
 - `dividend` signals derive a `dividend` event; `general_meeting` signals derive a `shareholder_meeting` event. Confirmation flips `status` from `proposed` to `confirmed`; rejection deletes the proposed event and clears `derived_event_id`. Derivation dedups against manually created events for the same company/date/type.
 
 ## Report Document Model
 
-Report documents are the persisted report files behind fundamentals and the report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md), [ADR 0036](adr/0036-report-document-storage-and-backfill.md)). A document originates from an ESPI/EBI attachment, a user-supplied PDF URL, or a captured article URL, and is the citation target for AI KPI extraction, report-over-report diff, and confirmed financial facts. The table shipped in migration 0035; `v0.41.0` implements the ESPI/EBI attachment rung and the storage/retention rules below without a schema change.
+Report documents are the persisted report files behind fundamentals and the report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md), [ADR 0036](adr/0036-report-document-storage-and-backfill.md)). A document originates from an ESPI/EBI attachment, a user-supplied PDF URL, or a captured article URL, and is the citation target for deterministic fundamentals extraction, report-over-report diff, and confirmed financial facts. The table shipped in migration 0035; `v0.41.0` implements the ESPI/EBI attachment rung and the storage/retention rules below without a schema change.
 
 Fields (migration 0035): `id`, `company_id` → `companies(id)`, `period_id` → `financial_periods(id)` (nullable), `source_type` (`espi_attachment` | `user_url` | `article`), `origin_ref` (feed item / evidence id), `url` (original source URL), `local_path` (relative path under the app data dir; null when no file is stored), `content_type`, `content_hash` (sha256, optional dedup), `byte_size`, `title`, `attribution`, `fetch_status`, `fetch_error`, `fetched_at`, `created_at`, `updated_at`. `financial_facts.source_document_ref` is a soft reference to `report_documents.id`.
 
@@ -1647,7 +1564,7 @@ The app accesses the database through an `r2d2` connection pool, not a single sh
 
 ## First Migration Scope
 
-The first migration should create:
+Migration `0001_initial.sql` created (historical scope — the `ai_analysis_*` rows in this list were later dropped by `0102`, ADR 0084):
 
 - companies
 - company_aliases
