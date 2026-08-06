@@ -788,12 +788,34 @@ fn qualitative_criterion(state: &AppState, framework_id: &str, label: &str) -> F
         .expect("qualitative criterion creates")
 }
 
+/// Helper: seed a notebook entry to cite as verdict evidence (#343 — persist
+/// refuses citations that do not resolve to a real evidence row).
+fn cited_note(state: &AppState, company_id: &str) -> String {
+    state
+        .create_notebook_entry(NewNotebookEntry {
+            company_id: company_id.to_owned(),
+            title: "Evidence note".to_owned(),
+            body: "Cited by an agent verdict.".to_owned(),
+            body_format: Some("markdown".to_owned()),
+            tags: vec![],
+            kind: "manual".to_owned(),
+            claim_status: None,
+            event_date: None,
+            follow_up_after: None,
+            follow_up_date: None,
+            origins: vec![],
+        })
+        .expect("evidence note should create")
+        .id
+}
+
 fn qual_result(
     criterion_id: &str,
     ordinal: i64,
     label: &str,
     verdict: &str,
     reasoning: &str,
+    note_id: &str,
 ) -> QualitativeCriterionResult {
     QualitativeCriterionResult {
         criterion_id: criterion_id.to_owned(),
@@ -801,7 +823,9 @@ fn qual_result(
         label: label.to_owned(),
         verdict: verdict.to_owned(),
         reasoning: reasoning.to_owned(),
-        citations_json: "[]".to_owned(),
+        citations_json: format!(
+            r#"[{{"evidenceType":"notebook_entry","evidenceId":"{note_id}"}}]"#
+        ),
         confidence: "medium".to_owned(),
         prompt_version: "qualitative_assessment_v1".to_owned(),
     }
@@ -811,10 +835,126 @@ fn qual_result(
 /// qualitative criterion, the most-recent agent-assessed row across snapshots —
 /// so a later single-criterion re-run never blanks the other criteria, and a
 /// never-assessed criterion is simply absent (empty state).
+/// #343 (ADR 0088 provenance intent): persist refuses citations that do not
+/// resolve to real evidence — typed per-table existence, malformed/empty
+/// shapes, unknown types — atomically (one bad result refuses the whole
+/// batch, nothing is written).
+#[test]
+fn persist_refuses_citations_that_do_not_resolve_to_real_evidence() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let company = tracked_company(&state);
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Q".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let moat = qualitative_criterion(&state, &framework.id, "Wide moat");
+    let persist = |citations_json: &str| {
+        state.persist_qualitative_assessment(PersistQualitativeAssessmentInput {
+            framework_id: framework.id.clone(),
+            company_id: company.id.clone(),
+            results: vec![QualitativeCriterionResult {
+                criterion_id: moat.id.clone(),
+                ordinal: 0,
+                label: "Wide moat".to_owned(),
+                verdict: "pass".to_owned(),
+                reasoning: "Reasoned.".to_owned(),
+                citations_json: citations_json.to_owned(),
+                confidence: "medium".to_owned(),
+                prompt_version: "mcp".to_owned(),
+            }],
+        })
+    };
+
+    // A citation naming a notebook entry that does not exist.
+    assert!(
+        persist(r#"[{"evidenceType":"notebook_entry","evidenceId":"nope"}]"#).is_err(),
+        "a citation to a missing evidence row must be refused"
+    );
+    // An unknown evidence type.
+    assert!(
+        persist(r#"[{"evidenceType":"vibes","evidenceId":"x"}]"#).is_err(),
+        "an unknown evidence type must be refused"
+    );
+    // Structurally bad carriers: empty array, non-array, blank id, prose entry.
+    for bad in [
+        r#"[]"#,
+        r#"{"a":1}"#,
+        "not json",
+        r#"[{"evidenceType":"notebook_entry","evidenceId":"  "}]"#,
+        r#"["freeform prose"]"#,
+    ] {
+        assert!(
+            persist(bad).is_err(),
+            "bad citations {bad:?} must be refused"
+        );
+    }
+    // Nothing was written by any refused attempt.
+    let current = state
+        .get_qualitative_assessment(&framework.id, &company.id)
+        .expect("current-state read");
+    assert!(current.is_empty(), "refused writes must leave no snapshot");
+
+    // The happy path still works, including snake_case citation keys.
+    let note = cited_note(&state, &company.id);
+    persist(&format!(
+        r#"[{{"evidence_type":"notebook_entry","evidence_id":"{note}"}}]"#
+    ))
+    .expect("a resolving citation persists");
+}
+
+/// One bad citation in a multi-result batch refuses the WHOLE batch before any
+/// insert (atomic refusal — never a partial snapshot).
+#[test]
+fn one_bad_citation_refuses_the_whole_verdict_batch() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let company = tracked_company(&state);
+    let note = cited_note(&state, &company.id);
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Q".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let moat = qualitative_criterion(&state, &framework.id, "Wide moat");
+    let pricing = qualitative_criterion(&state, &framework.id, "Pricing power");
+
+    let mut bad = qual_result(
+        &pricing.id,
+        1,
+        "Pricing power",
+        "pass",
+        "Cited badly.",
+        &note,
+    );
+    bad.citations_json = r#"[{"evidenceType":"notebook_entry","evidenceId":"missing"}]"#.to_owned();
+    let refused = state.persist_qualitative_assessment(PersistQualitativeAssessmentInput {
+        framework_id: framework.id.clone(),
+        company_id: company.id.clone(),
+        results: vec![
+            qual_result(&moat.id, 0, "Wide moat", "pass", "Fine.", &note),
+            bad,
+        ],
+    });
+    assert!(
+        refused.is_err(),
+        "the batch with one bad citation is refused"
+    );
+    let current = state
+        .get_qualitative_assessment(&framework.id, &company.id)
+        .expect("current-state read");
+    assert!(
+        current.is_empty(),
+        "no partial snapshot survives the refusal"
+    );
+}
+
 #[test]
 fn get_qualitative_assessment_returns_latest_agent_row_per_criterion() {
     let state = AppState::new(open_in_memory_database().expect("database should initialize"));
     let company = tracked_company(&state);
+    let note = cited_note(&state, &company.id);
     let framework = state
         .create_quality_framework(NewQualityFramework {
             name: "Q".to_owned(),
@@ -831,13 +971,21 @@ fn get_qualitative_assessment_returns_latest_agent_row_per_criterion() {
             framework_id: framework.id.clone(),
             company_id: company.id.clone(),
             results: vec![
-                qual_result(&moat.id, 0, "Wide moat", "pass", "Durable advantage."),
+                qual_result(
+                    &moat.id,
+                    0,
+                    "Wide moat",
+                    "pass",
+                    "Durable advantage.",
+                    &note,
+                ),
                 qual_result(
                     &pricing.id,
                     1,
                     "Pricing power",
                     "partial",
                     "Some pricing power.",
+                    &note,
                 ),
             ],
         })
@@ -855,6 +1003,7 @@ fn get_qualitative_assessment_returns_latest_agent_row_per_criterion() {
                 "Wide moat",
                 "fail",
                 "Moat eroding.",
+                &note,
             )],
         })
         .expect("run 2 persists");
@@ -895,6 +1044,7 @@ fn get_qualitative_assessment_returns_latest_agent_row_per_criterion() {
 fn qualitative_verdict_changes_reports_per_criterion_transitions() {
     let state = AppState::new(open_in_memory_database().expect("database should initialize"));
     let company = tracked_company(&state);
+    let note = cited_note(&state, &company.id);
     let framework = state
         .create_quality_framework(NewQualityFramework {
             name: "Q".to_owned(),
@@ -911,9 +1061,30 @@ fn qualitative_verdict_changes_reports_per_criterion_transitions() {
             framework_id: framework.id.clone(),
             company_id: company.id.clone(),
             results: vec![
-                qual_result(&moat.id, 0, "Wide moat", "pass", "Durable advantage."),
-                qual_result(&pricing.id, 1, "Pricing power", "partial", "Some pricing."),
-                qual_result(&recurring.id, 2, "Recurring revenue", "pass", "Recurring."),
+                qual_result(
+                    &moat.id,
+                    0,
+                    "Wide moat",
+                    "pass",
+                    "Durable advantage.",
+                    &note,
+                ),
+                qual_result(
+                    &pricing.id,
+                    1,
+                    "Pricing power",
+                    "partial",
+                    "Some pricing.",
+                    &note,
+                ),
+                qual_result(
+                    &recurring.id,
+                    2,
+                    "Recurring revenue",
+                    "pass",
+                    "Recurring.",
+                    &note,
+                ),
             ],
         })
         .expect("run 1 persists");
@@ -925,8 +1096,15 @@ fn qualitative_verdict_changes_reports_per_criterion_transitions() {
             framework_id: framework.id.clone(),
             company_id: company.id.clone(),
             results: vec![
-                qual_result(&moat.id, 0, "Wide moat", "fail", "Moat eroding."),
-                qual_result(&pricing.id, 1, "Pricing power", "partial", "Still some."),
+                qual_result(&moat.id, 0, "Wide moat", "fail", "Moat eroding.", &note),
+                qual_result(
+                    &pricing.id,
+                    1,
+                    "Pricing power",
+                    "partial",
+                    "Still some.",
+                    &note,
+                ),
             ],
         })
         .expect("run 2 persists");

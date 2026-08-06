@@ -832,7 +832,7 @@ fn validate_review_scope(
     }
 }
 
-fn validate_evidence_reference(
+pub(super) fn validate_evidence_reference(
     connection: &Connection,
     evidence_type: &str,
     evidence_id: &str,

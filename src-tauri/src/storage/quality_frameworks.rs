@@ -846,12 +846,56 @@ pub(super) fn evaluate_framework(
 /// `prompt_version`). `insufficient_evidence` counts into the "could not
 /// determine" bucket (`unavailable_count`), mirroring the quantitative
 /// `unavailable` verdict. Never touches quantitative rows or facts.
+/// Citation integrity for agent verdicts (#343, the ADR 0088 provenance
+/// intent): `citationsJson` must be a non-empty array of typed refs, and every
+/// `(evidenceType, evidenceId)` must resolve to an existing row of that
+/// evidence type. Enforced here — the shared chokepoint of the typed command
+/// and the MCP act handler — before any row is written (atomic refusal, never
+/// a partial snapshot). Key spelling is tolerant (`evidenceType`/`evidence_type`).
+fn validate_verdict_citations(
+    connection: &Connection,
+    criterion_id: &str,
+    citations_json: &str,
+) -> StorageResult<()> {
+    let invalid = |detail: String| StorageError::InvalidResearchValue {
+        key: "citations",
+        value: format!("criterion {criterion_id}: {detail}"),
+    };
+    let parsed: serde_json::Value = serde_json::from_str(citations_json)
+        .map_err(|_| invalid("citationsJson is not valid JSON".to_owned()))?;
+    let citations = parsed
+        .as_array()
+        .ok_or_else(|| invalid("citationsJson must be a JSON array".to_owned()))?;
+    if citations.is_empty() {
+        return Err(invalid("citations must not be empty".to_owned()));
+    }
+    for citation in citations {
+        let field = |camel: &str, snake: &str| {
+            citation
+                .get(camel)
+                .or_else(|| citation.get(snake))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        };
+        let evidence_type = field("evidenceType", "evidence_type")
+            .ok_or_else(|| invalid("every citation needs a non-blank evidenceType".to_owned()))?;
+        let evidence_id = field("evidenceId", "evidence_id")
+            .ok_or_else(|| invalid("every citation needs a non-blank evidenceId".to_owned()))?;
+        super::research::validate_evidence_reference(connection, evidence_type, evidence_id)?;
+    }
+    Ok(())
+}
+
 pub(super) fn persist_qualitative_assessment(
     connection: &Connection,
     input: PersistQualitativeAssessmentInput,
 ) -> StorageResult<FrameworkEvaluation> {
     let framework = get_quality_framework(connection, &input.framework_id)?;
     ensure_company_exists(connection, &input.company_id)?;
+    for result in &input.results {
+        validate_verdict_citations(connection, &result.criterion_id, &result.citations_json)?;
+    }
 
     let mut pass = 0i64;
     let mut partial = 0i64;
