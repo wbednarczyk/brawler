@@ -14,7 +14,6 @@ import type {
   CredentialStatus,
   DatabaseStatus,
   FeedItem,
-  FeedPruneResult,
   HealthResponse,
   SourceAdapter,
   UnmatchedSourceItem,
@@ -25,7 +24,6 @@ import type {
 import type { DbRefreshState } from "./appTypes";
 
 type AppDataControllerInput = {
-  feedPruneRetentionDays: number;
   refreshCompanyEvents: () => Promise<void>;
   setCompanies: Dispatch<SetStateAction<Company[]>>;
   setCompaniesError: Dispatch<SetStateAction<string | null>>;
@@ -34,10 +32,7 @@ type AppDataControllerInput = {
   setDatabaseError: Dispatch<SetStateAction<string | null>>;
   setDatabaseStatus: Dispatch<SetStateAction<DatabaseStatus | null>>;
   setDbRefreshState: Dispatch<SetStateAction<DbRefreshState>>;
-  setDeleteUnsavedFeedError: Dispatch<SetStateAction<string | null>>;
-  setDeleteUnsavedFeedState: Dispatch<SetStateAction<DbRefreshState>>;
   setFeedError: Dispatch<SetStateAction<string | null>>;
-  setFeedPruneResult: Dispatch<SetStateAction<FeedPruneResult | null>>;
   setFeedState: Dispatch<SetStateAction<FeedItem[]>>;
   setGeminiCredentialError: Dispatch<SetStateAction<string | null>>;
   setGeminiCredentialStatus: Dispatch<SetStateAction<CredentialStatus | null>>;
@@ -61,7 +56,6 @@ type AppDataControllerInput = {
 };
 
 export function useAppDataController({
-  feedPruneRetentionDays,
   refreshCompanyEvents,
   setCompanies,
   setCompaniesError,
@@ -70,10 +64,7 @@ export function useAppDataController({
   setDatabaseError,
   setDatabaseStatus,
   setDbRefreshState,
-  setDeleteUnsavedFeedError,
-  setDeleteUnsavedFeedState,
   setFeedError,
-  setFeedPruneResult,
   setFeedState,
   setGeminiCredentialError,
   setGeminiCredentialStatus,
@@ -278,39 +269,7 @@ export function useAppDataController({
     });
   }
 
-  // Bulk data clear (ADR 0076 D5): removes every unsaved feed item at once with
-  // no faithful re-create, so the confirm gate is an InlineConfirm at the call
-  // site.
-  function deleteUnsavedFeedItems() {
-    setDeleteUnsavedFeedState("refreshing");
-    setDeleteUnsavedFeedError(null);
-
-    feedApi.deleteUnsavedFeedItems()
-      .then(() => Promise.all([refreshFeedItems(), refreshDatabaseStatus()]))
-      .then(() => {
-        setDeleteUnsavedFeedState("done");
-        window.setTimeout(() => {
-          setDeleteUnsavedFeedState("idle");
-        }, 900);
-      })
-      .catch((error) => {
-        setDeleteUnsavedFeedError(String(error));
-        setDeleteUnsavedFeedState("idle");
-      });
-  }
-
-  function pruneOldFeedItems() {
-    return feedApi.pruneOldFeedItems({ retentionDays: feedPruneRetentionDays })
-      .then((response) => {
-        setFeedPruneResult(response);
-        return refreshFeedItems();
-      })
-      .catch(() => undefined);
-  }
-
   return {
-    deleteUnsavedFeedItems,
-    pruneOldFeedItems,
     refreshCompanies,
     refreshCompanyRegistryEntries,
     refreshDatabaseBackedViews,

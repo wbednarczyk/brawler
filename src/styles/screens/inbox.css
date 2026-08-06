@@ -472,21 +472,6 @@ summary.feed-body-heading::before {
    dropped the type/source/timestamp text below WCAG AA (U9, worst in the light
    palettes where no dim ratio clears 4.5:1). Meta stays at the AA-safe --muted. */
 
-.inbox-maintenance-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  background: color-mix(in srgb, var(--surface) 48%, transparent);
-}
-
-.inbox-maintenance-row > span {
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
 .danger-subtle-button {
   color: color-mix(in srgb, var(--danger) 78%, var(--text));
 }

@@ -1111,14 +1111,6 @@ impl AppState {
         self.feed().get_feed_item(feed_item_id)
     }
 
-    pub fn prune_old_feed_items(&self, retention_days: i64) -> StorageResult<FeedPruneResult> {
-        self.feed().prune_old_feed_items(retention_days)
-    }
-
-    pub fn delete_unsaved_feed_items(&self) -> StorageResult<FeedDeleteResult> {
-        self.feed().delete_unsaved_feed_items()
-    }
-
     pub fn list_notebook_entries(&self, company_id: &str) -> StorageResult<Vec<NotebookEntry>> {
         self.notebooks().list_notebook_entries(company_id)
     }

@@ -1213,18 +1213,6 @@ function buildHandlers(): Record<string, Handler> {
       });
       return updated ?? d.feedItems[0];
     },
-    delete_unsaved_feed_items: (d) => {
-      const before = d.feedItems.length;
-      d.feedItems = d.feedItems.filter((f) => f.saved);
-      return {
-        itemsDeleted: before - d.feedItems.length,
-        deletedAt: SAMPLE_NOW,
-      };
-    },
-    prune_old_feed_items: (d, a) => {
-      const retentionDays = Number(unwrap(a).retentionDays ?? 30);
-      return { retentionDays, itemsDeleted: 0, prunedAt: SAMPLE_NOW };
-    },
 
     // --- Events / signals ---
     list_company_events: (d, a) => {

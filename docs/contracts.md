@@ -2496,8 +2496,6 @@ Initial Tauri command groups:
 - `remove_company_from_watchlist`
 - `list_feed_items`
 - `update_feed_item_state`
-- `prune_old_feed_items`
-- `delete_unsaved_feed_items`
 - `list_research_evidence`
 - `list_company_timeline`
 - `list_watchlist_timeline`
@@ -2671,25 +2669,7 @@ Initial `refresh_sources` behavior:
 - Refresh commands must not prune old feed items from any source.
 - Automated tests continue to use bundled GPW listing test samples or injected fetchers; default checks must not require live network access.
 
-`prune_old_feed_items` behavior:
-
-- Runs as a separate asynchronous maintenance command, not as part of any source refresh path.
-- Deletes unsaved feed items older than the requested retention window (30-day default).
-- **Manual-only (owner decision 2026-07-19).** The command is invoked ONLY by an explicit user action ("Clean up feed now" in Settings → Sources). There is no automatic timer — the app never deletes feed items on its own. (The prior once-per-day auto-prune silently removed ~3,900 items, including researched periodic reports; the future retention mechanism is tracked as backlog card `cc674d4`.)
-- Settings exposes cleanup as Off (no automatic run), the manual retention window, the protected item class, and the manual "Clean up feed now" action. There is no cleanup-interval control.
-- Settings exposes the last cleanup timestamp and deleted item count for the current app session after the manual cleanup command runs.
-- Preserves saved feed items regardless of age.
-- Removes dependent feed item company links, attachments, and AI analysis rows before deleting pruned feed items.
-- Returns retention days, deleted item count, and prune timestamp.
-
-Initial `delete_unsaved_feed_items` behavior:
-
-- Runs only from an explicit user action with confirmation copy in the UI.
-- Deletes all unsaved feed items regardless of source or age.
-- Preserves saved feed items.
-- Removes dependent feed item company links, attachments, and AI analysis rows before deleting feed items.
-- Does not fetch, poll, or refresh external sources after deletion; the UI only reloads local SQLite-backed state.
-- Returns deleted item count and deletion timestamp.
+Feed mass-delete (`prune_old_feed_items`, `delete_unsaved_feed_items`) — removed (#329, owner decision 2026-08-05): feed content persists; no bulk destructive feed actions.
 
 Initial `refresh_source` behavior:
 

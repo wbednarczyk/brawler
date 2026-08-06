@@ -158,7 +158,6 @@ export const pl: LocaleResources = {
   "events.action.refreshSources": "Odśwież źródła wydarzeń",
   "events.action.refreshing": "Odświeżanie",
   "settings.sources.title": "Źródła",
-  "settings.feedCleanup.title": "Czyszczenie kanału",
   "settings.importExport.title": "Import i eksport",
   "settings.credentials.title": "Poświadczenia",
   "settings.credentials.save": "Zapisz",

@@ -416,7 +416,7 @@ Settings uses local subnavigation rather than route-level pages. Each section op
 Sections:
 
 - Appearance: dark/light/system brightness mode, separate accent palette with `night-neon` and `midnight-horizon`, extensible locale setting with English default and Polish as the first additional language
-- Sources: polling interval, **backfill history depth** (clickable presets 1/3/5/10 years bound to a slider + numeric input, clamped 1–10, default 3; ADR 0077 §3), feed cleanup status, import/export status
+- Sources: polling interval, **backfill history depth** (clickable presets 1/3/5/10 years bound to a slider + numeric input, clamped 1–10, default 3; ADR 0077 §3), import/export status
 - AI providers: Gemini configuration for YouTube transcription — the only in-app AI capability ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)) — selectable transcription model, credential configured/not-configured status, credential storage, secret kind
 - Credentials: credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls

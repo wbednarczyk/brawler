@@ -38,6 +38,8 @@
     { "token": "ownership_ocr_proposals", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
     { "token": "ownership_ocr_proposal_rows", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
     { "token": "parse_ocr_shareholders", "adr": "ADR 0084" },
-    { "token": "html_positional", "adr": "ADR 0095", "allow": ["docs/data-model.md", "docs/roadmap.md"], "allowFile": ["docs/testing.md"] }
+    { "token": "html_positional", "adr": "ADR 0095", "allow": ["docs/data-model.md", "docs/roadmap.md"], "allowFile": ["docs/testing.md"] },
+    { "token": "prune_old_feed_items", "adr": "#329", "allow": ["docs/contracts.md"] },
+    { "token": "delete_unsaved_feed_items", "adr": "#329", "allow": ["docs/contracts.md"] }
   ]
 }

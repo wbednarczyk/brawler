@@ -155,7 +155,7 @@ Ingestion should preserve source attribution, publication time, fetch time, orig
 
 Feed retention must be designed before v1 ingestion becomes broad. The app should avoid unbounded local growth by defining per-source retention defaults, user-adjustable cleanup settings, and rules that preserve important user-marked content. Saved items, items linked to notes, and items with explicit user decisions should not be removed by routine cleanup without clear user control.
 
-**Automatic timed cleanup is disabled (owner decision 2026-07-19).** The app must never delete feed items on a timer: an automatic 30-day prune running once per day silently removed ~3,900 items, including periodic reports the owner actively researches. Cleanup is now a **manual, user-triggered action only** ("Clean up feed now" in Settings → Sources); nothing is deleted without an explicit click. The redesigned retention mechanism (per-source defaults, safe preservation rules, honest controls) is tracked as backlog card `cc674d4`.
+**Feed content persists; no bulk destructive feed actions (owner decision 2026-08-05, #329).** Both automatic timed cleanup and the manual "Clean up feed now" / "Delete unsaved" controls are removed — an earlier automatic 30-day prune silently removed ~3,900 items, including periodic reports the owner actively researches, and the manual fallback carried the same risk. Nothing deletes feed items today. **No mass-destructive feed actions**: the app never exposes bulk deletion of feed items (owner decision 2026-08-05, #329); the future retention design (#175) must not reintroduce one without an explicit product decision.
 
 ## Typed Filing Signals
 
