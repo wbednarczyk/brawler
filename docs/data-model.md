@@ -1513,7 +1513,6 @@ Indexed content:
 - notebook title and Markdown body
 - transcript segment text (`parent_id` = owning transcript job)
 - company event title and type (`content_type = 'event'`)
-- digest title and body
 
 Rules:
 

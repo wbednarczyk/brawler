@@ -991,9 +991,6 @@ Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownershi
   ],
   "residuals": [
     { "reportDocumentId": "doc_…", "parseState": "glyph_encoded", "detectedAsOf": "2023-12-31", "matchedHeading": "Akcjonariat" }
-  ],
-  "pendingProposals": [
-    { "id": "ownhtp_…", "holderKey": "ITEMA VENTURES UAB", "proposedType": "other_institutional", "confidence": 0.7, "rationale": "foreign fund" }
   ]
 }
 ```
