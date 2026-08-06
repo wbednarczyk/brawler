@@ -683,6 +683,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "retire_html_positional_facts",
         sql: include_str!("../../migrations/0135_retire_html_positional_facts.sql"),
     },
+    Migration {
+        version: 136,
+        name: "purge_retired_search_rows",
+        sql: include_str!("../../migrations/0136_purge_retired_search_rows.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

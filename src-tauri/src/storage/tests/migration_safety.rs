@@ -4906,3 +4906,38 @@ fn migration_0135_retires_every_html_positional_fact_and_only_its_orphaned_perio
     assert!(period_exists(&connection, "per_pos_sibling"));
     assert!(period_exists(&connection, "per_pos_doc_ref"));
 }
+
+#[test]
+fn migration_0136_purges_orphaned_retired_search_rows_and_keeps_live_ones() {
+    // ADR 0084 clean-cut completion: 0102 dropped the AI brief/digest source
+    // tables, but DROP TABLE fires no delete triggers, so their search_index
+    // FTS rows survived and stayed searchable. 0136 purges exactly the retired
+    // content types; every live content type's rows are untouched.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 135).expect("apply schema up to pre-0136");
+    connection
+        .execute_batch(
+            "INSERT INTO search_index (title, body, content_type, source_id, company_id, parent_id)
+             VALUES ('Old brief', 'orphaned AI text', 'research_brief', 'brief1', 'c1', NULL);
+             INSERT INTO search_index (title, body, content_type, source_id, company_id, parent_id)
+             VALUES ('Old digest', 'orphaned AI text', 'digest', 'digest1', 'c1', NULL);
+             INSERT INTO search_index (title, body, content_type, source_id, company_id, parent_id)
+             VALUES ('My note', 'live user note', 'notebook_entry', 'note1', 'c1', NULL);",
+        )
+        .expect("seed orphaned retired rows and one live row on the pre-0136 schema");
+
+    crate::storage::migrations::apply_migrations(&mut connection).expect("apply 0136+");
+
+    let count_type = |content_type: &str| -> i64 {
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM search_index WHERE content_type = ?1",
+                [content_type],
+                |row| row.get(0),
+            )
+            .expect("count search rows")
+    };
+    assert_eq!(count_type("research_brief"), 0);
+    assert_eq!(count_type("digest"), 0);
+    assert_eq!(count_type("notebook_entry"), 1);
+}

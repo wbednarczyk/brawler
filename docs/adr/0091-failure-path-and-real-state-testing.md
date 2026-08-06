@@ -1,6 +1,6 @@
 # ADR 0091: Failure-Path & Real-State Test Layer — chaos seam, job-failure visibility, honesty harness
 
-Status: Accepted (2026-07-29, owner sign-off at epic #40 planning — Polish plan approved in chat). Decision 4 narrowly amended by [ADR 0094](0094-committed-public-espi-report-samples.md) (official ESPI/EBI filing files as committed test samples; everything else unchanged).
+Status: Accepted (2026-07-29, owner sign-off at epic #40 planning — Polish plan approved in chat). Decision 4 narrowly amended by [ADR 0094](0094-committed-public-espi-report-samples.md) (official ESPI/EBI filing files as committed test samples; everything else unchanged). Cadence language ("closure/epic-gate runs") superseded by [ADR 0096](0096-quality-gate-architecture-under-continuous-release.md) — audits are risk-triggered or on-demand, the PR is the only gate.
 
 Deciders: maintainer. Area: testing, jobs, storage, frontend.
 

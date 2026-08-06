@@ -66,7 +66,7 @@ Intent: open the app at the start of the day and learn what changed and whether 
 Flow:
 
 1. User lands on Today.
-2. At the top, the **morning briefing** summarizes what changed in the user's companies and what needs doing — new signals, autopilot runs, claims due, upcoming report dates, and fired alerts — as a structured list, or an AI narrative with citation links when a provider is configured. A **Generate briefing** action recomposes it on demand; it also auto-refreshes once per day while the app is open.
+2. At the top, the **morning briefing** summarizes what changed in the user's companies and what needs doing — new signals, autopilot runs, claims due, upcoming report dates, and fired alerts — as a deterministic structured list ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2 — no AI narrative). A **Generate briefing** action recomposes it on demand; it also auto-refreshes once per day while the app is open.
 3. Below it, the user triages the **attention stream** (autopilot runs, changed reports, claims to verify, upcoming reports, and fired alerts), optionally filtered by a counter tile.
 4. **Fired alerts** also raise a **persistent toast** the user can click through to the evidence; the **Today attention list** groups fired events by company, where each is marked seen or dismissed.
 5. User opens the 0–2 items that matter into the company workspace, then returns to Today.
@@ -75,7 +75,7 @@ Setup (Library → Alerts): the user creates **alert rules** from preset chips �
 
 Acceptance criteria:
 
-- The briefing renders even with no AI provider configured (structured list, never blocked); a narrative only appears when it can cite the composed items.
+- The briefing is a fully deterministic structured list and always renders, never blocked (the narrative half is retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 - A fired alert always traces back to its evidence (signal, run, or quote) via both the toast click-through and the attention list.
 - An alert never re-fires for the same evidence, and never phrases a fact as advice.
 - The journey stays within its interaction budget ([budgets.json](../tests/browser/journeys/budgets.json)); reading the briefing is a passive scan, not a counted interaction.
@@ -90,7 +90,7 @@ Flow:
 2. Feed shows newest items first, with a typed-signal badge on classified official filings (e.g. insider transaction, dividend, profit warning).
 3. User filters by watchlist, company, item type, signal type, unread, saved, and significance when available.
 4. User opens an item in the detail pane.
-5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) (a stored pre-retirement AI analysis remains readable as legacy data — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
+5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) — no AI analysis panel ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5: stored AI analysis was dropped by migration `0102`).
 6. User marks item read, saves it, opens the original source, or creates a note from it.
 7. Signals are typed by the deterministic rule classifier only ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); an unclassifiable filing simply carries no typed signal.
 
@@ -376,7 +376,7 @@ Flow:
 
 1. User opens global search from the top-toolbar search box (or its keyboard shortcut).
 2. User types a query.
-3. App shows ranked results grouped by content type (companies, feed items, notes, transcript segments, research briefs, digests), each with a snippet.
+3. App shows ranked results grouped by content type (companies, feed items, notes, transcript segments, events), each with a snippet.
 4. User selects a result.
 5. App navigates to the owning screen/item.
 

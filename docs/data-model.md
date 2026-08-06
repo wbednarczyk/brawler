@@ -444,27 +444,19 @@ Owner-durable: the `ownership_stakes` section joins the v2 research import/expor
 
 **Current-state read = newest disclosure basis, not latest-per-holder-over-history** (real-data harvest 2026-07-16): a holder who drops below the 5% disclosure threshold *vanishes* from later filings (no "0%" row exists), so a naive latest-per-holder union resurrects stale holders and pushes the disclosed sum past 100% (free float goes to 0). `current_state` therefore scopes to a **baseline** = `max(as_of)` of the company's **full-picture bases** — `report_document` and `aggregator` snapshots (ADR 0072 amendment: the newest full picture wins, whichever source it came from; fallback: any source) — returns the latest per holder at `as_of >= baseline`, and overlays later `espi_filing`/`manual` snapshots. Pre-baseline holders remain in `history` only. **Founder-insider sticky overlay (F-A1, owner dogfooding 2026-07-17):** a `founder_insider` holder is exempt from the vanish rule — a founder crossing below the disclosure threshold is itself an ESPI-disclosable event (not a silent vanish) AND is corroborated by the management/insider substrate, so when a newer full-picture basis only *partially* captures the shareholder table (e.g. an OFE-only quarterly that missed the founders — the live ABE shape), each founder's most-recent stake is overlaid into current state whenever that holder identity is absent from the baseline-scoped set. Without this the founder — and its skin-in-the-game corroboration badge, which attaches only to a surfaced holder — disappears entirely, and free float is overstated. The witness comparison path uses a **disclosed-only reference read** (same baseline logic restricted to non-`aggregator` sources) so the aggregator is never compared against itself. Free float derives from this scoped state. Within the scoped set, rows merge by **holder identity**: a shared dictionary `display_name` when the name resolves to a seeded entity alias (`HolderIdentityMap`; "NN PTE" = "Nationale-Nederlanden PTE S.A.", migration `0086`), else the parenthetical-stripped canonical key ("cyber_Folks S.A." = "cyber_Folks S.A. (akcje własne)"); generic marker aliases (`treasury_shares`) never act as identities. The most specific raw name represents the merged holder; history keeps every variant.
 
-**Report extraction** (plan v0.56 T3, migration `0083_ownership_extraction_residual.sql`, [ADR 0072](adr/0072-ownership-structure.md)): the `ownership_extraction` job parses the mandatory shareholders table of a stored periodic report and writes stakes **directly and finally** with `source = report_document` (owner decision 2026-07-16 — the deterministic parse needs no confirmation). A parse it cannot turn into holder rows (glyph-mangled font, image table, missing section) writes **zero** stakes and is parked in `ownership_extraction_residual` for the later AI/OCR path, whose results always require confirmation.
+**Report extraction** (plan v0.56 T3, migration `0083_ownership_extraction_residual.sql`, [ADR 0072](adr/0072-ownership-structure.md)): the `ownership_extraction` job parses the mandatory shareholders table of a stored periodic report and writes stakes **directly and finally** with `source = report_document` (owner decision 2026-07-16 — the deterministic parse needs no confirmation). A parse it cannot turn into holder rows (glyph-mangled font, image table, missing section) writes **zero** stakes and is parked in `ownership_extraction_residual` — flagged, never guessed; the OCR follow-up path over residuals was retired outright ([ADR 0084](adr/0084-retire-in-app-ai-layer.md), migration `0102`).
 
 `ownership_extraction_residual` (the deterministic parser's pending queue):
 
 - `report_document_id` (PK → `report_documents`, `ON DELETE CASCADE`) — one residual per document, so a re-run **upserts in place**; the job **clears** it the moment a (later) parser version succeeds, so a document is never both parsed and residual.
 - `company_id` (→ `companies`, `ON DELETE CASCADE`)
 - `parse_state` — `section_missing | table_unparsable | glyph_encoded` (CHECK) — why the deterministic parse could not write stakes.
-- `detected_as_of?` — the disclosure date resolved for the document, if any (carried so the AI/OCR write reuses it).
+- `detected_as_of?` — the disclosure date resolved for the document, if any.
 - `matched_heading?` — the shareholders heading line that anchored the failed parse, verbatim (NULL for `section_missing`).
-- `ocr_state?` (v0.57 T8, migration `0093`) — the tier-4 OCR lifecycle marker: `NULL` = never attempted (eligible for a bulk OCR pass); `proposed` = a pending OCR proposal awaits review; `rejected` = the user rejected the OCR proposal (never re-proposed); `no_table` = OCR ran (or the doc is un-OCRable, e.g. an ESEF/iXBRL route) and yielded no shareholders table. Enforced in code (`OCR_STATE_*`), no CHECK on the ADD COLUMN. A deterministic re-parse (`record_extraction_residual`) never resets it.
+- `ocr_state?` (migration `0093`) — **frozen legacy column**: the retired OCR pass's lifecycle marker; readers tolerate any stored value, nothing writes it anymore ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 - `created_at` / `updated_at`.
 
-**Tier-4 OCR of residuals** (v0.57 T8, migration `0093_ownership_ocr_proposals.sql`, [ADR 0077](adr/0077-trusted-extraction-foundations.md) tier-4 over [ADR 0072](adr/0072-ownership-structure.md) decision 2a): the `ownership_ocr_extraction` job OCRs a residual document through the routable `vision_extraction` capability ([ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md) — Mistral OCR; **no** general-analysis fallback, and no vision provider is a **clean no-op**, never an error), parses the shareholders table out of the OCR markdown with the SAME deterministic parser (`parse_ocr_shareholders` — OCR defeats the glyph encoding by reading pixels), and lands the result as a proposal in `ownership_ocr_proposals` — **NEVER auto-applied** ([ADR 0072](adr/0072-ownership-structure.md) decision 2a: OCR/AI results always require confirmation).
-
-**Which file is OCR'd** (real-data gap closed 2026-07-17: on the maintainer DB the `table_unparsable` residuals are 16 PDF / 27 xhtml — a PDF-only gate would skip 61%): a **PDF** residual OCRs itself; an **xhtml** pdf2htmlEX container (unreadable text layer — the very reason it is residual) OCRs its fetched **PDF sibling** of the same company + derived period (`find_pdf_sibling`, the single sibling rule shared with the management-holdings glyph path); an ESEF report package (`.xbri`/`.zip`) or an xhtml with no PDF sibling is un-OCRable → `ocr_state='no_table'`, no provider call. Tier-4 is still PDF-native (the pure-Rust build cannot rasterize) — the sibling is the PDF-native content the xhtml container was rendered from.
-
-`ownership_ocr_proposals` (**transient, not in the import/export bundle**): `report_document_id` (PK → `report_documents`, `ON DELETE CASCADE`) — the residual document this proposal resolves, one proposal per residual (idempotent upsert; a re-OCR reconciles); `source_document_id` (→ `report_documents`) — the document actually OCR'd (equals `report_document_id` for a PDF residual, the PDF sibling for an xhtml residual — OCR-run provenance, surfaced in the review card); `company_id`, `as_of` (the deterministically-resolved disclosure date every written stake carries — the residual's `detected_as_of`, else the document-period derivation; never fabricated), `matched_heading?`, `provider_id?`, `model?`, timestamps. Rows in `ownership_ocr_proposal_rows` (`id` PK, `report_document_id` → cascade, `row_index`, `holder_name_raw`, `capital_pct?`, `votes_pct?`).
-
-**Bulk vs manual selection (parse-state scope)**: the **bulk** pass (`run_ownership_ocr_extraction`) selects residuals whose `parse_state` is `table_unparsable` OR `glyph_encoded` (the card's target population — unreadable tables OCR can defeat) and `ocr_state IS NULL` (a `no_table` doc is never re-spent). `section_missing` residuals (a document genuinely lacking the shareholders section) are **excluded** from bulk to avoid burning provider calls on nothing. The **manual per-company** pass (`run_company_ownership_ocr`) is broader (an explicit user retry): it re-arms the company's `no_table` residuals **and** includes `section_missing`.
-
-**Confirm/reject + re-propose rule** (the `ocr_state` marker gates re-selection): **confirm** writes each proposed row as a `report_document` stake at `as_of` (the standard extraction write path), stamps deterministic holder types, **clears the ORIGINAL residual entirely** (the gap is filled), and deletes the proposal — the residual and proposal never coexist after. Stakes anchor their `report_document_id` provenance to the **residual** document (so the deterministic catch-up sees the period covered and never re-parks/re-OCRs it), while the PDF actually read is preserved on the proposal's `source_document_id`. **Reject** deletes the proposal and parks the residual `ocr_state='rejected'` so it is **not** re-proposed. A provider error creates no proposal and leaves the residual eligible (`NULL`, retryable). A `proposed`/`rejected` residual is never re-selected by either pass.
+**OCR of residuals — retired outright** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md), migration `0102`): the tier-4 OCR jobs, `ownership_ocr_proposals`/`ownership_ocr_proposal_rows`, and the confirm/reject review flow are gone; an unparseable residual stays flagged with zero stakes written.
 
 **`as_of` resolution order** (deterministic and stable across re-runs, so the append-only stake id never churns): (1) the document's linked `financial_periods.period_end_date` (via `period_id`); (2) else the document-period derivation (`derive_report_period` — the ESEF iXBRL context end, else the title/URL end-of-period); (3) else the first date at/after the matched shareholders heading in the extracted section text. A parse that yields rows but no resolvable date writes nothing (never fabricates a date) — it is parked as a `table_unparsable` residual instead.
 
@@ -616,40 +608,13 @@ Rules:
 - Notes created from transcript segments reference them through origin links.
 - Transcript-derived notes are normal notebook entries; each selected segment creates a `transcript_segment` origin containing the segment ID, original video URL, and job/provider/timestamp context in the label.
 
-### AI Analysis Results
+### AI Analysis Results — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-Supports feed item summaries, significance labels, tags, and future provider-neutral analysis.
-
-Fields:
-
-- `id`
-- `feed_item_id`
-- `provider_id`
-- `model`
-- `prompt_version`
-- `summary`
-- `significance`
-- `reasoning`
-- `language`
-- `created_at`
-
-Related tables:
-
-- `ai_analysis_jobs`
-- `ai_analysis_tags`
-- `ai_analysis_source_references`
-
-Rules:
-
-- General AI analysis is implemented later through a provider-neutral boundary. Gemini may be the first live provider, but stored analysis records must not assume Gemini is the only provider.
-- M13 analysis runs through async job records with queued, running, succeeded, and failed states.
-- Job records preserve prompt preset/custom-question context, provider ID, model, prompt version, error state, and timestamps.
-- AI output must not contain buy/sell/hold recommendations.
-- Source references are required.
+In-app feed-item AI analysis is removed; `ai_analysis_results`/`ai_analysis_jobs`/`ai_analysis_tags`/`ai_analysis_source_references` were dropped by migration `0102` (decision 5 — no readable history survives). Intelligence over feed items arrives via the MCP port (BYOA).
 
 ### Research Evidence Boundary
 
-Supports future company timelines, watchlist review, changed-since-review views, evidence links, research questions, reminders, AI briefs, and digests.
+Supports future company timelines, watchlist review, changed-since-review views, evidence links, research questions, and reminders.
 
 This is a hybrid model governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md):
 
@@ -663,11 +628,7 @@ Likely durable tables:
 - `research_review_checkpoints`
 - `evidence_links`
 - `research_questions`
-- `ai_research_briefs`
-- `ai_research_brief_citations`
 - `research_reminders`
-- `ai_research_digests`
-- `ai_research_digest_citations`
 
 Recommended `research_review_checkpoints` fields:
 
@@ -701,7 +662,7 @@ Rules:
 
 - Evidence links relate existing domain entities without moving their canonical data.
 - Existing notebook origin rows remain provenance records and are not replaced by `evidence_links`.
-- Evidence links may connect source items, notebook entries, claims, events, transcript segments, AI analysis results, research questions, future reminders, future briefs, and future digests.
+- Evidence links may connect source items, notebook entries, claims, events, transcript segments, research questions, and reminders.
 - Initial relation types include `originates_from`, `cites`, `supports`, `contradicts`, `updates`, `follows_up`, `answers`, and `related`.
 - Link validation should reject unknown entity types and dangling references when practical.
 
@@ -727,58 +688,7 @@ Rules:
 - Questions may be linked to feed items, notebook entries, claims, events, transcript segments, AI analysis, and other accepted evidence through `evidence_links`.
 - Company-scoped questions appear in the backend research timeline as `research_question` evidence items.
 
-Initial `ai_research_brief_jobs` fields:
-
-- `id`
-- `scope_type`
-- `scope_id`
-- `provider_id`
-- `model`
-- `prompt_version`
-- `evidence_collector_version`
-- `renderer_version`
-- `status`
-- `error_code`
-- `error`
-- `created_at`
-- `started_at`
-- `finished_at`
-
-Initial `ai_research_briefs` fields:
-
-- `id`
-- `job_id`
-- `scope_type`
-- `scope_id`
-- `provider_id`
-- `model`
-- `prompt_version`
-- `evidence_collector_version`
-- `renderer_version`
-- `title`
-- `summary`
-- `content_markdown`
-- `language`
-- `generated_at`
-- `created_at`
-
-Initial `ai_research_brief_citations` fields:
-
-- `id`
-- `brief_id`
-- `citation_key`
-- `evidence_type`
-- `evidence_id`
-- `label`
-- `snippet`
-- `created_at`
-
-Rules:
-
-- AI research briefs are not notebook entries.
-- Initial `scope_type` values are `company` and `watchlist`.
-- Brief generation is explicit and asynchronous.
-- Brief jobs use the provider-neutral AI settings and credential boundary.
+AI research briefs are retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5): `ai_research_brief_jobs`/`ai_research_briefs`/`ai_research_brief_citations` were dropped by migration `0102` (no readable history survives).
 
 Initial `research_reminders` fields:
 
@@ -808,19 +718,9 @@ Rules:
 - Confirmed `company_signals` appear in the backend research timeline as `company_signal` evidence items and so flow into the personal digest; proposed (unconfirmed AI) signals do not.
 - Completion and dismissal are stored on the reminder record and do not modify the linked source object by default.
 
-Initial `ai_research_digest_jobs`, `ai_research_digests`, and `ai_research_digest_citations` mirror the AI brief tables with digest-specific names and version fields.
+AI research digests are retired the same as AI research briefs (above): `ai_research_digest_jobs`, `ai_research_digests`, and `ai_research_digest_citations` were dropped by migration `0102` (no readable history survives). Their replacement is an MCP-connected agent working over research evidence (BYOA).
 
-Rules:
-
-- Research digests are immutable generated snapshots.
-- Digest jobs use provider-neutral AI settings and credential boundaries.
-- Digest collection combines open reminders and changed research evidence.
-- Digest citations point to typed evidence references and do not store full source bodies.
-- Briefs are immutable snapshots. Regeneration creates a new successful brief instead of overwriting the previous one.
-- A later workflow may let the user create a notebook entry from a brief or selected excerpt, but no note is created automatically.
-- Generated briefs must cite source evidence and keep buy/sell/hold recommendation guardrails.
-- Citation rows link generated content back to research evidence items and should not duplicate full source bodies.
-- Import/export, backup, retention, and migrations must treat research-owned durable state explicitly.
+Import/export, backup, retention, and migrations must treat research-owned durable state explicitly.
 
 ### Company Fundamentals
 
@@ -951,7 +851,6 @@ Structured-first extraction provenance ([ADR 0061](adr/0061-deterministic-fundam
 
 `company_ocr_extraction_profile` — dropped by migration `0102_clean_cut_ai_artifacts.sql` ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5). Distinct from `company_extraction_profile` above (ADR 0061 decision 3), which stays append-only with its read/write code retired ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1).
 
-`kpi_extraction_jobs.committed_fact_count` (`INTEGER NOT NULL DEFAULT 0`, migration `0064_kpi_extraction_committed_facts.sql`): how many validated facts the run committed directly (tier-4 profile path, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §4 / T4.5). `0` for the classic proposals-only path, so the review panel reads an honest outcome ("N facts committed" vs "N proposals"). Reads tolerate the default on old rows.
 
 `document_derived_periods` (migration `0109_document_derived_periods.sql`) — a **persisted derived index** for one document's reporting period, so the Coverage panel and re-extraction runs read the period instead of recomputing it (Model Principles; CLAUDE.md "read persisted derived indexes instead of recomputing the corpus per call").
 
@@ -1019,16 +918,15 @@ User-owned alert rules and the attention events their evaluation emits ([ADR 006
 
 ### Morning Briefing
 
-A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) decision 4, `v0.54.0`): a deterministically composed item list plus an optional AI narrative. Migration `0078_morning_briefings.sql`.
+A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) decision 4, `v0.54.0`): a deterministically composed item list, end to end — the optional AI narrative half was retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md); migration `0102` dropped its three columns). Migration `0078_morning_briefings.sql`.
 
-`morning_briefings` — `(id, composed_at, since, narrative_markdown, narrative_provider_id, narrative_model, language, created_at)`.
+`morning_briefings` — `(id, composed_at, since, language, created_at)`.
 
 - `since` is the domain-date lower bound the composer used (`YYYY-MM-DD`; `''` on the first-ever briefing = include everything). The next compose's `since` = the latest briefing's `composed_at` date.
-- `narrative_markdown` is `NULL` when no provider is configured **or** the narrative was rejected on citation integrity — the briefing still persists as the structured item list. A narrative is **decision-support only** (facts + citations, never advice), phrased via the research-digest provider contract (capability `morning_briefing`, [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)).
 
-`morning_briefing_items` — `(id, briefing_id, position, item_type, company_id, domain_date, citation_key, evidence_type, evidence_ref, title, detail, created_at)`, `UNIQUE(briefing_id, citation_key)`. This table is BOTH the structured list the Today card renders AND the citeable evidence set the narrative resolves against (mirrors `ai_research_digest_citations`).
+`morning_briefing_items` — `(id, briefing_id, position, item_type, company_id, domain_date, citation_key, evidence_type, evidence_ref, title, detail, created_at)`, `UNIQUE(briefing_id, citation_key)`. This table is the structured list the Today card renders; `citation_key` is a stable per-item reference key.
 
-- `item_type` ∈ `signal` | `autopilot_run` | `claim_due` | `report_date` | `attention_event`. `evidence_ref` is the source id (signal id | run id | claim id | attention-event id | `company:event_key`); a narrative citation resolves against `(evidence_type, evidence_ref)` via `research::supplied_evidence_refs` — an unresolved citation rejects the whole narrative (never store an uncited narrative).
+- `item_type` ∈ `signal` | `autopilot_run` | `claim_due` | `report_date` | `attention_event`. `evidence_ref` is the source id (signal id | run id | claim id | attention-event id | `company:event_key`), resolvable against `(evidence_type, evidence_ref)` via `research::supplied_evidence_refs`.
 - **`title`/`detail` carry typed payloads (since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) dec. 4; columns unchanged).** The composer writes only verbatim source data or typed codes/tokens (category code, `trigger_type`/`evidence_type` codes, a `report_processed`/token summary, `status`, `due:<period>:<year>`, qualified ticker) — never composed prose. The Today card translates via `briefingItemText.ts`. Legacy rows composed before `v0.60` keep prose (no migration); the read path is unchanged and tolerant. Composition also **dedups** to at most one item per `(company_id, item_type, evidence_ref)`, keeping the newest by `domain_date` (dec. 1).
 - **Composition** is a pure, deterministic function over gathered reads (`storage::compose_briefing`), so it is snapshot-stable. Inputs: new **confirmed** signals (domain date = `signal_date`), completed autopilot runs (`succeeded`/`partial`, domain date = `updated_at`), and fired non-dismissed attention events (domain date = `fired_at`) whose date is **strictly after** `since`; plus the current claims-due (due + overdue) and upcoming-report snapshot (not `since`-bounded). Items are ordered by `domain_date`, then a stable (type, company, evidence-ref) tiebreak — **never `created_at`**; `citation_key` = `b{position+1}`.
 - `company_id` is denormalized TEXT (not an FK): a briefing is a historical snapshot, so deleting a company must not rewrite past briefings. Items CASCADE-delete with their briefing.
@@ -1159,16 +1057,16 @@ User-owned quality checklists evaluated against the fundamentals facts by a dete
 - `id`, `evaluation_id` → `framework_evaluations(id)`, `criterion_id` → `framework_criteria(id)`.
 - `expression` (snapshot of the criterion text at run time), `verdict` (`pass` | `partial` | `fail` | `unavailable`).
 - `measured_value` (decimal-exact text, the leading metric's measured value), `measured_unit`, `threshold` (snapshot), `inputs_json` (the facts/periods/metric keys used, for audit), `note`.
-- Agent-assessed fields — `v0.50.0` ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), append-only columns in `0059_qualitative_criteria.sql`): `reasoning` (short), `citations` (JSON — typed evidence refs reusing the `ai_research_brief_citations` model: `evidence_type` from `ResearchEvidenceType`, `evidence_id`, `label`, `snippet`), `confidence` (`low` | `medium` | `high`), `prompt_version`, `source`. `source` follows the append-only safe-default pattern: added with `DEFAULT 'engine'` so the existing-table `ALTER … ADD COLUMN` succeeds and pre-migration quantitative rows read as engine-sourced; qualitative rows write `agent`. For qualitative rows `verdict` adds `insufficient_evidence` to the quantitative set. Agent results are opinion, never facts: visually distinct, regeneratable, and they never mutate quantitative data. The Quality panel's current-state read resolves, per criterion, the most-recent `source = agent` row across all snapshots — indexed by `idx_criterion_results_agent(criterion_id, source)` (`0060_qualitative_assessment_index.sql`).
+- Agent-assessed fields — `v0.50.0` ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), append-only columns in `0059_qualitative_criteria.sql`): `reasoning` (short), `citations` (JSON — typed evidence refs: `evidence_type` from `ResearchEvidenceType`, `evidence_id`, `label`, `snippet`), `confidence` (`low` | `medium` | `high`), `prompt_version`, `source`. `source` follows the append-only safe-default pattern: added with `DEFAULT 'engine'` so the existing-table `ALTER … ADD COLUMN` succeeds and pre-migration quantitative rows read as engine-sourced; qualitative rows write `agent`. For qualitative rows `verdict` adds `insufficient_evidence` to the quantitative set. Agent results are opinion, never facts: visually distinct, regeneratable, and they never mutate quantitative data. The Quality panel's current-state read resolves, per criterion, the most-recent `source = agent` row across all snapshots — indexed by `idx_criterion_results_agent(criterion_id, source)` (`0060_qualitative_assessment_index.sql`).
 - Immutable once written.
 
 Rules:
 
-- Quantitative evaluation is a manual user action (`evaluate_framework`) over the latest available period/TTM. Qualitative assessment (`v0.50.0`, ADR 0075) is agent-run per criterion (durable `qualitative_assessment` job) and re-enqueued by the assist/autopilot trust rungs on new-report arrival; agent results compose into the same immutable snapshot with a per-criterion `source`.
+- Quantitative evaluation is a manual user action (`evaluate_framework`) over the latest available period/TTM. Qualitative criteria (`v0.50.0`, ADR 0075) are authored in-app; verdicts arrive from the user's own MCP-connected agent via `set_qualitative_verdicts` (mandatory provenance, `v0.60.0`, BYOA — [ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5 retired the in-app assessment job) and compose into the same immutable snapshot with a per-criterion `source`.
 - A run computes an in-memory metric table (never persisted) via the shared derived-metrics service, then persists only the `framework_evaluations` + `criterion_results` rows. The `measured_value` is pinned to the run and does **not** change when underlying facts later change (a final supersedes an estimate) — the scorecard is the latest run; history is queryable.
 - `verdict = unavailable` when a referenced metric cannot be computed (missing fact), distinct from `fail`.
 - A quantitative run (`evaluate_framework`) **skips `kind = qualitative` criteria** entirely — they carry no DSL expression and are agent-assessed on a separate snapshot, so a quant run never writes a phantom `unavailable` row for them (ADR 0075, §T6; the quantitative engine's semantics are otherwise untouched).
-- **Verdict-change detection** (`qualitative_verdict_changes`) compares, per qualitative criterion, the two most-recent `source = agent` verdicts across snapshots; a differing pair is a change (a first/only assessment is not). Changes surface in the **company research digest** as synthetic `framework_verdict` evidence items, **bounded by the company review checkpoint** (the same `reviewed_at` gate real timeline evidence uses — a change not newer than the checkpoint is not re-emitted, so marking the company reviewed suppresses it; ADR 0075 Decision 5, §T6). The Kroeze app template (`v0.50.0`) ships six qualitative criteria (moat, pricing power, recurring revenue, capital-allocation quality, understandable business, founder/insider ownership) alongside its quantitative checks.
+- **Verdict-change detection** (`qualitative_verdict_changes`) compares, per qualitative criterion, the two most-recent `source = agent` verdicts across snapshots; a differing pair is a change (a first/only assessment is not). It was originally consumed by the company research digest (retired with the in-app AI layer, [ADR 0084](adr/0084-retire-in-app-ai-layer.md) — no digest surfaces it today); the storage function itself is untouched by the cut. The Kroeze app template (`v0.50.0`) ships six qualitative criteria (moat, pricing power, recurring revenue, capital-allocation quality, understandable business, founder/insider ownership) alongside its quantitative checks.
 - The framework-criteria **import path applies the same `kind`/`assessment_guidance` validation as the create path** (`normalize_kind` + guidance required for qualitative): an unrecognized `kind` or a guidance-less qualitative criterion fails the import with a typed error — never stored verbatim.
 - An evaluation run may be **deleted** from the history (pruning); deletion cascades to its `criterion_results`. Deletion removes a whole run — it never mutates a retained run's snapshotted values, so the immutability guarantee holds for what remains.
 - App-template seeds are **bilingual** ([ADR 0076](adr/0076-ui-design-system-and-density-contracts.md) Decision 8): the Rust template constant carries `{pl, en}` for every human-facing string (framework name/description, criterion label, `assessment_guidance`); seed, reset, and top-up resolve the language from the persisted `locale` setting once (fallback `pl`). Criterion keys — `expression`, `partial_band`, `kind` — stay locale-independent.
@@ -1306,8 +1204,8 @@ Rules:
 
 - **Trust ladder.** A sweep (chained or manual) runs only for mode ∈ {`assist`, `autopilot`}; mode `off` ends it with `status='completed'` + `skipped_reason='automation_off'` and zero enqueues.
 - **Candidate document = the period's best EXTRACTABLE document, not blindly the coverage canonical** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3, T-A2): when the canonical is a non-iXBRL XHTML (a pdf2htmlEX render, extractable by no deterministic tier and ineligible for the PDF-only tier-4), the sweep attacks the period's next-best fetched periodic document that IS extractable (a PDF, or an iXBRL `.xhtml`/`.xbri`/`.zip`), preferring ssf over jsf then the newest; with no extractable sibling the canonical is still enqueued (the run degrades `not_pdf`), never a silent drop. Sweep-layer only — the canonical selection (ADR 0061 dec. 1b) is untouched. A report document's reporting period is self-derived from its iXBRL contexts when it is a valid instance, else from its title/URL (`period_sort_key`); a non-iXBRL XHTML now uses that title/URL fallback like a PDF.
-- **AI budget is consumed atomically** (ADR 0077 §6): a single guarded `UPDATE ... SET ai_calls_used = ai_calls_used + 1 WHERE id = ?1 AND (ai_call_limit = 0 OR ai_calls_used < ai_call_limit)` is the whole check-and-consume (`changes() == 1` ⇔ granted), so concurrent extract stages can never over-spend the last unit. Deterministic outcomes never consume — only a run actually entering tier-4 spends a unit; a denied run records `skipped_budget` on its `kpi_delta_json`, never a silent skip. **Statically-ineligible runs never consume either** (ADR 0077 §6 refinement, 2026-07-10): a missing `VisionExtraction` provider, no stored file, or the ESEF/iXBRL route (tier-4 is PDF-only) is decided by a pre-check *before* the guarded UPDATE, so the run degrades honestly (`no_vision_provider` / `no_stored_file` / `not_pdf`) and spends zero units — a unit buys a reachable provider invocation, not a configuration/format check. The computed **coverage read model** (`get_fundamentals_coverage`, [contracts.md](contracts.md)) projects this onto its period: `skippedBudget` is `true` when a period's canonical report's `history_sweep` run carries that reason (the run id is per-`(company, document)` deterministic, so it is a single lookup, not a windowing query).
-- **Terminal-run re-arm on capability upgrade** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3, 2026-07-10; version gate 2026-07-21). The shared `enqueue_extraction_run` dedup no longer skips a terminal run forever. A terminal **succeeded** run whose `kpi_delta_json` says `extractionAvailable:false` with a re-arm-class reason is **re-armed** (`autopilot().rearm_run`: reset to `pending`/`fetch`, re-stamped with the current `trigger` + `sweep_id`, so the re-run re-enters `stage_extract` and charges the *current* sweep's budget) iff **(a) the pipeline capability version advanced since the run recorded its verdict AND (b) the document is now extractable** — otherwise a period a prior pipeline version couldn't read stays permanently blind to every later version (live: the tier-3b positional tier made CDR interim XHTMLs newly extractable, yet the sweep skipped them). **Version gate** (the storm fix, owner dogfooding 2026-07-21): the false-path delta stamps `pipelineVersion` = `EXTRACTION_PIPELINE_VERSION` (a `u32` const in `jobs::structured_extraction`, bumped only when a tier/parser/derivation change alters what documents can be read — a JSON field, no schema migration; a missing field reads as version 0, the pre-versioning era, eligible for one re-arm). Re-arm requires `stored < EXTRACTION_PIPELINE_VERSION`; because `document_is_extractable` is constant-true for any well-formed PDF, without this gate every sweep pass re-armed every flagged period forever (attempt_count reached ~1100+ in a day, re-running identical file IO + PDF parse). After a re-run records its stamped delta the period settles until the next bump. Classes: `not_extractable` / `not_pdf` / `no_stored_file` / `witness_fallback` re-arm iff `document_is_extractable` is now true (a still-dead unreadable/zero-byte file stays deduped) — `witness_fallback` (a **legacy** class: the ADR 0085 gap-fill is retired by ADR 0086, but stored fallback deltas still re-arm so a period left on third-party numbers is re-extracted with issuer data once readable); `pdf_document` (the BY-DESIGN raw-PDF gap, ADR 0086 dec. 1) **never re-arms** — no capability upgrade makes a PDF machine-readable; `skipped_budget` re-arms so a fresh sweep's fresh budget retries it (the sweep's own `ai_call_limit` caps re-invocations, G-4); `no_vision_provider` re-arms only once a `VisionExtraction` provider is configured. A run that **emitted** facts, or any `partial`/`failed` run, is never re-armed.
+- **AI budget — retired** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 4, migration `0102`): the tier-4 OCR/vision fallback and its atomic `ai_calls_used`/`ai_call_limit` check-and-consume are gone — the pipeline is deterministic end to end and a sweep run never spends a unit. Legacy rows recorded `skipped_budget` on their `kpi_delta_json` before the retirement; the computed **coverage read model** (`get_fundamentals_coverage`, [contracts.md](contracts.md)) still projects that stored marker onto its period — `skippedBudget` is `true` when a period's canonical report's `history_sweep` run carries the legacy reason (the run id is per-`(company, document)` deterministic, so it is a single lookup) — reading a stored fact, never performing a live budget check.
+- **Terminal-run re-arm on capability upgrade** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3, 2026-07-10; version gate 2026-07-21). The shared `enqueue_extraction_run` dedup no longer skips a terminal run forever. A terminal **succeeded** run whose `kpi_delta_json` says `extractionAvailable:false` with a re-arm-class reason is **re-armed** (`autopilot().rearm_run`: reset to `pending`/`fetch`, re-stamped with the current `trigger` + `sweep_id`, so the re-run re-enters `stage_extract` under the current sweep) iff **(a) the pipeline capability version advanced since the run recorded its verdict AND (b) the document is now extractable** — otherwise a period a prior pipeline version couldn't read stays permanently blind to every later version (live: the tier-3b positional tier made CDR interim XHTMLs newly extractable, yet the sweep skipped them). **Version gate** (the storm fix, owner dogfooding 2026-07-21): the false-path delta stamps `pipelineVersion` = `EXTRACTION_PIPELINE_VERSION` (a `u32` const in `jobs::structured_extraction`, bumped only when a tier/parser/derivation change alters what documents can be read — a JSON field, no schema migration; a missing field reads as version 0, the pre-versioning era, eligible for one re-arm). Re-arm requires `stored < EXTRACTION_PIPELINE_VERSION`; because `document_is_extractable` is constant-true for any well-formed PDF, without this gate every sweep pass re-armed every flagged period forever (attempt_count reached ~1100+ in a day, re-running identical file IO + PDF parse). After a re-run records its stamped delta the period settles until the next bump. Classes: `not_extractable` / `not_pdf` / `no_stored_file` / `witness_fallback` re-arm iff `document_is_extractable` is now true (a still-dead unreadable/zero-byte file stays deduped) — `witness_fallback` (a **legacy** class: the ADR 0085 gap-fill is retired by ADR 0086, but stored fallback deltas still re-arm so a period left on third-party numbers is re-extracted with issuer data once readable); `pdf_document` (the BY-DESIGN raw-PDF gap, ADR 0086 dec. 1) **never re-arms** — no capability upgrade makes a PDF machine-readable; `skipped_budget` and `no_vision_provider` are **legacy classes from the retired tier-4 budget** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 4) — found only on rows stamped before the retirement, never freshly produced — and still re-arm once a fresh sweep runs. A run that **emitted** facts, or any `partial`/`failed` run, is never re-armed.
 - **Backfill chaining.** `run_backfill` chains a `backfill` sweep at its successful end — best-effort (a chaining failure is logged, never fails the backfill).
 - **Automatic backfill catch-up** (v0.57 fix wave 2, [ADR 0077](adr/0077-trusted-extraction-foundations.md) amendment — trigger parity). The report-history backfill is no longer manual-only: `enqueue_company_backfill_catch_up` enqueues a durable `company_backfill` job (sources lane, serialized on the Bankier-company source lock) for every **automated** company (`company_autopilot_settings.mode != 'off'`) that has **no fetched periodic report** (`companies_lacking_periodic_coverage`: no `report_documents` row with `fetch_status='fetched'` AND `doc_kind ∈ {periodic_ssf, periodic_jsf}`). Wired at **app startup** AND **after every successful source refresh** (mirroring the ownership / management-holdings catch-up parity). Idempotent two ways: the coverage predicate stops selecting a company once it has history, and a **stable per-company job id** (INSERT-OR-IGNORE) means a queued/running/completed backfill — including a genuinely empty issuer — is attempted **once**, never re-fetched every refresh. A `mode='off'` company (or one with no autopilot row) is skipped with an explicit logged `automation_off` reason, never a silent drop.
 - **Backfill truncation honesty.** The in-memory `BackfillProgress` (not persisted; ADR 0036) carries `truncated: bool` — `true` when the page cap (`MAX_BACKFILL_PAGES`) ended the fetch before the configured `backfill_years` cutoff was reached, so older filings may be missing. Surfaced as an explicit coverage-panel warning, never a silent gap.
@@ -1523,20 +1421,20 @@ Company signals are typed classifications of official ESPI/EBI filings. A signal
 Identity and lifecycle:
 
 - A signal is produced by classifying a `feed_item` from an official report source (currently the active Bankier company-komunikaty feed; source-neutral for a future `gpw-espi-ebi` re-enable).
-- The rule classifier runs at ingestion and writes `confirmed` signals deterministically. Filings it cannot place go to the opt-in async AI fallback, which writes `proposed` signals that require user confirmation.
+- The rule classifier runs at ingestion and writes `confirmed` signals deterministically. Filings it cannot place land in the explicit **unclassified** bucket (`list_unclassified_filings`), resolved by `classify_filing` — the AI fallback is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2).
 - Signal identity is `(feed_item_id, category)`; re-classification updates the existing row rather than inserting a duplicate.
 - Derived calendar events link back via `derived_event_id`, and the event carries origin linkage to the signal and the originating filing.
 
 Derived calendar events (`v0.41.0`, [ADR 0036](adr/0036-report-document-storage-and-backfill.md)):
 
 - A `company_events` row is derived **only** for `dividend` and `general_meeting` signals that are **confirmed** and carry a real future date extracted from the filing body.
-- Date extraction is **deterministic-first** (labelled-pattern parse of the body), with the **opt-in async AI fallback** when the deterministic parse is not confident; the derived event is created as `status = 'proposed'` and requires user confirmation before it appears on the calendar. A guessed-date event is never created.
+- Date extraction is **deterministic-only** (labelled-pattern parse of the body) — the AI fallback is retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2); the derived event is created as `status = 'proposed'` and requires user confirmation before it appears on the calendar. A guessed-date event is never created.
 - A derived event is represented additively (no migration): `source_type = 'derived_signal'`, `source_adapter_id` = the official-report adapter, and `source_event_key` = the originating signal id, so the event identity is stable and idempotent re-derivation upserts the same row. `company_signals.derived_event_id` points back to the event; the event's source key points back to the signal.
 - `dividend` signals derive a `dividend` event; `general_meeting` signals derive a `shareholder_meeting` event. Confirmation flips `status` from `proposed` to `confirmed`; rejection deletes the proposed event and clears `derived_event_id`. Derivation dedups against manually created events for the same company/date/type.
 
 ## Report Document Model
 
-Report documents are the persisted report files behind fundamentals and the report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md), [ADR 0036](adr/0036-report-document-storage-and-backfill.md)). A document originates from an ESPI/EBI attachment, a user-supplied PDF URL, or a captured article URL, and is the citation target for AI KPI extraction, report-over-report diff, and confirmed financial facts. The table shipped in migration 0035; `v0.41.0` implements the ESPI/EBI attachment rung and the storage/retention rules below without a schema change.
+Report documents are the persisted report files behind fundamentals and the report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md), [ADR 0036](adr/0036-report-document-storage-and-backfill.md)). A document originates from an ESPI/EBI attachment, a user-supplied PDF URL, or a captured article URL, and is the citation target for deterministic fundamentals extraction, report-over-report diff, and confirmed financial facts. The table shipped in migration 0035; `v0.41.0` implements the ESPI/EBI attachment rung and the storage/retention rules below without a schema change.
 
 Fields (migration 0035): `id`, `company_id` → `companies(id)`, `period_id` → `financial_periods(id)` (nullable), `source_type` (`espi_attachment` | `user_url` | `article`), `origin_ref` (feed item / evidence id), `url` (original source URL), `local_path` (relative path under the app data dir; null when no file is stored), `content_type`, `content_hash` (sha256, optional dedup), `byte_size`, `title`, `attribution`, `fetch_status`, `fetch_error`, `fetched_at`, `created_at`, `updated_at`. `financial_facts.source_document_ref` is a soft reference to `report_documents.id`.
 
@@ -1597,7 +1495,8 @@ CREATE VIRTUAL TABLE search_index USING fts5(
   title,
   body,
   content_type UNINDEXED,   -- 'company' | 'watchlist' | 'feed_item' | 'notebook_entry'
-                            -- | 'transcript_segment' | 'event' | 'research_brief' | 'digest'
+                            -- | 'transcript_segment' | 'event' (the retired 'research_brief'/'digest'
+                            -- rows were purged by 0136 — DROP TABLE fires no delete triggers)
   source_id    UNINDEXED,   -- primary key of the owning source row
   company_id   UNINDEXED,   -- canonical company for scoping/grouping (nullable)
   parent_id    UNINDEXED,   -- navigational container when source_id is not the
@@ -1614,8 +1513,6 @@ Indexed content:
 - notebook title and Markdown body
 - transcript segment text (`parent_id` = owning transcript job)
 - company event title and type (`content_type = 'event'`)
-- research brief title and body
-- digest title and body
 
 Rules:
 
@@ -1647,7 +1544,7 @@ The app accesses the database through an `r2d2` connection pool, not a single sh
 
 ## First Migration Scope
 
-The first migration should create:
+Migration `0001_initial.sql` created (historical scope — the `ai_analysis_*` rows in this list were later dropped by `0102`, ADR 0084):
 
 - companies
 - company_aliases
@@ -1664,10 +1561,10 @@ The first migration should create:
 - notebook_entry_origins
 - transcript_jobs
 - transcript_segments
-- ai_analysis_jobs
-- ai_analysis_results
-- ai_analysis_tags
-- ai_analysis_source_references
+- ai_analysis_jobs (dropped by `0102`)
+- ai_analysis_results (dropped by `0102`)
+- ai_analysis_tags (dropped by `0102`)
+- ai_analysis_source_references (dropped by `0102`)
 - jobs
 - settings
 

@@ -16,8 +16,8 @@ The maintainer decided to adopt the Claude Code ecosystem natively (CLAUDE.md, o
 
 | Layer | Content | Budget (gate-enforced) |
 | --- | --- | --- |
-| L0 always-loaded | `CLAUDE.md` (canonical agent contract: Three Always-On Rules, SSOT map, working-rules digest, pointer index) + `.claude/hooks/session-context.sh` | CLAUDE.md ≤ 18 KB, hook ≤ 2.5 KB, `AGENTS.md` stub ≤ 1 KB |
-| L1 mandatory read | `docs/engineering-workflow.md` (TDD loop, Definition of Done, day-to-day loop, one command-reference table) | ≤ 27 KB *(raised from 26 KB on 2026-07-11: the disk-hygiene guardrail — ADR 0045 harvest after a disk-full session kill — joined the mandatory-read layer with 34 bytes of headroom left; deliberate +1 KiB)* |
+| L0 always-loaded | `CLAUDE.md` (canonical agent contract: Three Always-On Rules, SSOT map, working-rules digest, pointer index) + `.claude/hooks/session-context.sh` | CLAUDE.md ≤ 20 KB *(raised from 18 KB on 2026-08-06: agent-private-memory nuances — fix-in-task, forge-wide no-attribution, proposed release label — consolidated into the contract; the private memory index shrank by more than this file grew, so net always-on context went DOWN; deliberate +2 KiB)*, hook ≤ 2.5 KB, `AGENTS.md` stub ≤ 1 KB |
+| L1 mandatory read | `docs/engineering-workflow.md` (TDD loop, Definition of Done, day-to-day loop; the command catalog lives in on-demand `docs/command-reference.md`) | ≤ 27 KB *(raised from 26 KB on 2026-07-11: the disk-hygiene guardrail — ADR 0045 harvest after a disk-full session kill — joined the mandatory-read layer with 34 bytes of headroom left; deliberate +1 KiB)* |
 | L2 on-demand skills | `.claude/skills/{guardrail-harvest,packaging}/SKILL.md` — loaded via frontmatter description only when relevant | — |
 | L3 spec docs | contracts / data-model / product-spec / ui-* / source-strategy / roadmap — targeted reads | — |
 

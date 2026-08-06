@@ -57,8 +57,8 @@ Process:
 - Prefer small, reviewable changes. Commit at meaningful checkpoints (a coherent slice + tests + docs), only when the user asks or at a natural milestone. Never commit or push unattended.
 - **After implementing a milestone, write a retrospective before closure sign-off**: both domains (app + development loop) × what went well / what went wrong (especially unexpected gaps) / what to stop / what to improve; mark each item closed or still-open honestly — the human decides what needs action. Feed still-open items into the guardrail-harvest loop.
 - **Guardrail harvest (mandatory feedback loop).** When a defect is flagged — by the user, a review, a gate, or your own noticing — fixing the instance is not enough: convert the **class** into a durable guardrail in the same change (a precise automated gate when cleanly detectable, otherwise a documented rule + checklist line). Never add a broad gate that flags legitimate code. Put the guardrail where every agent reads it, not in private memory. Ritual: the `guardrail-harvest` skill; policy: [ADR 0045](docs/adr/0045-guardrail-harvest-loop.md).
-- File a GitHub issue for every reported/found bug not fixed immediately (`bug` + priority/area labels; `epic` to parent).
-- **Continuous release** ([ADR 0090](docs/adr/0090-github-canonical-forge-and-continuous-release.md)): every PR carries one `release:major|minor|patch|skip` label and merge auto-ships it — agents **never** bump versions, tag, edit the changelog, or force a release via a label (owner's call). Update `wiki/` in the behavior-changing PR. Epic closure is a post-delivery audit, never a gate: [kanban.md](docs/kanban.md) § Epic closure.
+- **Fix findings in-task** (owner 2026-08-04): a defect discovered during a task is fixed in that task — root cause + guardrail; a card is for tracking, not deferral. Deferring the fix is reserved for genuinely large work and needs owner consent. File a GitHub issue for every bug that does stay open (`bug` + priority/area labels; `epic` to parent).
+- **Continuous release** ([ADR 0090](docs/adr/0090-github-canonical-forge-and-continuous-release.md)): every PR carries one `release:major|minor|patch|skip` label and merge auto-ships it. The agent creating a PR **sets the proposed label** matching the change scope; the owner may override — the final label call and **merging stay owner-only**. Agents never bump versions, tag, or edit the changelog. Update `wiki/` in the behavior-changing PR. Epic closure is a post-delivery audit, never a gate: [kanban.md](docs/kanban.md) § Epic closure.
 - **Anti-archaeology**: code comments state only live constraints (one sentence + ADR pointer, at the site); canonical docs describe the present, a retirement is one pointer line; retreat ledger: [bad-ideas.md](docs/bad-ideas.md).
 
 Architecture and design:
@@ -77,7 +77,7 @@ Product and policy:
 - Prefer official/public/RSS sources; no fragile/restricted scraping without a source ADR.
 - AI output is decision support only — never phrase analysis as buy/sell/hold advice.
 - Secrets use the OS keychain in runtime code; `.env` is dev/tests only. Strict Tauri permissions: typed commands only, no arbitrary shell, no broad FS access.
-- GitHub is the canonical forge (code, issues, board, CI, releases); Radicle is a code mirror only (`make sync-rad`, no process role). `gh issue`/`gh pr create` may run unattended; **merges, `release:*` labelling, and repo-setting mutations may not.** `rad init` stays `--private` unless an approved publication task. Label conventions: [docs/kanban.md](docs/kanban.md).
+- GitHub is the canonical forge (code, issues, board, CI, releases); Radicle is a code mirror only (`make sync-rad`, no process role). `gh issue`/`gh pr create` (incl. setting the proposed `release:*` label at creation) may run unattended; **merges, final `release:*` calls, and repo-setting mutations may not.** `rad init` stays `--private` unless an approved publication task. Label conventions: [docs/kanban.md](docs/kanban.md).
 - The private sibling `../brawler-private` (when present) is readable for owner context; never copy its content into this public repo unless asked.
 - Local build/test commands are primary; CI runs the same `make` targets, conservative (standard runners, no macOS, no scheduled workflows). Nix from the first scaffold; no secrets in Nix files/`.envrc`.
 - Agents may always drive the owner's real Windows app live from WSL: `make live-cycle` ([testing.md](docs/testing.md) § Live drive). A WSL Tauri build is a Linux app — never desktop evidence.
@@ -97,7 +97,7 @@ Canonical strategy/layers: [docs/testing.md](docs/testing.md). Which-test-where 
 
 - Repository-owned workflows are skills under `.claude/skills/` (`repoctx`, `guardrail-harvest`, `packaging`) — loaded on demand, not re-derived.
 - The session hook (`.claude/hooks/session-context.sh`, all four SessionStart matchers) re-grounds the always-on rules after start/resume/clear/compact. Gate-integrity enforces this file's and the hook's byte budgets and parity markers ([ADR 0063](docs/adr/0063-claude-native-context-architecture.md)).
-- Durable rules/decisions live in this repo (this file, ADRs, canonical docs) — not agent-private memory. No AI/agent attribution in commits, co-authors, or trailers; commit history stays authored by the human maintainer.
+- Durable rules/decisions live in this repo (this file, ADRs, canonical docs) — not agent-private memory. No AI/agent attribution anywhere on the forge — commits, co-authors, trailers, PR descriptions, issues, comments; history stays authored by the human maintainer.
 
 <!-- repoctx:start -->
 ## Code navigation with `repoctx`

@@ -67,9 +67,8 @@ per feature.
   football field of implied ranges per multiple, and an A–D confidence grade —
   all evidence-linked, decision support only.
 - **[AI in Brawler: transcripts only (BYOA)](ai-provider-presets.md)**
-  — route each AI capability to its own provider with a failover pool, and add
-  free/self-hosted open-model hosts (Groq, OpenRouter, local Ollama, and more)
-  alongside Gemini, Claude, and OpenAI.
+  — the only in-app AI feature is YouTube transcription (Gemini); intelligence
+  over your research comes from your own agent talking to Brawler over MCP.
 - **[The decision journal and pre-report expectations](decision-journal.md)**
   — capture your buy/pass/keep-watching decisions in an append-only,
   evidence-linked journal, and write down pre-report expectations that freeze

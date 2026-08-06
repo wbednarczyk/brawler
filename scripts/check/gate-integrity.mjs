@@ -52,11 +52,12 @@ const MANDATORY_SUITES = [
   { target: "check-docs-gates", marker: "docs-drift", label: "spec↔code drift gate (ADR 0065)" },
   { target: "coverage-frontend", marker: "npm run test:coverage", label: "frontend coverage ratchet (ADR 0096)" },
   { target: "coverage-rust", marker: "cargo llvm-cov", label: "rust coverage ratchet (ADR 0096)" },
-  { target: "check-docs-gates", marker: "node --test", label: "check-script unit tests (bench-compare, live-drive-hints)" },
+  { target: "check-docs-gates", marker: 'node --test "scripts/check/*.test.mjs"', label: "check-script unit tests (the full scripts/check glob)" },
+  { target: "check-docs-gates", marker: "retired-surface", label: "retired-surface manifest gate (live docs vs retired ADR surface)" },
 ];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.
-const GUARDED_TARGETS = ["check", "check-docs"];
+const GUARDED_TARGETS = ["check", "check-docs", "check-docs-gates"];
 
 /**
  * Extract the recipe lines (tab-indented commands) for a Makefile target. The
@@ -213,7 +214,10 @@ if (workflow === null) {
 
 // (3) Byte budgets for the L0/L1 context layers (ADR 0063 Decision 1).
 const CONTEXT_ARCH_BUDGETS = {
-  "CLAUDE.md": 18432,
+  // 18432 → 20480 (2026-08-06, ADR 0063 amendment): agent-memory nuances
+  // consolidated INTO CLAUDE.md (net always-on context shrinks — the private
+  // memory index lost more than this file gained); deliberate +2 KiB.
+  "CLAUDE.md": 20480,
   ".claude/hooks/session-context.sh": 2560,
   // 26624 → 27648 (2026-07-11, ADR 0063 amendment): the doc was 34 bytes from
   // the ceiling when the disk-hygiene guardrail (ADR 0045 harvest) had to join

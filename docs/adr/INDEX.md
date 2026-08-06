@@ -7,8 +7,8 @@
 - [0004](0004-source-and-ai-policy.md) — Source and AI Policy — Accepted
 - [0005](0005-company-notebooks-and-transcripts.md) — Company Notebooks and Transcripts — Accepted
 - [0006](0006-theme-and-visual-direction.md) — Theme and Visual Direction — Accepted
-- [0007](0007-github-build-and-lean-testing.md) — GitHub Build and Lean Testing — Superseded in part by [ADR 0090](0090-github-canonical-forge-and-continuous-rele
-- [0008](0008-license-and-project-governance.md) — License and Project Governance — Superseded in part by [ADR 0023](0023-public-private-documentation-split.md) and
+- [0007](0007-github-build-and-lean-testing.md) — GitHub Build and Lean Testing — Superseded in part by ADR 0090
+- [0008](0008-license-and-project-governance.md) — License and Project Governance — Superseded in part by ADR 0023 and ADR 0090
 - [0009](0009-local-config-secrets-data-and-observability.md) — Local Config, Secrets, Data, and Observability — Accepted
 - [0010](0010-security-dependencies-and-ai-policy.md) — Security, Dependencies, and AI Policy — Accepted
 - [0011](0011-export-backup-versioning-and-releases.md) — Export, Backup, Versioning, and Releases — Accepted
@@ -24,7 +24,7 @@
 - [0021](0021-browser-ui-regression-testing.md) — Browser UI Regression Testing — accepted
 - [0022](0022-research-evidence-read-model-boundary.md) — Research Evidence Read-Model Boundary — accepted
 - [0023](0023-public-private-documentation-split.md) — Public And Private Documentation Split — Accepted
-- [0024](0024-cross-platform-release-artifacts.md) — Cross-Platform Release Artifacts — Superseded in part by [ADR 0090](0090-github-canonical-forge-and-continuous-rele
+- [0024](0024-cross-platform-release-artifacts.md) — Cross-Platform Release Artifacts — Superseded in part by ADR 0090
 - [0025](0025-research-reminders-and-digest-boundaries.md) — Research Reminders And Digest Boundaries — Accepted
 - [0026](0026-reusable-ui-foundation.md) — Reusable UI Foundation — Accepted
 - [0027](0027-company-fundamentals-scope.md) — Company Fundamentals Scope And KPI Taxonomy — Accepted
@@ -49,7 +49,7 @@
 - [0046](0046-quality-frameworks-quantitative.md) — Quality Frameworks — Quantitative Checks, the Metric Expression Engine, and the Open Metric Catalog (Design) — Accepted
 - [0047](0047-top-navigation-bar.md) — Top Navigation Bar (move primary navigation from the left sidebar to the top) — Accepted
 - [0048](0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) — Test architecture — canonical sample-data factory, broad clickable coverage, and layered parallelism — Accepted
-- [0049](0049-test-architecture-v2-data-transform-correctness.md) — Test architecture v2 — data-transform correctness at volume — Accepted
+- [0049](0049-test-architecture-v2-data-transform-correctness.md) — Test architecture v2 — data-transform correctness at volume — Accepted; T5 (committed bench baseline) superseded by ADR 0096 amendment (#336
 - [0050](0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md) — Architecture v2 — domain stores, pluggable source pipeline, entity resolution, durable jobs, frontend decomposition, vector scaling — Accepted
 - [0051](0051-story-clustering-across-sources.md) — Story clustering across sources — evaluated and not shipped — **Rejected** (heuristic/local-embedding approach); cross-source story
 - [0052](0052-report-over-report-diff.md) — Report-over-report diff — pure-Rust statement diff, narrative MD&A deferred — **Accepted** (v0.47.0)
@@ -60,9 +60,9 @@
 - [0057](0057-composable-views-and-curated-dashboard.md) — Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard — Accepted (2026-06-25)
 - [0058](0058-investor-week-calendar.md) — Investor Week Calendar — Event Layers, Whole-Market Scope, Macro & Holiday Domains — Accepted (2026-06-30)
 - [0059](0059-worker-pools-and-queue-fairness.md) — Worker Pools, Per-Source Serialization, Per-Provider Concurrency, Chunked Refresh, Dead-Letter — Accepted (2026-07-01)
-- [0060](0060-ai-capability-routing-and-openai-compatible-provider.md) — Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider — Superseded (2026-07-20) by [ADR 0084](0084-retire-in-app-ai-layer.md)
+- [0060](0060-ai-capability-routing-and-openai-compatible-provider.md) — Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider — Superseded (2026-07-20) by ADR 0084
 - [0061](0061-deterministic-fundamentals-data-gathering.md) — 100%-Deterministic Fundamentals Data Gathering — Structured-First Pipeline + Validation + Company Profiles — Accepted (2026-07-01); decisions 1/3 (tier ladder, deterministic PDF parser) sup
-- [0062](0062-mandatory-test-gate-and-test-driven-loop.md) — Single Mandatory Test Gate (Pre-Commit) and Test-Driven Development Loop — Accepted
+- [0062](0062-mandatory-test-gate-and-test-driven-loop.md) — Single Mandatory Test Gate (Pre-Commit) and Test-Driven Development Loop — Accepted; gate placement superseded by ADR 0096
 - [0063](0063-claude-native-context-architecture.md) — Claude-Native Context Architecture and Lean-Docs Layering — Accepted
 - [0064](0064-resolved-v1-ux-decisions.md) — Resolved V1 UX Decisions (Consolidated Record) — Accepted
 - [0065](0065-spec-code-drift-gates.md) — Spec↔Code Drift Gates and the Planned-Section Convention — Accepted
@@ -77,7 +77,7 @@
 - [0074](0074-ux-journeys-and-anti-rot.md) — UX Journeys as Spec — Journey Tests, Step Budgets, and Anti-Rot Guardrails — Accepted
 - [0075](0075-qualitative-assessment-frameworks.md) — Qualitative Assessment Frameworks — Agent-Assessed Criteria with Citations — Accepted (v0.50.0)
 - [0076](0076-ui-design-system-and-density-contracts.md) — UI Design System — Scales, Semantic Tokens, Format Rules, Density Contracts — Accepted (v0.50.0 phase 2
-- [0077](0077-trusted-extraction-foundations.md) — Trusted Extraction Foundations — Document Taxonomy, Coverage Map, History Sweep, Free-Tier Vision Fallback — Superseded (2026-07-20) by [ADR 0084](0084-retire-in-app-ai-layer.md)
+- [0077](0077-trusted-extraction-foundations.md) — Trusted Extraction Foundations — Document Taxonomy, Coverage Map, History Sweep, Free-Tier Vision Fallback — Superseded (2026-07-20) by ADR 0084
 - [0078](0078-mcp-external-surface.md) — External Surface — Read-Only MCP Server MVP (NS1 Slice 1) — Accepted (2026-07-11, owner sign-off)
 - [0080](0080-retire-embedding-model.md) — Retire the Local Embedding Model and Dead Subsystems — Accepted (2026-07-11, owner sign-off)
 - [0081](0081-ux-quality-loop-v2.md) — UX Quality Loop v2 — Experience Contracts, Adversarial Validation, Continuous Dogfooding — Accepted (owner sign-off 2026-07-12)

@@ -10,7 +10,7 @@ Early sample feed implementations should already obey local watchlist, company, 
 Sample feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state locally.
 The UI-facing Inbox is scoped to tracked companies. Raw or sample source items that do not match the local company registry may exist internally, but they should not appear in the normal feed until the company is added.
 Source URLs in item details must be directly actionable so the user can verify the original report or article quickly.
-Feed details should show a short summary first. `summary` is separate from the report title and full body, but when no source or AI summary is available the UI may use the report title as the summary fallback. Full official report body text should be available in the same detail pane but collapsed by default and expanded on demand.
+Feed details should show a short summary first. `summary` is separate from the report title and full body, but when no source summary is available the UI may use the report title as the summary fallback. Full official report body text should be available in the same detail pane but collapsed by default and expanded on demand.
 When filters hide all feed items, the UI must offer a quick way to clear active filters and return to the full feed.
 Inbox empty states should distinguish first-run setup from filter misses. If no companies are tracked, the Inbox should point directly to adding a company. If companies exist but no feed items are stored, the Inbox should make clear that source ingestion or refresh is not wired yet and offer a path to source status. If filters hide existing feed items, the Inbox should offer `Clear filters`.
 The app shell should expose an Inbox unread count badge when unread feed items exist.
@@ -32,7 +32,7 @@ Expected v1 UI areas:
 - item detail pane with original link, compact metadata, and bottom-aligned publication/fetch timestamps
 - action to create a company notebook note from a feed item
 
-The feed detail pane is a fixed-width side rail and is treated as a containment boundary: it shows compact, read-only summaries plus launchers, never wide interactive controls. Rich flows open in the centered modal rather than rendering inline in the rail; the rail shows a status pill and a one-line summary with a button to open the full flow. (The AI-analysis and AI-KPI-extraction modals this rule was written for were retired in `v0.59.0`, [ADR 0084](adr/0084-retire-in-app-ai-layer.md); the containment rule itself stands for every future rich flow. Stored analyses from before the cut remain readable.) This keeps the rail readable at the supported narrow window range and prevents a wide descendant from clipping the pane. New rail panels render inside the `DetailSection` primitive, which bakes in the containment contract so the rail cannot regress.
+The feed detail pane is a fixed-width side rail and is treated as a containment boundary: it shows compact, read-only summaries plus launchers, never wide interactive controls. Rich flows open in the centered modal rather than rendering inline in the rail; the rail shows a status pill and a one-line summary with a button to open the full flow. (The AI-analysis and AI-KPI-extraction modals this rule was written for were retired in `v0.59.0` — migration 0102 dropped their stored outputs, nothing survives ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the containment rule itself stands for every future rich flow.) This keeps the rail readable at the supported narrow window range and prevents a wide descendant from clipping the pane. New rail panels render inside the `DetailSection` primitive, which bakes in the containment contract so the rail cannot regress.
 - manual refresh control
 - in-app badges for new/unread items
 
@@ -92,7 +92,7 @@ Local test samples for GPW metadata are allowed only in tests and development re
 
 ## Company Notebooks
 
-Each company has a notebook tied to its canonical company identity. Notes should support manual entry and creation from feed items, reports, transcripts, or AI-suggested excerpts.
+Each company has a notebook tied to its canonical company identity. Notes should support manual entry and creation from feed items, reports, and transcripts.
 
 Notebook entries should support:
 
@@ -153,7 +153,7 @@ A local data status indicator may expose a small view refresh action for develop
 
 Ingestion should preserve source attribution, publication time, fetch time, original language, matched company, and source URL.
 
-Feed retention must be designed before v1 ingestion becomes broad. The app should avoid unbounded local growth by defining per-source retention defaults, user-adjustable cleanup settings, and rules that preserve important user-marked content. Saved items, items linked to notes, and items with AI analysis or explicit user decisions should not be removed by routine cleanup without clear user control.
+Feed retention must be designed before v1 ingestion becomes broad. The app should avoid unbounded local growth by defining per-source retention defaults, user-adjustable cleanup settings, and rules that preserve important user-marked content. Saved items, items linked to notes, and items with explicit user decisions should not be removed by routine cleanup without clear user control.
 
 **Automatic timed cleanup is disabled (owner decision 2026-07-19).** The app must never delete feed items on a timer: an automatic 30-day prune running once per day silently removed ~3,900 items, including periodic reports the owner actively researches. Cleanup is now a **manual, user-triggered action only** ("Clean up feed now" in Settings → Sources); nothing is deleted without an explicit click. The redesigned retention mechanism (per-source defaults, safe preservation rules, honest controls) is tracked as backlog card `cc674d4`.
 
@@ -164,7 +164,7 @@ Official ESPI/EBI filings should be classified into typed disclosure signals so 
 Behavior:
 
 - A deterministic rule classifier runs during ingestion over the filing's official category label, title, and body, and types the formulaic majority of filings automatically.
-- Filings the rules cannot place are left untyped, or — when the optional AI fallback is enabled — produce a proposed type that the user must confirm before it is applied. The app never silently assigns a wrong type.
+- Filings the rules cannot place land in an explicit unclassified bucket, triaged headless via the MCP tool pair (`list_unclassified_filings`/`classify_filing` — BYOA). The app never silently assigns a wrong type.
 - Typed filings show a type badge in the Inbox and company feed, and the feed can be filtered by type.
 - The digest groups high-signal types (for example, insider activity) so the user sees them together, and high-signal types can drive reminders.
 - A typed filing that carries a real future date (such as a dividend record/payment date or a general-meeting date) also appears as a company event in the calendar. Past disclosures stay in the feed and do not create calendar entries.
@@ -199,7 +199,7 @@ Walls fold cross-company ([ADR 0087](adr/0087-today-attention-home-v2.md) amendm
 
 At the top of Today the investor sees a **morning briefing** answering "what changed in my companies and what needs doing" — a deterministically composed list of **new signals since the last briefing, autopilot runs, claims due, upcoming report dates, and fired alerts**, ordered by when each thing happened. It refreshes **once a day automatically** while the app is open and can be regenerated **on demand**.
 
-When an AI provider is configured the briefing is additionally phrased as a short **narrative with citations** that link each statement back to an item in the composed list. With **no provider configured** — or if a narrative can't cite cleanly against the list — the briefing still renders as the **structured item list**, never blocked and never an error. Like every AI surface it is decision support: facts and citations, never a buy/sell/hold call.
+The briefing is deterministic end to end and always renders as the **structured item list** — the optional AI narrative half was retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)). Like every surface it is decision support: facts and citations, never a buy/sell/hold call.
 
 ## Company Health
 
@@ -254,7 +254,7 @@ The **investor week calendar** (`v0.67.0`, [ADR 0058](adr/0058-investor-week-cal
 
 The in-app AI analysis layer is **retired** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)). Brawler is a **deterministic research substrate with an MCP port** — the user brings their own agent (BYOA). Decision support arrives two ways: deterministic computation inside the app (the fundamentals pipeline, ESPI rule classification, company health, red flags, the composed briefing), and the user's own agent working over the local MCP port with a frontier model, user-owned prompts, and full context via typed tools. "AI decision support" as an in-app feature family — summaries, significance labels, feed analysis, claim/KPI proposals, research briefs/digests, qualitative auto-verdicts, briefing prose — is gone; those jobs re-enter as MCP read/write tools where an external agent does them better and writes back with mandatory provenance (`v0.60.0`). The app runs fully featured with **zero API keys**.
 
-Feature losses are explicit and accepted: no in-app claim proposals, no feed-analysis panel, no AI briefing prose, no qualitative auto-verdicts, no OCR coverage for scanned-only documents (now honest flagged gaps, never guessed). Stored outputs a previous version produced stay readable (no table drops, no row deletion). Re-introducing any in-app inference requires a fresh eval-gated ADR that beats the deterministic baseline on real data (the ADR 0080 bar).
+Feature losses are explicit and accepted: no in-app claim proposals, no feed-analysis panel, no AI briefing prose, no qualitative auto-verdicts, no OCR coverage for scanned-only documents (now honest flagged gaps, never guessed). Migration 0102 was a clean cut: analysis results, research briefs/digests, and extraction proposals were dropped outright — nothing from the retired feature survives. Saved notes and claims the user created (even ones originating from that AI) remain as ordinary user data. Re-introducing any in-app inference requires a fresh eval-gated ADR that beats the deterministic baseline on real data (the ADR 0080 bar).
 
 ### Video transcription — the one remaining in-app AI
 
@@ -289,7 +289,7 @@ App data lives in the OS app data directory by default, with development-only ov
 
 Export is part of normal v1 implementation. M20 exports companies, watchlists, watchlist memberships, notebook entries, and non-secret settings. Research data uses structured JSON. Settings use YAML. Import preview validates supported files before applying changes.
 
-Global search (delivered in `v0.38.0`) lets the user find anything stored locally from one search box in the top toolbar — companies, feed items, notes, transcript text, research briefs, and digests — with ranked results grouped by type and a snippet, and navigation to the matching item. Search is local-only and covers the user's own content.
+Global search (delivered in `v0.38.0`) lets the user find anything stored locally from one search box in the top toolbar — companies, watchlists, feed items, notes, transcript text, and company events — with ranked results grouped by type and a snippet, and navigation to the matching item. Search is local-only and covers the user's own content.
 
 Automatic local backups (delivered in `v0.38.0`) keep recent copies of the local data so it can be recovered. The app takes a safety copy before any data-structure upgrade and keeps a rotating set of recent backups; if a safety copy cannot be written, the upgrade is stopped. Restore is offered from Developer Diagnostics with explicit confirmation and is applied when the app restarts. Backups stay on the machine and never contain stored API keys. A broader full app-data bundle and hosted data services remain later design discussions.
 

@@ -69,7 +69,7 @@ boundaries without new tooling. Widening an edge (e.g. a new sanctioned
 ESLint block, never an inline disable.
 
 - `src/app/App.tsx` is the app entry wrapper.
-- `src/app/AppStateRoot.tsx` owns app-level state wiring and composes controllers/view models. Keep feature-specific logic in the matching app controller, screen, API module, or shared helper. It is being **decomposed into feature-scoped React contexts** (Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)) so a screen subscribes only to the state it uses instead of receiving a mega view-model by prop-drilling. **Realized so far:** `src/app/state/SettingsContext.tsx` — the settings-domain context (`SettingsProvider` + selector hooks `useDeveloperMode`, `useAiFallbackEnabled`, `useAiAnalysisProviderConfigured`). It is now the single source for **every settings-derived UI flag** that was previously prop-drilled from `AppStateRoot`: developer mode (`AppShell`/`SourcesScreen`/`DiagnosticsScreen`), the ESPI AI fallback (`InboxScreen`), and whether an analysis provider is configured (`InboxDetailPane`/`CompanyWorkspace`) — `AppStateRoot` no longer computes or threads any of them. Shared leaf components (`FeedAiAnalysisPanel`, `FeedKpiExtractionPanel`) stay prop-driven (context-agnostic); the screen/pane that composes them reads the context. **Done:** every top-level screen now reads its view-model from a context instead of receiving a prop bundle from `AppStateRoot` — `SourcesContext` plus a `createScreenContext` factory backing `screenViewModels.tsx` (Inbox, Companies, Watchlists, Research, Notebooks, ReportSeason, Events, Transcripts, Settings). `AppStateRoot` assembles each view-model once and wraps the screen in its `Provider`; the screens take zero props. The screen `*ScreenProps` types are retained as the context value shapes. Add new settings selectors to `SettingsContext` rather than re-drilling a flag, and a new screen gets a `createScreenContext` entry rather than a prop bundle.
+- `src/app/AppStateRoot.tsx` owns app-level state wiring and composes controllers/view models. Keep feature-specific logic in the matching app controller, screen, API module, or shared helper. It is being **decomposed into feature-scoped React contexts** (Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)) so a screen subscribes only to the state it uses instead of receiving a mega view-model by prop-drilling. **Realized so far:** `src/app/state/SettingsContext.tsx` — the settings-domain context (`SettingsProvider` + selector hooks `useDeveloperMode`, `usePinnedCompanyIds`). It is now the single source for the settings-derived UI flags that were previously prop-drilled from `AppStateRoot` (developer mode: `AppShell`/`SourcesScreen`/`DiagnosticsScreen`) — `AppStateRoot` no longer computes or threads them. **Done:** every top-level screen now reads its view-model from a context instead of receiving a prop bundle from `AppStateRoot` — `SourcesContext` plus a `createScreenContext` factory backing `screenViewModels.tsx` (Inbox, Companies, Watchlists, Research, Notebooks, ReportSeason, Events, Transcripts, Settings). `AppStateRoot` assembles each view-model once and wraps the screen in its `Provider`; the screens take zero props. The screen `*ScreenProps` types are retained as the context value shapes. Add new settings selectors to `SettingsContext` rather than re-drilling a flag, and a new screen gets a `createScreenContext` entry rather than a prop bundle.
 - `src/app/AppShell.tsx` owns shell layout.
 - Screen modules should not call unrelated APIs.
 - API modules should be the only place where frontend code calls `invoke`.
@@ -203,8 +203,8 @@ Frontend ownership:
 Rust ownership:
 
 - Research/evidence commands should be thin wrappers around a dedicated research/evidence domain boundary.
-- Existing domain storage modules remain the canonical owners of feed items, notebook entries, transcript segments, events, AI analysis results, companies, watchlists, and source state.
-- The research/evidence boundary owns cross-domain read models, review checkpoints, evidence links, and later AI brief/read-model orchestration.
+- Existing domain storage modules remain the canonical owners of feed items, notebook entries, transcript segments, events, companies, watchlists, and source state.
+- The research/evidence boundary owns cross-domain read models, review checkpoints, and evidence links.
 
 Storage posture:
 
@@ -212,7 +212,4 @@ Storage posture:
 - Durable cross-domain concepts such as review checkpoints and typed evidence links may get their own storage surfaces.
 - Full stored timeline/evidence projections are deferred until performance, review semantics, sync, or import/export requirements prove they are needed. If added later, they must stay behind the research API so frontend ownership does not change.
 
-AI brief posture:
-
-- AI research briefs are dedicated entities with citations and provider/model/prompt provenance, not ordinary notebook entries.
-- Generation should stay split across evidence collection, prompt/context building, provider job execution, citation mapping, rendering, and persistence.
+AI research briefs are retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5.

@@ -95,8 +95,8 @@ The structured-first extraction pipeline (`fundamentals::extraction::pipeline::r
 harness — `storage::tests::real_data_extraction::real_data_extraction_recall_precision` — that
 measures recall/precision against a hand-labeled ground-truth set, per ADR 0061's guardrail
 ("a `#[ignore]` real-data harness measures recall/precision on the owner's filings before any
-default flip"). It also gates the [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)
-decision-3 document-tier default-model change. It complements
+default flip"). It re-baselines against the [ADR 0086](adr/0086-aggregator-primary-fundamentals.md)
+ladder (coverage = ESEF+WDF+BR) whenever the deterministic tiers change. It complements
 `storage::tests::autopilot::autopilot_real_data_validation`, which smoke-tests the pipeline
 end-to-end (queue drain, terminal state) but does not measure accuracy.
 
@@ -149,8 +149,9 @@ per-tier (esef/pdf/html_aggregator) rollup, and an overall summary.
 
 **Policy:** the harness currently asserts sanity only (ground truth resolves; overall recall >
 0) — no precision/recall floor yet. A quality threshold is a deliberate follow-up gate before
-relying on this pipeline by default or before the ADR 0060 decision-3 default-model flip, per
-the real-data-validation-precedes-implementation guardrail above.
+relying on this pipeline by default or before any future deterministic-tier promotion (the
+[ADR 0086](adr/0086-aggregator-primary-fundamentals.md) pattern), per the
+real-data-validation-precedes-implementation guardrail above.
 
 ### Corpus-wide deterministic sweep — the official coverage number (v0.59 A4)
 
@@ -817,11 +818,13 @@ and a hard `systemd-run` memory jail `MUTANTS_MEMORY_MAX=11G`) — uncapped swee
 OOM-froze the whole WSL VM twice (2026-07-03; memory, not CPU, is the killer —
 the jail OOMs only the sweep scope). Raise via `MUTANTS_BUILD_JOBS`/`MUTANTS_MEMORY_MAX`
 on a dedicated box, or split a sweep across quiet moments with
-`make mutants MUTANTS_SHARD=k/n`.
+`make audit-mutants MUTANTS_SHARD=k/n`.
 
 Sweeps run in CI via **`mutation-audit.yml`** (renamed from `mutants.yml`) —
 auto-triggered on monitored-path `master` pushes, plus `gh workflow run
-mutation-audit.yml [-f shard=1/8]` for manual dispatch — on standard
+mutation-audit.yml [-f shard=1/8]` for manual dispatch (**standing owner
+authorization**: agents dispatch sweeps unattended when worthwhile; findings
+triage into cards, never blockers) — on standard
 `ubuntu-latest`, `MUTANTS_JAIL=off` since a hosted runner has no user systemd
 manager to jail. `make audit-mutants` (jailed by default) stays the documented
 local equivalent for a dedicated box; findings are advisory and become tracked
@@ -838,7 +841,7 @@ one timeout per shard and sent triage hunting a survivor that did not exist.)
 
 ## Generated API types (Rust → TypeScript)
 
-The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the Rust source** with `ts-rs`, so a Rust struct and its TS shape cannot silently drift (ADR 0048). The Rust DTO carries `#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]` + `#[ts(export, export_to = "../../src/api/generated/")]` (ts-rs honors the existing `#[serde(rename_all = "camelCase")]` via serde-compat); `make types` emits `src/api/generated/`, and the hand-written `src/api/*Types.ts` module re-exports the generated types so consumers keep a stable import path. `make types-check` regenerates and fails if regeneration changes the working-tree bindings (a before/after hash self-consistency check — independent of git staging state, so it works both mid-work and in the pre-commit gate). `ts-rs` is behind the off-by-default `ts-export` feature, so it never ships in the binary; `src/api/generated/` is lint-excluded and **knip-ignored** (`ignore` in `knip.json`), because it is a generated contract mirror governed by `types-check`, not authored source — knip's unused-file check would flag generated leaf DTOs that nothing imports, and deleting them is invalid (regenerate, don't hand-edit). Authored dead-code detection stays strict everywhere else.
+The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the Rust source** with `ts-rs`, so a Rust struct and its TS shape cannot silently drift (ADR 0048). The Rust DTO carries `#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]` + `#[ts(export, export_to = "../../src/api/generated/")]` (ts-rs honors the existing `#[serde(rename_all = "camelCase")]` via serde-compat); `make types` emits `src/api/generated/`, and the hand-written `src/api/*Types.ts` module re-exports the generated types so consumers keep a stable import path. `make types-check` regenerates and fails if regeneration changes the working-tree bindings (a before/after hash self-consistency check — independent of git staging state, so it works both mid-work and in CI). `ts-rs` is behind the off-by-default `ts-export` feature, so it never ships in the binary; `src/api/generated/` is lint-excluded and **knip-ignored** (`ignore` in `knip.json`), because it is a generated contract mirror governed by `types-check`, not authored source — knip's unused-file check would flag generated leaf DTOs that nothing imports, and deleting them is invalid (regenerate, don't hand-edit). Authored dead-code detection stays strict everywhere else.
 
 **Generation conventions** (so the generated shape matches the hand-written contract exactly):
 
@@ -859,13 +862,13 @@ The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the R
 - **Durable job queue (Architecture v2):** the `JobQueueStore` (enqueue idempotency, atomic claim, retry-with-backoff, terminal failure, crash-reclaim, counts) and the `JobWorker` dispatch are tested against a real in-memory DB (`storage::tests::job_queue`, `jobs::queue::tests`, `jobs::handlers::tests`). A **new job kind** adds a `JobHandler` in `jobs/handlers.rs` registered in `build_worker`, covered by the "every registered kind dispatches" test; the job's own logic keeps its direct `run_*_job` tests. Migrating a fire-and-forget job preserves its per-job status table + UI polling (the queue is execution, the table is status).
 - **Interpretation vector index (Architecture v2):** a `VectorIndex` implementation is tested for **top-k parity with `BruteForceVectorIndex`** on separable vectors (plus empty/zero-k), so an ANN swap cannot regress ranking; the T4 behavioral scale gate still guards the persisted linear-scan contract (ADR 0050 / ADR 0049).
 - **Frontend per-screen view-model context (Architecture v2):** screens read their view-model from a context (`screenViewModels`/`SettingsContext`/`SourcesContext`), not a prop bundle. They are covered by the full-app workflow tests (which render through `AppStateRoot`'s providers) and the Playwright smoke-walk; a direct component test must wrap the screen in its `Provider`. New cross-cutting settings flags get a `SettingsContext` selector rather than re-drilling.
-- **AI provider:** provider contract mapping + prompt/result shape tested with samples, no live calls; normal CI requires no API keys; live checks manual/local-only.
+- **Transcript provider** (`VideoTranscriptProvider` — the only AI provider left, [ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 3): provider contract mapping + transcript-result shape tested with samples, no live calls; normal CI requires no API keys; live checks manual/local-only (`make smoke-gemini-transcript`).
 - **Packaging:** app starts; Rust command boundary works; local SQLite opens; primary screen renders; packaged builds keep open-core navigation and preserve optional entitlement workflows.
 - **Command / IPC layer (`#[tauri::command]`):** a `#[tauri::command]` fn takes `tauri::State<'_, AppState>`, which Tauri's DI constructs at runtime and which is **not** meaningfully constructible in a unit test — so do **not** write tests that build a `State` to call a command wrapper. Most wrappers are thin pass-throughs (`state.x().map_err(to_string)`) whose behavior is already covered at the **storage/jobs layer** (the `AppState` method and the `jobs::*` function it delegates to, tested with `open_in_memory_database`). When a wrapper carries **non-trivial logic** (input defaulting/parsing, branching, mapping), extract that logic into a pure helper or a function taking `&AppState` and test **that** — the established pattern (e.g. `commands::settings::developer_unlock_code_matches_value`). Adding `State`-construction tests for thin pass-throughs is redundant coverage and is rejected (see Strategy). Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
 ## Browser UI regression smoke (Playwright)
 
-A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md). Under [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) it was extended to **broad clickable coverage of all primary screens** on a stateful, per-test-isolated mock runtime; the ADR 0048 Decision 6 promotion is now **complete** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): the **full suite is a hard-fail step of `make check`** and runs before every commit (it parallelizes to ~tens of seconds, keeping the gate in the seconds-to-low-minutes range). It is **no longer opt-in** — a browser-suite failure blocks the commit.
+A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md). Under [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) it was extended to **broad clickable coverage of all primary screens** on a stateful, per-test-isolated mock runtime; the ADR 0048 Decision 6 promotion is now **complete** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): the **full suite is a hard-fail step of `make check`**, which runs as the PR's required checks ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md); it parallelizes to ~tens of seconds). It is **no longer opt-in** — a browser-suite failure blocks the merge.
 
 Setup and run:
 
