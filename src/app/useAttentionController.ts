@@ -72,27 +72,16 @@ export type AttentionController = {
   dismiss: (id: string) => Promise<void>;
 };
 
-/** Cheap change detector so steady-state polls cause no re-renders. */
-function sameEvents(a: AttentionEvent[], b: AttentionEvent[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((event, index) => {
-    const other = b[index];
-    return (
-      event.id === other.id &&
-      event.seen === other.seen &&
-      event.dismissed === other.dismissed &&
-      event.severity === other.severity &&
-      event.evidenceTitle === other.evidenceTitle
-    );
-  });
-}
-
-function sameRules(a: AlertRule[], b: AlertRule[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((rule, index) => {
-    const other = b[index];
-    return rule.id === other.id && rule.updatedAt === other.updatedAt;
-  });
+/**
+ * Full-fidelity change detector so steady-state polls preserve state identity.
+ * Serialized comparison covers EVERY field (a reconciliation re-run can update
+ * `witnessUrl` on the same event id — a hand-picked field list silently
+ * discarded exactly the field Review routes on) and stays complete as the
+ * payload grows. Both sides come off the same serde/mock serializers, so key
+ * order is stable; the lists are small (active events + rules).
+ */
+function sameCollection<T>(a: T[], b: T[]): boolean {
+  return a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
 }
 
 export function useAttentionController(licenseCanUseApp: boolean): AttentionController {
@@ -108,6 +97,19 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
   // optimistic mutation must not overwrite it — it is discarded and a re-fetch
   // is scheduled instead, so state converges without clobbering the mutation.
   const mutationSeqRef = useRef(0);
+  // The chain of in-flight persistence writes (errors swallowed here — the
+  // mutation's own caller handles them). A convergence re-fetch waits on it so
+  // it can never read the backend BEFORE the optimistic write committed and
+  // accept pre-mutation data.
+  const mutationChainRef = useRef<Promise<void>>(Promise.resolve());
+  // In-flight coalescing: one fetch at a time; refreshes arriving mid-flight
+  // fold into a single follow-up instead of stacking superseding requests.
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef(false);
+  // Mirror of `hydrated` readable synchronously inside the effect: background
+  // refreshes after hydration are SILENT (no loading flip) — a 15s poll must
+  // never flash Today's skeleton.
+  const hydratedRef = useRef(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const refresh = useCallback(() => setRefreshNonce((nonce) => nonce + 1), []);
@@ -116,28 +118,46 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
     if (!licenseCanUseApp) {
       return;
     }
+    if (inFlightRef.current) {
+      pendingRef.current = true;
+      return;
+    }
+    inFlightRef.current = true;
     const requestSeq = (requestSeqRef.current += 1);
     const mutationSeqAtStart = mutationSeqRef.current;
-    setLoading(true);
+    if (!hydratedRef.current) {
+      setLoading(true);
+    }
+    const settle = () => {
+      inFlightRef.current = false;
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        setRefreshNonce((nonce) => nonce + 1);
+      }
+    };
     Promise.all([listAttentionEvents(), listAlertRules()])
       .then(([nextEvents, nextRules]) => {
+        settle();
         if (requestSeqRef.current !== requestSeq) {
           return; // a newer request owns the state now
         }
         if (mutationSeqRef.current !== mutationSeqAtStart) {
           // A mutation landed while this fetch was in flight — its data is
-          // stale against the optimistic state. Converge via a fresh fetch
-          // (which will also settle loading) instead of clobbering.
-          setRefreshNonce((nonce) => nonce + 1);
+          // stale against the optimistic state. Converge via a fresh fetch,
+          // but only AFTER the mutation's write committed (else the re-read
+          // could accept pre-mutation backend data).
+          void mutationChainRef.current.then(() => setRefreshNonce((nonce) => nonce + 1));
           return;
         }
-        setEvents((current) => (sameEvents(current, nextEvents) ? current : nextEvents));
-        setRules((current) => (sameRules(current, nextRules) ? current : nextRules));
+        setEvents((current) => (sameCollection(current, nextEvents) ? current : nextEvents));
+        setRules((current) => (sameCollection(current, nextRules) ? current : nextRules));
         setError(null);
         setLoading(false);
+        hydratedRef.current = true;
         setHydrated(true);
       })
       .catch((cause) => {
+        settle();
         if (requestSeqRef.current !== requestSeq) {
           return;
         }
@@ -152,13 +172,18 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
   }, [licenseCanUseApp, refreshNonce]);
 
   // A mutation failure re-syncs from the backend (the optimistic flip may be a
-  // lie) and rethrows so the calling screen can surface it.
+  // lie) and rethrows so the calling screen can surface it. Every persistence
+  // promise also joins the mutation chain the convergence re-fetch awaits.
   const persistMutation = useCallback(
-    (persist: Promise<void>) =>
-      persist.catch((cause) => {
+    (persist: Promise<void>) => {
+      mutationChainRef.current = mutationChainRef.current
+        .then(() => persist)
+        .catch(() => {});
+      return persist.catch((cause) => {
         refresh();
         throw cause;
-      }),
+      });
+    },
     [refresh],
   );
 

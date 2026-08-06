@@ -299,9 +299,9 @@ const NOTABLE_ONLY_COUNT = 12;
 
 /**
  * ~20 unseen events of which only SOME (5) are `urgent`; the rest are `notable`.
- * Only the urgent ones may raise persistent toasts, so the persistent stack caps
- * at 3 visible + a "+N more" summary counting ONLY the urgent overflow — never
- * the notable events (which raise transient toasts at most).
+ * A mixed-severity batch: urgent rows lead the stream and collapse from 2+,
+ * notable rows sit below and collapse from 4+ (ADR 0087); all of them count
+ * toward the Today badge and none raises a toast (ADR 0097).
  *
  * OWNS the attention set (REPLACES, not appends): the whole point is an exact
  * severity MIX, so a base-scenario urgent event must not perturb the persistent
@@ -388,7 +388,7 @@ function makeRoutineRun(id: string, companyId: string): ScenarioData["autopilotR
  *
  *   - 2 URGENT: an insider transaction (PKN) + a missed-report reconciliation
  *     (KGH, a system event with no user rule) — the rows that must LEAD the
- *     stream and raise the (only) persistent toasts.
+ *     stream.
  *   - a 2-member NOTABLE group (PZU, two same-category fired alerts on distinct
  *     evidence) — the "repeats collapse into one ×N row" case.
  *   - 6 ROUTINE autopilot runs across distinct companies — more than the

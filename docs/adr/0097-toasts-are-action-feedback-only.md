@@ -56,11 +56,11 @@ for the same reason.
 6. **One app-level attention controller** owns events, rules, the unseen count, refresh, and
    seen/dismiss mutations. Today, Alerts, and the badge consume the same state — no per-screen
    copies drifting apart. Freshness seams: startup (behind the license gate), the shared
-   post-source-refresh view update (manual all-source + single-source), and **every
-   scheduler-mirror poll tick** — background work (autopilot completions, terminal job
-   failures) raises events with no frontend-visible trigger, so a source-due transition is not
-   a proxy for "an event landed"; the controller skips the state update when a poll returns
-   unchanged data, keeping the steady state render-free. Consistency: requests and mutations
+   post-source-refresh view update (manual all-source + single-source), and **after every
+   successful scheduler-status poll** (~15s) — background work (autopilot completions, terminal
+   job failures) raises events with no frontend-visible trigger, so a source-due transition is
+   not a proxy for "an event landed"; post-hydration refreshes are silent (no loading flip) and
+   the controller preserves state identity when a poll returns unchanged data. Consistency: requests and mutations
    are sequenced separately (only the newest request applies data or settles loading/hydration;
    a response that raced past an optimistic mutation is discarded and replaced by a scheduled
    re-fetch); a failed fetch keeps the **last-known-good events** and surfaces a typed error —

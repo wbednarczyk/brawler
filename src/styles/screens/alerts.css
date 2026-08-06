@@ -139,6 +139,15 @@
   white-space: nowrap;
 }
 
+/* Attention-read failure strip (ADR 0097: last-known-good events stay listed
+   below it — an errored read must never look quiet). */
+.alerts-attention-error {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
 /* Rule + fired rows (shared card-row idiom). */
 .alerts-list {
   display: flex;

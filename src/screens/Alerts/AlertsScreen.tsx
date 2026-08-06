@@ -266,7 +266,12 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
         setRules((current) => current.map((r) => (r.id === rule.id ? updated : r)));
         attention.refresh();
       })
-      .catch((reason) => setError(String(reason)));
+      .catch((reason) => {
+        setError(String(reason));
+        // The local edit was optimistic — re-read so the row shows the value
+        // the backend actually holds, not the rejected draft.
+        refresh();
+      });
   }
 
   // The controller re-syncs on a failed mutation; this screen also surfaces it.
@@ -616,7 +621,17 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
             title={text("Fired alerts")}
             meta={unseenCount > 0 ? `${unseenCount} ${pluralNoun(locale, unseenCount, NEW_FORMS)}` : undefined}
           />
-          {events.length === 0 ? (
+          {/* A failed attention read must never look quiet (ADR 0097 dec. 6):
+              last-known-good events stay listed below the strip. */}
+          {attention.error ? (
+            <div className="alerts-attention-error">
+              <ErrorText>{text("Couldn't load attention events.")}</ErrorText>
+              <Button onClick={() => attention.refresh()} variant="ghost">
+                {text("Try again")}
+              </Button>
+            </div>
+          ) : null}
+          {events.length === 0 && attention.error ? null : events.length === 0 ? (
             <EmptyState>{text("All quiet — nothing has fired. That's the point.")}</EmptyState>
           ) : (
             <ul className="alerts-list" aria-label={text("Fired alerts")}>

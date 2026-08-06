@@ -16,7 +16,7 @@ import {
 
 type Translate = (key: string) => string;
 
-/** The category chip label for a fired event's row/toast. */
+/** The category chip label for a fired event's row. */
 export function attentionEventBadgeText(event: AttentionEvent, text: Translate): string {
   switch (event.triggerType) {
     case "signal_category":

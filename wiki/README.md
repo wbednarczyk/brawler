@@ -76,7 +76,8 @@ per feature.
 - **[Attention alerts and the morning briefing](attention-and-briefing.md)** —
   set up alert rules over signals, autopilot runs, and price conditions; read
   the daily "what changed + what needs doing" briefing at the top of Today; and
-  find fired alerts as pop-ups and in the Today attention list.
+  find fired alerts in the Today attention stream, with the sidebar badge as
+  the ambient signal.
 - **[Source reliability & disclosure signals](source-reliability-and-disclosure-signals.md)** —
   the ESPI witness that audits your official-report feed and warns when the
   primary source missed a disclosure; the KNF short-selling register as a

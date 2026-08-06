@@ -138,14 +138,67 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
     await waitFor(() => expect(result.current.events).toHaveLength(1));
   });
 
-  it("an unchanged poll keeps the same state reference — the steady state is render-free", async () => {
+  it("an unchanged poll preserves state identity AND stays silent (no loading flip after hydration)", async () => {
     vi.mocked(listAttentionEvents).mockResolvedValue([event("a")]);
     const { result } = renderHook(() => useAttentionController(true));
-    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
     const before = result.current.events;
 
     act(() => result.current.refresh());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.events).toBe(before);
+    // Post-hydration refreshes are background work — Today's skeleton keys on
+    // `loading`, so a 15s poll must never flip it.
+    const sawLoading = result.current.loading;
+    await waitFor(() => expect(vi.mocked(listAttentionEvents).mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() => expect(result.current.events).toBe(before));
+    expect(sawLoading).toBe(false);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("a changed witnessUrl on an otherwise-identical event IS applied (full-fidelity compare)", async () => {
+    vi.mocked(listAttentionEvents)
+      .mockResolvedValueOnce([event("a", { witnessUrl: null })])
+      .mockResolvedValueOnce([event("a", { witnessUrl: "https://gpw.pl/k?id=1" })]);
+    const { result } = renderHook(() => useAttentionController(true));
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+
+    act(() => result.current.refresh());
+    // Review routes on witnessUrl — a reconciliation re-run that fills it in on
+    // the same event id must reach the UI, never be dropped as "unchanged".
+    await waitFor(() =>
+      expect(result.current.events[0].witnessUrl).toBe("https://gpw.pl/k?id=1"),
+    );
+  });
+
+  it("a convergence re-fetch waits for the mutation's write to commit", async () => {
+    const initial = deferred<AttentionEvent[]>();
+    vi.mocked(listAttentionEvents)
+      .mockReturnValueOnce(initial.promise)
+      .mockResolvedValue([]);
+    const persist = deferred<void>();
+    vi.mocked(dismissAttentionEvent).mockReturnValueOnce(persist.promise);
+
+    const { result } = renderHook(() => useAttentionController(true));
+    await act(async () => {
+      void result.current.dismiss("a").catch(() => {});
+    });
+    const callsBeforeStale = vi.mocked(listAttentionEvents).mock.calls.length;
+
+    // The stale initial response arrives — discarded, but the replacement
+    // fetch must NOT start until the dismiss write settles (else it could read
+    // pre-mutation backend data and accept it).
+    await act(async () => {
+      initial.resolve([event("a")]);
+      await initial.promise;
+    });
+    expect(vi.mocked(listAttentionEvents).mock.calls.length).toBe(callsBeforeStale);
+
+    await act(async () => {
+      persist.resolve();
+      await persist.promise;
+    });
+    await waitFor(() =>
+      expect(vi.mocked(listAttentionEvents).mock.calls.length).toBeGreaterThan(callsBeforeStale),
+    );
+    await waitFor(() => expect(result.current.events).toEqual([]));
   });
 });
