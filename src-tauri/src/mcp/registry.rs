@@ -2333,6 +2333,23 @@ mod tests {
         let state = act_state();
         let (company_id, framework_id, criterion_id) = seed_company_framework(&state);
         set_writes_enabled(&state, true);
+        // Citation integrity (#343): the cited evidence must exist, so the
+        // round-trip cites a real notebook entry.
+        let note = state
+            .create_notebook_entry(storage::NewNotebookEntry {
+                company_id: company_id.clone(),
+                title: "Evidence".to_owned(),
+                body: "Cited by the verdict.".to_owned(),
+                body_format: Some("markdown".to_owned()),
+                tags: vec![],
+                kind: "manual".to_owned(),
+                claim_status: None,
+                event_date: None,
+                follow_up_after: None,
+                follow_up_date: None,
+                origins: vec![],
+            })
+            .expect("evidence note");
 
         let write = call(
             &state,
@@ -2344,7 +2361,7 @@ mod tests {
                     "criterionId": criterion_id,
                     "verdict": "pass",
                     "reasoning": "wide moat",
-                    "citationsJson": "[{\"kind\":\"note\",\"id\":\"n1\"}]",
+                    "citationsJson": format!(r#"[{{"evidenceType":"notebook_entry","evidenceId":"{}"}}]"#, note.id),
                     "confidence": "high",
                 }],
             }),
