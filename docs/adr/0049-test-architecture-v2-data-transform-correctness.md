@@ -1,6 +1,6 @@
 # ADR 0049: Test architecture v2 — data-transform correctness at volume
 
-Status: Accepted
+Status: Accepted; T5 (committed bench baseline) superseded by [ADR 0096](0096-quality-gate-architecture-under-continuous-release.md) amendment (#336 — base-vs-head audit on one runner)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR 0062: Single Mandatory Test Gate (Pre-Commit) and Test-Driven Development Loop
 
-Status: Accepted
+Status: Accepted; gate placement superseded by [ADR 0096](0096-quality-gate-architecture-under-continuous-release.md) — the gate runs as the PR's required checks, never pre-commit (hooks deleted); the single-gate principle and TDD loop stand
 
 This ADR makes **one gate the whole truth**: every deterministic/hermetic test suite is a hard-fail step of `make check`, that gate runs **before every commit**, and the project's development loop is **test-driven** (spec-driven for *intent*, test-driven for the *loop*). It executes the browser-suite promotion foreseen in [ADR 0048](0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) Decision 6 and closes an [ADR 0045](0045-guardrail-harvest-loop.md) guardrail class: *a suite that is not a hard-fail step of the one mandatory gate rots.*
 

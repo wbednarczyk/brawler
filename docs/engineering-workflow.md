@@ -57,7 +57,7 @@ The Makefile is the preferred local command surface from WSL; targets stay thin 
 
 Brawler is **spec-driven for intent** (docs/ADRs define behavior before code) and **test-driven for the loop** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)) — tests are the guardrails of a data-heavy app, so the loop is organized around them.
 
-**The loop for every behavior change:** 1) **write/extend the test first**, at the cheapest layer that proves the behavior (map below) — a feature isn't "done" until a test **reddens when it breaks**; 2) **iterate against a targeted, fast subset** (seconds; see "Targeted run" below, or `make check-local`); 3) the **full `make check` runs on the PR** — run it yourself before "done" (the floor, not the ceiling).
+**The loop for every behavior change:** 1) **write/extend the test first**, at the cheapest layer that proves the behavior (map below) — a feature isn't "done" until a test **reddens when it breaks**; 2) **iterate against a targeted, fast subset** (seconds; see "Targeted run" below, or `make check-local`); 3) the **full `make check` runs only as the PR's required checks** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) — the local pre-handover floor is `make check-local`.
 
 **Anti-rot rule (`gate-integrity`).** Every deterministic/hermetic suite is a hard-fail step of `make check`; no step may be `-`-prefixed. Exclusions: [Testing](testing.md). **Anti-drift rule (`docs-drift`, [ADR 0065](adr/0065-spec-code-drift-gates.md)).** The same gate fails if contracts.md/ui-information-architecture.md/data-model.md diverge from the code, or ADR `Status:`/INDEX.md hygiene rots — a spec-ahead-of-code section is tagged `Status: planned (vX.Y.Z, ADR NNNN)`, never left silently wrong.
 
@@ -88,7 +88,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §A — Always
 - [ ] Implemented to spec: read the canonical doc(s) for the area (the [Required Reading](../CLAUDE.md) map) — don't infer architecture/field/command names from code alone. ADR added/confirmed if durable architecture or policy changed.
-- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate**, run as the PR's required checks ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)/[ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)). Its composition is the `check-*` targets in the Command Reference, every one hard-failing. Run it yourself before "done"; a host pass is a hint, not a verdict. **Re-run after the last fix; never hand over on a stale or partial run.**
+- [ ] **`make check-local` passes under Nix** (not host) before handover — a host pass is a hint, not a verdict — and the **full `make check` gate is green as the PR's required checks for the exact head SHA** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)/[ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)); the full gate never runs locally. **Re-run `check-local` after the last fix; never hand over on a stale or partial run.**
 - [ ] Canonical doc(s) whose behavior changed are updated **in this change** (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
 - [ ] Nothing committed or pushed unless the user asked, or via the release workflow.
 
@@ -140,50 +140,26 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **Bench audit** when a hot kernel changed — dispatch `bench-audit.yml` (advisory; local `make audit-bench` self-compares).
 
 ### §K — Honest handover report — always
-- [ ] **A "gate green" claim requires the gate's own exit code as evidence** — for a backgrounded `make check`, grep the echoed `EXIT=`/`${PIPESTATUS[0]}` line from the saved output; a wrapper/task-notification exit code is **never** evidence (it reflects the last shell command, not `make`). A failed step also **aborts the steps after it** — a partially-green log proves nothing about suites that never ran (two S6 gate runs were mis-reported green this way).
+- [ ] **A "gate green" claim requires the gate's own evidence.** Full gate: the PR's required checks green **for the exact head SHA** (`gh pr checks`) — never a local run. Local `check-local`: grep the echoed `EXIT=`/`${PIPESTATUS[0]}` line from the saved output; a wrapper/task-notification exit code is **never** evidence (it reflects the last shell command, not `make`). A failed step also **aborts the steps after it** — a partially-green log proves nothing about suites that never ran (two S6 gate runs were mis-reported green this way).
 - [ ] The handoff states **what was validated and how** (Nix vs host, which suites ran) and **what was NOT run or verified** ("not run on real Windows", "eval not run against the real model", "browser smoke has a pre-existing unrelated failure, filed as X"). No victory lap; surface still-open items rather than implying completeness.
 
 ## Agent Day-To-Day Check Loop
 
-Agents minimize token usage via direct `rtk` commands and the local WSL toolchain — a convenience loop, not a replacement for the canonical Nix workflow (`nix develop`/`make check` stay authoritative for closure and CI-equivalent verification).
+Agents minimize token usage via direct `rtk` commands and the local WSL toolchain — a convenience loop, not a replacement for the canonical Nix workflow (`nix develop`/`make check-local` stay authoritative for local verification; the full gate is the PR's CI).
 
-**Host toolchain can be silently split — only Nix is authoritative.** A host/Nix version split has produced false doc-test failures and hidden a real `clippy` lint (`v0.44.0`). Run the gate under Nix before claiming green (`make check`, or `env -u LD_LIBRARY_PATH nix develop -c npm run check:rust`); don't mix host/Nix `cargo` on the same `target/`.
+**Host toolchain can be silently split — only Nix is authoritative.** A host/Nix version split has produced false doc-test failures and hidden a real `clippy` lint (`v0.44.0`). Run `check-local` under Nix before claiming green (or `env -u LD_LIBRARY_PATH nix develop -c npm run check:rust`); don't mix host/Nix `cargo` on the same `target/`.
 
 **`cargo check` proves compile, not tests** — the lib can compile while the test build breaks (e.g. an item only used via `use super::*;` in `#[cfg(test)]`). Run `cargo nextest run` before committing storage/test changes; a checkpoint must be test-green, not compile-green.
 
 Preferred commands for targeted iteration: `rtk grep "pattern" path`; `rtk read path --max-lines N --line-numbers` / `rtk sed -n 'a,bp' path`; `rtk npm typecheck`; `rtk npm test` (scoped to `vitest run src` — **not** bare `vitest run`, which sweeps `tests/browser/`) / `rtk npm test -- -t "name"`; `rtk npm build`; `rtk cargo fmt --check` · `clippy --all-targets -- -D warnings` · `nextest run` (preferred) / `cargo test`; `rtk git diff -- path`.
 
-Avoid: `rtk proxy ...` (bypasses filtering); shell-wrapped reads where `rtk grep`/`read`/`sed`/`git status` would work; full `make check` per small edit. Full parity when appropriate: `make check`, Nix-wrapped env checks, `make package-windows-from-linux`.
+Avoid: `rtk proxy ...` (bypasses filtering); shell-wrapped reads where `rtk grep`/`read`/`sed`/`git status` would work; `make check-local` per small edit. Full local parity when appropriate: `make check-local`, Nix-wrapped env checks, `make package-windows-from-linux`.
 
 **Layered parallelism** ([ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)): `make check` stages fast-fail checks then runs Rust/Vitest/build concurrently, workers capped — mechanics in [Testing](testing.md). Local toolchain: `rustup`+`clippy`/`rustfmt`/`cargo-nextest`, Node/npm, `ripgrep`, `fd`, `jq`, `sqlite3`; `flake.nix` is canonical.
 
 ## Command Reference
 
-| `make` target | Underlying command | When |
-| --- | --- | --- |
-| `install` | `npm ci` | Set up deps. |
-| `check` | composes the `check-*` targets (§ CI Posture) | **Mandatory gate**; runs on every PR (`full-check.yml`). `check-local` (no browser) is the developer inner loop, run on demand. |
-| `check-rust-lint` · `check-rust-test` · `check-frontend-static` · `check-frontend-test` · `check-frontend-build` · `check-browser` · `check-deps` · `check-docs-gates` · `check-commits` · `check-release-label` | granular gate wrappers | One per `full-check.yml` job (job name mirrors the target); `make check`/`check-local` compose subsets. `check-deps` policy/exceptions: `src-tauri/deny.toml` (network-bound → not in `check-local`). |
-| `docs-drift` | `node scripts/check/docs-drift.mjs` | Spec↔code drift gate standalone (also a `check` step); `--write-adr-index` regenerates `docs/adr/INDEX.md`. |
-| `check-local` | `npm run check:parallel` | Inner-loop only, never proof of done (renamed from `check-fast`). |
-| `coverage-frontend` | Vitest v8 coverage + ratchet | PR required check; floor 80.0% vs `coverage-baseline.json` ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)). |
-| `coverage-rust` | `cargo-llvm-cov` + ratchet | PR required check; floor 86.5% vs `coverage-baseline.json`. |
-| `disk-clean` | caches, mutants artifacts, old nix generations, fstrim | Run when `disk-guard` warns. |
-| `disk-clean-deep` | + `src-tauri/target` + full nix GC | Space emergencies; full rebuild after. |
-| `test` | `npm run test` | Frontend unit tests (Vitest, `src`). |
-| `build` | `npm run build` | Frontend production build. |
-| `dev` | `npm run dev` | Tauri dev mode; needs Linux GUI forwarding. |
-| `frontend-preview` | `npm run preview -- --host 0.0.0.0` | Windows browser layout check; not a Tauri API test. |
-| `ui-smoke-install` | `npm run test:browser:install` | Download Chromium for Playwright. |
-| `ui-smoke` | `npm run test:browser` | Playwright suite standalone (also a `check` step). |
-| `types` | `cargo test --features ts-export export_bindings` | Regenerate TS DTOs from Rust `#[ts(export)]`. |
-| `types-check` | `types` + hash diff on generated bindings | Drift guard. |
-| `install-git-hooks` | `git config core.hooksPath .githooks` | Wires the `commit-msg` hook (only survivor). |
-| `sync-rad` | `git push rad master` + tags | Async Radicle mirror (owner-run; not a process step). |
-| `audit-mutants` | `cargo mutants --test-tool nextest -f ...` | Risk-triggered mutation audit (renamed from `mutants`; auto on monitored-path `master` pushes, plus manual dispatch). |
-| `audit-bench` | `cargo bench --bench transforms` | Advisory local run; honest signal: `bench-audit.yml`. |
-| `pr-live-cycle` | `pr-binary` + launch + live suite | Drive a PR's exe over the real data (no rebuild). |
-| `package-*`, `windows-package*`, `windows-test-help` | — | Packaging/Windows paths — the `packaging` skill. |
+The full `make` target catalog lives in **[command-reference.md](command-reference.md)** (on-demand; the Makefile is the source of truth for recipes). Load it when you need a specific command; the workflow rules above tell you *when* to run what.
 
 ## Testing
 

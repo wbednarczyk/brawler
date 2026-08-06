@@ -49,7 +49,7 @@
 - [0046](0046-quality-frameworks-quantitative.md) — Quality Frameworks — Quantitative Checks, the Metric Expression Engine, and the Open Metric Catalog (Design) — Accepted
 - [0047](0047-top-navigation-bar.md) — Top Navigation Bar (move primary navigation from the left sidebar to the top) — Accepted
 - [0048](0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) — Test architecture — canonical sample-data factory, broad clickable coverage, and layered parallelism — Accepted
-- [0049](0049-test-architecture-v2-data-transform-correctness.md) — Test architecture v2 — data-transform correctness at volume — Accepted
+- [0049](0049-test-architecture-v2-data-transform-correctness.md) — Test architecture v2 — data-transform correctness at volume — Accepted; T5 (committed bench baseline) superseded by [ADR 0096](0096-quality-ga
 - [0050](0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md) — Architecture v2 — domain stores, pluggable source pipeline, entity resolution, durable jobs, frontend decomposition, vector scaling — Accepted
 - [0051](0051-story-clustering-across-sources.md) — Story clustering across sources — evaluated and not shipped — **Rejected** (heuristic/local-embedding approach); cross-source story
 - [0052](0052-report-over-report-diff.md) — Report-over-report diff — pure-Rust statement diff, narrative MD&A deferred — **Accepted** (v0.47.0)
@@ -62,7 +62,7 @@
 - [0059](0059-worker-pools-and-queue-fairness.md) — Worker Pools, Per-Source Serialization, Per-Provider Concurrency, Chunked Refresh, Dead-Letter — Accepted (2026-07-01)
 - [0060](0060-ai-capability-routing-and-openai-compatible-provider.md) — Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider — Superseded (2026-07-20) by [ADR 0084](0084-retire-in-app-ai-layer.md)
 - [0061](0061-deterministic-fundamentals-data-gathering.md) — 100%-Deterministic Fundamentals Data Gathering — Structured-First Pipeline + Validation + Company Profiles — Accepted (2026-07-01); decisions 1/3 (tier ladder, deterministic PDF parser) sup
-- [0062](0062-mandatory-test-gate-and-test-driven-loop.md) — Single Mandatory Test Gate (Pre-Commit) and Test-Driven Development Loop — Accepted
+- [0062](0062-mandatory-test-gate-and-test-driven-loop.md) — Single Mandatory Test Gate (Pre-Commit) and Test-Driven Development Loop — Accepted; gate placement superseded by [ADR 0096](0096-quality-gate-architecture
 - [0063](0063-claude-native-context-architecture.md) — Claude-Native Context Architecture and Lean-Docs Layering — Accepted
 - [0064](0064-resolved-v1-ux-decisions.md) — Resolved V1 UX Decisions (Consolidated Record) — Accepted
 - [0065](0065-spec-code-drift-gates.md) — Spec↔Code Drift Gates and the Planned-Section Convention — Accepted
