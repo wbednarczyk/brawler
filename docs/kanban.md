@@ -38,14 +38,14 @@ Create a GitHub issue for every reported or discovered bug that will not be fixe
 
 Closing an epic is a **post-delivery audit**, never a gate a merge waits on ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)): all delivery already shipped via normal PRs with green required checks. Before `gh issue close <epic> --reason completed`:
 
-- **A retrospective presented inline in chat** before sign-off — both domains (app + dev loop) × went-well / went-wrong / stop / improve, each item marked closed or still-open honestly.
+- **Closure artifacts presented inline in chat** before sign-off — the retrospective (both domains — app + dev loop — × went-well / went-wrong / stop / improve, each item marked closed or still-open honestly), the guardrail-harvest list, the ADR-audit verdicts, and any decisions the owner must make. A committed file the owner never saw does not count.
 - **ADR spec-conformance audit**: for every decision in the epic's ADR(s), verify a live-path invocation exists (`repoctx callers` from the real job/command/UI entry, not only unit tests); verdict per decision (conforms / partial / deviates / not built).
 - **Guardrail harvest**: every flagged defect's class closed in-branch or carded — none silently dropped.
 - **Every sub-issue closed, re-parented, or explicitly dropped** before closing the epic — an epic never closes with open children (`sub_issues_summary` verified complete; a closed epic with open children is reopened on sight).
 - Board `Status` stays the only home of state (never a `state:*` label).
 - A **reopened epic** gets a delta-retro (what changed since the first closure), not a full repeat.
 
-**Standing permission:** agents may run `gh issue close` / `gh issue edit` for the epic's own issues unattended as part of this ritual. Merges, `release:*` labels, and repo-setting mutations stay owner-only.
+**Standing permission:** agents may run `gh issue close` / `gh issue edit` for the epic's own issues unattended as part of this ritual. Merges and repo-setting mutations stay owner-only; on `release:*` the agent sets the proposed label at PR creation and the owner confirms or overrides at merge (CLAUDE.md § Working Rules).
 
 ## Cut-over
 

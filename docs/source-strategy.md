@@ -11,6 +11,7 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Pro
 - Store enough origin to audit every feed item.
 - Keep adapters modular and source-specific.
 - Avoid restricted or fragile scraping unless a source-specific ADR approves it.
+- **The app is an automaton — manual import is a failure mode, never the default fallback** (owner standing rule): exhaust automatic, policy-clean sources first (official APIs, robots-allowed endpoints); a feature whose answer is "the user imports a file" is not done.
 - Treat paid data products as future options, not v1 assumptions.
 - Use RSS/Atom where it is the source's intended distribution format, but do not let secondary RSS replace official issuer-report attribution when the official source is reachable.
 
