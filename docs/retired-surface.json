@@ -33,6 +33,11 @@
     { "token": "narrative_markdown", "adr": "ADR 0084", "allow": ["docs/data-model.md", "docs/contracts.md"] },
     { "token": "ai_calls_used", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
     { "token": "ai_call_limit", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "run_ownership_ocr_extraction", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
+    { "token": "run_company_ownership_ocr", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
+    { "token": "ownership_ocr_proposals", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "ownership_ocr_proposal_rows", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "parse_ocr_shareholders", "adr": "ADR 0084" },
     { "token": "html_positional", "adr": "ADR 0095", "allow": ["docs/data-model.md", "docs/roadmap.md"], "allowFile": ["docs/testing.md"] }
   ]
 }

@@ -164,7 +164,7 @@ Official ESPI/EBI filings should be classified into typed disclosure signals so 
 Behavior:
 
 - A deterministic rule classifier runs during ingestion over the filing's official category label, title, and body, and types the formulaic majority of filings automatically.
-- Filings the rules cannot place land in an explicit unclassified bucket; the user manually classifies one from there. The app never silently assigns a wrong type.
+- Filings the rules cannot place land in an explicit unclassified bucket, triaged headless via the MCP tool pair (`list_unclassified_filings`/`classify_filing` — BYOA). The app never silently assigns a wrong type.
 - Typed filings show a type badge in the Inbox and company feed, and the feed can be filtered by type.
 - The digest groups high-signal types (for example, insider activity) so the user sees them together, and high-signal types can drive reminders.
 - A typed filing that carries a real future date (such as a dividend record/payment date or a general-meeting date) also appears as a company event in the calendar. Past disclosures stay in the feed and do not create calendar entries.

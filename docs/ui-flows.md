@@ -75,7 +75,7 @@ Setup (Library → Alerts): the user creates **alert rules** from preset chips �
 
 Acceptance criteria:
 
-- The briefing renders even with no AI provider configured (structured list, never blocked); a narrative only appears when it can cite the composed items.
+- The briefing is a fully deterministic structured list and always renders, never blocked (the narrative half is retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 - A fired alert always traces back to its evidence (signal, run, or quote) via both the toast click-through and the attention list.
 - An alert never re-fires for the same evidence, and never phrases a fact as advice.
 - The journey stays within its interaction budget ([budgets.json](../tests/browser/journeys/budgets.json)); reading the briefing is a passive scan, not a counted interaction.

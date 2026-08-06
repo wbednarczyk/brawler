@@ -76,6 +76,10 @@ export function findHits(content, token) {
 // it visibly talks about the retirement rather than specifying live behavior.
 // A whole-file exemption is `allowFile` (reserved for docs whose subject IS
 // the retired surface, e.g. a stored-state auditor's methodology).
+// LIMITATION (deliberate): this is a lexical tripwire, not semantic proof — a
+// line can carry a retirement word and still specify live behavior. The
+// backstop is review: every `allow`/`allowFile` change ships in a reviewed
+// diff, and the gate's job is to force that conversation, not to win it.
 const POINTER_RE = /retir|dropp|remov|supersed|legacy|historic|delet|renam|no longer/i;
 export const isPointerLine = (text) => POINTER_RE.test(text);
 
