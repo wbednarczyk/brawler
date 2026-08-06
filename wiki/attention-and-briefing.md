@@ -87,13 +87,16 @@ still retrying stays quiet until it truly gives up. Tasks that concern one
 company appear under its ticker; workspace-wide ones (like the briefing) appear
 without a ticker.
 
-## Pop-ups (toasts) are pointers, not the inbox
+## No pop-ups — the badge on Dziś is your signal
 
-The stream is the system of record. A corner pop-up only announces that
-something **urgent** just landed — click it to jump to the row, or dismiss it;
-nothing is lost either way (dismissing the row also clears its pop-up and vice
-versa). Notable events show a brief fading pop-up at most; routine events never
-pop up. The stack is capped and never covers buttons you need.
+The stream is the system of record, and nothing interrupts you to say so:
+**attention events never appear as corner pop-ups**. While you work elsewhere,
+the sidebar **Dziś** entry carries a small count of important events you have
+not looked at yet; open Dziś and the count clears — everything you saw there
+counts as noticed (rows stay until you dismiss them, and dismissed events keep
+living in the Archive). The only pop-ups left are brief confirmations of your
+own actions ("Usunięto — Cofnij", "Źródła odświeżone") that fade on their own
+and never stack up over the interface.
 
 ## A note on scope
 

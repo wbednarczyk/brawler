@@ -118,7 +118,7 @@ Guarded by `src/screens/Cockpit/paneLandmarks.test.tsx`, which opens every compa
 | Sub-navigation | `Subnav` | bespoke nav rows |
 | A filter bar | `FilterToolbar` | bespoke filter rows |
 | A row of actions | `ActionRow` | a flex div of buttons |
-| Transient async-action feedback (saved / refreshed / started / undo) **or** a persistent attention alert | `useToast()` from the app-shell `ToastProvider` — transient by default (`role="status"`, auto-dismiss); pass `persistent` for an attention event (explicit dismiss, `role="alert"`, optional evidence click-through) | a bespoke inline "Saved"/"Done" banner, a per-screen notification region, or a second toast mount |
+| Transient feedback for a **direct user action** (saved / refreshed / started / undo) | `useToast()` from the app-shell `ToastProvider` — transient only (`role="status"`, auto-dismiss); the production consumer allowlist (`src/ui/toastConsumers.test.ts`) gates new call sites | a bespoke inline "Saved"/"Done" banner, a per-screen notification region, a second toast mount, or **any ambient/system event as a toast** ([ADR 0097](adr/0097-toasts-are-action-feedback-only.md): system attention lives in Today + the sidebar badge) |
 | Sparkline / trend chart / scaled line chart / candlesticks | `Sparkline` (axis-less inline) / `TrendChart` (per-period bars) / `LineChart` (dense close-only series) / `CandlestickChart` (dense OHLC series) — the scaled charts carry a y-scale + date span; a value the reader must gauge is never plotted scale-less | a charting dependency or hand-drawn SVG |
 
 ## Domain components (`src/shared/components`)

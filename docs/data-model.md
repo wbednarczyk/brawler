@@ -407,7 +407,7 @@ The persisted GPW ESPI/EBI witness ↔ Bankier agreement ledger ([ADR 0069](adr/
 - `company_id` is nullable and resolved by ISIN; untracked issuers are skipped.
 - `id` is a **deterministic, status-independent** key (from witness_adapter + company + disclosure_date + report identity), so a re-reconciled pair UPSERTs in place — idempotent, and its status can flip (`espi_only → matched`) once the primary catches up.
 - Matching is tolerant: exact ESPI report-number match (`N/YYYY`, e.g. Bankier "RB 15/2026") first, then a `(company, disclosure date)` fallback. Window = `[earliest witness disclosure date, now]` (default 7-day lookback when the listing is empty).
-- An `espi_only` result for a tracked company raises a **system** `attention_events` row (`trigger_type = source_reconciliation`, `evidence_ref = result id`), surfaced through the v0.54 attention routing (Today stream + toast + morning briefing). The full ledger is developer-diagnostics only (`list_source_reconciliation`).
+- An `espi_only` result for a tracked company raises a **system** `attention_events` row (`trigger_type = source_reconciliation`, `evidence_ref = result id`), surfaced through the attention routing (Today stream + sidebar badge + morning briefing, [ADR 0097](adr/0097-toasts-are-action-feedback-only.md)); the read model joins the ledger's `witness_url` so Review opens the missed report itself. The full ledger is developer-diagnostics only (`list_source_reconciliation`).
 
 ### Ownership Stakes
 

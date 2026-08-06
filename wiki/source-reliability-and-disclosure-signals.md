@@ -13,9 +13,10 @@ refresh it compares its list of disclosures against what the primary channel
 delivered for your tracked companies.
 
 - **Agreement** is recorded quietly — you see nothing, which is the goal.
-- **A report the primary channel missed** raises a toast and a morning-briefing
-  line ("an official report your feed didn't catch"), with the report's title
-  and a link to the GPW source. No rule setup needed — it's on by default.
+- **A report the primary channel missed** lands in the Dziś stream (and the
+  morning briefing) as "an official report your feed didn't catch", with the
+  report's title; **Review opens the report itself** at the GPW source. No rule
+  setup needed — it's on by default.
 - The witness **never adds items to your feed** — no duplicates, ever.
 
 In **Sources** the witness carries a "Witness" badge (it's a health mechanism,
