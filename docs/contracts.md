@@ -999,7 +999,7 @@ Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownershi
 ```
 
 - Percentages are **decimal-exact TEXT** (the `financial_facts.value_numeric` convention), not floats. `freeFloatPct` is always present (`"100"` when nothing disclosed); `disclosedSum` is Σ of disclosed `capitalPct` across current holders; `asOf`/`source` are omitted when there are no stakes yet. `holderType`/`capitalPct`/`votesPct` are omitted when absent (never a fabricated value).
-- `holders` is the current state (latest disclosed stake per holder); `history` is each current holder's chronological capital-% trajectory — each point carrying the `source` that disclosed it, deduped per `asOf` to the latest disclosure for that date. An `espi_filing` point is a **threshold crossing** (Polish law compels that filing only when a holder crosses a statutory band), which is what the stake-over-time chart marks per [ADR 0072](adr/0072-ownership-structure.md) decision 5; `report_document` / `aggregator` / `manual` points are ordinary samples. `residuals` are documents whose shareholders table the deterministic parser could not read (awaiting OCR/AI, whose results always require confirmation); `pendingProposals` are AI holder-type classifications awaiting confirmation (never auto-applied).
+- `holders` is the current state (latest disclosed stake per holder); `history` is each current holder's chronological capital-% trajectory — each point carrying the `source` that disclosed it, deduped per `asOf` to the latest disclosure for that date. An `espi_filing` point is a **threshold crossing** (Polish law compels that filing only when a holder crosses a statutory band), which is what the stake-over-time chart marks per [ADR 0072](adr/0072-ownership-structure.md) decision 5; `report_document` / `aggregator` / `manual` points are ordinary samples. `residuals` are documents whose shareholders table the deterministic parser could not read — flagged, never guessed (the OCR/AI follow-up and holder-type proposal flows are retired, [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 - `skinInTheGame` (v0.57, ADR 0083 D6) is present on a holder corroborated by a parsed management-holdings row or an insider transaction — by exact person name, or as the `via` vehicle a founder holds through (`{ person, via? }`). It drives the Ownership "skin in the game" badge; omitted when there is no management/insider match. Founder-name stamping (`founder_insider`) and this corroboration are joined by canonical holder identity — never a shared surname.
 
 Mutations return the **freshly recomputed** `OwnershipOverview` so the UI updates in one round-trip:
@@ -1703,7 +1703,7 @@ Rules ([ADR 0032](adr/0032-search-and-backup-boundaries.md); FTS5 schema, saniti
 - An empty/blank `query` returns no groups.
 - `contentTypes` and `companyId` are optional scoping filters. Omitting `contentTypes` searches all types.
 - Matches are returned grouped by `contentType`, each carrying `sourceId`, `companyId`, `parentId`, `title`, `snippet`, and `score` — enough context to render and navigate to the specific item. Snippet highlight markers are control characters (STX/ETX), not HTML, so callers render snippets as plain text.
-- Coverage is companies, watchlists, feed items, notebook entries, transcript segments, company events, research briefs, and digests.
+- Coverage is companies, watchlists, feed items, notebook entries, transcript segments, and company events.
 
 ## Database Backups
 
@@ -2603,7 +2603,7 @@ Typed commands:
 
 Rules:
 
-- Research-data JSON includes companies, watchlists, memberships, notebook entries, research questions, evidence links, AI research briefs, and AI research brief citations.
+- Research-data JSON includes companies, watchlists, memberships, notebook entries, research questions, and evidence links (the AI research-brief tables are gone — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 - Settings YAML includes only allowlisted non-secret settings.
 - Import preview validates schema version, references, setting keys, setting values, and duplicate note behavior before apply.
 - Apply must reject invalid preview states and must be transactional for each import operation.

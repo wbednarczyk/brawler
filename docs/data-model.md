@@ -451,7 +451,7 @@ Owner-durable: the `ownership_stakes` section joins the v2 research import/expor
 - `report_document_id` (PK → `report_documents`, `ON DELETE CASCADE`) — one residual per document, so a re-run **upserts in place**; the job **clears** it the moment a (later) parser version succeeds, so a document is never both parsed and residual.
 - `company_id` (→ `companies`, `ON DELETE CASCADE`)
 - `parse_state` — `section_missing | table_unparsable | glyph_encoded` (CHECK) — why the deterministic parse could not write stakes.
-- `detected_as_of?` — the disclosure date resolved for the document, if any (carried so the AI/OCR write reuses it).
+- `detected_as_of?` — the disclosure date resolved for the document, if any.
 - `matched_heading?` — the shareholders heading line that anchored the failed parse, verbatim (NULL for `section_missing`).
 - `ocr_state?` (migration `0093`) — **frozen legacy column**: the retired OCR pass's lifecycle marker; readers tolerate any stored value, nothing writes it anymore ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 - `created_at` / `updated_at`.
@@ -662,7 +662,7 @@ Rules:
 
 - Evidence links relate existing domain entities without moving their canonical data.
 - Existing notebook origin rows remain provenance records and are not replaced by `evidence_links`.
-- Evidence links may connect source items, notebook entries, claims, events, transcript segments, AI analysis results, research questions, future reminders, future briefs, and future digests.
+- Evidence links may connect source items, notebook entries, claims, events, transcript segments, research questions, and reminders.
 - Initial relation types include `originates_from`, `cites`, `supports`, `contradicts`, `updates`, `follows_up`, `answers`, and `related`.
 - Link validation should reject unknown entity types and dangling references when practical.
 
@@ -1513,7 +1513,6 @@ Indexed content:
 - notebook title and Markdown body
 - transcript segment text (`parent_id` = owning transcript job)
 - company event title and type (`content_type = 'event'`)
-- research brief title and body
 - digest title and body
 
 Rules:

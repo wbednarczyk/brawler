@@ -376,7 +376,7 @@ Flow:
 
 1. User opens global search from the top-toolbar search box (or its keyboard shortcut).
 2. User types a query.
-3. App shows ranked results grouped by content type (companies, feed items, notes, transcript segments, research briefs, digests), each with a snippet.
+3. App shows ranked results grouped by content type (companies, feed items, notes, transcript segments, events), each with a snippet.
 4. User selects a result.
 5. App navigates to the owning screen/item.
 
