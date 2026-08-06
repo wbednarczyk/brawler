@@ -986,3 +986,52 @@ fn list_attention_events_leaves_evidence_title_none_for_pruned_evidence() {
     assert_eq!(events[0].evidence_title, None);
     assert_eq!(events[0].evidence_detail, None);
 }
+
+#[test]
+fn legacy_pruned_database_still_renders_the_durable_evidence_title_snapshot() {
+    // Legacy-state compatibility (v0.60 D7 snapshot, reframed after #329):
+    // databases pruned by the RETIRED feed cleanup hold attention events whose
+    // feed item — and, via `company_signals.feed_item_id` ON DELETE CASCADE,
+    // their signal row — are gone. The read must render the fire-time
+    // `evidence_title` snapshot, never a bare category from a dead join.
+    const INSIDER_TITLE: &str = "Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR";
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'XTB', 'GPW:XTB', 'XTB S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO alert_rules (id, trigger_type, signal_category, scope_type, scope_ref)
+             VALUES ('r1', 'signal_category', 'insider_transaction', 'company', 'c1')",
+            [],
+        )
+        .expect("seed rule");
+    // The signal's feed item was pruned pre-#329, cascading the signal away —
+    // only the event row survives, with the snapshot title stamped at fire time.
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at,
+                 evidence_title)
+             VALUES ('attn1', 'r1', 'signal_category', 'c1', 'company_signal', 'sig_gone',
+                     '2026-07-20T09:00:00Z', ?1)",
+            [INSIDER_TITLE],
+        )
+        .expect("seed legacy event with a dead signal ref");
+
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1, "the legacy event is listed");
+    assert_eq!(
+        events[0].evidence_title.as_deref(),
+        Some(INSIDER_TITLE),
+        "the fire-time snapshot renders although the signal and feed item are long gone"
+    );
+}

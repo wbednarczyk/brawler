@@ -153,9 +153,7 @@ A local data status indicator may expose a small view refresh action for develop
 
 Ingestion should preserve source attribution, publication time, fetch time, original language, matched company, and source URL.
 
-Feed retention must be designed before v1 ingestion becomes broad. The app should avoid unbounded local growth by defining per-source retention defaults, user-adjustable cleanup settings, and rules that preserve important user-marked content. Saved items, items linked to notes, and items with explicit user decisions should not be removed by routine cleanup without clear user control.
-
-**Feed content persists; no bulk destructive feed actions (owner decision 2026-08-05, #329).** Both automatic timed cleanup and the manual "Clean up feed now" / "Delete unsaved" controls are removed — an earlier automatic 30-day prune silently removed ~3,900 items, including periodic reports the owner actively researches, and the manual fallback carried the same risk. Nothing deletes feed items today. **No mass-destructive feed actions**: the app never exposes bulk deletion of feed items (owner decision 2026-08-05, #329); the future retention design (#175) must not reintroduce one without an explicit product decision.
+**Feed content persists; no bulk destructive feed actions (owner decision 2026-08-05, #329).** Both automatic timed cleanup and the manual "Clean up feed now" / "Delete unsaved" controls are removed — an earlier automatic 30-day prune silently removed ~3,900 items, including periodic reports the owner actively researches, and the manual fallback carried the same risk. No feed-specific deletion path exists today (a full-database restore replaces everything wholesale, which is a different operation). The eventual retention design (#175) must bound local growth **without** a bulk-delete control: whatever it chooses, saved items, items linked to notes, and items with explicit user decisions stay, and reintroducing any mass-destructive feed action requires an explicit product decision — never a casual control.
 
 ## Typed Filing Signals
 

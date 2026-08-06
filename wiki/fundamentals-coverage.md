@@ -21,7 +21,7 @@ trusted one owns the slot:
    debt, total liabilities, group equity).
 3. **Structured/positional xHTML** filings and the **ESPI "Wybrane dane
    finansowe" cover table** from interim komunikaty (parsed the moment the
-   feed item arrives, before retention can prune it).
+   feed item arrives — the figures outlive the carrier item).
 4. **BiznesRadar — the primary source for core KPIs.** Once a day Brawler
    politely reads three public report pages per tracked company (income
    statement, balance sheet, cash flow) and ingests **every period column**
