@@ -904,6 +904,55 @@ fn persist_refuses_citations_that_do_not_resolve_to_real_evidence() {
     .expect("a resolving citation persists");
 }
 
+/// The stored citation array is the CANONICAL validated view (camelCase keys,
+/// trimmed values) — a padded id or a conflicting snake_case alias can never
+/// validate as one reference and persist as another (sol review, #343).
+#[test]
+fn persisted_citations_are_canonicalized_to_what_was_validated() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let company = tracked_company(&state);
+    let note = cited_note(&state, &company.id);
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Q".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let moat = qualitative_criterion(&state, &framework.id, "Wide moat");
+
+    // Padded id + snake_case keys + a conflicting camelCase alias: camelCase
+    // wins validation, so camelCase is what must be stored.
+    let messy = format!(
+        r#"[{{"evidenceType":"notebook_entry","evidence_type":"claim","evidenceId":"  {note}  ","label":"Note"}}]"#
+    );
+    state
+        .persist_qualitative_assessment(PersistQualitativeAssessmentInput {
+            framework_id: framework.id.clone(),
+            company_id: company.id.clone(),
+            results: vec![QualitativeCriterionResult {
+                criterion_id: moat.id.clone(),
+                ordinal: 0,
+                label: "Wide moat".to_owned(),
+                verdict: "pass".to_owned(),
+                reasoning: "Reasoned.".to_owned(),
+                citations_json: messy,
+                confidence: "medium".to_owned(),
+                prompt_version: "mcp".to_owned(),
+            }],
+        })
+        .expect("messy-but-resolving citation persists");
+
+    let current = state
+        .get_qualitative_assessment(&framework.id, &company.id)
+        .expect("current-state read");
+    let stored = current[0].citations.as_deref().expect("citations stored");
+    assert_eq!(
+        stored,
+        format!(r#"[{{"evidenceId":"{note}","evidenceType":"notebook_entry","label":"Note"}}]"#),
+        "stored citations are the canonical validated view"
+    );
+}
+
 /// One bad citation in a multi-result batch refuses the WHOLE batch before any
 /// insert (atomic refusal — never a partial snapshot).
 #[test]

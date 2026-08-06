@@ -1,6 +1,5 @@
 ---
 source: src/mcp/protocol.rs
-assertion_line: 323
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -1239,7 +1238,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "record_financial_facts"
       },
       {
-        "description": "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation.",
+        "description": "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{\"evidenceType\":\"notebook_entry\",\"evidenceId\":\"<id>\"}]` (types: feed_item | notebook_entry | claim | transcript_segment | company_event | research_question | company_signal | decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation.",
         "inputSchema": {
           "definitions": {
             "QualitativeVerdictInput": {

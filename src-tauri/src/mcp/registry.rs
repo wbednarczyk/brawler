@@ -675,7 +675,7 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "set_qualitative_verdicts",
             Some(CitationsJson),
-            "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation.",
+            "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{\"evidenceType\":\"notebook_entry\",\"evidenceId\":\"<id>\"}]` (types: feed_item | notebook_entry | claim | transcript_segment | company_event | research_question | company_signal | decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation.",
             tools::tool_schema::<crate::commands::quality_frameworks::SetQualitativeVerdictsInput>,
             acts::set_qualitative_verdicts_handler,
         ),
@@ -1845,6 +1845,34 @@ mod tests {
         )
         .expect("domain outcome");
         assert_eq!(failure_code(outcome), CommandErrorCode::ProvenanceRequired);
+    }
+
+    /// Freezes the error-layer distinction (#343): an EMPTY citations array is
+    /// stopped at the port gate (`provenance_required`, test above); a
+    /// non-empty array of garbage passes the gate and is refused by the persist
+    /// chokepoint's integrity check as `invalid_input`.
+    #[test]
+    fn garbage_citations_pass_the_gate_and_fail_integrity_as_invalid_input() {
+        let state = act_state();
+        let (company_id, framework_id, criterion_id) = seed_company_framework(&state);
+        set_writes_enabled(&state, true);
+        let outcome = call(
+            &state,
+            "set_qualitative_verdicts",
+            &json!({
+                "frameworkId": framework_id,
+                "companyId": company_id,
+                "results": [{
+                    "criterionId": criterion_id,
+                    "verdict": "pass",
+                    "reasoning": "r",
+                    "citationsJson": "[\"freeform prose\"]",
+                    "confidence": "low",
+                }],
+            }),
+        )
+        .expect("domain outcome");
+        assert_eq!(failure_code(outcome), CommandErrorCode::InvalidInput);
     }
 
     /// Seed a company + fiscal period a financial-fact write can slot into.

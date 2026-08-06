@@ -852,11 +852,11 @@ pub(super) fn evaluate_framework(
 /// evidence type. Enforced here — the shared chokepoint of the typed command
 /// and the MCP act handler — before any row is written (atomic refusal, never
 /// a partial snapshot). Key spelling is tolerant (`evidenceType`/`evidence_type`).
-fn validate_verdict_citations(
+fn validate_and_canonicalize_citations(
     connection: &Connection,
     criterion_id: &str,
     citations_json: &str,
-) -> StorageResult<()> {
+) -> StorageResult<String> {
     let invalid = |detail: String| StorageError::InvalidResearchValue {
         key: "citations",
         value: format!("criterion {criterion_id}: {detail}"),
@@ -869,6 +869,7 @@ fn validate_verdict_citations(
     if citations.is_empty() {
         return Err(invalid("citations must not be empty".to_owned()));
     }
+    let mut canonical = Vec::with_capacity(citations.len());
     for citation in citations {
         let field = |camel: &str, snake: &str| {
             citation
@@ -883,8 +884,21 @@ fn validate_verdict_citations(
         let evidence_id = field("evidenceId", "evidence_id")
             .ok_or_else(|| invalid("every citation needs a non-blank evidenceId".to_owned()))?;
         super::research::validate_evidence_reference(connection, evidence_type, evidence_id)?;
+        // Store exactly what was validated: canonical camelCase keys, trimmed
+        // values — a padded id or a conflicting snake_case alias can never
+        // validate as one reference and persist as another.
+        let mut entry = serde_json::Map::new();
+        entry.insert("evidenceType".to_owned(), evidence_type.into());
+        entry.insert("evidenceId".to_owned(), evidence_id.into());
+        for extra in ["label", "snippet"] {
+            if let Some(value) = citation.get(extra).and_then(serde_json::Value::as_str) {
+                entry.insert(extra.to_owned(), value.into());
+            }
+        }
+        canonical.push(serde_json::Value::Object(entry));
     }
-    Ok(())
+    serde_json::to_string(&canonical)
+        .map_err(|_| invalid("citations failed to re-serialize".to_owned()))
 }
 
 pub(super) fn persist_qualitative_assessment(
@@ -893,8 +907,13 @@ pub(super) fn persist_qualitative_assessment(
 ) -> StorageResult<FrameworkEvaluation> {
     let framework = get_quality_framework(connection, &input.framework_id)?;
     ensure_company_exists(connection, &input.company_id)?;
+    let mut canonical_citations = Vec::with_capacity(input.results.len());
     for result in &input.results {
-        validate_verdict_citations(connection, &result.criterion_id, &result.citations_json)?;
+        canonical_citations.push(validate_and_canonicalize_citations(
+            connection,
+            &result.criterion_id,
+            &result.citations_json,
+        )?);
     }
 
     let mut pass = 0i64;
@@ -930,7 +949,7 @@ pub(super) fn persist_qualitative_assessment(
         ],
     )?;
 
-    for result in &input.results {
+    for (result, citations) in input.results.iter().zip(&canonical_citations) {
         connection.execute(
             "INSERT INTO criterion_results
                 (id, evaluation_id, criterion_id, ordinal, label, expression, verdict,
@@ -946,7 +965,7 @@ pub(super) fn persist_qualitative_assessment(
                 result.label,
                 result.verdict,
                 result.reasoning,
-                result.citations_json,
+                citations,
                 result.confidence,
                 result.prompt_version,
             ],
