@@ -196,6 +196,7 @@ check-deps:
 check-docs-gates:
 	$(NIX) node scripts/check/gate-integrity.mjs
 	$(NIX) node scripts/check/docs-drift.mjs
+	$(NIX) node scripts/check/retired-surface.mjs
 	$(NIX) node --test "scripts/check/*.test.mjs"
 	$(NIX) npm run release:version-check
 

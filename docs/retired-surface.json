@@ -1,0 +1,30 @@
+{
+  "_comment": "Retired-surface manifest (scripts/check/retired-surface.mjs): exact identifiers an ADR removed. A LIVE doc (docs/ + wiki/, minus history homes) may not mention one except where `allow` marks a deliberate one-line retirement pointer. Add entries when an ADR retires surface; extend `allow` only in a reviewed change.",
+  "retired": [
+    { "token": "history_sweep_ai_call_limit", "adr": "ADR 0084" },
+    { "token": "historySweepAiCallLimit", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
+    { "token": "capabilityProviders", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
+    { "token": "CapabilityProviderEntry", "adr": "ADR 0084" },
+    { "token": "useAiFallbackEnabled", "adr": "ADR 0084" },
+    { "token": "useAiAnalysisProviderConfigured", "adr": "ADR 0084" },
+    { "token": "FeedAiAnalysisPanel", "adr": "ADR 0084" },
+    { "token": "FeedKpiExtractionPanel", "adr": "ADR 0084" },
+    { "token": "list_ai_analysis", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
+    { "token": "run_ai_analysis", "adr": "ADR 0084" },
+    { "token": "ai_analysis_results", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "ai_analysis_jobs", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "ai_research_brief_jobs", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "ai_research_briefs", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "ai_research_brief_citations", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
+    { "token": "kpi_extraction_jobs", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
+    { "token": "kpi_extraction_proposals", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
+    { "token": "check-epic", "adr": "ADR 0096", "allow": ["docs/testing.md"] },
+    { "token": "epic-gate.yml", "adr": "ADR 0096" },
+    { "token": "realdata-gt-check", "adr": "ADR 0096" },
+    { "token": "realdata-extraction-metrics", "adr": "ADR 0096", "allow": ["docs/testing.md"] },
+    { "token": "bench-baseline.json", "adr": "ADR 0096 (#336)" },
+    { "token": "bench-ratchet", "adr": "ADR 0096 (#336)" },
+    { "token": "bench:ratchet", "adr": "ADR 0096 (#336)" },
+    { "token": "html_positional", "adr": "ADR 0095", "allow": ["docs/data-model.md", "docs/testing.md", "docs/roadmap.md"] }
+  ]
+}
