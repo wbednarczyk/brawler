@@ -142,16 +142,20 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
     // so every write known at read time has committed, and anything later
     // counts as "raced past this request" and triggers convergence.
     let mutationSeqAtStart = 0;
-    const awaitMutationChain = async (): Promise<void> => {
+    // Returns the sequence SYNCHRONOUSLY with the loop's final still-latest
+    // check — a later `.then` would open a microtask gap in which a fresh
+    // mutation could bump the sequence past its own un-awaited write.
+    const awaitMutationChainAndSnapshot = async (): Promise<number> => {
       let chain: Promise<void>;
       do {
         chain = mutationChainRef.current;
         await chain;
       } while (chain !== mutationChainRef.current);
+      return mutationSeqRef.current;
     };
-    awaitMutationChain()
-      .then(() => {
-        mutationSeqAtStart = mutationSeqRef.current;
+    awaitMutationChainAndSnapshot()
+      .then((seq) => {
+        mutationSeqAtStart = seq;
         return Promise.all([listAttentionEvents(), listAlertRules()]);
       })
       .then(([nextEvents, nextRules]) => {
