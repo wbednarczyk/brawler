@@ -1193,7 +1193,7 @@ Event commands:
 
 ## Morning Briefing
 
-A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) decision 4, `v0.54.0`): a **deterministically composed item list** ("what changed in my companies + what needs doing") plus an **optional** AI narrative with citations, phrased via the research-digest provider contract (capability `morning_briefing`, [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)). With no provider configured — or if the narrative fails citation integrity — the briefing still returns as the structured item list (`narrativeMarkdown` = `null`), never blocked, never an error. Field/storage rules (composer inputs, ordering, `since` boundary, citation integrity) are canonical in [Data Model § Morning Briefing](data-model.md#morning-briefing).
+A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) decision 4, `v0.54.0`): a **deterministically composed item list** ("what changed in my companies + what needs doing"), end to end — the optional AI narrative half was retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md); migration `0102` dropped `narrative_markdown`/`narrative_provider_id`/`narrative_model`). Field/storage rules (composer inputs, ordering, `since` boundary) are canonical in [Data Model § Morning Briefing](data-model.md#morning-briefing).
 
 `MorningBriefing` (returned by `get_latest_morning_briefing`):
 
@@ -1202,9 +1202,6 @@ A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-br
   "id": "morning_briefing_0001",
   "composedAt": "2026-07-15T06:00:00.000Z",
   "since": "2026-07-14",
-  "narrativeMarkdown": "## Signals\n\nA profit warning landed. [b1]",
-  "narrativeProviderId": "provider_gemini",
-  "narrativeModel": "gemini-3.5-flash",
   "language": "en",
   "createdAt": "2026-07-15T06:00:00.000Z",
   "items": [
@@ -1225,70 +1222,17 @@ A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-br
 }
 ```
 
-- `itemType` ∈ `signal` (ref = signal id) | `autopilot_run` (ref = run id) | `claim_due` (ref = claim id) | `report_date` (ref = `companyId:eventKey`) | `attention_event` (ref = attention-event id). Items are ordered by `domainDate` (never `createdAt`); `citationKey` (`b1`, `b2`, …) is what a narrative citation references and resolves against `(evidenceType, evidenceRef)`. Items are **deduped** to at most one per `(companyId, itemType, evidenceRef)`, keeping the newest by `domainDate` ([ADR 0087](adr/0087-today-attention-home-v2.md) dec. 1).
+- `itemType` ∈ `signal` (ref = signal id) | `autopilot_run` (ref = run id) | `claim_due` (ref = claim id) | `report_date` (ref = `companyId:eventKey`) | `attention_event` (ref = attention-event id). Items are ordered by `domainDate` (never `createdAt`); `citationKey` (`b1`, `b2`, …) is a stable per-item reference key that resolves against `(evidenceType, evidenceRef)`. Items are **deduped** to at most one per `(companyId, itemType, evidenceRef)`, keeping the newest by `domainDate` ([ADR 0087](adr/0087-today-attention-home-v2.md) dec. 1).
 - **Typed `title`/`detail` (since `v0.60`, [ADR 0087](adr/0087-today-attention-home-v2.md) dec. 4).** The composer writes ONLY verbatim source data or typed codes/tokens into `title`/`detail` — never composed English prose; the frontend (`briefingItemText.ts`) translates. Per `itemType`: **signal** — `title` = signal title, `detail` = category CODE (e.g. `profit_warning`); **attention_event** — `title` = `trigger_type` code (e.g. `signal_category`), `detail` = `evidence_type` code (e.g. `company_signal`); **autopilot_run** — `title` = the run's `summaryText` token stream as stored (`report_processed` fallback), `detail` = `status` code (`succeeded`/`partial`); **claim_due** — `title` = claim statement, `detail` = typed token `due:<periodType>:<fiscalYear>` (e.g. `due:Q2:2026`); **report_date** — `title` = entry title, `detail` = qualified ticker. Legacy briefings composed before `v0.60` keep their English prose (no migration); the frontend reads both tolerantly (a non-token title/detail passes through verbatim).
-- The narrative is **decision-support only** (facts + links, never advice); it is stored only when every citation it references resolves to a composed item.
 
 Commands:
 
-- `generate_morning_briefing()`: enqueues an on-demand compose (forces a fresh compose even if today's briefing exists) on the durable queue (the `morning_briefing` ai-lane job). Returns once queued; poll `get_latest_morning_briefing` for the result. A once-per-day auto compose is enqueued by the Rust scheduler while the app is open.
+- `generate_morning_briefing()`: enqueues an on-demand compose (forces a fresh compose even if today's briefing exists) on the durable queue (the `morning_briefing` autopilot-lane job). Returns once queued; poll `get_latest_morning_briefing` for the result. A once-per-day auto compose is enqueued by the Rust scheduler while the app is open.
 - `get_latest_morning_briefing()`: the most recently composed briefing (`MorningBriefing`), or `null` when none has been composed yet.
 
-## AI Analysis Result
+## AI Analysis Result / AI Analysis Job — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-```json
-{
-  "id": "analysis_01",
-  "aiAnalysisJobId": "analysis_job_01",
-  "feedItemId": "feed_01",
-  "providerId": "provider_openai_compatible",
-  "model": "configured-model-name",
-  "promptVersion": "m13.source_grounded.v1",
-  "summary": "Short neutral summary.",
-  "significance": "medium",
-  "tags": ["earnings", "guidance"],
-  "reasoning": "Why this may matter, based on cited source content.",
-  "language": "en",
-  "sourceReferences": [
-    {
-      "sourceUrl": "https://www.gpw.pl/komunikaty",
-      "label": "GPW ESPI/EBI report"
-    }
-  ],
-  "createdAt": "2026-05-28T13:00:00Z"
-}
-```
-
-Rules:
-
-- Allowed significance values: `low`, `medium`, `high`, `unknown`.
-- AI output must not include buy/sell/hold recommendations.
-- AI output must reference source material used for analysis.
-
-## AI Analysis Job
-
-```json
-{
-  "id": "analysis_job_01",
-  "feedItemId": "feed_01",
-  "promptPresetId": "default_summary",
-  "customQuestion": null,
-  "providerId": "provider_gemini",
-  "model": "gemini-2.5-flash",
-  "promptVersion": "m13.source_grounded.v1",
-  "status": "queued",
-  "errorCode": null,
-  "error": null,
-  "createdAt": "2026-06-03T10:00:00Z",
-  "startedAt": null,
-  "finishedAt": null,
-  "result": null
-}
-```
-
-Rules:
-
-- **Retired outright** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md), migration `0102`): no new feed-item analysis is produced in-app (intelligence arrives through the MCP port, BYOA), the `ai_analysis_*` tables are dropped, and `list_ai_analysis` no longer exists as a command.
+In-app feed-item AI analysis is removed; the `ai_analysis_results` and `ai_analysis_jobs` tables were dropped by migration `0102` (no readable history survives). No new feed-item analysis is produced in-app — intelligence arrives through the MCP port (BYOA) — and `list_ai_analysis` no longer exists as a command.
 
 ## Video Transcript Job
 
@@ -2137,35 +2081,7 @@ Rules:
 - Completing a reminder does not mark a company or watchlist reviewed by default.
 - Deleting a reminder must not delete the linked claim, event, question, note, feed item, or digest.
 
-Initial research digest job shape mirrors AI brief jobs but uses digest-specific versions:
-
-```json
-{
-  "id": "research_digest_job_01",
-  "scopeType": "watchlist",
-  "scopeId": "watchlist_main_gpw",
-  "providerId": "provider_gemini",
-  "model": "gemini-2.5-flash",
-  "promptVersion": "m31.research_digest.v1",
-  "evidenceCollectorVersion": "m31.digest_collector.v1",
-  "rendererVersion": "m31.digest_renderer.v1",
-  "status": "queued",
-  "errorCode": null,
-  "error": null,
-  "createdAt": "2026-06-12T08:00:00Z",
-  "startedAt": null,
-  "finishedAt": null,
-  "digest": null
-}
-```
-
-Research digest rules:
-
-- Initial digest scopes are `company` and `watchlist`.
-- Digest generation is explicit and on-demand.
-- Digest input collection is backend-owned and combines open reminders with changed research evidence.
-- Digest output is an immutable research-owned snapshot with citations.
-- Digest output must cite typed evidence and must not include buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.
+AI research digests are retired the same as AI research briefs (above): the `ai_research_digest_jobs`/`ai_research_digests`/`ai_research_digest_citations` tables were dropped by migration `0102` (no readable history survives). Their replacement is an MCP-connected agent working over research evidence (BYOA).
 
 Initial relation types:
 
@@ -2511,8 +2427,8 @@ Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamen
   - Cell `facts` (`CoverageFactsCell`) — `{ total, validated, unvalidated, flagged }` over the period's `financial_facts` joined to `financial_fact_provenance`: `validated` = provenance `passed`/`witness_confirmed`, `flagged` = provenance `flagged`, `unvalidated` = everything else (no provenance row, `unreviewed`, `none`). `total = validated + unvalidated + flagged`.
   - Cell `review` (`CoverageReviewCell`) — `{ flaggedFacts }`: mirrors `facts.flagged` — flagged deterministic facts are the only review surface ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5 removed the proposals input with the KPI staging ledger).
   - Field `skippedBudget` (`boolean`) — `true` when the period's canonical report's `trigger='history_sweep'` autopilot run recorded `reason: "skipped_budget"` on its `kpiDeltaJson` (a budget-denied tier-4, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §6). Run ids are per-`(company, document)` deterministic, so there is at most one run per document; a later successful extraction clears the flag two ways (facts appear → non-gap; the run's delta is overwritten). Tolerant: an absent/garbled delta, or any other `reason`, reads `false`.
-  - **Period-union rule**: a period appears iff at least one of {a canonical report, ≥1 fact, ≥1 pending proposal} names it; rows are sorted newest-first (DESC by `fiscalYear`, then period index `Q1<H1<Q3<FY`).
-  - **UI entry point**: the **Coverage panel** (`src/shared/components/CompanyCoveragePanel.tsx`, T2.2) — a company-scoped cockpit pane (kind `coverage`, label "Coverage") seeded into the curated company dashboard. It renders one table row per period (Period / Report / Data / To review); clicking a row opens the company's Report documents pane. Fetched via the `getFundamentalsCoverage(companyId)` wrapper (`src/api/fundamentalsCoverage.ts`), reloading on `companyId` change. Its **history-actions footer** (T3.2) drives "Backfill history" and "Extract missing periods" (below); the footer's status line also echoes the latest sweep's **AI-call spend** (T5.3 — "AI: {used}/{limit}", or "AI: {used} (no limit)" when the budget is `0`).
+  - **Period-union rule**: a period appears iff at least one of {a canonical report, ≥1 fact} names it — there is no proposal queue ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5); rows are sorted newest-first (DESC by `fiscalYear`, then period index `Q1<H1<Q3<FY`).
+  - **UI entry point**: the **Coverage panel** (`src/shared/components/CompanyCoveragePanel.tsx`, T2.2) — a company-scoped cockpit pane (kind `coverage`, label "Coverage") seeded into the curated company dashboard. It renders one table row per period (Period / Report / Data / To review); clicking a row opens the company's Report documents pane. Fetched via the `getFundamentalsCoverage(companyId)` wrapper (`src/api/fundamentalsCoverage.ts`), reloading on `companyId` change. Its **history-actions footer** (T3.2) drives "Backfill history" and "Extract missing periods" (below), with a lean status line and a live drain counter while a sweep runs — the sweep is fully deterministic, so there is no AI-call spend to report ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 
 #### History Sweep (`v0.51.0`, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §3)
 
@@ -2548,25 +2464,13 @@ Frameworks, criteria, and any `user`-scope `kpi_definitions` a criterion referen
 
 ### Qualitative Assessment
 
-Status: implemented (v0.50.0, ADR 0075) — pending T7 real-company validation
+Status: retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5)
 
-(Commands + UI shipped in v0.50 T5, validated so far only against sample/mock data. Real-company validation and milestone closure are reserved for T7 per the [v0.50 plan](plans/v0.50-quality-frameworks-qualitative.md). This section is NOT tagged `Status: planned`: the docs-drift gate reads "planned" as "not yet in code" and fails when a planned section's commands already exist — these do.)
+A quality framework may hold **qualitative** criteria (moat, pricing power, recurring revenue, capital-allocation quality…) that cannot be reduced to a metric comparison ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), `v0.50.0`). A qualitative criterion is authored in-app like any other criterion: it carries `kind: "qualitative"` and an owner-authored `assessmentGuidance` prompt seed instead of a DSL expression (`create_framework_criterion` / `update_framework_criterion` accept optional `kind` and `assessmentGuidance`; `expression` stays empty for qualitative rows).
 
-Qualitative assessment ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), `v0.50.0`) extends quality frameworks with **agent-assessed** criteria (moat, pricing power, recurring revenue, capital-allocation quality…) that cannot be reduced to a metric comparison. A qualitative criterion carries `kind: "qualitative"` and an owner-authored `assessmentGuidance` prompt seed instead of a DSL expression; the existing criterion writes (`create_framework_criterion` / `update_framework_criterion`) gain optional `kind` and `assessmentGuidance` fields for this (empty `expression` for qualitative rows). Assessment is one AI request **per criterion per company** (the `qualitative_assessment` capability, ADR 0060), grounded only in app-held evidence — report documents, research evidence links, claims + verdicts, recent signals, notebook notes; **no web access**. Each result is agent opinion (not a fact): `verdict` (`pass | partial | fail | insufficient_evidence`), short `reasoning`, `citations` (typed evidence refs reusing the research-evidence citation model — `evidenceType`, `evidenceId`, `label`, `snippet`), `confidence` (`low | medium | high`), `promptVersion`, and `source: "agent"`. Results are labeled, regeneratable, and never mutate quantitative data; stored `reasoning` must contain no buy/sell/hold or allocation language. Agent results merge into the same immutable evaluation snapshot as quantitative results (per-criterion `source`); verdict changes vs the previous snapshot surface in digests and on autopilot re-evaluation.
+The in-app AI assessment run — the durable `qualitative_assessment` job, the per-criterion AI request, and its current-state read — is **removed entirely** (migration `0102`, clean cut). Verdicts now arrive via `set_qualitative_verdicts`, an MCP write tool with mandatory provenance (`v0.60.0`, BYOA): the user's own agent supplies `verdict` (`pass | partial | fail | insufficient_evidence`), short `reasoning`, `citations` (typed evidence refs — `evidenceType`, `evidenceId`, `label`, `snippet`), and `confidence` (`low | medium | high`) for one criterion+company, and the write stamps `source: "agent"`. Citations are rejected when they do not reference an evidence id supplied to the request: uncited reasoning is never stored. Agent results are opinion, never facts — they never mutate quantitative data, and merge into the same immutable evaluation snapshot as quantitative results (per-criterion `source`); `criterion_results` otherwise keeps only its deterministic `source='engine'` DSL rows, which the cut does not touch.
 
-Two read surfaces with a fixed boundary (a snapshot may be quant-only, qual-only, or combined, so "the latest snapshot" is **not** a reliable source of qualitative rows):
-
-- `get_framework_evaluation` / `list_framework_evaluations` return the qualitative fields **as snapshotted in that specific run** — the audit/history view of one evaluation, unchanged and immutable.
-Qualitative assessment is **removed entirely** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)
-decision 5, clean cut): the run/re-run generation commands, the durable
-assessment job, and the current-state read are all gone. Criterion
-verdicts are manual now — `criterion_results` keeps only its deterministic
-`source='engine'` DSL rows, which the cut does not touch — and agent-written
-verdicts return via MCP write-tools with mandatory provenance (`v0.60.0`).
-
-Citations are rejected when they do not reference an evidence id supplied to the request (the research-brief `rejects_unknown_citation_keys` precedent): uncited reasoning is never stored.
-
-**Output language** (owner decision 2026-07-07): AI prose output follows the persisted app `locale` — the qualitative-assessment prompt instructs the model to write `reasoning` and citation `label` in Polish/English accordingly (prompt version `qualitative-assessment.v2`), while citation `snippet` stays **verbatim in the evidence's original language** (attribution durability — a quote must remain exact). Unknown locale codes degrade to English. Existing stored assessments keep the language they were generated in; only new runs follow the setting. The same rule now applies to every prose-producing prompt: feed analysis (`m13.source_grounded.v2` — `summary`/`reasoning`/`tags`/source-reference labels), research brief (`m30.research_brief.v2`), and research digest (`m31.research_digest.v2` — title/summary/section headings & bodies/citation labels; citation `snippet` stays verbatim). Each job reads the persisted `locale` and passes it as the request's `output_language`. **Structured-extraction prompts (KPI extraction, management-claim extraction) deliberately carry NO app-locale instruction**: their output is data traced to the source (verbatim `sourceSnippet` + a source-language `language` field), and the claim `statement` is a neutral paraphrase kept in the source language so a claim stays faithful and traceable to its report — the prose layers (brief/digest/assessment) render in the app locale on top of them.
+`get_framework_evaluation` / `list_framework_evaluations` return the qualitative fields **as snapshotted in that specific run** — the audit/history view of one evaluation, unchanged and immutable (a snapshot may be quant-only, qual-only, or combined, so "the latest snapshot" alone is not a reliable source of qualitative rows).
 
 ### AI KPI Extraction — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
@@ -2577,7 +2481,7 @@ AI-generated KPI extraction is removed entirely (decision 5): generation, the st
 The report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md)) is: ESPI/EBI attachment (primary), per-company IR reports page (fallback), manual PDF URL paste (last resort).
 
 - `get_company_ir_reports_url(companyId)` / `set_company_ir_reports_url(companyId, url)`: read/write the durable per-company IR reports page URL (empty clears it).
-- `resolve_ir_report(input)`: fetches the company's IR page, extracts candidate links generically (no per-company scrapers), and has the AI pick the report matching the event context (`companyId`, optional `periodHint`/`reportType`/`publishedAt`). A confident pick is captured into `report_documents` and returned as `document`; otherwise `document` is null and `candidates` is returned for the user to choose. Event-driven automatic resolution is deferred to v0.49.0.
+- `resolve_ir_report(input)`: fetches the company's IR page and extracts candidate links generically (no per-company scrapers), ranked most-report-like first. **Candidates-only** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 1 retired the AI pick and its confidence-gated auto-capture): the command returns `{ candidates }` and never writes to `report_documents` itself — choosing from the ranked list is the user's (or their MCP agent's) call.
 
 ## UI-Facing Command Boundaries
 

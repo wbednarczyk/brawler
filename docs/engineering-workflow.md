@@ -140,7 +140,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **Bench audit** when a hot kernel changed — dispatch `bench-audit.yml` (advisory; local `make audit-bench` self-compares).
 
 ### §K — Honest handover report — always
-- [ ] **A "gate green" claim requires the gate's own evidence.** Full gate: the PR's required checks green **for the exact head SHA** (`gh pr checks`) — never a local run. Local `check-local`: grep the echoed `EXIT=`/`${PIPESTATUS[0]}` line from the saved output; a wrapper/task-notification exit code is **never** evidence (it reflects the last shell command, not `make`). A failed step also **aborts the steps after it** — a partially-green log proves nothing about suites that never ran (two S6 gate runs were mis-reported green this way).
+- [ ] **A "gate green" claim requires the gate's own evidence.** Full gate: the PR's required checks green **for the exact head SHA** (`gh pr checks`) — never a local run. Local `check-local`: the recipe's own final `CHECK_LOCAL_EXIT=0` line in the saved output (emitted only when every stage passed); a wrapper/task-notification exit code is **never** evidence (it reflects the last shell command, not `make`). A failed step also **aborts the steps after it** — a partially-green log proves nothing about suites that never ran (two S6 gate runs were mis-reported green this way).
 - [ ] The handoff states **what was validated and how** (Nix vs host, which suites ran) and **what was NOT run or verified** ("not run on real Windows", "eval not run against the real model", "browser smoke has a pre-existing unrelated failure, filed as X"). No victory lap; surface still-open items rather than implying completeness.
 
 ## Agent Day-To-Day Check Loop

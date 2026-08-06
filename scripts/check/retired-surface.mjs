@@ -51,8 +51,10 @@ function listMarkdown(root, dir, out) {
   return out;
 }
 
-// Word-ish boundary: the token must not be embedded in a larger identifier.
-const boundary = (ch) => ch === undefined || !/[A-Za-z0-9_]/.test(ch);
+// Identifier boundary: the token must not be embedded in a larger identifier.
+// `-` counts as an identifier character so `check-epic` never matches inside a
+// legitimately distinct hyphenated name like `check-epic-v2`.
+const boundary = (ch) => ch === undefined || !/[A-Za-z0-9_-]/.test(ch);
 
 export function findHits(content, token) {
   const hits = [];
@@ -61,7 +63,7 @@ export function findHits(content, token) {
     let idx = lines[i].indexOf(token);
     while (idx !== -1) {
       if (boundary(lines[i][idx - 1]) && boundary(lines[i][idx + token.length])) {
-        hits.push(i + 1);
+        hits.push({ line: i + 1, text: lines[i] });
         break;
       }
       idx = lines[i].indexOf(token, idx + 1);
@@ -69,6 +71,13 @@ export function findHits(content, token) {
   }
   return hits;
 }
+
+// A line in an `allow`-listed file passes ONLY when it is pointer-shaped —
+// it visibly talks about the retirement rather than specifying live behavior.
+// A whole-file exemption is `allowFile` (reserved for docs whose subject IS
+// the retired surface, e.g. a stored-state auditor's methodology).
+const POINTER_RE = /retir|dropp|remov|supersed|legacy|historic|delet|renam|no longer/i;
+export const isPointerLine = (text) => POINTER_RE.test(text);
 
 export function scan(root, manifest) {
   const files = [];
@@ -78,9 +87,11 @@ export function scan(root, manifest) {
   for (const rel of files) {
     const content = readFileSync(join(root, rel), "utf8");
     for (const entry of manifest.retired) {
-      if ((entry.allow ?? []).includes(rel)) continue;
-      for (const line of findHits(content, entry.token)) {
-        violations.push({ file: rel, line, token: entry.token, adr: entry.adr });
+      if ((entry.allowFile ?? []).includes(rel)) continue;
+      const pointerOk = (entry.allow ?? []).includes(rel);
+      for (const hit of findHits(content, entry.token)) {
+        if (pointerOk && isPointerLine(hit.text)) continue;
+        violations.push({ file: rel, line: hit.line, token: entry.token, adr: entry.adr });
       }
     }
   }
@@ -109,8 +120,9 @@ function main() {
       console.error(`  ${v.file}:${v.line} mentions \`${v.token}\` (retired — ${v.adr}).`);
     }
     console.error(
-      `  A live doc must describe the present. If this is a deliberate one-line retirement pointer,\n` +
-        `  add the file to that token's \`allow\` list in docs/retired-surface.json — in the same reviewed change.`,
+      `  A live doc must describe the present. A deliberate retirement pointer needs BOTH the file in\n` +
+        `  that token's \`allow\` list (docs/retired-surface.json) AND retirement wording on the line itself;\n` +
+        `  \`allowFile\` (whole-file) is reserved for docs whose subject IS the retired surface.`,
     );
     process.exit(1);
   }

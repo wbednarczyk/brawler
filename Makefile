@@ -255,6 +255,7 @@ check-docs:
 check-local:
 	@node scripts/check/disk-guard.mjs
 	$(NIX) npm run check:parallel
+	@printf 'CHECK_LOCAL_EXIT=0\n'
 
 # Disk hygiene (guardrail 2026-07-11: a full host drive killed a session
 # mid-work; disk-guard above fails the gate before that point). `disk-clean` is

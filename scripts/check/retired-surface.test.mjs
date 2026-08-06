@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { findHits, isScanned, scan } from "./retired-surface.mjs";
+import { findHits, isPointerLine, isScanned, scan } from "./retired-surface.mjs";
 
 function makeTree(files) {
   const root = mkdtempSync(join(tmpdir(), "retired-surface-"));
@@ -62,25 +62,54 @@ test("plans README is live and scanned; wiki is scanned", () => {
   }
 });
 
-test("allow list exempts exactly the listed file", () => {
+test("allow permits only pointer-shaped lines in the listed file", () => {
   const root = makeTree({
-    "docs/testing.md": "the now-retired old_cmd taught us a lesson\n",
-    "docs/contracts.md": "old_cmd is available\n",
+    "docs/testing.md":
+      "the now-retired old_cmd taught us a lesson\nbut old_cmd is still how you run it\n",
+    "docs/contracts.md": "old_cmd was removed (ADR X)\n",
   });
   try {
     const v = scan(root, {
       retired: [{ token: "old_cmd", adr: "A", allow: ["docs/testing.md"] }],
     });
-    assert.deepEqual(v.map((x) => x.file), ["docs/contracts.md"]);
+    // testing.md line 1 is pointer-shaped (allowed); line 2 specifies live
+    // behavior (violation). contracts.md is not allow-listed at all — even its
+    // pointer-shaped line reddens until the allowance is reviewed in.
+    assert.deepEqual(
+      v.map((x) => `${x.file}:${x.line}`).sort(),
+      ["docs/contracts.md:1", "docs/testing.md:2"],
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("token boundaries: embedded identifiers do not match", () => {
+test("allowFile exempts the whole file regardless of line shape", () => {
+  const root = makeTree({
+    "docs/testing.md": "old_cmd corpus rows: 17 old_cmd documents\n",
+  });
+  try {
+    const v = scan(root, {
+      retired: [{ token: "old_cmd", adr: "A", allowFile: ["docs/testing.md"] }],
+    });
+    assert.equal(v.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("token boundaries: embedded and hyphen-extended identifiers do not match", () => {
   assert.deepEqual(findHits("bold_cmdX and old_cmd2 here", "old_cmd"), []);
-  assert.deepEqual(findHits("`old_cmd` in backticks", "old_cmd"), [1]);
-  assert.deepEqual(findHits("path/old_cmd.rs mention", "old_cmd"), [1]);
+  assert.deepEqual(findHits("`old_cmd` in backticks", "old_cmd").map((h) => h.line), [1]);
+  assert.deepEqual(findHits("path/old_cmd.rs mention", "old_cmd").map((h) => h.line), [1]);
+  assert.deepEqual(findHits("use check-epic-v2 here", "check-epic"), []);
+  assert.deepEqual(findHits("run make check-epic now", "check-epic").map((h) => h.line), [1]);
+});
+
+test("isPointerLine recognizes retirement wording and rejects live prose", () => {
+  assert.equal(isPointerLine("`old_cmd` was dropped by migration 0102"), true);
+  assert.equal(isPointerLine("renamed from `mutants.yml`"), true);
+  assert.equal(isPointerLine("call `old_cmd` to refresh the panel"), false);
 });
 
 test("isScanned covers only live markdown under docs/ and wiki/", () => {

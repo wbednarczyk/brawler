@@ -77,7 +77,7 @@ Product and policy:
 - Prefer official/public/RSS sources; no fragile/restricted scraping without a source ADR.
 - AI output is decision support only — never phrase analysis as buy/sell/hold advice.
 - Secrets use the OS keychain in runtime code; `.env` is dev/tests only. Strict Tauri permissions: typed commands only, no arbitrary shell, no broad FS access.
-- GitHub is the canonical forge (code, issues, board, CI, releases); Radicle is a code mirror only (`make sync-rad`, no process role). `gh issue`/`gh pr create` may run unattended; **merges, `release:*` labelling, and repo-setting mutations may not.** `rad init` stays `--private` unless an approved publication task. Label conventions: [docs/kanban.md](docs/kanban.md).
+- GitHub is the canonical forge (code, issues, board, CI, releases); Radicle is a code mirror only (`make sync-rad`, no process role). `gh issue`/`gh pr create` (incl. setting the proposed `release:*` label at creation) may run unattended; **merges, final `release:*` calls, and repo-setting mutations may not.** `rad init` stays `--private` unless an approved publication task. Label conventions: [docs/kanban.md](docs/kanban.md).
 - The private sibling `../brawler-private` (when present) is readable for owner context; never copy its content into this public repo unless asked.
 - Local build/test commands are primary; CI runs the same `make` targets, conservative (standard runners, no macOS, no scheduled workflows). Nix from the first scaffold; no secrets in Nix files/`.envrc`.
 - Agents may always drive the owner's real Windows app live from WSL: `make live-cycle` ([testing.md](docs/testing.md) § Live drive). A WSL Tauri build is a Linux app — never desktop evidence.

@@ -381,7 +381,9 @@ function firstNonEmptyLines(text, n) {
 
 function truncateStatus(statusLine) {
   // "Status: <text>" -> "<text>", truncated at the first sentence/em-dash, max ~80 chars.
-  let text = statusLine.replace(/^Status:\s*/, "");
+  // Markdown links are flattened to their text FIRST — a blind slice can cut a
+  // link mid-destination and render the whole INDEX row broken.
+  let text = statusLine.replace(/^Status:\s*/, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
   const cutRe = /(\. |\.$| — |—)/;
   const cm = cutRe.exec(text);
   if (cm && cm.index > 0) text = text.slice(0, cm.index);
