@@ -383,16 +383,16 @@ describe("RangeBarChart (football field)", () => {
 });
 
 describe("Toast gallery entry", () => {
-  it("renders both the transient (status) and persistent (alert) variants", () => {
+  it("renders the transient action-feedback queue and no alert region (ADR 0097)", () => {
     render(<PrimitiveGallery />);
     expect(screen.getByText("Sources refreshed")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Sources refreshed");
-
-    const persistent = screen
-      .getAllByRole("alert")
-      .find((node) => node.textContent?.includes("Profit warning"));
-    expect(persistent).toBeDefined();
-    expect(screen.getByRole("button", { name: "View evidence" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    const statuses = screen.getAllByRole("status");
+    expect(statuses.some((node) => node.textContent?.includes("Sources refreshed"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+    // The persistent (role=alert) toast variant is retired — no toast may be an
+    // alert region (ErrorText elsewhere in the gallery legitimately uses one).
+    const viewport = document.querySelector(".ui-toast-viewport");
+    expect(viewport).not.toBeNull();
+    expect(viewport?.querySelector('[role="alert"]')).toBeNull();
   });
 });

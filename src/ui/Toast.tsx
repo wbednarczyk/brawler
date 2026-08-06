@@ -9,35 +9,19 @@ import {
   type ReactNode,
 } from "react";
 
-import { ClearButton } from "./ClearButton";
-
-// Feedback policy (ADR 0076 Decision 5, extended by ADR 0068 Decision 1). The
-// Toast surface backs the undo-vs-confirm contract: a reversible destroy runs
-// immediately and offers a `Cofnij` action here instead of a blocking native
-// dialog. Bottom-left queue, auto-dismiss after 6s (paused while hovered), at
-// most 3 stacked transient toasts, each toast a `role="status"` live region.
-// Strings arrive already translated — the primitive is locale-agnostic so it
-// can mount above LocaleContext.
-//
-// ADR 0068 adds a `persistent` variant for attention events (fired alerts,
-// signals worth a look): no auto-dismiss, an explicit dismiss control, and an
-// optional click-through action to jump to the evidence. Persistent toasts
-// use `role="alert"` (assertive) instead of `role="status"` (polite) — they
-// represent something the user is meant to act on, not ambient async
-// feedback, so they should interrupt an in-progress screen-reader announcement
-// rather than wait politely. `dismissLabel` defaults to the English literal
-// "Dismiss" like other primitive defaults (see `InlineConfirm`'s
-// `cancelLabel`); callers pass a translated `text("Dismiss")` for the real UI.
+// Feedback policy (ADR 0076 Decision 5, narrowed by ADR 0097): a toast is
+// TRANSIENT feedback for a direct user action — the undo-vs-confirm contract
+// (a reversible destroy runs immediately and offers `Cofnij` here instead of a
+// blocking native dialog), an import applied, a refresh finished. Bottom-left
+// queue, auto-dismiss after 6s (paused while hovered), at most 3 stacked
+// toasts, each a `role="status"` live region. Ambient/system attention NEVER
+// renders here — it lives in the Today stream + the sidebar badge (ADR 0097);
+// the production consumer allowlist in `toastConsumers.test.ts` guards the
+// class. Strings arrive already translated — the primitive is locale-agnostic
+// so it can mount above LocaleContext.
 
 const AUTO_DISMISS_MS = 6000;
 const MAX_STACK = 3;
-// Persistent (attention-event) toasts are exempt from MAX_STACK, but an
-// unbounded queue overlaps other chrome (bug: the bottom-left viewport grew to
-// 19 stacked toasts, covering the sidebar nav). PERSISTENT_VISIBLE_CAP bounds
-// how many render as full toasts; anything beyond that collapses into one
-// "+N more" summary row (see ToastViewport). Keeps the newest N — the most
-// recently fired attention events are the most likely to still be actionable.
-const PERSISTENT_VISIBLE_CAP = 3;
 
 export type ToastTone = "neutral" | "positive" | "caution" | "negative";
 
@@ -48,23 +32,6 @@ export type ToastInput = {
   onAction?: () => void;
   /** Override the auto-dismiss window (ms). Defaults to 6000. */
   durationMs?: number;
-  /**
-   * Attention-event variant (ADR 0068): no auto-dismiss, an explicit dismiss
-   * button, `role="alert"` instead of `role="status"`, and exempt from
-   * MAX_STACK eviction by transient toast churn.
-   */
-  persistent?: boolean;
-  /** Accessible label + visible title for the persistent dismiss button. Defaults to "Dismiss". */
-  dismissLabel?: string;
-  /**
-   * Fired when the toast is dismissed via its own explicit dismiss control
-   * (ADR 0068 T4) — lets a persistent attention toast sync the dismissal back
-   * to its domain store (e.g. `dismissAttentionEvent`). Not called on
-   * `onAction` click-through (that path already leaves the evidence handler
-   * to decide what "resolved" means) or on auto-dismiss (transient toasts
-   * only, which carry no domain state to sync).
-   */
-  onDismiss?: () => void;
 };
 
 type ToastRecord = ToastInput & { id: string };
@@ -88,29 +55,9 @@ let toastCounter = 0;
 
 export type ToastProviderProps = {
   children: ReactNode;
-  /**
-   * Invoked when the persistent-overflow summary row ("+N more") is clicked
-   * or activated via keyboard. Omit to keep the primitive's default of no
-   * summary row at all (existing `<ToastProvider>` call sites — tests, the
-   * gallery — that don't pass it keep compiling and behaving as before,
-   * except that persistent toasts beyond PERSISTENT_VISIBLE_CAP are still
-   * silently capped rather than piling up unbounded).
-   */
-  onPersistentOverflowClick?: () => void;
-  /**
-   * Formats the summary row's label from the hidden persistent-toast count.
-   * The primitive stays locale-agnostic (see file header) — callers pass a
-   * translated formatter (e.g. built from `text("more")`). Defaults to the
-   * English literal "+{n} more", matching the `dismissLabel` convention.
-   */
-  persistentOverflowLabel?: (hiddenCount: number) => string;
 };
 
-export function ToastProvider({
-  children,
-  onPersistentOverflowClick,
-  persistentOverflowLabel,
-}: ToastProviderProps) {
+export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
 
   const dismiss = useCallback((id: string) => {
@@ -119,23 +66,8 @@ export function ToastProvider({
 
   const show = useCallback((toast: ToastInput) => {
     const id = `toast-${(toastCounter += 1)}`;
-    setToasts((current) => {
-      const next = [...current, { ...toast, id }];
-      // MAX_STACK caps the TRANSIENT queue only (newest last, oldest
-      // dropped). Persistent toasts (ADR 0068 attention events) are exempt:
-      // they represent something the user must still act on, so a burst of
-      // transient async feedback must never silently evict them. Filter
-      // `next` (not the two sublists concatenated) to preserve original
-      // insertion order in the rendered stack.
-      const persistentIds = new Set(next.filter((t) => t.persistent).map((t) => t.id));
-      const keptTransientIds = new Set(
-        next
-          .filter((t) => !t.persistent)
-          .slice(-MAX_STACK)
-          .map((t) => t.id),
-      );
-      return next.filter((t) => persistentIds.has(t.id) || keptTransientIds.has(t.id));
-    });
+    // MAX_STACK caps the queue: newest last, oldest dropped.
+    setToasts((current) => [...current, { ...toast, id }].slice(-MAX_STACK));
     return id;
   }, []);
 
@@ -144,62 +76,27 @@ export function ToastProvider({
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <ToastViewport
-        toasts={toasts}
-        onDismiss={dismiss}
-        onPersistentOverflowClick={onPersistentOverflowClick}
-        persistentOverflowLabel={persistentOverflowLabel}
-      />
+      <ToastViewport toasts={toasts} onDismiss={dismiss} />
     </ToastContext.Provider>
   );
-}
-
-function defaultPersistentOverflowLabel(hiddenCount: number): string {
-  return `+${hiddenCount} more`;
 }
 
 function ToastViewport({
   toasts,
   onDismiss,
-  onPersistentOverflowClick,
-  persistentOverflowLabel,
 }: {
   toasts: ToastRecord[];
   onDismiss: (id: string) => void;
-  onPersistentOverflowClick?: () => void;
-  persistentOverflowLabel?: (hiddenCount: number) => string;
 }) {
   if (toasts.length === 0) {
     return null;
   }
 
-  // Cap VISIBLE persistent toasts at PERSISTENT_VISIBLE_CAP regardless of
-  // whether a summary row can be shown (see ToastProviderProps doc): drop the
-  // OLDEST persistent toasts beyond the cap, keeping the most recent ones plus
-  // every transient toast (already capped independently by MAX_STACK in
-  // `show`). Filtering `toasts` (not rebuilding from sublists) preserves the
-  // original insertion order.
-  const persistentToasts = toasts.filter((toast) => toast.persistent);
-  const hiddenCount = Math.max(0, persistentToasts.length - PERSISTENT_VISIBLE_CAP);
-  const hiddenIds = new Set(persistentToasts.slice(0, hiddenCount).map((toast) => toast.id));
-  const visibleToasts = toasts.filter((toast) => !hiddenIds.has(toast.id));
-
   return (
     <ol className="ui-toast-viewport">
-      {visibleToasts.map((toast) => (
+      {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}
-      {hiddenCount > 0 && onPersistentOverflowClick ? (
-        <li className="ui-toast ui-toast-overflow">
-          <button
-            type="button"
-            className="ui-toast-overflow-button"
-            onClick={onPersistentOverflowClick}
-          >
-            {(persistentOverflowLabel ?? defaultPersistentOverflowLabel)(hiddenCount)}
-          </button>
-        </li>
-      ) : null}
     </ol>
   );
 }
@@ -218,18 +115,15 @@ function ToastItem({
   const duration = toast.durationMs ?? AUTO_DISMISS_MS;
 
   useEffect(() => {
-    // Persistent toasts (ADR 0068) never auto-dismiss — only the explicit
-    // dismiss button or the click-through action removes them.
-    if (paused || toast.persistent) {
+    if (paused) {
       return;
     }
     const timer = window.setTimeout(() => onDismissRef.current(toast.id), duration);
     return () => window.clearTimeout(timer);
     // Re-arm the timer whenever hover state flips (leave restarts the window).
-  }, [toast.id, duration, paused, toast.persistent]);
+  }, [toast.id, duration, paused]);
 
   const toneClass = toast.tone && toast.tone !== "neutral" ? ` ui-toast-${toast.tone}` : "";
-  const persistentClass = toast.persistent ? " ui-toast-persistent" : "";
 
   function handleAction() {
     toast.onAction?.();
@@ -238,34 +132,22 @@ function ToastItem({
 
   return (
     <li
-      className={`ui-toast${toneClass}${persistentClass}`}
+      className={`ui-toast${toneClass}`}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {/* `role="alert"` is not an ARIA-in-HTML-allowed role on `<li>` (axe
+      {/* `role="status"` is not an ARIA-in-HTML-allowed role on `<li>` (axe
           `aria-allowed-role`/`list`), so the live-region role sits on this
           inner wrapper instead of the list item. `ui-toast-live` is
           `display: contents` so it stays visually transparent — the li keeps
-          doing the actual flex layout of the message/action/dismiss row.
-          Persistent attention toasts (ADR 0068) are assertive (role="alert"):
-          they represent something the user must act on, so they interrupt
-          rather than politely queue behind other announcements. Transient
-          toasts stay role="status" (polite ambient feedback). */}
-      <div className="ui-toast-live" role={toast.persistent ? "alert" : "status"}>
+          doing the actual flex layout of the message/action row. Polite by
+          design: a toast is ambient feedback for the user's own action. */}
+      <div className="ui-toast-live" role="status">
         <span className="ui-toast-message">{toast.message}</span>
         {toast.actionLabel ? (
           <button className="ui-toast-action" type="button" onClick={handleAction}>
             {toast.actionLabel}
           </button>
-        ) : null}
-        {toast.persistent ? (
-          <ClearButton
-            label={toast.dismissLabel ?? "Dismiss"}
-            onClick={() => {
-              toast.onDismiss?.();
-              onDismissRef.current(toast.id);
-            }}
-          />
         ) : null}
       </div>
     </li>

@@ -1417,6 +1417,17 @@ function buildHandlers(): Record<string, Handler> {
       d.attentionEvents = next;
       return undefined;
     },
+    // Batch "was on screen" marking (ADR 0097 dec. 5): flags exactly the given
+    // ids; unknown ids are ignored, an empty batch is a no-op — the backend's
+    // single UPDATE ... WHERE id IN (...) semantics.
+    mark_attention_events_seen: (d, a) => {
+      const raw = unwrap(a).ids;
+      const ids = new Set(Array.isArray(raw) ? raw.map((value) => String(value)) : []);
+      d.attentionEvents = d.attentionEvents.map((e) =>
+        ids.has(e.id) ? { ...e, seen: true } : e,
+      );
+      return undefined;
+    },
     dismiss_attention_event: (d, a) => {
       const id = str(unwrap(a).id);
       const { next } = mapReplace(
@@ -1477,6 +1488,7 @@ function buildHandlers(): Record<string, Handler> {
           // run's status, so the event states WHAT the autopilot finished.
           evidenceTitle: firedRun?.reportDocumentTitle ?? null,
           evidenceDetail: firedRun?.status ?? null,
+          witnessUrl: null,
         };
         d.attentionEvents = [...d.attentionEvents, event];
         firstEvent ??= event;
@@ -1517,6 +1529,7 @@ function buildHandlers(): Record<string, Handler> {
         severity: "notable",
         evidenceTitle: subject ?? error,
         evidenceDetail: kind,
+        witnessUrl: null,
       };
       d.attentionEvents = [...d.attentionEvents, event];
       return event;

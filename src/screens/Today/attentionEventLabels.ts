@@ -100,12 +100,14 @@ export function attentionEventTitleText(
     case "price_week52_low":
       return text("52-week low");
     case "source_reconciliation":
-      // The missed report + the registry that caught it (owner: "jaki dokładniej
+      // The missed report + the witness that caught it (owner: "jaki dokładniej
       // raport? które to źródło główne?"). The primary channel missed it; the
-      // GPW ESPI/EBI witness (`evidenceDetail`) backfilled it from the registry.
+      // GPW ESPI/EBI witness (`evidenceDetail`) CAUGHT it — nothing is
+      // backfilled into the feed (ADR 0069/0097: the event's Review opens the
+      // report itself via its witness URL).
       if (event.evidenceTitle) {
         const source = event.evidenceDetail ?? text("the official registry");
-        return text("{title} — missed by the primary source, backfilled from {source}")
+        return text("{title} — missed by the primary source, caught by {source}")
           .replace("{title}", event.evidenceTitle)
           .replace("{source}", source);
       }

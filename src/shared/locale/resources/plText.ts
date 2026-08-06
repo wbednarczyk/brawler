@@ -146,10 +146,6 @@ export const plText: Record<string, string> = {
   "Expand": "Rozwiń",
   "Generate": "Wygeneruj",
   "Show all upcoming reports": "Pokaż wszystkie nadchodzące raporty",
-  // Persistent-toast overflow summary (bug: unbounded attention toasts
-  // covered the sidebar nav) — "+{n} " is composed outside text(), matching
-  // the codebase's other count-prefixed strings.
-  "more": "więcej",
   // Morning briefing Today card (ADR 0068 decision 4, v0.54 §T5)
   "Morning briefing": "Poranny przegląd",
   "Generate briefing": "Wygeneruj przegląd",
@@ -996,10 +992,11 @@ export const plText: Record<string, string> = {
   "Reconciliation": "Uzgadnianie",
   "Official report missed by the primary source": "Raport oficjalny pominięty przez źródło główne",
   // v0.60 D6: every Today row states WHAT concretely happened. The
-  // reconciliation statement names the missed report and the registry that
-  // caught it; the autopilot event statement carries the run status.
-  "{title} — missed by the primary source, backfilled from {source}":
-    "{title} — pominięty przez źródło główne, dociągnięty z {source}",
+  // reconciliation statement names the missed report and the witness that
+  // caught it (honest copy, ADR 0097: nothing is backfilled into the feed);
+  // the autopilot event statement carries the run status.
+  "{title} — missed by the primary source, caught by {source}":
+    "{title} — pominięty przez źródło główne, wykryty przez {source}",
   "the official registry": "oficjalnego rejestru",
   // Epic #40 S3 (ADR 0091 dec. 1) — a background task that exhausted its retries
   // states itself in the Today stream: WHICH task, and what it failed on (its

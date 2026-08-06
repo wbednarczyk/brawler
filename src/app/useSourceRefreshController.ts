@@ -18,6 +18,12 @@ type RefreshCallbacks = {
   refreshSignals: () => Promise<void>;
   refreshSourceAdapters: () => Promise<void>;
   refreshUnmatchedSourceItems: (adapterId: string) => Promise<void>;
+  /**
+   * Refetch the app-level attention state (ADR 0097 dec. 6) — a source refresh
+   * can raise attention events (reconciliation, fired alerts), so the shared
+   * post-refresh view update reloads it alongside feed/signals.
+   */
+  refreshAttention: () => void;
 };
 
 type SourceRefreshControllerInput = RefreshCallbacks & {
@@ -98,6 +104,7 @@ export function useSourceRefreshController({
   refreshSignals,
   refreshSourceAdapters,
   refreshUnmatchedSourceItems,
+  refreshAttention,
   onManualRefreshSuccess,
   scheduledSourceAdapters,
   settings,
@@ -138,6 +145,9 @@ export function useSourceRefreshController({
       refreshSourceAdapters(),
       refreshDatabaseStatus(),
       refreshUnmatchedSourceItems(adapterId),
+      // Attention events ride every ingestion (reconciliation, fired alerts) —
+      // reload the app-level state so the Today badge/stream stay current.
+      Promise.resolve(refreshAttention()),
     ]);
   }
 

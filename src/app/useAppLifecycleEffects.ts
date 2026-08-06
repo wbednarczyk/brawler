@@ -40,6 +40,13 @@ type AppLifecycleEffectsInput = {
   refreshDatabaseStatus: () => void;
   refreshFeedItems: () => void;
   refreshSignals: () => void;
+  /**
+   * Refetch the app-level attention state (ADR 0097 dec. 6) when a background
+   * scheduler refresh fired — background ingestion and job failures raise
+   * attention events the Today badge/stream must reflect without a manual
+   * refresh. Startup load is the controller's own license-gated effect.
+   */
+  refreshAttention: () => void;
   refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
   refreshLicenseStatus: () => void;
@@ -91,6 +98,7 @@ export function useAppLifecycleEffects({
   refreshDatabaseStatus,
   refreshFeedItems,
   refreshSignals,
+  refreshAttention,
   refreshGeminiCredentialStatus,
   refreshHealth,
   refreshLicenseStatus,
@@ -238,6 +246,7 @@ export function useAppLifecycleEffects({
             refreshSourceAdapters();
             refreshDatabaseStatus();
             refreshCompanyRegistryEntries();
+            refreshAttention();
           }
         })
         .catch(() => {

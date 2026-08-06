@@ -11,12 +11,20 @@ import { StreamRow, type RowDescriptor } from "./streamRowKit";
 
 /**
  * Evidence click-through for a fired attention event (ADR 0068 T4): mark it seen,
- * then jump to its evidence surface — a signal/reconciliation opens the company
- * Feed, an autopilot-run/daily-quote opens Fundamentals; an evidence company
- * outside the registry falls back to the Inbox. Shared with the briefing strip.
+ * then jump to its evidence surface — a signal opens the company Feed, a
+ * reconciliation opens the missed report itself in the system browser (ADR 0097
+ * dec. 8: the report is NEVER in the feed — witness items are not ingested, so
+ * feed navigation cannot reach it), an autopilot-run/daily-quote opens
+ * Fundamentals; an evidence company outside the registry falls back to the
+ * Inbox. Shared with the briefing strip.
  */
 export function openAttentionEvidence(event: AttentionEvent, ctx: RowContext) {
   ctx.attention.markAttentionEventSeenRow(event.id);
+  // The missed report's own URL — the only surface that actually shows it.
+  if (event.evidenceType === "source_reconciliation" && event.witnessUrl) {
+    ctx.openExternalUrl(event.witnessUrl);
+    return;
+  }
   // A system event may carry NO company at all (a workspace-wide background job
   // that failed, ADR 0091 dec. 2) — there is no company workspace to open, so it
   // resolves like an out-of-registry evidence company: the Inbox.
@@ -26,6 +34,9 @@ export function openAttentionEvidence(event: AttentionEvent, ctx: RowContext) {
     return;
   }
   switch (event.evidenceType) {
+    // `source_reconciliation` here = a legacy row without a stored URL: the
+    // company Feed is the best remaining anchor (company context, not the
+    // report itself).
     case "company_signal":
     case "source_reconciliation":
       ctx.openCompanyWorkspace(company.id, "Feed");

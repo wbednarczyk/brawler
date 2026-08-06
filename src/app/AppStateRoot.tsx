@@ -31,6 +31,7 @@ import * as eventsApi from "../api/events";
 import * as signalsApi from "../api/signals";
 import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
+import { useAttentionController } from "./useAttentionController";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
 import { useLicenseController } from "./useLicenseController";
@@ -158,19 +159,11 @@ import type { SearchMatch } from "../api/search";
 type AppStateRootProps = {
   initialLicenseStatus?: LicenseStatus | null;
   initialSection?: Section;
-  /** App.tsx bridge for the Toast primitive's persistent-overflow summary row
-   * (see App.tsx for why this is a bind-into-a-ref, not a direct prop): called
-   * whenever the translated label or the navigate-to-Today handler changes. */
-  onBindPersistentOverflow?: (config: {
-    label: (hiddenCount: number) => string;
-    onClick: () => void;
-  }) => void;
 };
 
 export function AppStateRoot({
   initialLicenseStatus = null,
   initialSection = "Today",
-  onBindPersistentOverflow,
 }: AppStateRootProps) {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
@@ -637,35 +630,10 @@ export function AppStateRoot({
     watchlistMemberships,
   });
 
-  // Memoized (not recreated every render): the persistent-overflow bridge
-  // effect below depends on `text`'s identity to know when to rebind. An
-  // unmemoized `text` is a fresh closure every render, so that effect would
-  // fire on every AppStateRoot render rather than only on a real locale
-  // change (see the bridge's own comment for why that distinction matters).
+  // Memoized so locale-keyed consumers (effects, memos) rebind only on a real
+  // locale change, not every AppStateRoot render.
   const text = useMemo(() => makeTextTranslator(locale), [locale]);
 
-  // Toast persistent-overflow summary bridge (bug fix: unbounded attention
-  // toasts covered the sidebar nav). Today has no per-list anchor to deep-link
-  // into (the attention rows share one unlabeled stream with autopilot/verify/
-  // upcoming — see TodayScreen.tsx), so the finest available target is the
-  // Today section itself. Rebinds whenever the translated label would change
-  // (i.e. whenever `locale` changes — `text` above is memoized on it).
-  //
-  // App.tsx stores the bound config in STATE, not a ref (D1 fix, v0.57 fix
-  // wave 2): a persistent-toast burst can fire — and get baked into the
-  // rendered "+N more" summary — before the locale setting has loaded, and
-  // with no further toast/dismiss afterward there is no other trigger to
-  // re-render the summary once the real locale arrives. A ref rebind alone
-  // does not re-render `ToastViewport` (it is a sibling of this tree under
-  // `ToastProvider`, not a descendant, so this component re-rendering never
-  // cascades to it) — only a state update in `App` (which owns `ToastProvider`)
-  // does. See App.tsx's `bindPersistentOverflow` for the state side.
-  useEffect(() => {
-    onBindPersistentOverflow?.({
-      label: (hiddenCount) => `+${hiddenCount} ${text("more")}`,
-      onClick: () => setActiveSection("Today"),
-    });
-  }, [text, onBindPersistentOverflow, setActiveSection]);
   // ADR 0076 D5: reversible-destroy orchestration (immediate delete + undo toast).
   const runUndoableDelete = useUndoableDelete();
   // ADR 0068 T6: transient async-success feedback on the shared Toast surface.
@@ -683,6 +651,10 @@ export function AppStateRoot({
   const shortcutBindings = settings?.shortcutBindings ?? {};
   const shortcutReferences = resolveAppShortcutReferenceItems(shortcutBindings);
   const licenseCanUseApp = licenseStatus?.canUseApp !== false;
+
+  // THE attention state (ADR 0097 dec. 6): Today's stream, the Alerts fired
+  // list, and the sidebar Today badge all consume this one controller.
+  const attention = useAttentionController(licenseCanUseApp);
 
   const {
     researchMode,
@@ -829,6 +801,7 @@ export function AppStateRoot({
     refreshEventSources,
     refreshSources,
   } = useSourceRefreshController({
+    refreshAttention: attention.refresh,
     refreshCompanyEvents,
     refreshCompanyRegistryEntries,
     refreshDatabaseStatus,
@@ -1259,6 +1232,7 @@ export function AppStateRoot({
   useAppLifecycleEffects({
     activeSection,
     companies,
+    refreshAttention: attention.refresh,
     companyEventCompanyFilter,
     companyEventDateFrom,
     companyEventDateTo,
@@ -1888,6 +1862,8 @@ export function AppStateRoot({
           shortcutBindings={shortcutBindings}
           shortcutActions={shortcutActions}
           totalUnreadFeedItems={totalUnreadFeedItems}
+          unseenAttentionCount={attention.unseenCount}
+          attentionHydrated={attention.hydrated}
           updateTheme={updateTheme}
         >
           <section
@@ -1997,11 +1973,13 @@ export function AppStateRoot({
               ) : null}
               {activeSection === "Today" ? (
                 <TodayScreen
+                  attention={attention}
                   companies={companies}
                   pinnedCompanyIds={pinnedCompanyIds}
                   recentFeedItems={feedState}
                   openCompanyWorkspace={openCompanyWorkspaceById}
                   openInbox={() => setActiveSection("Inbox")}
+                  openExternalUrl={openExternalUrl}
                   openReportSeason={() => setActiveSection("ReportSeason")}
                   sourceAdapters={sourceAdapters}
                   openSources={() => setActiveSection("Sources")}
@@ -2047,7 +2025,7 @@ export function AppStateRoot({
                   <WatchlistsScreen />
                 </WatchlistsProvider>
               ) : null}
-              {activeSection === "Alerts" ? <AlertsScreen /> : null}
+              {activeSection === "Alerts" ? <AlertsScreen attention={attention} /> : null}
               {/* The standalone Research screen is retired as a *nav destination*
               (epic c793ca1): no sidebar entry, and user-facing callers
               (openResearchEvidence, brief/digest search) redirect into the

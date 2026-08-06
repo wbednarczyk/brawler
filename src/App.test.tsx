@@ -1,12 +1,9 @@
 import { fireEvent } from "@testing-library/react";
 import { describe, it } from "vitest";
 import packageJson from "../package.json";
-import type { AttentionEvent } from "./api/attention";
 import {
   appTestState,
   expect,
-  handleAppCommand,
-  initialCompanies,
   invoke,
   renderApp,
   screen,
@@ -24,7 +21,9 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     expect(within(nav).getByText("Modes")).toBeInTheDocument();
     expect(within(nav).getByText("Library")).toBeInTheDocument();
     expect(within(nav).getByText("Utilities")).toBeInTheDocument();
-    expect(within(nav).getByRole("button", { name: "Today" })).toBeInTheDocument();
+    // /^Today/: the ambient-attention badge (ADR 0097) joins the accessible
+    // name when unseen events exist — same idiom as the Inbox unread badge.
+    expect(within(nav).getByRole("button", { name: /^Today/ })).toBeInTheDocument();
     // Compare is a live mode destination again (ADR 0089, v0.61): the
     // comparison read model + FX substrate now give the mode real content, so
     // the reserved slot under Dashboard is restored to the spine.
@@ -34,7 +33,7 @@ describe("Sidebar IA spine (ADR 0054)", () => {
   it("opens the Today mode home", async () => {
     renderApp();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Today" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Today/ }));
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
   });
 
@@ -168,6 +167,69 @@ describe("App shell", () => {
     expect(within(inboxNav).getByLabelText("1 unread feed item")).toBeInTheDocument();
   });
 
+  it("shows the unseen-attention badge on the Today navigation item (ADR 0097 dec. 4)", async () => {
+    // The sample dataset carries exactly one unseen non-routine attention event.
+    renderApp();
+
+    const todayNav = await screen.findByRole("button", { name: /^Today/ });
+    expect(await within(todayNav).findByText("1")).toHaveClass("nav-badge");
+    expect(within(todayNav).getByLabelText("1 new important item in Today")).toBeInTheDocument();
+  });
+
+  it("clears the Today badge on a visit — seen means 'was on screen' (ADR 0097 dec. 5)", async () => {
+    renderApp();
+
+    const todayNav = await screen.findByRole("button", { name: /^Today/ });
+    await within(todayNav).findByText("1");
+
+    await userEvent.click(todayNav);
+    await screen.findByRole("heading", { name: "Today" });
+
+    // Today's stream batch-marks the loaded unseen events; the optimistic flip
+    // empties the badge without waiting for a refetch.
+    await waitFor(() => expect(within(todayNav).queryByText("1")).toBeNull());
+    expect(invoke).toHaveBeenCalledWith(
+      "mark_attention_events_seen",
+      expect.objectContaining({ input: expect.objectContaining({ ids: expect.any(Array) }) }),
+    );
+  });
+
+  it("does not count routine attention events toward the Today badge", async () => {
+    appTestState.attentionEventsResponse = appTestState.attentionEventsResponse.map((event) => ({
+      ...event,
+      severity: "routine" as const,
+    }));
+    renderApp();
+
+    const todayNav = await screen.findByRole("button", { name: "Today" });
+    expect(within(todayNav).queryByText(/^\d+$/)).toBeNull();
+  });
+
+  it("announces a count INCREASE politely, but never replays the startup backlog (ADR 0097 dec. 4)", async () => {
+    const { container } = renderApp();
+
+    // Hydration: the backlog (1 unseen event) lights the badge…
+    const todayNav = await screen.findByRole("button", { name: /^Today/ });
+    await within(todayNav).findByText("1");
+    const liveRegion = container.querySelector('[aria-live="polite"]') as HTMLElement;
+    expect(liveRegion).not.toBeNull();
+    // …but is NOT announced.
+    expect(liveRegion).toHaveTextContent("");
+
+    // A refresh brings two MORE unseen events (3 total) — one coalesced polite
+    // announcement states the new count.
+    appTestState.attentionEventsResponse = [
+      ...appTestState.attentionEventsResponse,
+      { ...appTestState.attentionEventsResponse[0], id: "attn_live_2" },
+      { ...appTestState.attentionEventsResponse[0], id: "attn_live_3" },
+    ];
+    await userEvent.click(screen.getByRole("button", { name: "Refresh sources" }));
+
+    await waitFor(() =>
+      expect(liveRegion).toHaveTextContent("3 new important items in Today"),
+    );
+  });
+
   it("shows Diagnostics navigation only in Developer mode", async () => {
     renderApp();
 
@@ -286,110 +348,3 @@ describe("App shell", () => {
   });
 });
 
-// Live-defect fix (v0.57 fix wave 2): the persistent-toast overflow summary
-// ("+N more") bridges its translated label from AppStateRoot into App.tsx via
-// a ref (see App.tsx's `persistentOverflowRef` doc comment) so ToastProvider
-// can mount above LocaleContext. A ref write alone does not force the label
-// closure that already rendered to be re-evaluated with the Polish text, so
-// the summary row kept showing the English "+9 more" literal in a Polish app
-// (owner screenshot: 27-toast-stack.png). The fix must make the label
-// reactive, not patch around the ref.
-describe("Persistent-toast overflow summary — locale reactivity (D1 fix)", () => {
-  const signalRule = {
-    id: "alert_rule_overflow_1",
-    triggerType: "signal_category" as const,
-    signalCategory: "profit_warning",
-    priceMin: null,
-    priceMax: null,
-    scopeType: "company" as const,
-    scopeRef: initialCompanies[0].id,
-    enabled: true,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  };
-
-  function overflowAttentionEvent(id: string): AttentionEvent {
-    return {
-      id,
-      ruleId: signalRule.id,
-      triggerType: "signal_category",
-      companyId: initialCompanies[0].id,
-      evidenceType: "company_signal",
-      evidenceRef: `signal_${id}`,
-      firedAt: "2026-06-10T09:00:00Z",
-      seen: false,
-      dismissed: false,
-      // signal_category + profit_warning → urgent, the only level that raises a
-      // PERSISTENT toast (ADR 0087 dec. 3) — exactly what the overflow cap exercises.
-      severity: "urgent",
-      evidenceTitle: null,
-      evidenceDetail: null,
-    };
-  }
-
-  it("renders the '+N more' summary in Polish once the Polish locale is active", async () => {
-    appTestState.settingsResponse = {
-      ...appTestState.settingsResponse,
-      locale: "pl",
-    };
-    appTestState.autopilotRunsResponse = [];
-    appTestState.alertRulesResponse = [signalRule];
-    // PERSISTENT_VISIBLE_CAP is 3 — 5 unseen events leave 2 collapsed into the
-    // overflow row.
-    appTestState.attentionEventsResponse = Array.from({ length: 5 }, (_, i) =>
-      overflowAttentionEvent(`attn_overflow_${i}`),
-    );
-
-    renderApp({ section: "Today" });
-
-    const summary = await screen.findByRole("button", { name: /^\+\d+ więcej$/ });
-    expect(summary).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /more$/ })).not.toBeInTheDocument();
-  });
-
-  it("still switches the already-rendered summary to Polish when the locale settles AFTER the toast burst (the real race)", async () => {
-    // The live defect: the attention-events/alert-rules round trip can settle
-    // (and fire the whole persistent-toast burst) before the settings fetch
-    // that carries `locale` resolves. With no further toast/dismiss after
-    // that, the ref-bridge version never re-rendered the summary once the
-    // Polish label was finally bound — it stayed on the English literal that
-    // was current when the burst rendered. Reproduce that ordering exactly:
-    // hold `get_settings` open until the English summary has already painted,
-    // then release it and assert the SAME summary element updates in place.
-    appTestState.settingsResponse = {
-      ...appTestState.settingsResponse,
-      locale: "pl",
-    };
-    appTestState.autopilotRunsResponse = [];
-    appTestState.alertRulesResponse = [signalRule];
-    // Distinct ids from the previous test: `toastedAttentionEventIds` is a
-    // module-scoped "this app session" dedup Set (TodayScreen.tsx) that
-    // outlives a single test's render — reused ids would already be marked
-    // toasted and silently produce no new toasts at all here.
-    appTestState.attentionEventsResponse = Array.from({ length: 5 }, (_, i) =>
-      overflowAttentionEvent(`attn_overflow_race_${i}`),
-    );
-
-    let releaseSettings: (() => void) | undefined;
-    const settingsGate = new Promise<void>((resolve) => {
-      releaseSettings = resolve;
-    });
-    vi.mocked(invoke).mockImplementation(async (command, args) => {
-      if (command === "get_settings") {
-        await settingsGate;
-      }
-      return handleAppCommand(command as string, args as Record<string, unknown> | undefined);
-    });
-
-    renderApp({ section: "Today" });
-
-    // The toast burst fires and renders before settings/locale ever resolves.
-    const summary = await screen.findByRole("button", { name: /^\+\d+ more$/ });
-
-    // Now let the delayed `get_settings` (locale: "pl") resolve — with no new
-    // toast and no dismissal, the fix must still flip this same element to
-    // the Polish label.
-    releaseSettings?.();
-    await waitFor(() => expect(summary).toHaveAccessibleName(/^\+\d+ więcej$/));
-  });
-});

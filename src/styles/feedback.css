@@ -96,45 +96,6 @@
   outline-offset: 1px;
 }
 
-/* Persistent attention toast (ADR 0068): explicit dismiss control (ClearButton)
-   sits trailing, same fixed slot every time regardless of an action button. */
-.ui-toast-persistent {
-  align-items: flex-start;
-}
-
-.ui-toast-persistent .field-clear-button {
-  flex: 0 0 auto;
-}
-
-/* Persistent-overflow summary row ("+N more", Toast.tsx PERSISTENT_VISIBLE_CAP):
-   the last item in the viewport once more than 3 persistent toasts are
-   queued. A full-width button inside the same `.ui-toast` shell so it reads
-   as part of the stack rather than a stray control. */
-.ui-toast-overflow {
-  justify-content: center;
-  padding: var(--space-2) var(--space-4);
-}
-
-.ui-toast-overflow-button {
-  flex: 1 1 auto;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-weight: 650;
-  text-align: center;
-  cursor: pointer;
-}
-
-.ui-toast-overflow-button:hover {
-  color: var(--primary);
-}
-
-.ui-toast-overflow-button:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Skeleton                                                                   */
 /* -------------------------------------------------------------------------- */

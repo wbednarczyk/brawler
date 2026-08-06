@@ -25,7 +25,7 @@ export type AutopilotControls = {
   undoneAutopilotRuns: Record<string, number>;
 };
 
-/** The attention-event controls a row needs (from `useTodayPulse`). */
+/** The attention-event controls a row needs (from the app-level controller). */
 export type AttentionControls = {
   attentionRulesById: Map<string, AlertRule>;
   dismissAttentionEventRow: (id: string) => void;
@@ -40,6 +40,9 @@ export type RowContext = {
   companyByTicker: Map<string, Company>;
   openCompanyWorkspace: (companyId: string, tab: CompanyWorkspaceTab) => void;
   openInbox: () => void;
+  /** Open a URL in the system browser (ADR 0097 dec. 8: a reconciliation
+   * event's Review opens the missed report itself — it is never in the feed). */
+  openExternalUrl: (url: string) => void;
   autopilot: AutopilotControls;
   attention: AttentionControls;
 };

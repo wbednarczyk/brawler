@@ -803,6 +803,7 @@ export function makeAttentionEvent(
     // The filing's own title — the concrete statement a stream row shows (v0.60 D6).
     evidenceTitle: "Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR",
     evidenceDetail: null,
+    witnessUrl: null,
   };
 }
 

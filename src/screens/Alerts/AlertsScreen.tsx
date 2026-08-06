@@ -4,16 +4,14 @@ import { BarChart3, Bot, Coins, FileWarning, TrendingDown, Trash2, Users, X, typ
 import {
   createAlertRule,
   deleteAlertRule,
-  dismissAttentionEvent,
   listAlertRules,
-  listAttentionEvents,
-  markAttentionEventSeen,
   setAlertRuleEnabled,
   updateAlertRule,
   type AlertRule,
   type AttentionEvent,
   type NewAlertRule,
 } from "../../api/attention";
+import type { AttentionController } from "../../app/useAttentionController";
 import { listCompanies } from "../../api/companies";
 import { listWatchlists } from "../../api/watchlists";
 import type { Company, Watchlist } from "../../api/types";
@@ -106,15 +104,16 @@ function triggerIcon(triggerType: TriggerType, signalCategory: string | null): I
  * your rules, fired alerts — with a live plain-language preview of the draft rule.
  * A reference surface like Sources/Watchlists (its own sidebar destination) so it
  * gets the Library `feed-panel` + `PanelHeader` chrome. Stays self-contained: it
- * drives the attention commands (`api/attention`) directly and re-reads on each
- * mutation. The richer Today attention surfaces + persistent toasts are T4.
+ * drives the rule commands (`api/attention`) directly and re-reads on each
+ * mutation; fired events come from the app-level attention controller (ADR 0097
+ * dec. 6) shared with Today and the sidebar badge.
  */
-export function AlertsScreen() {
+export function AlertsScreen({ attention }: { attention: AttentionController }) {
   const { t, text, locale } = useLocale();
   const runUndoableDelete = useUndoableDelete();
 
   const [rules, setRules] = useState<AlertRule[]>([]);
-  const [events, setEvents] = useState<AttentionEvent[]>([]);
+  const events = attention.events;
   const [companies, setCompanies] = useState<Company[]>([]);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -146,21 +145,20 @@ export function AlertsScreen() {
   const watchlistName = useMemo(() => new Map(watchlists.map((w) => [w.id, w.name])), [watchlists]);
 
   function refresh() {
-    Promise.all([listAlertRules(), listAttentionEvents()])
-      .then(([nextRules, nextEvents]) => {
-        setRules(nextRules);
-        setEvents(nextEvents);
-      })
+    // Rule CRUD also refreshes the shared controller so Today's rule labels and
+    // the fired list stay in sync (one state, ADR 0097 dec. 6).
+    attention.refresh();
+    listAlertRules()
+      .then(setRules)
       .catch((reason) => setError(String(reason)));
   }
 
   useEffect(() => {
     let active = true;
-    Promise.all([listAlertRules(), listAttentionEvents(), listCompanies(), listWatchlists()])
-      .then(([nextRules, nextEvents, nextCompanies, nextWatchlists]) => {
+    Promise.all([listAlertRules(), listCompanies(), listWatchlists()])
+      .then(([nextRules, nextCompanies, nextWatchlists]) => {
         if (!active) return;
         setRules(nextRules);
-        setEvents(nextEvents);
         setCompanies(nextCompanies);
         setWatchlists(nextWatchlists);
         // Seed the scope target with a sensible default so the form is usable.
@@ -260,15 +258,11 @@ export function AlertsScreen() {
 
   function dismissEvent(event: AttentionEvent) {
     setError(null);
-    dismissAttentionEvent(event.id)
-      .then(() => setEvents((current) => current.filter((e) => e.id !== event.id)))
-      .catch((reason) => setError(String(reason)));
+    attention.dismiss(event.id);
   }
 
   function markSeen(event: AttentionEvent) {
-    markAttentionEventSeen(event.id)
-      .then(() => setEvents((current) => current.map((e) => (e.id === event.id ? { ...e, seen: true } : e))))
-      .catch((reason) => setError(String(reason)));
+    attention.markSeen(event.id);
   }
 
   // Short, human title for a rule's trigger (the rule row's bold first line).

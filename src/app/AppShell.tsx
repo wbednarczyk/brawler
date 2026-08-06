@@ -9,6 +9,7 @@ import type {
   Theme,
 } from "../api/types";
 import { makeTextTranslator, makeTranslator } from "../shared/locale";
+import { pluralNoun, type PluralForms } from "../shared/locale/plural";
 import { useKeyboardShortcuts } from "../shared/shortcuts";
 import type { SearchMatch } from "../api/search";
 import { GlobalSearch } from "./GlobalSearch";
@@ -76,8 +77,23 @@ type AppShellProps = {
   shortcutBindings: Record<string, ShortcutBindingSetting>;
   shortcutActions: AppShortcutActionMap;
   totalUnreadFeedItems: number;
+  /**
+   * Unseen non-routine attention events (ADR 0097 dec. 4) — the Today nav badge,
+   * the app's only ambient-attention indicator now that system toasts are gone.
+   */
+  unseenAttentionCount: number;
+  /** True once the attention state hydrated — gates the polite live region so
+   * the startup backlog is never replayed as an announcement. */
+  attentionHydrated: boolean;
   updateTheme: (theme: Theme) => void;
   openSourceStatus: () => void;
+};
+
+// Badge aria-label + polite announcement for unseen attention events (ADR 0097
+// dec. 4) — a full noun phrase so the count reads as a sentence in both locales.
+const ATTENTION_BADGE_FORMS: PluralForms = {
+  en: ["new important item in Today", "new important items in Today"],
+  pl: ["nowe ważne zdarzenie w Dziś", "nowe ważne zdarzenia w Dziś", "nowych ważnych zdarzeń w Dziś"],
 };
 
 export function AppShell({
@@ -110,6 +126,8 @@ export function AppShell({
   shortcutBindings,
   shortcutActions,
   totalUnreadFeedItems,
+  unseenAttentionCount,
+  attentionHydrated,
   updateTheme,
   openSourceStatus,
 }: AppShellProps) {
@@ -120,6 +138,25 @@ export function AppShell({
   // TextField; Enter commits, Escape/blur cancels.
   const [renamingViewId, setRenamingViewId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+
+  // ONE coalesced POLITE announcement when the unseen-attention count INCREASES
+  // after hydration (ADR 0097 dec. 4): screen-reader users learn something
+  // important landed in Today without per-event interrupts — role="alert" left
+  // with the persistent toasts. The startup backlog stays badge-only.
+  const [attentionAnnouncement, setAttentionAnnouncement] = useState("");
+  const previousUnseenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!attentionHydrated) return;
+    const previous = previousUnseenRef.current;
+    previousUnseenRef.current = unseenAttentionCount;
+    // The first post-hydration observation is the backlog — record, don't speak.
+    if (previous === null) return;
+    if (unseenAttentionCount > previous) {
+      setAttentionAnnouncement(
+        `${unseenAttentionCount} ${pluralNoun(locale, unseenAttentionCount, ATTENTION_BADGE_FORMS)}`,
+      );
+    }
+  }, [attentionHydrated, unseenAttentionCount, locale]);
 
   // The command palette's open() lives inside the CommandPaletteProvider (below),
   // which AppShell renders — so it cannot read that context directly. A binder
@@ -270,6 +307,12 @@ export function AppShell({
     <CommandPaletteProvider appCommands={appCommands} text={text}>
       <PaletteShortcutBinder bindOpen={bindPaletteOpen} />
       <div className="app-shell">
+        {/* Polite, coalesced ambient-attention announcement (ADR 0097 dec. 4).
+            aria-live WITHOUT role="status": announcement behavior is identical,
+            but the region never collides with toast queries for role=status. */}
+        <div className="visually-hidden" aria-live="polite">
+          {attentionAnnouncement}
+        </div>
         <aside className="sidebar">
           <div className="brand">
             <div className="brand-mark">B</div>
@@ -315,6 +358,16 @@ export function AppShell({
                           {item.label === "Inbox" && totalUnreadFeedItems > 0 ? (
                             <span className="nav-badge" aria-label={`${totalUnreadFeedItems} ${text("unread feed item")}`}>
                               {totalUnreadFeedItems}
+                            </span>
+                          ) : null}
+                          {/* Ambient attention (ADR 0097 dec. 4): unseen non-routine
+                              attention events; clears when Today marks them seen. */}
+                          {item.label === "Today" && unseenAttentionCount > 0 ? (
+                            <span
+                              className="nav-badge"
+                              aria-label={`${unseenAttentionCount} ${pluralNoun(locale, unseenAttentionCount, ATTENTION_BADGE_FORMS)}`}
+                            >
+                              {unseenAttentionCount}
                             </span>
                           ) : null}
                         </button>
