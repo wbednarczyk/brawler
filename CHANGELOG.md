@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.13 - 2026-08-06
+
+
+### Bug Fixes
+
+- **mcp**: enforce citation integrity on agent verdicts (#343) (#346)
+
 ## v0.63.11 - 2026-08-05
 
 
