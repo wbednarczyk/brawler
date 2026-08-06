@@ -700,21 +700,6 @@ fn runtime_metric_contract(name: &str) -> (&'static str, MetricKind, MetricUnit)
             MetricKind::Counter,
             MetricUnit::Seconds,
         ),
-        "brawler_feed_cleanup_runs_total" => (
-            "Process-lifetime feed cleanup executions by mode and status.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
-        "brawler_feed_cleanup_deleted_total" => (
-            "Process-lifetime feed items deleted by cleanup mode.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
-        "brawler_feed_cleanup_duration_seconds" => (
-            "Process-lifetime cumulative feed cleanup duration by mode and status.",
-            MetricKind::Counter,
-            MetricUnit::Seconds,
-        ),
         "brawler_credential_checks_total" => (
             "Process-lifetime credential check outcomes by provider and purpose.",
             MetricKind::Counter,

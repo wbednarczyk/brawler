@@ -7,7 +7,6 @@ import {
   Plus,
   RefreshCw,
   Save,
-  Trash2,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -21,7 +20,6 @@ import {
   EmptyState,
   ErrorText,
   FilterToolbar,
-  InlineConfirm,
   PanelHeader,
   SearchField,
   SegmentedControl,
@@ -55,13 +53,11 @@ export function InboxScreen() {
     inboxReviewStats,
     inboxEmptyState,
     hasActiveInboxFilters,
-    deleteUnsavedFeedState,
     sourceRefreshState,
     detailPaneFraction,
     detailPaneMinFraction,
     detailPaneMaxFraction,
     feedError,
-    deleteUnsavedFeedError,
     sourceRefreshError,
     healthError,
     databaseError,
@@ -77,7 +73,6 @@ export function InboxScreen() {
     setSelectedFeedItemId,
     setActiveSection,
     markVisibleInboxAsRead,
-    deleteUnsavedFeedItems,
     clearInboxFilters,
     refreshSources,
     openSourceStatus,
@@ -94,8 +89,6 @@ export function InboxScreen() {
     formatTimestamp,
   } = useInboxViewModel();
   const { t, text, locale } = useLocale();
-  // Bulk data clear (ADR 0076 D5): confirm the unsaved-feed purge in place.
-  const [confirmDeleteUnsaved, setConfirmDeleteUnsaved] = useState(false);
   // Density contract (ADR 0076 D6): at the S width tier the detail is a full-pane
   // overlay over the list. The list always has a selection (it defaults to the
   // first item), so this presentation-only flag — not the selection — decides
@@ -365,42 +358,12 @@ export function InboxScreen() {
             </EmptyState>
           ) : null}
           {feedError ? <ErrorText>{text("Feed command failed")}: {feedError}</ErrorText> : null}
-          {deleteUnsavedFeedError ? (
-            <ErrorText>{text("Delete unsaved failed")}: {deleteUnsavedFeedError}</ErrorText>
-          ) : null}
           {sourceRefreshError ? (
             <ErrorText>{text("Source refresh failed")}: {sourceRefreshError}</ErrorText>
           ) : null}
           {signalsError ? (
             <ErrorText>{text("Signal classification failed")}: {signalsError}</ErrorText>
           ) : null}
-        </div>
-
-        <div className="inbox-maintenance-row" aria-label={text("Inbox maintenance")}>
-          <span>{text("Feed cleanup")}</span>
-          {confirmDeleteUnsaved ? (
-            <InlineConfirm
-              cancelLabel={text("Cancel")}
-              confirmLabel={text("Delete unsaved")}
-              disabled={deleteUnsavedFeedState === "refreshing"}
-              onCancel={() => setConfirmDeleteUnsaved(false)}
-              onConfirm={() => {
-                setConfirmDeleteUnsaved(false);
-                deleteUnsavedFeedItems();
-              }}
-            >
-              {text("Delete all unsaved feed items? Saved items will stay.")}
-            </InlineConfirm>
-          ) : (
-            <Button
-              className="compact-button danger-subtle-button"
-              disabled={deleteUnsavedFeedState === "refreshing"}
-              onClick={() => setConfirmDeleteUnsaved(true)}
-            >
-              {deleteUnsavedFeedState === "done" ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
-              {deleteUnsavedFeedState === "refreshing" ? text("Deleting") : text("Delete unsaved")}
-            </Button>
-          )}
         </div>
       </section>
 

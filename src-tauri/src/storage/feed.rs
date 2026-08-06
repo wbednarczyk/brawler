@@ -38,16 +38,6 @@ impl FeedStore {
         let connection = self.db.checkout()?;
         get_feed_item(&connection, feed_item_id)
     }
-
-    pub fn prune_old_feed_items(&self, retention_days: i64) -> StorageResult<FeedPruneResult> {
-        let mut connection = self.db.checkout()?;
-        prune_old_feed_items(&mut connection, retention_days)
-    }
-
-    pub fn delete_unsaved_feed_items(&self) -> StorageResult<FeedDeleteResult> {
-        let mut connection = self.db.checkout()?;
-        delete_unsaved_feed_items(&mut connection)
-    }
 }
 
 pub(super) fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
@@ -197,107 +187,6 @@ pub(super) fn update_feed_item_state(
     }
 
     get_feed_item(connection, &input.id)
-}
-
-pub(super) fn prune_old_feed_items(
-    connection: &mut Connection,
-    retention_days: i64,
-) -> StorageResult<FeedPruneResult> {
-    let retention_days = retention_days.max(1);
-    let retention_modifier = format!("-{retention_days} days");
-    let transaction =
-        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let pruned_at = sources::current_timestamp(&transaction)?;
-
-    let candidate_ids = old_unsaved_feed_item_ids(&transaction, &retention_modifier)?;
-
-    delete_feed_items_by_id(&transaction, &candidate_ids)?;
-
-    transaction.commit()?;
-
-    Ok(FeedPruneResult {
-        retention_days,
-        items_deleted: candidate_ids.len(),
-        pruned_at,
-    })
-}
-
-pub(super) fn delete_unsaved_feed_items(
-    connection: &mut Connection,
-) -> StorageResult<FeedDeleteResult> {
-    let transaction =
-        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let deleted_at = sources::current_timestamp(&transaction)?;
-    let candidate_ids = unsaved_feed_item_ids(&transaction)?;
-
-    delete_feed_items_by_id(&transaction, &candidate_ids)?;
-
-    transaction.commit()?;
-
-    Ok(FeedDeleteResult {
-        items_deleted: candidate_ids.len(),
-        deleted_at,
-    })
-}
-
-pub(super) fn delete_feed_items_by_id(
-    connection: &Connection,
-    feed_item_ids: &[String],
-) -> StorageResult<()> {
-    for feed_item_id in feed_item_ids {
-        transaction_delete_feed_item(connection, feed_item_id)?;
-    }
-
-    Ok(())
-}
-
-pub(super) fn transaction_delete_feed_item(
-    connection: &Connection,
-    feed_item_id: &str,
-) -> StorageResult<()> {
-    connection.execute(
-        "DELETE FROM feed_item_attachments WHERE feed_item_id = ?1",
-        [feed_item_id],
-    )?;
-    connection.execute(
-        "DELETE FROM feed_item_companies WHERE feed_item_id = ?1",
-        [feed_item_id],
-    )?;
-    connection.execute("DELETE FROM feed_items WHERE id = ?1", [feed_item_id])?;
-
-    Ok(())
-}
-
-pub(super) fn old_unsaved_feed_item_ids(
-    connection: &Connection,
-    retention_modifier: &str,
-) -> StorageResult<Vec<String>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT id
-        FROM feed_items
-        WHERE saved = 0
-            AND datetime(COALESCE(published_at, fetched_at)) < datetime('now', ?1)
-        ",
-    )?;
-    let rows = statement.query_map([retention_modifier], |row| row.get(0))?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(StorageError::from)
-}
-
-pub(super) fn unsaved_feed_item_ids(connection: &Connection) -> StorageResult<Vec<String>> {
-    let mut statement = connection.prepare(
-        "
-        SELECT id
-        FROM feed_items
-        WHERE saved = 0
-        ",
-    )?;
-    let rows = statement.query_map([], |row| row.get(0))?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(StorageError::from)
 }
 
 pub(crate) fn get_feed_item(

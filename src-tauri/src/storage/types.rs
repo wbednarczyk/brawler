@@ -206,31 +206,6 @@ pub struct SourceIngestionResult {
     pub fetched_at: Option<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct FeedPruneResult {
-    pub retention_days: i64,
-    pub items_deleted: usize,
-    pub pruned_at: String,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct FeedDeleteResult {
-    pub items_deleted: usize,
-    pub deleted_at: String,
-}
-
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(

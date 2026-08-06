@@ -495,43 +495,6 @@ describe("Inbox screen workflows", () => {
     });
   });
 
-  it("confirms and deletes unsaved feed items without refreshing sources", async () => {
-    const user = userEvent.setup();
-
-    appTestState.feedItemsResponse = [
-      {
-        ...initialFeedItems[0],
-        id: "feed_unsaved_delete_candidate",
-        title: "Unsaved report to delete",
-        saved: false,
-      },
-      {
-        ...initialFeedItems[1],
-        id: "feed_saved_to_keep",
-        title: "Saved report to keep",
-        saved: true,
-      },
-    ];
-
-    renderApp();
-
-    const feedList = screen.getByLabelText("Feed items");
-    await within(feedList).findByText("Unsaved report to delete");
-
-    // Bulk data clear (ADR 0076 D5): confirm in place, no native dialog.
-    await user.click(screen.getByRole("button", { name: "Delete unsaved" }));
-    expect(invoke).not.toHaveBeenCalledWith("delete_unsaved_feed_items");
-    expect(screen.getByText("Delete all unsaved feed items? Saved items will stay.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Delete unsaved" }));
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("delete_unsaved_feed_items");
-    });
-    await within(feedList).findByText("Saved report to keep");
-    expect(within(feedList).queryByText("Unsaved report to delete")).not.toBeInTheDocument();
-    expect(invoke).not.toHaveBeenCalledWith("refresh_sources", expect.anything());
-  });
-
   it("summarizes the current inbox review set", async () => {
     const user = userEvent.setup();
 

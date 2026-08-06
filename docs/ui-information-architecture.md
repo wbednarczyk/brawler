@@ -40,7 +40,7 @@ Shell behavior:
 - The top toolbar and navigation bar stay fixed while the current workspace scrolls.
 - The app shell owns the viewport height; screens should use internal panel/list scroll areas instead of relying on page/body scrolling.
 - The browser page should not expose a global application scrollbar. The top toolbar, the navigation bar, and each screen's primary header or control bar should remain visible while long lists, detail panes, or subpanels scroll internally.
-- The Inbox workspace splits the feed list and detail pane 50/50 by default, **side by side (horizontal)**; the divider is draggable between 25% and 75% of the row. The feed list must remain the dominant flexible scroll region — the feed pane carries heavy fixed chrome (tabs, stats, the filter toolbar, the cleanup footer), so do not stack the panes vertically without first collapsing that chrome (see [ADR 0047](adr/0047-top-navigation-bar.md), "Rejected alternative").
+- The Inbox workspace splits the feed list and detail pane 50/50 by default, **side by side (horizontal)**; the divider is draggable between 25% and 75% of the row. The feed list must remain the dominant flexible scroll region — the feed pane carries heavy fixed chrome (tabs, stats, the filter toolbar), so do not stack the panes vertically without first collapsing that chrome (see [ADR 0047](adr/0047-top-navigation-bar.md), "Rejected alternative").
 - Desktop layouts must remain usable outside maximized windows, including a side-region window on an ultrawide monitor. Multi-column screens should stack or simplify around this size before text, buttons, filters, or panels become cramped.
 - The Inbox navigation item shows an unread count badge when unread feed items exist.
 - The top toolbar source health indicator summarizes locally registered sources and opens the Sources screen with the most relevant source expanded. Manual source refresh remains a separate disabled control until ingestion jobs exist.
@@ -416,7 +416,7 @@ Settings uses local subnavigation rather than route-level pages. Each section op
 Sections:
 
 - Appearance: dark/light/system brightness mode, separate accent palette with `night-neon` and `midnight-horizon`, extensible locale setting with English default and Polish as the first additional language
-- Sources: polling interval, **backfill history depth** (clickable presets 1/3/5/10 years bound to a slider + numeric input, clamped 1–10, default 3; ADR 0077 §3), feed cleanup status, import/export status
+- Sources: polling interval, **backfill history depth** (clickable presets 1/3/5/10 years bound to a slider + numeric input, clamped 1–10, default 3; ADR 0077 §3), import/export status
 - AI providers: Gemini configuration for YouTube transcription — the only in-app AI capability ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)) — selectable transcription model, credential configured/not-configured status, credential storage, secret kind
 - Credentials: credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls

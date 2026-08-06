@@ -1,7 +1,6 @@
-import type { FeedPruneResult, UserSettings } from "../../api/types";
+import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
 import {
-  Button,
   FieldRow,
   Hint,
   InfoGrid,
@@ -21,25 +20,17 @@ const clampBackfillYears = (value: number): number =>
   Number.isNaN(value) ? BACKFILL_YEARS_DEFAULT : Math.min(10, Math.max(1, Math.round(value)));
 
 type SourceSettingsProps = {
-  feedPruneRetentionDays: number;
-  feedPruneResult: FeedPruneResult | null;
-  onPruneFeedItems: () => void;
   settings: UserSettings | null;
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
   onBackfillYearsChange: (backfillYears: number) => void;
   formatPollInterval: (seconds: number) => string;
-  formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
 };
 
 export function SourceSettings({
-  feedPruneRetentionDays,
-  feedPruneResult,
-  onPruneFeedItems,
   settings,
   onPollIntervalChange,
   onBackfillYearsChange,
   formatPollInterval,
-  formatTimestamp,
 }: SourceSettingsProps) {
   const { t, text } = useLocale();
   const backfillYears = settings?.backfillYears ?? BACKFILL_YEARS_DEFAULT;
@@ -114,40 +105,6 @@ export function SourceSettings({
           </div>
         </FieldRow>
       </section>
-
-      <section className="settings-group" aria-labelledby="settings-cleanup-title">
-        <h2 id="settings-cleanup-title">{t("settings.feedCleanup.title")}</h2>
-        <InfoGrid
-          className="settings-grid"
-          items={[
-            { label: text("Feed cleanup"), value: text("Off") },
-            {
-              label: text("Manual cleanup retention"),
-              value: `${feedPruneRetentionDays} ${text("days")}`,
-            },
-            {
-              label: text("Last cleanup"),
-              value: formatTimestamp(feedPruneResult?.prunedAt, text("Not run this session")),
-            },
-            {
-              label: text("Last cleanup deleted"),
-              value: feedPruneResult ? feedPruneResult.itemsDeleted : text("Not run this session"),
-            },
-            { label: text("Protected feed items"), value: text("Saved") },
-          ]}
-        />
-        <Hint>
-          {text(
-            "Automatic cleanup is disabled (owner decision 2026-07-19) — the app deletes nothing on its own. Cleanup runs only when you click below, removing unsaved feed items older than the retention window.",
-          )}
-        </Hint>
-        <FieldRow>
-          <Button className="compact-button" onClick={onPruneFeedItems}>
-            {text("Clean up feed now")}
-          </Button>
-        </FieldRow>
-      </section>
-
     </>
   );
 }

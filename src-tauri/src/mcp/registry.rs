@@ -1159,8 +1159,6 @@ fn classifications() -> Vec<RegistryEntry> {
         excluded("delete_framework_evaluation"),
         excluded("delete_video_transcript_job"),
         excluded("delete_alert_rule"),
-        excluded("prune_old_feed_items"),
-        excluded("delete_unsaved_feed_items"),
         // ---- Excluded: undo ------------------------------------------------
         excluded("undo_autopilot_run"),
         // ---- Excluded: bulk import / backups (destructive data management) --

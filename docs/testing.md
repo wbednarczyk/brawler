@@ -1039,7 +1039,7 @@ Representative manual sweep:
 - **Settings:** open every section; subnavigation stays stable; controls readable; the active panel scrolls independently. **Database:** adjust pool values, confirm out-of-range clamps + reset-to-defaults + the "applied on next launch" note.
 - **Appearance:** switch dark/light/system, then `night-neon` / `midnight-horizon`; palette changes tokens without unexpectedly changing brightness mode.
 - **Notebooks:** select company/note, create + edit a long note, tag-filter and clear; company list, note list, and editor scroll independently.
-- **Inbox:** scan rows, change/clear filters and search, open details; the destructive cleanup action is separated from routine controls.
+- **Inbox:** scan rows, change/clear filters and search, open details.
 - **Sources:** adapters grouped by purpose, disabled/review candidates distinct, expanded rows readable, registry search + clear work.
 - **Companies:** create a watchlist, toggle membership on/off, verify feedback/selected states, clear form fields.
 - **Global search:** top-toolbar search → ranked results grouped by content type with snippets → select navigates → field clear returns focus.

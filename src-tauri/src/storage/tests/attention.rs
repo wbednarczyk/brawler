@@ -988,47 +988,50 @@ fn list_attention_events_leaves_evidence_title_none_for_pruned_evidence() {
 }
 
 #[test]
-fn signal_event_title_survives_feed_item_prune_via_durable_snapshot() {
-    // GPW:XTB profit-warning events rendered a bare category because their
-    // feed items were pruned. `company_signals.feed_item_id`
-    // is ON DELETE CASCADE, so pruning the feed item cascade-deletes the SIGNAL row
-    // too — the attention event survives (its evidence_ref is plain TEXT), but the
-    // read-time join to `feed_items.title` finds nothing. The fix snapshots the
-    // title onto the event at fire time (v0.60 D7): after the feed item (and its
-    // cascaded signal) are gone, the event still states WHAT happened.
+fn legacy_pruned_database_still_renders_the_durable_evidence_title_snapshot() {
+    // Legacy-state compatibility (v0.60 D7 snapshot, reframed after #329):
+    // databases pruned by the RETIRED feed cleanup hold attention events whose
+    // feed item — and, via `company_signals.feed_item_id` ON DELETE CASCADE,
+    // their signal row — are gone. The read must render the fire-time
+    // `evidence_title` snapshot, never a bare category from a dead join.
     const INSIDER_TITLE: &str = "Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR";
     let connection = open_in_memory_database().expect("database should initialize");
-    let state = AppState::new(connection);
-    let company = tracked_company(&state);
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'XTB', 'GPW:XTB', 'XTB S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO alert_rules (id, trigger_type, signal_category, scope_type, scope_ref)
+             VALUES ('r1', 'signal_category', 'insider_transaction', 'company', 'c1')",
+            [],
+        )
+        .expect("seed rule");
+    // The signal's feed item was pruned pre-#329, cascading the signal away —
+    // only the event row survives, with the snapshot title stamped at fire time.
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at,
+                 evidence_title)
+             VALUES ('attn1', 'r1', 'signal_category', 'c1', 'company_signal', 'sig_gone',
+                     '2026-07-20T09:00:00Z', ?1)",
+            [INSIDER_TITLE],
+        )
+        .expect("seed legacy event with a dead signal ref");
 
-    state
-        .attention()
-        .create_alert_rule(new_signal_rule(&company.id))
-        .expect("rule");
-    state
-        .ingest_bankier_company_items(&[insider_item(&company, "9300082")])
-        .expect("ingestion classifies and fires");
-
-    // Sanity: the fresh event carries its filing title (snapshot == live join).
-    let before = events(&state);
-    assert_eq!(before.len(), 1, "one insider event fired");
-    assert_eq!(before[0].evidence_title.as_deref(), Some(INSIDER_TITLE));
-
-    // Prune the unsaved feed item → ON DELETE CASCADE removes the company_signal.
-    state
-        .feed()
-        .delete_unsaved_feed_items()
-        .expect("prune unsaved feed items");
-
-    let after = events(&state);
+    let events = crate::storage::attention::list_attention_events(
+        &connection,
+        AttentionEventListInput::default(),
+    )
+    .expect("events");
+    assert_eq!(events.len(), 1, "the legacy event is listed");
     assert_eq!(
-        after.len(),
-        1,
-        "the attention event itself survives the prune"
-    );
-    assert_eq!(
-        after[0].evidence_title.as_deref(),
+        events[0].evidence_title.as_deref(),
         Some(INSIDER_TITLE),
-        "the durable fire-time snapshot survives the feed prune that killed the signal"
+        "the fire-time snapshot renders although the signal and feed item are long gone"
     );
 }

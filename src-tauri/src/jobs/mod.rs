@@ -2,7 +2,6 @@ pub mod aggregator_fundamentals_pull;
 pub mod autopilot;
 pub mod backfill;
 pub mod failure_surface;
-pub mod feed_cleanup;
 pub mod fx_daily_pull;
 pub mod handlers;
 pub mod health_facts_backfill;

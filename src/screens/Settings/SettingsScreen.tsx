@@ -76,9 +76,6 @@ export function SettingsScreen() {
     licenseError,
     licenseInFlight,
     licenseKeyDraft,
-    feedPruneRetentionDays,
-    feedPruneResult,
-    onPruneFeedItems,
     geminiCredentialStatus,
     geminiCredentialError,
     geminiCredentialInFlight,
@@ -113,7 +110,6 @@ export function SettingsScreen() {
     onClearGeminiApiKey,
     onOpenGeminiApiKeyPage,
     onImportApplied,
-    formatTimestamp,
     formatPollInterval,
     formatCredentialConfigured,
     formatCredentialKind,
@@ -184,14 +180,10 @@ export function SettingsScreen() {
           ) : null}
           {activeSettingsTab === "sources" ? (
             <SourceSettings
-              feedPruneRetentionDays={feedPruneRetentionDays}
-              feedPruneResult={feedPruneResult}
-              onPruneFeedItems={onPruneFeedItems}
               settings={settings}
               onPollIntervalChange={onPollIntervalChange}
               onBackfillYearsChange={onBackfillYearsChange}
               formatPollInterval={formatPollInterval}
-              formatTimestamp={formatTimestamp}
             />
           ) : null}
           {activeSettingsTab === "transcripts" ? (

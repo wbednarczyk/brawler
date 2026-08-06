@@ -42,13 +42,11 @@ export type InboxScreenProps = {
   inboxReviewStats: InboxReviewStats;
   inboxEmptyState: InboxEmptyState;
   hasActiveInboxFilters: boolean;
-  deleteUnsavedFeedState: string;
   sourceRefreshState: string;
   detailPaneFraction: number;
   detailPaneMinFraction: number;
   detailPaneMaxFraction: number;
   feedError: string | null;
-  deleteUnsavedFeedError: string | null;
   sourceRefreshError: string | null;
   healthError: string | null;
   databaseError: string | null;
@@ -64,7 +62,6 @@ export type InboxScreenProps = {
   setSelectedFeedItemId: (itemId: string) => void;
   setActiveSection: (section: "Companies") => void;
   markVisibleInboxAsRead: () => void;
-  deleteUnsavedFeedItems: () => void;
   clearInboxFilters: () => void;
   refreshSources: (trigger: "manual") => Promise<void> | Promise<unknown>;
   openSourceStatus: () => void;

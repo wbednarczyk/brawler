@@ -201,9 +201,6 @@ export function useAppLifecycleEffects({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch each week once (guarded by eventWeekFetchAttemptedRef); the non-memoized refreshBankierCalendarWeek identity is intentionally excluded
   }, [licenseCanUseApp, activeSection, companyEventViewMode, companyEventWeekRange.start]);
 
-  // Feed cleanup is manual-only — no lifecycle effect triggers it on a timer
-  // (sourceScheduler.ts, product-spec.md § Ingestion).
-
   // Source/registry refresh cadence is owned by the Rust-side scheduler (ADR 0055
   // / AV5) — a webview timer is throttled when the window is hidden/suspended, so
   // the frontend must not decide *when* to refresh. This effect only **mirrors**

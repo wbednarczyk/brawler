@@ -156,7 +156,6 @@ export const en = {
   "events.action.refreshSources": "Refresh event sources",
   "events.action.refreshing": "Refreshing",
   "settings.sources.title": "Sources",
-  "settings.feedCleanup.title": "Feed Cleanup",
   "settings.importExport.title": "Import And Export",
   "settings.credentials.title": "Credentials",
   "settings.credentials.save": "Save",

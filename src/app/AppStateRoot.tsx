@@ -26,7 +26,6 @@ import {
 } from "./layout";
 import { type Section } from "./navigation";
 import { emptyNotebookForm, manualNotebookOrigins } from "./notebookForms";
-import { feedPruneRetentionDays } from "./sourceScheduler";
 import * as sourcesApi from "../api/sources";
 import * as eventsApi from "../api/events";
 import * as signalsApi from "../api/signals";
@@ -139,7 +138,6 @@ import type {
   CredentialStatus,
   DatabaseStatus,
   FeedItem,
-  FeedPruneResult,
   HealthResponse,
   LicenseStatus,
   NotebookDraftOrigin,
@@ -392,13 +390,6 @@ export function AppStateRoot({
     detailPaneDefaultFraction,
   );
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
-  const [deleteUnsavedFeedState, setDeleteUnsavedFeedState] =
-    useState<DbRefreshState>("idle");
-  const [deleteUnsavedFeedError, setDeleteUnsavedFeedError] = useState<
-    string | null
-  >(null);
-  const [feedPruneResult, setFeedPruneResult] =
-    useState<FeedPruneResult | null>(null);
   const [sourceRefreshState, setSourceRefreshState] =
     useState<SourceRefreshState>("idle");
   const [sourceRefreshResult, setSourceRefreshResult] =
@@ -778,8 +769,6 @@ export function AppStateRoot({
   });
 
   const {
-    deleteUnsavedFeedItems,
-    pruneOldFeedItems,
     refreshCompanies,
     refreshCompanyRegistryEntries,
     refreshDatabaseBackedViews,
@@ -794,7 +783,6 @@ export function AppStateRoot({
     refreshWatchlistMemberships,
     refreshWatchlists,
   } = useAppDataController({
-    feedPruneRetentionDays,
     refreshCompanyEvents,
     setCompanies,
     setCompaniesError,
@@ -803,10 +791,7 @@ export function AppStateRoot({
     setDatabaseError,
     setDatabaseStatus,
     setDbRefreshState,
-    setDeleteUnsavedFeedError,
-    setDeleteUnsavedFeedState,
     setFeedError,
-    setFeedPruneResult,
     setFeedState,
     setGeminiCredentialError,
     setGeminiCredentialStatus,
@@ -1949,13 +1934,11 @@ export function AppStateRoot({
                     inboxReviewStats,
                     inboxEmptyState,
                     hasActiveInboxFilters,
-                    deleteUnsavedFeedState,
                     sourceRefreshState,
                     detailPaneFraction,
                     detailPaneMinFraction,
                     detailPaneMaxFraction,
                     feedError,
-                    deleteUnsavedFeedError,
                     sourceRefreshError,
                     healthError,
                     databaseError,
@@ -1971,7 +1954,6 @@ export function AppStateRoot({
                     setSelectedFeedItemId,
                     setActiveSection,
                     markVisibleInboxAsRead,
-                    deleteUnsavedFeedItems,
                     clearInboxFilters,
                     refreshSources,
                     openSourceStatus,
@@ -2208,9 +2190,6 @@ export function AppStateRoot({
                     licenseInFlight,
                     licenseKeyDraft,
                     licenseStatus,
-                    feedPruneRetentionDays,
-                    feedPruneResult,
-                    onPruneFeedItems: pruneOldFeedItems,
                     geminiCredentialStatus,
                     geminiCredentialError,
                     geminiCredentialInFlight,
@@ -2249,7 +2228,6 @@ export function AppStateRoot({
                       void openUrl("https://aistudio.google.com/app/apikey");
                     },
                     onImportApplied: refreshDatabaseBackedViews,
-                    formatTimestamp,
                     formatPollInterval,
                     formatGeminiModel,
                     formatCredentialConfigured,

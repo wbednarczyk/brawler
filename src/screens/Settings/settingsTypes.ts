@@ -3,7 +3,6 @@ import type {
   AccentPalette,
   AppLocale,
   CredentialStatus,
-  FeedPruneResult,
   LicenseStatus,
   ShortcutBindingSetting,
   Theme,
@@ -21,9 +20,6 @@ export type SettingsScreenProps = {
   licenseError: string | null;
   licenseInFlight: boolean;
   licenseKeyDraft: string;
-  feedPruneRetentionDays: number;
-  feedPruneResult: FeedPruneResult | null;
-  onPruneFeedItems: () => void;
   geminiCredentialStatus: CredentialStatus | null;
   geminiCredentialError: string | null;
   geminiCredentialInFlight: boolean;
@@ -60,10 +56,6 @@ export type SettingsScreenProps = {
   onClearGeminiApiKey: () => void;
   onOpenGeminiApiKeyPage: () => void;
   onImportApplied: () => void;
-  formatTimestamp: (
-    value: string | null | undefined,
-    emptyLabel?: string,
-  ) => string;
   formatPollInterval: (seconds: number) => string;
   formatGeminiModel: (value: string | null | undefined) => string;
   formatCredentialConfigured: (status: CredentialStatus | null) => string;

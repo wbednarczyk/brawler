@@ -278,8 +278,6 @@ pub fn run() {
             commands::feed::list_feed_items,
             commands::sources::list_unmatched_source_items,
             commands::feed::update_feed_item_state,
-            commands::feed::prune_old_feed_items,
-            commands::feed::delete_unsaved_feed_items,
             commands::research::list_research_evidence,
             commands::research::list_company_timeline,
             commands::research::list_watchlist_timeline,

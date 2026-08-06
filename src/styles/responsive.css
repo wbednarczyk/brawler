@@ -26,8 +26,8 @@
      very tall (~425px). The scrollable feed list was the only flex child able to
      shrink (min-height:0), so in a short window the chrome consumed the whole
      panel and collapsed the list to zero height — feed rows rendered at the panel
-     bottom and their click target fell onto the maintenance row/body, so clicks
-     were intercepted and never landed (see issues 885b3d9 / 2d9825a). Let the
+     bottom and their click target fell onto chrome below, so clicks were
+     intercepted and never landed (see issues 885b3d9 / 2d9825a). Let the
      selects share rows so the toolbar is shorter, let the toolbar itself scroll
      instead of starving the list, and guarantee the list a usable minimum height
      so rows stay clickable. */

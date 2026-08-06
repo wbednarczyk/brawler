@@ -70,8 +70,6 @@ export type { DatabaseStatus } from "./generated/DatabaseStatus";
 
 export type { FeedItem } from "./generated/FeedItem";
 export type { FeedItemAttachment } from "./generated/FeedItemAttachment";
-export type { FeedDeleteResult } from "./generated/FeedDeleteResult";
-export type { FeedPruneResult } from "./generated/FeedPruneResult";
 
 
 export type { DiagnosticScope } from "./generated/DiagnosticScope";
