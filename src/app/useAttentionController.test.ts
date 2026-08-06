@@ -52,6 +52,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(listAlertRules).mockResolvedValue([]);
   vi.mocked(markAttentionEventsSeen).mockResolvedValue(undefined);
   vi.mocked(dismissAttentionEvent).mockResolvedValue(undefined);
@@ -77,6 +78,9 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
       .mockResolvedValue([]); // the convergence re-fetch returns the post-dismiss truth
 
     const { result } = renderHook(() => useAttentionController(true));
+    // The fetch starts asynchronously (behind the mutation-chain gate) — wait
+    // until it is genuinely in flight before racing the mutation against it.
+    await waitFor(() => expect(listAttentionEvents).toHaveBeenCalledTimes(1));
 
     // Optimistic dismiss while the initial fetch is STILL in flight.
     await act(async () => {
@@ -169,6 +173,41 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
     );
   });
 
+  it("a pending COALESCED refresh also waits for the mutation's write to commit", async () => {
+    const initial = deferred<AttentionEvent[]>();
+    vi.mocked(listAttentionEvents)
+      .mockReturnValueOnce(initial.promise)
+      .mockResolvedValue([]);
+    const persist = deferred<void>();
+    vi.mocked(dismissAttentionEvent).mockReturnValueOnce(persist.promise);
+
+    const { result } = renderHook(() => useAttentionController(true));
+    await waitFor(() => expect(listAttentionEvents).toHaveBeenCalledTimes(1));
+    // While the initial fetch is in flight: an optimistic dismiss (persist
+    // pending) AND a refresh that coalesces behind the in-flight fetch.
+    await act(async () => {
+      void result.current.dismiss("a").catch(() => {});
+      result.current.refresh();
+    });
+    const callsBeforeStale = vi.mocked(listAttentionEvents).mock.calls.length;
+
+    // The stale response settles and releases the coalesced follow-up — but
+    // that follow-up must NOT read until the dismiss write commits, or it
+    // would accept pre-mutation backend data and momentarily resurrect the
+    // dismissed event.
+    await act(async () => {
+      initial.resolve([event("a")]);
+      await initial.promise;
+    });
+    expect(vi.mocked(listAttentionEvents).mock.calls.length).toBe(callsBeforeStale);
+
+    await act(async () => {
+      persist.resolve();
+      await persist.promise;
+    });
+    await waitFor(() => expect(result.current.events).toEqual([]));
+  });
+
   it("a convergence re-fetch waits for the mutation's write to commit", async () => {
     const initial = deferred<AttentionEvent[]>();
     vi.mocked(listAttentionEvents)
@@ -178,6 +217,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
     vi.mocked(dismissAttentionEvent).mockReturnValueOnce(persist.promise);
 
     const { result } = renderHook(() => useAttentionController(true));
+    await waitFor(() => expect(listAttentionEvents).toHaveBeenCalledTimes(1));
     await act(async () => {
       void result.current.dismiss("a").catch(() => {});
     });

@@ -124,7 +124,6 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
     }
     inFlightRef.current = true;
     const requestSeq = (requestSeqRef.current += 1);
-    const mutationSeqAtStart = mutationSeqRef.current;
     if (!hydratedRef.current) {
       setLoading(true);
     }
@@ -135,7 +134,26 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
         setRefreshNonce((nonce) => nonce + 1);
       }
     };
-    Promise.all([listAttentionEvents(), listAlertRules()])
+    // EVERY fetch waits for the persistence chain first — a read that starts
+    // before an optimistic write commits would capture the post-mutation
+    // sequence yet pre-mutation backend data and be accepted. The loop makes
+    // wait + snapshot atomic: if a NEW mutation was appended while we waited,
+    // wait again on the extended chain, and only then snapshot the sequence —
+    // so every write known at read time has committed, and anything later
+    // counts as "raced past this request" and triggers convergence.
+    let mutationSeqAtStart = 0;
+    const awaitMutationChain = async (): Promise<void> => {
+      let chain: Promise<void>;
+      do {
+        chain = mutationChainRef.current;
+        await chain;
+      } while (chain !== mutationChainRef.current);
+    };
+    awaitMutationChain()
+      .then(() => {
+        mutationSeqAtStart = mutationSeqRef.current;
+        return Promise.all([listAttentionEvents(), listAlertRules()]);
+      })
       .then(([nextEvents, nextRules]) => {
         settle();
         if (requestSeqRef.current !== requestSeq) {

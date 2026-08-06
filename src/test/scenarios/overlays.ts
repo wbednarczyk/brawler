@@ -304,8 +304,8 @@ const NOTABLE_ONLY_COUNT = 12;
  * toward the Today badge and none raises a toast (ADR 0097).
  *
  * OWNS the attention set (REPLACES, not appends): the whole point is an exact
- * severity MIX, so a base-scenario urgent event must not perturb the persistent
- * count. This is the documented replace-exception (cf. `partial-data`).
+ * severity MIX, so a base-scenario urgent event must not perturb the counts.
+ * This is the documented replace-exception (cf. `partial-data`).
  */
 function applyAttentionMixedSeverity(data: ScenarioData): ScenarioData {
   const ruleId = data.alertRules[0]?.id ?? "alert_rule_sample_1";
@@ -323,9 +323,9 @@ function applyAttentionMixedSeverity(data: ScenarioData): ScenarioData {
 }
 
 /**
- * Many unseen events, NONE `urgent` (all `notable`). A persistent toast must
- * never appear — the stream is the system of record, and only urgent events are
- * allowed to interrupt (ADR 0087 dec. 3). OWNS the attention set (REPLACES): a
+ * Many unseen events, NONE `urgent` (all `notable`) — the zero-urgent batch
+ * shape (nothing leads the stream as PILNE; the badge still counts them, and
+ * nothing raises a toast — ADR 0097). OWNS the attention set (REPLACES): a
  * base-scenario urgent event would defeat the "zero urgent" premise.
  */
 function applyAttentionNotableOnly(data: ScenarioData): ScenarioData {
