@@ -1266,6 +1266,74 @@
       ]
     },
     {
+      "name": "batch mark-seen flags exactly the given ids, ignoring unknown ones (ADR 0097 dec. 5)",
+      "_comment": "Today's 'was on screen' bulk marking behind the sidebar badge: one call, idempotent, unknown ids ignored — both sides must agree it never errors on a stale id and touches only the listed events.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "BSEEN",
+              "displayName": "Batch Seen Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_alert_rule",
+          "input": {
+            "input": {
+              "triggerType": "autopilot_run_completed",
+              "signalCategory": null,
+              "priceMin": null,
+              "priceMax": null,
+              "scopeType": "company",
+              "scopeRef": "$cid"
+            }
+          },
+          "capture": "rid"
+        },
+        {
+          "command": "evaluate_autopilot_completion",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "runId": "run_batch_seen"
+            }
+          },
+          "capture": "eid",
+          "expectField": {
+            "seen": false
+          }
+        },
+        {
+          "command": "mark_attention_events_seen",
+          "input": {
+            "input": {
+              "ids": ["$eid", "no_such_event"]
+            }
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectContains": {
+            "evidenceRef": "run_batch_seen",
+            "seen": true,
+            "dismissed": false
+          }
+        }
+      ]
+    },
+    {
       "name": "a terminally failed background job surfaces as a system attention event (epic #40 S3, ADR 0091 dec. 1)",
       "_comment": "The generic failure surface: a job whose retries are exhausted raises a SYSTEM event (no rule) whose evidence is the job row itself. `record_job_failure` is the corpus-only setup bridge for the queue's single terminal-failure point (there is no user command to mint one), mirroring `evaluate_autopilot_completion`. Both sides must agree that the event carries the raw job kind as its detail and the handler's failure subject as its statement, is Notable for every kind, is company-less when the work is workspace-wide (nullable since migration 0118), and answers seen/dismiss like any other event.",
       "steps": [

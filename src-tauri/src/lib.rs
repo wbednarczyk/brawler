@@ -418,6 +418,7 @@ pub fn run() {
             commands::attention::delete_alert_rule,
             commands::attention::list_attention_events,
             commands::attention::mark_attention_event_seen,
+            commands::attention::mark_attention_events_seen,
             commands::attention::dismiss_attention_event,
             commands::morning_briefing::generate_morning_briefing,
             commands::morning_briefing::get_latest_morning_briefing,

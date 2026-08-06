@@ -653,6 +653,13 @@ mod tests {
             "system event has no owning rule"
         );
         assert_eq!(events[0].evidence_ref, ledger[0].id);
+        // ADR 0097 dec. 8: the missed report never enters the feed, so the event
+        // must expose the witness URL for Review to open the report itself.
+        assert_eq!(
+            events[0].witness_url.as_deref(),
+            Some("https://www.gpw.pl/komunikaty?id=15/2026"),
+            "reconciliation event exposes the witness URL"
+        );
     }
 
     #[test]
