@@ -675,7 +675,7 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "set_qualitative_verdicts",
             Some(CitationsJson),
-            "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry a non-empty `citationsJson` evidence array (provenance). Decision support only — never an investment recommendation.",
+            "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{\"evidenceType\":\"notebook_entry\",\"evidenceId\":\"<id>\"}]` (types: feed_item | notebook_entry | claim | transcript_segment | company_event | research_question | company_signal | decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation.",
             tools::tool_schema::<crate::commands::quality_frameworks::SetQualitativeVerdictsInput>,
             acts::set_qualitative_verdicts_handler,
         ),
@@ -1847,6 +1847,34 @@ mod tests {
         assert_eq!(failure_code(outcome), CommandErrorCode::ProvenanceRequired);
     }
 
+    /// Freezes the error-layer distinction (#343): an EMPTY citations array is
+    /// stopped at the port gate (`provenance_required`, test above); a
+    /// non-empty array of garbage passes the gate and is refused by the persist
+    /// chokepoint's integrity check as `invalid_input`.
+    #[test]
+    fn garbage_citations_pass_the_gate_and_fail_integrity_as_invalid_input() {
+        let state = act_state();
+        let (company_id, framework_id, criterion_id) = seed_company_framework(&state);
+        set_writes_enabled(&state, true);
+        let outcome = call(
+            &state,
+            "set_qualitative_verdicts",
+            &json!({
+                "frameworkId": framework_id,
+                "companyId": company_id,
+                "results": [{
+                    "criterionId": criterion_id,
+                    "verdict": "pass",
+                    "reasoning": "r",
+                    "citationsJson": "[\"freeform prose\"]",
+                    "confidence": "low",
+                }],
+            }),
+        )
+        .expect("domain outcome");
+        assert_eq!(failure_code(outcome), CommandErrorCode::InvalidInput);
+    }
+
     /// Seed a company + fiscal period a financial-fact write can slot into.
     /// `kpidef_net_profit` is a canonical seeded definition's deterministic id
     /// (no lookup needed — the same convention `every_exposed_act_tool_is_
@@ -2333,6 +2361,23 @@ mod tests {
         let state = act_state();
         let (company_id, framework_id, criterion_id) = seed_company_framework(&state);
         set_writes_enabled(&state, true);
+        // Citation integrity (#343): the cited evidence must exist, so the
+        // round-trip cites a real notebook entry.
+        let note = state
+            .create_notebook_entry(storage::NewNotebookEntry {
+                company_id: company_id.clone(),
+                title: "Evidence".to_owned(),
+                body: "Cited by the verdict.".to_owned(),
+                body_format: Some("markdown".to_owned()),
+                tags: vec![],
+                kind: "manual".to_owned(),
+                claim_status: None,
+                event_date: None,
+                follow_up_after: None,
+                follow_up_date: None,
+                origins: vec![],
+            })
+            .expect("evidence note");
 
         let write = call(
             &state,
@@ -2344,7 +2389,7 @@ mod tests {
                     "criterionId": criterion_id,
                     "verdict": "pass",
                     "reasoning": "wide moat",
-                    "citationsJson": "[{\"kind\":\"note\",\"id\":\"n1\"}]",
+                    "citationsJson": format!(r#"[{{"evidenceType":"notebook_entry","evidenceId":"{}"}}]"#, note.id),
                     "confidence": "high",
                 }],
             }),
