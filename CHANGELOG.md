@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.63.14 - 2026-08-06
+
+
+### Features
+
+- **feed**: remove the per-channel mass-delete feature (#329) (#347)
+
 ## v0.63.13 - 2026-08-06
 
 
