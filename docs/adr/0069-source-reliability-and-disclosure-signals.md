@@ -1,6 +1,6 @@
 # ADR 0069: Source Reliability and Disclosure Signals
 
-Status: Accepted
+Status: Accepted — **decision 2's attention-routing amendment amended 2026-08-06 by [ADR 0097](0097-toasts-are-action-feedback-only.md)**: an `espi_only` event surfaces via the Today stream + sidebar badge (no toast), and its Review opens the missed report through the stored witness URL
 
 The official-report core of the product currently rides on a single active channel (Bankier per-company pages; the GPW ESPI/EBI adapter is registered but disabled since migration 0011), and the `SourceAdapter` boundary is a metadata catalog without a behavioral contract — adding a source means bespoke fetch code wired imperatively into `jobs/source_refresh.rs`. This ADR fixes both and extends the disclosure-signal taxonomy with two investor-relevant categories.
 

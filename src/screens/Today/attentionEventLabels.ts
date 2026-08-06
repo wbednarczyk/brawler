@@ -5,9 +5,9 @@ import {
 } from "../../shared/formatting/labels";
 
 /**
- * Today attention list + toast wiring (ADR 0068 T4): composes the badge/title
- * text for a fired attention event from its rule's trigger. Pure so the Today
- * row builder and the toast-raising effect render the identical "what fired"
+ * Today attention list (ADR 0068 T4): composes the badge/title text for a
+ * fired attention event from its rule's trigger. Pure so every consumer (the
+ * Today row builder, the briefing strip) renders the identical "what fired"
  * sentence — decision support only (facts + the trigger's own category/price
  * context), never phrased as advice. Reuses the exact `text()` keys the
  * Alerts screen's rules manager already translates (`AlertsScreen.tsx`

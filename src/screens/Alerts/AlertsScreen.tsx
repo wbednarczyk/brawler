@@ -210,6 +210,8 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
         setRules((current) => [...current, rule]);
         setPriceMin("");
         setPriceMax("");
+        // Keep the shared controller's rules in sync (Today's rule labels).
+        attention.refresh();
       })
       .catch((reason) => setError(String(reason)))
       .finally(() => setBusy(false));
@@ -218,7 +220,10 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
   function toggleRule(rule: AlertRule, enabled: boolean) {
     setError(null);
     setAlertRuleEnabled(rule.id, enabled)
-      .then((updated) => setRules((current) => current.map((r) => (r.id === rule.id ? updated : r))))
+      .then((updated) => {
+        setRules((current) => current.map((r) => (r.id === rule.id ? updated : r)));
+        attention.refresh();
+      })
       .catch((reason) => setError(String(reason)));
   }
 
@@ -236,7 +241,12 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
         }),
       message: text("Alert rule deleted"),
       undoLabel: text("Undo"),
-      onPerformed: () => setRules((current) => current.filter((r) => r.id !== rule.id)),
+      onPerformed: () => {
+        setRules((current) => current.filter((r) => r.id !== rule.id));
+        // The delete CASCADEs the rule's events in the backend — resync the
+        // shared controller so they leave Today/Alerts/the badge too.
+        attention.refresh();
+      },
       onRestored: refresh,
       onError: (reason) => setError(String(reason)),
     });
@@ -252,24 +262,28 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
   function commitRulePrice(rule: AlertRule) {
     setError(null);
     updateAlertRule({ id: rule.id, priceMin: rule.priceMin ?? undefined, priceMax: rule.priceMax ?? undefined })
-      .then((updated) => setRules((current) => current.map((r) => (r.id === rule.id ? updated : r))))
+      .then((updated) => {
+        setRules((current) => current.map((r) => (r.id === rule.id ? updated : r)));
+        attention.refresh();
+      })
       .catch((reason) => setError(String(reason)));
   }
 
+  // The controller re-syncs on a failed mutation; this screen also surfaces it.
   function dismissEvent(event: AttentionEvent) {
     setError(null);
-    attention.dismiss(event.id);
+    attention.dismiss(event.id).catch((reason) => setError(String(reason)));
   }
 
   function markSeen(event: AttentionEvent) {
-    attention.markSeen(event.id);
+    attention.markSeen(event.id).catch((reason) => setError(String(reason)));
   }
 
   // Short, human title for a rule's trigger (the rule row's bold first line).
   const ruleTitle = (rule: AlertRule): string => {
     switch (rule.triggerType) {
       case "signal_category":
-        // Issue #71 (same class as toast D3): resolve EVERY category through
+        // Issue #71 (the D3 raw-enum class): resolve EVERY category through
         // the shared display-name map (mirrors signal_categories.display_name)
         // — a hand-rolled subset leaks raw enum codes for the rest.
         return rule.signalCategory
@@ -594,7 +608,7 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
           )}
         </div>
 
-        {/* Card 3 — fired alerts (review). Richer Today surface + toasts land in T4. */}
+        {/* Card 3 — fired alerts (review), reading the shared attention controller. */}
         <div className="alerts-card">
           <SectionHeader
             className="alerts-card-header"

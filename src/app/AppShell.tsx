@@ -142,7 +142,11 @@ export function AppShell({
   // ONE coalesced POLITE announcement when the unseen-attention count INCREASES
   // after hydration (ADR 0097 dec. 4): screen-reader users learn something
   // important landed in Today without per-event interrupts — role="alert" left
-  // with the persistent toasts. The startup backlog stays badge-only.
+  // with the persistent toasts. The startup backlog stays badge-only. The
+  // region is CLEARED on a decrease (visiting Today) so a later identical
+  // count produces a real DOM mutation — aria-live only announces changes, and
+  // React skips a set to the same string, so 0→1→0→1 would otherwise go
+  // silent the second time.
   const [attentionAnnouncement, setAttentionAnnouncement] = useState("");
   const previousUnseenRef = useRef<number | null>(null);
   useEffect(() => {
@@ -155,8 +159,17 @@ export function AppShell({
       setAttentionAnnouncement(
         `${unseenAttentionCount} ${pluralNoun(locale, unseenAttentionCount, ATTENTION_BADGE_FORMS)}`,
       );
+    } else if (unseenAttentionCount < previous) {
+      setAttentionAnnouncement("");
     }
-  }, [attentionHydrated, unseenAttentionCount, locale]);
+    // `locale` is deliberately not a dependency: a locale switch must neither
+    // re-announce nor leave the previous locale's sentence behind — the effect
+    // below clears the region instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attentionHydrated, unseenAttentionCount]);
+  useEffect(() => {
+    setAttentionAnnouncement("");
+  }, [locale]);
 
   // The command palette's open() lives inside the CommandPaletteProvider (below),
   // which AppShell renders — so it cannot read that context directly. A binder

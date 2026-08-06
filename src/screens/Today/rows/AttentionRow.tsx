@@ -129,9 +129,9 @@ export function attentionEventIds(payloads: StreamPayload[]): string[] {
 /**
  * The group-level "Dismiss all" secondary action (ADR 0087 amendment 2026-07-23):
  * a two-step InlineConfirm (like Undo) that dispatches the existing per-event
- * dismiss for every member — optimistic, and the toast wiring syncs off the same
- * per-event dismiss. Only rendered for attention groups/aggregates (there is
- * nothing to bulk-dismiss otherwise).
+ * dismiss for every member — optimistic, through the shared attention
+ * controller. Only rendered for attention groups/aggregates (there is nothing
+ * to bulk-dismiss otherwise).
  */
 export function AttentionDismissAll({ eventIds, ctx }: { eventIds: string[]; ctx: RowContext }) {
   const [confirming, setConfirming] = useState(false);

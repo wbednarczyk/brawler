@@ -618,6 +618,20 @@ fn batch_mark_seen_flags_exactly_the_given_ids() {
         .attention()
         .mark_attention_events_seen(&[])
         .expect("empty batch is fine");
+
+    // A batch far past the SQLite bound-parameter floor (999) must not error:
+    // the statement is chunked, so an unbounded unseen backlog can never fail
+    // the very command meant to clear it. The unlisted event stays untouched.
+    let mut oversized: Vec<String> = (0..2_500).map(|n| format!("bulk_{n}")).collect();
+    oversized.push(listed[0].id.clone());
+    state
+        .attention()
+        .mark_attention_events_seen(&oversized)
+        .expect("oversized batch is chunked, never a parameter-limit error");
+    assert!(
+        events(&state).iter().all(|event| event.seen),
+        "the real id buried in the oversized batch was marked"
+    );
 }
 
 // --- rule id lifecycle (regression: live crash 2026-07-15) --------------------

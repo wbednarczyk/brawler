@@ -627,21 +627,26 @@ pub(super) fn mark_attention_event_seen(connection: &Connection, id: &str) -> St
     Ok(())
 }
 
-/// Mark a batch of events seen in one statement (ADR 0097 dec. 5): Today calls
-/// this for every loaded unseen event when the stream renders, so "seen" means
-/// "was on screen the last time Today was open" and the sidebar badge clears on
-/// a visit — never N per-row IPC round trips. Idempotent; unknown ids are
-/// ignored (the row may have been dismissed or pruned since the list loaded).
+/// One `UPDATE … IN (…)` per this many ids — comfortably under every SQLite
+/// build's bound-parameter limit (the legacy floor is 999), so an unbounded
+/// unseen backlog can never fail the very command meant to clear it.
+const MARK_SEEN_CHUNK: usize = 500;
+
+/// Mark a batch of events seen (ADR 0097 dec. 5): Today calls this for every
+/// loaded unseen event when the stream renders, so "seen" means "was on screen
+/// the last time Today was open" and the sidebar badge clears on a visit —
+/// never N per-row IPC round trips. Chunked at [`MARK_SEEN_CHUNK`] ids per
+/// statement. Idempotent; unknown ids are ignored (the row may have been
+/// dismissed or pruned since the list loaded).
 pub(super) fn mark_attention_events_seen(
     connection: &Connection,
     ids: &[String],
 ) -> StorageResult<()> {
-    if ids.is_empty() {
-        return Ok(());
+    for chunk in ids.chunks(MARK_SEEN_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let sql = format!("UPDATE attention_events SET seen = 1 WHERE id IN ({placeholders})");
+        connection.execute(&sql, rusqlite::params_from_iter(chunk.iter()))?;
     }
-    let placeholders = vec!["?"; ids.len()].join(", ");
-    let sql = format!("UPDATE attention_events SET seen = 1 WHERE id IN ({placeholders})");
-    connection.execute(&sql, rusqlite::params_from_iter(ids.iter()))?;
     Ok(())
 }
 

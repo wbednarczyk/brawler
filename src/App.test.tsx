@@ -230,6 +230,37 @@ describe("App shell", () => {
     );
   });
 
+  it("clears the announcement on a decrease so a repeat cycle re-announces (0→1→0→1)", async () => {
+    const { container } = renderApp();
+    const todayNav = await screen.findByRole("button", { name: /^Today/ });
+    await within(todayNav).findByText("1");
+    const liveRegion = container.querySelector('[aria-live="polite"]') as HTMLElement;
+
+    // The refresh control's accessible name tracks its state ("Refreshing…",
+    // "Sources refreshed") — capture the node once and click it by reference.
+    const refreshButton = screen.getByRole("button", { name: "Refresh sources" });
+
+    // Cycle 1: +1 event (1 → 2) — announced.
+    const base = appTestState.attentionEventsResponse[0];
+    appTestState.attentionEventsResponse = [base, { ...base, id: "attn_cycle_2" }];
+    await userEvent.click(refreshButton);
+    await waitFor(() => expect(liveRegion).toHaveTextContent("2 new important items in Today"));
+
+    // Visiting Today clears the count — the region must EMPTY (a later identical
+    // announcement needs a real DOM mutation, or aria-live stays silent).
+    await userEvent.click(todayNav);
+    await screen.findByRole("heading", { name: "Today" });
+    await waitFor(() => expect(liveRegion).toHaveTextContent(""));
+
+    // Cycle 2: two fresh events arrive (0 → 2) — the SAME sentence re-announces.
+    appTestState.attentionEventsResponse = [
+      { ...base, id: "attn_cycle_3" },
+      { ...base, id: "attn_cycle_4" },
+    ];
+    await userEvent.click(refreshButton);
+    await waitFor(() => expect(liveRegion).toHaveTextContent("2 new important items in Today"));
+  });
+
   it("shows Diagnostics navigation only in Developer mode", async () => {
     renderApp();
 

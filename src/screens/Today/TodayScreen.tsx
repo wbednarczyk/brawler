@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Inbox, RefreshCw } from "lucide-react";
 
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
@@ -107,10 +107,24 @@ export function TodayScreen({
     events: attentionEvents,
     rulesById: attentionRulesById,
     loading: attentionLoading,
+    error: attentionError,
+    refresh: refreshAttention,
     markManySeen: markAttentionEventsSeen,
-    markSeen: markAttentionEventSeenRow,
-    dismiss: dismissAttentionEventRow,
   } = attention;
+  // Row-facing wrappers: a failed mutation already re-syncs inside the
+  // controller (the stream/badge self-correct), so rows stay fire-and-forget.
+  const markAttentionEventSeenRow = useCallback(
+    (id: string) => {
+      void attention.markSeen(id).catch(() => {});
+    },
+    [attention],
+  );
+  const dismissAttentionEventRow = useCallback(
+    (id: string) => {
+      void attention.dismiss(id).catch(() => {});
+    },
+    [attention],
+  );
   const morningBriefing = useMorningBriefing();
   // The active counter filter, or null for the full stream.
   const [filter, setFilter] = useState<StreamFilter | null>(null);
@@ -150,7 +164,7 @@ export function TodayScreen({
   const upcomingAll = season.season?.upcoming ?? [];
 
   // Fired alerts (ADR 0068 T4): grouped by company (contiguous by ticker),
-  // newest-fired first within a company — the same order the toast effect walks.
+  // newest-fired first within a company.
   const attentionRows = useMemo(() => {
     const tickerOf = (companyId: string | null) =>
       (companyId ? companyById.get(companyId)?.qualifiedTicker : null) ??
@@ -313,7 +327,8 @@ export function TodayScreen({
     const unseenIds = attentionEvents
       .filter((event) => !event.seen && !event.dismissed)
       .map((event) => event.id);
-    if (unseenIds.length > 0) markAttentionEventsSeen(unseenIds);
+    // Failure path: the controller re-syncs (the badge relights honestly).
+    if (unseenIds.length > 0) void markAttentionEventsSeen(unseenIds).catch(() => {});
   }, [view, attentionEvents, markAttentionEventsSeen]);
 
   // Counter tiles: "Pilne" (urgent rows) first, then the live pre-cap category
@@ -333,7 +348,7 @@ export function TodayScreen({
   const anyLoading = autopilotLoading || attentionLoading || claimsLoading || season.loading;
   // A failed category is explicit, never false quiet (J1 contract, ADR 0081 Q9):
   // an errored read must not let the stream read as "nothing needs attention".
-  const anyCategoryError = Boolean(claimsError || season.error);
+  const anyCategoryError = Boolean(claimsError || season.error || attentionError);
   const showQuietState = filter === null && !hasAttention && !anyCategoryError;
 
   // Config-state banner conditions (ADR 0087 dec. 5): a property of the app itself,
@@ -486,6 +501,8 @@ export function TodayScreen({
         <section className="today-stream-region" aria-label={text("Attention stream")}>
           {claimsError ? errorStrip(text("Couldn't load claims to verify."), retryClaims) : null}
           {season.error ? errorStrip(text("Couldn't load upcoming reports."), season.reload) : null}
+          {/* Last-known-good events stay rendered under the strip (ADR 0097). */}
+          {attentionError ? errorStrip(text("Couldn't load attention events."), refreshAttention) : null}
 
           {showQuietState && anyLoading ? (
             <Skeleton

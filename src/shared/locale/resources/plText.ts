@@ -141,6 +141,7 @@ export const plText: Record<string, string> = {
   "Urgent": "Pilne",
   "Notable": "Uwaga",
   "Couldn't load claims to verify.": "Nie udało się pobrać obietnic do weryfikacji.",
+  "Couldn't load attention events.": "Nie udało się pobrać zdarzeń uwagi.",
   "Couldn't load upcoming reports.": "Nie udało się pobrać nadchodzących raportów.",
   "Composing the review…": "Składam przegląd…",
   "Expand": "Rozwiń",

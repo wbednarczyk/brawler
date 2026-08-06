@@ -269,12 +269,12 @@ function applyMixedLocale(data: ScenarioData): ScenarioData {
   return { ...data, feedItems: [plItem, enItem, ...data.feedItems] };
 }
 
-// Persistent-toast overflow cap regression (bug: 19+ unseen attention events
-// piled up unbounded persistent toasts, covering the sidebar nav — Toast.tsx
-// PERSISTENT_VISIBLE_CAP). 20 unseen events reused across the base scenario's
-// companies (falling back to a fixed id when there are none) — Playwright's
-// only lever into "many unseen attention events" without a dedicated bridge
-// method, mirroring `applyDenseHistory`'s "materializes only when selected".
+// A large unseen attention batch — the shape that used to raise the toast wall
+// and now must raise ZERO toasts, only the Today badge (ADR 0097; guarded by
+// tests/browser/attention-ambient.spec.ts). 20 unseen events reused across the
+// base scenario's companies (falling back to a fixed id when there are none) —
+// Playwright's lever into "many unseen attention events" without a dedicated
+// bridge method, mirroring `applyDenseHistory`'s "materializes only when selected".
 const ATTENTION_OVERFLOW_COUNT = 20;
 
 function applyAttentionOverflow(data: ScenarioData): ScenarioData {
@@ -291,8 +291,8 @@ function applyAttentionOverflow(data: ScenarioData): ScenarioData {
   return { ...data, attentionEvents: [...extra, ...data.attentionEvents] };
 }
 
-// Toast policy v2 (ADR 0087 dec. 3): a persistent toast is reserved for `urgent`
-// events only. These two overlays exercise the SELECTIVE side of the cap.
+// Severity-mix batches (urgent vs notable composition) — sample-data levers for
+// severity-dependent surfaces (stream lead, wall collapse, badge counting).
 const MIXED_URGENT_COUNT = 5;
 const MIXED_NOTABLE_COUNT = 15;
 const NOTABLE_ONLY_COUNT = 12;

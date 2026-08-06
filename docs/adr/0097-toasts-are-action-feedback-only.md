@@ -54,10 +54,19 @@ for the same reason.
    loaded set). Previously `seen` only gated toast dedup and was set per-row on evidence
    review; nothing else consumed it. `seen` ≠ `dismissed`: rows and the Archive are unchanged.
 6. **One app-level attention controller** owns events, rules, the unseen count, refresh, and
-   seen/dismiss mutations (request-generation guarded). Today, Alerts, and the badge consume
-   the same state — no per-screen copies drifting apart — and it refreshes on every
-   event-producing seam (startup behind the license gate, manual all-source refresh,
-   single-source refresh, scheduler cycle completion, which also covers job-failure events).
+   seen/dismiss mutations. Today, Alerts, and the badge consume the same state — no per-screen
+   copies drifting apart. Freshness seams: startup (behind the license gate), the shared
+   post-source-refresh view update (manual all-source + single-source), and **every
+   scheduler-mirror poll tick** — background work (autopilot completions, terminal job
+   failures) raises events with no frontend-visible trigger, so a source-due transition is not
+   a proxy for "an event landed"; the controller skips the state update when a poll returns
+   unchanged data, keeping the steady state render-free. Consistency: requests and mutations
+   are sequenced separately (only the newest request applies data or settles loading/hydration;
+   a response that raced past an optimistic mutation is discarded and replaced by a scheduled
+   re-fetch); a failed fetch keeps the **last-known-good events** and surfaces a typed error —
+   an errored attention read must never blank the badge or render a false quiet state (the
+   ADR 0081 Q9 posture); mutations return their persistence promise and re-sync + reject on
+   failure so screens can surface it.
 7. **Reconciliation severity stays `urgent`.** With toasts gone, severity no longer routes any
    toast; demoting to `notable` would buy nothing and break wall collapse (urgent aggregates
    from 2, notable from 4) while removing the only real exerciser of the 72h aging rule.
