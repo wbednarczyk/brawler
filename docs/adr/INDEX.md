@@ -96,3 +96,4 @@
 - [0094](0094-committed-public-espi-report-samples.md) — Committed public ESPI/EBI report samples for the real-format CI test tier — Accepted (2026-08-04, epic #40 / #139; owner sign-off in chat
 - [0095](0095-retire-html-positional-tier.md) — Retire the html_positional extraction tier — Accepted (2026-08-05, owner decision in chat after the #182 measurement; scope w
 - [0096](0096-quality-gate-architecture-under-continuous-release.md) — Quality Gate Architecture Under Continuous Release — Accepted (2026-08-05, owner decision after sol consultation + adversarial review
+- [0097](0097-toasts-are-action-feedback-only.md) — Toasts Are Action Feedback Only — Ambient Attention Lives in Today — Accepted (2026-08-06, owner sign-off on the #330 plan)

@@ -40,6 +40,16 @@ type AppLifecycleEffectsInput = {
   refreshDatabaseStatus: () => void;
   refreshFeedItems: () => void;
   refreshSignals: () => void;
+  /**
+   * Refetch the app-level attention state (ADR 0097 dec. 6) on EVERY scheduler
+   * poll tick: background work (autopilot completions, terminal job failures)
+   * raises attention events with no frontend-visible trigger of its own — a
+   * source-due transition is NOT a proxy for "an event landed" (the queue can
+   * finish long after the refresh that enqueued it). The controller skips the
+   * state update when data is unchanged, so the steady state is render-free.
+   * Startup load is the controller's own license-gated effect.
+   */
+  refreshAttention: () => void;
   refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
   refreshLicenseStatus: () => void;
@@ -91,6 +101,7 @@ export function useAppLifecycleEffects({
   refreshDatabaseStatus,
   refreshFeedItems,
   refreshSignals,
+  refreshAttention,
   refreshGeminiCredentialStatus,
   refreshHealth,
   refreshLicenseStatus,
@@ -239,6 +250,10 @@ export function useAppLifecycleEffects({
             refreshDatabaseStatus();
             refreshCompanyRegistryEntries();
           }
+          // Every tick, not only on a source-due transition: queued background
+          // work (autopilot, job failures) raises attention events on its own
+          // schedule — see the `refreshAttention` input doc.
+          refreshAttention();
         })
         .catch(() => {
           // A transient status read failure just leaves the last display in place.

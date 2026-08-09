@@ -39,10 +39,18 @@ severity: AttentionSeverity,
 evidenceTitle: string | null, 
 /**
  * A secondary raw datum whose meaning depends on `evidence_type`: for a
- * `source_reconciliation` event, the display name of the source that missed
- * the report (adapter id → its registry display name); for an `autopilot_run`
- * event, the run's raw status; for a `job` event, the failed job's raw `kind`
- * (all translated by the frontend). `None` otherwise or when the evidence row
- * is gone.
+ * `source_reconciliation` event, the display name of the WITNESS that caught
+ * the missed report (`witness_adapter_id` → its registry display name — not
+ * the source that missed it); for an `autopilot_run` event, the run's raw
+ * status; for a `job` event, the failed job's raw `kind` (all translated by
+ * the frontend). `None` otherwise or when the evidence row is gone.
  */
-evidenceDetail: string | null, };
+evidenceDetail: string | null, 
+/**
+ * The missed report's own URL (ADR 0097 dec. 8): for a
+ * `source_reconciliation` event, the witness listing's `witness_url`, so the
+ * row's Review can open the report itself — the report never enters the feed
+ * (ADR 0069), so no feed navigation can reach it. `None` for every other
+ * evidence type or when the ledger row is gone.
+ */
+witnessUrl: string | null, };

@@ -68,7 +68,7 @@ Flow:
 1. User lands on Today.
 2. At the top, the **morning briefing** summarizes what changed in the user's companies and what needs doing — new signals, autopilot runs, claims due, upcoming report dates, and fired alerts — as a deterministic structured list ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2 — no AI narrative). A **Generate briefing** action recomposes it on demand; it also auto-refreshes once per day while the app is open.
 3. Below it, the user triages the **attention stream** (autopilot runs, changed reports, claims to verify, upcoming reports, and fired alerts), optionally filtered by a counter tile.
-4. **Fired alerts** also raise a **persistent toast** the user can click through to the evidence; the **Today attention list** groups fired events by company, where each is marked seen or dismissed.
+4. **Fired alerts** land in the same stream, grouped by company, each marked seen or dismissed; while the user works elsewhere, the **sidebar Today badge** counts unseen non-routine events and clears on the next visit ([ADR 0097](adr/0097-toasts-are-action-feedback-only.md) — no attention event raises a toast).
 5. User opens the 0–2 items that matter into the company workspace, then returns to Today.
 
 Setup (Library → Alerts): the user creates **alert rules** from preset chips — a signal category, an autopilot run completing, or a price condition (*price enters my range* / *52-week low*) — scoped to a company or a watchlist, each enable/disable-able. Fired alerts are reviewable there too.
@@ -76,7 +76,7 @@ Setup (Library → Alerts): the user creates **alert rules** from preset chips �
 Acceptance criteria:
 
 - The briefing is a fully deterministic structured list and always renders, never blocked (the narrative half is retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
-- A fired alert always traces back to its evidence (signal, run, or quote) via both the toast click-through and the attention list.
+- A fired alert always traces back to its evidence (signal, run, quote, or a missed report's witness URL) via the attention row's Review.
 - An alert never re-fires for the same evidence, and never phrases a fact as advice.
 - The journey stays within its interaction budget ([budgets.json](../tests/browser/journeys/budgets.json)); reading the briefing is a passive scan, not a counted interaction.
 

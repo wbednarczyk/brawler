@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Inbox, RefreshCw } from "lucide-react";
 
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { Company, FeedItem, SourceAdapter } from "../../api/types";
-import type { AttentionEvent } from "../../api/attention";
 import type { MorningBriefingItem } from "../../api/generated/MorningBriefingItem";
 import { useLocale } from "../../shared/locale";
 import {
@@ -14,9 +13,9 @@ import {
   SegmentedControlOption,
   Skeleton,
 } from "../../ui";
+import type { AttentionController } from "../../app/useAttentionController";
 import { useTodayPulse } from "./useTodayPulse";
 import { useMorningBriefing } from "./useMorningBriefing";
-import { useAttentionToasts } from "./useAttentionToasts";
 import { MorningBriefingStrip } from "./MorningBriefingStrip";
 import { SeverityLegend } from "./SeverityLegend";
 import { ConfigBanner, type ConfigCondition } from "./ConfigBanner";
@@ -36,11 +35,15 @@ import { onStreamRowKeyDown } from "./rows/streamRowKit";
 import { ArchivedAttentionRow, openAttentionEvidence } from "./rows/AttentionRow";
 
 export type TodayScreenProps = {
+  /** The app-level attention state (ADR 0097 dec. 6) — shared with Alerts and the sidebar badge. */
+  attention: AttentionController;
   companies: Company[];
   pinnedCompanyIds: string[];
   recentFeedItems: FeedItem[];
   openCompanyWorkspace: (companyId: string, tab: CompanyWorkspaceTab) => void;
   openInbox: () => void;
+  /** Open a URL in the system browser (a reconciliation event's missed report, ADR 0097 dec. 8). */
+  openExternalUrl: (url: string) => void;
   /** Navigate to the Report-season surface (the upcoming-reports "Show all" target). */
   openReportSeason: () => void;
   /** The loaded source adapters (already fetched app-wide), for the config banner's
@@ -73,11 +76,13 @@ type StreamFilter = StreamCategory | "urgent";
 // counter tiles ("Pilne" first), and per-category error strips. Composes existing
 // app-wide read models; severity arrives typed (placeholder adapter until D3a).
 export function TodayScreen({
+  attention,
   companies,
   pinnedCompanyIds,
   recentFeedItems,
   openCompanyWorkspace,
   openInbox,
+  openExternalUrl,
   openReportSeason,
   sourceAdapters,
   openSources,
@@ -93,16 +98,33 @@ export function TodayScreen({
     dismissAutopilotRun,
     undoAutopilotRun,
     undoneAutopilotRuns,
-    attentionEvents,
-    attentionLoading,
-    attentionRulesById,
-    dismissAttentionEventRow,
-    markAttentionEventSeenRow,
     retryClaims,
     archivedAttentionEvents,
     archiveLoading,
     loadArchive,
   } = useTodayPulse(pinnedCompanyIds, companies);
+  const {
+    events: attentionEvents,
+    rulesById: attentionRulesById,
+    loading: attentionLoading,
+    error: attentionError,
+    refresh: refreshAttention,
+    markManySeen: markAttentionEventsSeen,
+  } = attention;
+  // Row-facing wrappers: a failed mutation already re-syncs inside the
+  // controller (the stream/badge self-correct), so rows stay fire-and-forget.
+  const markAttentionEventSeenRow = useCallback(
+    (id: string) => {
+      void attention.markSeen(id).catch(() => {});
+    },
+    [attention],
+  );
+  const dismissAttentionEventRow = useCallback(
+    (id: string) => {
+      void attention.dismiss(id).catch(() => {});
+    },
+    [attention],
+  );
   const morningBriefing = useMorningBriefing();
   // The active counter filter, or null for the full stream.
   const [filter, setFilter] = useState<StreamFilter | null>(null);
@@ -142,7 +164,7 @@ export function TodayScreen({
   const upcomingAll = season.season?.upcoming ?? [];
 
   // Fired alerts (ADR 0068 T4): grouped by company (contiguous by ticker),
-  // newest-fired first within a company — the same order the toast effect walks.
+  // newest-fired first within a company.
   const attentionRows = useMemo(() => {
     const tickerOf = (companyId: string | null) =>
       (companyId ? companyById.get(companyId)?.qualifiedTicker : null) ??
@@ -166,6 +188,7 @@ export function TodayScreen({
     companyByTicker,
     openCompanyWorkspace,
     openInbox,
+    openExternalUrl,
     autopilot: { dismissAutopilotRun, undoAutopilotRun, undoneAutopilotRuns },
     attention: { attentionRulesById, dismissAttentionEventRow, markAttentionEventSeenRow },
   };
@@ -294,16 +317,19 @@ export function TodayScreen({
     }
   }
 
-  // Persistent-toast wiring (unchanged behavior, ADR 0068 T4; severity-driven with
-  // D3a). Reuses the pulse attention-events fetch — no new poller.
-  useAttentionToasts({
-    companies,
-    events: attentionRows,
-    companyById,
-    attentionRulesById,
-    onReview: (event: AttentionEvent) => openAttentionEvidence(event, ctx),
-    onDismiss: dismissAttentionEventRow,
-  });
+  // Seen = "was on screen the last time Today was open" (ADR 0097 dec. 5):
+  // batch-mark every loaded unseen event once the stream has real data, so the
+  // sidebar badge clears on a visit. One IPC call; the optimistic flip empties
+  // the unseen set, so the effect self-quiesces. Aggregated/grouped members are
+  // covered — they are all in the loaded list.
+  useEffect(() => {
+    if (view !== "active") return;
+    const unseenIds = attentionEvents
+      .filter((event) => !event.seen && !event.dismissed)
+      .map((event) => event.id);
+    // Failure path: the controller re-syncs (the badge relights honestly).
+    if (unseenIds.length > 0) void markAttentionEventsSeen(unseenIds).catch(() => {});
+  }, [view, attentionEvents, markAttentionEventsSeen]);
 
   // Counter tiles: "Pilne" (urgent rows) first, then the live pre-cap category
   // counts (ADR 0076 U-Rb D5 + the mockup's fourth-tile amendment).
@@ -322,7 +348,7 @@ export function TodayScreen({
   const anyLoading = autopilotLoading || attentionLoading || claimsLoading || season.loading;
   // A failed category is explicit, never false quiet (J1 contract, ADR 0081 Q9):
   // an errored read must not let the stream read as "nothing needs attention".
-  const anyCategoryError = Boolean(claimsError || season.error);
+  const anyCategoryError = Boolean(claimsError || season.error || attentionError);
   const showQuietState = filter === null && !hasAttention && !anyCategoryError;
 
   // Config-state banner conditions (ADR 0087 dec. 5): a property of the app itself,
@@ -475,6 +501,8 @@ export function TodayScreen({
         <section className="today-stream-region" aria-label={text("Attention stream")}>
           {claimsError ? errorStrip(text("Couldn't load claims to verify."), retryClaims) : null}
           {season.error ? errorStrip(text("Couldn't load upcoming reports."), season.reload) : null}
+          {/* Last-known-good events stay rendered under the strip (ADR 0097). */}
+          {attentionError ? errorStrip(text("Couldn't load attention events."), refreshAttention) : null}
 
           {showQuietState && anyLoading ? (
             <Skeleton

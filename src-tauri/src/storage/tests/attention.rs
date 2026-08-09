@@ -562,6 +562,78 @@ fn mark_seen_and_dismiss_update_event_flags() {
     assert!(all[0].dismissed);
 }
 
+#[test]
+fn batch_mark_seen_flags_exactly_the_given_ids() {
+    // ADR 0097 dec. 5: Today marks every loaded unseen event in ONE call when
+    // its stream renders, so the sidebar badge clears on a visit. Rows are
+    // seeded raw (system events, no rule) — the per-rule daily throttle would
+    // otherwise cap an ingestion at one event.
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    for n in 1..=3 {
+        crate::storage::attention::insert_system_attention_event(
+            &connection,
+            crate::storage::attention::TRIGGER_SOURCE_RECONCILIATION,
+            Some("c1"),
+            crate::storage::attention::EVIDENCE_SOURCE_RECONCILIATION,
+            &format!("recon_{n}"),
+            Some("Raport bieżący"),
+            &format!("2026-08-0{n}T00:00:00Z"),
+        )
+        .expect("seed event");
+    }
+    let state = AppState::new(connection);
+
+    let listed = events(&state);
+    assert_eq!(listed.len(), 3, "three seeded events");
+    assert!(listed.iter().all(|event| !event.seen));
+
+    // Mark all but the first, plus an unknown id (ignored, not an error).
+    let mut ids: Vec<String> = listed
+        .iter()
+        .skip(1)
+        .map(|event| event.id.clone())
+        .collect();
+    ids.push("no_such_event".to_owned());
+    state
+        .attention()
+        .mark_attention_events_seen(&ids)
+        .expect("batch mark seen");
+
+    let after = events(&state);
+    let seen_of = |id: &str| after.iter().find(|event| event.id == id).expect("row").seen;
+    assert!(!seen_of(&listed[0].id), "unlisted event stays unseen");
+    for event in listed.iter().skip(1) {
+        assert!(seen_of(&event.id), "listed event is seen");
+    }
+
+    // An empty batch is a no-op, never an error.
+    state
+        .attention()
+        .mark_attention_events_seen(&[])
+        .expect("empty batch is fine");
+
+    // A batch far past the SQLite bound-parameter floor (999) must not error:
+    // the statement is chunked, so an unbounded unseen backlog can never fail
+    // the very command meant to clear it. The unlisted event stays untouched.
+    let mut oversized: Vec<String> = (0..2_500).map(|n| format!("bulk_{n}")).collect();
+    oversized.push(listed[0].id.clone());
+    state
+        .attention()
+        .mark_attention_events_seen(&oversized)
+        .expect("oversized batch is chunked, never a parameter-limit error");
+    assert!(
+        events(&state).iter().all(|event| event.seen),
+        "the real id buried in the oversized batch was marked"
+    );
+}
+
 // --- rule id lifecycle (regression: live crash 2026-07-15) --------------------
 
 #[test]

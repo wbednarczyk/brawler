@@ -269,12 +269,12 @@ function applyMixedLocale(data: ScenarioData): ScenarioData {
   return { ...data, feedItems: [plItem, enItem, ...data.feedItems] };
 }
 
-// Persistent-toast overflow cap regression (bug: 19+ unseen attention events
-// piled up unbounded persistent toasts, covering the sidebar nav — Toast.tsx
-// PERSISTENT_VISIBLE_CAP). 20 unseen events reused across the base scenario's
-// companies (falling back to a fixed id when there are none) — Playwright's
-// only lever into "many unseen attention events" without a dedicated bridge
-// method, mirroring `applyDenseHistory`'s "materializes only when selected".
+// A large unseen attention batch — the shape that used to raise the toast wall
+// and now must raise ZERO toasts, only the Today badge (ADR 0097; guarded by
+// tests/browser/attention-ambient.spec.ts). 20 unseen events reused across the
+// base scenario's companies (falling back to a fixed id when there are none) —
+// Playwright's lever into "many unseen attention events" without a dedicated
+// bridge method, mirroring `applyDenseHistory`'s "materializes only when selected".
 const ATTENTION_OVERFLOW_COUNT = 20;
 
 function applyAttentionOverflow(data: ScenarioData): ScenarioData {
@@ -291,21 +291,21 @@ function applyAttentionOverflow(data: ScenarioData): ScenarioData {
   return { ...data, attentionEvents: [...extra, ...data.attentionEvents] };
 }
 
-// Toast policy v2 (ADR 0087 dec. 3): a persistent toast is reserved for `urgent`
-// events only. These two overlays exercise the SELECTIVE side of the cap.
+// Severity-mix batches (urgent vs notable composition) — sample-data levers for
+// severity-dependent surfaces (stream lead, wall collapse, badge counting).
 const MIXED_URGENT_COUNT = 5;
 const MIXED_NOTABLE_COUNT = 15;
 const NOTABLE_ONLY_COUNT = 12;
 
 /**
  * ~20 unseen events of which only SOME (5) are `urgent`; the rest are `notable`.
- * Only the urgent ones may raise persistent toasts, so the persistent stack caps
- * at 3 visible + a "+N more" summary counting ONLY the urgent overflow — never
- * the notable events (which raise transient toasts at most).
+ * A mixed-severity batch: urgent rows lead the stream and collapse from 2+,
+ * notable rows sit below and collapse from 4+ (ADR 0087); all of them count
+ * toward the Today badge and none raises a toast (ADR 0097).
  *
  * OWNS the attention set (REPLACES, not appends): the whole point is an exact
- * severity MIX, so a base-scenario urgent event must not perturb the persistent
- * count. This is the documented replace-exception (cf. `partial-data`).
+ * severity MIX, so a base-scenario urgent event must not perturb the counts.
+ * This is the documented replace-exception (cf. `partial-data`).
  */
 function applyAttentionMixedSeverity(data: ScenarioData): ScenarioData {
   const ruleId = data.alertRules[0]?.id ?? "alert_rule_sample_1";
@@ -323,9 +323,9 @@ function applyAttentionMixedSeverity(data: ScenarioData): ScenarioData {
 }
 
 /**
- * Many unseen events, NONE `urgent` (all `notable`). A persistent toast must
- * never appear — the stream is the system of record, and only urgent events are
- * allowed to interrupt (ADR 0087 dec. 3). OWNS the attention set (REPLACES): a
+ * Many unseen events, NONE `urgent` (all `notable`) — the zero-urgent batch
+ * shape (nothing leads the stream as PILNE; the badge still counts them, and
+ * nothing raises a toast — ADR 0097). OWNS the attention set (REPLACES): a
  * base-scenario urgent event would defeat the "zero urgent" premise.
  */
 function applyAttentionNotableOnly(data: ScenarioData): ScenarioData {
@@ -388,7 +388,7 @@ function makeRoutineRun(id: string, companyId: string): ScenarioData["autopilotR
  *
  *   - 2 URGENT: an insider transaction (PKN) + a missed-report reconciliation
  *     (KGH, a system event with no user rule) — the rows that must LEAD the
- *     stream and raise the (only) persistent toasts.
+ *     stream.
  *   - a 2-member NOTABLE group (PZU, two same-category fired alerts on distinct
  *     evidence) — the "repeats collapse into one ×N row" case.
  *   - 6 ROUTINE autopilot runs across distinct companies — more than the

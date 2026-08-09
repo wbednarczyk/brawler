@@ -1,6 +1,6 @@
 # ADR 0068: Attention Routing — Toasts, Alert Rules, Morning Briefing
 
-Status: Accepted — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the briefing's optional AI narrative is removed (`v0.59.0`); the deterministic composed list (`gather_sources` + `compose_briefing`) becomes the only briefing. Alert rules, attention events, and toasts are unchanged.
+Status: Accepted — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the briefing's optional AI narrative is removed (`v0.59.0`); the deterministic composed list (`gather_sources` + `compose_briefing`) becomes the only briefing. **Amended 2026-08-06 by [ADR 0097](0097-toasts-are-action-feedback-only.md)**: attention events no longer raise toasts (persistent or transient) — toasts are action feedback only; ambient awareness moved to the Today sidebar badge. Alert rules and attention events are unchanged.
 
 The app produces high-signal events (typed disclosure signals, autopilot runs, upcoming due dates) but has no attention layer: no toast/snackbar system exists at all, async feedback surfaces inconsistently, and nothing tells the user "this deserves a look" without them scanning feeds. This ADR adds the in-app attention boundary and its first synthesis consumer, the morning briefing.
 

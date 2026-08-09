@@ -1,6 +1,6 @@
 # ADR 0087: Today attention home v2 — grouped stream, typed severity, quiet toasts
 
-Status: Accepted (2026-07-22, owner sign-off at v0.60 planning)
+Status: Accepted (2026-07-22, owner sign-off at v0.60 planning) — **decision 3 (toast policy v2) superseded 2026-08-06 by [ADR 0097](0097-toasts-are-action-feedback-only.md)**: attention events raise no toasts at all; ambient awareness lives in the Today sidebar badge
 
 Deciders: maintainer. Area: frontend, attention routing, i18n.
 

@@ -32,5 +32,16 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v7
-      - run: make check-release-label PR=${{ github.event.pull_request.number }}
+      # Deliberately NO `uses:` actions (guardrail 2026-08-06): during a GitHub
+      # Actions incident the runner could not even resolve actions/checkout
+      # ("Failed to resolve action download info: Service Unavailable" in Set
+      # up job), reddening this gate while the label sat correctly on the PR.
+      # This is the job the owner's labeled/unlabeled events re-run at merge
+      # time, so it depends only on what the runner image already ships
+      # (git + gh): a shallow clone of the default branch (the gate's script +
+      # Makefile — label data comes from the API, not the tree), then the same
+      # make target as before.
+      - name: Check release label
+        run: |
+          gh repo clone "$GITHUB_REPOSITORY" gate -- --depth 1
+          cd gate && make check-release-label PR=${{ github.event.pull_request.number }}

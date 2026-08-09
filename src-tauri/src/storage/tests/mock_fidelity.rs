@@ -710,6 +710,19 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
                 .expect("mark_attention_event_seen");
             Value::Null
         }
+        "mark_attention_events_seen" => {
+            let ids: Vec<String> = inner["ids"]
+                .as_array()
+                .expect("ids")
+                .iter()
+                .map(|value| value.as_str().expect("id").to_owned())
+                .collect();
+            state
+                .attention()
+                .mark_attention_events_seen(&ids)
+                .expect("mark_attention_events_seen");
+            Value::Null
+        }
         "dismiss_attention_event" => {
             let id = inner["id"].as_str().expect("id");
             state

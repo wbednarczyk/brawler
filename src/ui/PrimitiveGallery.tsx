@@ -31,11 +31,11 @@ import { ToastProvider, useToast } from "./Toast";
 
 const noop = () => {};
 
-// Toast (ADR 0068) has no static "closed" markup like InlineConfirm — it only
-// renders once queued via `useToast().show()`. The gallery is a standalone
-// dev-only preview root (src/gallery.tsx), not part of the app shell, so it
-// mounts its own ToastProvider here purely to demonstrate the transient and
-// persistent variants; this is not a second app-wide mount (see App.tsx).
+// Toast has no static "closed" markup like InlineConfirm — it only renders
+// once queued via `useToast().show()`. The gallery is a standalone dev-only
+// preview root (src/gallery.tsx), not part of the app shell, so it mounts its
+// own ToastProvider here purely to demonstrate the transient action-feedback
+// variant (the only one, ADR 0097); this is not a second app-wide mount.
 function ToastGalleryDemo() {
   return (
     <ToastProvider>
@@ -48,14 +48,9 @@ function ToastGalleryTriggers() {
   const { show } = useToast();
   useEffect(() => {
     show({ message: "Sources refreshed", tone: "positive" });
-    show({
-      message: "Profit warning: quarterly guidance cut 12%",
-      persistent: true,
-      actionLabel: "View evidence",
-      onAction: noop,
-    });
+    show({ message: "View deleted", actionLabel: "Undo", onAction: noop });
     // `show` is a stable useCallback identity, so this fires once on mount —
-    // the gallery/a11y snapshot always shows both variants.
+    // the gallery/a11y snapshot always shows the queue.
   }, [show]);
   return null;
 }
@@ -179,10 +174,10 @@ export function PrimitiveGallery() {
 
       <section aria-labelledby="g-toast">
         <SectionHeader
-          title="Toast (transient / persistent, ADR 0068)"
+          title="Toast (action feedback, ADR 0097)"
           titleId="g-toast"
           level="h3"
-          description="Bottom-left queue. Transient: role=status, auto-dismisses. Persistent: role=alert, explicit dismiss + click-through action, exempt from stack eviction."
+          description="Bottom-left queue, role=status, auto-dismisses after 6s, max 3 stacked. Feedback for a direct user action only (undo, import applied) — ambient attention lives in Today."
         />
         <ToastGalleryDemo />
       </section>

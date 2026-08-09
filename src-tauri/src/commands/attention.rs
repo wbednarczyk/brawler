@@ -27,6 +27,12 @@ pub struct AttentionEventActionInput {
     id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttentionEventBatchActionInput {
+    ids: Vec<String>,
+}
+
 /// Create a user-owned alert rule. Trigger-specific invariants (signal category
 /// present, `price_min ≤ price_max`, valid scope) are enforced by the store.
 #[tauri::command]
@@ -110,6 +116,20 @@ pub fn mark_attention_event_seen(
     state
         .attention()
         .mark_attention_event_seen(&input.id)
+        .map_err(|error| error.to_string())
+}
+
+/// Mark a batch of events seen in one call (ADR 0097 dec. 5): Today marks every
+/// loaded unseen event when its stream renders, so the sidebar badge clears on a
+/// visit. Idempotent; unknown ids are ignored.
+#[tauri::command]
+pub fn mark_attention_events_seen(
+    input: AttentionEventBatchActionInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<(), String> {
+    state
+        .attention()
+        .mark_attention_events_seen(&input.ids)
         .map_err(|error| error.to_string())
 }
 

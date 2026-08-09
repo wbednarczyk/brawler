@@ -5,9 +5,9 @@ import {
 } from "../../shared/formatting/labels";
 
 /**
- * Today attention list + toast wiring (ADR 0068 T4): composes the badge/title
- * text for a fired attention event from its rule's trigger. Pure so the Today
- * row builder and the toast-raising effect render the identical "what fired"
+ * Today attention list (ADR 0068 T4): composes the badge/title text for a
+ * fired attention event from its rule's trigger. Pure so every consumer (the
+ * Today row builder, the briefing strip) renders the identical "what fired"
  * sentence — decision support only (facts + the trigger's own category/price
  * context), never phrased as advice. Reuses the exact `text()` keys the
  * Alerts screen's rules manager already translates (`AlertsScreen.tsx`
@@ -16,7 +16,7 @@ import {
 
 type Translate = (key: string) => string;
 
-/** The category chip label for a fired event's row/toast. */
+/** The category chip label for a fired event's row. */
 export function attentionEventBadgeText(event: AttentionEvent, text: Translate): string {
   switch (event.triggerType) {
     case "signal_category":
@@ -100,12 +100,14 @@ export function attentionEventTitleText(
     case "price_week52_low":
       return text("52-week low");
     case "source_reconciliation":
-      // The missed report + the registry that caught it (owner: "jaki dokładniej
+      // The missed report + the witness that caught it (owner: "jaki dokładniej
       // raport? które to źródło główne?"). The primary channel missed it; the
-      // GPW ESPI/EBI witness (`evidenceDetail`) backfilled it from the registry.
+      // GPW ESPI/EBI witness (`evidenceDetail`) CAUGHT it — nothing is
+      // backfilled into the feed (ADR 0069/0097: the event's Review opens the
+      // report itself via its witness URL).
       if (event.evidenceTitle) {
         const source = event.evidenceDetail ?? text("the official registry");
-        return text("{title} — missed by the primary source, backfilled from {source}")
+        return text("{title} — missed by the primary source, caught by {source}")
           .replace("{title}", event.evidenceTitle)
           .replace("{source}", source);
       }

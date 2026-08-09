@@ -22,6 +22,7 @@ function event(overrides: Partial<AttentionEvent>): AttentionEvent {
     // Evidence specifics from the backend join (v0.60 D6); overridden per case.
     evidenceTitle: null,
     evidenceDetail: null,
+    witnessUrl: null,
     ...overrides,
   };
 }
@@ -38,7 +39,7 @@ describe("attentionEventLabels — source_reconciliation (ADR 0069 D2)", () => {
       evidenceDetail: "GPW ESPI/EBI",
     });
     expect(attentionEventTitleText(reconciliation, undefined, text)).toBe(
-      "Raport bieżący 15/2026 — zawarcie znaczącej umowy — missed by the primary source, backfilled from GPW ESPI/EBI",
+      "Raport bieżący 15/2026 — zawarcie znaczącej umowy — missed by the primary source, caught by GPW ESPI/EBI",
     );
   });
 

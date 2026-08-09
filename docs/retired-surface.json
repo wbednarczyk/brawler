@@ -40,6 +40,9 @@
     { "token": "parse_ocr_shareholders", "adr": "ADR 0084" },
     { "token": "html_positional", "adr": "ADR 0095", "allow": ["docs/data-model.md", "docs/roadmap.md"], "allowFile": ["docs/testing.md"] },
     { "token": "prune_old_feed_items", "adr": "#329", "allow": ["docs/contracts.md"] },
-    { "token": "delete_unsaved_feed_items", "adr": "#329", "allow": ["docs/contracts.md"] }
+    { "token": "delete_unsaved_feed_items", "adr": "#329", "allow": ["docs/contracts.md"] },
+    { "token": "useAttentionToasts", "adr": "ADR 0097" },
+    { "token": "PERSISTENT_VISIBLE_CAP", "adr": "ADR 0097" },
+    { "token": "onPersistentOverflowClick", "adr": "ADR 0097" }
   ]
 }

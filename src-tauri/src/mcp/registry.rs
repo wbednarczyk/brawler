@@ -1168,6 +1168,10 @@ fn classifications() -> Vec<RegistryEntry> {
         excluded("restore_backup"),
         // ---- Excluded: settings / configuration ----------------------------
         excluded("update_settings"),
+        // UI-session semantics: Today's bulk "was on screen" seen-marking for the
+        // sidebar badge (ADR 0097 dec. 5). Agents mark individual events via the
+        // exposed mark_attention_event_seen.
+        excluded("mark_attention_events_seen"),
         excluded("save_cockpit_layout"),
         excluded("set_source_adapter_enabled"),
         excluded("set_company_autopilot"),

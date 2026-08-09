@@ -32,12 +32,14 @@ function themeFor(): "dark" | "light" {
 
 async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
-  // Hide the global toast overlay for per-screen baselines (analogous to the
-  // disabled CSS animations): a persistent attention toast (ADR 0068) raised by
-  // seeded scenario events floats over EVERY screen's shot, coupling all
-  // baselines to seed timing/content. Toast look/behavior has its own coverage
-  // (Toast.test.tsx, primitives a11y, J1 journey); screen baselines assert the
-  // screen. Injected per-shot, idempotent.
+  // Hide the toast overlay for per-screen baselines (analogous to the disabled
+  // CSS animations): a transient action-feedback toast (ADR 0097 — the only
+  // kind) raised by a scripted action would float over the shot, coupling the
+  // baseline to timing. Toast look/behavior has its own coverage
+  // (Toast.test.tsx, primitives a11y); screen baselines assert the screen.
+  // Injected per-shot, idempotent. The sidebar Today badge is deterministic in
+  // shots: the mock scenario's attention fetch resolves synchronously with the
+  // other seeded reads the shot already waits for.
   await page
     .addStyleTag({ content: ".ui-toast-viewport { display: none !important; }" })
     .catch(() => {});

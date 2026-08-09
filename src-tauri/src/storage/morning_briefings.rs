@@ -587,6 +587,7 @@ mod tests {
             severity: crate::storage::severity_for_attention_event("signal_category", None),
             evidence_title: None,
             evidence_detail: None,
+            witness_url: None,
         }
     }
 

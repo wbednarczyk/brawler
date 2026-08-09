@@ -237,12 +237,19 @@ pub struct AttentionEvent {
     /// bare category (v0.60 D6, owner dogfooding 2026-07-23).
     pub evidence_title: Option<String>,
     /// A secondary raw datum whose meaning depends on `evidence_type`: for a
-    /// `source_reconciliation` event, the display name of the source that missed
-    /// the report (adapter id → its registry display name); for an `autopilot_run`
-    /// event, the run's raw status; for a `job` event, the failed job's raw `kind`
-    /// (all translated by the frontend). `None` otherwise or when the evidence row
-    /// is gone.
+    /// `source_reconciliation` event, the display name of the WITNESS that caught
+    /// the missed report (`witness_adapter_id` → its registry display name — not
+    /// the source that missed it); for an `autopilot_run` event, the run's raw
+    /// status; for a `job` event, the failed job's raw `kind` (all translated by
+    /// the frontend). `None` otherwise or when the evidence row is gone.
     pub evidence_detail: Option<String>,
+    /// The missed report's own URL (ADR 0097 dec. 8): for a
+    /// `source_reconciliation` event, the witness listing's `witness_url`, so the
+    /// row's Review can open the report itself — the report never enters the feed
+    /// (ADR 0069), so no feed navigation can reach it. `None` for every other
+    /// evidence type or when the ledger row is gone.
+    #[cfg_attr(feature = "ts-export", ts(type = "string | null"))]
+    pub witness_url: Option<String>,
 }
 
 /// Filter for listing attention events.
@@ -569,7 +576,10 @@ pub(super) fn list_attention_events(
             -- dec. 1): its kind (the enum token the frontend translates) and the
             -- queue's own last_error, so the row states WHICH job failed and HOW.
             failed_job.kind AS job_kind,
-            failed_job.last_error AS job_last_error
+            failed_job.last_error AS job_last_error,
+            -- The missed report's own URL (ADR 0097 dec. 8), so Review can open
+            -- the report the feed cannot contain.
+            recon.witness_url AS recon_url
         FROM attention_events
         LEFT JOIN alert_rules ON alert_rules.id = attention_events.rule_id
         -- Resolve the signal category for `signal_category` events (evidence_ref
@@ -614,6 +624,29 @@ pub(super) fn list_attention_events(
 
 pub(super) fn mark_attention_event_seen(connection: &Connection, id: &str) -> StorageResult<()> {
     connection.execute("UPDATE attention_events SET seen = 1 WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// One `UPDATE … IN (…)` per this many ids — comfortably under every SQLite
+/// build's bound-parameter limit (the legacy floor is 999), so an unbounded
+/// unseen backlog can never fail the very command meant to clear it.
+const MARK_SEEN_CHUNK: usize = 500;
+
+/// Mark a batch of events seen (ADR 0097 dec. 5): Today calls this for every
+/// loaded unseen event when the stream renders, so "seen" means "was on screen
+/// the last time Today was open" and the sidebar badge clears on a visit —
+/// never N per-row IPC round trips. Chunked at [`MARK_SEEN_CHUNK`] ids per
+/// statement. Idempotent; unknown ids are ignored (the row may have been
+/// dismissed or pruned since the list loaded).
+pub(super) fn mark_attention_events_seen(
+    connection: &Connection,
+    ids: &[String],
+) -> StorageResult<()> {
+    for chunk in ids.chunks(MARK_SEEN_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let sql = format!("UPDATE attention_events SET seen = 1 WHERE id IN ({placeholders})");
+        connection.execute(&sql, rusqlite::params_from_iter(chunk.iter()))?;
+    }
     Ok(())
 }
 
@@ -673,6 +706,15 @@ fn attention_event_from_row(
         ),
         _ => (None, None),
     };
+    // The missed report's URL (ADR 0097 dec. 8) — reconciliation evidence only;
+    // a blank ledger value degrades to None (frontend falls back to no action).
+    let witness_url: Option<String> = if evidence_type == EVIDENCE_SOURCE_RECONCILIATION {
+        row.get::<_, Option<String>>(18)?
+            .map(|url| url.trim().to_owned())
+            .filter(|url| !url.is_empty())
+    } else {
+        None
+    };
     Ok(AttentionEvent {
         id: row.get(0)?,
         rule_id: row.get::<_, Option<String>>(1)?,
@@ -686,6 +728,7 @@ fn attention_event_from_row(
         severity,
         evidence_title,
         evidence_detail,
+        witness_url,
     })
 }
 
@@ -1144,6 +1187,11 @@ impl AttentionStore {
     pub fn mark_attention_event_seen(&self, id: &str) -> StorageResult<()> {
         let connection = self.db.checkout()?;
         mark_attention_event_seen(&connection, id)
+    }
+
+    pub fn mark_attention_events_seen(&self, ids: &[String]) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        mark_attention_events_seen(&connection, ids)
     }
 
     pub fn dismiss_attention_event(&self, id: &str) -> StorageResult<()> {

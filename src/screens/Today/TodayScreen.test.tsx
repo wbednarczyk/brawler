@@ -6,6 +6,7 @@ import {
   handleAppCommand,
   initialCompanies,
   invoke,
+  openUrl,
   renderApp,
   screen,
   userEvent,
@@ -127,6 +128,7 @@ function attentionEvent(overrides: Partial<AttentionEvent> = {}): AttentionEvent
     // statement leads the row.
     evidenceTitle: null,
     evidenceDetail: null,
+    witnessUrl: null,
     ...overrides,
   };
 }
@@ -541,103 +543,87 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
   });
 
-  it("raises a persistent toast for a new unseen URGENT event, once per session (no duplicate on Today re-entry)", async () => {
-    const user = userEvent.setup();
-    // Persistent toasts are reserved for `urgent` events (ADR 0087 dec. 3).
-    seedOnlyAttention([attentionEvent({ id: "attn_toast_1", severity: "urgent" })]);
-    renderApp({ section: "Today" });
-    await screen.findByRole("alert");
-
-    expect(screen.getAllByRole("alert")).toHaveLength(1);
-    // The category's human display name (D3 fix), never the raw enum code.
-    expect(
-      screen.getByText(/Profit warning \/ estimate/, { selector: ".ui-toast-message" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/\bprofit_warning\b/, { selector: ".ui-toast-message" }),
-    ).not.toBeInTheDocument();
-
-    // Today unmounts on navigating away (`AppStateRoot` only renders it while
-    // `activeSection === "Today"`) and remounts on return — the real "refresh"
-    // this list has today. The already-shown event must not re-toast.
-    await user.click(screen.getByRole("button", { name: "Inbox" }));
-    await screen.findByRole("heading", { name: "Inbox" });
-    await user.click(screen.getByRole("button", { name: "Today" }));
-    await screen.findByRole("heading", { name: "Today" });
-
-    expect(screen.getAllByRole("alert")).toHaveLength(1);
-  });
-
-  it("raises a TRANSIENT (auto-dismissing) toast for a NOTABLE event, never a persistent one (ADR 0087 dec. 3)", async () => {
-    seedOnlyAttention([attentionEvent({ id: "attn_notable_1", severity: "notable" })]);
-    renderApp({ section: "Today" });
-
-    // Notable → a transient toast (`role="status"`, `caution` tone), announcing
-    // the landing; it is NOT the persistent (`role="alert"`) variant, and the
-    // toast itself carries no Dismiss control (the stream row stays the place to act).
-    const message = await screen.findByText(/Profit warning \/ estimate/, {
-      selector: ".ui-toast-message",
-    });
-    const toast = message.closest(".ui-toast") as HTMLElement;
-    expect(toast).not.toBeNull();
-    expect(toast.className).toContain("ui-toast-caution");
-    expect(toast.className).not.toContain("ui-toast-persistent");
-    expect(toast.querySelector('[role="status"]')).not.toBeNull();
-    expect(within(toast).queryByRole("alert")).toBeNull();
-    // The transient toast has no Dismiss of its own (only persistent toasts do).
-    expect(within(toast).queryByRole("button", { name: "Dismiss" })).toBeNull();
-  });
-
-  it("raises NO toast for a ROUTINE event — stream only (ADR 0087 dec. 3)", async () => {
-    seedOnlyAttention([attentionEvent({ id: "attn_routine_1", severity: "routine" })]);
+  it("a reconciliation event's Review opens the missed report itself (ADR 0097 dec. 8)", async () => {
+    // The missed report NEVER enters the feed (ADR 0069: witness items are not
+    // ingested), so feed navigation cannot show it — Review must open the
+    // report's own witness URL in the system browser.
+    seedOnlyAttention([
+      attentionEvent({
+        id: "attn_recon_url_1",
+        triggerType: "source_reconciliation",
+        evidenceType: "source_reconciliation",
+        ruleId: null,
+        severity: "urgent",
+        evidenceTitle: "Raport bieżący 15/2026",
+        evidenceDetail: "GPW ESPI/EBI",
+        witnessUrl: "https://www.gpw.pl/komunikaty?id=15-2026",
+      }),
+    ]);
     const { container } = renderApp({ section: "Today" });
-    // The routine event still renders its stream row…
     await findCategoryRow(container as HTMLElement, "attention");
-    // …but never surfaces as a toast (persistent or transient).
+
+    const row = container.querySelector('li[data-category="attention"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Review" }));
+
+    expect(vi.mocked(openUrl)).toHaveBeenCalledWith("https://www.gpw.pl/komunikaty?id=15-2026");
+    expect(invoke).toHaveBeenCalledWith(
+      "mark_attention_event_seen",
+      expect.objectContaining({ input: expect.objectContaining({ id: "attn_recon_url_1" }) }),
+    );
+  });
+
+  it("a legacy reconciliation event without a stored URL falls back to the company Feed", async () => {
+    seedOnlyAttention([
+      attentionEvent({
+        id: "attn_recon_legacy_1",
+        triggerType: "source_reconciliation",
+        evidenceType: "source_reconciliation",
+        ruleId: null,
+        severity: "urgent",
+        witnessUrl: null,
+      }),
+    ]);
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    const row = container.querySelector('li[data-category="attention"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Review" }));
+
+    expect(vi.mocked(openUrl)).not.toHaveBeenCalled();
+    // The company workspace (Feed) is the best remaining anchor.
+    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+  });
+
+  it("raises NO toast for ANY severity — attention events are stream-only (ADR 0097 dec. 1)", async () => {
+    seedOnlyAttention([
+      attentionEvent({ id: "attn_urgent_1", severity: "urgent" }),
+      attentionEvent({ id: "attn_notable_1", severity: "notable" }),
+      attentionEvent({ id: "attn_routine_1", severity: "routine" }),
+    ]);
+    const { container } = renderApp({ section: "Today" });
+    // The events render as stream rows…
+    await findCategoryRow(container as HTMLElement, "attention");
+    // …and none of them surfaces as any toast, of any kind.
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(container.ownerDocument.querySelector(".ui-toast-message")).toBeNull();
   });
 
-  it("resolves the company id to its ticker even when the attention list loads before the company list (live defect: raw 'company_gpw_scw' id shown)", async () => {
-    // Live-defect fix (v0.57 fix wave 2, D2, owner screenshot 27-toast-stack.png):
-    // `companies` and the attention-events/alert-rules pair are two
-    // independent fetches (AppStateRoot's own company load vs
-    // `useTodayPulse`'s). If the attention fetch settles first, the
-    // toast-raising effect built its `companyById` map off the still-empty
-    // `companies` array and permanently baked the raw company id into the
-    // toast message — the module-scoped `toastedAttentionEventIds` dedup Set
-    // means it is never retried once the real company list arrives. Force
-    // that exact ordering: hold `list_companies` open until the attention
-    // event has already had a chance to fire, then release it.
-    seedOnlyAttention([attentionEvent({ id: "attn_race_company_1" })]);
-
-    let releaseCompanies: (() => void) | undefined;
-    const companiesGate = new Promise<void>((resolve) => {
-      releaseCompanies = resolve;
-    });
-    vi.mocked(invoke).mockImplementation(async (command, args) => {
-      if (command === "list_companies") {
-        await companiesGate;
-      }
-      return handleAppCommand(command as string, args as Record<string, unknown> | undefined);
-    });
-
+  it("batch-marks every loaded unseen event seen when the stream renders (ADR 0097 dec. 5)", async () => {
+    seedOnlyAttention([
+      attentionEvent({ id: "attn_seen_1", severity: "urgent" }),
+      attentionEvent({ id: "attn_seen_2", severity: "notable" }),
+    ]);
     const { container } = renderApp({ section: "Today" });
-
-    // Attention data can settle first, but the toast must not fire — and must
-    // not mark the event toasted — until the company list is actually usable.
     await findCategoryRow(container as HTMLElement, "attention");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
-    releaseCompanies?.();
-
-    // The toast must show the resolved ticker, never the raw internal id.
-    expect(
-      await screen.findByText(new RegExp(`^${pinnedTicker} —`), { selector: ".ui-toast-message" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(new RegExp(pinnedCompanyId), { selector: ".ui-toast-message" }),
-    ).not.toBeInTheDocument();
+    // One batched IPC call carrying exactly the loaded unseen ids — "seen"
+    // means "was on screen the last time Today was open", so the sidebar badge
+    // clears on a visit without N per-row round trips.
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("mark_attention_events_seen", {
+        input: { ids: expect.arrayContaining(["attn_seen_1", "attn_seen_2"]) },
+      });
+    });
   });
 
   it("renders no attention rows when there are nothing fired (same stream, no special sub-state)", async () => {
@@ -649,44 +635,6 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
 
     expect(container.querySelector('li[data-category="attention"]')).toBeNull();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-});
-
-// D3 fix (v0.57 fix wave 2, owner screenshot 27-toast-stack.png): the toast's
-// reconciliation message and its Review/Dismiss actions are `text()` literals
-// with real `plText` entries already — but nothing exercised them in the
-// Polish locale end to end, so a regression here (or in how `locale` reaches
-// this screen) would have slipped through unnoticed exactly like D1/D2 did.
-describe("Today attention toast — Polish locale content (D3 fix)", () => {
-  it("renders the reconciliation message and Review/Dismiss actions in Polish, not English", async () => {
-    appTestState.settingsResponse = { ...appTestState.settingsResponse, locale: "pl" };
-    appTestState.autopilotRunsResponse = [];
-    appTestState.attentionEventsResponse = [
-      attentionEvent({
-        id: "attn_reconciliation_pl_1",
-        triggerType: "source_reconciliation",
-        evidenceType: "source_reconciliation",
-        ruleId: null,
-        // Missed-report reconciliation → urgent, so it raises the persistent
-        // (role="alert") toast this test asserts (ADR 0087 dec. 3).
-        severity: "urgent",
-      }),
-    ];
-    appTestState.feedItemsResponse = [];
-    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
-    appTestState.reportSeasonUpcomingResponse = [];
-
-    renderApp({ section: "Today" });
-
-    const alert = await screen.findByRole("alert");
-    expect(
-      within(alert).getByText(/Raport oficjalny pominięty/, { selector: ".ui-toast-message" }),
-    ).toBeInTheDocument();
-    expect(within(alert).getByRole("button", { name: "Przejrzyj" })).toBeInTheDocument();
-    expect(within(alert).getByRole("button", { name: "Odrzuć" })).toBeInTheDocument();
-    expect(screen.queryByText(/Official report missed/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Review" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
   });
 });
 
@@ -930,7 +878,7 @@ describe("Today autopilot detail — undo / dismiss / drift behind the expandabl
 
       expect(
         await screen.findByText(
-          "Raport bieżący 15/2026 — zawarcie znaczącej umowy — missed by the primary source, backfilled from GPW ESPI/EBI",
+          "Raport bieżący 15/2026 — zawarcie znaczącej umowy — missed by the primary source, caught by GPW ESPI/EBI",
         ),
       ).toBeInTheDocument();
     });

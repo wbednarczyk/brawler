@@ -52,6 +52,15 @@ export function markAttentionEventSeen(id: string) {
   return callCommand<void>("mark_attention_event_seen", { input: { id } });
 }
 
+/**
+ * Mark a batch of events seen in one call (ADR 0097 dec. 5) — Today marks every
+ * loaded unseen event when its stream renders, so the sidebar badge clears on a
+ * visit. Idempotent; unknown ids are ignored.
+ */
+export function markAttentionEventsSeen(ids: string[]) {
+  return callCommand<void>("mark_attention_events_seen", { input: { ids } });
+}
+
 /** Dismiss an event (also marks it seen); drops it from the default list. */
 export function dismissAttentionEvent(id: string) {
   return callCommand<void>("dismiss_attention_event", { input: { id } });
