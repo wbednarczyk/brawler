@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.64.0 - 2026-08-09
+
+
+### Features
+
+- **attention**: retire system-event toasts — ambient attention lives in Today (#330) (#349)
+
 ## v0.63.14 - 2026-08-06
 
 
