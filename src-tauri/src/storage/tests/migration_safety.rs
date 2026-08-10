@@ -4941,3 +4941,99 @@ fn migration_0136_purges_orphaned_retired_search_rows_and_keeps_live_ones() {
     assert_eq!(count_type("digest"), 0);
     assert_eq!(count_type("notebook_entry"), 1);
 }
+
+#[test]
+fn migration_0137_creates_kpi_ingest_runs_with_defaults_and_active_unique_index() {
+    // ADR 0098 dec. 2/6/8, card #358: 0137 adds the durable kpi_ingest_runs
+    // table (IF NOT EXISTS + IF NOT EXISTS indexes), so re-running the runner
+    // is a safe no-op. The partial unique index enforces at most one
+    // non-terminal run per (document, company, profile) triple.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+             VALUES ('doc1', 'c1', 'espi_attachment', 'https://x/doc1.pdf', 'fetched')",
+            [],
+        )
+        .expect("seed a document");
+
+    connection
+        .execute(
+            "INSERT INTO kpi_ingest_runs (id, report_document_id, company_id, profile_version)
+             VALUES ('run1', 'doc1', 'c1', 'p1')",
+            [],
+        )
+        .expect("a kpi ingest run row must be storable with defaults");
+
+    // Defaults apply: status='discovered', manifest_revision=0, attempt_count=0.
+    let (status, manifest_revision, attempt_count): (String, i64, i64) = connection
+        .query_row(
+            "SELECT status, manifest_revision, attempt_count FROM kpi_ingest_runs WHERE id = 'run1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("read defaults");
+    assert_eq!(status, "discovered");
+    assert_eq!(manifest_revision, 0);
+    assert_eq!(attempt_count, 0);
+
+    // The partial unique index rejects a second non-terminal run for the same triple.
+    let duplicate = connection.execute(
+        "INSERT INTO kpi_ingest_runs (id, report_document_id, company_id, profile_version)
+         VALUES ('run2', 'doc1', 'c1', 'p1')",
+        [],
+    );
+    assert!(
+        duplicate.is_err(),
+        "the active-triple partial unique index must reject a second non-terminal run"
+    );
+
+    // A terminal run for the same triple is exempt from the partial index.
+    connection
+        .execute(
+            "UPDATE kpi_ingest_runs SET status = 'complete' WHERE id = 'run1'",
+            [],
+        )
+        .expect("terminate run1");
+    connection
+        .execute(
+            "INSERT INTO kpi_ingest_runs (id, report_document_id, company_id, profile_version)
+             VALUES ('run2', 'doc1', 'c1', 'p1')",
+            [],
+        )
+        .expect("a new run for the same triple is allowed once the prior one is terminal");
+
+    let index_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+              WHERE type = 'index' AND name = 'idx_kpi_ingest_runs_active')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("index existence check");
+    assert!(
+        index_exists,
+        "the active-triple partial unique index must be created"
+    );
+
+    // Re-running the runner is a safe no-op on the new table.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    assert_eq!(
+        count_rows(&connection, "kpi_ingest_runs").expect("count"),
+        2,
+        "re-running migrations must not disturb stored kpi ingest runs"
+    );
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "re-run must reach exactly the expected migration count",
+    );
+}

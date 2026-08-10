@@ -94,6 +94,33 @@ pub enum StorageError {
         "financial fact write refused: extraction_method='html_positional' is retired (ADR 0095) — no new fact row may carry the removed positional parser's method"
     )]
     RetiredExtractionMethod,
+    #[error("kpi ingest run not found: {id}")]
+    KpiIngestRunNotFound { id: String },
+    #[error("kpi ingest run reference not found: {table} {id}")]
+    MissingIngestReference { table: String, id: String },
+    #[error("invalid kpi ingest run value for {key}: {value}")]
+    InvalidKpiIngestRunValue { key: &'static str, value: String },
+    #[error("kpi ingest run period {period} does not belong to company {company}")]
+    RunPeriodCompanyMismatch { period: String, company: String },
+    #[error("kpi ingest run {id} lease not held by {holder}")]
+    RunLeaseNotHeld { id: String, holder: String },
+    #[error("kpi ingest run document {run_document} does not belong to company {company}")]
+    RunDocumentCompanyMismatch {
+        run_document: String,
+        company: String,
+    },
+    #[error(
+        "kpi ingest run {id} source_content_hash is already recorded and cannot be overwritten"
+    )]
+    RunSourceHashAlreadyRecorded { id: String },
+    #[error("invalid kpi ingest run lease duration: {seconds} seconds (must be > 0)")]
+    InvalidRunLeaseDuration { seconds: i64 },
+    #[error(
+        "kpi ingest run {id} lease invariant violated: status={status} holds a non-null lease"
+    )]
+    RunLeaseInvariantViolation { id: String, status: String },
+    #[error("unknown kpi ingest run state: {value}")]
+    UnknownKpiIngestRunState { value: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

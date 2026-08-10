@@ -56,6 +56,7 @@ mod ingestion;
 mod insider;
 mod jobs;
 mod kpi_extraction;
+mod kpi_ingest_runs;
 mod licensing;
 mod management_claims;
 mod management_holdings;
@@ -122,6 +123,7 @@ pub use fundamentals_provenance::{
     NewExtractionOutcome, NewFactProvenance, TierFactCount, WitnessCorroboration,
 };
 pub use fx_rates::FxRatesStore;
+pub use kpi_ingest_runs::{KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun};
 pub use severity::{
     severity_for_attention_event, severity_for_autopilot_run, severity_for_signal_category,
     AttentionSeverity,
@@ -769,6 +771,12 @@ impl AppState {
     /// Valuation-runs (`valuation_runs`) append-only history (ADR 0089 dec. 5).
     pub fn valuation_runs(&self) -> valuation_runs::ValuationRunsStore {
         valuation_runs::ValuationRunsStore::new(self.db.clone())
+    }
+
+    /// KPI ingest runs (`kpi_ingest_runs`) — the external agent's durable
+    /// worklist and lease/heartbeat holder (ADR 0098 decisions 2, 6, 8).
+    pub fn kpi_ingest_runs(&self) -> kpi_ingest_runs::KpiIngestRunsStore {
+        kpi_ingest_runs::KpiIngestRunsStore::new(self.db.clone())
     }
 
     pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
