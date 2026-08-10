@@ -1488,7 +1488,7 @@ Rules:
 
 ### Planned: KPI ingest runs (ADR 0098)
 
-*Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md), epic #352 (no schema yet; the implementing migration is authoritative):* durable `kpi_ingest_runs` (one row per report document × company × extraction profile — lifecycle state, lease/heartbeat, manifest hash + revision, versioned expected-KPI snapshot), run-owned staged observations (pre-canonical LLM proposals with citation locators — never visible to fact readers) and immutable commit receipts, plus a canonical `published_at` on `report_documents` filled by a typed origin-date resolver (`created_at`/`fetched_at` proxies rejected). A document referenced by any durable run joins the report-bytes protection contract below.
+*Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md), epic #352 (no schema yet; the implementing migration is authoritative):* durable `kpi_ingest_runs` (one row per report document × company × extraction profile — lifecycle state, lease/heartbeat, manifest hash + revision, versioned expected-KPI snapshot), run-owned staged observations (pre-canonical LLM proposals with citation locators — never visible to fact readers) and immutable commit receipts, plus a canonical `published_at` on `report_documents` filled by a typed origin-date resolver (`created_at`/`fetched_at` proxies rejected). A document referenced by any durable run joins the report-bytes protection contract above (§ report document retention).
 
 ## Search Index
 

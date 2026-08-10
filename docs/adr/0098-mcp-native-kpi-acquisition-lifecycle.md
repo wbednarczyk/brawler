@@ -1,6 +1,6 @@
 # ADR 0098: MCP-native KPI acquisition lifecycle
 
-Status: Accepted (2026-08-10, owner decision after the 2026-08 vendor study). Supersedes (on completion) ADR 0086 decisions 2 and 7; amends ADR 0093. Implemented by epics #352–#356.
+Status: Accepted (2026-08-10, owner decision after the 2026-08 vendor study). Supersedes (on completion) ADR 0086 decisions 2 and 7; amends ADR 0093. Implementation: epics #352–#356.
 
 Deciders: maintainer. Area: fundamentals, MCP port, data trust, sources.
 
@@ -16,7 +16,7 @@ The building blocks exist but are not yet a production ingestion protocol, verif
 - `report_documents` records a SHA-256 (`content_hash`) but no publication date; identity is `(company_id, url)` (migration 0035). Repo policy forbids `created_at` as a recency proxy (data-model.md § conventions).
 - The MCP surface is 102 tools behind one shared bearer token and a single global `mcpWritesEnabled` switch (`mcp/server.rs`, `mcp/registry.rs:1324`); `tools/list` is unconditional.
 
-ADR 0093 (Status: Proposed) is already implemented — `SourceTier::Agent`, `record_financial_facts`, `capture_report_document` are live — and its ladder places `agent` above `html_aggregator`, which contradicts ADR 0086's "BiznesRadar primary / agent additive" framing. This ADR resolves that drift and sets the program's architecture. Epic map: #352 (transactional core), #353 (workflow MCP surface), #354 (GPW/NC automation), #355 (conformance suite), #356 (protocol modernization).
+Before this ADR, ADR 0093 was still marked Proposed despite being implemented — `SourceTier::Agent`, `record_financial_facts`, `capture_report_document` are live — and its ladder places `agent` above `html_aggregator`, which contradicts ADR 0086's "BiznesRadar primary / agent additive" framing. This ADR resolves that drift and sets the program's architecture. Epic map: #352 (transactional core), #353 (workflow MCP surface), #354 (GPW/NC automation), #355 (conformance suite), #356 (protocol modernization).
 
 ## Decisions
 
