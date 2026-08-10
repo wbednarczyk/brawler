@@ -24,10 +24,6 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     // /^Today/: the ambient-attention badge (ADR 0097) joins the accessible
     // name when unseen events exist — same idiom as the Inbox unread badge.
     expect(within(nav).getByRole("button", { name: /^Today/ })).toBeInTheDocument();
-    // Compare is a live mode destination again (ADR 0089, v0.61): the
-    // comparison read model + FX substrate now give the mode real content, so
-    // the reserved slot under Dashboard is restored to the spine.
-    expect(within(nav).getByRole("button", { name: "Compare" })).toBeInTheDocument();
   });
 
   it("opens the Today mode home", async () => {

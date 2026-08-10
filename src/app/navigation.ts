@@ -7,7 +7,6 @@ import {
   Home,
   Inbox,
   ListChecks,
-  Scale,
   Settings,
   Video,
 } from "lucide-react";
@@ -22,7 +21,6 @@ export type Section =
   | "Today"
   | "Inbox"
   | "Cockpit"
-  | "Compare"
   | "ReportSeason"
   | "Companies"
   | "Watchlists"
@@ -49,7 +47,7 @@ export type NavGroup = {
 
 // Mode-based, thesis-centric IA spine (ADR 0054). The left sidebar is grouped:
 //   • Modes — the investor's jobs as top-level destinations (Today/Pulse home,
-//     Company workspace, Compare), followed by the saved named views (a
+//     Company workspace), followed by the saved named views (a
 //     data-driven list, rendered by AppShell from `cockpit_layouts`) and the
 //     "+ New view" creator — the composable-views entry point (ADR 0057
 //     decision 5).
@@ -69,11 +67,6 @@ export const navGroups: NavGroup[] = [
       // arrangement); every preset follows the view company. Amends ADR 0057
       // decision 5: never a blank canvas (seeds a company / resumes layout).
       { label: "Cockpit", icon: FlaskConical, localeKey: "nav.dashboard" },
-      // Compare — the cross-company mode (ADR 0089), restored to the spine in
-      // v0.61 now that the comparison read model + FX substrate give it real
-      // content. Sits directly under Dashboard; the reserved slot (held since
-      // v0.48) and the pl/en `nav.compare` labels are now live.
-      { label: "Compare", icon: Scale, localeKey: "nav.compare" },
     ],
   },
   {

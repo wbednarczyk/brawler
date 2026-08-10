@@ -31,7 +31,6 @@ const RAW_CATALOG = [
   { screen: "report-season", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "today", spec: "visual-shell-today.spec.ts", states: ["default"], tiers: M_ONLY },
   { screen: "cockpit-shell", spec: "visual-shell-today.spec.ts", states: ["default"], tiers: M_ONLY },
-  { screen: "compare", spec: "visual-compare.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "watchlists", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "transcripts", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "settings", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },

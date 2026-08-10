@@ -1,6 +1,6 @@
 # ADR 0089: Cross-company comparison + comparative valuation level 1
 
-Status: Accepted (2026-07-27, owner sign-off at v0.61 planning — plan + storyboard approved in chat)
+Status: Accepted (2026-07-27, owner sign-off at v0.61 planning — plan + storyboard approved in chat). Amended 2026-08-10 (#351): the Compare screen (decisions A1–A3, A7 UI legs) is removed — unused in real owner practice; the comparison/sector-percentile/valuation read models, the FX layer, valuation_runs, and the Fundamentals periods × deltas table stay, reachable in-app (Fundamentals) and headless over MCP.
 
 Deciders: maintainer. Area: fundamentals, valuation, frontend, sources.
 

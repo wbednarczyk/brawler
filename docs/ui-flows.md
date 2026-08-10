@@ -165,27 +165,6 @@ Acceptance criteria:
 - For a company in `autopilot` mode, a run's facts land already committed; the review point is Today/Pulse's Autopilot run card, which offers **Undo** (two-step confirm) reverting exactly the facts that run produced, then shows a "Reverted N facts" state ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md) §4).
 - A stored periodic financial statement can be diffed section-by-section against the previous same-type filing, from the company workspace and on new-report arrival ([ADR 0052](adr/0052-report-over-report-diff.md)).
 
-## Journey: Compare Companies On A KPI
-
-Intent: judge a tracked company's relative position by lining it up against its peers on the same canonical KPI, aligned across periods, with the evidence one click away — input to a buy/pass decision (journey J6, [ADR 0089](adr/0089-cross-company-comparison-and-valuation-l1.md)).
-
-Flow:
-
-1. The user opens **Compare (Porównaj)** from the sidebar (its own Modes item under Dashboard). The empty state is a quiet invite — "pick at least 2 companies with confirmed data" — never a blank screen and never an artificial CTA.
-2. The user builds a **zestaw spółek**: "+ Add company…" multi-selects from tracked companies, "From watchlist…" quick-picks a whole list, and a "**+ Peers in sector X**" helper offers the tracked siblings of the first company's sector. Each selection appears as a chip with its series colour dot (the same four colour slots the trend overlay uses); ✕ removes it.
-3. The user picks a **canonical KPI** and a **granularity** (annual / quarterly), then presses **Porównaj** (the one primary action for the primed state).
-4. The result is a **side-by-side table**: rows are the companies (colour dot + full ticker), columns are the aligned periods plus Δ YoY (Δ QoQ too, quarterly). Every value cell carries an **⧉ evidence link** to the fact's company Fundamentals/report surface; a non-PLN company shows an **EUR→PLN** chip whose tooltip names the FX basis (flow: period average / stock: rate at period end).
-5. No value is ever silently absent: a gap, a missing FX rate, or an unknown currency renders a **typed, translated flag** in the cell, not a fabricated number; an undefined percentage change renders "—" with its reason. A read failure shows a **typed error strip** with a per-section **Try again** (never a raw `.message`).
-6. Removing a chip (or changing the KPI/granularity) **recomputes immediately**; dropping below two companies falls back to the invite rather than a stale table. Across the supported window range (down to ~960px) the sections stack and the table scrolls inside its own container — no global horizontal scroll.
-
-Acceptance criteria:
-
-- Reaching a two-company comparison takes ≤2 interactions from entry; the empty state invites without CTA-spam and the primed state has exactly one primary action ("Porównaj").
-- The table aligns each company's confirmed facts on a shared period axis; deltas are server-computed (% for monetary, p.p. for ratio/percentage KPIs), never re-derived in the UI.
-- Every gap carries a typed reason; mixed currency never renders an unconverted number as comparable; percentiles/medians (valuation, later slices) never show without their peer count.
-- Each value's ⧉ opens the fact's company workspace (Fundamentals/report surface); the FX-basis and evidence detail stay one interaction away, not on the face of the table.
-- All copy is localized (en + pl, "zestaw spółek" — never "kohort"); counts render through the plural helper.
-
 ## Journey: Review Company Ownership Structure
 
 Intent: see who owns a tracked company and how stakes moved over time, straight from the Basic info panel, with every disclosure traced to its report ([ADR 0072](adr/0072-ownership-structure.md)). Decision support only — never advice.

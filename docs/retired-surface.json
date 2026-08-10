@@ -1,48 +1,281 @@
 {
   "_comment": "Retired-surface manifest (scripts/check/retired-surface.mjs): exact identifiers an ADR removed. A LIVE doc (docs/ + wiki/, minus history homes) may not mention one. `allow` permits a file's POINTER-SHAPED lines only (the line itself must carry retirement wording); `allowFile` exempts a whole file (reserved for docs whose subject IS the retired surface). Add entries when an ADR retires surface; extend allowances only in a reviewed change.",
   "retired": [
-    { "token": "history_sweep_ai_call_limit", "adr": "ADR 0084" },
-    { "token": "historySweepAiCallLimit", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "capabilityProviders", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "CapabilityProviderEntry", "adr": "ADR 0084" },
-    { "token": "useAiFallbackEnabled", "adr": "ADR 0084" },
-    { "token": "useAiAnalysisProviderConfigured", "adr": "ADR 0084" },
-    { "token": "FeedAiAnalysisPanel", "adr": "ADR 0084" },
-    { "token": "FeedKpiExtractionPanel", "adr": "ADR 0084" },
-    { "token": "list_ai_analysis", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "run_ai_analysis", "adr": "ADR 0084" },
-    { "token": "ai_analysis_results", "adr": "ADR 0084", "allow": ["docs/data-model.md", "docs/contracts.md"] },
-    { "token": "ai_analysis_jobs", "adr": "ADR 0084", "allow": ["docs/data-model.md", "docs/contracts.md"] },
-    { "token": "ai_research_brief_jobs", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
-    { "token": "ai_research_briefs", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
-    { "token": "ai_research_brief_citations", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
-    { "token": "kpi_extraction_jobs", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "kpi_extraction_proposals", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "check-epic", "adr": "ADR 0096", "allow": ["docs/testing.md"] },
-    { "token": "epic-gate.yml", "adr": "ADR 0096" },
-    { "token": "realdata-gt-check", "adr": "ADR 0096" },
-    { "token": "realdata-extraction-metrics", "adr": "ADR 0096", "allow": ["docs/testing.md"] },
-    { "token": "bench-baseline.json", "adr": "ADR 0096 (#336)" },
-    { "token": "bench-ratchet", "adr": "ADR 0096 (#336)" },
-    { "token": "bench:ratchet", "adr": "ADR 0096 (#336)" },
-    { "token": "mutants.yml", "adr": "ADR 0096", "allow": ["docs/testing.md", "docs/engineering-workflow.md"] },
-    { "token": "ai_research_digest_jobs", "adr": "ADR 0084", "allow": ["docs/contracts.md", "docs/data-model.md"] },
-    { "token": "ai_research_digests", "adr": "ADR 0084", "allow": ["docs/contracts.md", "docs/data-model.md"] },
-    { "token": "ai_research_digest_citations", "adr": "ADR 0084", "allow": ["docs/contracts.md", "docs/data-model.md"] },
-    { "token": "narrativeMarkdown", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "narrative_markdown", "adr": "ADR 0084", "allow": ["docs/data-model.md", "docs/contracts.md"] },
-    { "token": "ai_calls_used", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
-    { "token": "ai_call_limit", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
-    { "token": "run_ownership_ocr_extraction", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "run_company_ownership_ocr", "adr": "ADR 0084", "allow": ["docs/contracts.md"] },
-    { "token": "ownership_ocr_proposals", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
-    { "token": "ownership_ocr_proposal_rows", "adr": "ADR 0084", "allow": ["docs/data-model.md"] },
-    { "token": "parse_ocr_shareholders", "adr": "ADR 0084" },
-    { "token": "html_positional", "adr": "ADR 0095", "allow": ["docs/data-model.md", "docs/roadmap.md"], "allowFile": ["docs/testing.md"] },
-    { "token": "prune_old_feed_items", "adr": "#329", "allow": ["docs/contracts.md"] },
-    { "token": "delete_unsaved_feed_items", "adr": "#329", "allow": ["docs/contracts.md"] },
-    { "token": "useAttentionToasts", "adr": "ADR 0097" },
-    { "token": "PERSISTENT_VISIBLE_CAP", "adr": "ADR 0097" },
-    { "token": "onPersistentOverflowClick", "adr": "ADR 0097" }
+    {
+      "token": "history_sweep_ai_call_limit",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "historySweepAiCallLimit",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "capabilityProviders",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "CapabilityProviderEntry",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "useAiFallbackEnabled",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "useAiAnalysisProviderConfigured",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "FeedAiAnalysisPanel",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "FeedKpiExtractionPanel",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "list_ai_analysis",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "run_ai_analysis",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "ai_analysis_results",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md",
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "ai_analysis_jobs",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md",
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "ai_research_brief_jobs",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "ai_research_briefs",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "ai_research_brief_citations",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "kpi_extraction_jobs",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "kpi_extraction_proposals",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "check-epic",
+      "adr": "ADR 0096",
+      "allow": [
+        "docs/testing.md"
+      ]
+    },
+    {
+      "token": "epic-gate.yml",
+      "adr": "ADR 0096"
+    },
+    {
+      "token": "realdata-gt-check",
+      "adr": "ADR 0096"
+    },
+    {
+      "token": "realdata-extraction-metrics",
+      "adr": "ADR 0096",
+      "allow": [
+        "docs/testing.md"
+      ]
+    },
+    {
+      "token": "bench-baseline.json",
+      "adr": "ADR 0096 (#336)"
+    },
+    {
+      "token": "bench-ratchet",
+      "adr": "ADR 0096 (#336)"
+    },
+    {
+      "token": "bench:ratchet",
+      "adr": "ADR 0096 (#336)"
+    },
+    {
+      "token": "mutants.yml",
+      "adr": "ADR 0096",
+      "allow": [
+        "docs/testing.md",
+        "docs/engineering-workflow.md"
+      ]
+    },
+    {
+      "token": "ai_research_digest_jobs",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md",
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "ai_research_digests",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md",
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "ai_research_digest_citations",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md",
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "narrativeMarkdown",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "narrative_markdown",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md",
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "ai_calls_used",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "ai_call_limit",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "run_ownership_ocr_extraction",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "run_company_ownership_ocr",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "ownership_ocr_proposals",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "ownership_ocr_proposal_rows",
+      "adr": "ADR 0084",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "parse_ocr_shareholders",
+      "adr": "ADR 0084"
+    },
+    {
+      "token": "html_positional",
+      "adr": "ADR 0095",
+      "allow": [
+        "docs/data-model.md",
+        "docs/roadmap.md"
+      ],
+      "allowFile": [
+        "docs/testing.md"
+      ]
+    },
+    {
+      "token": "prune_old_feed_items",
+      "adr": "#329",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "delete_unsaved_feed_items",
+      "adr": "#329",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "useAttentionToasts",
+      "adr": "ADR 0097"
+    },
+    {
+      "token": "PERSISTENT_VISIBLE_CAP",
+      "adr": "ADR 0097"
+    },
+    {
+      "token": "onPersistentOverflowClick",
+      "adr": "ADR 0097"
+    },
+    {
+      "token": "CompareScreen",
+      "adr": "ADR 0089 amendment (#351)"
+    },
+    {
+      "token": "CompareValuation",
+      "adr": "ADR 0089 amendment (#351)"
+    },
+    {
+      "token": "nav.compare",
+      "adr": "ADR 0089 amendment (#351)"
+    }
   ]
 }
