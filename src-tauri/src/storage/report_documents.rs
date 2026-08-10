@@ -230,28 +230,88 @@ pub(super) fn create_or_find_with_status(
     get_report_document(connection, &id)
 }
 
+/// Report-bytes protection contract (data-model.md § Report Document Model
+/// retention; ADR 0098 dec. 3, card #359 — the first implementation of this
+/// doc-only contract). FOUR semantic legs, FIVE physical `EXISTS` (b splits
+/// into notebook evidence and management-claim evidence, columns confirmed
+/// against their migrations):
+///
+/// (a) a CONFIRMED financial fact citing the document (`financial_facts`,
+///     migration 0034); (b1) research evidence (`notebook_entry_origins`,
+///     migration 0001/0003 rename); (b2) a management-claim's evidence
+///     (`management_claims`, migration 0045); (c) a CONFIRMED signal derived
+///     from the document, joined via `report_documents.origin_ref =
+///     company_signals.feed_item_id` (migrations 0035/0041); (d) any durable
+///     `kpi_ingest_runs` row referencing the document, in ANY state
+///     (migration 0137, ADR 0098 dec. 3 — a run's citations must stay
+///     verifiable even if the run failed/was cancelled).
+const PROTECTION_EXISTS_CLAUSES: &str = "
+    EXISTS (SELECT 1 FROM financial_facts
+            WHERE source_document_ref = ?1 AND confirmation_state = 'confirmed')
+    OR EXISTS (SELECT 1 FROM notebook_entry_origins
+               WHERE source_type = 'report_document' AND source_id = ?1)
+    OR EXISTS (SELECT 1 FROM management_claims
+               WHERE source_evidence_type = 'report_document' AND source_evidence_id = ?1)
+    OR EXISTS (SELECT 1 FROM company_signals cs
+               JOIN report_documents rd ON rd.origin_ref = cs.feed_item_id
+               WHERE rd.id = ?1 AND cs.status = 'confirmed')
+    OR EXISTS (SELECT 1 FROM kpi_ingest_runs WHERE report_document_id = ?1)
+";
+
+/// Whether a document's bytes are under the retention protection contract
+/// above. Production callers are storage's own retention-pruning seam; this
+/// predicate has no other production call site outside storage as of #359
+/// (test-only elsewhere).
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn document_bytes_are_protected(
+    connection: &Connection,
+    id: &str,
+) -> StorageResult<bool> {
+    connection
+        .query_row(
+            &format!("SELECT {PROTECTION_EXISTS_CLAUSES}"),
+            params![id],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::from)
+}
+
 /// Downgrade a document to `metadata_only`: keep the URL/title/attribution row for
 /// citation and the source ladder, but record that no file is stored locally. Used by
 /// retention pruning and for non-periodic ESPI/EBI attachments (ADR 0036).
+///
+/// **Atomic guard** (#359, B3 sol review): a single `UPDATE … WHERE id = ?1
+/// AND NOT (<protection>)` — never a read-then-write, so no window exists
+/// where a fact/claim/signal/run could attach between the check and the
+/// write. Zero rows updated re-reads to classify: missing document (typed
+/// not-found, existing behavior) vs protected document
+/// (`ReportDocumentBytesProtected`).
 pub(super) fn mark_metadata_only(
     connection: &Connection,
     id: &str,
 ) -> StorageResult<ReportDocument> {
-    let _doc = get_report_document(connection, id)?;
-
-    connection.execute(
-        "
+    let updated = connection.execute(
+        &format!(
+            "
         UPDATE report_documents
         SET fetch_status = 'metadata_only',
             local_path = NULL,
             fetch_error = NULL,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?1
-        ",
+          AND NOT ({PROTECTION_EXISTS_CLAUSES})
+        "
+        ),
         params![id],
     )?;
+    if updated == 1 {
+        return get_report_document(connection, id);
+    }
 
-    get_report_document(connection, id)
+    // Zero rows: re-read to classify missing (typed not-found, unchanged
+    // behavior) vs protected (the document exists but the guard refused).
+    let _doc = get_report_document(connection, id)?;
+    Err(StorageError::ReportDocumentBytesProtected { id: id.to_owned() })
 }
 
 /// Documents awaiting a file fetch: ESPI/EBI attachments registered as `pending` with no

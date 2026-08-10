@@ -652,3 +652,340 @@ fn migration_0058_flips_legacy_metadata_only_structured_attachments_to_pending()
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, "doc_legacy_xhtml");
 }
+
+// ---------------------------------------------------------------------------
+// Report-bytes protection (#359, ADR 0098 dec. 3): document_bytes_are_protected
+// / mark_metadata_only's atomic guard. Five physical legs, tested separately,
+// plus negatives that must NOT protect, plus the unprotected happy path.
+// ---------------------------------------------------------------------------
+
+fn fresh_doc(state: &AppState, company_id: &str, suffix: &str) -> ReportDocument {
+    state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company_id.to_owned(),
+            source_type: "user_url".to_owned(),
+            url: format!("https://example.com/protect-{suffix}.pdf"),
+            period_id: None,
+            origin_ref: None,
+            title: None,
+            attribution: None,
+        })
+        .expect("doc should create")
+}
+
+fn new_fact(
+    company_id: &str,
+    period_id: &str,
+    definition_id: &str,
+    doc_id: &str,
+) -> NewFinancialFact {
+    NewFinancialFact {
+        company_id: company_id.to_owned(),
+        period_id: period_id.to_owned(),
+        definition_id: definition_id.to_owned(),
+        value_numeric: "1000".to_owned(),
+        currency: Some("PLN".to_owned()),
+        statement_basis: None,
+        attribution: None,
+        variant: None,
+        measure_window: None,
+        data_quality: None,
+        as_reported_value: None,
+        as_reported_scale: None,
+        reporting_standard: None,
+        extraction_method: None,
+        confidence: None,
+        confirmation_state: Some("confirmed".to_owned()),
+        supersedes_id: None,
+        source_document_ref: Some(doc_id.to_owned()),
+        annotation: None,
+    }
+}
+
+fn total_assets_definition_id(state: &AppState) -> String {
+    state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions should list")
+        .iter()
+        .find(|d| d.metric_key == "total_assets")
+        .expect("total_assets should exist canonically")
+        .id
+        .clone()
+}
+
+#[test]
+fn mark_metadata_only_refuses_when_a_confirmed_fact_cites_the_document() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+    let doc = fresh_doc(&state, &company.id, "fact");
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2025-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+    let definition_id = total_assets_definition_id(&state);
+    state
+        .create_financial_fact(new_fact(&company.id, &period.id, &definition_id, &doc.id))
+        .expect("fact should create");
+
+    let error = state
+        .mark_report_document_metadata_only(&doc.id)
+        .expect_err("a confirmed fact citing the doc must protect its bytes");
+    assert!(matches!(
+        error,
+        StorageError::ReportDocumentBytesProtected { .. }
+    ));
+}
+
+#[test]
+fn mark_metadata_only_refuses_when_notebook_evidence_cites_the_document() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+    let doc = fresh_doc(&state, &company.id, "notebook");
+
+    let raw = state.checkout_for_tests().expect("raw connection");
+    raw.execute(
+        "INSERT INTO notebook_entries (id, company_id, title, body)
+         VALUES ('note1', ?1, 'Note', 'Body')",
+        params![company.id],
+    )
+    .expect("seed notebook entry");
+    raw.execute(
+        "INSERT INTO notebook_entry_origins (id, notebook_entry_id, source_type, source_id)
+         VALUES ('orig1', 'note1', 'report_document', ?1)",
+        params![doc.id],
+    )
+    .expect("seed notebook origin");
+    drop(raw);
+
+    let error = state
+        .mark_report_document_metadata_only(&doc.id)
+        .expect_err("research evidence citing the doc must protect its bytes");
+    assert!(matches!(
+        error,
+        StorageError::ReportDocumentBytesProtected { .. }
+    ));
+}
+
+#[test]
+fn mark_metadata_only_refuses_when_a_management_claim_cites_the_document() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+    let doc = fresh_doc(&state, &company.id, "claim");
+
+    let raw = state.checkout_for_tests().expect("raw connection");
+    raw.execute(
+        "INSERT INTO management_claims (id, company_id, statement, source_evidence_type, source_evidence_id)
+         VALUES ('claim1', ?1, 'We will grow', 'report_document', ?2)",
+        params![company.id, doc.id],
+    )
+    .expect("seed management claim");
+    drop(raw);
+
+    let error = state
+        .mark_report_document_metadata_only(&doc.id)
+        .expect_err("a management claim's evidence must protect the doc's bytes");
+    assert!(matches!(
+        error,
+        StorageError::ReportDocumentBytesProtected { .. }
+    ));
+}
+
+/// Seeds a `feed_items` row plus a `company_signals` row for it, and points
+/// `doc`'s `origin_ref` at that feed item — the join `document_bytes_are_protected`
+/// leg (c) requires.
+fn seed_signal_for_doc(
+    state: &AppState,
+    company_id: &str,
+    doc_id: &str,
+    feed_item_id: &str,
+    status: &str,
+) {
+    let raw = state.checkout_for_tests().expect("raw connection");
+    raw.execute(
+        "INSERT INTO feed_items
+            (id, type, source_adapter_id, source_name, source_url, title, fetched_at, dedupe_key)
+         VALUES (?1, 'official_report', 'gpw-espi-ebi', 'GPW ESPI/EBI', 'https://x/item',
+                 'Item', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?1)",
+        params![feed_item_id],
+    )
+    .expect("seed feed item");
+    raw.execute(
+        "INSERT INTO company_signals (id, company_id, feed_item_id, category, classified_by, status)
+         VALUES (?1, ?2, ?3, 'other', 'rule', ?4)",
+        params![format!("sig_{feed_item_id}"), company_id, feed_item_id, status],
+    )
+    .expect("seed signal");
+    raw.execute(
+        "UPDATE report_documents SET origin_ref = ?1 WHERE id = ?2",
+        params![feed_item_id, doc_id],
+    )
+    .expect("point origin_ref at the feed item");
+}
+
+#[test]
+fn mark_metadata_only_refuses_when_a_confirmed_signal_derives_from_the_document() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+    let doc = fresh_doc(&state, &company.id, "signal");
+    seed_signal_for_doc(&state, &company.id, &doc.id, "feed1", "confirmed");
+
+    let error = state
+        .mark_report_document_metadata_only(&doc.id)
+        .expect_err("a confirmed signal derived from the doc must protect its bytes");
+    assert!(matches!(
+        error,
+        StorageError::ReportDocumentBytesProtected { .. }
+    ));
+}
+
+#[test]
+fn mark_metadata_only_refuses_when_any_kpi_ingest_run_references_the_document_even_terminal() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+    let doc = fresh_doc(&state, &company.id, "run");
+
+    let raw = state.checkout_for_tests().expect("raw connection");
+    raw.execute(
+        "INSERT INTO kpi_ingest_runs (id, report_document_id, company_id, profile_version, status)
+         VALUES ('run1', ?1, ?2, 'p1', 'failed')",
+        params![doc.id, company.id],
+    )
+    .expect("seed a TERMINAL run");
+    drop(raw);
+
+    let error = state
+        .mark_report_document_metadata_only(&doc.id)
+        .expect_err("ANY durable run, even a terminal/failed one, must protect the doc's bytes");
+    assert!(matches!(
+        error,
+        StorageError::ReportDocumentBytesProtected { .. }
+    ));
+}
+
+#[test]
+fn mark_metadata_only_negatives_do_not_protect() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    // An UNCONFIRMED fact does not protect.
+    let doc_fact = fresh_doc(&state, &company.id, "unconfirmed-fact");
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2025-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+    let definition_id = total_assets_definition_id(&state);
+    let raw = state.checkout_for_tests().expect("raw connection");
+    raw.execute(
+        "INSERT INTO financial_facts
+            (id, company_id, period_id, definition_id, value_numeric, confirmation_state, source_document_ref)
+         VALUES ('fact_unconfirmed', ?1, ?2, ?3, '1000', 'auto_unreviewed', ?4)",
+        params![company.id, period.id, definition_id, doc_fact.id],
+    )
+    .expect("seed unconfirmed fact");
+    drop(raw);
+    state
+        .mark_report_document_metadata_only(&doc_fact.id)
+        .expect("an unconfirmed fact must not protect the doc");
+
+    // A `proposed` signal does not protect.
+    let doc_signal = fresh_doc(&state, &company.id, "proposed-signal");
+    seed_signal_for_doc(
+        &state,
+        &company.id,
+        &doc_signal.id,
+        "feed_proposed",
+        "proposed",
+    );
+    state
+        .mark_report_document_metadata_only(&doc_signal.id)
+        .expect("a proposed (unconfirmed) signal must not protect the doc");
+
+    // A CONFIRMED signal exists in the table, but for a DIFFERENT document's
+    // origin_ref — the join must scope by THIS document's origin_ref, never
+    // "any confirmed signal exists anywhere".
+    let doc_other = fresh_doc(&state, &company.id, "unrelated-origin-owner");
+    seed_signal_for_doc(
+        &state,
+        &company.id,
+        &doc_other.id,
+        "feed_other",
+        "confirmed",
+    );
+    let doc_wrong_origin = fresh_doc(&state, &company.id, "wrong-origin");
+    {
+        let raw = state.checkout_for_tests().expect("raw connection");
+        raw.execute(
+            "UPDATE report_documents SET origin_ref = 'feed_unrelated' WHERE id = ?1",
+            params![doc_wrong_origin.id],
+        )
+        .expect("point origin_ref at an unrelated feed item with no signal");
+    }
+    state
+        .mark_report_document_metadata_only(&doc_wrong_origin.id)
+        .expect("a confirmed signal owned by a DIFFERENT document's origin_ref must not protect this one");
+}
+
+#[test]
+fn document_bytes_are_protected_reports_true_and_false() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let protected_doc = fresh_doc(&state, &company.id, "predicate-protected");
+    {
+        let raw = state.checkout_for_tests().expect("raw connection");
+        raw.execute(
+            "INSERT INTO kpi_ingest_runs (id, report_document_id, company_id, profile_version, status)
+             VALUES ('run_pred', ?1, ?2, 'p1', 'extracting')",
+            params![protected_doc.id, company.id],
+        )
+        .expect("seed run");
+    }
+    let unprotected_doc = fresh_doc(&state, &company.id, "predicate-unprotected");
+
+    let raw = state.checkout_for_tests().expect("raw connection");
+    assert!(
+        crate::storage::report_documents::document_bytes_are_protected(&raw, &protected_doc.id)
+            .expect("predicate should run"),
+        "a document referenced by a durable run must report protected"
+    );
+    assert!(
+        !crate::storage::report_documents::document_bytes_are_protected(&raw, &unprotected_doc.id)
+            .expect("predicate should run"),
+        "an unreferenced document must report unprotected"
+    );
+}
+
+#[test]
+fn mark_metadata_only_succeeds_on_an_unprotected_document() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+    let doc = fresh_doc(&state, &company.id, "unprotected");
+
+    let updated = state
+        .mark_report_document_metadata_only(&doc.id)
+        .expect("an unprotected document must downgrade");
+    assert_eq!(updated.fetch_status, "metadata_only");
+    assert!(updated.local_path.is_none());
+}

@@ -168,6 +168,22 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::RunLeaseInvariantViolation { .. } => Internal,
         // A stored `status` token no caller ever supplies as raw input.
         StorageError::UnknownKpiIngestRunState { .. } => Internal,
+        // A second `create_run_if_absent` naming a different period for the
+        // same active triple conflicts with the already-running triple.
+        StorageError::RunPeriodConflict { .. } => Conflict,
+        // Staging a run outside {extracting, validation_failed} conflicts
+        // with the run's current lifecycle state.
+        StorageError::InvalidRunStateForStaging { .. } => Conflict,
+        // Acting on a stale or already-frozen staging revision conflicts
+        // with the run's current manifest state.
+        StorageError::InvalidStagingRevision { .. } => Conflict,
+        StorageError::StagedObservationNotFound { .. } => NotFound,
+        // A second commit receipt for the same run conflicts with the
+        // already-recorded (immutable) one.
+        StorageError::CommitReceiptAlreadyRecorded { .. } => Conflict,
+        // The document's bytes are under the retention protection contract —
+        // the request conflicts with that contract, not a shape problem.
+        StorageError::ReportDocumentBytesProtected { .. } => Conflict,
     }
 }
 

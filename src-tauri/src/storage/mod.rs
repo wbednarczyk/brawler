@@ -57,6 +57,7 @@ mod insider;
 mod jobs;
 mod kpi_extraction;
 mod kpi_ingest_runs;
+mod kpi_ingest_staging;
 mod licensing;
 mod management_claims;
 mod management_holdings;
@@ -124,6 +125,10 @@ pub use fundamentals_provenance::{
 };
 pub use fx_rates::FxRatesStore;
 pub use kpi_ingest_runs::{KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun};
+pub use kpi_ingest_staging::{
+    CommitReceipt, KpiIngestStagingStore, NewCommitReceipt, NewStagedObservation,
+    ObservationValidation, StagedObservation,
+};
 pub use severity::{
     severity_for_attention_event, severity_for_autopilot_run, severity_for_signal_category,
     AttentionSeverity,
@@ -777,6 +782,13 @@ impl AppState {
     /// worklist and lease/heartbeat holder (ADR 0098 decisions 2, 6, 8).
     pub fn kpi_ingest_runs(&self) -> kpi_ingest_runs::KpiIngestRunsStore {
         kpi_ingest_runs::KpiIngestRunsStore::new(self.db.clone())
+    }
+
+    /// KPI staging (`kpi_staged_observations` + `kpi_ingest_commit_receipts`)
+    /// — run-owned pre-canonical LLM proposals and immutable commit outcomes
+    /// (ADR 0098 decisions 3, 5).
+    pub fn kpi_ingest_staging(&self) -> kpi_ingest_staging::KpiIngestStagingStore {
+        kpi_ingest_staging::KpiIngestStagingStore::new(self.db.clone())
     }
 
     pub fn list_companies(&self) -> StorageResult<Vec<Company>> {

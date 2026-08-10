@@ -5037,3 +5037,127 @@ fn migration_0137_creates_kpi_ingest_runs_with_defaults_and_active_unique_index(
         "re-run must reach exactly the expected migration count",
     );
 }
+
+#[test]
+fn migration_0138_creates_kpi_staging_tables_and_run_period_columns() {
+    // ADR 0098 dec. 3/4/5, card #359: 0138 adds kpi_staged_observations +
+    // kpi_ingest_commit_receipts (IF NOT EXISTS) plus the run's period
+    // descriptor columns (ALTER TABLE ADD COLUMN), so re-running is a safe
+    // no-op.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+             VALUES ('doc1', 'c1', 'espi_attachment', 'https://x/doc1.pdf', 'fetched')",
+            [],
+        )
+        .expect("seed a document");
+    connection
+        .execute(
+            "INSERT INTO kpi_ingest_runs
+                (id, report_document_id, company_id, profile_version, period_fiscal_year, period_type)
+             VALUES ('run1', 'doc1', 'c1', 'p1', 2025, 'FY')",
+            [],
+        )
+        .expect("the run's period descriptor columns must exist and accept a value");
+
+    connection
+        .execute(
+            "INSERT INTO kpi_staged_observations (id, run_id, revision, ordinal, raw_label, raw_value)
+             VALUES ('obs1', 'run1', 1, 0, 'Przychody', '1000')",
+            [],
+        )
+        .expect("a staged observation row must be storable with defaults");
+    let (mapping_status, validation_state): (String, String) = connection
+        .query_row(
+            "SELECT mapping_status, validation_state FROM kpi_staged_observations WHERE id = 'obs1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read defaults");
+    assert_eq!(mapping_status, "unmapped");
+    assert_eq!(validation_state, "none");
+
+    // UNIQUE(run_id, revision, ordinal) rejects a duplicate.
+    let duplicate = connection.execute(
+        "INSERT INTO kpi_staged_observations (id, run_id, revision, ordinal, raw_label, raw_value)
+         VALUES ('obs2', 'run1', 1, 0, 'Przychody', '1000')",
+        [],
+    );
+    assert!(
+        duplicate.is_err(),
+        "UNIQUE(run_id, revision, ordinal) must reject a duplicate ordinal in the same revision"
+    );
+
+    connection
+        .execute(
+            "INSERT INTO kpi_ingest_commit_receipts
+                (id, run_id, manifest_hash, manifest_revision, terminal_status, accepted_count, outcomes_json)
+             VALUES ('r1', 'run1', 'hash1', 1, 'complete', 1, '[]')",
+            [],
+        )
+        .expect("a commit receipt row must be storable with defaults");
+    let outcomes_schema_version: i64 = connection
+        .query_row(
+            "SELECT outcomes_schema_version FROM kpi_ingest_commit_receipts WHERE id = 'r1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read default");
+    assert_eq!(outcomes_schema_version, 1);
+
+    // UNIQUE(run_id) rejects a second receipt for the same run.
+    let duplicate_receipt = connection.execute(
+        "INSERT INTO kpi_ingest_commit_receipts
+            (id, run_id, manifest_hash, manifest_revision, terminal_status, accepted_count, outcomes_json)
+         VALUES ('r2', 'run1', 'hash2', 1, 'complete', 1, '[]')",
+        [],
+    );
+    assert!(
+        duplicate_receipt.is_err(),
+        "UNIQUE(run_id) must reject a second commit receipt for the same run"
+    );
+
+    for (name, kind) in [
+        ("idx_kpi_staged_observations_run_revision", "index"),
+        ("kpi_staged_observations", "table"),
+        ("kpi_ingest_commit_receipts", "table"),
+    ] {
+        let exists: bool = connection
+            .query_row(
+                &format!(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = '{kind}' AND name = '{name}')"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .expect("existence check");
+        assert!(exists, "{kind} '{name}' must be created");
+    }
+
+    // Re-running the runner is a safe no-op.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    assert_eq!(
+        count_rows(&connection, "kpi_staged_observations").expect("count"),
+        1,
+        "re-run must not disturb stored staged observations"
+    );
+    assert_eq!(
+        count_rows(&connection, "kpi_ingest_commit_receipts").expect("count"),
+        1,
+        "re-run must not disturb stored commit receipts"
+    );
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "re-run must reach exactly the expected migration count",
+    );
+}
