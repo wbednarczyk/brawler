@@ -13,7 +13,6 @@
 @import "./styles/claims.css";
 @import "./styles/screens/watchlists.css";
 @import "./styles/screens/alerts.css";
-@import "./styles/screens/compare.css";
 @import "./styles/screens/research-layout.css";
 @import "./styles/screens/research-components.css";
 @import "./styles/screens/research-responsive.css";
@@ -25,7 +24,6 @@
 @import "./styles/membership.css";
 @import "./styles/screens/company-workspace.css";
 @import "./styles/screens/company-coverage.css";
-@import "./styles/screens/company-review-queue.css";
 @import "./styles/notebook-shared.css";
 @import "./styles/screens/inbox.css";
 @import "./styles/screens/report-season.css";

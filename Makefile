@@ -24,7 +24,7 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -463,9 +463,6 @@ ui-smoke-clickable:
 typecheck:
 	$(NIX) npm run typecheck
 
-frontend-check:
-	$(NIX) npm run check:frontend
-
 rust-check:
 	$(NIX) npm run check:rust
 
@@ -851,9 +848,6 @@ live-smoke:
 	fi; \
 	BRAWLER_CDP_URL="http://localhost:$(LIVE_CDP_PORT)" $$RUN npx playwright test --config playwright.live.config.ts tests/live/boot-smoke.live.spec.ts
 
-flake-check:
-	nix flake check --no-build
-
 tauri-build:
 	$(NIX) npm run tauri -- build $(RELEASE_FEATURE_FLAG)
 
@@ -964,12 +958,3 @@ windows-test-help:
 	@printf "  make frontend-preview\n"
 	@printf "Then open the printed localhost URL in Windows. Tauri APIs are not validated there.\n"
 
-open-project-windows:
-	@if command -v explorer.exe >/dev/null 2>&1; then explorer.exe .; else printf "explorer.exe not found. This target is intended for WSL on Windows.\n"; fi
-
-open-dist-windows:
-	@if [ -d dist ]; then \
-		if command -v explorer.exe >/dev/null 2>&1; then explorer.exe dist; else printf "explorer.exe not found. This target is intended for WSL on Windows.\n"; fi; \
-	else \
-		printf "dist/ does not exist. Run 'make build' first.\n"; \
-	fi

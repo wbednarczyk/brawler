@@ -1272,7 +1272,7 @@ function seedBrowserStore(data: ScenarioData) {
   data.kpiRelevance = structuredClone(kpiRelevance);
   data.reconciliationResults = structuredClone(reconciliationResults);
   // Populated cross-company comparison (ADR 0089 §A3) over two browser-harness
-  // companies so the Compare success table renders (CDR reports in PLN, CBF in
+  // companies exercising the kpi_comparison command (CDR reports in PLN, CBF in
   // EUR — the FX chip + fx_missing flag). Matched by the runtime mock on
   // (companyIds set, metricKeys=["revenue"], granularity="annual").
   // Plus the N=1 CDR comparisons the Fundamentals periods × deltas section

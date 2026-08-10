@@ -59,13 +59,13 @@ per feature.
 - **[Report comparison](report-comparison.md)** — see what changed between a
   company's two most recent financial statements of the same kind, section by
   section — fully local, deterministic, no AI.
-- **[Cross-company comparison and comparative valuation](cross-company-comparison.md)**
-  — the **Compare (Porównaj)** screen: pick a set of tracked companies and line
-  their KPIs up side by side (Profil view across companies, Trend view across
-  periods, a 4-series chart), read the one-company periods × QoQ/YoY deltas table
-  in Fundamentals, and see comparative valuation L1 — peer percentiles with N, a
-  football field of implied ranges per multiple, and an A–D confidence grade —
-  all evidence-linked, decision support only.
+- **Periods × deltas in Fundamentals** — each line item across recent periods
+  with its QoQ/YoY change inline (percentages for monetary items, percentage
+  points for ratios), every number linked to its source fact. The former
+  Compare (Porównaj) screen was removed (#351, unused); the comparison and
+  valuation read models stay reachable for agents over MCP
+  (`get_kpi_comparison`, `get_sector_percentiles`,
+  `compute_comparative_valuation`).
 - **[AI in Brawler: transcripts only (BYOA)](ai-provider-presets.md)**
   — the only in-app AI feature is YouTube transcription (Gemini); intelligence
   over your research comes from your own agent talking to Brawler over MCP.

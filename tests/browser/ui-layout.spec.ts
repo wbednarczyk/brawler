@@ -32,10 +32,8 @@ test.describe("browser UI regression smoke", () => {
     // 0054). Cockpit ("Research cockpit") + the cockpit-hosted screens are walked
     // by smoke-walk / screen-walk-extended; Notebooks/Research/Events/ReportSeason
     // are no longer sidebar buttons.
-    // Compare is a live mode destination again (ADR 0089, v0.61).
     for (const screenName of [
       "Today",
-      "Compare",
       "Companies",
       "Inbox",
       "Watchlists",

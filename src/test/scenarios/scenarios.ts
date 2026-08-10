@@ -25,8 +25,8 @@ import type { ReconciliationResult } from "../../api/generated/ReconciliationRes
 import type { MorningBriefing } from "../../api/generated/MorningBriefing";
 import type { AutopilotRun, CompanyAutopilot } from "../../api/autopilot";
 import type { KpiComparison } from "../../api/comparison";
-import type { SectorPercentiles } from "../../api/sectorPercentiles";
-import type { ComparativeValuation } from "../../api/valuation";
+import type { SectorPercentiles } from "../../api/generated/SectorPercentiles";
+import type { ComparativeValuation } from "../../api/generated/ComparativeValuation";
 import {
   legacyCompanies,
   legacyCompanyEvents,
@@ -209,7 +209,7 @@ export interface ScenarioData {
   // Populated cross-company comparisons (ADR 0089 §A3). Optional seed matched by
   // (companyIds set, metricKeys, granularity); an unmatched request reads back
   // the empty computed default. Lets the browser/visual harness render the
-  // Compare success table without wiring confirmed facts to these companies.
+  // kpi_comparison command without wiring confirmed facts to these companies.
   kpiComparisons?: KpiComparison[];
   // Comparative valuation L1 (ADR 0089 §B1/B2/B3). Optional seeds keyed by
   // companyId: a company with a seed reads it back verbatim; an unseeded company

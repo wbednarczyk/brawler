@@ -173,7 +173,7 @@ A bare numeric/text field alone is the **fallback**, for values with no meaningf
 
 Every user-visible string is `text("English text")` from `useLocale()`. The locale resources are typed: add the key to **both** `src/shared/locale/resources/en.ts` and `pl.ts`, or the build fails. See the en/pl maps and [ADR-tracked locale model]. Do not concatenate translated fragments where a single key reads better.
 
-**KPI display names always go through `localizedKpiLabel` (`src/shared/locale/kpiLabels.ts`), never raw `def.label`.** Canonical KPI definitions are seeded with English labels; rendering `def.label` directly ships the English name into a Polish UI (the "Current assets" bug, card 5b2222d). Every place a metric name is shown — picker options, table row/column heads, section titles, chart aria — maps through `localizedKpiLabel(def, locale)` / `localizedKpiLabelForKey(key, locale)`. Guarded by pl-locale render tests (e.g. `CompareScreen.test.tsx` asserts Polish picker + Profil rows).
+**KPI display names always go through `localizedKpiLabel` (`src/shared/locale/kpiLabels.ts`), never raw `def.label`.** Canonical KPI definitions are seeded with English labels; rendering `def.label` directly ships the English name into a Polish UI (the "Current assets" bug, card 5b2222d). Every place a metric name is shown — picker options, table row/column heads, section titles, chart aria — maps through `localizedKpiLabel(def, locale)` / `localizedKpiLabelForKey(key, locale)`. Guarded by pl-locale render tests over the consuming panels (e.g. `FundamentalsPanel`).
 
 **Use product language, not implementation terms.** Normal user-facing copy must avoid `SQLite`, `Tauri`, `adapter`, `schema`, `database`, `module`, `collector`, and `local`/`Local` — say what the user gets, not how it's built. Developer-only Diagnostics may use implementation terms (it's gated on Developer mode). Source-provided content/URLs may contain anything, but test samples in normal UI tests should not accidentally include the forbidden terms.
 
@@ -213,8 +213,6 @@ behind expansion when short; fixed-height artifacts (calendar, matrix) scroll in
 | Sources | source rows + status chip | + schedule/settings inline | + diagnostics column | rows only |
 | Settings | one section at a time (tab list collapses to select) | tab list + section | same | n/a (screen) |
 | Diagnostics | log list; filters collapse | + module/severity columns | full table | list only |
-
-Compare: live Modes destination (restored v0.61, [ADR 0089](adr/0089-cross-company-comparison-and-valuation-l1.md)). Density behaviour: the selection controls and result sections stack in a column; the comparison table is deliberate wide content that scrolls inside its own `data-hscroll` container (grid/flex chain kept `min-width:0`), so the panel never grows a horizontal scrollbar down to ~960px. Storyboard: `docs/mockups/v061-compare-storyboard.html` (frames 1–7).
 
 ### Implementing a contract row
 

@@ -2,8 +2,8 @@
 //!
 //! `get_kpi_comparison` answers "the same canonical KPI across these companies,
 //! aligned on a shared period axis, with QoQ/YoY deltas and PLN conversion" —
-//! the substrate behind both the Compare screen (N companies) and the
-//! Fundamentals periods×deltas table (N=1). The pure alignment/labeling/delta
+//! the substrate behind the Fundamentals periods×deltas table (N=1) and the
+//! MCP get_kpi_comparison read (N companies). The pure alignment/labeling/delta
 //! transform lives in [`crate::fundamentals::comparison`]; this command is the
 //! thin DB seam: it selects the canonical confirmed fact per slot (reusing the
 //! `load_period_facts` preference), fetches per-metric value kinds, wires the

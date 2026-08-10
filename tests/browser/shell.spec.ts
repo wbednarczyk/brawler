@@ -47,9 +47,6 @@ test.describe("mode-based shell (ADR 0054)", () => {
     await expect(nav.getByText("Library", { exact: true })).toBeVisible();
     await expect(nav.getByText("Utilities", { exact: true })).toBeVisible();
     await expect(nav.getByRole("button", { name: "Today" })).toBeVisible();
-    // Compare is a live mode destination again (ADR 0089, v0.61) — restored
-    // under Dashboard once the comparison read model gave the mode content.
-    await expect(nav.getByRole("button", { name: "Compare" })).toBeVisible();
   });
 
   test("the cockpit feed marks only unread items bold and the inspector reads cleanly", async ({

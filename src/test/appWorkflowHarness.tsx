@@ -4,7 +4,7 @@ import { downloadDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, vi } from "vitest";
-import { App } from "../App";
+import { App } from "../app/App";
 import type { Section } from "../app/navigation";
 import {
   currentWeekTestDate,

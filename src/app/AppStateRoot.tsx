@@ -60,7 +60,6 @@ import {
 } from "../api/cockpit";
 import { useToast, useUndoableDelete } from "../ui";
 import { TodayScreen } from "../screens/Today/TodayScreen";
-import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
@@ -1984,9 +1983,6 @@ export function AppStateRoot({
                   sourceAdapters={sourceAdapters}
                   openSources={() => setActiveSection("Sources")}
                 />
-              ) : null}
-              {activeSection === "Compare" ? (
-                <CompareScreen openCompanyWorkspace={openCompanyWorkspaceById} />
               ) : null}
               {activeSection === "Companies" ? (
                 <CompaniesProvider

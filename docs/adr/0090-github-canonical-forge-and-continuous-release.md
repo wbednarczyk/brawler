@@ -57,7 +57,7 @@ The master ruleset requires a PR + the `full-check` jobs as required checks + br
 
 ### 8. Migration and rollback
 
-`scripts/migration/rad-to-github.mjs` (owner-run, script-first — no issue content flows through the model's context): export all ~550 `rad` issues to `docs/archive/radicle-issues-2026-07.jsonl` (the rollback record), scaffold GitHub labels/milestones/project, create the ~390 open issues (body prefixed `> Migrated from Radicle rad:<hex7>`, labels, milestone, project `Status` from the old `state:*`, `parent:` → native sub-issue, `blocked:` → body link), and write `docs/archive/radicle-issue-map.json` (`hex7 → #n`) so existing hex references stay resolvable. Milestone `milestone:vX.Y.Z` labels migrate as historical grouping only — new work groups by epics, not version milestones.
+`scripts/migration/rad-to-github.mjs` (owner-run, script-first — no issue content flows through the model's context): export all ~550 `rad` issues to `docs/archive/radicle-issues-2026-07.jsonl` (the rollback record), scaffold GitHub labels/milestones/project, create the ~390 open issues (body prefixed `> Migrated from Radicle rad:<hex7>`, labels, milestone, project `Status` from the old `state:*`, `parent:` → native sub-issue, `blocked:` → body link), and write `docs/archive/radicle-issue-map.json` (`hex7 → #n`) so existing hex references stay resolvable. Milestone `milestone:vX.Y.Z` labels migrate as historical grouping only — new work groups by epics, not version milestones. (script deleted 2026-08-10, #351 — one-shot, already executed; the issue map lives at docs/archive/radicle-issue-map.json)
 
 ### 9. Privacy
 

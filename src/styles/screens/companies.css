@@ -21,13 +21,6 @@
   background: var(--surface-raised);
 }
 
-.watchlist-management-grid {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.6fr);
-  gap: var(--space-3);
-  min-height: 220px;
-}
-
 .watchlist-list,
 .watchlist-detail,
 .watchlist-company-list {
@@ -106,66 +99,11 @@
   gap: var(--space-2);
 }
 
-.watchlist-member-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-3);
-  min-height: 0;
-}
-
-.watchlist-member-columns section {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.watchlist-company-list {
-  display: grid;
-  align-content: start;
-  gap: var(--space-2);
-  max-height: 230px;
-  overflow: auto;
-}
-
-.watchlist-company-row,
-.watchlist-add-company {
-  min-width: 0;
-}
-
-.watchlist-company-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 65%, transparent);
-}
-
-.watchlist-company-row > div,
-.watchlist-add-company {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--space-2);
-}
-
 .watchlist-company-row span:not(.ticker-exchange):not(.ticker-symbol),
 .watchlist-add-company span:not(.ticker-exchange):not(.ticker-symbol) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.watchlist-add-company {
-  min-height: 36px;
-  padding: 0 var(--space-2);
-}
-
-.watchlist-add-company:hover,
-.watchlist-add-company:focus-visible {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-  color: var(--primary);
 }
 
 .company-form {
@@ -614,18 +552,6 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-raised);
-}
-
-.fact-detail-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.fact-detail-header h3 {
-  margin: var(--space-0) 0 0;
-  font-size: var(--font-md);
 }
 
 .fact-detail-header .eyebrow {
@@ -1101,17 +1027,6 @@
   gap: var(--space-2);
 }
 
-.ownership-trajectory-name {
-  font-size: var(--font-xs);
-  color: var(--muted);
-}
-
-.ownership-classify-cta {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-2);
-}
-
 .ownership-holders {
   list-style: none;
   margin: 0;
@@ -1152,12 +1067,6 @@
   gap: var(--space-2);
   color: var(--muted);
   white-space: nowrap;
-}
-
-.ownership-proposal-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
 }
 
 .ownership-type-chip {
@@ -1248,10 +1157,6 @@
   white-space: nowrap;
 }
 
-.ownership-warnbox-note {
-  color: var(--text-muted, var(--text-secondary));
-}
-
 /* Tier-4 OCR shareholders-table proposal card (v0.57 T8, ADR 0077) */
 .ownership-ocr-proposal {
   display: flex;
@@ -1261,39 +1166,6 @@
   border-radius: 8px;
   padding: var(--space-2) var(--space-3);
   background: color-mix(in srgb, var(--tone-warning, var(--warning)) 6%, transparent);
-}
-
-.ownership-ocr-proposal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.ownership-ocr-rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ownership-ocr-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  font-size: var(--font-xs);
-}
-
-.ownership-ocr-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
 }
 
 @container pane (max-width: 419px) {
@@ -1491,7 +1363,6 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
-
 
 /* Management claims tracker styles moved to src/styles/claims.css (ADR 0076 D6
    density-contract prep) so companies.css and the claims panel stay disjoint. */
@@ -1716,7 +1587,6 @@
     gap: 0;
   }
 }
-
 
 /* Owner dogfooding 2026-07-16: donut + merged trajectories side by side;
    stacks in narrow panes (same container query as the rest of the section). */
