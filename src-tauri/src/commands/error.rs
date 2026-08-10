@@ -152,6 +152,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // with current state — another worker's claim, or the caller's own
         // lease having expired — not a shape problem with the request.
         StorageError::KpiIngestRunNotFound { .. } => NotFound,
+        StorageError::MissingIngestReference { .. } => NotFound,
+        StorageError::InvalidKpiIngestRunValue { .. } => InvalidInput,
+        StorageError::RunPeriodCompanyMismatch { .. } => InvalidInput,
         StorageError::RunLeaseNotHeld { .. } => Conflict,
         // Caller-supplied document/company ids that do not cohere.
         StorageError::RunDocumentCompanyMismatch { .. } => InvalidInput,

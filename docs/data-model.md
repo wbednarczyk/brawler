@@ -1505,7 +1505,7 @@ Id policy: `kpiing_{32 hex}` — sha256 over the identity triple plus a nanoseco
 
 Partial-unique-active rule: `idx_kpi_ingest_runs_active` is a **partial** unique index on `(report_document_id, company_id, profile_version) WHERE status NOT IN ('complete','partial','failed','cancelled')` — at most one non-terminal run per triple; terminal history is exempt, so `create_run_if_absent` starts a fresh run once the prior one for the same triple has ended.
 
-A document referenced by any durable run (any state, including failed/cancelled) joins the report-bytes protection contract above (§ Report Document Model retention).
+*Planned — #359:* a document referenced by any durable run (any state, including failed/cancelled) will join the report-bytes protection contract above (§ Report Document Model retention); until #359 lands, only the run ROW is protected (the ON DELETE RESTRICT FK), not the stored bytes.
 
 ### Planned: KPI staging & commit receipts (ADR 0098)
 

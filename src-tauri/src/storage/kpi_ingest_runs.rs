@@ -263,6 +263,23 @@ impl KpiIngestRunsStore {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
+        if let Some(scope) = new_run.scope.as_deref() {
+            if !matches!(scope, "standalone" | "consolidated") {
+                return Err(StorageError::InvalidKpiIngestRunValue {
+                    key: "scope",
+                    value: scope.to_owned(),
+                });
+            }
+        }
+        if let Some(quality) = new_run.data_quality.as_deref() {
+            if !matches!(quality, "final" | "preliminary" | "estimated") {
+                return Err(StorageError::InvalidKpiIngestRunValue {
+                    key: "data_quality",
+                    value: quality.to_owned(),
+                });
+            }
+        }
+
         let doc_company: Option<String> = tx
             .query_row(
                 "SELECT company_id FROM report_documents WHERE id = ?1",
@@ -270,11 +287,44 @@ impl KpiIngestRunsStore {
                 |row| row.get(0),
             )
             .optional()?;
-        if doc_company.as_deref() != Some(new_run.company_id.as_str()) {
-            return Err(StorageError::RunDocumentCompanyMismatch {
-                run_document: new_run.report_document_id.clone(),
-                company: new_run.company_id.clone(),
-            });
+        match doc_company {
+            None => {
+                return Err(StorageError::MissingIngestReference {
+                    table: "report_documents".to_owned(),
+                    id: new_run.report_document_id.clone(),
+                });
+            }
+            Some(owner) if owner != new_run.company_id => {
+                return Err(StorageError::RunDocumentCompanyMismatch {
+                    run_document: new_run.report_document_id.clone(),
+                    company: new_run.company_id.clone(),
+                });
+            }
+            Some(_) => {}
+        }
+        if let Some(period_id) = new_run.period_id.as_deref() {
+            let period_company: Option<String> = tx
+                .query_row(
+                    "SELECT company_id FROM financial_periods WHERE id = ?1",
+                    [period_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            match period_company {
+                None => {
+                    return Err(StorageError::MissingIngestReference {
+                        table: "financial_periods".to_owned(),
+                        id: period_id.to_owned(),
+                    });
+                }
+                Some(owner) if owner != new_run.company_id => {
+                    return Err(StorageError::RunPeriodCompanyMismatch {
+                        period: period_id.to_owned(),
+                        company: new_run.company_id.clone(),
+                    });
+                }
+                Some(_) => {}
+            }
         }
 
         let existing: Option<RawRun> = tx
@@ -329,9 +379,21 @@ impl KpiIngestRunsStore {
 
     /// Set-once `source_content_hash`. Same hash again is a no-op; a different
     /// hash is refused (`RunSourceHashAlreadyRecorded`); an unknown run id is
-    /// `KpiIngestRunNotFound` — never a silent no-op.
+    /// `KpiIngestRunNotFound` — never a silent no-op. The write is a guarded
+    /// `UPDATE … WHERE source_content_hash IS NULL`, so two racing writers can
+    /// never overwrite each other (the loser re-reads and gets classified).
     pub fn record_source_capture(&self, id: &str, source_content_hash: &str) -> StorageResult<()> {
         let connection = self.db.checkout()?;
+        let updated = connection.execute(
+            "UPDATE kpi_ingest_runs
+             SET source_content_hash = ?2,
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?1 AND source_content_hash IS NULL",
+            params![id, source_content_hash],
+        )?;
+        if updated == 1 {
+            return Ok(());
+        }
         let current: Option<Option<String>> = connection
             .query_row(
                 "SELECT source_content_hash FROM kpi_ingest_runs WHERE id = ?1",
@@ -342,17 +404,7 @@ impl KpiIngestRunsStore {
         match current {
             None => Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() }),
             Some(Some(existing)) if existing == source_content_hash => Ok(()),
-            Some(Some(_)) => Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() }),
-            Some(None) => {
-                connection.execute(
-                    "UPDATE kpi_ingest_runs
-                     SET source_content_hash = ?2,
-                         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                     WHERE id = ?1",
-                    params![id, source_content_hash],
-                )?;
-                Ok(())
-            }
+            _ => Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() }),
         }
     }
 
@@ -567,6 +619,16 @@ mod tests {
                 params![id, company_id, format!("https://x/{id}.pdf")],
             )
             .expect("document");
+    }
+
+    fn seed_period(connection: &Connection, id: &str, company_id: &str) {
+        connection
+            .execute(
+                "INSERT INTO financial_periods (id, company_id, fiscal_year, period_type)
+                 VALUES (?1, ?2, 2025, 'annual')",
+                params![id, company_id],
+            )
+            .expect("seed period");
     }
 
     fn new_run(doc: &str, company: &str, profile: &str) -> NewKpiIngestRun {
@@ -1149,5 +1211,135 @@ mod tests {
         let _ = std::fs::remove_file(&db_path);
         let _ = std::fs::remove_file(db_path.with_extension("sqlite3-wal"));
         let _ = std::fs::remove_file(db_path.with_extension("sqlite3-shm"));
+    }
+
+    /// Two writers racing the set-once capture: the guarded UPDATE guarantees
+    /// exactly one hash survives and the loser gets the typed refusal — the
+    /// TOCTOU class a SELECT-then-UPDATE would reintroduce.
+    #[test]
+    fn record_source_capture_two_threads_one_hash_survives() {
+        use r2d2_sqlite::SqliteConnectionManager;
+        use std::sync::Arc;
+
+        let db_path = std::env::temp_dir().join(format!(
+            "brawler-kpi-ingest-capture-race-{}-{}.sqlite3",
+            std::process::id(),
+            time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+        ));
+        {
+            let mut connection = Connection::open(&db_path).expect("open file db");
+            crate::storage::migrations::apply_migrations(&mut connection).expect("migrate");
+            seed_company(&connection, "c1");
+            seed_document(&connection, "doc1", "c1");
+            seed_run_raw(
+                &connection,
+                "run1",
+                "doc1",
+                "c1",
+                "p1",
+                "discovered",
+                None,
+                None,
+                None,
+            );
+        }
+        let manager = SqliteConnectionManager::file(&db_path).with_init(|connection| {
+            connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+            connection.pragma_update(None, "busy_timeout", 5000i64)?;
+            Ok(())
+        });
+        let pool = r2d2::Pool::builder()
+            .max_size(4)
+            .build(manager)
+            .expect("build pool");
+        let store = Arc::new(KpiIngestRunsStore::new(Database::from_pool(pool)));
+
+        let store_a = store.clone();
+        let store_b = store.clone();
+        let a = std::thread::spawn(move || store_a.record_source_capture("run1", "hash-a"));
+        let b = std::thread::spawn(move || store_b.record_source_capture("run1", "hash-b"));
+        let result_a = a.join().expect("thread a");
+        let result_b = b.join().expect("thread b");
+
+        let ok_count = [&result_a, &result_b]
+            .iter()
+            .filter(|result| result.is_ok())
+            .count();
+        assert_eq!(ok_count, 1, "exactly one writer records the hash");
+        let loser = if result_a.is_err() {
+            result_a
+        } else {
+            result_b
+        };
+        assert!(matches!(
+            loser.expect_err("loser"),
+            StorageError::RunSourceHashAlreadyRecorded { .. }
+        ));
+        let run = store.get_run("run1").expect("get").expect("some");
+        assert!(matches!(
+            run.source_content_hash.as_deref(),
+            Some("hash-a") | Some("hash-b")
+        ));
+
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("sqlite3-wal"));
+        let _ = std::fs::remove_file(db_path.with_extension("sqlite3-shm"));
+    }
+
+    #[test]
+    fn create_run_validates_period_ownership_and_references() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_company(&connection, "c-other");
+        seed_document(&connection, "doc1", "c1");
+        seed_period(&connection, "finper_other", "c-other");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+        let (doc, company) = ("doc1", "c1");
+
+        // Unknown document is NotFound, never a company mismatch.
+        let missing_doc = new_run("doc-missing", company, "p1");
+        let error = store
+            .create_run_if_absent(&missing_doc)
+            .expect_err("unknown document");
+        assert!(matches!(error, StorageError::MissingIngestReference { .. }));
+
+        // Unknown period.
+        let mut unknown_period = new_run(doc, company, "p1");
+        unknown_period.period_id = Some("finper_missing".to_owned());
+        let error = store
+            .create_run_if_absent(&unknown_period)
+            .expect_err("unknown period");
+        assert!(matches!(error, StorageError::MissingIngestReference { .. }));
+
+        // Period owned by another company.
+        let mut foreign_period = new_run(doc, company, "p1");
+        foreign_period.period_id = Some("finper_other".to_owned());
+        let error = store
+            .create_run_if_absent(&foreign_period)
+            .expect_err("foreign period");
+        assert!(matches!(
+            error,
+            StorageError::RunPeriodCompanyMismatch { .. }
+        ));
+
+        // Invalid vocabulary values are typed refusals, not raw CHECK conflicts.
+        let mut bad_scope = new_run(doc, company, "p1");
+        bad_scope.scope = Some("group".to_owned());
+        assert!(matches!(
+            store.create_run_if_absent(&bad_scope).expect_err("scope"),
+            StorageError::InvalidKpiIngestRunValue { key: "scope", .. }
+        ));
+        let mut bad_quality = new_run(doc, company, "p1");
+        bad_quality.data_quality = Some("draft".to_owned());
+        assert!(matches!(
+            store
+                .create_run_if_absent(&bad_quality)
+                .expect_err("quality"),
+            StorageError::InvalidKpiIngestRunValue {
+                key: "data_quality",
+                ..
+            }
+        ));
     }
 }
