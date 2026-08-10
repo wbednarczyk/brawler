@@ -119,36 +119,6 @@ summary.feed-body-heading::-webkit-details-marker {
   display: none;
 }
 
-.ai-analysis-panel {
-  position: relative;
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
-  border-radius: 8px;
-  background:
-    linear-gradient(var(--surface-raised), var(--surface-raised)) padding-box,
-    linear-gradient(120deg, var(--primary), var(--accent), color-mix(in srgb, var(--primary) 54%, var(--text))) border-box;
-  background-size: auto, 220% 220%;
-  animation: ai-panel-border 9s ease infinite;
-}
-
-.ai-analysis-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.ai-analysis-header h3 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font-size: var(--font-md);
-}
-
 .ai-analysis-header p,
 .ai-analysis-empty,
 .ai-analysis-result p,
@@ -157,88 +127,6 @@ summary.feed-body-heading::-webkit-details-marker {
   color: var(--muted);
   font-size: var(--font-sm);
   line-height: 1.45;
-}
-
-.ai-analysis-presets,
-.ai-analysis-footer,
-.ai-analysis-tags,
-.ai-analysis-sources {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.ai-analysis-question {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.ai-analysis-question label {
-  display: grid;
-  gap: var(--space-1);
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-.ai-analysis-question textarea {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: var(--space-2);
-  color: var(--text);
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  font: inherit;
-  font-size: var(--font-sm);
-}
-
-.ai-analysis-question textarea:focus {
-  outline: 2px solid color-mix(in srgb, var(--primary) 48%, transparent);
-  outline-offset: 1px;
-}
-
-.ai-analysis-result {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 76%, transparent);
-}
-
-.ai-analysis-result-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-xs);
-}
-
-.ai-analysis-result p {
-  margin: 0;
-  color: var(--text);
-}
-
-.ai-analysis-reasoning {
-  color: var(--muted) !important;
-}
-
-.ai-analysis-tags span {
-  padding: var(--space-1) var(--space-2);
-  border-radius: 999px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  font-size: var(--font-xs);
-}
-
-.ai-analysis-sources a {
-  color: var(--primary);
-  font-size: var(--font-sm);
-}
-
-.ai-analysis-error {
-  display: grid;
-  gap: var(--space-2);
 }
 
 @keyframes ai-panel-border {
@@ -250,12 +138,6 @@ summary.feed-body-heading::-webkit-details-marker {
   }
   100% {
     background-position: 0 0, 0% 50%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ai-analysis-panel {
-    animation: none;
   }
 }
 
@@ -579,24 +461,6 @@ summary.feed-body-heading::before {
   flex: 0 0 auto;
 }
 
-/* Compact launcher row inside a detail-section (status summary + open button). */
-.detail-launcher {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.detail-launcher-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
 .detail-icon {
   display: grid;
   width: 38px;
@@ -694,12 +558,6 @@ summary.feed-body-heading::before {
   font-size: var(--font-xs);
 }
 
-.status-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .detail-pane dd {
   margin: var(--space-0) 0 0;
   overflow-wrap: anywhere;
@@ -709,39 +567,6 @@ summary.feed-body-heading::before {
 
 .detail-pane dd a {
   color: var(--primary);
-}
-
-/* KPI extraction panel (v0.36). Reuses the AI panel shell; basic readability only. */
-.kpi-extraction-panel {
-  position: relative;
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
-  border-radius: 8px;
-  background: var(--surface-raised);
-}
-
-.kpi-extraction-sources {
-  display: grid;
-  /* minmax(0, 1fr) lets the single column shrink below its content's intrinsic
-     width so a long unbreakable token (ESPI attachment URL) truncates via the
-     source-name's ellipsis instead of forcing the modal wide (ADR 0081 Q9). */
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
-}
-
-.kpi-extraction-paste {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-}
-
-.kpi-extraction-paste input {
-  flex: 1 1 200px;
-  min-width: 0;
 }
 
 /* Source buttons are full-width and left-aligned; the icon stays fixed while a
@@ -759,191 +584,8 @@ summary.feed-body-heading::before {
   text-align: left;
 }
 
-.kpi-extraction-source > svg {
-  flex: 0 0 auto;
-}
-
-.kpi-extraction-source-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.25;
-}
-
-.kpi-extraction-source-action .kpi-extraction-source-text {
-  flex-direction: row;
-}
-
-.kpi-extraction-source-label {
-  color: var(--muted);
-  font-size: var(--font-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.kpi-extraction-source-name {
-  /* min-width:0 lets this flex child shrink so the ellipsis truncates a long
-     unbreakable token (e.g. a GPW ESPI attachment URL) instead of forcing the
-     modal to overflow horizontally (ADR 0081 Q9 pilot, hostile-content). */
-  min-width: 0;
-  overflow: hidden;
-  font-size: var(--font-base);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kpi-extraction-documents,
-.kpi-extraction-candidates ul {
-  display: grid;
-  /* Pin the track to the container so a long unbreakable ESPI filename inside a
-     source button truncates instead of forcing the modal wider (no-h-scroll). */
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.kpi-extraction-documents li,
-.kpi-extraction-candidates li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-  font-size: var(--font-sm);
-}
-
-/* The document label (title + long unbreakable ESPI filename) must shrink and
-   wrap rather than force the row — the trailing Extract button stays put. */
-.kpi-extraction-documents li > span,
-.kpi-extraction-candidates li > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.kpi-extraction-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-.kpi-extraction-period {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
 .kpi-extraction-period .ui-text-field {
   flex: 1 1 140px;
-}
-
-/* Modal bodies for the AI analysis + KPI extraction flows (moved out of the
-   narrow detail rail into the centered Modal). */
-.ai-analysis-review,
-.kpi-extraction-review {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-/* Compact result preview shown in the rail launcher (full detail is in the
-   modal). Prose wraps safely; no wide controls live here. */
-.ai-analysis-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.ai-analysis-preview p {
-  margin: 0;
-  color: var(--text);
-  font-size: var(--font-sm);
-  line-height: 1.45;
-}
-
-.kpi-extraction-review > ul {
-  display: grid;
-  gap: var(--space-3);
-  margin: var(--space-2) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.kpi-extraction-proposal {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.kpi-extraction-proposal-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.kpi-extraction-proposal-tags {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.kpi-extraction-asreported {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.kpi-extraction-asreported span {
-  color: var(--muted);
-  font-size: var(--font-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.kpi-extraction-asreported strong {
-  font-variant-numeric: tabular-nums;
-  font-size: var(--font-md);
-}
-
-.kpi-extraction-snippet {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--font-sm);
-  font-style: italic;
-}
-
-.kpi-extraction-proposal-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.kpi-extraction-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-}
-
-.kpi-extraction-summary span {
-  color: var(--muted);
-  font-size: var(--font-sm);
 }
 
 /* Typed ESPI/EBI signals (v0.40.0) */

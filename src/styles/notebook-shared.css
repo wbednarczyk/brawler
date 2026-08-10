@@ -2,28 +2,6 @@
   gap: var(--space-3);
 }
 
-.notebook-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 52%, transparent);
-}
-
-.notebook-toolbar h3 {
-  margin: 0;
-  font-size: var(--font-md);
-}
-
-.notebook-toolbar p {
-  margin-top: var(--space-0);
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
 .notebook-form,
 .notebook-detail {
   display: grid;
@@ -217,47 +195,6 @@
 .claim-row-block {
   display: grid;
   gap: var(--space-2);
-}
-
-.claim-detail {
-  display: grid;
-  gap: var(--space-3);
-  margin: 0 var(--space-2) var(--space-1);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-}
-
-.claim-status-control {
-  display: flex;
-  align-items: end;
-  gap: var(--space-2);
-}
-
-.claim-status-control label {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 180px;
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-.claim-status-control select {
-  width: 100%;
-  min-height: 32px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  background: var(--surface-raised);
-  outline: none;
-}
-
-.claim-status-control select:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .notebook-row {

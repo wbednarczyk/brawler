@@ -33,27 +33,6 @@
     );
 }
 
-.company-workspace-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.company-workspace-header h2 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-1);
-  color: var(--text);
-  font-size: var(--font-xl);
-}
-
-.company-pin-toggle,
-.company-advanced-layout {
-  font-size: var(--font-sm);
-}
-
 /* Focus writer (ADR 0054): the body textarea fills the distraction-free surface. */
 .notebook-writer {
   display: flex;
@@ -69,11 +48,6 @@
   resize: none;
 }
 
-.company-workspace-header p {
-  margin-top: var(--space-1);
-  color: var(--muted);
-}
-
 .eyebrow {
   /* --primary-strong (not --primary) clears WCAG AA on the light surface-raised
      tints these small bold labels sit on (U9 a11y: contrast). */
@@ -81,40 +55,6 @@
   font-size: var(--font-xs);
   font-weight: 700;
   text-transform: uppercase;
-}
-
-.company-workspace-meta {
-  display: flex;
-  justify-content: end;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.company-workspace-header-side {
-  display: grid;
-  justify-items: end;
-  gap: var(--space-3);
-  min-width: min(420px, 50%);
-}
-
-.company-workspace-meta span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 48%, transparent);
-  font-size: var(--font-sm);
-}
-
-.company-tabs {
-  width: fit-content;
-}
-
-.company-tabs button {
-  min-width: 88px;
 }
 
 .company-tab-panel {
@@ -233,11 +173,6 @@
   /* Prose measure: long lines are hard to read; cap at ~72 characters
      (docs/ui-authoring.md — prose blocks carry a max-width). */
   max-width: 72ch;
-}
-
-.quality-citations {
-  display: grid;
-  gap: var(--space-1);
 }
 
 /* ---------------------------------------------------------------------------
