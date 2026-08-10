@@ -1529,6 +1529,10 @@ A document referenced by any durable run (any state, including failed/cancelled)
 - Carries `manifest_hash`/`manifest_revision`, `terminal_status` (`complete`/`partial`), `period_id` (`ON DELETE SET NULL`), `accepted_count`, and `outcomes_json` — a versioned array of `{observationId, revision, ordinal, metricKey, factId, outcome, detail?}`. **`outcomes_schema_version`** (default 1) is a durable format discriminator, bumped only if the shape changes, so a reader can branch on it forever.
 - `outcomes_json` is a **new type**, NOT a reuse of `jobs::record_financial_facts::FactOutcome` — that type carries no `factId`, and a receipt outcome must identify the fact a proposal became (or `NULL` for a rejected one). `outcome` reuses the existing vocabulary: `created`/`reobserved`/`upgraded`/`divergent`/`no_definition`/`implausible`/`identity_violation`.
 
+Integration gate (#363): `record_commit_receipt` inserts caller-supplied values without reading the run — the commit transaction MUST verify manifest hash/revision against the run row and the `committing` state inside the same transaction before writing the receipt.
+
+Vocabulary note: run period descriptors enforce the canonical `period_type` token set; the historical `create_financial_period` writer accepts free non-empty tokens (folding only `annual`→`FY`) — an intentional, documented mismatch until the period writers are unified (epic #352 follow-up).
+
 ### Planned: `report_documents.published_at` (ADR 0098)
 
 *Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md), epic #354:* a canonical `published_at` on `report_documents`, filled by a typed origin-date resolver (`created_at`/`fetched_at` proxies rejected — data-model.md § conventions).

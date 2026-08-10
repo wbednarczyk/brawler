@@ -417,30 +417,44 @@ impl KpiIngestRunsStore {
 
         if let Some(raw) = existing {
             // An active run for the same triple with a DIFFERENT period is a
-            // genuine conflict (B2 sol review round 3), never a silent
-            // idempotent return: comparing on whichever identity both sides
-            // supply (period_id, else the descriptor pair) so a request that
-            // merely fills in a previously-absent value is not a conflict.
-            let requested_id = new_run.period_id.as_deref();
-            if let (Some(existing_id), Some(requested_id)) =
-                (raw.period_id.as_deref(), requested_id)
-            {
-                if existing_id != requested_id {
-                    return Err(StorageError::RunPeriodConflict { id: raw.id });
+            // genuine conflict (B2 sol round 3), never a silent idempotent
+            // return. Both representations — a period_id and a descriptor pair
+            // — resolve to the SAME natural key (fiscal_year, period_type)
+            // before comparing, so a mixed-representation mismatch (existing
+            // period_id vs requested descriptor, or the reverse) is caught too
+            // (luna review P1). A side that supplies neither stays None and
+            // never conflicts: filling in a previously-absent period is legal.
+            let resolve_natural_key = |period_id: Option<&str>,
+                                       year: Option<i64>,
+                                       period_type: Option<&str>|
+             -> StorageResult<Option<(i64, String)>> {
+                if let Some(pid) = period_id {
+                    let row: Option<(i64, String)> = tx
+                        .query_row(
+                            "SELECT fiscal_year, period_type FROM financial_periods WHERE id = ?1",
+                            [pid],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .optional()?;
+                    return Ok(row);
                 }
-            }
-            if let (
-                Some(existing_year),
-                Some(existing_type),
-                Some(requested_year),
-                Some(requested_type),
-            ) = (
+                Ok(match (year, period_type) {
+                    (Some(year), Some(kind)) => Some((year, kind.to_owned())),
+                    _ => None,
+                })
+            };
+            let existing_key = resolve_natural_key(
+                raw.period_id.as_deref(),
                 raw.period_fiscal_year,
                 raw.period_type.as_deref(),
+            )?;
+            let requested_key = resolve_natural_key(
+                new_run.period_id.as_deref(),
                 new_run.period_fiscal_year,
                 new_run.period_type.as_deref(),
-            ) {
-                if existing_year != requested_year || existing_type != requested_type {
+            )?;
+            if let (Some(existing_key), Some(requested_key)) = (existing_key, requested_key) {
+                if existing_key != requested_key {
                     return Err(StorageError::RunPeriodConflict { id: raw.id });
                 }
             }
@@ -1528,5 +1542,68 @@ mod tests {
             .create_run_if_absent(&with_descriptor)
             .expect("the identical descriptor is not a conflict");
         assert_eq!(same_again.id, created.id);
+    }
+
+    /// Mixed representations must resolve to the natural key before comparing
+    /// (luna review P1): an existing run holding a period_id conflicts with a
+    /// requested DESCRIPTOR naming a different period, and vice versa.
+    #[test]
+    fn create_run_period_conflict_across_mixed_representations() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_document(&connection, "doc2", "c1");
+        connection
+            .execute(
+                "INSERT INTO financial_periods (id, company_id, fiscal_year, period_type)
+                 VALUES ('finper_fy2025', 'c1', 2025, 'FY')",
+                [],
+            )
+            .expect("seed period");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        // Existing run holds a period_id (FY2025); request carries only a
+        // DESCRIPTOR for FY2024 — must conflict, not silently reuse.
+        let mut with_id = new_run("doc1", "c1", "p1");
+        with_id.period_id = Some("finper_fy2025".to_owned());
+        let created = store.create_run_if_absent(&with_id).expect("create");
+        let mut descriptor_mismatch = new_run("doc1", "c1", "p1");
+        descriptor_mismatch.period_fiscal_year = Some(2024);
+        descriptor_mismatch.period_type = Some("FY".to_owned());
+        let error = store
+            .create_run_if_absent(&descriptor_mismatch)
+            .expect_err("descriptor naming another period must conflict with the stored period_id");
+        assert!(matches!(
+            error,
+            StorageError::RunPeriodConflict { id } if id == created.id
+        ));
+
+        // The matching descriptor for the SAME period is idempotent.
+        let mut descriptor_match = new_run("doc1", "c1", "p1");
+        descriptor_match.period_fiscal_year = Some(2025);
+        descriptor_match.period_type = Some("FY".to_owned());
+        let same = store
+            .create_run_if_absent(&descriptor_match)
+            .expect("the matching descriptor is not a conflict");
+        assert_eq!(same.id, created.id);
+
+        // Reverse direction: existing run holds a descriptor; request carries
+        // a period_id resolving to a different natural key — must conflict.
+        let mut with_descriptor = new_run("doc2", "c1", "p1");
+        with_descriptor.period_fiscal_year = Some(2024);
+        with_descriptor.period_type = Some("FY".to_owned());
+        let created2 = store
+            .create_run_if_absent(&with_descriptor)
+            .expect("create");
+        let mut id_mismatch = new_run("doc2", "c1", "p1");
+        id_mismatch.period_id = Some("finper_fy2025".to_owned());
+        let error = store
+            .create_run_if_absent(&id_mismatch)
+            .expect_err("a period_id resolving elsewhere must conflict with the stored descriptor");
+        assert!(matches!(
+            error,
+            StorageError::RunPeriodConflict { id } if id == created2.id
+        ));
     }
 }

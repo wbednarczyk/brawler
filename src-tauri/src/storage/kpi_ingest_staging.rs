@@ -496,6 +496,12 @@ impl KpiIngestStagingStore {
         revision: i64,
         results: Vec<ObservationValidation>,
     ) -> StorageResult<()> {
+        if results.is_empty() {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "validation_results",
+                value: "empty batch".to_owned(),
+            });
+        }
         let mut seen = HashSet::with_capacity(results.len());
         for result in &results {
             validate_vocab(
@@ -589,7 +595,11 @@ impl KpiIngestStagingStore {
 /// violation to the typed `CommitReceiptAlreadyRecorded` (ADR 0098 dec. 5:
 /// idempotent replay must return the stored receipt, never re-execute the
 /// commit primitives — that is #363's job once it sees this error/the
-/// existing row).
+/// existing row). INTEGRATION GATE (luna review): this primitive inserts
+/// caller-supplied values without reading the run — #363 MUST verify, inside
+/// the SAME outer transaction, that manifest_hash/manifest_revision match the
+/// run row and that the run is in `committing`; a receipt written without
+/// those checks can permanently disagree with its run.
 // ponytail: same #363-unwired situation as `generate_receipt_id` above.
 #[allow(dead_code)]
 pub(super) fn record_commit_receipt(
@@ -616,8 +626,13 @@ pub(super) fn record_commit_receipt(
     );
     match result {
         Ok(_) => {}
-        Err(rusqlite::Error::SqliteFailure(err, _))
-            if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+        // ONLY the run_id uniqueness gate is "already recorded"; every other
+        // constraint (CHECK vocab, FK, NOT NULL) is a distinct storage error —
+        // mapping them all to the idempotency conflict would misreport a
+        // malformed receipt as a replay (luna review P1).
+        Err(rusqlite::Error::SqliteFailure(err, Some(message)))
+            if err.code == rusqlite::ErrorCode::ConstraintViolation
+                && message.contains("kpi_ingest_commit_receipts.run_id") =>
         {
             return Err(StorageError::CommitReceiptAlreadyRecorded {
                 run: receipt.run_id,
@@ -976,6 +991,25 @@ mod tests {
     }
 
     #[test]
+    fn apply_validation_results_rejects_an_empty_batch() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        store
+            .stage_observations(run_id, vec![one_observation()])
+            .expect("stage");
+        let error = store
+            .apply_validation_results(run_id, 1, vec![])
+            .expect_err("an empty validation batch must be refused, not a silent no-op");
+        assert!(matches!(
+            error,
+            StorageError::InvalidKpiIngestRunValue {
+                key: "validation_results",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn apply_validation_results_rejects_unknown_id_bad_vocab_and_batch_duplicate() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
@@ -1102,6 +1136,46 @@ mod tests {
             .expect("some");
         assert_eq!(fetched.id, receipt.id);
         assert_eq!(fetched.outcomes_json, receipt.outcomes_json);
+    }
+
+    /// Only the `UNIQUE(run_id)` violation is a replay; every other
+    /// constraint (bad status vocab, missing run FK) must surface as its own
+    /// storage error, never as `CommitReceiptAlreadyRecorded` (luna review P1).
+    #[test]
+    fn record_commit_receipt_maps_only_run_uniqueness_to_already_recorded() {
+        let (state, run_id) = setup();
+        let base = |run: &str| NewCommitReceipt {
+            run_id: run.to_owned(),
+            manifest_hash: "hash1".to_owned(),
+            manifest_revision: 1,
+            terminal_status: "complete".to_owned(),
+            period_id: None,
+            accepted_count: 1,
+            outcomes_schema_version: 1,
+            outcomes_json: "[]".to_owned(),
+        };
+
+        // Bad terminal_status trips the CHECK — a constraint violation that is
+        // NOT a replay.
+        let mut connection = state.checkout_for_tests().expect("raw connection");
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("tx");
+        let mut bad_status = base(run_id);
+        bad_status.terminal_status = "half-done".to_owned();
+        let error = record_commit_receipt(&tx, bad_status).expect_err("bad status");
+        assert!(
+            !matches!(error, StorageError::CommitReceiptAlreadyRecorded { .. }),
+            "a CHECK violation must not masquerade as a replay: {error:?}"
+        );
+
+        // A receipt for a nonexistent run trips the FK — also not a replay.
+        let error = record_commit_receipt(&tx, base("kpiing_missing")).expect_err("missing run");
+        assert!(
+            !matches!(error, StorageError::CommitReceiptAlreadyRecorded { .. }),
+            "an FK violation must not masquerade as a replay: {error:?}"
+        );
+        drop(tx);
     }
 
     #[test]
@@ -1282,12 +1356,21 @@ mod tests {
             .expect("build pool");
         let store = Arc::new(KpiIngestStagingStore::new(Database::from_pool(pool)));
 
+        // Barrier so both contenders genuinely start together (luna review:
+        // without it the threads may serialize before either call begins).
+        let barrier = Arc::new(std::sync::Barrier::new(2));
         let store_a = store.clone();
         let store_b = store.clone();
-        let a =
-            std::thread::spawn(move || store_a.stage_observations("run1", vec![one_observation()]));
-        let b =
-            std::thread::spawn(move || store_b.stage_observations("run1", vec![one_observation()]));
+        let barrier_a = barrier.clone();
+        let barrier_b = barrier;
+        let a = std::thread::spawn(move || {
+            barrier_a.wait();
+            store_a.stage_observations("run1", vec![one_observation()])
+        });
+        let b = std::thread::spawn(move || {
+            barrier_b.wait();
+            store_b.stage_observations("run1", vec![one_observation()])
+        });
         let result_a = a.join().expect("thread a");
         let result_b = b.join().expect("thread b");
 
