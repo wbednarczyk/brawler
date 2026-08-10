@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.0 - 2026-08-10
+
+
+### Features
+
+- **compare**: remove the Compare screen + drop ~5,200 audited dead lines (#370)
+
 ## v0.64.0 - 2026-08-09
 
 
