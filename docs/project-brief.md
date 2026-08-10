@@ -19,7 +19,7 @@ Build an investor workspace for company news, official reports, and ticker-speci
 - create notes directly from feed items and transcripts
 - track management claims or promises across future quarters
 - run local ingestion while the desktop app is open
-- gather fundamentals 100% deterministically (layered structured-first extraction, validated or flagged — [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md))
+- gather fundamentals through a deterministic substrate (layered structured-first extraction, validated or flagged — [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)); *planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md)*: the primary acquisition path becomes agent-first — an external LLM reads the issuer's report and proposes facts, Brawler validates and commits them atomically with full provenance
 - expose the whole research domain through a local MCP port so the user's own agent supplies intelligence (**BYOA — bring your own agent**; the in-app AI analysis layer is retired, [ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the only in-app AI is video transcription (data acquisition, provider-neutral trait)
 
 V1 is not a portfolio tracker, trading tool, or investment recommendation engine.

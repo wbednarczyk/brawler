@@ -85,15 +85,16 @@
 - [0083](0083-company-health-scores-and-red-flags.md) — 0083-company-health-scores-and-red-flags.md — Accepted (2026-07-17, owner decisions at milestone planning)
 - [0084](0084-retire-in-app-ai-layer.md) — Retire the In-App AI Analysis Layer — Intelligence via MCP — Accepted (2026-07-20, owner sign-off)
 - [0085](0085-biznesradar-fundamentals-witness.md) — BiznesRadar Fundamentals Page as the Aggregator Witness — Accepted (2026-07-21, owner sign-off)
-- [0086](0086-aggregator-primary-fundamentals.md) — Aggregator-primary fundamentals, PDF-fact retirement, review-free facts — Accepted (2026-07-21, owner decisions at Track C planning)
+- [0086](0086-aggregator-primary-fundamentals.md) — Aggregator-primary fundamentals, PDF-fact retirement, review-free facts — Accepted (2026-07-21, owner decisions at Track C planning); decisions 2 and 7 su
 - [0087](0087-today-attention-home-v2.md) — Today attention home v2 — grouped stream, typed severity, quiet toasts — Accepted (2026-07-22, owner sign-off at v0.60 planning)
 - [0088](0088-mcp-surface-v2-ui-parity.md) — MCP surface v2 — UI-parity tool registry, capability tiers, provenance-mandatory writes — Accepted (2026-07-22, owner sign-off at v0.60 planning)
 - [0089](0089-cross-company-comparison-and-valuation-l1.md) — Cross-company comparison + comparative valuation level 1 — Accepted (2026-07-27, owner sign-off at v0.61 planning
 - [0090](0090-github-canonical-forge-and-continuous-release.md) — GitHub as the Canonical Forge for Everything; Radicle as the Second Path; Continuous Release — Accepted (2026-07-27, owner sign-off at CI/forge-migration planning; amended 202
 - [0091](0091-failure-path-and-real-state-testing.md) — Failure-Path & Real-State Test Layer — chaos seam, job-failure visibility, honesty harness — Accepted (2026-07-29, owner sign-off at epic #40 planning
 - [0092](0092-kpi-relevance-lifecycle.md) — kpi_relevance lifecycle — layered expectations, no self-referential gate — Accepted (2026-07-31, layers 2–3 implementation PR
-- [0093](0093-agent-acquisition-tier-and-preliminary-lifecycle.md) — Agent acquisition tier and the preliminary-data lifecycle — Proposed (2026-07-31, epic #285 T1; owner decisions ratified at plan approval)
+- [0093](0093-agent-acquisition-tier-and-preliminary-lifecycle.md) — Agent acquisition tier and the preliminary-data lifecycle — Accepted (2026-07-31, epic #285 T1; implemented in v0.62–v0.63); amended by ADR
 - [0094](0094-committed-public-espi-report-samples.md) — Committed public ESPI/EBI report samples for the real-format CI test tier — Accepted (2026-08-04, epic #40 / #139; owner sign-off in chat
 - [0095](0095-retire-html-positional-tier.md) — Retire the html_positional extraction tier — Accepted (2026-08-05, owner decision in chat after the #182 measurement; scope w
 - [0096](0096-quality-gate-architecture-under-continuous-release.md) — Quality Gate Architecture Under Continuous Release — Accepted (2026-08-05, owner decision after sol consultation + adversarial review
 - [0097](0097-toasts-are-action-feedback-only.md) — Toasts Are Action Feedback Only — Ambient Attention Lives in Today — Accepted (2026-08-06, owner sign-off on the #330 plan)
+- [0098](0098-mcp-native-kpi-acquisition-lifecycle.md) — MCP-native KPI acquisition lifecycle — Accepted (2026-08-10, owner decision after the 2026-08 vendor study)

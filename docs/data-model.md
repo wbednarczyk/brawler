@@ -1486,6 +1486,10 @@ Rules:
 - The **diff itself is never stored** — it is an on-demand backend read model computed from two documents' sections (heading + positional alignment; no similarity call — verified during [ADR 0080](adr/0080-retire-embedding-model.md)). No AI summary is produced or cached this milestone.
 - Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`); rebuildable regardless of prior state.
 
+### Planned: KPI ingest runs (ADR 0098)
+
+*Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md), epic #352 (no schema yet; the implementing migration is authoritative):* durable `kpi_ingest_runs` (one row per report document × company × extraction profile — lifecycle state, lease/heartbeat, manifest hash + revision, versioned expected-KPI snapshot), run-owned staged observations (pre-canonical LLM proposals with citation locators — never visible to fact readers) and immutable commit receipts, plus a canonical `published_at` on `report_documents` filled by a typed origin-date resolver (`created_at`/`fetched_at` proxies rejected). A document referenced by any durable run joins the report-bytes protection contract above (§ report document retention).
+
 ## Search Index
 
 Global full-text search is served by a single unified SQLite FTS5 virtual table, `search_index`. See [ADR 0032](adr/0032-search-and-backup-boundaries.md).

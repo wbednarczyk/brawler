@@ -12,6 +12,10 @@ This file states the wire shapes, commands, and command-specific rules for every
 - **Errors.** Typed commands surface failures as a typed command error the frontend maps to a user-facing message; there is no bare-string/panic error path across the Tauri boundary. Machine-readable failure kinds: [Error codes](#error-codes). Async work (jobs, extraction, backfill) reports failure through job status fields (`status: "failed"`, `errorCode`, `error`) rather than a rejected command call.
 - **Scope.** Commands accept and return the **canonical id** (`companyId`, `watchlistId`, etc.), never a raw ticker or display string; canonical identity and uniqueness rules live in [Data Model](data-model.md). Company-scoped vs watchlist-scoped behavior is called out per section only where it differs from this default.
 
+### Planned: KPI acquisition workflow tools (ADR 0098)
+
+*Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md), epic #353 (shapes frozen there; nothing is callable yet):* a compact run-based MCP workflow (`start_kpi_ingest`, `list_pending_kpi_ingests`, `get_kpi_ingest_context`, `stage_kpi_observations`, `validate_kpi_ingest`, `commit_kpi_ingest`, `get_kpi_ingest_status`, `cancel_kpi_ingest`) behind an acquisition-scoped credential; `record_financial_facts` remains a low-level repair tool, no longer the normal agent path.
+
 ## Error codes
 
 Commands adopting [ADR 0070](adr/0070-typed-command-error-envelope.md) reject with the `CommandError` envelope; pre-migration commands keep rejecting with bare strings until touched (strangler adoption — the frontend `callCommand` wrapper accepts both shapes). `From<StorageError>` assigns codes centrally in `src-tauri/src/commands/error.rs` with a wildcard-free match, so a new storage variant forces a deliberate code choice.

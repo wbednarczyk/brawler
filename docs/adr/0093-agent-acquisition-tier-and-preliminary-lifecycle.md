@@ -1,6 +1,6 @@
 # ADR 0093: Agent acquisition tier and the preliminary-data lifecycle
 
-Status: Proposed (2026-07-31, epic #285 T1; owner decisions ratified at plan approval)
+Status: Accepted (2026-07-31, epic #285 T1; implemented in v0.62–v0.63); amended by [ADR 0095](0095-retire-html-positional-tier.md) (positional tier retired) and [ADR 0098](0098-mcp-native-kpi-acquisition-lifecycle.md) (the batch write stops being the normal agent path — the run workflow replaces it; ladder ordering confirmed)
 
 Deciders: maintainer. Area: fundamentals, MCP port, data trust.
 
