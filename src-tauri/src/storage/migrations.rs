@@ -688,6 +688,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "purge_retired_search_rows",
         sql: include_str!("../../migrations/0136_purge_retired_search_rows.sql"),
     },
+    Migration {
+        version: 137,
+        name: "kpi_ingest_runs",
+        sql: include_str!("../../migrations/0137_kpi_ingest_runs.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
@@ -901,5 +906,45 @@ mod migration_invariants {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), total, "migration names must be unique");
+    }
+
+    /// Guardrail harvest (#358, sol F7): the contiguity/count checks above only
+    /// ever see what IS registered in `MIGRATIONS`, so a `.sql` file dropped into
+    /// `migrations/` and never wired into this const passes every existing gate
+    /// silently — it never applies, and no test catches the drift. This walks
+    /// the actual `migrations/*.sql` directory and asserts the file inventory and
+    /// `MIGRATIONS` agree exactly, in both directions.
+    #[test]
+    fn every_migration_file_is_registered_and_vice_versa() {
+        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut file_versions: Vec<i64> =
+            std::fs::read_dir(&migrations_dir)
+                .expect("read migrations dir")
+                .filter_map(|entry| {
+                    let entry = entry.expect("dir entry");
+                    let name = entry.file_name();
+                    let name = name.to_str().expect("utf8 filename").to_owned();
+                    if !name.ends_with(".sql") {
+                        return None;
+                    }
+                    let prefix = &name[..4];
+                    Some(prefix.parse::<i64>().unwrap_or_else(|_| {
+                        panic!("migration file '{name}' has no numeric prefix")
+                    }))
+                })
+                .collect();
+        file_versions.sort_unstable();
+
+        let mut registered_versions: Vec<i64> = MIGRATIONS
+            .iter()
+            .map(|migration| migration.version)
+            .collect();
+        registered_versions.sort_unstable();
+
+        assert_eq!(
+            file_versions, registered_versions,
+            "every migrations/*.sql file must have exactly one MIGRATIONS entry, and vice versa \
+             (a file present but unregistered silently never applies)"
+        );
     }
 }

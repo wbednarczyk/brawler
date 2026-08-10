@@ -1486,9 +1486,30 @@ Rules:
 - The **diff itself is never stored** — it is an on-demand backend read model computed from two documents' sections (heading + positional alignment; no similarity call — verified during [ADR 0080](adr/0080-retire-embedding-model.md)). No AI summary is produced or cached this milestone.
 - Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`); rebuildable regardless of prior state.
 
-### Planned: KPI ingest runs (ADR 0098)
+### KPI Ingest Runs
 
-*Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md), epic #352 (no schema yet; the implementing migration is authoritative):* durable `kpi_ingest_runs` (one row per report document × company × extraction profile — lifecycle state, lease/heartbeat, manifest hash + revision, versioned expected-KPI snapshot), run-owned staged observations (pre-canonical LLM proposals with citation locators — never visible to fact readers) and immutable commit receipts, plus a canonical `published_at` on `report_documents` filled by a typed origin-date resolver (`created_at`/`fetched_at` proxies rejected). A document referenced by any durable run joins the report-bytes protection contract above (§ report document retention).
+Durable `kpi_ingest_runs` (migration 0137, [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md) decisions 2, 6, 8): the external agent's worklist and lease/heartbeat holder. One row = one (report document, company, extraction profile).
+
+Schema summary:
+
+- Identity: `report_document_id` (FK → `report_documents`, `ON DELETE RESTRICT` — row-audit protection; the byte-retention downgrade to `metadata_only` stays a separate contract, #359), `company_id` (FK → `companies`, `ON DELETE CASCADE`), `profile_version`. `period_id` (FK → `financial_periods`, `ON DELETE SET NULL`) may be absent until a period exists.
+- `source_content_hash` — an immutable snapshot SHA-256 of the content the run actually read, set once via `record_source_capture`. Not the same signal as `report_documents.content_hash`, which is overwritten on re-fetch.
+- `scope` (`standalone`/`consolidated`), `data_quality` (`final`/`preliminary`/`estimated`) — nullable in discovery, required before extracting/commit (#360).
+- `instruction_version` — nullable in discovery; #360 invariant requires it non-NULL before the run may transition to `extracting`.
+- `status` — the closed 11-state lifecycle (ADR 0098 dec. 6): `discovered → source_captured → extracting → staged → validation_failed | ready_to_commit → committing → complete | partial | failed | cancelled`. Enforced by a DB `CHECK` and the `KpiIngestRunState` enum (`storage/kpi_ingest_runs.rs`); the typed transition table (repair, cancellation, crash recovery) lands in #360.
+- `manifest_hash`/`manifest_revision`, `attempt_count`, `expected_kpis_json` (the versioned completeness-denominator snapshot, filled by #362), `missing_reasons_json`, `progress_json`, `cost_json` (diagnostic only, never part of the trust verdict), `last_error`.
+
+Lease semantics (model A, ADR 0098 dec. 8): `lease_holder`/`lease_expires_at`/`last_heartbeat_at` are all-NULL or all-set (DB `CHECK`) — never a half-filled/orphaned heartbeat. `claim_next` atomically claims the oldest claimable row whose lease is absent or expired (one `UPDATE … WHERE id = (SELECT …) RETURNING`, mirroring `jobs::claim_next`), incrementing `attempt_count` exactly once per successful claim or takeover. Claimable states: `discovered`, `source_captured`, `extracting`, `validation_failed` — `staged`/`ready_to_commit` wait on deterministic validation/commit, not the agent worklist, and `committing` plus every terminal state are never claimable. `heartbeat` extends a live, owned lease only (an expired lease cannot be resurrected by its old holder — only a fresh `claim_next` may reclaim it). `reclaim_expired_leases` clears expired leases on claimable rows and refuses (rather than silently repairing) if any `committing` row holds a non-null lease — a structural invariant the `committing` transition must uphold (#360).
+
+Id policy: `kpiing_{32 hex}` — sha256 over the identity triple plus a nanosecond time component, deliberately **not deterministic** on the triple alone, since a document can legitimately get a new run after its content changes under the same URL (content identity lives in `source_content_hash`, not the id).
+
+Partial-unique-active rule: `idx_kpi_ingest_runs_active` is a **partial** unique index on `(report_document_id, company_id, profile_version) WHERE status NOT IN ('complete','partial','failed','cancelled')` — at most one non-terminal run per triple; terminal history is exempt, so `create_run_if_absent` starts a fresh run once the prior one for the same triple has ended.
+
+A document referenced by any durable run (any state, including failed/cancelled) joins the report-bytes protection contract above (§ Report Document Model retention).
+
+### Planned: KPI staging & commit receipts (ADR 0098)
+
+*Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md), epic #352 (no schema yet; the implementing migration is authoritative):* run-owned staged observations (pre-canonical LLM proposals with citation locators — never visible to fact readers, #359) and immutable commit receipts (#359), plus a canonical `published_at` on `report_documents` filled by a typed origin-date resolver (`created_at`/`fetched_at` proxies rejected, #354).
 
 ## Search Index
 

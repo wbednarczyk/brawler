@@ -148,6 +148,23 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // the plain create path (UI/MCP manual entry) — a request naming the
         // retired positional method is a shape problem with the input.
         StorageError::RetiredExtractionMethod => InvalidInput,
+        // Acting on a lease the caller does not (or no longer) hold conflicts
+        // with current state — another worker's claim, or the caller's own
+        // lease having expired — not a shape problem with the request.
+        StorageError::KpiIngestRunNotFound { .. } => NotFound,
+        StorageError::RunLeaseNotHeld { .. } => Conflict,
+        // Caller-supplied document/company ids that do not cohere.
+        StorageError::RunDocumentCompanyMismatch { .. } => InvalidInput,
+        // Overwriting the immutable source snapshot hash conflicts with the
+        // already-recorded value.
+        StorageError::RunSourceHashAlreadyRecorded { .. } => Conflict,
+        StorageError::InvalidRunLeaseDuration { .. } => InvalidInput,
+        // A `committing` row holding a non-null lease is a structural bug
+        // (the transition to `committing` must clear it, #360) — never caller
+        // input.
+        StorageError::RunLeaseInvariantViolation { .. } => Internal,
+        // A stored `status` token no caller ever supplies as raw input.
+        StorageError::UnknownKpiIngestRunState { .. } => Internal,
     }
 }
 
