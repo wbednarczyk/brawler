@@ -90,6 +90,8 @@ fully-built feature that has to be reverted.
 
 ### Fundamentals structured-extraction recall/precision harness
 
+*Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md):* coverage reporting splits into **deterministic coverage** (ESEF+WDF+BR — this harness, unchanged) and **acquisition coverage** (agent ingest runs, measured by the epic #355 conformance suite); the two are never blended into one number.
+
 The structured-first extraction pipeline (`fundamentals::extraction::pipeline::run_pipeline`,
 [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)) has an `#[ignore]` real-data
 harness — `storage::tests::real_data_extraction::real_data_extraction_recall_precision` — that

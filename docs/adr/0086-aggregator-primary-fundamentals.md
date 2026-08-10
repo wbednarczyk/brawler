@@ -1,6 +1,6 @@
 # ADR 0086: Aggregator-primary fundamentals, PDF-fact retirement, review-free facts
 
-Status: Accepted (2026-07-21, owner decisions at Track C planning)
+Status: Accepted (2026-07-21, owner decisions at Track C planning); decisions 2 and 7 superseded on completion by [ADR 0098](0098-mcp-native-kpi-acquisition-lifecycle.md) (BiznesRadar: primary → witness/complement per slot; agent: additive → agent-first)
 
 Deciders: maintainer. Area: fundamentals, sources, architecture.
 
