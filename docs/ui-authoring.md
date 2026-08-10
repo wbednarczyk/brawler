@@ -214,8 +214,6 @@ behind expansion when short; fixed-height artifacts (calendar, matrix) scroll in
 | Settings | one section at a time (tab list collapses to select) | tab list + section | same | n/a (screen) |
 | Diagnostics | log list; filters collapse | + module/severity columns | full table | list only |
 
-Compare: live Modes destination (restored v0.61, [ADR 0089](adr/0089-cross-company-comparison-and-valuation-l1.md)). Density behaviour: the selection controls and result sections stack in a column; the comparison table is deliberate wide content that scrolls inside its own `data-hscroll` container (grid/flex chain kept `min-width:0`), so the panel never grows a horizontal scrollbar down to ~960px. Storyboard: `docs/mockups/v061-compare-storyboard.html` (frames 1–7).
-
 ### Implementing a contract row
 
 The cross-cutting infrastructure (U7) is in place: `.cockpit-pane` and `.workspace` are named `pane` **size** containers (`container: pane / size`), so a panel's CSS reacts to the *pane's* size, not the window's. To implement a row:

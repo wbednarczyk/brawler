@@ -15,8 +15,6 @@ The sidebar is grouped so you always know where you are:
   - **🏠 Today** — your home and the default screen (see below).
   - **Companies** — browse, search, add companies, and open one to its
     dashboard (see below).
-  - **Compare** — line companies up side by side *(coming with the valuation
-    work)*.
   - Below the built-in modes: your own **saved views** and a **"+ New view"**
     entry to build one — see
     [Composable cockpit views](cockpit-views.md).

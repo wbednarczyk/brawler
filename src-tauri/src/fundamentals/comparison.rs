@@ -4,8 +4,8 @@
 //! `storage::fx_rates` in production), and produces the aligned period axis +
 //! per-company series the `get_kpi_comparison` command serializes. Keeping the
 //! transform pure is what lets the ADR 0049 golden/proptest suite pin its
-//! correctness DB-free, and lets the N=1 Fundamentals surface reuse the exact
-//! same code as the N-company Compare screen.
+//! correctness DB-free, and lets the N=1 Fundamentals surface and the N-company
+//! MCP read share the exact same code.
 //!
 //! What it does NOT do: pick the canonical fact per `(company, period, metric)`
 //! slot — that selection (consolidated / total / reported / final / confirmed,

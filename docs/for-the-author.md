@@ -2,7 +2,7 @@
 
 > Dokument dla człowieka, nie dla agenta: zwięzły obraz tego, z czego składa się aplikacja i co potrafi DZIŚ. Aktualizowany przy każdym release (krok w rytuale kanban.md § Epic closure). Wersja interaktywna: prywatny Artifact „Brawler — mapa systemu”. Normy i szczegóły są gdzie indziej (contracts, data-model, ADR-y) — tu ma być czytelnie, nie wyczerpująco.
 
-**Stan: v0.61** (implementacja gotowa) · 12 trybów/ekranów (**Porównaj** przywrócone jako żywa pozycja menu) · ~200 typowanych komend · 21 domen silnika (nowa: wycena porównawcza) · 116 migracji · **100 narzędzi MCP** (44 read + 56 act za przełącznikiem zapisu, proweniencja obowiązkowa) · ~3300 testów w jednej bramce · **zero AI w analizie** (BYOA przez MCP; w apce został tylko provider transkrypcji).
+**Stan: v0.64** · 11 trybów/ekranów (**Porównaj** usunięte — #351; porównania: tabela okresów w Fundamentach + odczyty MCP) · ~200 typowanych komend · 21 domen silnika (nowa: wycena porównawcza) · 116 migracji · **100 narzędzi MCP** (44 read + 56 act za przełącznikiem zapisu, proweniencja obowiązkowa) · ~3300 testów w jednej bramce · **zero AI w analizie** (BYOA przez MCP; w apce został tylko provider transkrypcji).
 
 ## Pięć warstw (przekrój od góry)
 
@@ -32,6 +32,6 @@ Pełne `make check` jako wymagany check każdego PR, twardo (nigdy lokalnie): te
 - Ręczne czyszczenie feedu: Ustawienia → Źródła → sekcja czyszczenia → **„Wyczyść teraz"** (automat wyłączony na stałe decyzją z 2026-07-19).
 - Skąd jest ta liczba: Fundamenty → klik w wartość → proweniencja (tier, metoda, cytat do wiersza strony/dokumentu); rozjazdy źródeł: Pokrycie → Oflagowane okresy.
 - Ręczna poprawka KPI: Fundamenty → edycja/dodanie wartości (Twój wpis jest nietykalny dla automatu; sprzeciw agregatora wyląduje jako informacja w Oflagowanych).
-- Porównanie spółek na tle peerów: lewe menu → **Porównaj** → dodaj min. 2 śledzone spółki (albo „z watchlisty" / „peerzy z sektora"); **Profil** (KPI × spółki, kolumna Różnica dla pary) lub **Trend** (jedno KPI × okresy, do 4 serii); sekcja **Wycena porównawcza L1** (percentyle z N + football field + wiarygodność A–D) pod tabelą; ⧉ przy każdej liczbie prowadzi do dowodu, brak danych/kursu to jawny chip.
+- Porównanie spółek: ekran Porównaj usunięty (#351) — w apce została tabela okresów jednej spółki (niżej), a porównania wielospółkowe robi agent przez MCP (get_kpi_comparison / get_sector_percentiles / compute_comparative_valuation).
 - Delty okresowe jednej spółki: kokpit spółki → panel **Fundamenty** → tabela **pozycje × okresy** (QoQ/YoY inline, każda liczba z dowodem).
 - Instrukcje użytkowe per funkcja: katalog `wiki/`.
