@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.1 - 2026-08-10
+
+
+### Features
+
+- **fundamentals**: durable KPI ingest runs — migration 0137 + lease-based store (#358) (#372)
+
 ## v0.65.0 - 2026-08-10
 
 
