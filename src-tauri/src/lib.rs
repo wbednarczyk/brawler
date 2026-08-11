@@ -153,6 +153,17 @@ pub fn run() {
                 Err(error) => log::warn!("startup doc-kind reclassify failed: {error}"),
             }
 
+            // KPI ingest run self-heal (ADR 0098 dec. 6, #360): resolve any
+            // `committing` row a crash left behind (finalize by receipt, or
+            // revert to `ready_to_commit` if the commit transaction rolled
+            // back) and clear ordinary expired leases, before the queue
+            // starts draining work that might touch the same runs.
+            match state.kpi_ingest_runs().reclaim_ingest_runs_on_startup() {
+                Ok(summary) if summary.is_noop() => {}
+                Ok(summary) => log::info!("startup KPI ingest run reclaim: {summary:?}"),
+                Err(error) => log::warn!("startup KPI ingest run reclaim failed: {error}"),
+            }
+
             // Start the durable-queue worker as isolated lanes (ADR 0059): reclaim
             // crash residue, then drain each lane's kinds on its own threads off the
             // UI thread, so a slow source refresh cannot starve autopilot (ADR 0050).

@@ -184,6 +184,20 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // The document's bytes are under the retention protection contract —
         // the request conflicts with that contract, not a shape problem.
         StorageError::ReportDocumentBytesProtected { .. } => Conflict,
+        // The closed lifecycle (ADR 0098 dec. 6, #360) refuses an illegal
+        // (from, to) pair — a conflict with the run's current state, never a
+        // shape problem with the request.
+        StorageError::InvalidRunTransition { .. } => Conflict,
+        // A prerequisite the RUN itself must already carry (instruction
+        // version's scope/data_quality/period, or a commit receipt) is
+        // missing — the same class as `InvalidRunStateForStaging`: the run's
+        // current state conflicts with what this transition requires, not a
+        // shape problem with this call's own arguments.
+        StorageError::RunTransitionPrerequisiteMissing { .. } => Conflict,
+        // The commit primitive's caller-supplied manifest hash/revision no
+        // longer matches the run's current state — a conflict with what is
+        // stored, not a shape problem with the request.
+        StorageError::StaleManifestForCommit { .. } => Conflict,
     }
 }
 
