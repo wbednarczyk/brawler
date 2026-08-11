@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.2 - 2026-08-11
+
+
+### Features
+
+- **fundamentals**: staged observations, commit receipts and live byte-retention guard (#359) (#373)
+
 ## v0.65.1 - 2026-08-10
 
 
