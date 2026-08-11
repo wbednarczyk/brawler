@@ -1,0 +1,5 @@
+---
+source: src/storage/kpi_ingest_commit/tests.rs
+expression: canonical_citation_json(&citation)
+---
+{"page":1,"table":"A | B","row":"R\"1\"","quote":"line one\nline two \"quoted\", with, commas"}

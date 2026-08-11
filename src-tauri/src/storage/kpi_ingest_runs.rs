@@ -1381,7 +1381,7 @@ impl KpiIngestRunsStore {
 }
 
 /// `ready_to_commit -> committing` (#360, ADR 0098 dec. 6/5): connection-level
-/// free fn for #363's commit transaction to call under its own
+/// free fn `KpiIngestCommitStore::commit_manifest` (#362) calls under its own
 /// externally-owned `&Connection` (the `record_structured_fact` pattern) —
 /// composing the PUBLIC, connection-checking-out store methods inside an
 /// outer transaction is prohibited (ADR 0098 dec. 5). Guard: status =
@@ -1389,12 +1389,6 @@ impl KpiIngestRunsStore {
 /// (mismatch -> `StaleManifestForCommit`), lease is NULL (ADR 0098 dec. 6
 /// invariant: `mark_ready_to_commit` clears it; a non-null lease here is a
 /// structural bug, `RunLeaseInvariantViolation`, checked FIRST).
-// ponytail: unwired until #363's commit transaction calls this under its own
-// externally-owned transaction (ADR 0098 dec. 5) — #360 ships the primitive
-// plus its composition/rollback tests per the approved plan, so it is
-// exercised only from #[cfg(test)] until then (same situation as
-// `kpi_ingest_staging::record_commit_receipt`, #359).
-#[allow(dead_code)]
 pub(super) fn begin_committing(
     conn: &Connection,
     id: &str,
@@ -1434,8 +1428,8 @@ pub(super) fn begin_committing(
 }
 
 /// `committing -> complete | partial` (#360, ADR 0098 dec. 5/6): connection-
-/// level free fn for #363's commit transaction, called on the SAME handle
-/// AFTER it writes the commit receipt (`kpi_ingest_staging::
+/// level free fn `KpiIngestCommitStore::commit_manifest` (#362) calls on the
+/// SAME handle AFTER it writes the commit receipt (`kpi_ingest_staging::
 /// record_commit_receipt`) in the same outer transaction. Deliberately takes
 /// NO terminal-status parameter (B2 sol — a structural gate, not a
 /// doc-comment promise): it reads and verifies the receipt ITSELF —
@@ -1443,8 +1437,6 @@ pub(super) fn begin_committing(
 /// `complete`/`partial` from `receipt.terminal_status`. No receipt yet ->
 /// `RunTransitionPrerequisiteMissing`; a receipt that disagrees with the run
 /// -> `StaleManifestForCommit`. Returns the terminal state it set.
-// ponytail: same #363-unwired situation as `begin_committing` above.
-#[allow(dead_code)]
 pub(super) fn finalize_committing(conn: &Connection, id: &str) -> StorageResult<KpiIngestRunState> {
     let Some(raw) = read_raw_run(conn, id)? else {
         return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
@@ -1486,6 +1478,32 @@ pub(super) fn finalize_committing(conn: &Connection, id: &str) -> StorageResult<
         return Err(wrong_state(id, status, terminal));
     }
     Ok(terminal)
+}
+
+/// Attaches the commit transaction's resolved period id onto the run (#362
+/// step 4, the `(manifest.periodId=None, run.period_id=None)` branch): a
+/// same-or-set guarded write under `status='committing'` — 0 rows updated
+/// (including a raced non-NULL mismatch) is a typed `CommitPeriodConflict`,
+/// never silent acceptance. The other three period-match branches (#362) run
+/// entirely in the caller and never reach this write.
+pub(super) fn attach_period_on_connection(
+    conn: &Connection,
+    id: &str,
+    period_id: &str,
+) -> StorageResult<()> {
+    let changed = conn.execute(
+        "UPDATE kpi_ingest_runs SET period_id = ?1, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE id = ?2 AND status = 'committing' AND (period_id IS NULL OR period_id = ?1)",
+        params![period_id, id],
+    )?;
+    if changed == 1 {
+        return Ok(());
+    }
+    Err(StorageError::CommitPeriodConflict {
+        run: id.to_owned(),
+        reason: "period attach raced or the run left committing before it landed",
+    })
 }
 
 #[cfg(test)]

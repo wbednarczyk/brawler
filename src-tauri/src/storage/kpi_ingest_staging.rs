@@ -5,8 +5,8 @@
 //! is the immutable per-run commit outcome, append-only (the `valuation_runs`
 //! idiom — zero UPDATE path here). Reach the observation surface via
 //! `AppState::kpi_ingest_staging()`; `record_commit_receipt` is a
-//! connection-level free fn for #363's commit transaction to call under its
-//! own `&Connection` (the `record_structured_fact` pattern,
+//! connection-level free fn `KpiIngestCommitStore::commit_manifest` (#362)
+//! calls under its own `&Connection` (the `record_structured_fact` pattern,
 //! `kpi_extraction.rs:359`).
 
 use std::collections::{HashMap, HashSet};
@@ -302,11 +302,6 @@ fn content_matches_projection(
         && row.citation_quote == projection.citation_quote
 }
 
-// ponytail: unwired until #363's commit transaction calls `record_commit_receipt`
-// under its own externally-owned transaction (ADR 0098 dec. 5); #359 ships
-// the primitive plus its round-trip/idempotency/rollback tests per the
-// approved plan, so it is exercised only from #[cfg(test)] until then.
-#[allow(dead_code)]
 fn generate_receipt_id(run_id: &str) -> String {
     use sha2::{Digest, Sha256};
     let now_nanos = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
@@ -940,19 +935,20 @@ pub(super) fn get_commit_receipt_on_connection(
 }
 
 /// Connection-level free fn (the `record_structured_fact` pattern,
-/// `kpi_extraction.rs:359`): #363's commit transaction calls this under its
-/// own externally-owned `&Connection`/transaction — this fn never opens one
-/// itself. A second insert for the same `run_id` maps the `UNIQUE(run_id)`
-/// violation to the typed `CommitReceiptAlreadyRecorded` (ADR 0098 dec. 5:
-/// idempotent replay must return the stored receipt, never re-execute the
-/// commit primitives — that is #363's job once it sees this error/the
-/// existing row). INTEGRATION GATE (luna review): this primitive inserts
-/// caller-supplied values without reading the run — #363 MUST verify, inside
-/// the SAME outer transaction, that manifest_hash/manifest_revision match the
-/// run row and that the run is in `committing`; a receipt written without
-/// those checks can permanently disagree with its run.
-// ponytail: same #363-unwired situation as `generate_receipt_id` above.
-#[allow(dead_code)]
+/// `kpi_extraction.rs:359`): `KpiIngestCommitStore::commit_manifest` (#362)
+/// calls this under its own externally-owned `&Connection`/transaction — this
+/// fn never opens one itself. A second insert for the same `run_id` maps the
+/// `UNIQUE(run_id)` violation to the typed `CommitReceiptAlreadyRecorded`
+/// (ADR 0098 dec. 5: idempotent replay must return the stored receipt, never
+/// re-execute the commit primitives — that is #363's job once it sees this
+/// error/the existing row; #362 itself never replays — a normal re-call
+/// against a terminal run dies on `InvalidRunTransition` inside
+/// `begin_committing`, before this insert is ever reached). INTEGRATION GATE
+/// (luna review, closed by #362): this primitive inserts caller-supplied
+/// values without reading the run — `commit_manifest` verifies, inside the
+/// SAME outer transaction (`begin_committing` transitions the row to
+/// `committing` first), that manifest_hash/manifest_revision match the run
+/// row before this call is ever reached.
 pub(super) fn record_commit_receipt(
     connection: &Connection,
     receipt: NewCommitReceipt,

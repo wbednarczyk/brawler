@@ -56,6 +56,7 @@ mod ingestion;
 mod insider;
 mod jobs;
 mod kpi_extraction;
+mod kpi_ingest_commit;
 mod kpi_ingest_runs;
 mod kpi_ingest_staging;
 mod licensing;
@@ -124,6 +125,7 @@ pub use fundamentals_provenance::{
     NewExtractionOutcome, NewFactProvenance, TierFactCount, WitnessCorroboration,
 };
 pub use fx_rates::FxRatesStore;
+pub use kpi_ingest_commit::KpiIngestCommitStore;
 pub use kpi_ingest_runs::{
     KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun, ValidationAttempt,
 };
@@ -790,6 +792,14 @@ impl AppState {
     /// (ADR 0098 decisions 3, 5).
     pub fn kpi_ingest_staging(&self) -> kpi_ingest_staging::KpiIngestStagingStore {
         kpi_ingest_staging::KpiIngestStagingStore::new(self.db.clone())
+    }
+
+    /// Atomic manifest commit — one transaction per report (ADR 0098 dec. 5,
+    /// card #362): re-verifies a `ready` manifest's freshness, then writes
+    /// the period, every accepted fact, its provenance, the immutable commit
+    /// receipt, and the run's terminal state in ONE transaction.
+    pub fn kpi_ingest_commit(&self) -> kpi_ingest_commit::KpiIngestCommitStore {
+        kpi_ingest_commit::KpiIngestCommitStore::new(self.db.clone())
     }
 
     pub fn list_companies(&self) -> StorageResult<Vec<Company>> {

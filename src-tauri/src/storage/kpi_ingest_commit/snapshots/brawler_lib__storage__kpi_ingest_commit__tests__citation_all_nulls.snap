@@ -1,0 +1,5 @@
+---
+source: src/storage/kpi_ingest_commit/tests.rs
+expression: canonical_citation_json(&citation)
+---
+{"page":null,"table":null,"row":null,"quote":null}
