@@ -24,7 +24,17 @@ const RUN_COLUMNS: &str = "id, report_document_id, company_id, period_id, source
      scope, data_quality, profile_version, instruction_version, status, manifest_hash, \
      manifest_revision, attempt_count, lease_holder, lease_expires_at, last_heartbeat_at, \
      expected_kpis_json, missing_reasons_json, progress_json, cost_json, last_error, \
-     created_at, updated_at";
+     created_at, updated_at, period_fiscal_year, period_type";
+
+/// `financial_periods.period_type` vocabulary (data-model.md § financial
+///_periods, `storage/financials.rs:525`): FY, H1, H2, Q1-Q4, 9M, M01-M12.
+/// The run's period descriptor (migration 0138) validates against the SAME
+/// list — it is a natural key mirroring `financial_periods` and must stay in
+/// lockstep with a period row when both are present.
+const PERIOD_TYPE_VALUES: &[&str] = &[
+    "FY", "H1", "H2", "Q1", "Q2", "Q3", "Q4", "9M", "M01", "M02", "M03", "M04", "M05", "M06",
+    "M07", "M08", "M09", "M10", "M11", "M12",
+];
 
 /// The closed run lifecycle (ADR 0098 dec. 6). `as_str`/`parse` idiom from
 /// `SourceTier`, except `parse` returns a typed [`StorageError`] on an unknown
@@ -103,6 +113,14 @@ impl KpiIngestRunState {
 /// The identity + discovery-known fields for a new run. `instruction_version`
 /// is deliberately absent: nullable at creation, filled before `extracting`
 /// (#360 invariant).
+///
+/// `period_fiscal_year`/`period_type` are the run's durable period
+/// descriptor (ADR 0098 dec. 3, B2 sol review round 2, migration 0138): a
+/// `financial_periods` row legally does not exist until the commit
+/// transaction (#363) creates one, so staging needs a natural-key descriptor
+/// to stage against before that. All-or-none (`create_run_if_absent` refuses
+/// a partial descriptor); when both `period_id` and the descriptor are
+/// present, the descriptor must match the referenced period row.
 #[derive(Debug, Clone)]
 pub struct NewKpiIngestRun {
     pub report_document_id: String,
@@ -111,6 +129,8 @@ pub struct NewKpiIngestRun {
     pub profile_version: String,
     pub scope: Option<String>,
     pub data_quality: Option<String>,
+    pub period_fiscal_year: Option<i64>,
+    pub period_type: Option<String>,
 }
 
 /// A stored run (the full read model). No `ts_rs` — this is a headless
@@ -140,6 +160,10 @@ pub struct KpiIngestRun {
     pub last_error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// The run's period descriptor (migration 0138, ADR 0098 dec. 3) — see
+    /// [`NewKpiIngestRun`] doc.
+    pub period_fiscal_year: Option<i64>,
+    pub period_type: Option<String>,
 }
 
 /// Row shape as read straight from SQLite, before `status` is parsed into the
@@ -169,6 +193,8 @@ struct RawRun {
     last_error: Option<String>,
     created_at: String,
     updated_at: String,
+    period_fiscal_year: Option<i64>,
+    period_type: Option<String>,
 }
 
 fn map_raw_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawRun> {
@@ -196,6 +222,8 @@ fn map_raw_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawRun> {
         last_error: row.get(20)?,
         created_at: row.get(21)?,
         updated_at: row.get(22)?,
+        period_fiscal_year: row.get(23)?,
+        period_type: row.get(24)?,
     })
 }
 
@@ -224,6 +252,8 @@ fn raw_to_domain(raw: RawRun) -> StorageResult<KpiIngestRun> {
         last_error: raw.last_error,
         created_at: raw.created_at,
         updated_at: raw.updated_at,
+        period_fiscal_year: raw.period_fiscal_year,
+        period_type: raw.period_type,
     })
 }
 
@@ -280,6 +310,30 @@ impl KpiIngestRunsStore {
             }
         }
 
+        // Period descriptor (ADR 0098 dec. 3, B2 sol review round 2):
+        // all-or-none, then vocabulary. Cross-checked against an explicit
+        // period_id below once that row is resolved.
+        match (new_run.period_fiscal_year, new_run.period_type.as_deref()) {
+            (None, None) => {}
+            (Some(_), Some(period_type)) => {
+                if !PERIOD_TYPE_VALUES.contains(&period_type) {
+                    return Err(StorageError::InvalidKpiIngestRunValue {
+                        key: "period_type",
+                        value: period_type.to_owned(),
+                    });
+                }
+            }
+            _ => {
+                return Err(StorageError::InvalidKpiIngestRunValue {
+                    key: "period_descriptor",
+                    value: format!(
+                        "partial descriptor: period_fiscal_year={:?} period_type={:?}",
+                        new_run.period_fiscal_year, new_run.period_type
+                    ),
+                });
+            }
+        }
+
         let doc_company: Option<String> = tx
             .query_row(
                 "SELECT company_id FROM report_documents WHERE id = ?1",
@@ -303,27 +357,45 @@ impl KpiIngestRunsStore {
             Some(_) => {}
         }
         if let Some(period_id) = new_run.period_id.as_deref() {
-            let period_company: Option<String> = tx
+            let period_row: Option<(String, i64, String)> = tx
                 .query_row(
-                    "SELECT company_id FROM financial_periods WHERE id = ?1",
+                    "SELECT company_id, fiscal_year, period_type FROM financial_periods WHERE id = ?1",
                     [period_id],
-                    |row| row.get(0),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .optional()?;
-            match period_company {
+            match period_row {
                 None => {
                     return Err(StorageError::MissingIngestReference {
                         table: "financial_periods".to_owned(),
                         id: period_id.to_owned(),
                     });
                 }
-                Some(owner) if owner != new_run.company_id => {
+                Some((owner, ..)) if owner != new_run.company_id => {
                     return Err(StorageError::RunPeriodCompanyMismatch {
                         period: period_id.to_owned(),
                         company: new_run.company_id.clone(),
                     });
                 }
-                Some(_) => {}
+                Some((_, period_fiscal_year, period_type)) => {
+                    // Descriptor<->period_id consistency (B2 sol review round
+                    // 2): when BOTH are supplied, they must name the same
+                    // period — a caller-shaped mismatch, not a genuine
+                    // cross-run conflict (that is RunPeriodConflict below).
+                    if let (Some(descriptor_year), Some(descriptor_type)) =
+                        (new_run.period_fiscal_year, new_run.period_type.as_deref())
+                    {
+                        if descriptor_year != period_fiscal_year || descriptor_type != period_type {
+                            return Err(StorageError::InvalidKpiIngestRunValue {
+                                key: "period_descriptor",
+                                value: format!(
+                                    "descriptor ({descriptor_year}, {descriptor_type}) does not \
+                                     match period {period_id} ({period_fiscal_year}, {period_type})"
+                                ),
+                            });
+                        }
+                    }
+                }
             }
         }
 
@@ -344,6 +416,48 @@ impl KpiIngestRunsStore {
             .optional()?;
 
         if let Some(raw) = existing {
+            // An active run for the same triple with a DIFFERENT period is a
+            // genuine conflict (B2 sol round 3), never a silent idempotent
+            // return. Both representations — a period_id and a descriptor pair
+            // — resolve to the SAME natural key (fiscal_year, period_type)
+            // before comparing, so a mixed-representation mismatch (existing
+            // period_id vs requested descriptor, or the reverse) is caught too
+            // (luna review P1). A side that supplies neither stays None and
+            // never conflicts: filling in a previously-absent period is legal.
+            let resolve_natural_key = |period_id: Option<&str>,
+                                       year: Option<i64>,
+                                       period_type: Option<&str>|
+             -> StorageResult<Option<(i64, String)>> {
+                if let Some(pid) = period_id {
+                    let row: Option<(i64, String)> = tx
+                        .query_row(
+                            "SELECT fiscal_year, period_type FROM financial_periods WHERE id = ?1",
+                            [pid],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .optional()?;
+                    return Ok(row);
+                }
+                Ok(match (year, period_type) {
+                    (Some(year), Some(kind)) => Some((year, kind.to_owned())),
+                    _ => None,
+                })
+            };
+            let existing_key = resolve_natural_key(
+                raw.period_id.as_deref(),
+                raw.period_fiscal_year,
+                raw.period_type.as_deref(),
+            )?;
+            let requested_key = resolve_natural_key(
+                new_run.period_id.as_deref(),
+                new_run.period_fiscal_year,
+                new_run.period_type.as_deref(),
+            )?;
+            if let (Some(existing_key), Some(requested_key)) = (existing_key, requested_key) {
+                if existing_key != requested_key {
+                    return Err(StorageError::RunPeriodConflict { id: raw.id });
+                }
+            }
             tx.commit()?;
             return raw_to_domain(raw);
         }
@@ -355,8 +469,9 @@ impl KpiIngestRunsStore {
         );
         tx.execute(
             "INSERT INTO kpi_ingest_runs
-                (id, report_document_id, company_id, period_id, profile_version, scope, data_quality)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (id, report_document_id, company_id, period_id, profile_version, scope, data_quality,
+                 period_fiscal_year, period_type)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 id,
                 new_run.report_document_id,
@@ -365,6 +480,8 @@ impl KpiIngestRunsStore {
                 new_run.profile_version,
                 new_run.scope,
                 new_run.data_quality,
+                new_run.period_fiscal_year,
+                new_run.period_type,
             ],
         )?;
 
@@ -639,6 +756,8 @@ mod tests {
             profile_version: profile.to_owned(),
             scope: None,
             data_quality: None,
+            period_fiscal_year: None,
+            period_type: None,
         }
     }
 
@@ -1340,6 +1459,151 @@ mod tests {
                 key: "data_quality",
                 ..
             }
+        ));
+    }
+
+    /// Test 10 (#359 plan): the run's period descriptor — all-or-none,
+    /// consistency with an explicit `period_id`, and the cross-request
+    /// conflict on an active triple.
+    #[test]
+    fn create_run_if_absent_enforces_the_period_descriptor_contract() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        // A period whose stored period_type is the canonical 'FY' token (not
+        // the legacy 'annual' alias `seed_period` uses elsewhere), so it is a
+        // valid descriptor consistency target.
+        connection
+            .execute(
+                "INSERT INTO financial_periods (id, company_id, fiscal_year, period_type)
+                 VALUES ('finper1', 'c1', 2025, 'FY')",
+                [],
+            )
+            .expect("seed period");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        // A descriptor with no period_id succeeds.
+        let mut with_descriptor = new_run("doc1", "c1", "p1");
+        with_descriptor.period_fiscal_year = Some(2025);
+        with_descriptor.period_type = Some("FY".to_owned());
+        let created = store
+            .create_run_if_absent(&with_descriptor)
+            .expect("descriptor-only run must be creatable");
+        assert_eq!(created.period_fiscal_year, Some(2025));
+        assert_eq!(created.period_type.as_deref(), Some("FY"));
+        assert!(created.period_id.is_none());
+
+        // A partial descriptor is refused.
+        let mut partial = new_run("doc1", "c1", "p2");
+        partial.period_fiscal_year = Some(2025);
+        let error = store
+            .create_run_if_absent(&partial)
+            .expect_err("partial descriptor must be refused");
+        assert!(matches!(
+            error,
+            StorageError::InvalidKpiIngestRunValue {
+                key: "period_descriptor",
+                ..
+            }
+        ));
+
+        // A descriptor that contradicts an explicit period_id is refused.
+        let mut contradictory = new_run("doc1", "c1", "p3");
+        contradictory.period_id = Some("finper1".to_owned());
+        contradictory.period_fiscal_year = Some(2024);
+        contradictory.period_type = Some("FY".to_owned());
+        let error = store
+            .create_run_if_absent(&contradictory)
+            .expect_err("descriptor contradicting period_id must be refused");
+        assert!(matches!(
+            error,
+            StorageError::InvalidKpiIngestRunValue {
+                key: "period_descriptor",
+                ..
+            }
+        ));
+
+        // A second create on the SAME active triple ("p1") with a DIFFERENT
+        // descriptor conflicts with the already-running one.
+        let mut conflicting = new_run("doc1", "c1", "p1");
+        conflicting.period_fiscal_year = Some(2024);
+        conflicting.period_type = Some("FY".to_owned());
+        let error = store
+            .create_run_if_absent(&conflicting)
+            .expect_err("a different descriptor on the same active triple must conflict");
+        assert!(matches!(
+            error,
+            StorageError::RunPeriodConflict { id } if id == created.id
+        ));
+
+        // The SAME descriptor on the same active triple stays idempotent.
+        let same_again = store
+            .create_run_if_absent(&with_descriptor)
+            .expect("the identical descriptor is not a conflict");
+        assert_eq!(same_again.id, created.id);
+    }
+
+    /// Mixed representations must resolve to the natural key before comparing
+    /// (luna review P1): an existing run holding a period_id conflicts with a
+    /// requested DESCRIPTOR naming a different period, and vice versa.
+    #[test]
+    fn create_run_period_conflict_across_mixed_representations() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_document(&connection, "doc2", "c1");
+        connection
+            .execute(
+                "INSERT INTO financial_periods (id, company_id, fiscal_year, period_type)
+                 VALUES ('finper_fy2025', 'c1', 2025, 'FY')",
+                [],
+            )
+            .expect("seed period");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        // Existing run holds a period_id (FY2025); request carries only a
+        // DESCRIPTOR for FY2024 — must conflict, not silently reuse.
+        let mut with_id = new_run("doc1", "c1", "p1");
+        with_id.period_id = Some("finper_fy2025".to_owned());
+        let created = store.create_run_if_absent(&with_id).expect("create");
+        let mut descriptor_mismatch = new_run("doc1", "c1", "p1");
+        descriptor_mismatch.period_fiscal_year = Some(2024);
+        descriptor_mismatch.period_type = Some("FY".to_owned());
+        let error = store
+            .create_run_if_absent(&descriptor_mismatch)
+            .expect_err("descriptor naming another period must conflict with the stored period_id");
+        assert!(matches!(
+            error,
+            StorageError::RunPeriodConflict { id } if id == created.id
+        ));
+
+        // The matching descriptor for the SAME period is idempotent.
+        let mut descriptor_match = new_run("doc1", "c1", "p1");
+        descriptor_match.period_fiscal_year = Some(2025);
+        descriptor_match.period_type = Some("FY".to_owned());
+        let same = store
+            .create_run_if_absent(&descriptor_match)
+            .expect("the matching descriptor is not a conflict");
+        assert_eq!(same.id, created.id);
+
+        // Reverse direction: existing run holds a descriptor; request carries
+        // a period_id resolving to a different natural key — must conflict.
+        let mut with_descriptor = new_run("doc2", "c1", "p1");
+        with_descriptor.period_fiscal_year = Some(2024);
+        with_descriptor.period_type = Some("FY".to_owned());
+        let created2 = store
+            .create_run_if_absent(&with_descriptor)
+            .expect("create");
+        let mut id_mismatch = new_run("doc2", "c1", "p1");
+        id_mismatch.period_id = Some("finper_fy2025".to_owned());
+        let error = store
+            .create_run_if_absent(&id_mismatch)
+            .expect_err("a period_id resolving elsewhere must conflict with the stored descriptor");
+        assert!(matches!(
+            error,
+            StorageError::RunPeriodConflict { id } if id == created2.id
         ));
     }
 }

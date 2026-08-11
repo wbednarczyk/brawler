@@ -121,6 +121,24 @@ pub enum StorageError {
     RunLeaseInvariantViolation { id: String, status: String },
     #[error("unknown kpi ingest run state: {value}")]
     UnknownKpiIngestRunState { value: String },
+    #[error(
+        "kpi ingest run {id} has an active run for the same (document, company, profile) triple with a conflicting period"
+    )]
+    RunPeriodConflict { id: String },
+    #[error("kpi ingest run {id} is not stageable in status {status}")]
+    InvalidRunStateForStaging { id: String, status: String },
+    #[error("kpi staging revision {revision} for run {run_id} is invalid: {reason}")]
+    InvalidStagingRevision {
+        run_id: String,
+        revision: i64,
+        reason: &'static str,
+    },
+    #[error("staged observation not found: {id}")]
+    StagedObservationNotFound { id: String },
+    #[error("commit receipt already recorded for run {run}")]
+    CommitReceiptAlreadyRecorded { run: String },
+    #[error("report document {id} bytes are protected and cannot be downgraded to metadata-only")]
+    ReportDocumentBytesProtected { id: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
