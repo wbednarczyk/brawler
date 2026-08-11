@@ -416,17 +416,32 @@ impl KpiIngestStagingStore {
             normalized.push((observation, currency, mapping_status));
         }
 
-        let new_revision: i64 = tx.query_row(
-            "UPDATE kpi_ingest_runs
-             SET manifest_revision = manifest_revision + 1,
-                 manifest_hash = NULL,
-                 status = 'staged',
-                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE id = ?1
-             RETURNING manifest_revision",
-            [run_id],
-            |row| row.get(0),
-        )?;
+        // The final flip re-guards status AND the live lease (luna review B1):
+        // the batch above can be long, and the lease is WALL-CLOCK state — it
+        // can expire mid-transaction even though no other writer can touch the
+        // row under this Immediate tx. An expired holder must not stage.
+        let new_revision: Option<i64> = tx
+            .query_row(
+                "UPDATE kpi_ingest_runs
+                 SET manifest_revision = manifest_revision + 1,
+                     manifest_hash = NULL,
+                     status = 'staged',
+                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE id = ?1
+                   AND status IN ('extracting', 'validation_failed')
+                   AND lease_holder = ?2
+                   AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 RETURNING manifest_revision",
+                params![run_id, holder],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(new_revision) = new_revision else {
+            return Err(StorageError::RunLeaseNotHeld {
+                id: run_id.to_owned(),
+                holder: holder.to_owned(),
+            });
+        };
 
         for (ordinal, (observation, currency, mapping_status)) in normalized.into_iter().enumerate()
         {
@@ -1037,6 +1052,65 @@ mod tests {
             after[1].validation_codes_json.as_deref(),
             Some("[\"code_1\"]")
         );
+    }
+
+    #[test]
+    fn apply_validation_results_refuses_a_non_staged_run() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, observations) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+            .expect("stage");
+        state
+            .kpi_ingest_runs()
+            .cancel_run(run_id)
+            .expect("cancel from staged is legal");
+        let error = store
+            .apply_validation_results(
+                run_id,
+                revision,
+                vec![ObservationValidation {
+                    observation_id: observations[0].id.clone(),
+                    validation_state: "passed".to_owned(),
+                    validation_codes_json: None,
+                }],
+            )
+            .expect_err("validating a cancelled run must refuse (status != staged)");
+        assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
+    }
+
+    /// The lease is wall-clock state: it can expire DURING a long staging
+    /// batch even though no other writer can touch the row under the Immediate
+    /// transaction. The final flip re-guards the live lease (luna review B1).
+    #[test]
+    fn stage_observations_refuses_when_the_lease_expires_mid_batch() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_run(&connection, "run1", "doc1", "c1", "extracting");
+        let state = AppState::new(connection);
+        state
+            .kpi_ingest_runs()
+            .claim_next(TEST_HOLDER, 1)
+            .expect("claim")
+            .expect("claimed");
+        // Cross the 1-second expiry between the entry check and the final
+        // flip; the whole call re-runs, so an expired lease is refused at the
+        // entry check on this second timeline — either way the guard holds
+        // and the run never reaches `staged` with a dead lease.
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        let error = state
+            .kpi_ingest_staging()
+            .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
+            .expect_err("an expired lease must not stage");
+        assert!(matches!(error, StorageError::RunLeaseNotHeld { .. }));
+        let run = state
+            .kpi_ingest_runs()
+            .get_run("run1")
+            .expect("get")
+            .expect("some");
+        assert_eq!(run.status, KpiIngestRunState::Extracting);
+        assert_eq!(run.manifest_revision, 0, "no revision bump on refusal");
     }
 
     #[test]

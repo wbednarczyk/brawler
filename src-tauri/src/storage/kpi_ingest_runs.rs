@@ -287,11 +287,19 @@ pub struct ReclaimSummary {
     /// `committing` rows found holding a non-null lease — a structural
     /// invariant violation, reported but left UNTOUCHED (never auto-repaired).
     pub violations: usize,
+    /// `committing` rows whose receipt disagrees with the run's manifest —
+    /// left untouched, needs manual investigation (luna review P2: visible in
+    /// the startup log, never silently absorbed into a no-op summary).
+    pub mismatched: usize,
 }
 
 impl ReclaimSummary {
     pub fn is_noop(&self) -> bool {
-        self.finalized == 0 && self.reverted == 0 && self.lease_cleared == 0 && self.violations == 0
+        self.finalized == 0
+            && self.reverted == 0
+            && self.lease_cleared == 0
+            && self.violations == 0
+            && self.mismatched == 0
     }
 }
 
@@ -694,6 +702,9 @@ impl KpiIngestRunsStore {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
+        // Set-once also holds across the retired lease-free path (luna review
+        // B2): a legacy `discovered` row may already carry a hash — a different
+        // one must refuse, the same one is idempotent.
         let changed = apply_transition(
             &tx,
             id,
@@ -701,8 +712,9 @@ impl KpiIngestRunsStore {
             KpiIngestRunState::SourceCaptured,
             "source_content_hash = ?, ",
             &[&source_content_hash],
-            " AND lease_holder = ? AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-            &[&holder],
+            " AND lease_holder = ? AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+             AND (source_content_hash IS NULL OR source_content_hash = ?)",
+            &[&holder, &source_content_hash],
         )?;
         if changed == 1 {
             tx.commit()?;
@@ -722,7 +734,15 @@ impl KpiIngestRunsStore {
                 None => Err(wrong_state(id, status, KpiIngestRunState::SourceCaptured)),
             }
         } else {
-            Err(lease_not_held(id, holder))
+            // Still `discovered`: either the guard's hash predicate refused a
+            // DIFFERENT pre-existing hash (legacy lease-free capture — set-once
+            // wins over the transition), or the lease is not live.
+            match raw.source_content_hash.as_deref() {
+                Some(existing) if existing != source_content_hash => {
+                    Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() })
+                }
+                _ => Err(lease_not_held(id, holder)),
+            }
         };
         tx.commit()?;
         result
@@ -1219,9 +1239,9 @@ impl KpiIngestRunsStore {
                     summary.finalized += 1;
                 }
                 // A receipt exists but disagrees with the run's manifest — left
-                // untouched, uncounted: this needs manual investigation, it is
-                // not the ordinary crash-recovery case.
-                Some(_) => {}
+                // untouched but COUNTED (luna review P2), so the startup log
+                // surfaces the row needing manual investigation.
+                Some(_) => summary.mismatched += 1,
                 None => {
                     tx.execute(
                         "UPDATE kpi_ingest_runs SET status = 'ready_to_commit', \
@@ -2885,6 +2905,69 @@ mod tests {
         assert!(matches!(error, StorageError::StaleManifestForCommit { .. }));
     }
 
+    /// A receipt with the CORRECT hash but a different revision must also
+    /// refuse; and a `partial` receipt finalizes to `Partial`, derived only
+    /// from the receipt (luna review test gap).
+    #[test]
+    fn finalize_committing_checks_revision_and_derives_partial_from_the_receipt() {
+        let (state, doc, company) = setup_one_company_doc();
+        let ready = advance_to_ready_to_commit(&state, doc, company, "worker-a", "hash-abc");
+        let mut connection = state.checkout_for_tests().expect("raw connection");
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("tx");
+        begin_committing(&tx, &ready.id, "hash-abc", ready.manifest_revision).expect("begin");
+
+        // Correct hash, wrong revision.
+        kpi_ingest_staging::record_commit_receipt(
+            &tx,
+            NewCommitReceipt {
+                run_id: ready.id.clone(),
+                manifest_hash: "hash-abc".to_owned(),
+                manifest_revision: ready.manifest_revision + 7,
+                terminal_status: "partial".to_owned(),
+                period_id: None,
+                accepted_count: 0,
+                outcomes_schema_version: 1,
+                outcomes_json: "[]".to_owned(),
+            },
+        )
+        .expect("receipt");
+        let error = finalize_committing(&tx, &ready.id).expect_err("revision mismatch");
+        assert!(matches!(error, StorageError::StaleManifestForCommit { .. }));
+        tx.rollback().expect("rollback");
+
+        // Fresh transaction: matching receipt with terminal_status='partial'.
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("tx2");
+        begin_committing(&tx, &ready.id, "hash-abc", ready.manifest_revision).expect("begin2");
+        kpi_ingest_staging::record_commit_receipt(
+            &tx,
+            NewCommitReceipt {
+                run_id: ready.id.clone(),
+                manifest_hash: "hash-abc".to_owned(),
+                manifest_revision: ready.manifest_revision,
+                terminal_status: "partial".to_owned(),
+                period_id: None,
+                accepted_count: 0,
+                outcomes_schema_version: 1,
+                outcomes_json: "[]".to_owned(),
+            },
+        )
+        .expect("receipt2");
+        let terminal = finalize_committing(&tx, &ready.id).expect("finalize");
+        assert_eq!(terminal, KpiIngestRunState::Partial);
+        tx.commit().expect("commit");
+        drop(connection);
+        let after = state
+            .kpi_ingest_runs()
+            .get_run(&ready.id)
+            .expect("get")
+            .expect("some");
+        assert_eq!(after.status, KpiIngestRunState::Partial);
+    }
+
     #[test]
     fn begin_committing_finalize_rollback_undoes_everything() {
         let (state, doc, company) = setup_one_company_doc();
@@ -3069,11 +3152,103 @@ mod tests {
         let summary = store.reclaim_ingest_runs_on_startup().expect("reclaim");
         assert_eq!(summary.finalized, 0);
         assert_eq!(summary.reverted, 0);
+        assert_eq!(
+            summary.mismatched, 1,
+            "the mismatch must be counted so the startup log surfaces it"
+        );
+        assert!(!summary.is_noop(), "a mismatch is never a silent no-op");
         let after = store.get_run("run1").expect("get").expect("some");
         assert_eq!(
             before, after,
             "a mismatched receipt must leave the run untouched"
         );
+    }
+
+    /// A `committing` row that BOTH violates the lease invariant AND has a
+    /// matching receipt must NOT be finalized — the violation wins and the
+    /// row stays untouched for manual investigation.
+    #[test]
+    fn reclaim_violation_wins_over_a_matching_receipt() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_run_raw(
+            &connection,
+            "run1",
+            "doc1",
+            "c1",
+            "p1",
+            "committing",
+            Some("worker-a"),
+            Some("2099-01-01T00:00:00.000Z"),
+            Some("2026-01-01T00:00:00.000Z"),
+        );
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET manifest_hash = 'hash-abc', manifest_revision = 1 WHERE id = 'run1'",
+                [],
+            )
+            .expect("manifest");
+        connection
+            .execute(
+                "INSERT INTO kpi_ingest_commit_receipts
+                    (id, run_id, manifest_hash, manifest_revision, terminal_status, accepted_count, outcomes_json)
+                 VALUES ('r1', 'run1', 'hash-abc', 1, 'complete', 0, '[]')",
+                [],
+            )
+            .expect("matching receipt");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+        let before = store.get_run("run1").expect("get").expect("some");
+        let summary = store.reclaim_ingest_runs_on_startup().expect("reclaim");
+        assert_eq!(summary.violations, 1);
+        assert_eq!(
+            summary.finalized, 0,
+            "a lease-violating committing row must never be finalized"
+        );
+        let after = store.get_run("run1").expect("get").expect("some");
+        assert_eq!(before, after);
+    }
+
+    /// Legacy set-once semantics survive the retired lease-free capture path
+    /// (luna review B2): a `discovered` row already carrying a hash refuses a
+    /// DIFFERENT hash and stays put; the SAME hash transitions idempotently.
+    #[test]
+    fn mark_source_captured_respects_a_legacy_pre_existing_hash() {
+        let (state, doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let run = store
+            .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+            .expect("create");
+        store.claim_next("worker-a", 60).expect("claim");
+        // Simulate the retired lease-free path: hash present, still discovered.
+        {
+            let db = state.checkout_for_tests().expect("raw connection");
+            db.execute(
+                "UPDATE kpi_ingest_runs SET source_content_hash = 'legacy-hash' WHERE id = ?1",
+                [&run.id],
+            )
+            .expect("legacy hash");
+        }
+        let error = store
+            .mark_source_captured(&run.id, "worker-a", "different-hash")
+            .expect_err("a different hash must refuse, never overwrite");
+        assert!(matches!(
+            error,
+            StorageError::RunSourceHashAlreadyRecorded { .. }
+        ));
+        let unchanged = store.get_run(&run.id).expect("get").expect("some");
+        assert_eq!(
+            unchanged.source_content_hash.as_deref(),
+            Some("legacy-hash")
+        );
+        assert_eq!(unchanged.status, KpiIngestRunState::Discovered);
+
+        store
+            .mark_source_captured(&run.id, "worker-a", "legacy-hash")
+            .expect("the same hash transitions idempotently");
+        let after = store.get_run(&run.id).expect("get").expect("some");
+        assert_eq!(after.status, KpiIngestRunState::SourceCaptured);
     }
 
     #[test]
