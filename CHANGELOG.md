@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.4 - 2026-08-11
+
+
+### Features
+
+- **fundamentals**: deterministic manifest validation with immutable attempts (#361) (#375)
+
 ## v0.65.3 - 2026-08-11
 
 
