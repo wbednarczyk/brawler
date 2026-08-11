@@ -123,6 +123,36 @@ fn value_unparseable_skips_identity_plausibility_duplicate_but_not_unit_checks()
 }
 
 #[test]
+fn normalized_value_is_decimal_canonical_in_manifest_and_hash() {
+    let mut trailing_zeros = base_obs("o1", 0);
+    trailing_zeros.normalized_value = Some("1234.500".to_owned());
+    let manifest_a = build_manifest(&base_run(), &[trailing_zeros]);
+    assert_eq!(
+        manifest_a.observations[0].normalized_value.as_deref(),
+        Some("1234.5"),
+        "normalizedValue must be Decimal-canonical, not the raw trailing-zero string"
+    );
+
+    // An identical run staged with the already-canonical string must hash
+    // the same.
+    let manifest_b = build_manifest(&base_run(), &[base_obs("o1", 0)]);
+    let sealed_a = SealedManifest::seal(manifest_a).expect("seals");
+    let sealed_b = SealedManifest::seal(manifest_b).expect("seals");
+    assert_eq!(sealed_a.manifest_hash(), sealed_b.manifest_hash());
+}
+
+#[test]
+fn normalized_value_unparseable_carries_verbatim() {
+    let mut obs = base_obs("o1", 0);
+    obs.normalized_value = Some("not-a-number".to_owned());
+    let manifest = build_manifest(&base_run(), &[obs]);
+    assert_eq!(
+        manifest.observations[0].normalized_value.as_deref(),
+        Some("not-a-number")
+    );
+}
+
+#[test]
 fn attribution_none_defaults_to_total_in_output() {
     let manifest = build_manifest(&base_run(), &[base_obs("o1", 0)]);
     assert_eq!(manifest.observations[0].attribution, "total");
@@ -199,6 +229,55 @@ fn identity_violation_only_attributed_to_total_attribution_observations() {
         codes_for(&manifest, "equity_nci"),
         DiagnosticCode::IdentityViolation
     ));
+}
+
+#[test]
+fn identity_violation_attributed_to_every_total_attribution_member_sharing_a_metric_key() {
+    // Balance sheet identity: assets = liabilities + equity. Break it, and
+    // stage TWO total-attribution `total_assets` observations across
+    // different measure windows -- both must be flagged, not only the
+    // lowest-ordinal one that fed the FactSet (#361 finding 3).
+    let mut assets1 = base_obs("assets1", 0);
+    assets1.metric_key_candidate = Some("total_assets".to_owned());
+    assets1.definition = Some(resolved_def("total_assets", "monetary"));
+    assets1.normalized_value = Some("1000".to_owned());
+    assets1.raw_value = "1000".to_owned();
+    assets1.measure_window = Some("point_in_time".to_owned());
+
+    let mut assets2 = base_obs("assets2", 1);
+    assets2.metric_key_candidate = Some("total_assets".to_owned());
+    assets2.definition = Some(resolved_def("total_assets", "monetary"));
+    assets2.normalized_value = Some("1000".to_owned());
+    assets2.raw_value = "1000".to_owned();
+    assets2.measure_window = Some("duration".to_owned());
+
+    let mut liabilities = base_obs("liabilities", 2);
+    liabilities.metric_key_candidate = Some("total_liabilities".to_owned());
+    liabilities.definition = Some(resolved_def("total_liabilities", "monetary"));
+    liabilities.normalized_value = Some("100".to_owned());
+    liabilities.raw_value = "100".to_owned();
+
+    let mut equity = base_obs("equity", 3);
+    equity.metric_key_candidate = Some("total_equity".to_owned());
+    equity.definition = Some(resolved_def("total_equity", "monetary"));
+    equity.normalized_value = Some("100".to_owned());
+    equity.raw_value = "100".to_owned();
+
+    let manifest = build_manifest(&base_run(), &[assets1, assets2, liabilities, equity]);
+    assert!(
+        has_code(
+            codes_for(&manifest, "assets1"),
+            DiagnosticCode::IdentityViolation
+        ),
+        "the lowest-ordinal representative must still be flagged"
+    );
+    assert!(
+        has_code(
+            codes_for(&manifest, "assets2"),
+            DiagnosticCode::IdentityViolation
+        ),
+        "every other total-attribution member sharing the metric key must be flagged too"
+    );
 }
 
 #[test]
@@ -604,6 +683,67 @@ fn seal_rejects_mismatched_counts() {
     manifest.counts.flagged = 1;
     let err = SealedManifest::seal(manifest).expect_err("counts must match derived");
     assert!(matches!(err, ManifestSealError::CountsMismatch { .. }));
+}
+
+#[test]
+fn seal_rejects_a_duplicate_observation_id() {
+    let mut manifest = build_manifest(&base_run(), &[base_obs("o1", 0)]);
+    let mut dup = manifest.observations[0].clone();
+    dup.ordinal = 1; // distinct ordinal -- isolates the id check
+    manifest.observations.push(dup);
+    let err = SealedManifest::seal(manifest).expect_err("duplicate observationId must be refused");
+    assert!(matches!(
+        err,
+        ManifestSealError::DuplicateObservationId { .. }
+    ));
+}
+
+#[test]
+fn seal_rejects_a_duplicate_ordinal() {
+    let mut manifest = build_manifest(&base_run(), &[base_obs("o1", 0)]);
+    let mut dup = manifest.observations[0].clone();
+    dup.observation_id = "o2".to_owned(); // distinct id, same ordinal
+    manifest.observations.push(dup);
+    let err = SealedManifest::seal(manifest).expect_err("duplicate ordinal must be refused");
+    assert!(matches!(err, ManifestSealError::DuplicateOrdinal { .. }));
+}
+
+#[test]
+fn seal_rejects_a_code_with_the_wrong_detail_shape() {
+    let mut manifest = build_manifest(&base_run(), &[base_obs("o1", 0)]);
+    // plausibility.implausible must carry HistoryMedian, not Reason.
+    manifest.observations[0].codes.push(Code {
+        code: DiagnosticCode::PlausibilityImplausible,
+        detail: Some(DiagnosticDetail::Reason {
+            reason: "thin_history".to_owned(),
+        }),
+    });
+    let err =
+        SealedManifest::seal(manifest).expect_err("a mismatched code/detail pair must be refused");
+    assert!(matches!(err, ManifestSealError::InvalidCodeDetail { .. }));
+}
+
+#[test]
+fn seal_rejects_completeness_inconsistent_with_observations() {
+    let mut run = base_run();
+    run.expected = Some(expected(&["revenue", "net_profit"]));
+    let mut manifest = build_manifest(&run, &[base_obs("o1", 0)]); // revenue present, net_profit missing
+    let mut completeness = manifest
+        .completeness
+        .clone()
+        .expect("completeness computed");
+    // Tamper: claim net_profit is present too, contradicting the observations.
+    completeness.present.insert("net_profit".to_owned());
+    completeness
+        .missing
+        .retain(|m| m.metric_key != "net_profit");
+    manifest.completeness = Some(completeness);
+    let err = SealedManifest::seal(manifest)
+        .expect_err("completeness inconsistent with observations must be refused");
+    assert!(matches!(
+        err,
+        ManifestSealError::CompletenessInconsistent { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------

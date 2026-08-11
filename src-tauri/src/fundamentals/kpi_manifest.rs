@@ -11,7 +11,7 @@
 //! [`super::validation`] stays a pure core for the structured-extraction
 //! pipeline).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 
 use rust_decimal::Decimal;
@@ -242,6 +242,18 @@ fn abstention_reason_str(reason: AbstentionReason) -> &'static str {
 
 fn decimal_str(value: Decimal) -> String {
     value.normalize().to_string()
+}
+
+/// `normalizedValue` emission (data-model.md § KPI Ingest Validation,
+/// finding 2): Decimal-canonical (`.normalize().to_string()`) when the raw
+/// stored string parses; carried verbatim otherwise — the same string
+/// `value.unparseable` already fired against, never silently dropped.
+fn canonical_normalized_value(raw: Option<&str>) -> Option<String> {
+    let raw = raw?;
+    match Decimal::from_str(raw.trim()) {
+        Ok(value) => Some(decimal_str(value)),
+        Err(_) => Some(raw.to_owned()),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -564,11 +576,16 @@ pub fn evaluate(run: &ManifestRunInput, observations: &[ManifestObservationInput
     // identity.violation: same-period identities over the total-attribution
     // FactSet (definition resolved + value parseable + attribution_eff == 'total').
     let mut fact_set: FactSet = FactSet::new();
-    // ponytail: a metric_key colliding across measure_window at total
-    // attribution keeps only its lowest-ordinal observation's value in the
-    // FactSet — the plan names no tie-break for that (unspecified) case;
-    // ordinal is the one stable, deterministic key every observation carries.
+    // A metric_key colliding across measure_window at total attribution
+    // feeds the FactSet from only its lowest-ordinal observation's value —
+    // the plan names no tie-break for that (unspecified) case; ordinal is
+    // the one stable, deterministic key every observation carries. The
+    // ATTRIBUTION of a failed identity's code, below, is NOT limited to this
+    // representative — every qualifying observation sharing the metric key
+    // gets flagged (#361 finding 3).
     let mut representative: BTreeMap<String, (&ManifestObservationInput, Decimal)> =
+        BTreeMap::new();
+    let mut total_attribution_by_metric_key: BTreeMap<String, Vec<&ManifestObservationInput>> =
         BTreeMap::new();
     for obs in observations {
         let Some(def) = obs.definition.as_ref() else {
@@ -591,6 +608,10 @@ pub fn evaluate(run: &ManifestRunInput, observations: &[ManifestObservationInput
         else {
             continue;
         };
+        total_attribution_by_metric_key
+            .entry(def.metric_key.clone())
+            .or_default()
+            .push(obs);
         match representative.get(&def.metric_key) {
             Some((existing, _)) if existing.ordinal <= obs.ordinal => {}
             _ => {
@@ -620,21 +641,23 @@ pub fn evaluate(run: &ManifestRunInput, observations: &[ManifestObservationInput
             else {
                 continue;
             };
-            let Some((obs, _)) = representative.get(*metric_key) else {
+            let Some(members) = total_attribution_by_metric_key.get(*metric_key) else {
                 continue;
             };
-            observation_codes
-                .get_mut(&obs.observation_id)
-                .expect("seeded above")
-                .push(Code {
-                    code: DiagnosticCode::IdentityViolation,
-                    detail: Some(DiagnosticDetail::CheckResidual {
-                        check_id: (*check_id).to_owned(),
-                        expected: decimal_str(*expected),
-                        actual: decimal_str(*actual),
-                        residual: decimal_str(*residual),
-                    }),
-                });
+            for obs in members {
+                observation_codes
+                    .get_mut(&obs.observation_id)
+                    .expect("seeded above")
+                    .push(Code {
+                        code: DiagnosticCode::IdentityViolation,
+                        detail: Some(DiagnosticDetail::CheckResidual {
+                            check_id: (*check_id).to_owned(),
+                            expected: decimal_str(*expected),
+                            actual: decimal_str(*actual),
+                            residual: decimal_str(*residual),
+                        }),
+                    });
+            }
         }
     }
 
@@ -883,7 +906,7 @@ pub fn build_manifest(
                 ordinal: obs.ordinal,
                 metric_key: obs.metric_key_candidate.clone().unwrap_or_default(),
                 definition_id: obs.definition.as_ref().map(|d| d.definition_id.clone()),
-                normalized_value: obs.normalized_value.clone(),
+                normalized_value: canonical_normalized_value(obs.normalized_value.as_deref()),
                 currency: obs.currency.clone(),
                 unit_scale: obs.unit_scale.clone(),
                 attribution: obs
@@ -967,6 +990,19 @@ pub enum ManifestSealError {
         derived_unreviewed: u32,
         derived_flagged: u32,
     },
+    #[error("manifest observations contain a duplicate observationId: {observation_id}")]
+    DuplicateObservationId { observation_id: String },
+    #[error("manifest observations contain a duplicate ordinal: {ordinal}")]
+    DuplicateOrdinal { ordinal: i64 },
+    #[error(
+        "code {code} carries a detail shape it does not admit (observation {observation_id:?})"
+    )]
+    InvalidCodeDetail {
+        code: &'static str,
+        observation_id: Option<String>,
+    },
+    #[error("manifest completeness is inconsistent with its observations: {reason}")]
+    CompletenessInconsistent { reason: &'static str },
 }
 
 /// One observation's stored verdict — exactly the two columns
@@ -1014,10 +1050,137 @@ pub struct SealedManifest {
     manifest_hash: String,
     verdicts: Vec<ObservationVerdict>,
     content: Vec<ObservationContentProjection>,
+    // Run-context fields (#361 finding 1b): the atom re-compares each of
+    // these against the LIVE `kpi_ingest_runs` row in the same transaction
+    // before writing anything — a manifest built for a different company/
+    // document/hash/scope/quality/period/expected-snapshot must never bind.
+    company_id: String,
+    report_document_id: String,
+    source_content_hash: Option<String>,
+    scope: String,
+    data_quality: String,
+    period_id: Option<String>,
+    fiscal_year: i64,
+    period_type: String,
+    expected_kpis_json: Option<String>,
+}
+
+/// Whether `code`'s detail matches the ONE shape that code admits (or `None`
+/// for every code not listed here) — data-model.md § Rejestr kodów. Checked
+/// by [`SealedManifest::seal`] over both observation `codes` and
+/// `runDiagnostics` (#361 finding 1a).
+fn detail_matches_code(code: DiagnosticCode, detail: &Option<DiagnosticDetail>) -> bool {
+    use DiagnosticCode::*;
+    use DiagnosticDetail::*;
+    match code {
+        PlausibilityImplausible => matches!(detail, Some(HistoryMedian { .. })),
+        IdentityViolation => matches!(detail, Some(CheckResidual { .. })),
+        DuplicateConflict | DuplicateRepeat => matches!(detail, Some(ObservationIds { .. })),
+        PlausibilityAbstained => matches!(detail, Some(Reason { .. })),
+        CompletenessMissingWithoutReason => matches!(detail, Some(MetricKeys { .. })),
+        _ => detail.is_none(),
+    }
+}
+
+/// Re-verifies `manifest.completeness` against `manifest.observations` and
+/// `manifest.expectedKpis` when an expected snapshot is present (#361 finding
+/// 1a): `present` is exactly the mapped metric keys among observations that
+/// fall inside the expected set (mirrors [`evaluate`]'s own construction);
+/// `missing` and `present` are disjoint; their union stays inside the
+/// expected keys (which also covers "every missing entry's metricKey is in
+/// the expected set"). A `None`/empty-keys snapshot has no completeness gate
+/// (mirrors [`evaluate`]), so nothing to check.
+fn validate_completeness_consistency(
+    manifest: &KpiIngestManifest,
+) -> Result<(), ManifestSealError> {
+    let Some(expected) = manifest.expected_kpis.as_ref() else {
+        return Ok(());
+    };
+    if expected.keys.is_empty() {
+        return Ok(());
+    }
+    let Some(completeness) = manifest.completeness.as_ref() else {
+        return Err(ManifestSealError::CompletenessInconsistent {
+            reason: "expectedKpis is present but completeness is missing",
+        });
+    };
+    // `o.metric_key` is the RAW candidate (`build_manifest` never re-derives
+    // it from the resolved definition); the real resolver echoes back the
+    // TRIMMED candidate it matched on (`storage::kpi_extraction::
+    // resolve_kpi_definition`), so `present`'s membership -- built by
+    // `evaluate` from the resolved definition's own metric_key -- can
+    // legitimately diverge from an untrimmed candidate by whitespace alone.
+    // Trim here to avoid a false CompletenessInconsistent on an otherwise
+    // consistent manifest.
+    let mapped_metric_keys: BTreeSet<String> = manifest
+        .observations
+        .iter()
+        .filter(|o| o.definition_id.is_some() && !o.metric_key.trim().is_empty())
+        .map(|o| o.metric_key.trim().to_owned())
+        .collect();
+    let expected_present: BTreeSet<String> = mapped_metric_keys
+        .into_iter()
+        .filter(|key| expected.keys.contains(key))
+        .collect();
+    if completeness.present != expected_present {
+        return Err(ManifestSealError::CompletenessInconsistent {
+            reason: "present does not match the mapped metric keys among observations",
+        });
+    }
+    let missing_keys: BTreeSet<String> = completeness
+        .missing
+        .iter()
+        .map(|m| m.metric_key.clone())
+        .collect();
+    if !missing_keys.is_disjoint(&completeness.present) {
+        return Err(ManifestSealError::CompletenessInconsistent {
+            reason: "missing and present overlap",
+        });
+    }
+    if !missing_keys
+        .union(&completeness.present)
+        .all(|key| expected.keys.contains(key))
+    {
+        return Err(ManifestSealError::CompletenessInconsistent {
+            reason: "missing/present contain a key outside the expected snapshot",
+        });
+    }
+    Ok(())
 }
 
 impl SealedManifest {
     pub fn seal(manifest: KpiIngestManifest) -> Result<Self, ManifestSealError> {
+        let mut seen_ids = HashSet::with_capacity(manifest.observations.len());
+        let mut seen_ordinals = HashSet::with_capacity(manifest.observations.len());
+        for obs in &manifest.observations {
+            if !seen_ids.insert(obs.observation_id.as_str()) {
+                return Err(ManifestSealError::DuplicateObservationId {
+                    observation_id: obs.observation_id.clone(),
+                });
+            }
+            if !seen_ordinals.insert(obs.ordinal) {
+                return Err(ManifestSealError::DuplicateOrdinal {
+                    ordinal: obs.ordinal,
+                });
+            }
+            for c in &obs.codes {
+                if !detail_matches_code(c.code, &c.detail) {
+                    return Err(ManifestSealError::InvalidCodeDetail {
+                        code: c.code.as_str(),
+                        observation_id: Some(obs.observation_id.clone()),
+                    });
+                }
+            }
+        }
+        for c in &manifest.run_diagnostics {
+            if !detail_matches_code(c.code, &c.detail) {
+                return Err(ManifestSealError::InvalidCodeDetail {
+                    code: c.code.as_str(),
+                    observation_id: None,
+                });
+            }
+        }
+
         for obs in &manifest.observations {
             let derived = derive_validation_state(&obs.codes);
             if derived != obs.validation_state {
@@ -1046,6 +1209,7 @@ impl SealedManifest {
                 derived_flagged: derived_counts.flagged,
             });
         }
+        validate_completeness_consistency(&manifest)?;
 
         let manifest_json =
             serde_json::to_string(&manifest).expect("KpiIngestManifest serialization is total");
@@ -1080,6 +1244,10 @@ impl SealedManifest {
                 citation_quote: obs.citation.quote.clone(),
             })
             .collect();
+        let expected_kpis_json = manifest
+            .expected_kpis
+            .as_ref()
+            .map(|e| serde_json::to_string(e).expect("ExpectedKpis serialization is total"));
 
         Ok(Self {
             run_id: manifest.run_id,
@@ -1089,6 +1257,15 @@ impl SealedManifest {
             manifest_hash,
             verdicts,
             content,
+            company_id: manifest.company_id,
+            report_document_id: manifest.report_document_id,
+            source_content_hash: manifest.source_content_hash,
+            scope: manifest.scope,
+            data_quality: manifest.data_quality,
+            period_id: manifest.period.period_id,
+            fiscal_year: manifest.period.fiscal_year,
+            period_type: manifest.period.period_type,
+            expected_kpis_json,
         })
     }
 
@@ -1114,6 +1291,48 @@ impl SealedManifest {
 
     pub fn observation_verdicts(&self) -> &[ObservationVerdict] {
         &self.verdicts
+    }
+
+    /// Run-context accessors (#361 finding 1b) — `KpiIngestStagingStore::
+    /// apply_validation_outcome` re-compares each against the LIVE run row
+    /// in the same transaction before writing anything.
+    pub fn company_id(&self) -> &str {
+        &self.company_id
+    }
+
+    pub fn report_document_id(&self) -> &str {
+        &self.report_document_id
+    }
+
+    pub fn source_content_hash(&self) -> Option<&str> {
+        self.source_content_hash.as_deref()
+    }
+
+    pub fn scope(&self) -> &str {
+        &self.scope
+    }
+
+    pub fn data_quality(&self) -> &str {
+        &self.data_quality
+    }
+
+    pub fn period_id(&self) -> Option<&str> {
+        self.period_id.as_deref()
+    }
+
+    pub fn fiscal_year(&self) -> i64 {
+        self.fiscal_year
+    }
+
+    pub fn period_type(&self) -> &str {
+        &self.period_type
+    }
+
+    /// The canonical `expected_kpis_json` this manifest was sealed with,
+    /// `None` when the manifest carries no expected-KPI snapshot —
+    /// byte-compared against `kpi_ingest_runs.expected_kpis_json` by the atom.
+    pub fn expected_kpis_json(&self) -> Option<&str> {
+        self.expected_kpis_json.as_deref()
     }
 
     pub fn observation_content(&self) -> &[ObservationContentProjection] {

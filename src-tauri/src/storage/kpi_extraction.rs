@@ -815,7 +815,7 @@ fn resolve_kpi_definition(
                     (scope = 'company' AND company_id = ?2)
                  OR scope = 'canonical'
                  OR (scope = 'sector' AND sector = ?3)
-                 OR scope NOT IN ('company', 'sector')
+                 OR (scope NOT IN ('company', 'sector') AND company_id IS NULL)
               )
             ORDER BY
               CASE
@@ -2561,6 +2561,37 @@ mod tests {
         let resolved = resolve_definition_by_metric_key(&connection, &company_id, "custom_metric")
             .expect("resolve");
         assert_eq!(resolved.as_deref(), Some("kpidef_custom_a"));
+    }
+
+    #[test]
+    fn resolver_catch_all_excludes_company_bound_rows_for_a_different_company() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        connection
+            .execute(
+                "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                 VALUES ('c2', 'gpw', 'XYZ', 'GPW:XYZ', 'XYZ SA')",
+                [],
+            )
+            .expect("company b");
+        // A 'user' scoped definition bound to company A only -- not
+        // 'company'/'sector' scope, so it would fall into the catch-all
+        // bucket if that bucket did not also require company_id IS NULL.
+        insert_definition(
+            &connection,
+            "kpidef_x__u_c1",
+            "user",
+            Some(&company_id),
+            None,
+            "custom_x",
+        );
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, "c2", "custom_x").expect("resolve");
+        assert_eq!(
+            resolved, None,
+            "company A's user-scoped definition must not leak to company B via the catch-all"
+        );
     }
 
     #[test]

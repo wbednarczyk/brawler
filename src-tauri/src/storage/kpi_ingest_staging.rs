@@ -10,6 +10,9 @@
 //! `kpi_extraction.rs:359`).
 
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+
+use rust_decimal::Decimal;
 
 use crate::fundamentals::kpi_manifest::{Outcome as ManifestOutcome, SealedManifest};
 
@@ -257,6 +260,25 @@ fn generate_attempt_id(run_id: &str, revision: i64, attempt: i64) -> String {
     format!("kpiatt_{hex}")
 }
 
+/// `normalized_value` equality for the content-tamper guard (finding 2):
+/// the manifest side is Decimal-canonical (`fundamentals::kpi_manifest`'s
+/// `canonical_normalized_value`) while the live row keeps the raw staged
+/// string, so a byte comparison would false-positive on a coherent value
+/// carrying trailing zeros (e.g. row `"1234.500"` vs projection `"1234.5"`).
+/// Parse both sides and compare numerically; fall back to verbatim string
+/// equality when either side does not parse (mirrors `value.unparseable`'s
+/// own carry-verbatim rule).
+fn normalized_values_match(row_value: &Option<String>, projection_value: &Option<String>) -> bool {
+    match (row_value, projection_value) {
+        (None, None) => true,
+        (Some(a), Some(b)) => match (Decimal::from_str(a.trim()), Decimal::from_str(b.trim())) {
+            (Ok(da), Ok(db)) => da == db,
+            _ => a == b,
+        },
+        _ => false,
+    }
+}
+
 /// The sol r5-2 content-tamper guard: whether a [`SealedManifest`]'s
 /// canonical staged-content projection for one observation matches the LIVE
 /// `kpi_staged_observations` row, dimension for dimension (effective scale/
@@ -268,7 +290,7 @@ fn content_matches_projection(
 ) -> bool {
     row.ordinal == projection.ordinal
         && row.metric_key_candidate == projection.metric_key_candidate
-        && row.normalized_value == projection.normalized_value
+        && normalized_values_match(&row.normalized_value, &projection.normalized_value)
         && row.currency == projection.currency
         && row.unit_scale.as_deref().unwrap_or("ones") == projection.unit_scale_eff
         && row.attribution.as_deref().unwrap_or("total") == projection.attribution_eff
@@ -593,10 +615,21 @@ impl KpiIngestStagingStore {
     /// 2. `sealed.run_id() == run_id` and `sealed.revision() == revision`
     ///    (`SealedManifestRejected`) — a manifest built for a different run/
     ///    revision must never bind here even if the caller mis-threads it.
-    /// 3. COVERAGE: the observation ids in `sealed` are EXACTLY the staged
+    /// 3. RUN-CONTEXT BINDING (finding 1b): `sealed`'s companyId,
+    ///    reportDocumentId, sourceContentHash, scope, dataQuality, period
+    ///    (periodId + fiscalYear + periodType), and expectedKpis (byte-compared
+    ///    against `expected_kpis_json`, both-NULL ok) must equal the LIVE run
+    ///    row's values (`SealedManifestRejected`) — a manifest built against a
+    ///    stale/wrong run context must never bind even when the run/revision
+    ///    id itself is right.
+    /// 4. COUNT: `sealed`'s observation count equals the live row count —
+    ///    defense in depth alongside the coverage/content checks below, since
+    ///    `SealedManifest::seal` already refuses a manifest with a duplicate
+    ///    `observationId` (`SealedManifestRejected`).
+    /// 5. COVERAGE: the observation ids in `sealed` are EXACTLY the staged
     ///    observations of this revision — no fewer, no more
     ///    (`SealedManifestRejected`).
-    /// 4. CONTENT (sol r5-2 tamper guard): `sealed`'s canonical staged-content
+    /// 6. CONTENT (sol r5-2 tamper guard): `sealed`'s canonical staged-content
     ///    projection per observation is re-compared against the LIVE row —
     ///    right ids, wrong value/citation/dims is refused, zero writes
     ///    (`SealedManifestRejected`).
@@ -615,21 +648,68 @@ impl KpiIngestStagingStore {
         revision: i64,
         sealed: SealedManifest,
     ) -> StorageResult<()> {
+        struct RunBindingRow {
+            status: String,
+            manifest_revision: i64,
+            manifest_hash: Option<String>,
+            company_id: String,
+            report_document_id: String,
+            source_content_hash: Option<String>,
+            scope: Option<String>,
+            data_quality: Option<String>,
+            period_id: Option<String>,
+            period_fiscal_year: Option<i64>,
+            period_type: Option<String>,
+            expected_kpis_json: Option<String>,
+        }
+
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
-        let run: Option<(String, i64, Option<String>)> = tx
+        let run: Option<RunBindingRow> = tx
             .query_row(
-                "SELECT status, manifest_revision, manifest_hash FROM kpi_ingest_runs WHERE id = ?1",
+                "SELECT status, manifest_revision, manifest_hash, company_id, \
+                     report_document_id, source_content_hash, scope, data_quality, \
+                     period_id, period_fiscal_year, period_type, expected_kpis_json \
+                 FROM kpi_ingest_runs WHERE id = ?1",
                 [run_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| {
+                    Ok(RunBindingRow {
+                        status: row.get(0)?,
+                        manifest_revision: row.get(1)?,
+                        manifest_hash: row.get(2)?,
+                        company_id: row.get(3)?,
+                        report_document_id: row.get(4)?,
+                        source_content_hash: row.get(5)?,
+                        scope: row.get(6)?,
+                        data_quality: row.get(7)?,
+                        period_id: row.get(8)?,
+                        period_fiscal_year: row.get(9)?,
+                        period_type: row.get(10)?,
+                        expected_kpis_json: row.get(11)?,
+                    })
+                },
             )
             .optional()?;
-        let Some((status, manifest_revision, manifest_hash)) = run else {
+        let Some(run) = run else {
             return Err(StorageError::KpiIngestRunNotFound {
                 id: run_id.to_owned(),
             });
         };
+        let RunBindingRow {
+            status,
+            manifest_revision,
+            manifest_hash,
+            company_id,
+            report_document_id,
+            source_content_hash,
+            scope,
+            data_quality,
+            period_id,
+            period_fiscal_year,
+            period_type,
+            expected_kpis_json,
+        } = run;
         if KpiIngestRunState::parse(&status)? != KpiIngestRunState::Staged {
             return Err(StorageError::InvalidStagingRevision {
                 run_id: run_id.to_owned(),
@@ -667,6 +747,63 @@ impl KpiIngestStagingStore {
             });
         }
 
+        // Run-context binding (#361 finding 1b): a manifest built for a
+        // different company/document/hash/scope/quality/period/expected-
+        // snapshot must never bind here even if it names the right run id
+        // and revision.
+        if sealed.company_id() != company_id {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's companyId does not match the run",
+            });
+        }
+        if sealed.report_document_id() != report_document_id {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's reportDocumentId does not match the run",
+            });
+        }
+        if sealed.source_content_hash() != source_content_hash.as_deref() {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's sourceContentHash does not match the run",
+            });
+        }
+        if Some(sealed.scope()) != scope.as_deref() {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's scope does not match the run",
+            });
+        }
+        if Some(sealed.data_quality()) != data_quality.as_deref() {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's dataQuality does not match the run",
+            });
+        }
+        if sealed.period_id() != period_id.as_deref()
+            || Some(sealed.fiscal_year()) != period_fiscal_year
+            || Some(sealed.period_type()) != period_type.as_deref()
+        {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's period does not match the run",
+            });
+        }
+        if sealed.expected_kpis_json() != expected_kpis_json.as_deref() {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's expectedKpis does not match the run's stamped snapshot",
+            });
+        }
+
         let mut statement = tx.prepare(&format!(
             "SELECT {OBSERVATION_COLUMNS} FROM kpi_staged_observations
              WHERE run_id = ?1 AND revision = ?2 ORDER BY ordinal"
@@ -675,6 +812,18 @@ impl KpiIngestStagingStore {
             .query_map(params![run_id, revision], map_observation_row)?
             .collect::<Result<_, _>>()?;
         drop(statement);
+
+        // Defense in depth (finding 1b): the set-equality coverage check
+        // below collapses duplicates, so also require the sealed manifest's
+        // observation COUNT to equal the live row count -- duplicates are
+        // refused even if `SealedManifest::seal` somehow missed them.
+        if sealed.observation_verdicts().len() != staged.len() {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's observation count does not match this revision's staged observation count",
+            });
+        }
 
         let staged_ids: HashSet<&str> = staged.iter().map(|o| o.id.as_str()).collect();
         let sealed_ids: HashSet<&str> = sealed
@@ -881,14 +1030,19 @@ mod tests {
 
     /// Seed a run directly at a given status with a complete period
     /// descriptor (staging's minimum period requirement) — bypasses
-    /// `create_run_if_absent` so tests can start from any status.
+    /// `create_run_if_absent` so tests can start from any status. `scope`/
+    /// `data_quality` are fixed at `consolidated`/`final` — the SAME values
+    /// [`sealed_manifest_for`]/[`failed_sealed_manifest_for`] hardcode into
+    /// their manifests' run context, so the #361 finding-1b run-context
+    /// binding check (`apply_validation_outcome`) sees a consistent world by
+    /// default.
     fn seed_run(connection: &Connection, id: &str, doc: &str, company: &str, status: &str) {
         connection
             .execute(
                 "INSERT INTO kpi_ingest_runs
                     (id, report_document_id, company_id, profile_version, status,
-                     period_fiscal_year, period_type)
-                 VALUES (?1, ?2, ?3, 'p1', ?4, 2025, 'FY')",
+                     period_fiscal_year, period_type, scope, data_quality)
+                 VALUES (?1, ?2, ?3, 'p1', ?4, 2025, 'FY', 'consolidated', 'final')",
                 params![id, doc, company, status],
             )
             .expect("seed run");
@@ -1172,11 +1326,24 @@ mod tests {
         revision: i64,
         rows: &[StagedObservation],
     ) -> SealedManifest {
+        sealed_manifest_with_run(run_id, revision, rows, |_run| {})
+    }
+
+    /// [`sealed_manifest_for`], but `customize` may mutate the manifest's own
+    /// run context (companyId, sourceContentHash, expectedKpis, ...) BEFORE
+    /// it is sealed — the #361 finding-1b run-context binding tests need a
+    /// manifest that disagrees with the live run row on exactly one field.
+    fn sealed_manifest_with_run(
+        run_id: &str,
+        revision: i64,
+        rows: &[StagedObservation],
+        customize: impl FnOnce(&mut crate::fundamentals::kpi_manifest::ManifestRunInput),
+    ) -> SealedManifest {
         use crate::fundamentals::kpi_manifest::{
             build_manifest, ManifestObservationInput, ManifestRunInput, MissingReasons,
             ResolvedDefinitionInput, SlotHistoryInput,
         };
-        let run = ManifestRunInput {
+        let mut run = ManifestRunInput {
             run_id: run_id.to_owned(),
             revision,
             company_id: "c1".to_owned(),
@@ -1190,6 +1357,7 @@ mod tests {
             missing_reasons: MissingReasons::None,
             expected: None,
         };
+        customize(&mut run);
         let observations: Vec<ManifestObservationInput> = rows
             .iter()
             .map(|row| ManifestObservationInput {
@@ -1208,14 +1376,20 @@ mod tests {
                 citation_table: row.citation_table.clone(),
                 citation_row: row.citation_row.clone(),
                 citation_quote: row.citation_quote.clone(),
-                // Distinct per ordinal -- two staged rows built from the same
-                // `clean_observation()` fixture would otherwise share one
-                // slot (definition_id, attribution_eff, measure_window_eff)
-                // and trip `duplicate.repeat`, which these tests don't want
-                // to reason about.
+                // `definition_id` is distinct per ordinal -- two staged rows
+                // built from the same `clean_observation()` fixture would
+                // otherwise share one slot (definition_id, attribution_eff,
+                // measure_window_eff) and trip `duplicate.repeat`, which
+                // these tests don't want to reason about. `metric_key`
+                // mirrors the row's own candidate (the real resolver always
+                // echoes back the exact key it matched on) -- a synthetic
+                // per-ordinal metric_key here would fake a mapping the
+                // resolver could never produce and desync `present`'s
+                // completeness accounting (finding 1a) from the candidate
+                // this same content projection binds to the live row.
                 definition: Some(ResolvedDefinitionInput {
                     definition_id: format!("kpidef_test_metric_{}", row.ordinal),
-                    metric_key: format!("test_metric_{}", row.ordinal),
+                    metric_key: row.metric_key_candidate.clone().unwrap_or_default(),
                     value_kind: "monetary".to_owned(),
                     history: SlotHistoryInput::default(),
                 }),
@@ -1473,6 +1647,54 @@ mod tests {
             .list_staged_observations(run_id, Some(revision))
             .expect("list");
         assert_eq!(after[0].validation_state, "none");
+        assert!(state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts")
+            .is_empty());
+    }
+
+    #[test]
+    fn apply_validation_outcome_refuses_run_context_mismatches_with_zero_writes() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .expect("stage");
+
+        let assert_refused = |sealed: SealedManifest| {
+            let error = store
+                .apply_validation_outcome(run_id, revision, sealed)
+                .expect_err("run-context mismatch must be refused");
+            assert!(matches!(error, StorageError::SealedManifestRejected { .. }));
+        };
+
+        // wrong companyId
+        assert_refused(sealed_manifest_with_run(run_id, revision, &rows, |run| {
+            run.company_id = "someone_else".to_owned();
+        }));
+        // wrong sourceContentHash (live run's is NULL; manifest claims one)
+        assert_refused(sealed_manifest_with_run(run_id, revision, &rows, |run| {
+            run.source_content_hash = Some("different-hash".to_owned());
+        }));
+        // wrong expectedKpis (live run's expected_kpis_json is NULL; manifest
+        // claims a stamped snapshot)
+        assert_refused(sealed_manifest_with_run(run_id, revision, &rows, |run| {
+            run.expected = Some(crate::fundamentals::kpi_manifest::ExpectedSnapshot {
+                schema_version: 1,
+                source: "kpi_relevance".to_owned(),
+                pack_version: None,
+                keys: ["revenue".to_owned()].into_iter().collect(),
+            });
+        }));
+
+        let after = store
+            .list_staged_observations(run_id, Some(revision))
+            .expect("list");
+        assert_eq!(
+            after[0].validation_state, "none",
+            "every context-mismatch refusal above must write nothing"
+        );
         assert!(state
             .kpi_ingest_runs()
             .list_validation_attempts(run_id)
