@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.3 - 2026-08-11
+
+
+### Features
+
+- **fundamentals**: closed ingest-run state machine with typed transition refusals (#360) (#374)
+
 ## v0.65.2 - 2026-08-11
 
 
