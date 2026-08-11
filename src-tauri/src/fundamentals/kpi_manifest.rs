@@ -905,7 +905,12 @@ pub fn build_manifest(
                 observation_id: obs.observation_id.clone(),
                 ordinal: obs.ordinal,
                 metric_key: obs.metric_key_candidate.clone().unwrap_or_default(),
-                definition_id: obs.definition.as_ref().map(|d| d.definition_id.clone()),
+                // Only a MAPPED observation carries a definition identity in the
+                // manifest — mirrors `evaluate`'s completeness/present rule, so
+                // `seal()`'s re-derivation cannot disagree with the validator.
+                definition_id: (obs.mapping_status == "mapped")
+                    .then(|| obs.definition.as_ref().map(|d| d.definition_id.clone()))
+                    .flatten(),
                 normalized_value: canonical_normalized_value(obs.normalized_value.as_deref()),
                 currency: obs.currency.clone(),
                 unit_scale: obs.unit_scale.clone(),
@@ -1003,6 +1008,15 @@ pub enum ManifestSealError {
     },
     #[error("manifest completeness is inconsistent with its observations: {reason}")]
     CompletenessInconsistent { reason: &'static str },
+    #[error(
+        "manifest carries schema/validator versions {stated_schema}/{stated_validator} but this validator produces {expected_schema}/{expected_validator}"
+    )]
+    VersionMismatch {
+        stated_schema: u32,
+        stated_validator: String,
+        expected_schema: u32,
+        expected_validator: &'static str,
+    },
 }
 
 /// One observation's stored verdict — exactly the two columns
@@ -1104,6 +1118,11 @@ fn validate_completeness_consistency(
             reason: "expectedKpis is present but completeness is missing",
         });
     };
+    if completeness.expected != expected.keys {
+        return Err(ManifestSealError::CompletenessInconsistent {
+            reason: "completeness.expected does not match expectedKpis.keys",
+        });
+    }
     // `o.metric_key` is the RAW candidate (`build_manifest` never re-derives
     // it from the resolved definition); the real resolver echoes back the
     // TRIMMED candidate it matched on (`storage::kpi_extraction::
@@ -1150,6 +1169,16 @@ fn validate_completeness_consistency(
 
 impl SealedManifest {
     pub fn seal(manifest: KpiIngestManifest) -> Result<Self, ManifestSealError> {
+        if manifest.manifest_schema_version != MANIFEST_SCHEMA_VERSION
+            || manifest.validator_version != VALIDATOR_VERSION
+        {
+            return Err(ManifestSealError::VersionMismatch {
+                stated_schema: manifest.manifest_schema_version,
+                stated_validator: manifest.validator_version.clone(),
+                expected_schema: MANIFEST_SCHEMA_VERSION,
+                expected_validator: VALIDATOR_VERSION,
+            });
+        }
         let mut seen_ids = HashSet::with_capacity(manifest.observations.len());
         let mut seen_ordinals = HashSet::with_capacity(manifest.observations.len());
         for obs in &manifest.observations {

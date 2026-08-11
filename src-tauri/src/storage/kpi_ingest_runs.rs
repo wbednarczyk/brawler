@@ -975,11 +975,13 @@ impl KpiIngestRunsStore {
     /// AND manifest_hash IS NULL AND expected_kpis_json IS NULL`. A 0-row
     /// UPDATE is not automatically a refusal: if the column is already
     /// non-NULL the snapshot was already stamped (by an earlier validation
-    /// attempt on the SAME revision) and this returns it unchanged — only a
-    /// wrong status/revision is a typed refusal. Once stamped, the snapshot
-    /// is frozen: the validator, #362 and #363 all read this column, never
-    /// live `kpi_relevance`, so a later relevance change never retroactively
-    /// changes an already-attempted revision's manifest.
+    /// attempt — possibly on an earlier revision; the snapshot is per-RUN,
+    /// ADR 0098 dec. 4 "stamped on the run at start") and this returns it
+    /// unchanged — only a wrong status/revision is a typed refusal. Once
+    /// stamped, the snapshot is frozen for the run's whole lifetime: the
+    /// validator, #362 and #363 all read this column, never live
+    /// `kpi_relevance`, so a later relevance change never changes any
+    /// revision's denominator.
     pub fn stamp_expected_kpis(
         &self,
         id: &str,

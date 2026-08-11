@@ -746,6 +746,62 @@ fn seal_rejects_completeness_inconsistent_with_observations() {
     ));
 }
 
+#[test]
+fn seal_accepts_a_validator_manifest_with_an_unmapped_observation_carrying_a_definition() {
+    // Regression (luna r2): an UNMAPPED observation that still carries a
+    // resolver-produced definition must not make seal()'s present-derivation
+    // disagree with evaluate()'s (mapping_status-based) one.
+    let mut run = base_run();
+    run.expected = Some(expected(&["revenue"]));
+    let mut obs = base_obs("o1", 0);
+    obs.mapping_status = "unmapped".to_owned(); // definition stays Some(revenue)
+    let manifest = build_manifest(&run, &[obs]);
+    assert_eq!(
+        manifest.observations[0].definition_id, None,
+        "unmapped observation must not carry a definition identity in the manifest"
+    );
+    let completeness = manifest.completeness.as_ref().expect("completeness");
+    assert!(completeness.present.is_empty());
+    SealedManifest::seal(manifest).expect("validator-produced manifest must seal");
+}
+
+#[test]
+fn seal_rejects_a_foreign_schema_or_validator_version() {
+    let mut manifest = build_manifest(&base_run(), &[base_obs("o1", 0)]);
+    manifest.manifest_schema_version = 99;
+    let err = SealedManifest::seal(manifest).expect_err("foreign schema version refused");
+    assert!(matches!(err, ManifestSealError::VersionMismatch { .. }));
+
+    let mut manifest = build_manifest(&base_run(), &[base_obs("o1", 0)]);
+    manifest.validator_version = "0-handmade".to_owned();
+    let err = SealedManifest::seal(manifest).expect_err("foreign validator version refused");
+    assert!(matches!(err, ManifestSealError::VersionMismatch { .. }));
+}
+
+#[test]
+fn seal_rejects_completeness_expected_diverging_from_the_snapshot_keys() {
+    let mut run = base_run();
+    run.expected = Some(expected(&["revenue", "net_profit"]));
+    let mut manifest = build_manifest(&run, &[base_obs("o1", 0)]);
+    let mut completeness = manifest
+        .completeness
+        .clone()
+        .expect("completeness computed");
+    // Tamper: shrink the ledger's denominator while the snapshot still
+    // demands net_profit.
+    completeness.expected.remove("net_profit");
+    completeness
+        .missing
+        .retain(|m| m.metric_key != "net_profit");
+    manifest.completeness = Some(completeness);
+    let err = SealedManifest::seal(manifest)
+        .expect_err("expected-set divergence from the snapshot must be refused");
+    assert!(matches!(
+        err,
+        ManifestSealError::CompletenessInconsistent { .. }
+    ));
+}
+
 // ---------------------------------------------------------------------------
 // Group 6: determinism / golden / proptest
 // ---------------------------------------------------------------------------
