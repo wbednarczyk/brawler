@@ -279,11 +279,18 @@ impl KpiIngestStagingStore {
     /// new revision — one `Immediate` transaction, so two racing stagers
     /// serialize on the run row (B1 sol review) and never interleave two
     /// revisions. Refuses an empty snapshot, an unknown run, a run outside
-    /// `{extracting, validation_failed}` (`InvalidRunStateForStaging`), and a
-    /// run with neither `period_id` nor a complete period descriptor.
+    /// `{extracting, validation_failed}` (`InvalidRunStateForStaging`), a run
+    /// whose lease `holder` does not currently hold LIVE (#360 back-fit —
+    /// `stage_observations` is one of the three agent-facing intents and
+    /// never shipped a lease-free staging path, F9 r2), and a run with
+    /// neither `period_id` nor a complete period descriptor. All checks run
+    /// on the SAME `Immediate` transaction as the mutating UPDATE below, so
+    /// there is no TOCTOU window between the SELECT and the write despite the
+    /// pre-check shape (`Immediate` already holds the write lock).
     pub fn stage_observations(
         &self,
         run_id: &str,
+        holder: &str,
         observations: Vec<NewStagedObservation>,
     ) -> StorageResult<(i64, Vec<StagedObservation>)> {
         if observations.is_empty() {
@@ -296,16 +303,41 @@ impl KpiIngestStagingStore {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
-        type RunPeriodRow = (String, Option<String>, Option<i64>, Option<String>);
+        type RunPeriodRow = (
+            String,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
         let run: Option<RunPeriodRow> = tx
             .query_row(
-                "SELECT status, period_id, period_fiscal_year, period_type
+                "SELECT status, period_id, period_fiscal_year, period_type, \
+                        lease_holder, lease_expires_at
                  FROM kpi_ingest_runs WHERE id = ?1",
                 [run_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
             )
             .optional()?;
-        let Some((status, period_id, period_fiscal_year, period_type)) = run else {
+        let Some((
+            status,
+            period_id,
+            period_fiscal_year,
+            period_type,
+            lease_holder,
+            lease_expires_at,
+        )) = run
+        else {
             return Err(StorageError::KpiIngestRunNotFound {
                 id: run_id.to_owned(),
             });
@@ -315,6 +347,20 @@ impl KpiIngestStagingStore {
             return Err(StorageError::InvalidRunStateForStaging {
                 id: run_id.to_owned(),
                 status: status.as_str().to_owned(),
+            });
+        }
+        let now: String =
+            tx.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
+                row.get(0)
+            })?;
+        let lease_live = lease_holder.as_deref() == Some(holder)
+            && lease_expires_at
+                .as_deref()
+                .is_some_and(|expires| expires > now.as_str());
+        if !lease_live {
+            return Err(StorageError::RunLeaseNotHeld {
+                id: run_id.to_owned(),
+                holder: holder.to_owned(),
             });
         }
         if period_id.is_none() && (period_fiscal_year.is_none() || period_type.is_none()) {
@@ -370,17 +416,34 @@ impl KpiIngestStagingStore {
             normalized.push((observation, currency, mapping_status));
         }
 
-        let new_revision: i64 = tx.query_row(
-            "UPDATE kpi_ingest_runs
-             SET manifest_revision = manifest_revision + 1,
-                 manifest_hash = NULL,
-                 status = 'staged',
-                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE id = ?1
-             RETURNING manifest_revision",
-            [run_id],
-            |row| row.get(0),
-        )?;
+        // The final flip re-guards status AND the live lease (luna review B1):
+        // the batch above can be long, and the lease is WALL-CLOCK state — it
+        // can expire mid-transaction even though no other writer can touch the
+        // row under this Immediate tx. An expired holder must not stage.
+        #[cfg(test)]
+        tests::mid_batch_test_delay();
+        let new_revision: Option<i64> = tx
+            .query_row(
+                "UPDATE kpi_ingest_runs
+                 SET manifest_revision = manifest_revision + 1,
+                     manifest_hash = NULL,
+                     status = 'staged',
+                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE id = ?1
+                   AND status IN ('extracting', 'validation_failed')
+                   AND lease_holder = ?2
+                   AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 RETURNING manifest_revision",
+                params![run_id, holder],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(new_revision) = new_revision else {
+            return Err(StorageError::RunLeaseNotHeld {
+                id: run_id.to_owned(),
+                holder: holder.to_owned(),
+            });
+        };
 
         for (ordinal, (observation, currency, mapping_status)) in normalized.into_iter().enumerate()
         {
@@ -520,18 +583,31 @@ impl KpiIngestStagingStore {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
-        let run: Option<(i64, Option<String>)> = tx
+        let run: Option<(String, i64, Option<String>)> = tx
             .query_row(
-                "SELECT manifest_revision, manifest_hash FROM kpi_ingest_runs WHERE id = ?1",
+                "SELECT status, manifest_revision, manifest_hash FROM kpi_ingest_runs WHERE id = ?1",
                 [run_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?;
-        let Some((manifest_revision, manifest_hash)) = run else {
+        let Some((status, manifest_revision, manifest_hash)) = run else {
             return Err(StorageError::KpiIngestRunNotFound {
                 id: run_id.to_owned(),
             });
         };
+        // #360 F7 sol: validation only ever applies to a `staged` revision —
+        // previously this method checked only revision/hash, which could
+        // still mutate a revision after `cancel_run`/`mark_failed` moved the
+        // run on. `staged` implies `manifest_hash IS NULL` already (the
+        // freeze check below is now redundant with this one but kept for its
+        // own, more specific error message).
+        if KpiIngestRunState::parse(&status)? != KpiIngestRunState::Staged {
+            return Err(StorageError::InvalidStagingRevision {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "run is not in status 'staged'",
+            });
+        }
         if manifest_hash.is_some() {
             return Err(StorageError::InvalidStagingRevision {
                 run_id: run_id.to_owned(),
@@ -575,17 +651,27 @@ impl KpiIngestStagingStore {
 
     pub fn get_commit_receipt(&self, run_id: &str) -> StorageResult<Option<CommitReceipt>> {
         let connection = self.db.checkout()?;
-        connection
-            .query_row(
-                &format!(
-                    "SELECT {RECEIPT_COLUMNS} FROM kpi_ingest_commit_receipts WHERE run_id = ?1"
-                ),
-                [run_id],
-                map_receipt_row,
-            )
-            .optional()
-            .map_err(StorageError::from)
+        get_commit_receipt_on_connection(&connection, run_id)
     }
+}
+
+/// Connection-level variant of [`KpiIngestStagingStore::get_commit_receipt`]
+/// (#360 B3 sol): `finalize_committing` and `reclaim_ingest_runs_on_startup`
+/// (`storage/kpi_ingest_runs.rs`) call this under their OWN externally-owned
+/// transaction — the public method above checks out its own connection and
+/// would deadlock under an outer `Immediate` write lock.
+pub(super) fn get_commit_receipt_on_connection(
+    connection: &Connection,
+    run_id: &str,
+) -> StorageResult<Option<CommitReceipt>> {
+    connection
+        .query_row(
+            &format!("SELECT {RECEIPT_COLUMNS} FROM kpi_ingest_commit_receipts WHERE run_id = ?1"),
+            [run_id],
+            map_receipt_row,
+        )
+        .optional()
+        .map_err(StorageError::from)
 }
 
 /// Connection-level free fn (the `record_structured_fact` pattern,
@@ -692,6 +778,10 @@ mod tests {
             .expect("seed run");
     }
 
+    /// #360 back-fit: `stage_observations` now requires a live lease. Every
+    /// test that stages against `setup()`'s run authenticates as this holder.
+    const TEST_HOLDER: &str = "agent-1";
+
     fn one_observation() -> NewStagedObservation {
         NewStagedObservation {
             raw_label: "Przychody ze sprzedaży".to_owned(),
@@ -704,12 +794,35 @@ mod tests {
         }
     }
 
+    thread_local! {
+        /// Test-only hook: a delay injected between `stage_observations`'
+        /// entry checks and its final guarded flip, so a test can cross the
+        /// wall-clock lease expiry EXACTLY mid-batch (luna review B1 —
+        /// sleeping before the call only exercises the entry check).
+        static MID_BATCH_DELAY: std::cell::Cell<Option<std::time::Duration>> =
+            const { std::cell::Cell::new(None) };
+    }
+
+    pub(super) fn mid_batch_test_delay() {
+        if let Some(delay) = MID_BATCH_DELAY.with(|cell| cell.take()) {
+            std::thread::sleep(delay);
+        }
+    }
+
     fn setup() -> (AppState, &'static str) {
         let connection = open_in_memory_database().expect("db");
         seed_company(&connection, "c1");
         seed_document(&connection, "doc1", "c1");
         seed_run(&connection, "run1", "doc1", "c1", "extracting");
-        (AppState::new(connection), "run1")
+        let state = AppState::new(connection);
+        // The real claim seam (#360: "claim before staging") — establishes
+        // the live lease `stage_observations` now requires.
+        state
+            .kpi_ingest_runs()
+            .claim_next(TEST_HOLDER, 3600)
+            .expect("claim")
+            .expect("run1 must be claimable");
+        (state, "run1")
     }
 
     // --- Test 1: stage ---------------------------------------------------
@@ -720,7 +833,11 @@ mod tests {
         let store = state.kpi_ingest_staging();
 
         let (revision, observations) = store
-            .stage_observations(run_id, vec![one_observation(), one_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation(), one_observation()],
+            )
             .expect("first stage");
         assert_eq!(revision, 1);
         assert_eq!(observations.len(), 2);
@@ -737,20 +854,18 @@ mod tests {
         assert!(run.manifest_hash.is_none());
         assert_eq!(run.manifest_revision, 1);
 
-        // Restage requires validation_failed, not staged directly — flip it
-        // the way #360's transition table eventually will (raw update here,
-        // no production seam exists yet).
+        // Restage requires validation_failed, not staged directly — #360's
+        // real seam, replacing the raw status flip this test used before it
+        // existed. The lease claimed in `setup()` is untouched by
+        // `mark_validation_failed` (no lease requirement on that edge), so it
+        // stays live for the restage below.
         state
-            .checkout_for_tests()
-            .expect("raw connection")
-            .execute(
-                "UPDATE kpi_ingest_runs SET status = 'validation_failed' WHERE id = ?1",
-                [run_id],
-            )
+            .kpi_ingest_runs()
+            .mark_validation_failed(run_id, revision)
             .expect("flip to validation_failed");
 
         let (revision2, observations2) = store
-            .stage_observations(run_id, vec![one_observation()])
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("restage");
         assert_eq!(revision2, 2);
         assert_eq!(observations2.len(), 1);
@@ -783,7 +898,7 @@ mod tests {
             let store = state.kpi_ingest_staging();
 
             let error = store
-                .stage_observations("run1", vec![one_observation()])
+                .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
                 .expect_err(&format!("status '{status}' must be refused"));
             assert!(
                 matches!(error, StorageError::InvalidRunStateForStaging { .. }),
@@ -805,10 +920,15 @@ mod tests {
             )
             .expect("seed run without period");
         let state = AppState::new(connection);
+        state
+            .kpi_ingest_runs()
+            .claim_next(TEST_HOLDER, 3600)
+            .expect("claim")
+            .expect("run1 must be claimable");
         let store = state.kpi_ingest_staging();
 
         let error = store
-            .stage_observations("run1", vec![one_observation()])
+            .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
             .expect_err("no period_id, no descriptor");
         assert!(matches!(
             error,
@@ -822,14 +942,14 @@ mod tests {
         let store = state.kpi_ingest_staging();
 
         let error = store
-            .stage_observations("kpiing_missing", vec![one_observation()])
+            .stage_observations("kpiing_missing", TEST_HOLDER, vec![one_observation()])
             .expect_err("unknown run");
         assert!(matches!(error, StorageError::KpiIngestRunNotFound { .. }));
 
         let mut bad_currency = one_observation();
         bad_currency.currency = Some("dollars".to_owned());
         let error = store
-            .stage_observations(run_id, vec![bad_currency])
+            .stage_observations(run_id, TEST_HOLDER, vec![bad_currency])
             .expect_err("bad currency");
         assert!(matches!(
             error,
@@ -853,6 +973,7 @@ mod tests {
         let (_, observations) = store
             .stage_observations(
                 run_id,
+                TEST_HOLDER,
                 vec![one_observation(), one_observation(), one_observation()],
             )
             .expect("stage three");
@@ -871,19 +992,19 @@ mod tests {
             None
         );
 
-        store
-            .stage_observations(run_id, vec![one_observation()])
+        let (revision1, _) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("rev1");
         state
-            .checkout_for_tests()
-            .expect("raw")
-            .execute(
-                "UPDATE kpi_ingest_runs SET status = 'validation_failed' WHERE id = ?1",
-                [run_id],
-            )
+            .kpi_ingest_runs()
+            .mark_validation_failed(run_id, revision1)
             .expect("flip");
         store
-            .stage_observations(run_id, vec![one_observation(), one_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation(), one_observation()],
+            )
             .expect("rev2");
 
         assert_eq!(
@@ -913,7 +1034,11 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, observations) = store
-            .stage_observations(run_id, vec![one_observation(), one_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation(), one_observation()],
+            )
             .expect("stage");
 
         store
@@ -947,11 +1072,71 @@ mod tests {
     }
 
     #[test]
+    fn apply_validation_results_refuses_a_non_staged_run() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, observations) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+            .expect("stage");
+        state
+            .kpi_ingest_runs()
+            .cancel_run(run_id)
+            .expect("cancel from staged is legal");
+        let error = store
+            .apply_validation_results(
+                run_id,
+                revision,
+                vec![ObservationValidation {
+                    observation_id: observations[0].id.clone(),
+                    validation_state: "passed".to_owned(),
+                    validation_codes_json: None,
+                }],
+            )
+            .expect_err("validating a cancelled run must refuse (status != staged)");
+        assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
+    }
+
+    /// The lease is wall-clock state: it can expire DURING a long staging
+    /// batch even though no other writer can touch the row under the Immediate
+    /// transaction. The final flip re-guards the live lease (luna review B1).
+    #[test]
+    fn stage_observations_refuses_when_the_lease_expires_mid_batch() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_run(&connection, "run1", "doc1", "c1", "extracting");
+        let state = AppState::new(connection);
+        state
+            .kpi_ingest_runs()
+            .claim_next(TEST_HOLDER, 1)
+            .expect("claim")
+            .expect("claimed");
+        // The lease is LIVE at the entry check; the injected delay crosses
+        // the 1-second expiry between that check and the final guarded flip —
+        // the genuine mid-batch scenario (luna review B1: the pre-call sleep
+        // variant only exercised the entry check, and the originally broken
+        // implementation would have passed it).
+        MID_BATCH_DELAY.with(|cell| cell.set(Some(std::time::Duration::from_millis(1200))));
+        let error = state
+            .kpi_ingest_staging()
+            .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
+            .expect_err("an expired lease must not stage");
+        assert!(matches!(error, StorageError::RunLeaseNotHeld { .. }));
+        let run = state
+            .kpi_ingest_runs()
+            .get_run("run1")
+            .expect("get")
+            .expect("some");
+        assert_eq!(run.status, KpiIngestRunState::Extracting);
+        assert_eq!(run.manifest_revision, 0, "no revision bump on refusal");
+    }
+
+    #[test]
     fn apply_validation_results_refuses_stale_or_frozen_revision() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, observations) = store
-            .stage_observations(run_id, vec![one_observation()])
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("stage");
 
         let error = store
@@ -967,7 +1152,11 @@ mod tests {
             .expect_err("stale revision");
         assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
 
-        // Freeze the revision (a manifest was issued).
+        // Freeze the revision (a manifest was issued). Structurally
+        // unreachable through any production seam while `status` stays
+        // `staged` (`mark_ready_to_commit` moves status to `ready_to_commit`
+        // in the SAME UPDATE that sets the hash — #360) — raw-seeded
+        // defensively to probe this method's OWN freeze guard in isolation.
         state
             .checkout_for_tests()
             .expect("raw")
@@ -995,7 +1184,7 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         store
-            .stage_observations(run_id, vec![one_observation()])
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("stage");
         let error = store
             .apply_validation_results(run_id, 1, vec![])
@@ -1014,7 +1203,7 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, observations) = store
-            .stage_observations(run_id, vec![one_observation()])
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("stage");
         let obs_id = observations[0].id.clone();
 
@@ -1283,10 +1472,15 @@ mod tests {
     fn stage_observations_bumps_revision_and_zeroes_manifest_hash() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
-        store
-            .stage_observations(run_id, vec![one_observation()])
+        let (revision, _) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("stage");
 
+        // Simulate an issued manifest while still `staged` — structurally
+        // unreachable through any production seam (same carve-out as
+        // `apply_validation_results_refuses_stale_or_frozen_revision`), so
+        // raw-seeded; the SUBSEQUENT status flip to `validation_failed`,
+        // however, has a real #360 seam now and no longer needs raw SQL.
         state
             .checkout_for_tests()
             .expect("raw")
@@ -1296,16 +1490,12 @@ mod tests {
             )
             .expect("simulate an issued manifest");
         state
-            .checkout_for_tests()
-            .expect("raw")
-            .execute(
-                "UPDATE kpi_ingest_runs SET status = 'validation_failed' WHERE id = ?1",
-                [run_id],
-            )
+            .kpi_ingest_runs()
+            .mark_validation_failed(run_id, revision)
             .expect("flip");
 
         store
-            .stage_observations(run_id, vec![one_observation()])
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("restage");
         let run = state
             .kpi_ingest_runs()
@@ -1354,6 +1544,11 @@ mod tests {
             .max_size(4)
             .build(manager)
             .expect("build pool");
+        let runs_store = KpiIngestRunsStore::new(Database::from_pool(pool.clone()));
+        runs_store
+            .claim_next(TEST_HOLDER, 3600)
+            .expect("claim")
+            .expect("run1 must be claimable");
         let store = Arc::new(KpiIngestStagingStore::new(Database::from_pool(pool)));
 
         // Barrier so both contenders genuinely start together (luna review:
@@ -1365,11 +1560,11 @@ mod tests {
         let barrier_b = barrier;
         let a = std::thread::spawn(move || {
             barrier_a.wait();
-            store_a.stage_observations("run1", vec![one_observation()])
+            store_a.stage_observations("run1", TEST_HOLDER, vec![one_observation()])
         });
         let b = std::thread::spawn(move || {
             barrier_b.wait();
-            store_b.stage_observations("run1", vec![one_observation()])
+            store_b.stage_observations("run1", TEST_HOLDER, vec![one_observation()])
         });
         let result_a = a.join().expect("thread a");
         let result_b = b.join().expect("thread b");
@@ -1408,7 +1603,7 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let error = store
-            .stage_observations(run_id, vec![])
+            .stage_observations(run_id, TEST_HOLDER, vec![])
             .expect_err("empty batch");
         assert!(matches!(
             error,
@@ -1427,7 +1622,7 @@ mod tests {
         observation.raw_currency = Some("PLN".to_owned());
         observation.raw_unit_scale = Some("tys. zł".to_owned());
         let (_, observations) = store
-            .stage_observations(run_id, vec![observation])
+            .stage_observations(run_id, TEST_HOLDER, vec![observation])
             .expect("stage");
         assert_eq!(observations[0].raw_currency.as_deref(), Some("PLN"));
         assert_eq!(observations[0].raw_unit_scale.as_deref(), Some("tys. zł"));

@@ -139,6 +139,23 @@ pub enum StorageError {
     CommitReceiptAlreadyRecorded { run: String },
     #[error("report document {id} bytes are protected and cannot be downgraded to metadata-only")]
     ReportDocumentBytesProtected { id: String },
+    #[error(
+        "kpi ingest run {id} transition from {from} to {to} is not permitted by the closed lifecycle (ADR 0098 dec. 6)"
+    )]
+    InvalidRunTransition {
+        id: String,
+        from: String,
+        to: String,
+    },
+    #[error("kpi ingest run {id} transition prerequisite missing: {requirement}")]
+    RunTransitionPrerequisiteMissing {
+        id: String,
+        requirement: &'static str,
+    },
+    #[error(
+        "kpi ingest run {id} commit refused: manifest is stale relative to the run's current state"
+    )]
+    StaleManifestForCommit { id: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
