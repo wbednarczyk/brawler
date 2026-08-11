@@ -780,26 +780,74 @@ fn write_fact_provenance_fields(
     Ok(())
 }
 
-/// Resolves a canonical/company KPI definition by metric key, without creating
-/// one (the structured pipeline only emits seeded catalog metrics).
+/// A resolved KPI definition's identity + shape — everything a caller needs
+/// beyond the bare id (#361's manifest builder needs `value_kind` too, for
+/// `unit.currency_*`/`period.window_kind_mismatch`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedKpiDefinition {
+    pub definition_id: String,
+    pub metric_key: String,
+    pub value_kind: String,
+}
+
+/// Resolves a KPI definition by metric key, without creating one (the
+/// structured pipeline only emits seeded catalog metrics) — the SAME
+/// sector-aware precedence #361's manifest validator resolves observations
+/// against (data-model.md § Rejestr kodów / resolver): company-scoped >
+/// canonical > sector-scoped MATCHING the company's sector > every remaining
+/// global non-sector definition, lexicographic by id. A sector-scoped
+/// definition for a DIFFERENT sector is excluded entirely, not merely
+/// deprioritized (a bank must never resolve an industrial sector pack); a
+/// company with no classified sector never gets a sector-scoped row either
+/// (`sector = ?3` against a bound `NULL` matches nothing in SQL).
+fn resolve_kpi_definition(
+    connection: &Connection,
+    company_id: &str,
+    metric_key: &str,
+) -> StorageResult<Option<ResolvedKpiDefinition>> {
+    let (sector, _source) = super::companies::get_company_sector(connection, company_id)?;
+    let existing: Option<(String, String, String)> = connection
+        .query_row(
+            "
+            SELECT id, metric_key, value_kind FROM kpi_definitions
+            WHERE metric_key = ?1
+              AND (
+                    (scope = 'company' AND company_id = ?2)
+                 OR scope = 'canonical'
+                 OR (scope = 'sector' AND sector = ?3)
+                 OR (scope NOT IN ('company', 'sector') AND company_id IS NULL)
+              )
+            ORDER BY
+              CASE
+                WHEN scope = 'company' AND company_id = ?2 THEN 0
+                WHEN scope = 'canonical' THEN 1
+                WHEN scope = 'sector' AND sector = ?3 THEN 2
+                ELSE 3
+              END,
+              id
+            LIMIT 1
+            ",
+            params![metric_key.trim(), company_id, sector],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    Ok(existing.map(
+        |(definition_id, metric_key, value_kind)| ResolvedKpiDefinition {
+            definition_id,
+            metric_key,
+            value_kind,
+        },
+    ))
+}
+
+/// [`resolve_kpi_definition`], bare id only — the shape
+/// [`prepare_fact_write`]/`record_aggregator_facts` need.
 fn resolve_definition_by_metric_key(
     connection: &Connection,
     company_id: &str,
     metric_key: &str,
 ) -> StorageResult<Option<String>> {
-    let existing: Option<String> = connection
-        .query_row(
-            "
-            SELECT id FROM kpi_definitions
-            WHERE metric_key = ?1 AND (company_id = ?2 OR company_id IS NULL)
-            ORDER BY (company_id IS NULL)
-            LIMIT 1
-            ",
-            params![metric_key.trim(), company_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(existing)
+    Ok(resolve_kpi_definition(connection, company_id, metric_key)?.map(|d| d.definition_id))
 }
 
 fn period_id(company_id: &str, fiscal_year: i64, period_type: &str) -> String {
@@ -884,6 +932,20 @@ impl KpiExtractionStore {
             None,
             citation,
         )
+    }
+
+    /// The sector-aware definition resolver (#361), read-only — no fact
+    /// write, no definition creation. `jobs::kpi_ingest_validation` calls
+    /// this per staged observation to build the manifest's `definitionId`
+    /// and `value_kind`; #362 never re-resolves, it consumes the manifest's
+    /// pinned `definitionId` (data-model.md § resolver).
+    pub fn resolve_kpi_definition(
+        &self,
+        company_id: &str,
+        metric_key: &str,
+    ) -> StorageResult<Option<ResolvedKpiDefinition>> {
+        let connection = self.db.checkout()?;
+        resolve_kpi_definition(&connection, company_id, metric_key)
     }
 
     /// Idempotently ensures a fiscal period exists and returns its id (ADR 0093
@@ -2342,5 +2404,223 @@ mod tests {
             Some(preliminary_id),
             "the issuer-published preliminary must win over a third-party estimate"
         );
+    }
+
+    // -----------------------------------------------------------------
+    // resolve_definition_by_metric_key (#361): sector-aware deterministic
+    // precedence, shared with the manifest validator's resolver.
+    // -----------------------------------------------------------------
+
+    fn insert_definition(
+        connection: &Connection,
+        id: &str,
+        scope: &str,
+        company_id: Option<&str>,
+        sector: Option<&str>,
+        metric_key: &str,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO kpi_definitions (id, scope, company_id, sector, metric_key, label, value_kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5, 'monetary')",
+                params![id, scope, company_id, sector, metric_key],
+            )
+            .expect("kpi_definitions insert");
+    }
+
+    #[test]
+    fn resolver_prefers_company_scoped_over_canonical_and_sector() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        super::super::companies::set_company_sector(&connection, &company_id, Some("banking"))
+            .expect("set sector");
+        insert_definition(
+            &connection,
+            "kpidef_revenue__s_banking",
+            "sector",
+            None,
+            Some("banking"),
+            "revenue",
+        );
+        insert_definition(
+            &connection,
+            "kpidef_revenue__c_c1",
+            "company",
+            Some(&company_id),
+            None,
+            "revenue",
+        );
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, &company_id, "revenue").expect("resolve");
+        assert_eq!(resolved.as_deref(), Some("kpidef_revenue__c_c1"));
+    }
+
+    #[test]
+    fn resolver_prefers_canonical_over_matching_sector() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        super::super::companies::set_company_sector(&connection, &company_id, Some("banking"))
+            .expect("set sector");
+        insert_definition(
+            &connection,
+            "kpidef_revenue__s_banking",
+            "sector",
+            None,
+            Some("banking"),
+            "revenue",
+        );
+
+        // "revenue" is already seeded canonically by migration 0034.
+        let resolved =
+            resolve_definition_by_metric_key(&connection, &company_id, "revenue").expect("resolve");
+        assert_eq!(resolved.as_deref(), Some("kpidef_revenue"));
+    }
+
+    #[test]
+    fn resolver_picks_matching_sector_and_excludes_non_matching_sector() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        super::super::companies::set_company_sector(&connection, &company_id, Some("banking"))
+            .expect("set sector");
+        // A company-specific metric key with NO canonical twin, so only the
+        // sector rows compete.
+        insert_definition(
+            &connection,
+            "kpidef_nim__s_banking",
+            "sector",
+            None,
+            Some("banking"),
+            "net_interest_margin",
+        );
+        insert_definition(
+            &connection,
+            "kpidef_nim__s_industrial",
+            "sector",
+            None,
+            Some("industrial"),
+            "net_interest_margin",
+        );
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, &company_id, "net_interest_margin")
+                .expect("resolve");
+        assert_eq!(
+            resolved.as_deref(),
+            Some("kpidef_nim__s_banking"),
+            "the industrial sector row must be excluded, not merely deprioritized"
+        );
+    }
+
+    #[test]
+    fn resolver_company_without_sector_never_gets_a_sector_scoped_definition() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        // No sector set on the company at all.
+        insert_definition(
+            &connection,
+            "kpidef_nim__s_banking",
+            "sector",
+            None,
+            Some("banking"),
+            "net_interest_margin",
+        );
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, &company_id, "net_interest_margin")
+                .expect("resolve");
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn resolver_falls_back_to_remaining_global_definitions_lexicographically() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        // Neither row is canonical/sector/company -- both are "remaining
+        // global", ordered lexicographically by id. Distinct `scope` values
+        // (rather than two `user` rows) keep the unique index
+        // `(metric_key, scope, company_id, sector)` happy -- the resolver's
+        // catch-all bucket cares only that `scope NOT IN ('company', 'sector')`.
+        insert_definition(
+            &connection,
+            "kpidef_custom_b",
+            "user",
+            None,
+            None,
+            "custom_metric",
+        );
+        insert_definition(
+            &connection,
+            "kpidef_custom_a",
+            "legacy",
+            None,
+            None,
+            "custom_metric",
+        );
+
+        let resolved = resolve_definition_by_metric_key(&connection, &company_id, "custom_metric")
+            .expect("resolve");
+        assert_eq!(resolved.as_deref(), Some("kpidef_custom_a"));
+    }
+
+    #[test]
+    fn resolver_catch_all_excludes_company_bound_rows_for_a_different_company() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        connection
+            .execute(
+                "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                 VALUES ('c2', 'gpw', 'XYZ', 'GPW:XYZ', 'XYZ SA')",
+                [],
+            )
+            .expect("company b");
+        // A 'user' scoped definition bound to company A only -- not
+        // 'company'/'sector' scope, so it would fall into the catch-all
+        // bucket if that bucket did not also require company_id IS NULL.
+        insert_definition(
+            &connection,
+            "kpidef_x__u_c1",
+            "user",
+            Some(&company_id),
+            None,
+            "custom_x",
+        );
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, "c2", "custom_x").expect("resolve");
+        assert_eq!(
+            resolved, None,
+            "company A's user-scoped definition must not leak to company B via the catch-all"
+        );
+    }
+
+    #[test]
+    fn resolver_is_deterministic_across_repeated_calls() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        super::super::companies::set_company_sector(&connection, &company_id, Some("banking"))
+            .expect("set sector");
+        insert_definition(
+            &connection,
+            "kpidef_revenue__s_banking",
+            "sector",
+            None,
+            Some("banking"),
+            "revenue",
+        );
+        insert_definition(
+            &connection,
+            "kpidef_revenue__c_c1",
+            "company",
+            Some(&company_id),
+            None,
+            "revenue",
+        );
+
+        let first =
+            resolve_definition_by_metric_key(&connection, &company_id, "revenue").expect("resolve");
+        let second =
+            resolve_definition_by_metric_key(&connection, &company_id, "revenue").expect("resolve");
+        assert_eq!(first, second);
     }
 }

@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod health_facts_backfill;
 pub mod history_sweep;
 pub mod insider_attachment;
+pub mod kpi_ingest_validation;
 pub mod management_holdings_extraction;
 pub mod morning_briefing;
 pub mod ownership_extraction;

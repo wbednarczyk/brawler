@@ -110,6 +110,21 @@ pub(crate) const STOCK_METRIC_KEYS: &[&str] = &[
     "total_loans",
 ];
 
+/// Whether `metric_key` names a flow (accumulates over a span) rather than a
+/// stock (a balance at a point in time) — the same TTM-eligibility axis
+/// [`MetricsContext::is_flow_key`] uses, pulled out pure so a caller with no
+/// [`MetricsContext`] (`fundamentals::kpi_manifest`'s `period.window_kind_mismatch`
+/// check, #361) can classify a metric it already has the `value_kind` for
+/// without building one. `value_kind` is `None` for a key with no resolved
+/// catalog definition — treated as a flow, the same default the method form
+/// uses for a key absent from both [`STOCK_METRIC_KEYS`] and the catalog.
+pub(crate) fn is_flow_key(metric_key: &str, value_kind: Option<&str>) -> bool {
+    if STOCK_METRIC_KEYS.contains(&metric_key) {
+        return false;
+    }
+    !matches!(value_kind, Some("ratio") | Some("percentage"))
+}
+
 /// Reported facts for one period. `index 0` is the latest period.
 #[derive(Debug, Clone)]
 pub struct PeriodFacts {
@@ -519,12 +534,9 @@ impl MetricsContext {
     /// A key absent from both the list and the catalog (an ad-hoc reported
     /// fact) is treated as a flow — the pre-existing default.
     fn is_flow_key(&self, key: &str) -> bool {
-        if STOCK_METRIC_KEYS.contains(&key) {
-            return false;
-        }
-        !matches!(
+        is_flow_key(
+            key,
             self.definitions.get(key).map(|d| d.value_kind.as_str()),
-            Some("ratio") | Some("percentage")
         )
     }
 

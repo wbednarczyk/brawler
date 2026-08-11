@@ -156,6 +156,12 @@ pub enum StorageError {
         "kpi ingest run {id} commit refused: manifest is stale relative to the run's current state"
     )]
     StaleManifestForCommit { id: String },
+    #[error("sealed manifest for run {run_id} revision {revision} refused: {reason}")]
+    SealedManifestRejected {
+        run_id: String,
+        revision: i64,
+        reason: &'static str,
+    },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

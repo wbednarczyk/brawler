@@ -1595,6 +1595,116 @@ pub(super) fn metric_histories(
     Ok(result)
 }
 
+/// One slot-aware history key for [`slot_metric_histories`] (#361
+/// data-model.md § Rejestr kodów `plausibility.*`): the manifest builder's
+/// plausibility gate must never mix a parent-attributed value with a total
+/// one, nor a `flow` figure with a `trailing`/`point_in_time` one — a plain
+/// `metric_key` history (as [`metric_histories`] reads) collapses all of
+/// those into one series. `statement_basis` is the OWNING RUN's `scope`
+/// (`standalone`/`consolidated`), not a per-fact field of its own choosing —
+/// one run has exactly one scope, so every slot the caller asks for shares it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HistorySlotKey {
+    pub definition_id: String,
+    pub statement_basis: String,
+    pub attribution_eff: String,
+    pub measure_window_eff: Option<String>,
+}
+
+/// The batched, SLOT-aware twin of [`metric_histories`]: company-wide values
+/// for the EXACT `(definition_id, statement_basis, attribution_eff,
+/// measure_window_eff)` slot each requested key names, `variant='reported'`
+/// only. Unlike [`metric_history`]/[`metric_histories`] (which key on the
+/// CANONICAL definition id only), `definition_id` here is whatever the
+/// sector-aware resolver picked — a company-scoped definition gets its OWN
+/// history, never silently merged into the canonical one (#361 test:
+/// "company-scoped z historią nie abstynuje"). Final-over-preliminary
+/// collapse retained: one value per period, a later `final` overwrites an
+/// earlier `preliminary`/`estimated` sibling in place.
+pub(super) fn slot_metric_histories(
+    connection: &Connection,
+    company_id: &str,
+    slots: &std::collections::BTreeSet<HistorySlotKey>,
+    exclude_fiscal_year: i64,
+    exclude_period_type: &str,
+) -> StorageResult<std::collections::HashMap<HistorySlotKey, Vec<Decimal>>> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut result: HashMap<HistorySlotKey, Vec<Decimal>> =
+        slots.iter().map(|key| (key.clone(), Vec::new())).collect();
+    if slots.is_empty() {
+        return Ok(result);
+    }
+
+    let periods = list_financial_periods(
+        connection,
+        ListFinancialPeriodsInput {
+            company_id: company_id.to_owned(),
+            fiscal_year: None,
+        },
+    )?;
+    let excluded: HashSet<String> = periods
+        .iter()
+        .filter(|p| {
+            p.fiscal_year == exclude_fiscal_year
+                && p.period_type.eq_ignore_ascii_case(exclude_period_type)
+        })
+        .map(|p| p.id.clone())
+        .collect();
+
+    let facts = list_financial_facts(
+        connection,
+        ListFinancialFactsInput {
+            company_id: Some(company_id.to_owned()),
+            period_id: None,
+            definition_id: None,
+        },
+    )?;
+
+    let mut slot_rank: HashMap<(HistorySlotKey, String), u8> = HashMap::new();
+    let mut slot_index: HashMap<(HistorySlotKey, String), usize> = HashMap::new();
+    for fact in facts {
+        if fact.variant != "reported" {
+            continue;
+        }
+        if excluded.contains(&fact.period_id) {
+            continue;
+        }
+        let key = HistorySlotKey {
+            definition_id: fact.definition_id.clone(),
+            statement_basis: fact.statement_basis.clone(),
+            attribution_eff: fact.attribution.clone(),
+            measure_window_eff: Some(fact.measure_window.clone()),
+        };
+        // Only requested slots ever get an entry pre-seeded above; a fact
+        // whose slot dims weren't asked for is simply not this caller's
+        // concern (mirrors `metric_histories`' pre-seeded-keys-only shape).
+        if !result.contains_key(&key) {
+            continue;
+        }
+        let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
+            continue;
+        };
+        let rank = u8::from(fact.data_quality != "final");
+        let rank_key = (key.clone(), fact.period_id.clone());
+        if let Some(&existing_rank) = slot_rank.get(&rank_key) {
+            if existing_rank <= rank {
+                continue;
+            }
+        }
+        let values = result.get_mut(&key).expect("checked contains_key above");
+        match slot_index.get(&rank_key) {
+            Some(&idx) => values[idx] = value,
+            None => {
+                slot_index.insert(rank_key.clone(), values.len());
+                values.push(value);
+            }
+        }
+        slot_rank.insert(rank_key, rank);
+    }
+    Ok(result)
+}
+
 /// A cached per-document reporting-period derivation (migration 0109). `None`
 /// period columns with `has_period = false` is the explicit none-marker — a
 /// document whose content yields no derivable period, recorded so it is not
@@ -2773,6 +2883,27 @@ impl FinancialsStore {
             &connection,
             company_id,
             metric_keys,
+            exclude_fiscal_year,
+            exclude_period_type,
+        )
+    }
+
+    /// Slot-aware batched history for the KPI ingest manifest builder (#361):
+    /// see [`slot_metric_histories`] for the exact slot key and why it never
+    /// collapses onto [`Self::metric_histories`]' canonical-only shape.
+    pub fn slot_metric_histories(
+        &self,
+        company_id: &str,
+        slots: &std::collections::BTreeSet<HistorySlotKey>,
+        exclude_fiscal_year: i64,
+        exclude_period_type: &str,
+    ) -> StorageResult<std::collections::HashMap<HistorySlotKey, Vec<Decimal>>> {
+        let connection = self.db.checkout()?;
+
+        slot_metric_histories(
+            &connection,
+            company_id,
+            slots,
             exclude_fiscal_year,
             exclude_period_type,
         )

@@ -430,6 +430,21 @@ pub fn implausible_against_history(metric_key: &str, value: Decimal, history: &[
     )
 }
 
+/// Why [`PlausibilityVerdict::Abstained`] fired — named so a caller (the
+/// #361 manifest builder's `plausibility.abstained` diagnostic detail) can
+/// report *which* of the three gate preconditions was unmet, instead of
+/// collapsing them to one opaque bit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AbstentionReason {
+    /// Fewer than two non-zero historical magnitudes — no stable median.
+    ThinHistory,
+    /// `metric_key` is one of [`is_split_sensitive_metric`]'s keys: a
+    /// >100× move is legitimate there (corporate actions), not a scale error.
+    SplitSensitive,
+    /// The value or the history median is zero — not a scale reference.
+    ZeroValue,
+}
+
 /// Three-way per-fact plausibility verdict — the honest-abstention doctrine
 /// ([ADR 0093](../../../docs/adr/0093-agent-acquisition-tier-and-preliminary-lifecycle.md)
 /// decision 6) a caller with no set-level accept/flag decision of its own
@@ -444,9 +459,8 @@ pub enum PlausibilityVerdict {
     /// ≥[`HISTORY_PLAUSIBILITY_RATIO`]× off the history median, in either
     /// direction.
     Implausible { history_median: Decimal },
-    /// The gate could not run for this fact: fewer than two historical
-    /// magnitudes, a split-sensitive metric, or a zero value/median.
-    Abstained,
+    /// The gate could not run for this fact — see [`AbstentionReason`].
+    Abstained { reason: AbstentionReason },
 }
 
 /// The typed twin of [`implausible_against_history`]/[`history_median`]: the
@@ -458,14 +472,20 @@ pub fn plausibility_verdict(
     history: &[Decimal],
 ) -> PlausibilityVerdict {
     if is_split_sensitive_metric(metric_key) {
-        return PlausibilityVerdict::Abstained;
+        return PlausibilityVerdict::Abstained {
+            reason: AbstentionReason::SplitSensitive,
+        };
     }
     let Some(median) = history_median(history) else {
-        return PlausibilityVerdict::Abstained;
+        return PlausibilityVerdict::Abstained {
+            reason: AbstentionReason::ThinHistory,
+        };
     };
     let magnitude = value.abs();
     if median.is_zero() || magnitude.is_zero() {
-        return PlausibilityVerdict::Abstained;
+        return PlausibilityVerdict::Abstained {
+            reason: AbstentionReason::ZeroValue,
+        };
     }
     let ratio = Decimal::from(HISTORY_PLAUSIBILITY_RATIO);
     if magnitude > median * ratio || magnitude * ratio < median {

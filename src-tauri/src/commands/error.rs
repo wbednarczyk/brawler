@@ -198,6 +198,13 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // longer matches the run's current state — a conflict with what is
         // stored, not a shape problem with the request.
         StorageError::StaleManifestForCommit { .. } => Conflict,
+        // `apply_validation_outcome`'s atom refused a `SealedManifest`: wrong
+        // binding (run/revision), coverage mismatch (missing/extra staged
+        // observation), or content tamper (same ids, changed value/citation)
+        // — every case is the manifest disagreeing with the run's current
+        // staged state, never a shape problem with the manifest bytes
+        // themselves (`SealedManifest::seal` already rejected those).
+        StorageError::SealedManifestRejected { .. } => Conflict,
     }
 }
 

@@ -114,20 +114,21 @@ pub use events::EventStore;
 pub use feed::FeedStore;
 pub use financials::FinancialsStore;
 pub use financials::{
-    CanonicalComparisonFact, FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance,
-    ListFinancialFactsInput, ListFinancialPeriodsInput, ListKpiDefinitionsInput, NewFinancialFact,
-    NewFinancialPeriod, NewKpiDefinition, NewKpiRelevance, PeriodFactCoverage, UpdateFinancialFact,
-    UpdateFinancialPeriod, UpdateKpiRelevance,
+    CanonicalComparisonFact, FinancialFact, FinancialPeriod, HistorySlotKey, KpiDefinition,
+    KpiRelevance, ListFinancialFactsInput, ListFinancialPeriodsInput, ListKpiDefinitionsInput,
+    NewFinancialFact, NewFinancialPeriod, NewKpiDefinition, NewKpiRelevance, PeriodFactCoverage,
+    UpdateFinancialFact, UpdateFinancialPeriod, UpdateKpiRelevance,
 };
 pub use fundamentals_provenance::{
     ExtractionOutcome, FactProvenance, FactTierBreakdown, FlaggedFact, FundamentalsProvenanceStore,
     NewExtractionOutcome, NewFactProvenance, TierFactCount, WitnessCorroboration,
 };
 pub use fx_rates::FxRatesStore;
-pub use kpi_ingest_runs::{KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun};
+pub use kpi_ingest_runs::{
+    KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun, ValidationAttempt,
+};
 pub use kpi_ingest_staging::{
-    CommitReceipt, KpiIngestStagingStore, NewCommitReceipt, NewStagedObservation,
-    ObservationValidation, StagedObservation,
+    CommitReceipt, KpiIngestStagingStore, NewCommitReceipt, NewStagedObservation, StagedObservation,
 };
 pub use severity::{
     severity_for_attention_event, severity_for_autopilot_run, severity_for_signal_category,
@@ -153,7 +154,7 @@ pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
     AggregatorFactCommit, CompletedKpiExtraction, ConfirmKpiProposalInput, ConfirmedKpiFact,
     KpiExtractionJob, KpiExtractionProposal, NewKpiExtractionJob, NewKpiProposal,
-    StructuredFactCommit, StructuredFactInput,
+    ResolvedKpiDefinition, StructuredFactCommit, StructuredFactInput,
 };
 pub use licensing::LicensingStore;
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};

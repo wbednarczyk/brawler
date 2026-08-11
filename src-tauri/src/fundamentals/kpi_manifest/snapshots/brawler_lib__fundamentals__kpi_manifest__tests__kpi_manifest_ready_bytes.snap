@@ -1,0 +1,6 @@
+---
+source: src/fundamentals/kpi_manifest/tests.rs
+assertion_line: 601
+expression: sealed.manifest_json()
+---
+{"manifestSchemaVersion":1,"validatorVersion":"1","runId":"run1","revision":1,"outcome":"ready","companyId":"c1","reportDocumentId":"doc1","sourceContentHash":"hash-src","scope":"consolidated","dataQuality":"final","period":{"periodId":null,"fiscalYear":2025,"periodType":"FY"},"expectedKpis":null,"observations":[{"observationId":"o1","ordinal":0,"metricKey":"revenue","definitionId":"kpidef_revenue","normalizedValue":"1234.5","currency":"PLN","unitScale":"ones","attribution":"total","measureWindow":"flow","scope":null,"citation":{"page":3,"table":null,"row":null,"quote":"Przychody 1 234,5"},"validationState":"passed","codes":[]}],"runDiagnostics":[],"completeness":null,"counts":{"passed":1,"unreviewed":0,"flagged":0}}

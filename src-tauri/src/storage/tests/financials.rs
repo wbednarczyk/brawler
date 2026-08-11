@@ -1,4 +1,5 @@
 use super::*;
+use crate::storage::financials::HistorySlotKey;
 use rust_decimal::Decimal;
 use std::collections::BTreeSet;
 
@@ -2925,6 +2926,283 @@ fn metric_histories_batch_matches_single_read_final_preferred() {
         batch.get("total_assets"),
         Some(&vec![Decimal::new(40_000_000, 0)]),
         "final wins, one value per period"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// slot_metric_histories (#361): the slot-aware batched history the manifest
+// builder's plausibility gate reads — never a plain metric_key collapse.
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+fn seed_slot_fact(
+    state: &AppState,
+    company_id: &str,
+    period_id: &str,
+    definition_id: &str,
+    statement_basis: &str,
+    attribution: &str,
+    measure_window: &str,
+    data_quality: &str,
+    value: &str,
+) {
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company_id.to_owned(),
+            period_id: period_id.to_owned(),
+            definition_id: definition_id.to_owned(),
+            value_numeric: value.to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: Some(statement_basis.to_owned()),
+            attribution: Some(attribution.to_owned()),
+            variant: None,
+            measure_window: Some(measure_window.to_owned()),
+            data_quality: Some(data_quality.to_owned()),
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("financial fact should create");
+}
+
+#[test]
+fn slot_metric_histories_never_mixes_attribution() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let definition_id = canonical_definition_id(&state, "total_equity");
+    let p2023 = seed_fy_period(&state, &company.id, 2023);
+    let p2024 = seed_fy_period(&state, &company.id, 2024);
+
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2023,
+        &definition_id,
+        "consolidated",
+        "total",
+        "point_in_time",
+        "final",
+        "1000",
+    );
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2024,
+        &definition_id,
+        "consolidated",
+        "owners_of_parent",
+        "point_in_time",
+        "final",
+        "9999",
+    );
+
+    let total_key = HistorySlotKey {
+        definition_id: definition_id.clone(),
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("point_in_time".to_owned()),
+    };
+    let parent_key = HistorySlotKey {
+        definition_id,
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "owners_of_parent".to_owned(),
+        measure_window_eff: Some("point_in_time".to_owned()),
+    };
+    let slots: std::collections::BTreeSet<_> = [total_key.clone(), parent_key.clone()].into();
+    let histories = state
+        .financials()
+        .slot_metric_histories(&company.id, &slots, 2099, "FY")
+        .expect("slot histories should read");
+
+    assert_eq!(
+        histories.get(&total_key),
+        Some(&vec![Decimal::new(1000, 0)])
+    );
+    assert_eq!(
+        histories.get(&parent_key),
+        Some(&vec![Decimal::new(9999, 0)])
+    );
+}
+
+#[test]
+fn slot_metric_histories_never_mixes_measure_window() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let definition_id = canonical_definition_id(&state, "revenue");
+    let p2023 = seed_fy_period(&state, &company.id, 2023);
+    let p2024 = seed_fy_period(&state, &company.id, 2024);
+
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2023,
+        &definition_id,
+        "consolidated",
+        "total",
+        "flow",
+        "final",
+        "500",
+    );
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2024,
+        &definition_id,
+        "consolidated",
+        "total",
+        "trailing",
+        "final",
+        "7777",
+    );
+
+    let flow_key = HistorySlotKey {
+        definition_id: definition_id.clone(),
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("flow".to_owned()),
+    };
+    let trailing_key = HistorySlotKey {
+        definition_id,
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("trailing".to_owned()),
+    };
+    let slots: std::collections::BTreeSet<_> = [flow_key.clone(), trailing_key.clone()].into();
+    let histories = state
+        .financials()
+        .slot_metric_histories(&company.id, &slots, 2099, "FY")
+        .expect("slot histories should read");
+
+    assert_eq!(histories.get(&flow_key), Some(&vec![Decimal::new(500, 0)]));
+    assert_eq!(
+        histories.get(&trailing_key),
+        Some(&vec![Decimal::new(7777, 0)])
+    );
+}
+
+#[test]
+fn slot_metric_histories_company_scoped_definition_has_its_own_history() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let canonical_id = canonical_definition_id(&state, "revenue");
+    let company_definition = state
+        .financials()
+        .create_kpi_definition(NewKpiDefinition {
+            scope: "company".to_owned(),
+            company_id: Some(company.id.clone()),
+            sector: None,
+            metric_key: "revenue".to_owned(),
+            label: "Przychody segmentu".to_owned(),
+            value_kind: "monetary".to_owned(),
+            unit: None,
+            computation: "reported".to_owned(),
+            formula: None,
+            display_format: None,
+            origin: None,
+            statement_group: None,
+        })
+        .expect("company-scoped definition should create");
+    let p2023 = seed_fy_period(&state, &company.id, 2023);
+
+    // Only the company-scoped definition has history; the canonical one has none.
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2023,
+        &company_definition.id,
+        "consolidated",
+        "total",
+        "flow",
+        "final",
+        "4242",
+    );
+
+    let company_key = HistorySlotKey {
+        definition_id: company_definition.id,
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("flow".to_owned()),
+    };
+    let canonical_key = HistorySlotKey {
+        definition_id: canonical_id,
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("flow".to_owned()),
+    };
+    let slots: std::collections::BTreeSet<_> = [company_key.clone(), canonical_key.clone()].into();
+    let histories = state
+        .financials()
+        .slot_metric_histories(&company.id, &slots, 2099, "FY")
+        .expect("slot histories should read");
+
+    assert_eq!(
+        histories.get(&company_key),
+        Some(&vec![Decimal::new(4242, 0)]),
+        "company-scoped definition gets its own history, not the canonical one's"
+    );
+    assert_eq!(
+        histories.get(&canonical_key),
+        Some(&Vec::new()),
+        "the canonical definition has no facts of its own -- empty, not borrowed"
+    );
+}
+
+#[test]
+fn slot_metric_histories_final_over_preliminary_one_value_per_period() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let definition_id = canonical_definition_id(&state, "total_assets");
+    let p2023 = seed_fy_period(&state, &company.id, 2023);
+
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2023,
+        &definition_id,
+        "consolidated",
+        "total",
+        "point_in_time",
+        "preliminary",
+        "39000000",
+    );
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2023,
+        &definition_id,
+        "consolidated",
+        "total",
+        "point_in_time",
+        "final",
+        "40000000",
+    );
+
+    let key = HistorySlotKey {
+        definition_id,
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("point_in_time".to_owned()),
+    };
+    let slots: std::collections::BTreeSet<_> = [key.clone()].into();
+    let histories = state
+        .financials()
+        .slot_metric_histories(&company.id, &slots, 2099, "FY")
+        .expect("slot histories should read");
+
+    assert_eq!(
+        histories.get(&key),
+        Some(&vec![Decimal::new(40_000_000, 0)]),
+        "final wins, one value for the period"
     );
 }
 

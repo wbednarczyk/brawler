@@ -237,6 +237,96 @@ fn wrong_state(id: &str, actual: KpiIngestRunState, to: KpiIngestRunState) -> St
     }
 }
 
+/// Connection-level `staged -> validation_failed` primitive (#361 sol r4):
+/// the ONLY callers are [`super::kpi_ingest_staging::apply_validation_outcome`]'s
+/// atom (under its own transaction, after inserting the immutable attempt
+/// row) and this module's own tests. No public `pub fn` wraps this anymore —
+/// a hash-bearing `ready_to_commit` row or a `validation_failed` row with no
+/// attempt evidence is structurally uncreatable after migration 0139 (every
+/// path to either transition now inserts an attempt row first). Targets the
+/// run's CURRENT `manifest_revision`, guarding a race with a concurrent
+/// re-stage bumping it.
+pub(super) fn mark_validation_failed_on_connection(
+    conn: &Connection,
+    id: &str,
+    revision: i64,
+) -> StorageResult<()> {
+    let changed = apply_transition(
+        conn,
+        id,
+        &[KpiIngestRunState::Staged],
+        KpiIngestRunState::ValidationFailed,
+        "",
+        &[],
+        " AND manifest_revision = ?",
+        &[&revision],
+    )?;
+    if changed == 1 {
+        return Ok(());
+    }
+
+    let Some(raw) = read_raw_run(conn, id)? else {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    };
+    let status = KpiIngestRunState::parse(&raw.status)?;
+    if status != KpiIngestRunState::Staged {
+        Err(wrong_state(id, status, KpiIngestRunState::ValidationFailed))
+    } else {
+        Err(StorageError::InvalidStagingRevision {
+            run_id: id.to_owned(),
+            revision,
+            reason: "revision is not the run's current staging revision",
+        })
+    }
+}
+
+/// Connection-level `staged -> ready_to_commit` primitive (#361 sol r4) — see
+/// [`mark_validation_failed_on_connection`]'s doc for why no `pub fn` wraps
+/// this. SETs `manifest_hash` and clears all three lease columns ATOMICALLY
+/// (ADR 0098 dec. 6 — a `ready_to_commit` row never holds a lease). Guard:
+/// `manifest_revision = ?revision AND manifest_hash IS NULL` (current AND
+/// never previously frozen).
+pub(super) fn mark_ready_to_commit_on_connection(
+    conn: &Connection,
+    id: &str,
+    revision: i64,
+    manifest_hash: &str,
+) -> StorageResult<()> {
+    let changed = apply_transition(
+        conn,
+        id,
+        &[KpiIngestRunState::Staged],
+        KpiIngestRunState::ReadyToCommit,
+        "manifest_hash = ?, lease_holder = NULL, lease_expires_at = NULL, last_heartbeat_at = NULL, ",
+        &[&manifest_hash],
+        " AND manifest_revision = ? AND manifest_hash IS NULL",
+        &[&revision],
+    )?;
+    if changed == 1 {
+        return Ok(());
+    }
+
+    let Some(raw) = read_raw_run(conn, id)? else {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    };
+    let status = KpiIngestRunState::parse(&raw.status)?;
+    if status != KpiIngestRunState::Staged {
+        Err(wrong_state(id, status, KpiIngestRunState::ReadyToCommit))
+    } else if raw.manifest_hash.is_some() {
+        Err(StorageError::InvalidStagingRevision {
+            run_id: id.to_owned(),
+            revision,
+            reason: "revision is frozen: a manifest is already issued",
+        })
+    } else {
+        Err(StorageError::InvalidStagingRevision {
+            run_id: id.to_owned(),
+            revision,
+            reason: "revision is not the run's current staging revision",
+        })
+    }
+}
+
 /// Every `committing` row currently holding a non-null lease — the
 /// structural invariant the transition INTO `committing` must uphold
 /// (`begin_committing` clears it atomically as part of the same UPDATE that
@@ -417,6 +507,35 @@ fn map_raw_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawRun> {
         updated_at: row.get(22)?,
         period_fiscal_year: row.get(23)?,
         period_type: row.get(24)?,
+    })
+}
+
+/// One immutable row from `kpi_ingest_validation_attempts` (migration 0139) —
+/// append-only, never updated/deleted outside `ON DELETE CASCADE`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationAttempt {
+    pub id: String,
+    pub run_id: String,
+    pub revision: i64,
+    pub attempt: i64,
+    /// `ready` | `failed`.
+    pub outcome: String,
+    pub manifest_hash: String,
+    /// Canonical manifest bytes (`fundamentals::kpi_manifest::SealedManifest::manifest_json`).
+    pub manifest_json: String,
+    pub created_at: String,
+}
+
+fn map_validation_attempt_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ValidationAttempt> {
+    Ok(ValidationAttempt {
+        id: row.get(0)?,
+        run_id: row.get(1)?,
+        revision: row.get(2)?,
+        attempt: row.get(3)?,
+        outcome: row.get(4)?,
+        manifest_hash: row.get(5)?,
+        manifest_json: row.get(6)?,
+        created_at: row.get(7)?,
     })
 }
 
@@ -819,101 +938,6 @@ impl KpiIngestRunsStore {
         result
     }
 
-    /// `staged -> validation_failed` (#360): the deterministic validator
-    /// (#361) rejects the current staging revision. No lease requirement —
-    /// the caller is the in-process validator step, never the agent. Targets
-    /// the run's CURRENT `manifest_revision` (guards against a race with a
-    /// concurrent re-stage bumping it).
-    pub fn mark_validation_failed(&self, id: &str, revision: i64) -> StorageResult<()> {
-        let mut connection = self.db.checkout()?;
-        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-
-        let changed = apply_transition(
-            &tx,
-            id,
-            &[KpiIngestRunState::Staged],
-            KpiIngestRunState::ValidationFailed,
-            "",
-            &[],
-            " AND manifest_revision = ?",
-            &[&revision],
-        )?;
-        if changed == 1 {
-            tx.commit()?;
-            return Ok(());
-        }
-
-        let Some(raw) = read_raw_run(&tx, id)? else {
-            return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
-        };
-        let status = KpiIngestRunState::parse(&raw.status)?;
-        let result = if status != KpiIngestRunState::Staged {
-            Err(wrong_state(id, status, KpiIngestRunState::ValidationFailed))
-        } else {
-            Err(StorageError::InvalidStagingRevision {
-                run_id: id.to_owned(),
-                revision,
-                reason: "revision is not the run's current staging revision",
-            })
-        };
-        tx.commit()?;
-        result
-    }
-
-    /// `staged -> ready_to_commit` (#360): the deterministic validator (#361)
-    /// accepts the current staging revision and freezes it as a manifest. No
-    /// lease requirement. Guard: `manifest_revision = ?revision AND
-    /// manifest_hash IS NULL` (the revision must be both current AND never
-    /// previously frozen). SETs `manifest_hash` and clears all three lease
-    /// columns ATOMICALLY (ADR 0098 dec. 6 — a `ready_to_commit` row never
-    /// holds a lease; `begin_committing`'s invariant guard depends on this).
-    pub fn mark_ready_to_commit(
-        &self,
-        id: &str,
-        revision: i64,
-        manifest_hash: &str,
-    ) -> StorageResult<()> {
-        let mut connection = self.db.checkout()?;
-        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-
-        let changed = apply_transition(
-            &tx,
-            id,
-            &[KpiIngestRunState::Staged],
-            KpiIngestRunState::ReadyToCommit,
-            "manifest_hash = ?, lease_holder = NULL, lease_expires_at = NULL, last_heartbeat_at = NULL, ",
-            &[&manifest_hash],
-            " AND manifest_revision = ? AND manifest_hash IS NULL",
-            &[&revision],
-        )?;
-        if changed == 1 {
-            tx.commit()?;
-            return Ok(());
-        }
-
-        let Some(raw) = read_raw_run(&tx, id)? else {
-            return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
-        };
-        let status = KpiIngestRunState::parse(&raw.status)?;
-        let result = if status != KpiIngestRunState::Staged {
-            Err(wrong_state(id, status, KpiIngestRunState::ReadyToCommit))
-        } else if raw.manifest_hash.is_some() {
-            Err(StorageError::InvalidStagingRevision {
-                run_id: id.to_owned(),
-                revision,
-                reason: "revision is frozen: a manifest is already issued",
-            })
-        } else {
-            Err(StorageError::InvalidStagingRevision {
-                run_id: id.to_owned(),
-                revision,
-                reason: "revision is not the run's current staging revision",
-            })
-        };
-        tx.commit()?;
-        result
-    }
-
     /// `ready_to_commit -> staged` (#360): manifest invalidation. Clears
     /// `manifest_hash`; the staging revision is unchanged (the SAME
     /// observations are still there — only the frozen verdict is discarded).
@@ -943,6 +967,103 @@ impl KpiIngestRunsStore {
         let status = KpiIngestRunState::parse(&raw.status)?;
         tx.commit()?;
         Err(wrong_state(id, status, KpiIngestRunState::Staged))
+    }
+
+    /// Stamps the run's `expected_kpis_json` completeness-denominator snapshot
+    /// EXACTLY ONCE (#361 data-model.md § Stempel): set-once, status- and
+    /// revision-guarded — `WHERE status='staged' AND manifest_revision=?
+    /// AND manifest_hash IS NULL AND expected_kpis_json IS NULL`. A 0-row
+    /// UPDATE is not automatically a refusal: if the column is already
+    /// non-NULL the snapshot was already stamped (by an earlier validation
+    /// attempt — possibly on an earlier revision; the snapshot is per-RUN,
+    /// ADR 0098 dec. 4 "stamped on the run at start") and this returns it
+    /// unchanged — only a wrong status/revision is a typed refusal. Once
+    /// stamped, the snapshot is frozen for the run's whole lifetime: the
+    /// validator, #362 and #363 all read this column, never live
+    /// `kpi_relevance`, so a later relevance change never changes any
+    /// revision's denominator.
+    pub fn stamp_expected_kpis(
+        &self,
+        id: &str,
+        revision: i64,
+        snapshot_json: &str,
+    ) -> StorageResult<String> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let changed = tx.execute(
+            "UPDATE kpi_ingest_runs \
+             SET expected_kpis_json = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+             WHERE id = ?2 AND status = 'staged' AND manifest_revision = ?3 \
+               AND manifest_hash IS NULL AND expected_kpis_json IS NULL",
+            params![snapshot_json, id, revision],
+        )?;
+        if changed == 1 {
+            tx.commit()?;
+            return Ok(snapshot_json.to_owned());
+        }
+
+        let Some(raw) = read_raw_run(&tx, id)? else {
+            return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+        };
+        let result = if let Some(existing) = raw.expected_kpis_json.clone() {
+            Ok(existing)
+        } else {
+            let status = KpiIngestRunState::parse(&raw.status)?;
+            let reason = if status != KpiIngestRunState::Staged {
+                "run is not staged"
+            } else {
+                "revision is not the run's current staging revision"
+            };
+            Err(StorageError::InvalidStagingRevision {
+                run_id: id.to_owned(),
+                revision,
+                reason,
+            })
+        };
+        tx.commit()?;
+        result
+    }
+
+    /// Every validation attempt ever recorded for `run_id`, oldest first —
+    /// the append-only audit trail migration 0139 exists for: a `failed`
+    /// attempt's diagnostics survive a re-stage/re-validate cycle.
+    pub fn list_validation_attempts(&self, run_id: &str) -> StorageResult<Vec<ValidationAttempt>> {
+        let connection = self.db.checkout()?;
+        let mut statement = connection.prepare(
+            "SELECT id, run_id, revision, attempt, outcome, manifest_hash, manifest_json, created_at \
+             FROM kpi_ingest_validation_attempts WHERE run_id = ?1 ORDER BY revision, attempt",
+        )?;
+        let rows = statement
+            .query_map([run_id], map_validation_attempt_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// The deterministic `ready` attempt for `(run_id, revision, manifest_hash)`
+    /// — the read #362/#363 use to fetch the exact frozen manifest bytes the
+    /// run's `manifest_hash` currently points at (`outcome='ready' ORDER BY
+    /// attempt DESC LIMIT 1`, data-model.md § Kompatybilność: a `ready_to_commit`
+    /// run whose (run, revision, hash) has no attempt row predates migration
+    /// 0139 — `None` here, never a fabricated match).
+    pub fn get_validation_attempt(
+        &self,
+        run_id: &str,
+        revision: i64,
+        manifest_hash: &str,
+    ) -> StorageResult<Option<ValidationAttempt>> {
+        let connection = self.db.checkout()?;
+        connection
+            .query_row(
+                "SELECT id, run_id, revision, attempt, outcome, manifest_hash, manifest_json, created_at \
+                 FROM kpi_ingest_validation_attempts \
+                 WHERE run_id = ?1 AND revision = ?2 AND manifest_hash = ?3 AND outcome = 'ready' \
+                 ORDER BY attempt DESC LIMIT 1",
+                params![run_id, revision, manifest_hash],
+                map_validation_attempt_row,
+            )
+            .optional()
+            .map_err(StorageError::from)
     }
 
     /// `{discovered, source_captured, extracting, staged, validation_failed,
@@ -2334,9 +2455,10 @@ mod tests {
         let run = advance_to_extracting(state, doc, company, holder);
         let revision = stage_once(state, &run.id, holder);
         let store = state.kpi_ingest_runs();
-        store
-            .mark_ready_to_commit(&run.id, revision, manifest_hash)
+        let connection = store.db.checkout().expect("checkout");
+        mark_ready_to_commit_on_connection(&connection, &run.id, revision, manifest_hash)
             .expect("ready");
+        drop(connection);
         store.get_run(&run.id).expect("get").expect("some")
     }
 
@@ -2487,58 +2609,70 @@ mod tests {
         );
     }
 
+    // `mark_validation_failed`/`mark_ready_to_commit` no longer have a public
+    // seam (#361 sol r4: the only caller is `kpi_ingest_staging::
+    // apply_validation_outcome`'s atom, which inserts an immutable attempt
+    // row before ever calling either connection-level primitive below — a
+    // hash-bearing `ready_to_commit`/`validation_failed` row with no
+    // attempt evidence is structurally uncreatable). These tests now drive
+    // the primitives directly on a checked-out connection, the same
+    // guarantees the atom's own test suite (`kpi_ingest_staging::tests`)
+    // re-exercises end to end.
+
     #[test]
-    fn mark_validation_failed_happy_path_targets_the_current_revision() {
+    fn mark_validation_failed_on_connection_happy_path_targets_the_current_revision() {
         let (state, doc, company) = setup_one_company_doc();
         let run = advance_to_extracting(&state, doc, company, "worker-a");
         let revision = stage_once(&state, &run.id, "worker-a");
 
         let store = state.kpi_ingest_runs();
-        store
-            .mark_validation_failed(&run.id, revision)
-            .expect("mark failed");
+        let connection = store.db.checkout().expect("checkout");
+        mark_validation_failed_on_connection(&connection, &run.id, revision).expect("mark failed");
+        drop(connection);
         let after = store.get_run(&run.id).expect("get").expect("some");
         assert_eq!(after.status, KpiIngestRunState::ValidationFailed);
     }
 
     #[test]
-    fn mark_validation_failed_refuses_a_stale_revision() {
+    fn mark_validation_failed_on_connection_refuses_a_stale_revision() {
         let (state, doc, company) = setup_one_company_doc();
         let run = advance_to_extracting(&state, doc, company, "worker-a");
         let revision = stage_once(&state, &run.id, "worker-a");
 
-        let error = state
-            .kpi_ingest_runs()
-            .mark_validation_failed(&run.id, revision + 1)
+        let store = state.kpi_ingest_runs();
+        let connection = store.db.checkout().expect("checkout");
+        let error = mark_validation_failed_on_connection(&connection, &run.id, revision + 1)
             .expect_err("stale revision");
         assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
     }
 
     #[test]
-    fn mark_validation_failed_refuses_wrong_state_with_unchanged_snapshot() {
+    fn mark_validation_failed_on_connection_refuses_wrong_state_with_unchanged_snapshot() {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
             .create_run_if_absent(&ready_new_run(doc, company, "p1"))
             .expect("create");
         let before = store.get_run(&run.id).expect("get").expect("some");
-        let error = store
-            .mark_validation_failed(&run.id, 0)
+        let connection = store.db.checkout().expect("checkout");
+        let error = mark_validation_failed_on_connection(&connection, &run.id, 0)
             .expect_err("still discovered");
         assert!(matches!(error, StorageError::InvalidRunTransition { .. }));
+        drop(connection);
         assert_eq!(before, store.get_run(&run.id).expect("get").expect("some"));
     }
 
     #[test]
-    fn mark_ready_to_commit_happy_path_freezes_manifest_and_clears_lease() {
+    fn mark_ready_to_commit_on_connection_happy_path_freezes_manifest_and_clears_lease() {
         let (state, doc, company) = setup_one_company_doc();
         let run = advance_to_extracting(&state, doc, company, "worker-a");
         let revision = stage_once(&state, &run.id, "worker-a");
 
         let store = state.kpi_ingest_runs();
-        store
-            .mark_ready_to_commit(&run.id, revision, "hash-abc")
+        let connection = store.db.checkout().expect("checkout");
+        mark_ready_to_commit_on_connection(&connection, &run.id, revision, "hash-abc")
             .expect("ready");
+        drop(connection);
         let after = store.get_run(&run.id).expect("get").expect("some");
         assert_eq!(after.status, KpiIngestRunState::ReadyToCommit);
         assert_eq!(after.manifest_hash.as_deref(), Some("hash-abc"));
@@ -2548,24 +2682,25 @@ mod tests {
     }
 
     #[test]
-    fn mark_ready_to_commit_refuses_a_stale_revision() {
+    fn mark_ready_to_commit_on_connection_refuses_a_stale_revision() {
         let (state, doc, company) = setup_one_company_doc();
         let run = advance_to_extracting(&state, doc, company, "worker-a");
         let revision = stage_once(&state, &run.id, "worker-a");
 
-        let error = state
-            .kpi_ingest_runs()
-            .mark_ready_to_commit(&run.id, revision + 1, "hash-abc")
-            .expect_err("stale revision");
+        let store = state.kpi_ingest_runs();
+        let connection = store.db.checkout().expect("checkout");
+        let error =
+            mark_ready_to_commit_on_connection(&connection, &run.id, revision + 1, "hash-abc")
+                .expect_err("stale revision");
         assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
     }
 
-    /// Structurally unreachable via any production seam (`mark_ready_to_commit`'s
-    /// own guard requires `manifest_hash IS NULL` and moves status off `staged`
-    /// on success) — raw-seeded defensively, the same carve-out
-    /// `kpi_ingest_staging`'s frozen-revision coverage uses.
+    /// Structurally unreachable via any production seam (the atom's own guard
+    /// requires `manifest_hash IS NULL` before ever calling this primitive) —
+    /// raw-seeded defensively, the same carve-out `kpi_ingest_staging`'s
+    /// frozen-revision coverage uses.
     #[test]
-    fn mark_ready_to_commit_refuses_when_a_manifest_is_already_issued() {
+    fn mark_ready_to_commit_on_connection_refuses_when_a_manifest_is_already_issued() {
         let connection = open_in_memory_database().expect("db");
         seed_company(&connection, "c1");
         seed_document(&connection, "doc1", "c1");
@@ -2586,10 +2721,7 @@ mod tests {
                 [],
             )
             .expect("freeze");
-        let state = AppState::new(connection);
-        let error = state
-            .kpi_ingest_runs()
-            .mark_ready_to_commit("run1", 1, "new-hash")
+        let error = mark_ready_to_commit_on_connection(&connection, "run1", 1, "new-hash")
             .expect_err("already issued");
         assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
     }
@@ -2600,9 +2732,10 @@ mod tests {
         let run = advance_to_extracting(&state, doc, company, "worker-a");
         let revision = stage_once(&state, &run.id, "worker-a");
         let store = state.kpi_ingest_runs();
-        store
-            .mark_ready_to_commit(&run.id, revision, "hash-abc")
+        let connection = store.db.checkout().expect("checkout");
+        mark_ready_to_commit_on_connection(&connection, &run.id, revision, "hash-abc")
             .expect("ready");
+        drop(connection);
 
         store.invalidate_manifest(&run.id).expect("invalidate");
         let after = store.get_run(&run.id).expect("get").expect("some");

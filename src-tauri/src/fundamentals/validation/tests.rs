@@ -256,17 +256,23 @@ fn plausibility_verdict_names_why_a_fact_was_not_flagged() {
     // Split-sensitive: abstains regardless of the swing.
     assert_eq!(
         plausibility_verdict("eps_basic", d(1), &[d(200), d(210)]),
-        PlausibilityVerdict::Abstained
+        PlausibilityVerdict::Abstained {
+            reason: AbstentionReason::SplitSensitive
+        }
     );
     // Thin history (< 2 values): abstains.
     assert_eq!(
         plausibility_verdict("cash", d(19_000), &[d(3_841_000)]),
-        PlausibilityVerdict::Abstained
+        PlausibilityVerdict::Abstained {
+            reason: AbstentionReason::ThinHistory
+        }
     );
     // Zero value: abstains.
     assert_eq!(
         plausibility_verdict("cash", d(0), &siblings),
-        PlausibilityVerdict::Abstained
+        PlausibilityVerdict::Abstained {
+            reason: AbstentionReason::ZeroValue
+        }
     );
 }
 
