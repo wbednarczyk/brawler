@@ -325,8 +325,9 @@ fn strip_currency_suffix(s: &str) -> String {
 /// `None` if the column is not a clean number. Handles accounting parentheses,
 /// ASCII and Unicode minus/dash (`-`, `–`, `—`, `−`), space/NBSP/dot thousands
 /// grouping and a trailing currency word; a bare dash (`–`, "no data") yields
-/// `None`. Shared with the HTML aggregator tier.
-pub(super) fn parse_amount(tok: &str) -> Option<Decimal> {
+/// `None`. Shared with the HTML aggregator tier and (#361) the manifest
+/// builder's `unit.scale_incoherent`/`unit.scale_unverifiable` checks.
+pub(crate) fn parse_amount(tok: &str) -> Option<Decimal> {
     // Normalize a leading Unicode minus/dash to ASCII '-'.
     let mut s = tok.trim().to_string();
     if let Some(rest) = s

@@ -13,6 +13,7 @@ pub mod expr;
 pub mod extraction;
 pub mod health;
 pub mod insider;
+pub mod kpi_manifest;
 pub mod management_holdings;
 pub mod metrics;
 pub mod ownership;

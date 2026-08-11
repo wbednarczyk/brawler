@@ -1,0 +1,25 @@
+---
+source: src/fundamentals/kpi_manifest/tests.rs
+assertion_line: 652
+expression: literals
+---
+[
+    "mapping.unresolved",
+    "value.unparseable",
+    "unit.currency_missing",
+    "unit.currency_unexpected",
+    "unit.scale_incoherent",
+    "unit.scale_unverifiable",
+    "period.window_missing",
+    "period.window_kind_mismatch",
+    "scope.run_mismatch",
+    "citation.missing",
+    "duplicate.conflict",
+    "duplicate.repeat",
+    "identity.violation",
+    "plausibility.implausible",
+    "plausibility.abstained",
+    "run.unsupported_period_grammar",
+    "run.invalid_missing_reasons",
+    "completeness.missing_without_reason",
+]

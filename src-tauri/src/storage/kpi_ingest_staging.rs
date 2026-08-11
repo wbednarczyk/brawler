@@ -9,10 +9,14 @@
 //! own `&Connection` (the `record_structured_fact` pattern,
 //! `kpi_extraction.rs:359`).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+use crate::fundamentals::kpi_manifest::{Outcome as ManifestOutcome, SealedManifest};
 
 use super::database::Database;
-use super::kpi_ingest_runs::KpiIngestRunState;
+use super::kpi_ingest_runs::{
+    mark_ready_to_commit_on_connection, mark_validation_failed_on_connection, KpiIngestRunState,
+};
 use super::*;
 
 /// `kpi_staged_observations.unit_scale` vocabulary — the live `UnitScale`
@@ -32,9 +36,6 @@ const MEASURE_WINDOW_VALUES: &[&str] = &[
 const ATTRIBUTION_VALUES: &[&str] = &["total", "owners_of_parent", "nci"];
 const SCOPE_VALUES: &[&str] = &["standalone", "consolidated"];
 const MAPPING_STATUS_VALUES: &[&str] = &["unmapped", "mapped", "no_definition"];
-/// Reused from `financial_fact_provenance.validation_status` (migration
-/// 0057).
-const VALIDATION_STATE_VALUES: &[&str] = &["none", "passed", "unreviewed", "flagged"];
 /// Which run states `stage_observations` may act on (B1 sol review round 2):
 /// `extracting` is the first snapshot, `validation_failed` is a repair
 /// restage. Every other state — including `staged`/`ready_to_commit`/
@@ -48,7 +49,7 @@ const STAGEABLE_STATUSES: &[KpiIngestRunState] = &[
 /// One proposed observation to stage. The store assigns `id`, `revision` and
 /// `ordinal` — never caller-supplied. `validation_state`/
 /// `validation_codes_json` are ALWAYS `none`/`NULL` at staging time; only
-/// [`KpiIngestStagingStore::apply_validation_results`] ever sets them.
+/// [`KpiIngestStagingStore::apply_validation_outcome`] ever sets them.
 #[derive(Debug, Clone, Default)]
 pub struct NewStagedObservation {
     /// Exactly as the document states it — never normalized.
@@ -133,15 +134,6 @@ fn map_observation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StagedObserv
         created_at: row.get(22)?,
         updated_at: row.get(23)?,
     })
-}
-
-/// One observation's validation verdict for
-/// [`KpiIngestStagingStore::apply_validation_results`].
-#[derive(Debug, Clone)]
-pub struct ObservationValidation {
-    pub observation_id: String,
-    pub validation_state: String,
-    pub validation_codes_json: Option<String>,
 }
 
 /// A new immutable commit receipt (ADR 0098 dec. 5).
@@ -244,6 +236,48 @@ fn generate_observation_id(run_id: &str, revision: i64, ordinal: i64) -> String 
         hex.push_str(&format!("{byte:02x}"));
     }
     format!("kpiobs_{hex}")
+}
+
+/// Collision-safe id for one `kpi_ingest_validation_attempts` row (the
+/// `generate_observation_id` idiom): `kpiatt_` + 32 hex chars of sha256 over
+/// the identity plus a nanosecond time component. `attempt` is part of the
+/// hashed key (not just `run_id`/`revision`) purely for extra collision
+/// distance across the rare case of two attempts landing at the same
+/// nanosecond — the `UNIQUE(run_id, revision, attempt)` constraint is the
+/// real invariant guard, not this id's uniqueness.
+fn generate_attempt_id(run_id: &str, revision: i64, attempt: i64) -> String {
+    use sha2::{Digest, Sha256};
+    let now_nanos = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
+    let key = format!("kpiatt:{run_id}\u{1f}{revision}\u{1f}{attempt}\u{1f}{now_nanos}");
+    let digest = Sha256::digest(key.as_bytes());
+    let mut hex = String::with_capacity(32);
+    for byte in &digest[..16] {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    format!("kpiatt_{hex}")
+}
+
+/// The sol r5-2 content-tamper guard: whether a [`SealedManifest`]'s
+/// canonical staged-content projection for one observation matches the LIVE
+/// `kpi_staged_observations` row, dimension for dimension (effective scale/
+/// attribution defaulted the SAME way `unit.scale_incoherent`'s `scale_eff`
+/// and the `attribution_eff` slot key are, everything else compared raw).
+fn content_matches_projection(
+    row: &StagedObservation,
+    projection: &crate::fundamentals::kpi_manifest::ObservationContentProjection,
+) -> bool {
+    row.ordinal == projection.ordinal
+        && row.metric_key_candidate == projection.metric_key_candidate
+        && row.normalized_value == projection.normalized_value
+        && row.currency == projection.currency
+        && row.unit_scale.as_deref().unwrap_or("ones") == projection.unit_scale_eff
+        && row.attribution.as_deref().unwrap_or("total") == projection.attribution_eff
+        && row.measure_window == projection.measure_window_eff
+        && row.scope == projection.scope
+        && row.citation_page == projection.citation_page
+        && row.citation_table == projection.citation_table
+        && row.citation_row == projection.citation_row
+        && row.citation_quote == projection.citation_quote
 }
 
 // ponytail: unwired until #363's commit transaction calls `record_commit_receipt`
@@ -545,41 +579,42 @@ impl KpiIngestStagingStore {
             .map_err(StorageError::from)
     }
 
-    /// Apply a batch of validation verdicts to ONE staging revision in a
-    /// SINGLE transaction (M6 sol review — never a partially-validated
-    /// revision). Refuses when `revision` is not the run's current
-    /// `manifest_revision` or the run's `manifest_hash` is already set (the
-    /// revision is frozen once a manifest is issued) — both are
-    /// `InvalidStagingRevision`. An unknown or duplicated `observation_id` in
-    /// the batch is a typed refusal; nothing in the batch is applied on any
-    /// failure (the transaction rolls back).
-    pub fn apply_validation_results(
+    /// Applies a [`SealedManifest`] to ONE staging revision — the ONLY path
+    /// to `staged -> {validation_failed, ready_to_commit}` (#361 sol r4):
+    /// verdicts, codes, the immutable attempt row, and the run transition are
+    /// ALL derived from `sealed`, in ONE `Immediate` transaction, so a
+    /// manifest↔stored-rows disagreement is structurally impossible.
+    ///
+    /// Guards, in order (any failure rolls back EVERYTHING, including the
+    /// attempt insert):
+    /// 1. run exists, `status = 'staged'`, `manifest_revision = revision`,
+    ///    `manifest_hash IS NULL` (`InvalidStagingRevision`, the same class
+    ///    the retired `apply_validation_results` used).
+    /// 2. `sealed.run_id() == run_id` and `sealed.revision() == revision`
+    ///    (`SealedManifestRejected`) — a manifest built for a different run/
+    ///    revision must never bind here even if the caller mis-threads it.
+    /// 3. COVERAGE: the observation ids in `sealed` are EXACTLY the staged
+    ///    observations of this revision — no fewer, no more
+    ///    (`SealedManifestRejected`).
+    /// 4. CONTENT (sol r5-2 tamper guard): `sealed`'s canonical staged-content
+    ///    projection per observation is re-compared against the LIVE row —
+    ///    right ids, wrong value/citation/dims is refused, zero writes
+    ///    (`SealedManifestRejected`).
+    ///
+    /// Then: batch-write every verdict (`validation_state` +
+    /// `validation_codes_json`, both taken from `sealed` — never a separate
+    /// caller-supplied `results` list), INSERT the immutable attempt row
+    /// (`attempt = COALESCE(MAX(attempt), 0) + 1` for `(run_id, revision)`,
+    /// computed in this same transaction), and transition the run via
+    /// [`mark_ready_to_commit_on_connection`] or
+    /// [`mark_validation_failed_on_connection`] according to
+    /// `sealed.outcome()`.
+    pub fn apply_validation_outcome(
         &self,
         run_id: &str,
         revision: i64,
-        results: Vec<ObservationValidation>,
+        sealed: SealedManifest,
     ) -> StorageResult<()> {
-        if results.is_empty() {
-            return Err(StorageError::InvalidKpiIngestRunValue {
-                key: "validation_results",
-                value: "empty batch".to_owned(),
-            });
-        }
-        let mut seen = HashSet::with_capacity(results.len());
-        for result in &results {
-            validate_vocab(
-                "validation_state",
-                &Some(result.validation_state.clone()),
-                VALIDATION_STATE_VALUES,
-            )?;
-            if !seen.insert(result.observation_id.clone()) {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "observation_id",
-                    value: format!("duplicate in batch: {}", result.observation_id),
-                });
-            }
-        }
-
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
@@ -595,12 +630,6 @@ impl KpiIngestStagingStore {
                 id: run_id.to_owned(),
             });
         };
-        // #360 F7 sol: validation only ever applies to a `staged` revision —
-        // previously this method checked only revision/hash, which could
-        // still mutate a revision after `cancel_run`/`mark_failed` moved the
-        // run on. `staged` implies `manifest_hash IS NULL` already (the
-        // freeze check below is now redundant with this one but kept for its
-        // own, more specific error message).
         if KpiIngestRunState::parse(&status)? != KpiIngestRunState::Staged {
             return Err(StorageError::InvalidStagingRevision {
                 run_id: run_id.to_owned(),
@@ -623,7 +652,60 @@ impl KpiIngestStagingStore {
             });
         }
 
-        for result in results {
+        if sealed.run_id() != run_id {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's runId does not match the target run",
+            });
+        }
+        if sealed.revision() != revision {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's revision does not match the target revision",
+            });
+        }
+
+        let mut statement = tx.prepare(&format!(
+            "SELECT {OBSERVATION_COLUMNS} FROM kpi_staged_observations
+             WHERE run_id = ?1 AND revision = ?2 ORDER BY ordinal"
+        ))?;
+        let staged: Vec<StagedObservation> = statement
+            .query_map(params![run_id, revision], map_observation_row)?
+            .collect::<Result<_, _>>()?;
+        drop(statement);
+
+        let staged_ids: HashSet<&str> = staged.iter().map(|o| o.id.as_str()).collect();
+        let sealed_ids: HashSet<&str> = sealed
+            .observation_verdicts()
+            .iter()
+            .map(|v| v.observation_id.as_str())
+            .collect();
+        if staged_ids != sealed_ids {
+            return Err(StorageError::SealedManifestRejected {
+                run_id: run_id.to_owned(),
+                revision,
+                reason: "sealed manifest's observations do not exactly match this revision's staged observations",
+            });
+        }
+
+        let staged_by_id: HashMap<&str, &StagedObservation> =
+            staged.iter().map(|o| (o.id.as_str(), o)).collect();
+        for projection in sealed.observation_content() {
+            let row = staged_by_id
+                .get(projection.observation_id.as_str())
+                .expect("coverage check above guarantees this id exists");
+            if !content_matches_projection(row, projection) {
+                return Err(StorageError::SealedManifestRejected {
+                    run_id: run_id.to_owned(),
+                    revision,
+                    reason: "sealed manifest's staged-content projection does not match the live observation row",
+                });
+            }
+        }
+
+        for verdict in sealed.observation_verdicts() {
             let changed = tx.execute(
                 "UPDATE kpi_staged_observations
                  SET validation_state = ?1,
@@ -631,17 +713,51 @@ impl KpiIngestStagingStore {
                      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                  WHERE id = ?3 AND run_id = ?4 AND revision = ?5",
                 params![
-                    result.validation_state,
-                    result.validation_codes_json,
-                    result.observation_id,
+                    verdict.validation_state,
+                    verdict.validation_codes_json,
+                    verdict.observation_id,
                     run_id,
                     revision
                 ],
             )?;
-            if changed == 0 {
-                return Err(StorageError::StagedObservationNotFound {
-                    id: result.observation_id,
-                });
+            debug_assert_eq!(
+                changed, 1,
+                "coverage check above guarantees this row exists"
+            );
+        }
+
+        let attempt: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(attempt), 0) + 1 FROM kpi_ingest_validation_attempts
+             WHERE run_id = ?1 AND revision = ?2",
+            params![run_id, revision],
+            |row| row.get(0),
+        )?;
+        let attempt_id = generate_attempt_id(run_id, revision, attempt);
+        let outcome_str = match sealed.outcome() {
+            ManifestOutcome::Ready => "ready",
+            ManifestOutcome::Failed => "failed",
+        };
+        tx.execute(
+            "INSERT INTO kpi_ingest_validation_attempts
+                (id, run_id, revision, attempt, outcome, manifest_hash, manifest_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                attempt_id,
+                run_id,
+                revision,
+                attempt,
+                outcome_str,
+                sealed.manifest_hash(),
+                sealed.manifest_json(),
+            ],
+        )?;
+
+        match sealed.outcome() {
+            ManifestOutcome::Ready => {
+                mark_ready_to_commit_on_connection(&tx, run_id, revision, sealed.manifest_hash())?;
+            }
+            ManifestOutcome::Failed => {
+                mark_validation_failed_on_connection(&tx, run_id, revision)?;
             }
         }
 
@@ -857,12 +973,14 @@ mod tests {
         // Restage requires validation_failed, not staged directly — #360's
         // real seam, replacing the raw status flip this test used before it
         // existed. The lease claimed in `setup()` is untouched by
-        // `mark_validation_failed` (no lease requirement on that edge), so it
-        // stays live for the restage below.
-        state
-            .kpi_ingest_runs()
-            .mark_validation_failed(run_id, revision)
-            .expect("flip to validation_failed");
+        // `mark_validation_failed_on_connection` (no lease requirement on
+        // that edge), so it stays live for the restage below.
+        mark_validation_failed_on_connection(
+            &state.checkout_for_tests().expect("checkout"),
+            run_id,
+            revision,
+        )
+        .expect("flip to validation_failed");
 
         let (revision2, observations2) = store
             .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
@@ -995,10 +1113,12 @@ mod tests {
         let (revision1, _) = store
             .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
             .expect("rev1");
-        state
-            .kpi_ingest_runs()
-            .mark_validation_failed(run_id, revision1)
-            .expect("flip");
+        mark_validation_failed_on_connection(
+            &state.checkout_for_tests().expect("checkout"),
+            run_id,
+            revision1,
+        )
+        .expect("flip");
         store
             .stage_observations(
                 run_id,
@@ -1027,71 +1147,230 @@ mod tests {
         );
     }
 
-    // --- Test 3: apply_validation_results ---------------------------------
+    // --- Test 3: apply_validation_outcome (#361) ----------------------------
+
+    /// `one_observation()` leaves `measure_window` unset (`period.window_missing`
+    /// would always flag it) — these atom tests need a "clean" staged row
+    /// that seals to a `passed`/`unreviewed` (never `flagged`) observation by
+    /// default, so a happy-path "ready" scenario is actually reachable.
+    fn clean_observation() -> NewStagedObservation {
+        NewStagedObservation {
+            measure_window: Some("flow".to_owned()),
+            ..one_observation()
+        }
+    }
+
+    /// Builds a [`SealedManifest`] whose observations are EXACTLY the given
+    /// staged rows (same ids/ordinal/content — the atom's coverage/content
+    /// guards require this), each carrying a resolved `revenue` definition
+    /// with no history (an honest `plausibility.abstained` -> `unreviewed`,
+    /// which never flips `outcome` — the atom tests below care about the
+    /// COVERAGE/CONTENT/BINDING guards, not the rule engine already covered
+    /// by `fundamentals::kpi_manifest::tests`).
+    fn sealed_manifest_for(
+        run_id: &str,
+        revision: i64,
+        rows: &[StagedObservation],
+    ) -> SealedManifest {
+        use crate::fundamentals::kpi_manifest::{
+            build_manifest, ManifestObservationInput, ManifestRunInput, MissingReasons,
+            ResolvedDefinitionInput, SlotHistoryInput,
+        };
+        let run = ManifestRunInput {
+            run_id: run_id.to_owned(),
+            revision,
+            company_id: "c1".to_owned(),
+            report_document_id: "doc1".to_owned(),
+            source_content_hash: None,
+            scope: "consolidated".to_owned(),
+            data_quality: "final".to_owned(),
+            period_id: None,
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            missing_reasons: MissingReasons::None,
+            expected: None,
+        };
+        let observations: Vec<ManifestObservationInput> = rows
+            .iter()
+            .map(|row| ManifestObservationInput {
+                observation_id: row.id.clone(),
+                ordinal: row.ordinal,
+                raw_value: row.raw_value.clone(),
+                metric_key_candidate: row.metric_key_candidate.clone(),
+                mapping_status: "mapped".to_owned(),
+                normalized_value: row.normalized_value.clone(),
+                currency: row.currency.clone(),
+                unit_scale: row.unit_scale.clone(),
+                measure_window: row.measure_window.clone(),
+                attribution: row.attribution.clone(),
+                scope: row.scope.clone(),
+                citation_page: row.citation_page,
+                citation_table: row.citation_table.clone(),
+                citation_row: row.citation_row.clone(),
+                citation_quote: row.citation_quote.clone(),
+                // Distinct per ordinal -- two staged rows built from the same
+                // `clean_observation()` fixture would otherwise share one
+                // slot (definition_id, attribution_eff, measure_window_eff)
+                // and trip `duplicate.repeat`, which these tests don't want
+                // to reason about.
+                definition: Some(ResolvedDefinitionInput {
+                    definition_id: format!("kpidef_test_metric_{}", row.ordinal),
+                    metric_key: format!("test_metric_{}", row.ordinal),
+                    value_kind: "monetary".to_owned(),
+                    history: SlotHistoryInput::default(),
+                }),
+            })
+            .collect();
+        SealedManifest::seal(build_manifest(&run, &observations))
+            .expect("consistent manifest seals")
+    }
+
+    /// Same as [`sealed_manifest_for`], but the given `row.id`s are flagged
+    /// (no resolved definition -> `mapping.unresolved`) so the sealed
+    /// manifest's derived `outcome` is `failed`.
+    fn failed_sealed_manifest_for(
+        run_id: &str,
+        revision: i64,
+        rows: &[StagedObservation],
+    ) -> SealedManifest {
+        use crate::fundamentals::kpi_manifest::{
+            build_manifest, ManifestObservationInput, ManifestRunInput, MissingReasons,
+        };
+        let run = ManifestRunInput {
+            run_id: run_id.to_owned(),
+            revision,
+            company_id: "c1".to_owned(),
+            report_document_id: "doc1".to_owned(),
+            source_content_hash: None,
+            scope: "consolidated".to_owned(),
+            data_quality: "final".to_owned(),
+            period_id: None,
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            missing_reasons: MissingReasons::None,
+            expected: None,
+        };
+        let observations: Vec<ManifestObservationInput> = rows
+            .iter()
+            .map(|row| ManifestObservationInput {
+                observation_id: row.id.clone(),
+                ordinal: row.ordinal,
+                raw_value: row.raw_value.clone(),
+                metric_key_candidate: row.metric_key_candidate.clone(),
+                mapping_status: "unmapped".to_owned(),
+                normalized_value: row.normalized_value.clone(),
+                currency: row.currency.clone(),
+                unit_scale: row.unit_scale.clone(),
+                measure_window: row.measure_window.clone(),
+                attribution: row.attribution.clone(),
+                scope: row.scope.clone(),
+                citation_page: row.citation_page,
+                citation_table: row.citation_table.clone(),
+                citation_row: row.citation_row.clone(),
+                citation_quote: row.citation_quote.clone(),
+                definition: None,
+            })
+            .collect();
+        SealedManifest::seal(build_manifest(&run, &observations))
+            .expect("consistent manifest seals")
+    }
 
     #[test]
-    fn apply_validation_results_happy_path_in_one_transaction() {
+    fn apply_validation_outcome_happy_path_ready_in_one_transaction() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
-        let (revision, observations) = store
+        let (revision, rows) = store
             .stage_observations(
                 run_id,
                 TEST_HOLDER,
-                vec![one_observation(), one_observation()],
+                vec![clean_observation(), clean_observation()],
             )
             .expect("stage");
+        let sealed = sealed_manifest_for(run_id, revision, &rows);
+        let manifest_hash = sealed.manifest_hash().to_owned();
 
         store
-            .apply_validation_results(
-                run_id,
-                revision,
-                vec![
-                    ObservationValidation {
-                        observation_id: observations[0].id.clone(),
-                        validation_state: "passed".to_owned(),
-                        validation_codes_json: None,
-                    },
-                    ObservationValidation {
-                        observation_id: observations[1].id.clone(),
-                        validation_state: "flagged".to_owned(),
-                        validation_codes_json: Some("[\"code_1\"]".to_owned()),
-                    },
-                ],
-            )
+            .apply_validation_outcome(run_id, revision, sealed)
             .expect("apply");
 
         let after = store
             .list_staged_observations(run_id, Some(revision))
             .expect("list");
-        assert_eq!(after[0].validation_state, "passed");
-        assert_eq!(after[1].validation_state, "flagged");
-        assert_eq!(
-            after[1].validation_codes_json.as_deref(),
-            Some("[\"code_1\"]")
-        );
+        assert!(after.iter().all(|o| o.validation_state == "unreviewed"));
+        assert!(after.iter().all(|o| o.validation_codes_json.is_some()));
+
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(run_id)
+            .expect("get")
+            .expect("some");
+        assert_eq!(run.status, KpiIngestRunState::ReadyToCommit);
+        assert_eq!(run.manifest_hash.as_deref(), Some(manifest_hash.as_str()));
+
+        let attempts = state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts");
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].outcome, "ready");
+        assert_eq!(attempts[0].attempt, 1);
+        assert_eq!(attempts[0].manifest_hash, manifest_hash);
     }
 
     #[test]
-    fn apply_validation_results_refuses_a_non_staged_run() {
+    fn apply_validation_outcome_failed_in_one_transaction_leaves_run_hash_null() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
-        let (revision, observations) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .expect("stage");
+        let sealed = failed_sealed_manifest_for(run_id, revision, &rows);
+        let manifest_hash = sealed.manifest_hash().to_owned();
+
+        store
+            .apply_validation_outcome(run_id, revision, sealed)
+            .expect("apply");
+
+        let after = store
+            .list_staged_observations(run_id, Some(revision))
+            .expect("list");
+        assert_eq!(after[0].validation_state, "flagged");
+
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(run_id)
+            .expect("get")
+            .expect("some");
+        assert_eq!(run.status, KpiIngestRunState::ValidationFailed);
+        assert!(
+            run.manifest_hash.is_none(),
+            "failed never sets run.manifest_hash"
+        );
+
+        let attempts = state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts");
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].outcome, "failed");
+        assert_eq!(attempts[0].manifest_hash, manifest_hash);
+        assert!(attempts[0].manifest_json.contains("mapping.unresolved"));
+    }
+
+    #[test]
+    fn apply_validation_outcome_refuses_a_non_staged_run() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
             .expect("stage");
         state
             .kpi_ingest_runs()
             .cancel_run(run_id)
             .expect("cancel from staged is legal");
+        let sealed = sealed_manifest_for(run_id, revision, &rows);
         let error = store
-            .apply_validation_results(
-                run_id,
-                revision,
-                vec![ObservationValidation {
-                    observation_id: observations[0].id.clone(),
-                    validation_state: "passed".to_owned(),
-                    validation_codes_json: None,
-                }],
-            )
+            .apply_validation_outcome(run_id, revision, sealed)
             .expect_err("validating a cancelled run must refuse (status != staged)");
         assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
     }
@@ -1132,31 +1411,24 @@ mod tests {
     }
 
     #[test]
-    fn apply_validation_results_refuses_stale_or_frozen_revision() {
+    fn apply_validation_outcome_refuses_stale_or_frozen_revision() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
-        let (revision, observations) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
             .expect("stage");
 
+        let sealed = sealed_manifest_for(run_id, revision + 1, &rows);
         let error = store
-            .apply_validation_results(
-                run_id,
-                revision + 1,
-                vec![ObservationValidation {
-                    observation_id: observations[0].id.clone(),
-                    validation_state: "passed".to_owned(),
-                    validation_codes_json: None,
-                }],
-            )
+            .apply_validation_outcome(run_id, revision + 1, sealed)
             .expect_err("stale revision");
         assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
 
         // Freeze the revision (a manifest was issued). Structurally
         // unreachable through any production seam while `status` stays
-        // `staged` (`mark_ready_to_commit` moves status to `ready_to_commit`
-        // in the SAME UPDATE that sets the hash — #360) — raw-seeded
-        // defensively to probe this method's OWN freeze guard in isolation.
+        // `staged` (the atom's own transition to `ready_to_commit` moves
+        // status off `staged` in the SAME update that sets the hash) —
+        // raw-seeded defensively to probe this method's OWN freeze guard.
         state
             .checkout_for_tests()
             .expect("raw")
@@ -1165,114 +1437,220 @@ mod tests {
                 [run_id],
             )
             .expect("freeze");
+        let sealed = sealed_manifest_for(run_id, revision, &rows);
         let error = store
-            .apply_validation_results(
-                run_id,
-                revision,
-                vec![ObservationValidation {
-                    observation_id: observations[0].id.clone(),
-                    validation_state: "passed".to_owned(),
-                    validation_codes_json: None,
-                }],
-            )
+            .apply_validation_outcome(run_id, revision, sealed)
             .expect_err("frozen revision");
         assert!(matches!(error, StorageError::InvalidStagingRevision { .. }));
     }
 
     #[test]
-    fn apply_validation_results_rejects_an_empty_batch() {
+    fn apply_validation_outcome_refuses_wrong_run_id_and_revision_binding() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
-        store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
             .expect("stage");
+
+        // Sealed for a DIFFERENT run id -- binding mismatch, distinct from
+        // the coverage/revision guards.
+        let foreign_run_sealed = sealed_manifest_for("kpiing_other", revision, &rows);
         let error = store
-            .apply_validation_results(run_id, 1, vec![])
-            .expect_err("an empty validation batch must be refused, not a silent no-op");
-        assert!(matches!(
-            error,
-            StorageError::InvalidKpiIngestRunValue {
-                key: "validation_results",
-                ..
-            }
-        ));
-    }
+            .apply_validation_outcome(run_id, revision, foreign_run_sealed)
+            .expect_err("foreign run id must be refused");
+        assert!(matches!(error, StorageError::SealedManifestRejected { .. }));
 
-    #[test]
-    fn apply_validation_results_rejects_unknown_id_bad_vocab_and_batch_duplicate() {
-        let (state, run_id) = setup();
-        let store = state.kpi_ingest_staging();
-        let (revision, observations) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
-            .expect("stage");
-        let obs_id = observations[0].id.clone();
-
+        // Sealed for the RIGHT run but a revision the manifest itself claims
+        // is different from what the caller passed.
+        let wrong_revision_sealed = sealed_manifest_for(run_id, revision + 41, &rows);
         let error = store
-            .apply_validation_results(
-                run_id,
-                revision,
-                vec![ObservationValidation {
-                    observation_id: "kpiobs_missing".to_owned(),
-                    validation_state: "passed".to_owned(),
-                    validation_codes_json: None,
-                }],
-            )
-            .expect_err("unknown id");
-        assert!(matches!(
-            error,
-            StorageError::StagedObservationNotFound { .. }
-        ));
+            .apply_validation_outcome(run_id, revision, wrong_revision_sealed)
+            .expect_err("mismatched revision binding must be refused");
+        assert!(matches!(error, StorageError::SealedManifestRejected { .. }));
 
-        let error = store
-            .apply_validation_results(
-                run_id,
-                revision,
-                vec![ObservationValidation {
-                    observation_id: obs_id.clone(),
-                    validation_state: "not_a_state".to_owned(),
-                    validation_codes_json: None,
-                }],
-            )
-            .expect_err("bad vocab");
-        assert!(matches!(
-            error,
-            StorageError::InvalidKpiIngestRunValue {
-                key: "validation_state",
-                ..
-            }
-        ));
-
-        let error = store
-            .apply_validation_results(
-                run_id,
-                revision,
-                vec![
-                    ObservationValidation {
-                        observation_id: obs_id.clone(),
-                        validation_state: "passed".to_owned(),
-                        validation_codes_json: None,
-                    },
-                    ObservationValidation {
-                        observation_id: obs_id.clone(),
-                        validation_state: "flagged".to_owned(),
-                        validation_codes_json: None,
-                    },
-                ],
-            )
-            .expect_err("duplicate observationId in batch");
-        assert!(matches!(
-            error,
-            StorageError::InvalidKpiIngestRunValue {
-                key: "observation_id",
-                ..
-            }
-        ));
-
-        // Nothing from the rejected batch landed.
+        // Zero writes from either refusal.
         let after = store
             .list_staged_observations(run_id, Some(revision))
             .expect("list");
         assert_eq!(after[0].validation_state, "none");
+        assert!(state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts")
+            .is_empty());
+    }
+
+    #[test]
+    fn apply_validation_outcome_refuses_missing_or_extra_observation_coverage() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, rows) = store
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation(), clean_observation()],
+            )
+            .expect("stage");
+
+        // Missing one of the two staged observations.
+        let partial = sealed_manifest_for(run_id, revision, &rows[..1]);
+        let error = store
+            .apply_validation_outcome(run_id, revision, partial)
+            .expect_err("a manifest missing a staged observation must be refused");
+        assert!(matches!(error, StorageError::SealedManifestRejected { .. }));
+
+        let after = store
+            .list_staged_observations(run_id, Some(revision))
+            .expect("list");
+        assert!(
+            after.iter().all(|o| o.validation_state == "none"),
+            "a coverage refusal must write nothing"
+        );
+        assert!(state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts")
+            .is_empty());
+    }
+
+    #[test]
+    fn apply_validation_outcome_refuses_content_tamper_with_zero_writes() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .expect("stage");
+
+        // Same observation id, but the manifest's own staged-content
+        // projection was built from a TAMPERED value that no longer matches
+        // the live row.
+        let mut tampered_row = rows[0].clone();
+        tampered_row.normalized_value = Some("999999".to_owned());
+        let sealed = sealed_manifest_for(run_id, revision, std::slice::from_ref(&tampered_row));
+
+        let error = store
+            .apply_validation_outcome(run_id, revision, sealed)
+            .expect_err(
+                "a manifest whose content projection disagrees with the live row must refuse",
+            );
+        assert!(matches!(error, StorageError::SealedManifestRejected { .. }));
+
+        let after = store
+            .list_staged_observations(run_id, Some(revision))
+            .expect("list");
+        assert_eq!(
+            after[0].validation_state, "none",
+            "tamper refusal writes nothing"
+        );
+        assert_eq!(
+            after[0].normalized_value.as_deref(),
+            Some("1234.5"),
+            "the LIVE row's value must be untouched"
+        );
+        assert!(state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts")
+            .is_empty());
+    }
+
+    #[test]
+    fn apply_validation_outcome_codes_on_rows_equal_codes_in_manifest() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .expect("stage");
+        let sealed = sealed_manifest_for(run_id, revision, &rows);
+        let expected_codes_json = sealed.observation_verdicts()[0]
+            .validation_codes_json
+            .clone();
+
+        store
+            .apply_validation_outcome(run_id, revision, sealed)
+            .expect("apply");
+
+        let after = store
+            .list_staged_observations(run_id, Some(revision))
+            .expect("list");
+        assert_eq!(
+            after[0].validation_codes_json.as_deref(),
+            Some(expected_codes_json.as_str()),
+            "the row's stored codes must be byte-identical to the sealed manifest's"
+        );
+    }
+
+    #[test]
+    fn apply_validation_outcome_attempt_survives_restage_and_invalidate_bumps_attempt() {
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, rows) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .expect("stage");
+
+        // First attempt: fails.
+        let failed = failed_sealed_manifest_for(run_id, revision, &rows);
+        store
+            .apply_validation_outcome(run_id, revision, failed)
+            .expect("apply failed");
+        let attempts = state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts");
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].attempt, 1);
+        assert_eq!(attempts[0].outcome, "failed");
+
+        // Restage the SAME revision's repair (validation_failed -> staged is
+        // legal, #360) and validate again -- attempt 2 for revision 2.
+        let (revision2, rows2) = store
+            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .expect("restage");
+        let sealed2 = sealed_manifest_for(run_id, revision2, &rows2);
+        store
+            .apply_validation_outcome(run_id, revision2, sealed2)
+            .expect("apply ready");
+
+        // Invalidate the manifest and re-validate the SAME revision -- the
+        // UNIQUE(run_id, revision, attempt) constraint means this must land
+        // as attempt 2 for revision2, not collide with attempt 1.
+        state
+            .kpi_ingest_runs()
+            .invalidate_manifest(run_id)
+            .expect("invalidate");
+        let rows2_current = store
+            .list_staged_observations(run_id, Some(revision2))
+            .expect("list");
+        let sealed2_again = sealed_manifest_for(run_id, revision2, &rows2_current);
+        store
+            .apply_validation_outcome(run_id, revision2, sealed2_again)
+            .expect("re-apply after invalidate");
+
+        let attempts = state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts");
+        assert_eq!(
+            attempts.len(),
+            3,
+            "revision1 attempt 1 + revision2 attempts 1 and 2"
+        );
+        let rev2_attempts: Vec<_> = attempts
+            .iter()
+            .filter(|a| a.revision == revision2)
+            .collect();
+        assert_eq!(rev2_attempts.len(), 2);
+        assert_eq!(rev2_attempts[0].attempt, 1);
+        assert_eq!(rev2_attempts[1].attempt, 2);
+
+        // The revision-1 failed attempt's diagnostics are still readable
+        // (audit survives the re-stage/invalidate cycle).
+        let rev1_attempt = attempts
+            .iter()
+            .find(|a| a.revision == revision)
+            .expect("rev1 attempt");
+        assert_eq!(rev1_attempt.outcome, "failed");
+        assert!(rev1_attempt.manifest_json.contains("mapping.unresolved"));
     }
 
     // --- Test 4: record_commit_receipt ------------------------------------
@@ -1466,6 +1844,43 @@ mod tests {
         );
     }
 
+    /// Migration 0139's CHECK constraints, exercised directly against raw
+    /// SQL (#361 test group 10: "0139 w inwentarzu, tabela utworzona, CHECKi
+    /// działają" -- the inventory guard is `migrations::tests::
+    /// every_migration_file_is_registered_and_vice_versa`).
+    #[test]
+    fn validation_attempts_check_constraints_reject_bad_rows() {
+        let (state, run_id) = setup();
+        let connection = state.checkout_for_tests().expect("raw connection");
+        let insert = |id: &str, revision: i64, attempt: i64, outcome: &str| {
+            connection.execute(
+                "INSERT INTO kpi_ingest_validation_attempts
+                    (id, run_id, revision, attempt, outcome, manifest_hash, manifest_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'h', '{}')",
+                params![id, run_id, revision, attempt, outcome],
+            )
+        };
+
+        assert!(
+            insert("bad1", 0, 1, "ready").is_err(),
+            "revision 0 must be rejected"
+        );
+        assert!(
+            insert("bad2", 1, 0, "ready").is_err(),
+            "attempt 0 must be rejected"
+        );
+        assert!(
+            insert("bad3", 1, 1, "half-done").is_err(),
+            "an outcome outside ('ready', 'failed') must be rejected"
+        );
+        insert("ok1", 1, 1, "ready").expect("(run, 1, 1) must succeed");
+        assert!(
+            insert("dup", 1, 1, "failed").is_err(),
+            "UNIQUE(run_id, revision, attempt) must reject a duplicate"
+        );
+        insert("ok2", 1, 2, "failed").expect("a second attempt for the same revision must succeed");
+    }
+
     // --- Test 7: revision consistency ---------------------------------------
 
     #[test]
@@ -1478,9 +1893,9 @@ mod tests {
 
         // Simulate an issued manifest while still `staged` — structurally
         // unreachable through any production seam (same carve-out as
-        // `apply_validation_results_refuses_stale_or_frozen_revision`), so
+        // `apply_validation_outcome_refuses_stale_or_frozen_revision`), so
         // raw-seeded; the SUBSEQUENT status flip to `validation_failed`,
-        // however, has a real #360 seam now and no longer needs raw SQL.
+        // however, has a real #360/#361 seam now and no longer needs raw SQL.
         state
             .checkout_for_tests()
             .expect("raw")
@@ -1489,10 +1904,12 @@ mod tests {
                 [run_id],
             )
             .expect("simulate an issued manifest");
-        state
-            .kpi_ingest_runs()
-            .mark_validation_failed(run_id, revision)
-            .expect("flip");
+        mark_validation_failed_on_connection(
+            &state.checkout_for_tests().expect("checkout"),
+            run_id,
+            revision,
+        )
+        .expect("flip");
 
         store
             .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])

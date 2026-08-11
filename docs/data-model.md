@@ -1507,8 +1507,8 @@ Schema summary:
 | `source_captured` → `extracting` | agent (live lease) | required | — | `begin_extracting(id, holder, instruction_version)` — prerequisites: `instruction_version` (the call's own payload), `scope`+`data_quality` non-NULL, a period identity (`period_id` or a complete descriptor) |
 | `extracting` → `staged` | agent (live lease) | required | rev+1, hash := `NULL` | `stage_observations(run_id, holder, observations)` |
 | `validation_failed` → `staged` (repair) | agent (live lease) | required | rev+1, hash := `NULL` | `stage_observations` (same method, a restage) |
-| `staged` → `validation_failed` | deterministic validator (#361) | — | targets the caller's expected current revision | `mark_validation_failed(id, revision)` |
-| `staged` → `ready_to_commit` | validator (#361) | clears all 3 lease columns atomically | freezes `manifest_hash` for the current revision | `mark_ready_to_commit(id, revision, manifest_hash)` |
+| `staged` → `validation_failed` | `apply_validation_outcome` (#361) | — | targets the caller's expected current revision | `KpiIngestStagingStore::apply_validation_outcome(run_id, revision, sealed)` — the SOLE path; `mark_validation_failed_on_connection` is a `pub(super)` primitive it alone calls |
+| `staged` → `ready_to_commit` | `apply_validation_outcome` (#361) | clears all 3 lease columns atomically | freezes `manifest_hash` for the current revision | `KpiIngestStagingStore::apply_validation_outcome(run_id, revision, sealed)` — `mark_ready_to_commit_on_connection` is a `pub(super)` primitive it alone calls |
 | `ready_to_commit` → `staged` (invalidation) | executor | — | hash := `NULL`, revision unchanged | `invalidate_manifest(id)` |
 | `ready_to_commit` → `committing` | commit job (#363) | must be `NULL` (invariant; violation → `RunLeaseInvariantViolation`) | verifies hash+revision (stale → `StaleManifestForCommit`) | `begin_committing(conn, id, manifest_hash, revision)` — connection-level |
 | `committing` → `complete`\|`partial` | commit job (#363), same tx as the receipt | — | — | `finalize_committing(conn, id)` — connection-level; reads and verifies the receipt itself (no terminal parameter — a structural gate); missing/mismatched receipt → typed refusal |
@@ -1538,11 +1538,90 @@ A document referenced by any durable run (any state, including failed/cancelled)
 
 - One run = one period: observations carry no period of their own (the run's `period_id`/period descriptor is the period context — see KPI Ingest Runs above).
 - **Revision is shared with the run**: `revision` mirrors `kpi_ingest_runs.manifest_revision`. `stage_observations(run_id, holder, observations)` runs one `Immediate` transaction that atomically bumps the run's counter, zeroes `manifest_hash` (a new snapshot invalidates any prior manifest), flips `status` to `staged`, and inserts a **complete** snapshot under the new revision with store-assigned, contiguous `ordinal`s (0..n-1) — two racing stagers serialize on the run row, so exactly one revision ever lands per staging call. Stale revisions are kept, never deleted (audit trail). Legal only from `status IN ('extracting', 'validation_failed')` — every other status (`InvalidRunStateForStaging`, Conflict) — requires a LIVE lease for `holder` (`RunLeaseNotHeld`, card #360 — `stage_observations` is one of the three agent-facing intents alongside `mark_source_captured`/`begin_extracting`, none of them lease-free), and only once the run has a period identity (`period_id` or a complete descriptor).
-- **Freeze rule**: once the run's `manifest_hash` is non-NULL (a manifest was issued), its current revision is frozen — `apply_validation_results` refuses (`InvalidStagingRevision`) a run not in status `staged` (card #360 — closes a gap where `cancel_run`/`mark_failed` could otherwise be followed by a stray validation write), a stale revision (`revision != manifest_revision`), and a frozen one, in one transaction covering the whole batch (never a partially-validated revision).
+- **Freeze rule**: once the run's `manifest_hash` is non-NULL (a manifest was issued), its current revision is frozen — `apply_validation_outcome` (#361) refuses (`InvalidStagingRevision`) a run not in status `staged` (card #360 — closes a gap where `cancel_run`/`mark_failed` could otherwise be followed by a stray validation write), a stale revision (`revision != manifest_revision`), and a frozen one, in one transaction covering the whole batch (never a partially-validated revision). Unchanged by #361 — the freeze rule and this column stay exactly ADR 0098/#360 semantics; `manifest_hash` is set ONLY on the `ready` path, never on `failed` (§ KPI Ingest Validation below).
 - Raw fields (`raw_label`, `raw_value`, `raw_currency`, `raw_unit_scale`) are stored exactly as the document states them, never normalized. Normalized fields (`normalized_value` decimal-exact TEXT, `currency` ISO-4217 via the same rule as `storage::financials::normalize_currency`, `unit_scale` the live `UnitScale` vocabulary: `ones`/`thousands`/`millions`) are separate columns for audit.
 - Period dimensions (`measure_window`, `attribution`, `scope`) are `CHECK`-constrained here — **stricter than `financial_facts`**, which does not `CHECK` `variant`/`measure_window`; staging is deliberately where the hardness lives, since this is unvalidated proposal data.
-- Citation locator is a **new structural shape** vs. `financial_facts`' flat `citation` TEXT: `citation_page`/`citation_table`/`citation_row`/`citation_quote`, all nullable in storage (mandatory-per-fact is validation's job, #361 — a repair proposal can stage with an incomplete citation plus a diagnostic code).
-- `mapping_status` (`unmapped` default | `mapped` | `no_definition`) and `validation_state` (`none` default | `passed` | `unreviewed` | `flagged`, reusing the 0057 provenance vocabulary) plus `validation_codes_json` — always `none`/`NULL` at staging time; only `apply_validation_results` sets them (the stable diagnostic-code registry lands in #361).
+- Citation locator is a **new structural shape** vs. `financial_facts`' flat `citation` TEXT: `citation_page`/`citation_table`/`citation_row`/`citation_quote`, all nullable in storage. Mandatory-per-fact is validation's job (#361, `citation.missing`, § KPI Ingest Validation below) — a repair proposal can stage with an incomplete citation plus a diagnostic code.
+- `mapping_status` (`unmapped` default | `mapped` | `no_definition`) and `validation_state` (`none` default | `passed` | `unreviewed` | `flagged`, reusing the 0057 provenance vocabulary) plus `validation_codes_json` — always `none`/`NULL` at staging time; only `apply_validation_outcome` (#361) sets them, in the same transaction as the immutable attempt row (§ KPI Ingest Validation below).
+
+### KPI Ingest Validation
+
+Deterministic manifest validation (migration 0139, [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md) dec. 4, epic #352 card #361). The validator's whole output is one versioned, content-hashed **manifest**: every staged observation gets a stable diagnostic verdict; `outcome` is DERIVED from those verdicts, never caller-supplied. Pure rule core: `fundamentals::kpi_manifest` (storage-free — a guard test forbids importing `crate::storage`). Thin orchestration: `jobs::kpi_ingest_validation::validate_kpi_ingest_run(state, run_id)`.
+
+**`kpi_ingest_validation_attempts`** (append-only, **immutable** — no UPDATE/DELETE path outside `ON DELETE CASCADE`):
+
+| Column | Notes |
+|---|---|
+| `id` | `kpiatt_{32 hex}` |
+| `run_id`, `revision` | targets one staging revision |
+| `attempt` | `COALESCE(MAX(attempt), 0) + 1` per `(run_id, revision)`, computed inside the writing transaction |
+| `outcome` | `ready` \| `failed` |
+| `manifest_hash` | `sha256_hex` of `manifest_json`, by construction |
+| `manifest_json` | canonical manifest bytes |
+| `created_at` | |
+
+`UNIQUE(run_id, revision, attempt)`. **No `ALTER` on `kpi_ingest_runs`** — `manifest_hash`/`manifest_revision` on the run stay exactly #360's semantics (a pointer/cache to the current `ready` attempt); `failed` never sets the run's `manifest_hash`. Re-validating the SAME revision after `invalidate_manifest` is legal and lands as `attempt + 1` — "one validation per revision" is not globally true, so a `failed` attempt's diagnostics survive a re-stage/re-validate cycle as durable audit. **Compatibility**: a `ready_to_commit` run whose `(run, revision, hash)` has no attempt row predates migration 0139 (possible only via test/raw seeding — no production writer creates one anymore); `list_validation_attempts`/`get_validation_attempt` (`KpiIngestRunsStore`) return nothing for it — the repair path is `invalidate_manifest` → re-validate, which creates a real attempt.
+
+**Diagnostic code registry** — a CLOSED enum (`fundamentals::kpi_manifest::DiagnosticCode`, wildcard-free `as_str`/`parse`/`severity`; `REGISTRY` + a golden-list test keep it stable across refactors). `severity()` (`flagged` | `unreviewed`) derives an observation's `validationState`; the three run-level codes always force `outcome = failed`.
+
+Per-observation (→ `validationState`):
+
+| Code | Condition | Severity |
+|---|---|---|
+| `mapping.unresolved` | `mapping_status != 'mapped'` or the resolver found no definition | flagged |
+| `value.unparseable` | `normalized_value` NULL or not a `Decimal` | flagged |
+| `unit.currency_missing` | `value_kind='monetary'` and `currency` NULL | flagged |
+| `unit.currency_unexpected` | non-monetary kind (`ratio`/`percentage`/`count`/`physical`/`duration`) and `currency` set | flagged |
+| `unit.scale_incoherent` | `raw_value` parses (`fundamentals::extraction::text_numbers::parse_amount`, `pub(crate)`) and `parsed × factor(scale_eff) ≠ normalized_value`; `scale_eff = unit_scale.unwrap_or("ones")` | flagged |
+| `unit.scale_unverifiable` | `raw_value` does not parse — coherence unverifiable, an honest abstention | unreviewed |
+| `period.window_missing` | `measure_window` NULL | flagged |
+| `period.window_kind_mismatch` | a stock metric (`fundamentals::metrics::is_flow_key(metric_key, value_kind)` false) with `measure_window ∈ {flow, cumulative, trailing}`, OR a flow metric with `point_in_time` | flagged |
+| `scope.run_mismatch` | observation `scope` set and `≠` the run's `scope` | flagged |
+| `citation.missing` | no usable locator: quote blank AND page NULL AND NOT(table and row both non-blank) | flagged |
+| `duplicate.conflict` | same slot `(definition_id, attribution_eff, measure_window_eff)` in the revision, differing values — every member of the group | flagged |
+| `duplicate.repeat` | same slot, equal values — every member of the group | flagged |
+| `identity.violation` | one of a FAILED same-period identity's inputs (`fundamentals::validation::validate_period`; `attribution_eff='total'` observations only, after dedup) | flagged |
+| `plausibility.implausible` | `PlausibilityVerdict::Implausible` against slot-aware history | flagged |
+| `plausibility.abstained` | `PlausibilityVerdict::Abstained { reason }` — `thin_history` \| `split_sensitive` \| `zero_value` | unreviewed |
+
+Run-level (→ `runDiagnostics`; any one code ⇒ `outcome = failed`):
+
+| Code | Condition |
+|---|---|
+| `run.unsupported_period_grammar` | `period_type ∉ {Q1, H1, 9M, FY}` (rejects `Q2`–`Q4`, `H2`, `M01`–`M12` — ADR 0093: `flow` on an interim period is otherwise correct) |
+| `run.invalid_missing_reasons` | `missing_reasons_json` non-NULL and malformed (see schema below) |
+| `completeness.missing_without_reason` | an expected-snapshot key is unmapped AND absent from `missing_reasons` — detail carries every such key |
+
+Normalization before every check: `attribution_eff = attribution.unwrap_or("total")` (mirrors `storage::financials::slot_dims`); `measure_window_eff = measure_window` (no default — `NULL` is its own code, `period.window_missing`). **Short-circuit**: `mapping.unresolved` skips every definition-dependent check (`unit.*`, `period.window_kind_mismatch`, `identity.violation`, `plausibility.*`, `duplicate.*`); `value.unparseable` additionally skips `identity.violation`/`plausibility.*`/`duplicate.*`. Mapping: any flagged code ⇒ `flagged`; only unreviewed-severity codes ⇒ `unreviewed`; none ⇒ `passed`.
+
+**Expected-KPI snapshot stamp** (`kpi_ingest_runs.expected_kpis_json`, set-once): before validation runs, guarded `UPDATE … WHERE id=? AND status='staged' AND manifest_revision=? AND manifest_hash IS NULL AND expected_kpis_json IS NULL` (`KpiIngestRunsStore::stamp_expected_kpis`). 0 rows updated is not automatically a refusal — if the column is already non-NULL the snapshot was stamped by an earlier attempt on the SAME revision and is returned unchanged; only a wrong status/revision is `InvalidStagingRevision`. Shape: `{schemaVersion: 1, source: "kpi_relevance", packVersion: null, keys: [...sorted]}` — `keys` is the union of the company's active `primary`-ranked `kpi_relevance` metric keys (degenerate today to `FinancialsStore::expected_primary_metric_keys`; `None`/empty → `keys: []`, no completeness gate). Once stamped, FROZEN: the validator, #362, and #363 all read this column, never live `kpi_relevance` — a later relevance change never retroactively changes an already-attempted revision's manifest. A future statement-pack profile (E2) moves the stamp to `create_run_if_absent` (`packVersion` stops being `null`).
+
+**`missing_reasons_json` schema**: a JSON object `{"<metricKey>": "<non-empty reason string>"}`. Malformed, not an object, or any non-string/blank value anywhere → `run.invalid_missing_reasons` (the whole ledger is then treated as empty for completeness purposes, though the code still fires). Keys outside the expected snapshot are ignored — never a gate on their own.
+
+**Manifest shape** (`fundamentals::kpi_manifest::KpiIngestManifest`, canonical serde: camelCase, fixed field order, `BTree*` collections, no `skip_serializing_if` — every `Option` is an explicit `null`, `Decimal` values `.normalize()`d):
+
+```
+{ manifestSchemaVersion: 1, validatorVersion: "1", runId, revision, outcome: "ready"|"failed",
+  companyId, reportDocumentId, sourceContentHash,
+  scope, dataQuality, period: { periodId, fiscalYear, periodType },
+  expectedKpis: { schemaVersion, source, packVersion, keys } | null,
+  observations: [ { observationId, ordinal, metricKey, definitionId|null,
+                     normalizedValue|null, currency|null, unitScale|null,
+                     attribution, measureWindow|null, scope|null,
+                     citation: { page, table, row, quote },
+                     validationState, codes: [{ code, detail|null }] } ],  // ordinal order
+  runDiagnostics: [{ code, detail|null }],
+  completeness: { expected, present, missing: [{ metricKey, reason|null }] } | null,
+  counts: { passed, unreviewed, flagged } }
+```
+
+`outcome`/every observation's `validationState`/`counts` are hand-settable Rust fields (the negative-construction tests need that) but only `SealedManifest::seal()` treats a manifest as trustworthy: it independently RE-derives all three from `codes`/`runDiagnostics` and rejects any mismatch (`ManifestSealError`) — a manifest claiming `ready` over a flagged observation, or `passed` over a flagged/abstained code, is structurally unconstructible past `seal()`. `SealedManifest` is otherwise opaque (private fields): `manifest_hash()` (64 lowercase hex), `manifest_json()`, `observation_verdicts()` (`{observationId, validationState, validationCodesJson}` — exactly what lands in `kpi_staged_observations`), `observation_content()` (a canonical staged-content projection — ordinal, candidate key, normalized value, currency, effective scale/attribution/window, scope, citation — re-compared by the atom against the LIVE row, sol r5-2's content-tamper guard).
+
+**Apply** (`KpiIngestStagingStore::apply_validation_outcome(run_id, revision, sealed)`) — the SOLE `staged → {validation_failed, ready_to_commit}` path (§ KPI Ingest Runs transition table): one `Immediate` transaction, guards (staged/revision/hash-NULL, `sealed.runId`/`revision` binding, exact observation-set coverage, content-tamper re-comparison) → batch-write every verdict → INSERT the attempt row → connection-level transition per `sealed.outcome`. Any guard failure rolls back everything, including the attempt insert — a refused manifest writes NOTHING.
+
+**Resolver** (`storage::kpi_extraction::resolve_kpi_definition`, sector-aware, shared by the structured-extraction pipeline AND the validator): company-scoped `>` canonical `>` sector-scoped MATCHING the company's sector `>` every remaining global non-sector definition, lexicographic by id. A sector-scoped definition for a DIFFERENT sector is EXCLUDED, not merely deprioritized; a company with no classified sector never resolves a sector-scoped row. Deterministic — two calls for the same `(company_id, metric_key)` return the same `definition_id`.
+
+**#362 integration note**: the commit transaction consumes `manifest.observations[].definitionId` and the frozen `expectedKpis`/`completeness` snapshot straight from the sealed manifest bytes (`KpiIngestRunsStore::get_validation_attempt`, `outcome='ready' ORDER BY attempt DESC LIMIT 1`) — it NEVER re-resolves a definition or re-reads live `kpi_relevance`. No attempt row for `(run, revision, hash)` (the pre-0139 compatibility case above) is a typed refusal, not a silent re-derivation.
 
 ### KPI Ingest Commit Receipts
 

@@ -131,7 +131,7 @@ pub fn validate_supplied_set(
                 PlausibilityVerdict::Implausible { history_median } => {
                     FactVerdict::Implausible { history_median }
                 }
-                PlausibilityVerdict::Abstained => FactVerdict::AbstainedThinHistory,
+                PlausibilityVerdict::Abstained { .. } => FactVerdict::AbstainedThinHistory,
             }
         })
         .collect();
