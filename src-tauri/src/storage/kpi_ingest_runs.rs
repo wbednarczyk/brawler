@@ -1192,8 +1192,8 @@ impl KpiIngestRunsStore {
     /// OTHER row); (2) every remaining `committing` row (lease already NULL)
     /// is resolved by receipt presence: a receipt matching hash+revision
     /// finalizes to `receipt.terminal_status`; a receipt that does NOT match
-    /// leaves the row untouched (uncounted — needs manual intervention, not a
-    /// crash-reclaim case); no receipt at all reverts to `ready_to_commit`
+    /// leaves the row untouched but COUNTED in `mismatched` (surfaced by the
+    /// startup log — needs manual intervention, not a crash-reclaim case); no receipt at all reverts to `ready_to_commit`
     /// with `manifest_hash`/`manifest_revision` preserved (the commit
     /// transaction rolled back — retryable); (3) ordinary expired-lease
     /// clearing on claimable rows (never touches `committing` — the WHERE

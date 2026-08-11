@@ -420,6 +420,8 @@ impl KpiIngestStagingStore {
         // the batch above can be long, and the lease is WALL-CLOCK state — it
         // can expire mid-transaction even though no other writer can touch the
         // row under this Immediate tx. An expired holder must not stage.
+        #[cfg(test)]
+        tests::mid_batch_test_delay();
         let new_revision: Option<i64> = tx
             .query_row(
                 "UPDATE kpi_ingest_runs
@@ -792,6 +794,21 @@ mod tests {
         }
     }
 
+    thread_local! {
+        /// Test-only hook: a delay injected between `stage_observations`'
+        /// entry checks and its final guarded flip, so a test can cross the
+        /// wall-clock lease expiry EXACTLY mid-batch (luna review B1 —
+        /// sleeping before the call only exercises the entry check).
+        static MID_BATCH_DELAY: std::cell::Cell<Option<std::time::Duration>> =
+            const { std::cell::Cell::new(None) };
+    }
+
+    pub(super) fn mid_batch_test_delay() {
+        if let Some(delay) = MID_BATCH_DELAY.with(|cell| cell.take()) {
+            std::thread::sleep(delay);
+        }
+    }
+
     fn setup() -> (AppState, &'static str) {
         let connection = open_in_memory_database().expect("db");
         seed_company(&connection, "c1");
@@ -1094,11 +1111,12 @@ mod tests {
             .claim_next(TEST_HOLDER, 1)
             .expect("claim")
             .expect("claimed");
-        // Cross the 1-second expiry between the entry check and the final
-        // flip; the whole call re-runs, so an expired lease is refused at the
-        // entry check on this second timeline — either way the guard holds
-        // and the run never reaches `staged` with a dead lease.
-        std::thread::sleep(std::time::Duration::from_millis(1200));
+        // The lease is LIVE at the entry check; the injected delay crosses
+        // the 1-second expiry between that check and the final guarded flip —
+        // the genuine mid-batch scenario (luna review B1: the pre-call sleep
+        // variant only exercised the entry check, and the originally broken
+        // implementation would have passed it).
+        MID_BATCH_DELAY.with(|cell| cell.set(Some(std::time::Duration::from_millis(1200))));
         let error = state
             .kpi_ingest_staging()
             .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
