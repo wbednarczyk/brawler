@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.5 - 2026-08-12
+
+
+### Features
+
+- **fundamentals**: atomic manifest commit — one transaction per report (#362) (#376)
+
 ## v0.65.4 - 2026-08-11
 
 
