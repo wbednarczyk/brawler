@@ -156,6 +156,14 @@ pub enum StorageError {
         "kpi ingest run {id} commit refused: manifest is stale relative to the run's current state"
     )]
     StaleManifestForCommit { id: String },
+    #[error(
+        "kpi ingest run {run} stored commit receipt disagrees with the run row (terminal status/hash/revision) — commit invariant violated"
+    )]
+    CommitReceiptRunMismatch { run: String },
+    #[error(
+        "kpi ingest run {run} commit could not acquire the write transaction under contention — retry"
+    )]
+    CommitContention { run: String },
     #[error("sealed manifest for run {run_id} revision {revision} refused: {reason}")]
     SealedManifestRejected {
         run_id: String,

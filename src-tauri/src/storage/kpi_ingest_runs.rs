@@ -400,7 +400,7 @@ impl ReclaimSummary {
 /// `period_fiscal_year`/`period_type` are the run's durable period
 /// descriptor (ADR 0098 dec. 3, B2 sol review round 2, migration 0138): a
 /// `financial_periods` row legally does not exist until the commit
-/// transaction (#363) creates one, so staging needs a natural-key descriptor
+/// transaction (`commit_manifest`, #362) creates one, so staging needs a natural-key descriptor
 /// to stage against before that. All-or-none (`create_run_if_absent` refuses
 /// a partial descriptor); when both `period_id` and the descriptor are
 /// present, the descriptor must match the referenced period row.

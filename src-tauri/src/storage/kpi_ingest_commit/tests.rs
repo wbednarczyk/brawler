@@ -15,6 +15,27 @@ use crate::storage::{
     StorageError, StructuredFactCommit,
 };
 use rusqlite::{params, Connection};
+use std::cell::RefCell;
+use std::sync::{Arc, Barrier};
+
+thread_local! {
+    static PRE_TX_BARRIER: RefCell<Option<Arc<Barrier>>> = const { RefCell::new(None) };
+}
+
+/// Installs the race-test rendezvous for THIS thread only — TLS does not
+/// propagate to spawned workers, each installs its own (#363).
+fn install_pre_transaction_barrier(barrier: Arc<Barrier>) {
+    PRE_TX_BARRIER.with(|slot| *slot.borrow_mut() = Some(barrier));
+}
+
+/// Called by `commit_manifest` after its pre-checks, right before checkout /
+/// `BEGIN IMMEDIATE`; consumes the barrier so a thread only rendezvouses once.
+pub(super) fn pre_transaction_test_barrier() {
+    let barrier = PRE_TX_BARRIER.with(|slot| slot.borrow_mut().take());
+    if let Some(barrier) = barrier {
+        barrier.wait();
+    }
+}
 
 fn seed_company_and_document(connection: &Connection, company: &str, doc: &str) {
     connection
@@ -222,19 +243,24 @@ fn commit_writes_period_facts_provenance_and_finalizes_the_run() {
 // ---------------------------------------------------------------------
 
 #[test]
-fn a_mid_transaction_failure_rolls_back_the_period_too() {
+fn a_receipt_on_a_non_terminal_run_is_an_invariant_violation() {
+    // #363: a raw-seeded receipt on a `ready_to_commit` (non-terminal) run is
+    // NOT a replay — receipt↔run coherence is classified BEFORE the requested
+    // tuple, so even a tuple-matching receipt refuses with the invariant
+    // error instead of masquerading as a committed manifest.
     let fixture = ready_fixture("standalone", vec![observation("revenue", "1000")]);
 
-    let connection = fixture.state.checkout_for_tests().expect("raw");
-    connection
-        .execute(
-            "INSERT INTO kpi_ingest_commit_receipts
-                (id, run_id, manifest_hash, manifest_revision, terminal_status, accepted_count, outcomes_json)
-             VALUES ('kpircpt_seed', ?1, 'other-hash', 1, 'complete', 0, '[]')",
-            [&fixture.run_id],
-        )
-        .expect("seed conflicting receipt");
-    drop(connection);
+    {
+        let connection = fixture.state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "INSERT INTO kpi_ingest_commit_receipts
+                    (id, run_id, manifest_hash, manifest_revision, terminal_status, accepted_count, outcomes_json)
+                 VALUES ('kpircpt_seed', ?1, ?2, ?3, 'complete', 0, '[]')",
+                params![fixture.run_id, fixture.manifest_hash, fixture.revision],
+            )
+            .expect("seed receipt on a non-terminal run");
+    }
 
     let before = fixture
         .state
@@ -247,10 +273,10 @@ fn a_mid_transaction_failure_rolls_back_the_period_too() {
         .state
         .kpi_ingest_commit()
         .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
-        .expect_err("receipt UNIQUE violation must roll back everything");
+        .expect_err("a receipt on a non-terminal run violates the commit invariant");
     assert!(matches!(
         error,
-        StorageError::CommitReceiptAlreadyRecorded { .. }
+        StorageError::CommitReceiptRunMismatch { .. }
     ));
 
     let connection = fixture.state.checkout_for_tests().expect("raw");
@@ -517,6 +543,13 @@ fn commit_derives_partial_from_an_honest_missing_reason() {
         .commit_manifest(&run.id, &manifest_hash, revision)
         .expect("commit");
     assert_eq!(receipt.terminal_status, "partial");
+
+    // #363: a replay of a partial commit returns the identical partial receipt.
+    let replay = state
+        .kpi_ingest_commit()
+        .commit_manifest(&run.id, &manifest_hash, revision)
+        .expect("replay");
+    assert_eq!(replay, receipt);
 }
 
 // ---------------------------------------------------------------------
@@ -1155,4 +1188,271 @@ fn commit_orders_a_permuted_stored_observation_array_by_ordinal() {
         .map(|entry| entry["ordinal"].as_i64().expect("ordinal"))
         .collect();
     assert_eq!(ordinals, vec![0, 1], "receipt ledger is ordinal-ordered");
+}
+
+// ---------------------------------------------------------------------
+// #363: idempotent replay, race-loser semantics, receipt coherence.
+// ---------------------------------------------------------------------
+
+#[test]
+fn commit_replay_returns_the_identical_stored_receipt() {
+    let fixture = ready_fixture("standalone", vec![observation("revenue", "1000")]);
+    let receipt = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .expect("commit");
+
+    let counts = |state: &AppState| -> (i64, i64) {
+        let connection = state.checkout_for_tests().expect("raw");
+        let facts: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+            .expect("facts");
+        let receipts: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM kpi_ingest_commit_receipts",
+                [],
+                |row| row.get(0),
+            )
+            .expect("receipts");
+        (facts, receipts)
+    };
+    let before = counts(&fixture.state);
+
+    let replay = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .expect("replay of a committed manifest returns the stored receipt");
+    assert_eq!(
+        replay, receipt,
+        "replay must be the verbatim stored receipt, committed_at included"
+    );
+    assert_eq!(
+        counts(&fixture.state),
+        before,
+        "replay never re-executes the write primitives"
+    );
+}
+
+#[test]
+fn commit_after_success_with_a_different_tuple_is_stale() {
+    let fixture = ready_fixture("standalone", vec![observation("revenue", "1000")]);
+    fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .expect("commit");
+
+    let error = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, "another-hash", fixture.revision)
+        .expect_err("a different hash after commit is stale, never an overwrite");
+    assert!(matches!(error, StorageError::StaleManifestForCommit { .. }));
+
+    let error = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision + 1,
+        )
+        .expect_err("a different revision after commit is stale");
+    assert!(matches!(error, StorageError::StaleManifestForCommit { .. }));
+}
+
+#[test]
+fn commit_replay_survives_corrupted_attempt_bytes() {
+    // The fast path reads the stored receipt BEFORE attempt parsing/sealing
+    // (sol r1 #362 ordering) — the receipt stays the stable answer even after
+    // the historical attempt bytes rot.
+    let fixture = ready_fixture("standalone", vec![observation("revenue", "1000")]);
+    let receipt = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .expect("commit");
+
+    {
+        let connection = fixture.state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_validation_attempts SET manifest_json = 'not json' WHERE run_id = ?1",
+                [&fixture.run_id],
+            )
+            .expect("rot the attempt bytes");
+    }
+
+    let replay = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .expect("replay must not touch the attempt");
+    assert_eq!(replay, receipt);
+}
+
+#[test]
+fn a_receipt_disagreeing_with_its_terminal_run_is_an_invariant_violation() {
+    // Coherence is classified BEFORE the requested tuple — a corrupt pair
+    // requested with ANOTHER tuple must not hide behind "stale".
+    let fixture = ready_fixture("standalone", vec![observation("revenue", "1000")]);
+    fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .expect("commit");
+
+    {
+        let connection = fixture.state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_commit_receipts SET terminal_status = 'partial' WHERE run_id = ?1",
+                [&fixture.run_id],
+            )
+            .expect("desync receipt terminal_status from the run");
+    }
+
+    let error = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, "another-hash", fixture.revision)
+        .expect_err("incoherent receipt/run must refuse before stale classification");
+    assert!(matches!(
+        error,
+        StorageError::CommitReceiptRunMismatch { .. }
+    ));
+}
+
+#[test]
+fn two_runs_of_the_same_period_commit_sequentially_and_share_the_period_row() {
+    let connection = open_in_memory_database().expect("db");
+    seed_company_and_document(&connection, "c1", "doc1");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+             VALUES ('doc2', 'c1', 'espi_attachment', 'https://x/doc2.pdf', 'fetched')",
+            [],
+        )
+        .expect("second document");
+    let state = AppState::new(connection);
+
+    let run1 = create_run(&state, "doc1", "c1", "consolidated", None);
+    let (rev1, hash1) = drive_to_ready(&state, &run1.id, vec![observation("revenue", "1000")]);
+    let receipt1 = state
+        .kpi_ingest_commit()
+        .commit_manifest(&run1.id, &hash1, rev1)
+        .expect("first commit");
+
+    let run2 = create_run(&state, "doc2", "c1", "consolidated", None);
+    let (rev2, hash2) = drive_to_ready(
+        &state,
+        &run2.id,
+        vec![
+            observation("revenue", "1000"),
+            observation("net_profit", "200"),
+        ],
+    );
+    let receipt2 = state
+        .kpi_ingest_commit()
+        .commit_manifest(&run2.id, &hash2, rev2)
+        .expect("second commit");
+
+    assert_eq!(
+        receipt1.period_id, receipt2.period_id,
+        "descriptor-only runs of the same (company, period) share the natural-key period row"
+    );
+    let outcomes: serde_json::Value = serde_json::from_str(&receipt2.outcomes_json).expect("json");
+    let revenue_outcome = outcomes
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|entry| entry["metricKey"] == "revenue")
+        .expect("revenue entry")["outcome"]
+        .clone();
+    assert_eq!(
+        revenue_outcome, "reobserved",
+        "an equal agent value against an agent-held slot reobserves, never overwrites"
+    );
+    let connection = state.checkout_for_tests().expect("raw");
+    let periods: i64 = connection
+        .query_row("SELECT COUNT(*) FROM financial_periods", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    assert_eq!(periods, 1);
+}
+
+#[test]
+fn concurrent_commits_of_the_same_run_both_return_the_winner_receipt() {
+    use std::sync::{Arc, Barrier};
+
+    // Real concurrency (sol r1 F2): a FILE-backed database through the
+    // production `open_pool` bootstrap (WAL, r2d2, >=2 connections) — the
+    // in-memory test pool is a single mutexed connection and would serialize
+    // whole checkouts, proving nothing.
+    let dir = std::env::temp_dir().join(format!(
+        "brawler-commit-race-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("t").len()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let state = crate::storage::open_pool(dir.join("race.sqlite3"), dir.clone()).expect("pool");
+
+    {
+        let connection = state.checkout_for_tests().expect("raw");
+        seed_company_and_document(&connection, "c1", "doc1");
+    }
+    let run = create_run(&state, "doc1", "c1", "consolidated", None);
+    let (revision, manifest_hash) =
+        drive_to_ready(&state, &run.id, vec![observation("revenue", "1000")]);
+
+    let barrier = Arc::new(Barrier::new(2));
+    let mut handles = Vec::new();
+    for _ in 0..2 {
+        let state = state.clone();
+        let run_id = run.id.clone();
+        let manifest_hash = manifest_hash.clone();
+        let barrier = Arc::clone(&barrier);
+        handles.push(std::thread::spawn(move || {
+            // TLS does not propagate from the parent — install per worker.
+            install_pre_transaction_barrier(Arc::clone(&barrier));
+            state
+                .kpi_ingest_commit()
+                .commit_manifest(&run_id, &manifest_hash, revision)
+        }));
+    }
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("thread"))
+        .collect();
+
+    let receipts: Vec<_> = results
+        .into_iter()
+        .map(|result| result.expect("both race sides must return Ok with the winner's receipt"))
+        .collect();
+    assert_eq!(
+        receipts[0], receipts[1],
+        "both race sides return the identical stored receipt"
+    );
+
+    {
+        let connection = state.checkout_for_tests().expect("raw");
+        let receipts_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM kpi_ingest_commit_receipts",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        let facts: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(receipts_count, 1, "exactly one commit ever executed");
+        assert_eq!(facts, 1);
+    }
+
+    drop(state);
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -228,6 +228,12 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // period) disagrees — a conflict with stored state, never a shape
         // problem with the commit call's own arguments.
         StorageError::CommitPeriodConflict { .. } => Conflict,
+        // A stored receipt exists but disagrees with its own run row —
+        // an invariant a real commit can never produce (raw tamper class).
+        StorageError::CommitReceiptRunMismatch { .. } => Internal,
+        // BEGIN IMMEDIATE lost the busy_timeout race — explicitly retryable;
+        // the retry lands on the receipt fast path (#363).
+        StorageError::CommitContention { .. } => Conflict,
     }
 }
 
