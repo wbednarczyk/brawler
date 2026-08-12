@@ -1392,10 +1392,15 @@ fn concurrent_commits_of_the_same_run_both_return_the_winner_receipt() {
     // production `open_pool` bootstrap (WAL, r2d2, >=2 connections) — the
     // in-memory test pool is a single mutexed connection and would serialize
     // whole checkouts, proving nothing.
+    // Nanosecond suffix: a panicked run must not poison the next one with a
+    // leftover database under the same (PID-reusable) name (luna PR #378).
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
     let dir = std::env::temp_dir().join(format!(
-        "brawler-commit-race-{}-{}",
-        std::process::id(),
-        std::thread::current().name().unwrap_or("t").len()
+        "brawler-commit-race-{}-{unique}",
+        std::process::id()
     ));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let state = crate::storage::open_pool(dir.join("race.sqlite3"), dir.clone()).expect("pool");
