@@ -1,7 +1,7 @@
 //! KPI staging domain store (ADR 0098 decisions 3, 4, 5; epic #352, card
 //! #359). `kpi_staged_observations` holds run-owned LLM proposals — NEVER
 //! visible to any fact reader (dec. 3); a proposal becomes a canonical fact
-//! only through the commit transaction (#363). `kpi_ingest_commit_receipts`
+//! only through the commit transaction (`KpiIngestCommitStore::commit_manifest`, #362). `kpi_ingest_commit_receipts`
 //! is the immutable per-run commit outcome, append-only (the `valuation_runs`
 //! idiom — zero UPDATE path here). Reach the observation surface via
 //! `AppState::kpi_ingest_staging()`; `record_commit_receipt` is a

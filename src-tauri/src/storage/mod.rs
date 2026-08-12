@@ -485,6 +485,8 @@ impl AppState {
 
     /// Test-only raw connection access, for seeding legacy DB shapes the public
     /// creation surface can no longer produce (e.g. pre-0066 period labels).
+    /// NEVER hold the returned guard across a store-method call — the store
+    /// checks out its own connection and the pool deadlocks (bit twice: #360, #376).
     #[cfg(test)]
     pub(crate) fn checkout_for_tests(&self) -> StorageResult<DbGuard<'_>> {
         self.checkout()
