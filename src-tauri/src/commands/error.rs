@@ -205,6 +205,29 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // staged state, never a shape problem with the manifest bytes
         // themselves (`SealedManifest::seal` already rejected those).
         StorageError::SealedManifestRejected { .. } => Conflict,
+        // #362 `commit_manifest`: no attempt row for the exact (run, revision,
+        // hash) the run currently points at — predates migration 0139, or the
+        // run's tuple has already moved on. A conflict with stored state, not
+        // a shape problem with the request.
+        StorageError::MissingValidationAttempt { .. } => Conflict,
+        // The stored `ready` attempt was sealed by an older/newer validator —
+        // valid history, wrong build; remedy is invalidate+re-validate, the
+        // same conflict class as every other "stale relative to current
+        // state" refusal.
+        StorageError::UnsupportedManifestVersion { .. } => Conflict,
+        // The stored attempt's bytes fail integrity checks a real validator
+        // can never produce (raw tamper or a corrupted row) — an unexpected
+        // internal failure, not caller input.
+        StorageError::CorruptStoredManifest { .. } => Internal,
+        // The manifest's pinned `definitionId` no longer resolves to a valid,
+        // eligible, metric-key-coherent definition (deleted/rescoped between
+        // validation and commit) — a conflict with stored state, remedy is
+        // invalidate+re-validate.
+        StorageError::PinnedDefinitionMissing { .. } => Conflict,
+        // The commit transaction's period match (manifest vs. the run's live
+        // period) disagrees — a conflict with stored state, never a shape
+        // problem with the commit call's own arguments.
+        StorageError::CommitPeriodConflict { .. } => Conflict,
     }
 }
 

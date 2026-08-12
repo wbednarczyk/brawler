@@ -162,6 +162,24 @@ pub enum StorageError {
         revision: i64,
         reason: &'static str,
     },
+    #[error(
+        "kpi ingest run {run} commit refused: no validation attempt row for revision {revision} (predates migration 0139 — invalidate and re-validate)"
+    )]
+    MissingValidationAttempt { run: String, revision: i64 },
+    #[error(
+        "kpi ingest run {run} commit refused: the stored manifest's schema/validator version is unsupported by this build (invalidate and re-validate)"
+    )]
+    UnsupportedManifestVersion { run: String },
+    #[error(
+        "kpi ingest run {run} commit refused: the stored validation attempt's manifest bytes are corrupt or internally inconsistent"
+    )]
+    CorruptStoredManifest { run: String },
+    #[error(
+        "kpi ingest run {run} commit refused: pinned kpi definition {definition} is missing, ineligible, or no longer matches the manifest's metric key (invalidate and re-validate)"
+    )]
+    PinnedDefinitionMissing { run: String, definition: String },
+    #[error("kpi ingest run {run} commit refused: period conflict — {reason}")]
+    CommitPeriodConflict { run: String, reason: &'static str },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

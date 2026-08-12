@@ -168,7 +168,7 @@ pub struct ConfirmedKpiFact {
 /// provenance state — cited, flagged, and reversible — using the job's detected
 /// period (no user overrides). The global confirm-before-commit default is
 /// unchanged; this only runs for a company explicitly opted into `autopilot`.
-fn ensure_period(
+pub(super) fn ensure_period(
     connection: &Connection,
     company_id: &str,
     fiscal_year: i64,
@@ -364,10 +364,62 @@ pub(super) fn record_structured_fact(
     let Some(outcome) = prepare_fact_write(connection, &input)? else {
         return Ok(StructuredFactCommit::NoDefinition);
     };
+    apply_structured_precedence(
+        connection,
+        outcome,
+        StructuredPrecedenceFields {
+            metric_key: input.metric_key,
+            currency: input.currency,
+            confirmation_state: input.confirmation_state,
+            source_tier: input.source_tier,
+            extraction_method: input.extraction_method,
+            validation_status: input.validation_status,
+            drift_json: input.drift_json,
+            citation: input.citation,
+            report_document_id: input.report_document_id,
+        },
+    )
+}
 
+/// The fields [`apply_structured_precedence`] needs beyond the raw
+/// `create_or_reobserve_financial_fact` outcome — everything [`StructuredFactInput`]
+/// and #362's pinned primitive both carry, so the ladder itself stays input-shape-agnostic.
+struct StructuredPrecedenceFields<'a> {
+    metric_key: &'a str,
+    currency: Option<&'a str>,
+    confirmation_state: &'a str,
+    source_tier: &'a str,
+    extraction_method: &'a str,
+    validation_status: &'a str,
+    drift_json: Option<&'a str>,
+    citation: Option<&'a str>,
+    report_document_id: &'a str,
+}
+
+/// The shared post-resolver core (#362 F2 sol): given a slot-write outcome,
+/// applies the structured-path precedence ladder (`outranked_stored_tier_of`
+/// — manual > esef/espi_cover_note > agent > html_aggregator, ADR 0086
+/// decision 3/ADR 0098 dec. 7) and stamps provenance. [`record_structured_fact`]
+/// (public [`StructuredFactInput`]) and `record_pinned_fact` (#362's
+/// manifest-pinned-definition primitive) share this ONE ladder — byte-identical
+/// to the pre-#362 inline match, verified by the untouched `record_structured_fact`
+/// suites.
+fn apply_structured_precedence(
+    connection: &Connection,
+    outcome: FactWriteOutcome,
+    fields: StructuredPrecedenceFields<'_>,
+) -> StorageResult<StructuredFactCommit> {
     match outcome {
         FactWriteOutcome::Created(fact) => {
-            write_fact_provenance(connection, &fact.id, &input)?;
+            write_fact_provenance_fields(
+                connection,
+                &fact.id,
+                fields.source_tier,
+                fields.extraction_method,
+                fields.validation_status,
+                fields.drift_json,
+                fields.citation,
+            )?;
             Ok(StructuredFactCommit::Created(fact.id))
         }
         // Same slot, same value. A HIGHER tier re-observing a lower-tier slot
@@ -376,7 +428,7 @@ pub(super) fn record_structured_fact(
         // otherwise an idempotent re-observation leaves provenance untouched.
         FactWriteOutcome::Reobserved(existing) => {
             if let Some(previous_tier) =
-                outranked_stored_tier_of(connection, &existing.id, input.source_tier)?
+                outranked_stored_tier_of(connection, &existing.id, fields.source_tier)?
             {
                 // The VALUE already agreed
                 // (that is what `Reobserved` means) but the lower tier's
@@ -397,19 +449,27 @@ pub(super) fn record_structured_fact(
                         currency: existing
                             .currency
                             .is_none()
-                            .then(|| input.currency.map(str::to_owned))
+                            .then(|| fields.currency.map(str::to_owned))
                             .flatten(),
                         data_quality: None,
                         confirmation_state: None,
                         supersedes_id: None,
-                        source_document_ref: Some(input.report_document_id.to_owned()),
+                        source_document_ref: Some(fields.report_document_id.to_owned()),
                         annotation: None,
                     },
                 )?;
-                // write_fact_provenance syncs financial_facts.extraction_method
-                // to input.extraction_method in the SAME call (bug #324
+                // write_fact_provenance_fields syncs financial_facts.extraction_method
+                // to fields.extraction_method in the SAME call (bug #324
                 // class) — no separate sync needed.
-                write_fact_provenance(connection, &existing.id, &input)?;
+                write_fact_provenance_fields(
+                    connection,
+                    &existing.id,
+                    fields.source_tier,
+                    fields.extraction_method,
+                    fields.validation_status,
+                    fields.drift_json,
+                    fields.citation,
+                )?;
                 return Ok(StructuredFactCommit::Upgraded {
                     fact_id: existing.id,
                     previous_value: None,
@@ -424,25 +484,33 @@ pub(super) fn record_structured_fact(
         // never silently overwritten — skip + report the divergence.
         FactWriteOutcome::Divergent { existing, incoming } => {
             if let Some(previous_tier) =
-                outranked_stored_tier_of(connection, &existing.id, input.source_tier)?
+                outranked_stored_tier_of(connection, &existing.id, fields.source_tier)?
             {
                 update_financial_fact(
                     connection,
                     UpdateFinancialFact {
                         id: existing.id.clone(),
                         value_numeric: Some(incoming),
-                        currency: input.currency.map(str::to_owned),
+                        currency: fields.currency.map(str::to_owned),
                         data_quality: None,
-                        confirmation_state: Some(input.confirmation_state.to_owned()),
+                        confirmation_state: Some(fields.confirmation_state.to_owned()),
                         supersedes_id: None,
-                        source_document_ref: Some(input.report_document_id.to_owned()),
+                        source_document_ref: Some(fields.report_document_id.to_owned()),
                         annotation: None,
                     },
                 )?;
-                // write_fact_provenance syncs financial_facts.extraction_method
-                // to input.extraction_method in the SAME call (bug #324
+                // write_fact_provenance_fields syncs financial_facts.extraction_method
+                // to fields.extraction_method in the SAME call (bug #324
                 // class) — no separate sync needed.
-                write_fact_provenance(connection, &existing.id, &input)?;
+                write_fact_provenance_fields(
+                    connection,
+                    &existing.id,
+                    fields.source_tier,
+                    fields.extraction_method,
+                    fields.validation_status,
+                    fields.drift_json,
+                    fields.citation,
+                )?;
                 return Ok(StructuredFactCommit::Upgraded {
                     fact_id: existing.id,
                     previous_value: Some(existing.value_numeric),
@@ -451,12 +519,136 @@ pub(super) fn record_structured_fact(
             }
             Ok(StructuredFactCommit::Divergent {
                 fact_id: existing.id,
-                metric_key: input.metric_key.to_owned(),
+                metric_key: fields.metric_key.to_owned(),
                 existing: existing.value_numeric,
                 incoming,
             })
         }
     }
+}
+
+/// Input for `record_pinned_fact` (#362): one manifest observation the commit
+/// transaction consumes — the definition is PINNED (`manifest.definitionId`),
+/// never re-resolved, unlike [`StructuredFactInput`]'s metric-key resolution.
+pub(super) struct PinnedFactInput<'a> {
+    /// The run id, carried only for error context (`PinnedDefinitionMissing`/
+    /// `CorruptStoredManifest`).
+    pub run_id: &'a str,
+    pub company_id: &'a str,
+    /// Resolved by the commit transaction's period step (#362 step 4) —
+    /// never re-derived here.
+    pub period_id: &'a str,
+    pub definition_id: &'a str,
+    /// The manifest observation's raw (untrimmed) `metricKey` candidate —
+    /// compared trimmed against the pinned definition's own `metric_key`.
+    pub metric_key: &'a str,
+    pub value_numeric: &'a str,
+    pub currency: Option<&'a str>,
+    /// `obs.scope || run.scope` (ADR 0095 slot dimension) — the caller
+    /// resolves the fallback; this primitive only validates the vocabulary.
+    pub statement_basis: &'a str,
+    pub attribution: &'a str,
+    pub measure_window: Option<&'a str>,
+    pub data_quality: &'a str,
+    pub report_document_id: &'a str,
+    /// `passed` | `unreviewed` (derived by the caller from the observation's
+    /// `validationState` — a ready manifest never carries `flagged`).
+    pub validation_status: &'a str,
+    /// Canonical structural-locator JSON (`{"page":…,"table":…,"row":…,"quote":…}`).
+    pub citation: Option<&'a str>,
+}
+
+/// Writes one manifest-pinned observation into its uniqueness slot (#362 step
+/// 5): validates the pinned definition still exists, matches the manifest's
+/// `metricKey`, and is still ELIGIBLE for `company_id` (mirrors
+/// [`resolve_kpi_definition`]'s own WHERE acceptance — company-scoped must
+/// name this company, sector-scoped must match this company's sector,
+/// everything else must be company-unscoped — without re-resolving), then
+/// validates `statement_basis` vocabulary (unreachable from a real validator;
+/// a raw-tampered stored manifest is the only path here — same defensive
+/// class as [`SealedManifest::seal`]'s F4 finding). Shares
+/// [`apply_structured_precedence`] with [`record_structured_fact`] — the ONE
+/// ladder both inputs go through. Provenance is HARDCODED here, never
+/// caller-supplied (ADR 0098 dec. 7, mirrors `jobs::record_financial_facts`'s
+/// `agent`/`mcp_agent`/`confirmed` triple): `source_tier="agent"`,
+/// `extraction_method="mcp_agent"`, `confirmation_state="confirmed"`,
+/// `drift_json=None` (a manifest carries no drift signal).
+pub(super) fn record_pinned_fact(
+    connection: &Connection,
+    input: PinnedFactInput<'_>,
+) -> StorageResult<StructuredFactCommit> {
+    let missing = || StorageError::PinnedDefinitionMissing {
+        run: input.run_id.to_owned(),
+        definition: input.definition_id.to_owned(),
+    };
+    let definition: Option<(String, Option<String>, Option<String>, String)> = connection
+        .query_row(
+            "SELECT scope, company_id, sector, metric_key FROM kpi_definitions WHERE id = ?1",
+            [input.definition_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    let Some((scope, definition_company_id, definition_sector, metric_key)) = definition else {
+        return Err(missing());
+    };
+    if metric_key != input.metric_key.trim() {
+        return Err(missing());
+    }
+    let (company_sector, _source) =
+        super::companies::get_company_sector(connection, input.company_id)?;
+    let eligible = match scope.as_str() {
+        "company" => definition_company_id.as_deref() == Some(input.company_id),
+        "sector" => definition_sector.is_some() && definition_sector == company_sector,
+        _ => definition_company_id.is_none(),
+    };
+    if !eligible {
+        return Err(missing());
+    }
+    if !matches!(input.statement_basis, "standalone" | "consolidated") {
+        return Err(StorageError::CorruptStoredManifest {
+            run: input.run_id.to_owned(),
+        });
+    }
+
+    let outcome = create_or_reobserve_financial_fact(
+        connection,
+        NewFinancialFact {
+            company_id: input.company_id.to_owned(),
+            period_id: input.period_id.to_owned(),
+            definition_id: input.definition_id.to_owned(),
+            value_numeric: input.value_numeric.to_owned(),
+            currency: input.currency.map(str::to_owned),
+            statement_basis: Some(input.statement_basis.to_owned()),
+            attribution: Some(input.attribution.to_owned()),
+            variant: None,
+            measure_window: input.measure_window.map(str::to_owned),
+            data_quality: Some(input.data_quality.to_owned()),
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: Some("mcp_agent".to_owned()),
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: Some(input.report_document_id.to_owned()),
+            annotation: None,
+        },
+    )?;
+    apply_structured_precedence(
+        connection,
+        outcome,
+        StructuredPrecedenceFields {
+            metric_key: input.metric_key,
+            currency: input.currency,
+            confirmation_state: "confirmed",
+            source_tier: "agent",
+            extraction_method: "mcp_agent",
+            validation_status: input.validation_status,
+            drift_json: None,
+            citation: input.citation,
+            report_document_id: input.report_document_id,
+        },
+    )
 }
 
 /// Outcome of committing one BiznesRadar-primary aggregator fact into its slot,

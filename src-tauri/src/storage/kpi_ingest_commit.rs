@@ -1,0 +1,363 @@
+//! Atomic manifest commit — one transaction per report (ADR 0098 dec. 5, epic
+//! #352, card #362). `commit_manifest` re-verifies the frozen `ready`
+//! manifest's freshness, then writes the period, every accepted fact, its
+//! provenance, the immutable commit receipt, and the run's terminal state in
+//! ONE `Immediate` transaction on ONE connection handle — any failure rolls
+//! back everything, including the period row (closes the empty-period-hole
+//! bug in `jobs/record_financial_facts.rs`, where the period commits before
+//! validation and each fact holds its own transaction). Composing the
+//! PUBLIC, connection-checking-out store methods inside this transaction is
+//! prohibited (ADR 0098 dec. 5) — every write below is a connection-level
+//! `pub(super)` primitive from a sibling module. Headless-only: no `jobs`
+//! wrapper exists yet (the MCP/#353 and queue/#364 callers add their own thin
+//! wrapper once they exist, so this module has no caller with zero purpose).
+//! Reach it via `AppState::kpi_ingest_commit()`.
+
+use rusqlite::OptionalExtension;
+use serde::Serialize;
+use serde_json::json;
+
+use crate::fundamentals::kpi_manifest::{
+    Citation, KpiIngestManifest, ManifestSealError, Outcome, SealedManifest, ValidationState,
+};
+
+use super::database::Database;
+use super::kpi_extraction::{self, PinnedFactInput};
+use super::kpi_ingest_runs::{self, KpiIngestRunsStore};
+use super::kpi_ingest_staging::{self, NewCommitReceipt};
+use super::{CommitReceipt, StorageError, StorageResult, StructuredFactCommit};
+
+/// One entry in `kpi_ingest_commit_receipts.outcomes_json` (migration 0138
+/// schema v1): `{observationId, revision, ordinal, metricKey, factId, outcome,
+/// detail?}`. `factId` is `null` only for `divergent` (no write); `detail` is
+/// present only for `divergent` (`{existingFactId}`).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FactOutcomeEntry {
+    observation_id: String,
+    revision: i64,
+    ordinal: i64,
+    metric_key: String,
+    fact_id: Option<String>,
+    outcome: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<serde_json::Value>,
+}
+
+/// Canonical structural-locator JSON for `financial_fact_provenance.citation`
+/// (#362 step 5, sol F5): serde over the manifest's own [`Citation`] shape —
+/// explicit nulls, deterministic declaration-order fields (`page`, `table`,
+/// `row`, `quote`) — so two commits of the same locator hash identically.
+fn canonical_citation_json(citation: &Citation) -> String {
+    serde_json::to_string(citation).expect("Citation serialization is total")
+}
+
+fn period_conflict(run_id: &str, reason: &'static str) -> StorageError {
+    StorageError::CommitPeriodConflict {
+        run: run_id.to_owned(),
+        reason,
+    }
+}
+
+#[derive(Clone)]
+pub struct KpiIngestCommitStore {
+    db: Database,
+}
+
+impl KpiIngestCommitStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    /// Atomically commits a `ready` manifest (ADR 0098 dec. 5) — see the
+    /// module doc for the full flow. Returns the immutable [`CommitReceipt`].
+    pub fn commit_manifest(
+        &self,
+        run_id: &str,
+        manifest_hash: &str,
+        revision: i64,
+    ) -> StorageResult<CommitReceipt> {
+        // --- Steps 1-2: outside the transaction, own connections -----------
+        // Validation attempts are immutable/append-only; `begin_committing`
+        // re-verifies freshness inside the transaction below, so a stale read
+        // here is never a correctness issue, only a slightly-early refusal.
+        let runs_store = KpiIngestRunsStore::new(self.db.clone());
+        let attempt = match runs_store.get_validation_attempt(run_id, revision, manifest_hash)? {
+            Some(attempt) => attempt,
+            None => {
+                // sol F1: classify against the run's CURRENT tuple — a wrong
+                // hash/revision could never have reached this guard any other
+                // way (the query filters on both), so a tuple mismatch means
+                // the CALLER's request is stale; a matching tuple with no
+                // attempt row predates migration 0139.
+                let run = runs_store.get_run(run_id)?.ok_or_else(|| {
+                    StorageError::KpiIngestRunNotFound {
+                        id: run_id.to_owned(),
+                    }
+                })?;
+                if run.manifest_hash.as_deref() != Some(manifest_hash)
+                    || run.manifest_revision != revision
+                {
+                    return Err(StorageError::StaleManifestForCommit {
+                        id: run_id.to_owned(),
+                    });
+                }
+                return Err(StorageError::MissingValidationAttempt {
+                    run: run_id.to_owned(),
+                    revision,
+                });
+            }
+        };
+
+        let manifest: KpiIngestManifest =
+            serde_json::from_str(&attempt.manifest_json).map_err(|_| {
+                StorageError::CorruptStoredManifest {
+                    run: run_id.to_owned(),
+                }
+            })?;
+        // sol F6: `SealedManifest::seal` re-verifies internal consistency
+        // (outcome/counts/validationState derived from codes) and classifies
+        // a version mismatch separately — valid history sealed by an
+        // old/newer validator build, remedy is invalidate+re-validate, never
+        // "corrupt".
+        let sealed = SealedManifest::seal(manifest.clone()).map_err(|error| match error {
+            ManifestSealError::VersionMismatch { .. } => StorageError::UnsupportedManifestVersion {
+                run: run_id.to_owned(),
+            },
+            _ => StorageError::CorruptStoredManifest {
+                run: run_id.to_owned(),
+            },
+        })?;
+        if sealed.manifest_hash() != attempt.manifest_hash || sealed.revision() != attempt.revision
+        {
+            return Err(StorageError::CorruptStoredManifest {
+                run: run_id.to_owned(),
+            });
+        }
+        if sealed.outcome() != Outcome::Ready {
+            return Err(StorageError::CorruptStoredManifest {
+                run: run_id.to_owned(),
+            });
+        }
+        // sol F4: a real validator always flags `mapping.unresolved` on an
+        // unmapped observation, so a `ready` manifest can never carry a null
+        // `definitionId` on a passed/unreviewed observation — reachable only
+        // via a raw-tampered stored row (same "corrupt" bucket as above).
+        // `no_definition` stays in the outcomes vocabulary purely as 0138
+        // schema documentation; no branch below ever produces it.
+        for obs in &manifest.observations {
+            if matches!(
+                obs.validation_state,
+                ValidationState::Passed | ValidationState::Unreviewed
+            ) && obs.definition_id.is_none()
+            {
+                return Err(StorageError::CorruptStoredManifest {
+                    run: run_id.to_owned(),
+                });
+            }
+        }
+
+        // --- Steps 3-9: ONE Immediate transaction on ONE handle ------------
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        kpi_ingest_runs::begin_committing(&tx, run_id, manifest_hash, revision)?;
+
+        // Step 4: period — 4-branch match on (manifest.periodId, LIVE
+        // run.period_id) under the `committing` guard (sol F3 r2): the FK
+        // `period_id ON DELETE SET NULL` (migration 0137) means a deleted
+        // pinned period looks identical to "never had one" unless the two
+        // sides are told apart explicitly — never silently re-created.
+        let live_period_id: Option<String> = tx.query_row(
+            "SELECT period_id FROM kpi_ingest_runs WHERE id = ?1",
+            [run_id],
+            |row| row.get(0),
+        )?;
+
+        let period_id: String = match (sealed.period_id(), live_period_id.as_deref()) {
+            (Some(manifest_period), Some(live_period)) => {
+                if manifest_period != live_period {
+                    return Err(period_conflict(
+                        run_id,
+                        "manifest periodId does not match the run's live period_id",
+                    ));
+                }
+                let row: Option<(String, i64, String)> = tx
+                    .query_row(
+                        "SELECT company_id, fiscal_year, period_type FROM financial_periods WHERE id = ?1",
+                        [live_period],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .optional()?;
+                let Some((company_id, fiscal_year, period_type)) = row else {
+                    return Err(period_conflict(
+                        run_id,
+                        "the run's pinned period row no longer exists",
+                    ));
+                };
+                if company_id != sealed.company_id()
+                    || fiscal_year != sealed.fiscal_year()
+                    || period_type != sealed.period_type()
+                {
+                    return Err(period_conflict(
+                        run_id,
+                        "the run's pinned period row no longer matches the manifest's company/fiscalYear/periodType",
+                    ));
+                }
+                live_period.to_owned()
+            }
+            (Some(_), None) => {
+                return Err(period_conflict(
+                    run_id,
+                    "the manifest's pinned period was deleted after validation",
+                ))
+            }
+            (None, Some(_)) => {
+                return Err(period_conflict(
+                    run_id,
+                    "the run gained a period after validation",
+                ))
+            }
+            (None, None) => {
+                let new_period_id = kpi_extraction::ensure_period(
+                    &tx,
+                    sealed.company_id(),
+                    sealed.fiscal_year(),
+                    sealed.period_type(),
+                    None,
+                    sealed.report_document_id(),
+                )?;
+                kpi_ingest_runs::attach_period_on_connection(&tx, run_id, &new_period_id)?;
+                new_period_id
+            }
+        };
+
+        // Step 5: facts, in ordinal order (the manifest was already sorted by
+        // `build_manifest`), each through the pinned primitive.
+        let mut outcome_entries = Vec::with_capacity(manifest.observations.len());
+        let mut accepted_count: i64 = 0;
+        for obs in &manifest.observations {
+            debug_assert!(
+                matches!(
+                    obs.validation_state,
+                    ValidationState::Passed | ValidationState::Unreviewed
+                ),
+                "a ready manifest never carries a flagged observation (SealedManifest::seal already verified this)"
+            );
+            let definition_id = obs
+                .definition_id
+                .as_deref()
+                .expect("a null definitionId on a ready manifest was already rejected above");
+            let Some(normalized_value) = obs.normalized_value.as_deref() else {
+                return Err(StorageError::CorruptStoredManifest {
+                    run: run_id.to_owned(),
+                });
+            };
+            let validation_status = match obs.validation_state {
+                ValidationState::Passed => "passed",
+                ValidationState::Unreviewed => "unreviewed",
+                ValidationState::Flagged => {
+                    return Err(StorageError::CorruptStoredManifest {
+                        run: run_id.to_owned(),
+                    })
+                }
+            };
+            let statement_basis = obs.scope.as_deref().unwrap_or_else(|| sealed.scope());
+            let citation_json = canonical_citation_json(&obs.citation);
+
+            let commit = kpi_extraction::record_pinned_fact(
+                &tx,
+                PinnedFactInput {
+                    run_id,
+                    company_id: sealed.company_id(),
+                    period_id: &period_id,
+                    definition_id,
+                    metric_key: &obs.metric_key,
+                    value_numeric: normalized_value,
+                    currency: obs.currency.as_deref(),
+                    statement_basis,
+                    attribution: &obs.attribution,
+                    measure_window: obs.measure_window.as_deref(),
+                    data_quality: sealed.data_quality(),
+                    report_document_id: sealed.report_document_id(),
+                    validation_status,
+                    citation: Some(&citation_json),
+                },
+            )?;
+
+            let (fact_id, outcome, detail) = match commit {
+                StructuredFactCommit::Created(id) => {
+                    accepted_count += 1;
+                    (Some(id), "created", None)
+                }
+                StructuredFactCommit::Reobserved(id) => {
+                    accepted_count += 1;
+                    (Some(id), "reobserved", None)
+                }
+                StructuredFactCommit::Upgraded { fact_id, .. } => {
+                    accepted_count += 1;
+                    (Some(fact_id), "upgraded", None)
+                }
+                StructuredFactCommit::Divergent { fact_id, .. } => (
+                    None,
+                    "divergent",
+                    Some(json!({ "existingFactId": fact_id })),
+                ),
+                StructuredFactCommit::NoDefinition => unreachable!(
+                    "record_pinned_fact never returns NoDefinition — the definition is validated present before any write"
+                ),
+            };
+            outcome_entries.push(FactOutcomeEntry {
+                observation_id: obs.observation_id.clone(),
+                revision,
+                ordinal: obs.ordinal,
+                metric_key: obs.metric_key.clone(),
+                fact_id,
+                outcome,
+                detail,
+            });
+        }
+
+        // Step 6: terminal status — a complete reasons ledger (#361
+        // construction: `completeness.missing_without_reason` forces
+        // `failed`, never reaching this manifest) means any non-empty
+        // `missing` is an honest partial commit, never a default.
+        let terminal_status = if manifest
+            .completeness
+            .as_ref()
+            .map(|c| !c.missing.is_empty())
+            .unwrap_or(false)
+        {
+            "partial"
+        } else {
+            "complete"
+        };
+
+        // Step 7: the immutable receipt.
+        let outcomes_json = serde_json::to_string(&outcome_entries)?;
+        let receipt = kpi_ingest_staging::record_commit_receipt(
+            &tx,
+            NewCommitReceipt {
+                run_id: run_id.to_owned(),
+                manifest_hash: manifest_hash.to_owned(),
+                manifest_revision: revision,
+                terminal_status: terminal_status.to_owned(),
+                period_id: Some(period_id),
+                accepted_count,
+                outcomes_schema_version: 1,
+                outcomes_json,
+            },
+        )?;
+
+        // Step 8: flip the run to its terminal state.
+        kpi_ingest_runs::finalize_committing(&tx, run_id)?;
+
+        // Step 9: commit. Any earlier `?` already rolled back everything via
+        // `tx`'s drop.
+        tx.commit()?;
+        Ok(receipt)
+    }
+}
+
+#[cfg(test)]
+mod tests;
