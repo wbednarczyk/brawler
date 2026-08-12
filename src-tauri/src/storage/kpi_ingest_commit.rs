@@ -163,16 +163,63 @@ impl KpiIngestCommitStore {
 
         kpi_ingest_runs::begin_committing(&tx, run_id, manifest_hash, revision)?;
 
+        // Rebind the sealed manifest to the run's FULL live context inside the
+        // transaction (luna PR #376): begin_committing pins status/hash/
+        // revision, but a raw-tampered attempt row could still pair a valid
+        // manifest of run A with run B — every identity field the validator
+        // bound at seal time is re-compared against the live row here.
+        let live: (
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+        ) = tx.query_row(
+            "SELECT company_id, report_document_id, source_content_hash, scope, data_quality,
+                        expected_kpis_json, period_id
+                 FROM kpi_ingest_runs WHERE id = ?1",
+            [run_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            },
+        )?;
+        let (
+            live_company,
+            live_document,
+            live_source_hash,
+            live_scope,
+            live_data_quality,
+            live_expected_kpis,
+            live_period_id,
+        ) = live;
+        if sealed.run_id() != run_id
+            || sealed.company_id() != live_company
+            || sealed.report_document_id() != live_document
+            || sealed.source_content_hash() != live_source_hash.as_deref()
+            || sealed.scope() != live_scope
+            || sealed.data_quality() != live_data_quality
+            || sealed.expected_kpis_json() != live_expected_kpis.as_deref()
+        {
+            return Err(StorageError::CorruptStoredManifest {
+                run: run_id.to_owned(),
+            });
+        }
+
         // Step 4: period — 4-branch match on (manifest.periodId, LIVE
         // run.period_id) under the `committing` guard (sol F3 r2): the FK
         // `period_id ON DELETE SET NULL` (migration 0137) means a deleted
         // pinned period looks identical to "never had one" unless the two
         // sides are told apart explicitly — never silently re-created.
-        let live_period_id: Option<String> = tx.query_row(
-            "SELECT period_id FROM kpi_ingest_runs WHERE id = ?1",
-            [run_id],
-            |row| row.get(0),
-        )?;
 
         let period_id: String = match (sealed.period_id(), live_period_id.as_deref()) {
             (Some(manifest_period), Some(live_period)) => {
@@ -232,11 +279,14 @@ impl KpiIngestCommitStore {
             }
         };
 
-        // Step 5: facts, in ordinal order (the manifest was already sorted by
-        // `build_manifest`), each through the pinned primitive.
+        // Step 5: facts, in ordinal order — sorted here rather than assumed
+        // (luna PR #376): seal rejects duplicate ordinals but not a permuted
+        // stored array, and the receipt ledger must be ordinal-ordered.
+        let mut ordered_observations: Vec<_> = manifest.observations.iter().collect();
+        ordered_observations.sort_by_key(|o| o.ordinal);
         let mut outcome_entries = Vec::with_capacity(manifest.observations.len());
         let mut accepted_count: i64 = 0;
-        for obs in &manifest.observations {
+        for obs in ordered_observations {
             debug_assert!(
                 matches!(
                     obs.validation_state,

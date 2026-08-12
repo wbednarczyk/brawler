@@ -1050,3 +1050,109 @@ fn citation_json_escapes_delimiters_and_newlines() {
         canonical_citation_json(&citation)
     );
 }
+
+// ---------------------------------------------------------------------
+// Luna PR #376: live-context rebinding and ordinal ordering.
+// ---------------------------------------------------------------------
+
+#[test]
+fn commit_refuses_a_manifest_whose_context_disagrees_with_the_live_run() {
+    let fixture = ready_fixture("consolidated", vec![observation("revenue", "1000")]);
+    // Raw tamper: mutate an identity field the sealed manifest bound at
+    // validation time — unreachable through any API, the corruption class.
+    // Guard scoped: holding a checkout across commit_manifest deadlocks the pool.
+    {
+        let connection = fixture.state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET data_quality = 'preliminary' WHERE id = ?1",
+                params![fixture.run_id],
+            )
+            .expect("tamper");
+    }
+
+    let error = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .expect_err("context mismatch must be refused");
+    assert!(matches!(error, StorageError::CorruptStoredManifest { .. }));
+
+    let run = fixture
+        .state
+        .kpi_ingest_runs()
+        .get_run(&fixture.run_id)
+        .expect("get")
+        .expect("some");
+    assert_eq!(run.status, KpiIngestRunState::ReadyToCommit);
+    let connection = fixture.state.checkout_for_tests().expect("raw");
+    let facts: i64 = connection
+        .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(facts, 0, "a refused commit writes nothing");
+}
+
+#[test]
+fn commit_orders_a_permuted_stored_observation_array_by_ordinal() {
+    use crate::fundamentals::kpi_manifest::{KpiIngestManifest, SealedManifest};
+
+    let fixture = ready_fixture(
+        "consolidated",
+        vec![
+            observation("revenue", "1000"),
+            observation("net_profit", "200"),
+        ],
+    );
+
+    // Permute the stored observation array: seal only rejects DUPLICATE
+    // ordinals, and serde round-trips preserve array order, so a permuted
+    // manifest re-seals to a self-consistent hash.
+    let attempt = fixture
+        .state
+        .kpi_ingest_runs()
+        .get_validation_attempt(&fixture.run_id, fixture.revision, &fixture.manifest_hash)
+        .expect("attempt")
+        .expect("some");
+    let mut manifest: KpiIngestManifest =
+        serde_json::from_str(&attempt.manifest_json).expect("parse");
+    manifest.observations.reverse();
+    assert!(manifest.observations[0].ordinal > manifest.observations[1].ordinal);
+    let sealed = SealedManifest::seal(manifest).expect("permuted array still seals");
+    let permuted_hash = sealed.manifest_hash().to_owned();
+    // Guard scoped: holding a checkout across commit_manifest deadlocks the pool.
+    {
+        let connection = fixture.state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_validation_attempts SET manifest_json = ?1, manifest_hash = ?2 \
+                 WHERE run_id = ?3 AND revision = ?4",
+                params![
+                    sealed.manifest_json(),
+                    permuted_hash,
+                    fixture.run_id,
+                    fixture.revision
+                ],
+            )
+            .expect("tamper attempt");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET manifest_hash = ?1 WHERE id = ?2",
+                params![permuted_hash, fixture.run_id],
+            )
+            .expect("tamper run");
+    }
+
+    let receipt = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(&fixture.run_id, &permuted_hash, fixture.revision)
+        .expect("commit");
+    let outcomes: serde_json::Value = serde_json::from_str(&receipt.outcomes_json).expect("json");
+    let ordinals: Vec<i64> = outcomes
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|entry| entry["ordinal"].as_i64().expect("ordinal"))
+        .collect();
+    assert_eq!(ordinals, vec![0, 1], "receipt ledger is ordinal-ordered");
+}
