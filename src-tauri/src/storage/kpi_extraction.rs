@@ -931,9 +931,13 @@ fn write_fact_provenance_fields(
     // value; no NEW write may ever produce it — a runtime refusal, not a
     // debug_assert, so a release build enforces this exactly like a debug
     // build.
-    if source_tier == "pdf" {
+    // `structured_xhtml` joined `pdf` as a legacy read-only tier (ADR 0098
+    // dec. 7, #365): no live producer constructs it and new provenance writes
+    // are refused by the same mechanism.
+    if source_tier == "pdf" || source_tier == "structured_xhtml" {
         return Err(StorageError::RetiredSourceTier {
             fact_id: fact_id.to_owned(),
+            source_tier: source_tier.to_owned(),
         });
     }
     if !crate::fundamentals::extraction::SourceTier::parse(source_tier)
@@ -2478,8 +2482,11 @@ mod tests {
         let error = record_structured_fact(&connection, input)
             .expect_err("a write naming the retired pdf tier must be refused");
         assert!(
-            matches!(error, StorageError::RetiredSourceTier { .. }),
-            "expected a typed RetiredSourceTier error, got {error:?}"
+            matches!(
+                error,
+                StorageError::RetiredSourceTier { ref source_tier, .. } if source_tier == "pdf"
+            ),
+            "expected a typed RetiredSourceTier error naming the tier, got {error:?}"
         );
         assert_eq!(
             connection
@@ -2492,6 +2499,49 @@ mod tests {
             0,
             "a refused write must leave no provenance row"
         );
+    }
+
+    /// ADR 0098 dec. 7 (#365): `structured_xhtml` joined `pdf` as a legacy
+    /// read-only tier. Driven through the PUBLIC store wrapper (its
+    /// transaction is what rolls the whole write back), asserting BOTH the
+    /// fact row and the provenance row are gone — the private fn creates the
+    /// fact before provenance, so a provenance-only assertion would pass even
+    /// if the fact leaked.
+    #[test]
+    fn record_structured_fact_refuses_a_retired_structured_xhtml_source_tier() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+        let state = crate::storage::AppState::new(connection);
+
+        let mut input = quality_input(&company_id, &document_id, "1", "final");
+        input.source_tier = "structured_xhtml";
+        input.extraction_method = "api";
+
+        let error = state
+            .kpi_extraction()
+            .record_structured_fact(input)
+            .expect_err("a write naming the retired structured_xhtml tier must be refused");
+        assert!(
+            matches!(
+                error,
+                StorageError::RetiredSourceTier { ref source_tier, .. }
+                    if source_tier == "structured_xhtml"
+            ),
+            "expected a typed RetiredSourceTier error naming the tier, got {error:?}"
+        );
+        let raw = state.checkout_for_tests().expect("raw");
+        for (table, label) in [
+            ("financial_facts", "fact"),
+            ("financial_fact_provenance", "provenance"),
+        ] {
+            assert_eq!(
+                raw.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row
+                    .get::<_, i64>(0))
+                    .expect("count"),
+                0,
+                "a refused write must leave no {label} row"
+            );
+        }
     }
 
     /// A `preliminary` fact and a `final` fact for the same metric/period are

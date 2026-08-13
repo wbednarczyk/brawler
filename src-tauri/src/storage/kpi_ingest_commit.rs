@@ -8,9 +8,9 @@
 //! validation and each fact holds its own transaction). Composing the
 //! PUBLIC, connection-checking-out store methods inside this transaction is
 //! prohibited (ADR 0098 dec. 5) — every write below is a connection-level
-//! `pub(super)` primitive from a sibling module. Headless-only: no `jobs`
-//! wrapper exists yet (the MCP/#353 and queue/#364 callers add their own thin
-//! wrapper once they exist, so this module has no caller with zero purpose).
+//! `pub(super)` primitive from a sibling module. Production caller: the
+//! `kpi_ingest_commit` queue handler (#364, `jobs::kpi_ingest_queue`); the
+//! MCP surface (#353) adds its own thin wrapper when it lands.
 //! Reach it via `AppState::kpi_ingest_commit()`.
 //!
 //! Idempotency + concurrency (#363, ADR 0098 dec. 5 second half): retrying a

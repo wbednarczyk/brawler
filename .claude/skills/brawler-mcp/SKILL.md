@@ -92,6 +92,14 @@ tell the user they are theirs to do in the app:
 
 ## Ingesting an issuer publication
 
+**Which path (ADR 0098):** if `start_kpi_ingest` is absent from this server's
+`tools/list`, the legacy `capture_report_document` → `record_financial_facts`
+ritual below is the only supported temporary report-ingest route. Once the
+run-workflow tools are present, use start → stage → validate → commit for
+ingestion; the direct fact tools (`record_financial_facts`,
+`create_financial_fact`, `update_financial_fact`) are then repair-only —
+never report ingestion.
+
 The concrete ritual for turning a report (PDF/HTML) into cited facts, claims,
 notes, and events. Follow the sequence; each step feeds the next (ADR 0093).
 
@@ -150,7 +158,7 @@ on *Settings → MCP server → Allow write tools* — ask, don't work around it
 
 | Report content | Tool | Notes |
 | --- | --- | --- |
-| P&L / balance-sheet / KPI figures | `record_financial_facts` | per-fact citation (page + row label) |
+| P&L / balance-sheet / KPI figures | `record_financial_facts` | per-fact citation (page + row label); legacy/low-level — repair-only once the run-workflow tools are present |
 | Management guidance with numbers ("costs +30% in 2026", "marketing +50%") | `create_management_claim` | structured target fields (`targetMetricKey`/comparator/value, due year/period) + `sourceEvidenceId` = the captured document id |
 | One-off narrative events (a KNF penalty, a donation) | `create_notebook_entry` | `report_document` origin |
 | Dividend declarations/payments | `create_company_event` | |
@@ -226,10 +234,10 @@ keeps it exact — do not hand-edit):
 | `create_management_claim` | Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report/transcript it was made in). |
 | `update_management_claim` | Update a tracked management claim (by id). Must carry its `sourceEvidenceId` provenance. |
 | `set_claim_verdict` | Record a verification verdict on a management claim (optionally linking the verifying fact). |
-| `create_financial_fact` | Record a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry. |
-| `update_financial_fact` | Update a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact. |
-| `capture_report_document` | Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (record_financial_facts needs its returned documentId). Always registers under source_type "user_url"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf \| text/html \| application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error. |
-| `record_financial_facts` | Record a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: "preliminary"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only. |
+| `create_financial_fact` | Low-level single-fact repair write (ADR 0098) — never report ingestion; once the KPI ingest run-workflow tools are present on this server, use them for ingesting reports. Records a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry. |
+| `update_financial_fact` | Low-level single-fact repair write (ADR 0098) — never report ingestion. Updates a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact. |
+| `capture_report_document` | Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (the fact-write tools need its returned documentId). Always registers under source_type "user_url"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf \| text/html \| application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error. |
+| `record_financial_facts` | Low-level batch fact write (ADR 0098). If `start_kpi_ingest` is absent from this server's tools, this is the only supported temporary report-ingest route; once the run-workflow tools are present, use them for ingestion and this tool ONLY for manual repair. Records a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: "preliminary"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only. |
 | `set_qualitative_verdicts` | Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{"evidenceType":"notebook_entry","evidenceId":"<id>"}]` (types: feed_item \| notebook_entry \| claim \| transcript_segment \| company_event \| research_question \| company_signal \| decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation. |
 | `create_research_question` | Open a research question scoped to a company/watchlist/sector. |
 | `update_research_question` | Update a research question (title/body/status) by id. |
