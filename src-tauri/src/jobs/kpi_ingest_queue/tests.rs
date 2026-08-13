@@ -737,6 +737,25 @@ fn reconcile_rearms_an_inconsistent_succeeded_row_and_preserves_a_pending_one() 
     let row = state.jobs().status(&job_id).expect("status").expect("row");
     assert_eq!(row.status, "pending");
     assert_eq!(row.attempts, 0, "reschedule reset, then left untouched");
+
+    // A RUNNING row of the current generation is untouched too (reconcile
+    // called without a prior reclaim — the branch a live worker would hit).
+    let claimed = state
+        .jobs()
+        .claim_next_for_kinds(&[KPI_INGEST_VALIDATE_KIND])
+        .expect("claim")
+        .expect("row");
+    reconcile_ingest_jobs(&state).expect("reconcile with running row");
+    let row = state
+        .jobs()
+        .status(&claimed.id)
+        .expect("status")
+        .expect("row");
+    assert_eq!(
+        row.status, "running",
+        "a running generation row is never touched"
+    );
+    assert_eq!(row.attempts, 1);
 }
 
 #[test]
@@ -765,16 +784,25 @@ fn reconcile_terminalizes_a_dead_lettered_current_generation() {
     // Crash: never settled.
 
     state.jobs().reclaim_stale_running().expect("reclaim");
+
+    // The crash-between-event-and-transition seam: a previous startup got as
+    // far as recording the event, then died before `mark_failed`. The event
+    // already exists (dedup key = the job id), the run is still queue-owned —
+    // this reconciliation must complete the transition WITHOUT a second event.
+    state
+        .attention()
+        .record_job_failure(&job_id, Some("c1"), None)
+        .expect("pre-recorded event (crash seam)");
     reconcile_ingest_jobs(&state).expect("reconcile");
 
     assert_eq!(run_status(&state, &run_id), KpiIngestRunState::Failed);
     let row = state.jobs().status(&job_id).expect("status").expect("row");
     assert_eq!(row.status, "failed", "the exhausted row was NOT reset");
     let events = attention_events(&state);
-    assert_eq!(events.len(), 1);
+    assert_eq!(events.len(), 1, "the pre-recorded event deduped, no second");
     assert_eq!(events[0].evidence_ref, job_id);
 
-    // Idempotent repeat (the crash-between-event-and-transition seam).
+    // Idempotent repeat: a fully-converged state stays converged.
     state.jobs().reclaim_stale_running().expect("reclaim again");
     reconcile_ingest_jobs(&state).expect("reconcile again");
     assert_eq!(attention_events(&state).len(), 1, "no second event");

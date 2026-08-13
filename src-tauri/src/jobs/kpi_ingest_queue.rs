@@ -15,7 +15,11 @@
 //! with the one-worker `kpi_ingest` lane, reconciliation running before the
 //! pools, and no external armers yet, [`arm`] can never observe a `running`
 //! row of the generation it arms — #353 (the first concurrent armer) must
-//! revisit this invariant when it lands its invalidate/stage tools.
+//! revisit this invariant when it lands its invalidate/stage tools. The same
+//! topology makes [`terminalize_ingest_run`]'s check-then-`mark_failed`
+//! race-free today (nothing can invalidate/re-stage between the generation
+//! guard and the transition); #353 must make that pair atomic (a
+//! generation-guarded `mark_failed`) alongside the arming revisit.
 
 use std::sync::Arc;
 
