@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.65.6 - 2026-08-13
+
+
+### Bug Fixes
+
+- **fundamentals**: commit rebinds manifest to live run context; ordinal-ordered ledger (#362) (#377)
+
+
+### Features
+
+- **fundamentals**: idempotent manifest replay and typed commit concurrency (#363) (#378)
+
 ## v0.65.5 - 2026-08-12
 
 
