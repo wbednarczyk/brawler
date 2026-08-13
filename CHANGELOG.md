@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.7 - 2026-08-13
+
+
+### Features
+
+- **fundamentals**: queue integration for KPI ingest runs (#364) (#379)
+
 ## v0.65.6 - 2026-08-13
 
 
