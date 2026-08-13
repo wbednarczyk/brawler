@@ -87,9 +87,12 @@ pub enum StorageError {
         extraction_method: String,
     },
     #[error(
-        "fact {fact_id} provenance write refused: source_tier='pdf' is retired (ADR 0095) — no new write may produce it, it is a legacy read-only value"
+        "fact {fact_id} provenance write refused: source_tier='{source_tier}' is retired (ADR 0095 / ADR 0098 dec. 7) — no new write may produce it, it is a legacy read-only value"
     )]
-    RetiredSourceTier { fact_id: String },
+    RetiredSourceTier {
+        fact_id: String,
+        source_tier: String,
+    },
     #[error(
         "financial fact write refused: extraction_method='html_positional' is retired (ADR 0095) — no new fact row may carry the removed positional parser's method"
     )]

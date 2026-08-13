@@ -112,6 +112,45 @@ fn the_raw_provenance_upsert_refuses_the_retired_pdf_tier() {
     );
 }
 
+/// ADR 0098 dec. 7 (#365): `structured_xhtml` joined `pdf` as a legacy
+/// read-only tier — the raw upsert seam refuses it too, and the error names
+/// the tier it refused.
+#[test]
+fn the_raw_provenance_upsert_refuses_the_retired_structured_xhtml_tier() {
+    let (state, company_id) = state_with_company("SXH");
+    record(&state, &company_id, "revenue", "1000000", "passed");
+    let fact_id = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts")
+        .first()
+        .expect("the recorded fact")
+        .id
+        .clone();
+
+    let error = state
+        .fundamentals_provenance()
+        .set_fact_provenance(NewFactProvenance {
+            fact_id: &fact_id,
+            source_tier: "structured_xhtml",
+            validation_status: "passed",
+            drift_json: None,
+            citation: None,
+        })
+        .expect_err("the retired structured_xhtml tier must be unwritable through the raw seam");
+    assert!(
+        matches!(
+            error,
+            StorageError::RetiredSourceTier { ref source_tier, .. }
+                if source_tier == "structured_xhtml"
+        ),
+        "expected the typed retired-tier error naming the tier, got {error:?}"
+    );
+}
+
 /// Companion (bug #324 class): the raw seam also validates tier/method
 /// coherence against the fact row's STORED `extraction_method`, so a caller
 /// bypassing the structured wrapper cannot mint an incoherent pair.

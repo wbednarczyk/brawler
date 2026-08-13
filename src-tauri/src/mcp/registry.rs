@@ -635,14 +635,14 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "create_financial_fact",
             Some(FactCitation),
-            "Record a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry.",
+            "Low-level single-fact repair write (ADR 0098) — never report ingestion; once the KPI ingest run-workflow tools are present on this server, use them for ingesting reports. Records a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry.",
             tools::tool_schema::<storage::NewFinancialFact>,
             acts::create_financial_fact_handler,
         ),
         exposed_act(
             "update_financial_fact",
             Some(FactCitation),
-            "Update a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact.",
+            "Low-level single-fact repair write (ADR 0098) — never report ingestion. Updates a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact.",
             tools::tool_schema::<storage::UpdateFinancialFact>,
             acts::update_financial_fact_handler,
         ),
@@ -655,18 +655,20 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "capture_report_document",
             None,
-            "Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (record_financial_facts needs its returned documentId). Always registers under source_type \"user_url\"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf | text/html | application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error.",
+            "Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (the fact-write tools need its returned documentId). Always registers under source_type \"user_url\"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf | text/html | application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error.",
             tools::tool_schema::<acts::AgentCaptureReportDocumentInput>,
             acts::capture_report_document_handler,
         ),
         // Batch write over `record_structured_fact` (ADR 0093 dec. 6, epic
-        // #285 T7): the agent-acquisition tier's centerpiece. No Tauri command
-        // twin (MCP-only, like the four MVP read composites) — `tool_name` ==
-        // `command_name` (the [`exposed_act`] convention for such tools).
+        // #285 T7), demoted to a low-level repair tool by ADR 0098 (#365) —
+        // the normal ingestion path is the KPI ingest run workflow (its MCP
+        // tools land with #353). No Tauri command twin (MCP-only, like the
+        // four MVP read composites) — `tool_name` == `command_name` (the
+        // [`exposed_act`] convention for such tools).
         exposed_act(
             "record_financial_facts",
             Some(DocumentAndPerFactCitations),
-            "Record a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: \"preliminary\"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only.",
+            "Low-level batch fact write (ADR 0098). If `start_kpi_ingest` is absent from this server's tools, this is the only supported temporary report-ingest route; once the run-workflow tools are present, use them for ingestion and this tool ONLY for manual repair. Records a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: \"preliminary\"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only.",
             tools::tool_schema::<acts::RecordFinancialFactsInput>,
             acts::record_financial_facts_handler,
         ),

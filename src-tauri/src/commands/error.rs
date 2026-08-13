@@ -141,8 +141,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // caller-supplied data.
         StorageError::IncoherentFactProvenance { .. } => Internal,
         // Same rationale: no caller ever passes `source_tier` as raw input,
-        // so tripping the ADR 0095 retired-tier refusal is a programming
-        // error in the write path, not a shape problem with caller data.
+        // so tripping the retired-tier refusal (`pdf` ADR 0095;
+        // `structured_xhtml` ADR 0098 dec. 7) is a programming error in the
+        // write path, not a shape problem with caller data.
         StorageError::RetiredSourceTier { .. } => Internal,
         // Unlike the two above, `extraction_method` IS caller-suppliable on
         // the plain create path (UI/MCP manual entry) — a request naming the

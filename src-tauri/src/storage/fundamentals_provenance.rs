@@ -157,9 +157,13 @@ pub(super) fn set_fact_provenance(
     // not only on the structured path. Coherence is judged against the fact
     // row's STORED `extraction_method`; a missing fact row fails open (the
     // pair cannot be judged without it), exactly like an unknown tier.
-    if input.source_tier == "pdf" {
+    // `structured_xhtml` joined `pdf` as a legacy read-only tier (ADR 0098
+    // dec. 7, #365) — refused at this raw seam too, not only on the
+    // structured path.
+    if input.source_tier == "pdf" || input.source_tier == "structured_xhtml" {
         return Err(StorageError::RetiredSourceTier {
             fact_id: input.fact_id.to_owned(),
+            source_tier: input.source_tier.to_owned(),
         });
     }
     let stored_method = match connection.query_row(

@@ -30,7 +30,7 @@ This supersedes, **on completion of the run workflow**, ADR 0086 decision 2 (Biz
 
 One run represents exactly one (report document, company, extraction profile). The run row carries: the document reference (URL + SHA-256), company, period, scope (standalone/consolidated), `data_quality`, extraction-profile and agent-instruction versions, manifest hash + revision, attempt count, lease (holder + expiry + heartbeat), progress, optional cost/tokens (diagnostic metadata, never part of the trust verdict), and the versioned expected-KPI snapshot with explicit missing reasons. The run id is an **opaque handle** the agent passes back on every call (the MCP stateful-tools pattern).
 
-**Publication date.** `report_documents` gains a canonical `published_at` column (forward migration, epics #352/#354), filled by a **typed origin-date resolver**: the linked feed item via `origin_ref` → a date carried by the document itself → explicit absence (a typed state, never a guess). Using `created_at`/`fetched_at` as publication proxies is **rejected** — backfills invert ingestion and publication order (data-model.md § conventions).
+**Publication date.** `report_documents` gains a canonical `published_at` column (forward migration, epic #354 — corrected 2026-08-13: migration 0137/#352 deliberately did not add it; data-model assigns it to #354), filled by a **typed origin-date resolver**: the linked feed item via `origin_ref` → a date carried by the document itself → explicit absence (a typed state, never a guess). Using `created_at`/`fetched_at` as publication proxies is **rejected** — backfills invert ingestion and publication order (data-model.md § conventions).
 
 ### 3. Staging before canonical
 
@@ -87,10 +87,10 @@ Unattended ingestion gets a **separate `kpi_acquisition` scope/credential** that
 
 ## Consequences
 
-- The fact store gains a protocol, not just an API: every canonical fact from the agent path traces to a run, a manifest revision, a document hash and a citation; a half-written report becomes structurally impossible.
+- The fact store gains a protocol, not just an API: every canonical fact committed through the normal run-based report-ingestion path traces to a run, a manifest revision, a document hash and a citation (the low-level repair writes are the documented exception — corrected 2026-08-13); a half-written report becomes structurally impossible on that path.
 - BiznesRadar's role inverts gradually and honestly: witness/complement per slot, with its relevance-cadence side job preserved until #354 replaces it. The recall harness splits deterministic vs acquisition coverage rather than blending them.
-- `record_financial_facts` (ADR 0093 dec. 6) stops being the normal path: it remains the internal engine under the commit step and an explicitly low-level repair tool; the agent skill (epic #353) routes normal ingestion exclusively through the run workflow. `capture_report_document` and its security gates (0093 dec. 5) are unchanged and feed the run's `source_captured` state.
-- The program's epics implement this ADR: #352 (runs, staging, manifest, atomic commit, state machine, `published_at`, the `structured_xhtml` write refusal), #353 (workflow tools, scoped credential, skill), #354 (discovery, universe, watermarks, backfill), #355 (conformance corpus, chaos, replay fixtures), #356 (protocol modernization — independent track).
+- `record_financial_facts` (ADR 0093 dec. 6) stops being the normal path: it remains a standalone, explicitly low-level repair tool (as built — corrected 2026-08-13: the commit step writes through its own `record_pinned_fact` primitive, #362, so RFF is not the engine under commit); the agent skill (epic #353) routes normal ingestion exclusively through the run workflow. `capture_report_document` and its security gates (0093 dec. 5) are unchanged and feed the run's `source_captured` state.
+- The program's epics implement this ADR: #352 (runs, staging, manifest, atomic commit, state machine, the `structured_xhtml` write refusal), #353 (workflow tools, scoped credential, skill), #354 (discovery, universe, watermarks, backfill, `published_at` — corrected 2026-08-13), #355 (conformance corpus, chaos, replay fixtures), #356 (protocol modernization — independent track).
 - Closure evidence for #352 is a real re-ingest of XTB RB 18/2026 by a live agent against the real Windows app (the ADR 0088 dogfooding ritual).
 
 ## Rejected options
