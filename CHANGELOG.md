@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.65.8 - 2026-08-13
+
+
+### Features
+
+- **fundamentals**: demote record_financial_facts to a low-level repair tool (#365) (#380)
+
 ## v0.65.7 - 2026-08-13
 
 
