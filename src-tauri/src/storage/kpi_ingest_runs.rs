@@ -1480,6 +1480,52 @@ pub(super) fn finalize_committing(conn: &Connection, id: &str) -> StorageResult<
     Ok(terminal)
 }
 
+/// Writes the diagnostic `progress_json` snapshot (#364, ADR 0098 dec. 2).
+/// Called ONLY from inside the validation atom (`apply_validation_outcome`)
+/// and the commit transaction — no writer exists outside those atoms, so a
+/// stale writer can never overwrite newer progress and a rolled-back commit
+/// leaves no `committed` snapshot behind. Diagnostic like `cost_json`: never
+/// part of the trust verdict.
+pub(super) fn write_progress_snapshot_on_connection(
+    conn: &Connection,
+    id: &str,
+    step: &str,
+    revision: i64,
+    manifest_hash: Option<&str>,
+    counts: serde_json::Value,
+) -> StorageResult<()> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ProgressSnapshot<'a> {
+        schema_version: i64,
+        step: &'a str,
+        revision: i64,
+        manifest_hash: Option<&'a str>,
+        at: String,
+        counts: serde_json::Value,
+    }
+    let at: String = conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
+        row.get(0)
+    })?;
+    let json = serde_json::to_string(&ProgressSnapshot {
+        schema_version: 1,
+        step,
+        revision,
+        manifest_hash,
+        at,
+        counts,
+    })?;
+    let changed = conn.execute(
+        "UPDATE kpi_ingest_runs SET progress_json = ?1, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?2",
+        params![json, id],
+    )?;
+    if changed == 0 {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    }
+    Ok(())
+}
+
 /// Attaches the commit transaction's resolved period id onto the run (#362
 /// step 4, the `(manifest.periodId=None, run.period_id=None)` branch): a
 /// same-or-set guarded write under `status='committing'` — 0 rows updated

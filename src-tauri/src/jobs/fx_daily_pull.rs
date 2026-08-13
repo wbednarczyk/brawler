@@ -208,7 +208,7 @@ mod tests {
         // ADR 0059 deliberate lane share: fx_daily_pull drains on the same lane as
         // the market-data (quote) jobs — the "sources" lane.
         let state = AppState::new(open_in_memory_database().expect("db"));
-        let sources = pool_layout(state.queue_config())
+        let sources = pool_layout(state.queue_config(), true)
             .into_iter()
             .find(|pool| pool.name == "sources")
             .expect("a sources lane exists");

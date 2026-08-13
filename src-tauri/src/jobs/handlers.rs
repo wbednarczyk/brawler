@@ -349,6 +349,9 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(
         crate::jobs::aggregator_fundamentals_pull::AggregatorFundamentalsPullHandler,
     ));
+    for handler in crate::jobs::kpi_ingest_queue::handlers() {
+        worker.register(handler);
+    }
     worker
 }
 
@@ -358,10 +361,22 @@ pub fn build_worker(state: AppState) -> JobWorker {
 /// defaults). Every registered kind must appear in exactly one lane.
 ///
 /// The morning briefing runs on the autopilot lane (ADR 0084 amending ADR 0059).
-pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
+///
+/// `include_kpi_ingest` gates the `kpi_ingest` lane (#364, fail-closed):
+/// startup passes `true` only after the explicit queue reclaim AND the ingest
+/// reconciliation both succeeded — on failure the lane stays off until the
+/// next launch (pending ingest jobs wait, invisible to every worker; the other
+/// lanes run normally). The lane runs a CONSTANT 1 worker (the ADR 0059
+/// "indexing stays 1" precedent): both steps are short SQLite-writing work
+/// globally serialized by the single writer anyway, so more workers would only
+/// manufacture BUSY contention.
+pub fn pool_layout(
+    config: crate::storage::QueueConfig,
+    include_kpi_ingest: bool,
+) -> Vec<WorkerPool> {
     use crate::jobs::scheduler::{REGISTRY_REFRESH_KIND, SOURCE_REFRESH_KIND};
     use crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND;
-    vec![
+    let mut pools = vec![
         WorkerPool {
             name: "sources",
             kinds: vec![
@@ -392,7 +407,18 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
             ],
             workers: config.autopilot_workers.max(1) as usize,
         },
-    ]
+    ];
+    if include_kpi_ingest {
+        pools.push(WorkerPool {
+            name: "kpi_ingest",
+            kinds: vec![
+                crate::jobs::kpi_ingest_queue::KPI_INGEST_VALIDATE_KIND,
+                crate::jobs::kpi_ingest_queue::KPI_INGEST_COMMIT_KIND,
+            ],
+            workers: 1,
+        });
+    }
+    pools
 }
 
 #[cfg(test)]
@@ -413,7 +439,7 @@ mod tests {
             worker.registered_kinds().into_iter().collect();
 
         let mut lane_kinds: Vec<&str> = Vec::new();
-        for pool in pool_layout(state.queue_config()) {
+        for pool in pool_layout(state.queue_config(), true) {
             lane_kinds.extend(pool.kinds);
         }
         let unique_lane_kinds: std::collections::BTreeSet<&str> =
@@ -431,6 +457,23 @@ mod tests {
         assert!(
             unique_lane_kinds.contains(MORNING_BRIEFING_KIND),
             "morning_briefing must be assigned to a lane"
+        );
+
+        // Fail-closed mode (#364): with the kpi_ingest lane gated off, exactly
+        // the two ingest kinds are missing — no other lane silently absorbs
+        // them, and no other kind is lost.
+        let mut disabled_kinds: std::collections::BTreeSet<&str> = Default::default();
+        for pool in pool_layout(state.queue_config(), false) {
+            disabled_kinds.extend(pool.kinds);
+        }
+        let missing: Vec<&str> = registered.difference(&disabled_kinds).copied().collect();
+        assert_eq!(
+            missing,
+            vec![
+                crate::jobs::kpi_ingest_queue::KPI_INGEST_COMMIT_KIND,
+                crate::jobs::kpi_ingest_queue::KPI_INGEST_VALIDATE_KIND,
+            ],
+            "disabling the kpi_ingest lane must remove exactly the two ingest kinds"
         );
     }
 

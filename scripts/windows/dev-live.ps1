@@ -118,6 +118,18 @@ if ($DebugPolicyFallback) {
     }
 }
 
+# Single-instance preflight (#364): the app enforces one process per database
+# (tauri-plugin-single-instance) — a second launch would just focus the first
+# window and this script would time out waiting for a CDP endpoint that never
+# appears. Refuse loudly instead; `make live-up`/`live-smoke` stop the app
+# before calling this script.
+$existing = Get-Process -Name "brawler*" -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-Host "A Brawler instance is already running (PID $($existing.Id -join ', '))." -ForegroundColor Red
+    Write-Host "The app is single-instance: stop it first (or use 'make live-up', which does)." -ForegroundColor Red
+    exit 75
+}
+
 Write-Host "Launching..." -ForegroundColor Green
 # CaptureDir (CI diagnostics): a WebView2Environment creation failure surfaces on
 # the exe's stderr, which Start-Process discards unless redirected.

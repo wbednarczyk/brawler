@@ -905,6 +905,30 @@ impl KpiIngestStagingStore {
             }
         }
 
+        // Diagnostic progress snapshot (#364) — same transaction as the verdict
+        // batch and the run transition, so it can never lag or lead the state
+        // it describes.
+        let flagged = sealed
+            .observation_verdicts()
+            .iter()
+            .filter(|v| v.validation_state == "flagged")
+            .count();
+        let step = match sealed.outcome() {
+            ManifestOutcome::Ready => "validation_ready",
+            ManifestOutcome::Failed => "validation_failed",
+        };
+        crate::storage::kpi_ingest_runs::write_progress_snapshot_on_connection(
+            &tx,
+            run_id,
+            step,
+            revision,
+            Some(sealed.manifest_hash()),
+            serde_json::json!({
+                "observations": sealed.observation_verdicts().len(),
+                "flagged": flagged,
+            }),
+        )?;
+
         tx.commit()?;
         Ok(())
     }

@@ -64,6 +64,18 @@ pub fn run() {
     configure_linux_webkit_runtime_environment();
 
     tauri::Builder::default()
+        // Single-instance MUST be the first registered plugin (official Tauri
+        // requirement). One process per database is a queue-integrity
+        // invariant (#364): a second process would run its own worker lanes
+        // and its startup reclaim would dead-letter jobs genuinely running in
+        // the first. A second launch just focuses the existing main window.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -164,12 +176,39 @@ pub fn run() {
                 Err(error) => log::warn!("startup KPI ingest run reclaim failed: {error}"),
             }
 
+            // Queue-owned ingest runs ↔ generation rows (#364): an EXPLICIT
+            // queue reclaim first (dead-letter poison, requeue crash residue —
+            // the later call inside `spawn_pools` stays an idempotent noop),
+            // then reconcile each `staged`/`ready_to_commit` run with its
+            // current generation's job row. Both succeeding is a PRECONDITION
+            // for the `kpi_ingest` lane (fail-closed): on failure the lane
+            // stays off until the next launch, other lanes run normally.
+            let ingest_lane_ready = match state.jobs().reclaim_stale_running() {
+                Ok(_) => match jobs::kpi_ingest_queue::reconcile_ingest_jobs(&state) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        log::error!(
+                            "startup KPI ingest reconciliation failed; the kpi_ingest \
+                             lane will not start this launch: {error}"
+                        );
+                        false
+                    }
+                },
+                Err(error) => {
+                    log::error!(
+                        "startup queue reclaim failed; the kpi_ingest lane will not \
+                         start this launch: {error}"
+                    );
+                    false
+                }
+            };
+
             // Start the durable-queue worker as isolated lanes (ADR 0059): reclaim
             // crash residue, then drain each lane's kinds on its own threads off the
             // UI thread, so a slow source refresh cannot starve autopilot (ADR 0050).
             jobs::queue::spawn_pools(
                 std::sync::Arc::new(jobs::handlers::build_worker(state.clone())),
-                jobs::handlers::pool_layout(state.queue_config()),
+                jobs::handlers::pool_layout(state.queue_config(), ingest_lane_ready),
             );
 
             // Ownership extraction catch-up (ADR 0072 T3): a cold or

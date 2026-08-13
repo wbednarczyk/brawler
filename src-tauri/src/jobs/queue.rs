@@ -57,6 +57,44 @@ pub trait JobHandler: Send + Sync {
     fn failure_subject(&self, _payload: &str, _state: &AppState) -> Option<String> {
         None
     }
+
+    /// Preflight coherence check over the actual claimed row, called by the
+    /// worker BEFORE [`JobHandler::run`]. Handlers whose payload duplicates the
+    /// row identity (the KPI ingest kinds, #364) verify the REAL `job.id`
+    /// matches the payload here, so a row whose id names one run but whose
+    /// payload names another never does work for the wrong run. An `Err` enters
+    /// the ordinary settle/retry path exactly like an `Err` from `run` — the
+    /// row is never left `running`. Default: no check.
+    fn validate_claimed_job(&self, _job: &ClaimedJob) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// The `(company_scope, failure_subject)` pair for the terminal `job_failed`
+    /// attention event, resolved from the actual claimed row. Default delegates
+    /// to the payload-based [`JobHandler::company_scope`] /
+    /// [`JobHandler::failure_subject`]; handlers with an id-authoritative
+    /// identity (#364) override to derive both from `job.id` so a tampered
+    /// payload can never misattribute the event.
+    fn failure_context(
+        &self,
+        job: &ClaimedJob,
+        state: &AppState,
+    ) -> (Option<String>, Option<String>) {
+        (
+            self.company_scope(&job.payload),
+            self.failure_subject(&job.payload, state),
+        )
+    }
+
+    /// Called by the worker AFTER the queue row is durably terminal (retries
+    /// exhausted, `mark_failed` returned false) and after the failure event
+    /// fired — event first, domain transition second, so a crash between the
+    /// two converges via startup reconciliation. Runs regardless of the kind's
+    /// failure-surface classification. Domain stores transition their own state
+    /// here (the KPI ingest kinds mark the run `failed`, #364); handlers whose
+    /// domain rows are finalized inside `run` (autopilot) keep the default
+    /// no-op.
+    fn on_terminal_failure(&self, _job: &ClaimedJob, _error: &str, _state: &AppState) {}
 }
 
 /// Poll interval when the queue is idle.
@@ -131,8 +169,13 @@ impl JobWorker {
             None => None,
         };
 
+        // Preflight (id↔payload coherence) composes with the run itself: either
+        // failure enters the same settle/retry path, never leaving the row
+        // `running`.
         let outcome = match handler.as_ref() {
-            Some(handler) => handler.run(&job.payload, &self.state),
+            Some(handler) => handler
+                .validate_claimed_job(&job)
+                .and_then(|()| handler.run(&job.payload, &self.state)),
             None => Err(format!("no handler registered for job kind {}", job.kind)),
         };
 
@@ -146,7 +189,15 @@ impl JobWorker {
                     .mark_failed(&job.id, &error, backoff)
                     .map_err(|error| error.to_string())?;
                 if !will_retry {
+                    // Event first (deduped, migration 0118), domain transition
+                    // second — a crash between the two converges at startup.
+                    // The hook fires for EVERY kind, independent of the
+                    // failure-surface classification inside
+                    // `surface_terminal_failure`.
                     self.surface_terminal_failure(&job, handler.as_deref());
+                    if let Some(handler) = handler.as_ref() {
+                        handler.on_terminal_failure(&job, &error, &self.state);
+                    }
                 }
             }
         }
@@ -169,9 +220,9 @@ impl JobWorker {
         if failure_surface(&job.kind) != Some(FailureSurface::TodayAttention) {
             return;
         }
-        let company = handler.and_then(|handler| handler.company_scope(&job.payload));
-        let subject =
-            handler.and_then(|handler| handler.failure_subject(&job.payload, &self.state));
+        let (company, subject) = handler
+            .map(|handler| handler.failure_context(job, &self.state))
+            .unwrap_or((None, None));
         if let Err(error) = self.state.attention().record_job_failure(
             &job.id,
             company.as_deref(),
@@ -310,6 +361,106 @@ mod tests {
         let mut worker = JobWorker::new(state);
         worker.register(handler);
         worker
+    }
+
+    /// A handler that always fails and records hook invocations, to prove the
+    /// terminal hooks fire independent of failure-surface classification.
+    struct HookRecordingHandler {
+        kind: &'static str,
+        preflight_errors: usize,
+        preflights: AtomicUsize,
+        terminal_calls: AtomicUsize,
+    }
+
+    impl JobHandler for HookRecordingHandler {
+        fn kind(&self) -> &'static str {
+            self.kind
+        }
+        fn validate_claimed_job(&self, _job: &ClaimedJob) -> Result<(), String> {
+            let prior = self.preflights.fetch_add(1, Ordering::SeqCst);
+            if prior < self.preflight_errors {
+                Err("preflight rejected".into())
+            } else {
+                Ok(())
+            }
+        }
+        fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
+            Err("always fails".into())
+        }
+        fn on_terminal_failure(&self, _job: &ClaimedJob, _error: &str, _state: &AppState) {
+            self.terminal_calls.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn the_terminal_hook_fires_for_a_kind_with_no_today_surface() {
+        // `on_terminal_failure` runs OUTSIDE the failure-surface classification:
+        // a kind that is not TodayAttention (here: unclassified) still gets its
+        // domain hook exactly once, at the terminal point only.
+        let handler = Arc::new(HookRecordingHandler {
+            kind: "hook-kind",
+            preflight_errors: 0,
+            preflights: AtomicUsize::new(0),
+            terminal_calls: AtomicUsize::new(0),
+        });
+        let worker = {
+            let state = AppState::new(open_in_memory_database().expect("db"));
+            let mut worker = JobWorker::new(state);
+            worker.register(handler.clone());
+            worker
+        };
+        worker
+            .state
+            .jobs()
+            .enqueue("hook-kind:retrying", "hook-kind", "{}", 2)
+            .expect("enqueue retrying");
+        worker.process_one().expect("non-terminal attempt");
+        assert_eq!(
+            handler.terminal_calls.load(Ordering::SeqCst),
+            0,
+            "a non-terminal retry must not fire the hook"
+        );
+        worker
+            .state
+            .jobs()
+            .enqueue("hook-kind:terminal", "hook-kind", "{}", 1)
+            .expect("enqueue terminal");
+        worker.process_one().expect("terminal attempt");
+        assert_eq!(handler.terminal_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_preflight_rejection_settles_the_row_like_a_run_failure() {
+        // `validate_claimed_job` errors enter the ordinary settle/retry path:
+        // the row is retried with backoff, never left `running`, and `run` is
+        // not reached for the rejected attempt.
+        let handler = Arc::new(HookRecordingHandler {
+            kind: "hook-kind",
+            preflight_errors: usize::MAX,
+            preflights: AtomicUsize::new(0),
+            terminal_calls: AtomicUsize::new(0),
+        });
+        let worker = {
+            let state = AppState::new(open_in_memory_database().expect("db"));
+            let mut worker = JobWorker::new(state);
+            worker.register(handler.clone());
+            worker
+        };
+        worker
+            .state
+            .jobs()
+            .enqueue("hook-kind:1", "hook-kind", "{}", 1)
+            .expect("enqueue");
+        worker.process_one().expect("terminal preflight rejection");
+        let status = worker
+            .state
+            .jobs()
+            .status("hook-kind:1")
+            .expect("status")
+            .expect("row");
+        assert_eq!(status.status, "failed");
+        assert_eq!(status.last_error.as_deref(), Some("preflight rejected"));
+        assert_eq!(handler.terminal_calls.load(Ordering::SeqCst), 1);
     }
 
     /// A handler that serializes on a fixed source key and counts its runs.

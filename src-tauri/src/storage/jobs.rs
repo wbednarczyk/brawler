@@ -110,6 +110,9 @@ impl JobQueueStore {
     /// job is never disturbed or double-run). This is the scheduler primitive for
     /// periodic work (e.g. `source_refresh:<adapter>`): one row per recurring job,
     /// re-runnable on each tick, so the queue does not accumulate a row per fire.
+    /// The reset row follows the caller's `kind`/`payload`/`max_attempts` — the id
+    /// IS the job's identity, so a row whose stored kind drifted (raw tamper)
+    /// heals on the next re-arm instead of sitting invisible to every lane.
     /// Returns `true` if the job is now runnable (newly inserted or reset).
     pub fn reschedule(
         &self,
@@ -128,7 +131,9 @@ impl JobQueueStore {
                 attempts = 0,
                 available_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
                 last_error = NULL,
+                kind = excluded.kind,
                 payload = excluded.payload,
+                max_attempts = excluded.max_attempts,
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             WHERE job_queue.status != 'running'
             ",

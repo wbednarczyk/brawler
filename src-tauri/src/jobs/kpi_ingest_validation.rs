@@ -5,7 +5,8 @@
 //! [`crate::storage::KpiIngestStagingStore::apply_validation_outcome`] — the
 //! sole write path from `staged` to `{ready_to_commit, validation_failed}`.
 //! Headless-only for #361 (no Tauri command twin, the `record_financial_facts`
-//! idiom): the MCP surface is #353, the queue trigger is #364.
+//! idiom): the MCP surface is #353; the queue trigger is the
+//! `kpi_ingest_validate` handler (#364, [`crate::jobs::kpi_ingest_queue`]).
 
 use std::collections::{BTreeSet, HashMap};
 

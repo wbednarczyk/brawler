@@ -527,6 +527,30 @@ impl KpiIngestCommitStore {
                 },
             )?;
 
+            // Step 7.5: diagnostic progress snapshot (#364) — same transaction
+            // as the receipt and the terminal flip, so a rolled-back commit
+            // leaves no `committed` snapshot behind.
+            let count_of = |wanted: &str| -> usize {
+                outcome_entries
+                    .iter()
+                    .filter(|entry| entry.outcome == wanted)
+                    .count()
+            };
+            kpi_ingest_runs::write_progress_snapshot_on_connection(
+                &tx,
+                run_id,
+                "committed",
+                revision,
+                Some(manifest_hash),
+                serde_json::json!({
+                    "accepted": receipt.accepted_count,
+                    "created": count_of("created"),
+                    "reobserved": count_of("reobserved"),
+                    "upgraded": count_of("upgraded"),
+                    "divergent": count_of("divergent"),
+                }),
+            )?;
+
             // Step 8: flip the run to its terminal state.
             kpi_ingest_runs::finalize_committing(&tx, run_id)?;
 
