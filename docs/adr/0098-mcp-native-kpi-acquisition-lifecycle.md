@@ -75,7 +75,7 @@ Status mechanics: ADR 0093 moves to **"Accepted; amended by ADR 0095 and ADR 009
 
 ### 8. Execution ownership — the run is the agent's worklist
 
-**Model A.** The `KpiIngestRun` table is the **external agent's worklist and lease**: lease expiry + heartbeat live on the run row; the agent claims a run over MCP, works, and reports through the workflow tools. The in-process job queue executes only **short deterministic steps** — discovery/planning of pending runs, validation, commit — and **never holds a `running` job row while waiting for an LLM**. The queue's four states (`pending/running/succeeded/failed`) are job bookkeeping; the run's lifecycle is the domain state machine.
+**Model A.** The `KpiIngestRun` table is the **external agent's worklist and lease**: lease expiry + heartbeat live on the run row; the agent claims a run over MCP, works, and reports through the workflow tools. The in-process job queue executes only **short deterministic steps** — discovery/planning of pending runs, validation, commit — and **never holds a `running` job row while waiting for an LLM**. *(Amended 2026-08-13, [ADR 0099](0099-acquisition-mcp-surface-mechanics.md) dec. 1: on the agent path Brawler executes validation and commit synchronously inside the MCP tool call; the job queue remains the executor for #354 automation and crash recovery.)* The queue's four states (`pending/running/succeeded/failed`) are job bookkeeping; the run's lifecycle is the domain state machine.
 
 Rejected (model B): making the external agent a claimant of `job_queue` rows over MCP — it would require durable lease/heartbeat/cancellation semantics and a row↔run mapping the queue does not have, and would conflate transport-level job retry with domain-level run repair.
 
