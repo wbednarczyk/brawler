@@ -64,6 +64,8 @@ fn the_classification_covers_the_registry_and_nothing_else() {
         crate::jobs::quote_backfill::QUOTE_BACKFILL_KIND,
         crate::jobs::backfill::COMPANY_BACKFILL_KIND,
         crate::jobs::aggregator_fundamentals_pull::AGGREGATOR_FUNDAMENTALS_PULL_KIND,
+        crate::jobs::kpi_ingest_queue::KPI_INGEST_VALIDATE_KIND,
+        crate::jobs::kpi_ingest_queue::KPI_INGEST_COMMIT_KIND,
     ] {
         assert!(
             registered.contains(kind),
@@ -157,6 +159,64 @@ fn a_terminally_failed_today_attention_job_reaches_the_stream() {
         AttentionSeverity::Notable,
         "every job failure is notable (owner decision 1)"
     );
+}
+
+#[test]
+fn a_terminally_failed_kpi_ingest_validate_job_reaches_the_stream() {
+    // Per-kind visibility (ADR 0091 dec. 3, #364): the validate kind's terminal
+    // failure raises exactly one `job_failed` event. A malformed payload fails
+    // the id↔payload preflight deterministically; max_attempts = 1 → terminal.
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let job_id = "kpi_ingest_validate:kpiing_missing:rev1";
+    state
+        .jobs()
+        .enqueue(
+            job_id,
+            crate::jobs::kpi_ingest_queue::KPI_INGEST_VALIDATE_KIND,
+            "not-json",
+            1,
+        )
+        .expect("enqueue");
+
+    let worker = build_worker(state.clone());
+    assert!(worker.process_one().expect("process"), "a job was claimed");
+    assert_eq!(state.jobs().counts().expect("counts").failed, 1);
+
+    let events = state
+        .attention()
+        .list_attention_events(AttentionEventListInput::default())
+        .expect("events");
+    assert_eq!(events.len(), 1, "the terminal failure raised ONE event");
+    assert_eq!(events[0].trigger_type, TRIGGER_JOB_FAILED);
+    assert_eq!(events[0].evidence_ref, job_id);
+}
+
+#[test]
+fn a_terminally_failed_kpi_ingest_commit_job_reaches_the_stream() {
+    // Per-kind visibility (ADR 0091 dec. 3, #364): the commit kind, same drive.
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let job_id = "kpi_ingest_commit:kpiing_missing:rev1:deadbeef";
+    state
+        .jobs()
+        .enqueue(
+            job_id,
+            crate::jobs::kpi_ingest_queue::KPI_INGEST_COMMIT_KIND,
+            "not-json",
+            1,
+        )
+        .expect("enqueue");
+
+    let worker = build_worker(state.clone());
+    assert!(worker.process_one().expect("process"), "a job was claimed");
+    assert_eq!(state.jobs().counts().expect("counts").failed, 1);
+
+    let events = state
+        .attention()
+        .list_attention_events(AttentionEventListInput::default())
+        .expect("events");
+    assert_eq!(events.len(), 1, "the terminal failure raised ONE event");
+    assert_eq!(events[0].trigger_type, TRIGGER_JOB_FAILED);
+    assert_eq!(events[0].evidence_ref, job_id);
 }
 
 #[test]

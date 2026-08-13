@@ -816,6 +816,7 @@ live-smoke:
 	else EXE_WIN="$(EXE)"; fi; \
 	stop_app() { powershell.exe -NoProfile -Command "Get-Process brawler* -ErrorAction SilentlyContinue | Stop-Process -Force" >/dev/null 2>&1 || true; }; \
 	trap stop_app EXIT; \
+	stop_app; \
 	SCRIPT_PATH="scripts/windows/dev-live.ps1"; \
 	if command -v wslpath >/dev/null 2>&1; then SCRIPT_PATH="$$(wslpath -w "$$SCRIPT_PATH")"; \
 	elif command -v cygpath >/dev/null 2>&1; then SCRIPT_PATH="$$(cygpath -w "$$SCRIPT_PATH")"; fi; \

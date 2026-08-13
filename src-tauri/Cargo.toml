@@ -63,6 +63,9 @@ serde_yaml = "0.9"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# One process per database (queue-integrity invariant, #364): a second launch
+# focuses the first instance instead of starting rival worker lanes.
+tauri-plugin-single-instance = "2"
 thiserror = "2"
 # In-app read-only MCP server transport (ADR 0078 dec. 2). Pure-Rust, three small
 # transitive deps, synchronous handlers call the blocking `AppState` directly (no

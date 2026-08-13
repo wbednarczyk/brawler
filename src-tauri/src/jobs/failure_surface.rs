@@ -46,6 +46,7 @@ pub fn failure_surface(kind: &str) -> Option<FailureSurface> {
     use crate::jobs::backfill::COMPANY_BACKFILL_KIND;
     use crate::jobs::fx_daily_pull::FX_DAILY_PULL_KIND;
     use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
+    use crate::jobs::kpi_ingest_queue::{KPI_INGEST_COMMIT_KIND, KPI_INGEST_VALIDATE_KIND};
     use crate::jobs::management_holdings_extraction::MANAGEMENT_EXTRACTION_KIND;
     use crate::jobs::morning_briefing::MORNING_BRIEFING_KIND;
     use crate::jobs::ownership_extraction::OWNERSHIP_EXTRACTION_KIND;
@@ -72,13 +73,21 @@ pub fn failure_surface(kind: &str) -> Option<FailureSurface> {
         // (The company backfill records an adapter fault only for a genuine
         // Bankier-interaction fault, and never returns Err after doing so — its
         // terminal failure is a malformed payload — so there is no double fire.)
+        // The KPI ingest steps (#364) also take the generic surface: the run's
+        // own `failed` + `last_error` has no UI in E1 (runs surface over MCP in
+        // #353), so the Today event is the one user-visible path. The domain
+        // transition itself happens in the handlers' `on_terminal_failure`
+        // hook, AFTER this event fires — never a double fire, the event and
+        // the run state describe the same terminal failure once each.
         MORNING_BRIEFING_KIND
         | HISTORY_SWEEP_KIND
         | OWNERSHIP_EXTRACTION_KIND
         | MANAGEMENT_EXTRACTION_KIND
         | QUOTE_BACKFILL_KIND
         | COMPANY_BACKFILL_KIND
-        | AGGREGATOR_FUNDAMENTALS_PULL_KIND => FailureSurface::TodayAttention,
+        | AGGREGATOR_FUNDAMENTALS_PULL_KIND
+        | KPI_INGEST_VALIDATE_KIND
+        | KPI_INGEST_COMMIT_KIND => FailureSurface::TodayAttention,
         _ => return None,
     })
 }
