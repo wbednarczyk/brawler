@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.68.0 - 2026-08-14
+
+
+### Features
+
+- **mcp**: run lifecycle tools — start, list_pending, status, cancel (#384) (#393)
+
 ## v0.67.0 - 2026-08-14
 
 
