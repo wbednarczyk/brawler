@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.67.0 - 2026-08-14
+
+
+### Features
+
+- **fundamentals**: extraction-profile registry and creation-time expected-pack stamp (#392)
+
 ## v0.66.0 - 2026-08-14
 
 
