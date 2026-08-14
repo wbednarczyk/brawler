@@ -2541,7 +2541,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
               "type": "object"
             },
             "StartPeriodType": {
-              "description": "The START period vocabulary (contracts.md § Planned): `Q1|H1|9M|FY` only — the validator refuses everything else via `run.unsupported_period_grammar`, so a run doomed to fail cannot start. The schema IS the enforcement.",
+              "description": "The START period vocabulary (contracts.md § KPI acquisition workflow tools): `Q1|H1|9M|FY` only — the validator refuses everything else via `run.unsupported_period_grammar`, so a run doomed to fail cannot start. The schema IS the enforcement.",
               "enum": [
                 "Q1",
                 "H1",
@@ -2692,6 +2692,340 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "get_kpi_ingest_document"
+      },
+      {
+        "description": "Stage the COMPLETE revision snapshot of extracted observations (1..100, with citations) plus the REQUIRED missingReasons declaration ({} = explicitly none), written in the same transaction. A repair resends every retained observation. Requires the caller's live lease. Provenance is the run pipeline itself.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "definitions": {
+            "AttributionInput": {
+              "enum": [
+                "total",
+                "owners_of_parent",
+                "nci"
+              ],
+              "type": "string"
+            },
+            "CitationInput": {
+              "additionalProperties": false,
+              "properties": {
+                "page": {
+                  "format": "int64",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "quote": {
+                  "type": "string"
+                },
+                "row": {
+                  "type": "string"
+                },
+                "table": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "ExecutionMetaInput": {
+              "additionalProperties": false,
+              "description": "`ExecutionMeta` (contracts.md shared shapes): diagnostic agent metadata. `client` is REQUIRED in every supplied payload; numerics are totals / snapshots, never deltas. Optional fields are skipped when absent so the stored merge never overwrites a field with `null`.",
+              "properties": {
+                "client": {
+                  "type": "string"
+                },
+                "costUsd": {
+                  "format": "double",
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "repairRounds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "skillVersion": {
+                  "type": "string"
+                },
+                "tokensIn": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tokensOut": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "client"
+              ],
+              "type": "object"
+            },
+            "MappingStatusInput": {
+              "enum": [
+                "unmapped",
+                "mapped",
+                "no_definition"
+              ],
+              "type": "string"
+            },
+            "MeasureWindowInput": {
+              "enum": [
+                "flow",
+                "point_in_time",
+                "trailing",
+                "cumulative",
+                "duration"
+              ],
+              "type": "string"
+            },
+            "ObservationInput": {
+              "additionalProperties": false,
+              "description": "One staged observation exactly as the tool contract freezes it (contracts.md tool 5). Raw fields are stored verbatim; normalized fields are the agent's own normalization for audit.",
+              "properties": {
+                "attribution": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/AttributionInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "citation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/CitationInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "mappingStatus": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/MappingStatusInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "measureWindow": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/MeasureWindowInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "metricKeyCandidate": {
+                  "type": "string"
+                },
+                "normalizedValue": {
+                  "type": "string"
+                },
+                "rawCurrency": {
+                  "type": "string"
+                },
+                "rawLabel": {
+                  "type": "string"
+                },
+                "rawUnitScale": {
+                  "type": "string"
+                },
+                "rawValue": {
+                  "type": "string"
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/RunScopeInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "unitScale": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/UnitScaleInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "rawLabel",
+                "rawValue"
+              ],
+              "type": "object"
+            },
+            "RunScopeInput": {
+              "enum": [
+                "standalone",
+                "consolidated"
+              ],
+              "type": "string"
+            },
+            "UnitScaleInput": {
+              "enum": [
+                "ones",
+                "thousands",
+                "millions"
+              ],
+              "type": "string"
+            }
+          },
+          "properties": {
+            "execution": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ExecutionMetaInput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missingReasons": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "REQUIRED: `{}` is the explicit \"no declared omissions\"/clear — there is no destructive default (contracts.md tool 5).",
+              "type": "object"
+            },
+            "observations": {
+              "items": {
+                "$ref": "#/definitions/ObservationInput"
+              },
+              "type": "array"
+            },
+            "runId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "missingReasons",
+            "observations",
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "stage_kpi_observations"
+      },
+      {
+        "description": "Validate one staged revision synchronously (generation-pinned). Returns the FULL manifest — a failed manifest is the typed repair report; a raced loser gets outcome=superseded with the current run tuple.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "runId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "revision",
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "validate_kpi_ingest"
+      },
+      {
+        "description": "Atomically commit a ready manifest (runId + manifestHash + revision) and return the immutable receipt. Idempotent: replaying a committed tuple returns the stored receipt verbatim; a stale tuple is a typed conflict.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "definitions": {
+            "ExecutionMetaInput": {
+              "additionalProperties": false,
+              "description": "`ExecutionMeta` (contracts.md shared shapes): diagnostic agent metadata. `client` is REQUIRED in every supplied payload; numerics are totals / snapshots, never deltas. Optional fields are skipped when absent so the stored merge never overwrites a field with `null`.",
+              "properties": {
+                "client": {
+                  "type": "string"
+                },
+                "costUsd": {
+                  "format": "double",
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "repairRounds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "skillVersion": {
+                  "type": "string"
+                },
+                "tokensIn": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tokensOut": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "client"
+              ],
+              "type": "object"
+            }
+          },
+          "properties": {
+            "execution": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ExecutionMetaInput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "manifestHash": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "runId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "manifestHash",
+            "revision",
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "commit_kpi_ingest"
       },
       {
         "description": "Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease.",

@@ -151,6 +151,7 @@ impl KpiIngestCommitStore {
         run_id: &str,
         manifest_hash: &str,
         revision: i64,
+        execution: Option<&serde_json::Value>,
     ) -> StorageResult<CommitReceipt> {
         // --- Step 0 (#363): the receipt fast path, BEFORE attempt parsing ---
         // Retrying a committed manifest returns the stored receipt verbatim —
@@ -550,6 +551,13 @@ impl KpiIngestCommitStore {
                     "divergent": count_of("divergent"),
                 }),
             )?;
+
+            // Execution metadata merges INSIDE the commit transaction (#386,
+            // ADR 0099 dec. 8); the replay fast path above never writes — a
+            // stored receipt is immutable and replays ignore `execution`.
+            if let Some(execution) = execution {
+                kpi_ingest_runs::merge_cost_json_on_connection(&tx, run_id, execution)?;
+            }
 
             // Step 8: flip the run to its terminal state.
             kpi_ingest_runs::finalize_committing(&tx, run_id)?;

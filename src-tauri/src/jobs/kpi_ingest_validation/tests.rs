@@ -79,7 +79,13 @@ fn staged_run_with_profile(profile_version: &str) -> (AppState, String, i64) {
         .expect("begin extracting");
     let (revision, _) = state
         .kpi_ingest_staging()
-        .stage_observations(&run.id, "agent-1", vec![clean_observation()])
+        .stage_observations(
+            &run.id,
+            "agent-1",
+            vec![clean_observation()],
+            &std::collections::BTreeMap::new(),
+            None,
+        )
         .expect("stage");
     (state, run.id, revision)
 }

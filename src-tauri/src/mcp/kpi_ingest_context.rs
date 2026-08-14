@@ -28,7 +28,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::kpi_ingest::{
-    get_existing_run, period_dto, reject_control_chars, run_status_dto, RunStatusDto, SNAPSHOT_DIR,
+    get_existing_run, is_content_hash, period_dto, reject_control_chars, run_status_dto,
+    RunStatusDto, SNAPSHOT_DIR,
 };
 use super::tools::{run, ToolCallError, ToolOutcome};
 use crate::commands::error::{CommandError, CommandErrorCode};
@@ -104,7 +105,7 @@ pub struct GetKpiIngestDocumentInput {
 }
 
 // ============================================================================
-// Wire DTOs (MCP-only — no TS consumer, no ts_rs; contracts.md § Planned)
+// Wire DTOs (MCP-only — no TS consumer, no ts_rs; contracts.md § KPI acquisition workflow tools)
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize)]
@@ -164,7 +165,7 @@ pub struct PlausibilityEntryDto {
     pub slot: SlotDto,
     /// `observed` = this exact slot exists in the fact store; `candidate` =
     /// the recommended default slot a staged observation would land in
-    /// (contracts.md § Planned, dated addition #385) — a recommendation, not
+    /// (contracts.md § KPI acquisition workflow tools, dated addition #385) — a recommendation, not
     /// observed validator evidence.
     pub slot_origin: &'static str,
     /// `history_median` over the exact vector the validator would read —
@@ -331,13 +332,6 @@ fn serialized_len<T: Serialize>(value: &T) -> Result<usize, CommandError> {
     serde_json::to_vec(value)
         .map(|bytes| bytes.len())
         .map_err(|error| internal(format!("response serialization failed: {error}")))
-}
-
-fn is_valid_content_hash(hash: &str) -> bool {
-    hash.len() == 64
-        && hash
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// The run's expected metric keys: the creation-time stamp verbatim; a legacy
@@ -675,7 +669,7 @@ fn document_meta(state: &AppState, run: &KpiIngestRun) -> Result<DocumentMetaDto
     let byte_size = run
         .source_content_hash
         .as_deref()
-        .filter(|hash| is_valid_content_hash(hash))
+        .filter(|hash| is_content_hash(hash))
         .and_then(|hash| {
             std::fs::metadata(state.data_dir().join(SNAPSHOT_DIR).join(hash))
                 .ok()
@@ -1183,7 +1177,7 @@ fn get_kpi_ingest_document(
             "invariant violated: a discovered run carries a source hash",
         ));
     }
-    if !is_valid_content_hash(&hash) {
+    if !is_content_hash(&hash) {
         return Err(internal(
             "stored source_content_hash is not 64 lowercase hex bytes",
         ));

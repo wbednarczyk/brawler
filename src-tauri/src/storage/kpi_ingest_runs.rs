@@ -236,6 +236,20 @@ fn lease_not_held(id: &str, holder: &str) -> StorageError {
 /// a LIVE foreign lease → `RunTakenOver` (abandon); anything else (absent, or
 /// foreign-and-expired) → `RunLeaseNotHeld`. The TTL is not a correctness
 /// mechanism — a lease may lapse between claim and any later guarded step.
+/// Classify a lease refusal for `holder` from a fresh read on the SAME
+/// connection/transaction — the three-way vocabulary (#360/#384) shared by
+/// every agent-facing intent; #386 routes staging through it too.
+pub(super) fn lease_refusal_on_connection(
+    conn: &Connection,
+    id: &str,
+    holder: &str,
+) -> StorageResult<StorageError> {
+    let Some(raw) = read_raw_run(conn, id)? else {
+        return Ok(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    };
+    lease_refusal(conn, &raw, id, holder)
+}
+
 fn lease_refusal(
     conn: &Connection,
     raw: &RawRun,
@@ -426,6 +440,21 @@ fn validate_period_type_value(period_type: &str) -> StorageResult<()> {
             value: period_type.to_owned(),
         })
     }
+}
+
+/// One exact queue generation of a run (#386, E1): the tuple a terminalization
+/// caller SELECTED before deciding to fail the run. Typed so the
+/// ready-to-commit variant cannot omit its manifest hash — a
+/// `(status, Option<hash>)` pair would admit an unsafe `ReadyToCommit + None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IngestGeneration {
+    Staged {
+        revision: i64,
+    },
+    ReadyToCommit {
+        revision: i64,
+        manifest_hash: String,
+    },
 }
 
 /// Bound `last_error` at its single write boundary (#385): ≤2048 UTF-8 bytes,
@@ -1435,6 +1464,52 @@ impl KpiIngestRunsStore {
         Err(wrong_state(id, status, KpiIngestRunState::Failed))
     }
 
+    /// Generation-guarded terminalization (#386, ADR 0099 dec. 1 / E1): fail
+    /// the run ONLY while it still sits at the exact generation the caller
+    /// selected — the guard lives in the UPDATE's WHERE clause, so the queue's
+    /// check-then-act window (and startup reconcile's missing check) closes
+    /// atomically. `Ok(false)` = the generation moved (or the run is gone) —
+    /// a deliberate no-op: the run lives on in its NEW generation and the
+    /// caller has nothing to do. `last_error` is bounded like [`Self::mark_failed`].
+    pub fn mark_failed_for_generation(
+        &self,
+        id: &str,
+        last_error: &str,
+        generation: &IngestGeneration,
+    ) -> StorageResult<bool> {
+        let last_error = bound_last_error(last_error);
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let changed = match generation {
+            IngestGeneration::Staged { revision } => apply_transition(
+                &tx,
+                id,
+                &[KpiIngestRunState::Staged],
+                KpiIngestRunState::Failed,
+                "last_error = ?, lease_holder = NULL, lease_expires_at = NULL, last_heartbeat_at = NULL, ",
+                &[&last_error],
+                " AND manifest_revision = ?",
+                &[revision],
+            )?,
+            IngestGeneration::ReadyToCommit {
+                revision,
+                manifest_hash,
+            } => apply_transition(
+                &tx,
+                id,
+                &[KpiIngestRunState::ReadyToCommit],
+                KpiIngestRunState::Failed,
+                "last_error = ?, lease_holder = NULL, lease_expires_at = NULL, last_heartbeat_at = NULL, ",
+                &[&last_error],
+                " AND manifest_revision = ? AND manifest_hash = ?",
+                &[revision, manifest_hash],
+            )?,
+        };
+        tx.commit()?;
+        Ok(changed == 1)
+    }
+
     pub fn get_run(&self, id: &str) -> StorageResult<Option<KpiIngestRun>> {
         let connection = self.db.checkout()?;
         let raw: Option<RawRun> = connection
@@ -2016,6 +2091,50 @@ pub(super) fn write_progress_snapshot_on_connection(
     })?;
     let changed = conn.execute(
         "UPDATE kpi_ingest_runs SET progress_json = ?1, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?2",
+        params![json, id],
+    )?;
+    if changed == 0 {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    }
+    Ok(())
+}
+
+/// The single `cost_json` writer (#386, ADR 0099 dec. 8): shallow per-key
+/// merge of the caller's `ExecutionMeta` payload over the stored object —
+/// fields OMITTED by this call survive (the agent may report `tokensIn` at
+/// stage and `costUsd` at commit; numerics are totals/snapshots, never
+/// accumulated), `schemaVersion` stamped 1. Runs ONLY inside the stage and
+/// commit transactions (no loose last-writer-wins update exists). A corrupt
+/// stored object is replaced fresh — `cost_json` is diagnostic, never part of
+/// the trust verdict (ADR 0098 dec. 2).
+pub(super) fn merge_cost_json_on_connection(
+    conn: &Connection,
+    id: &str,
+    execution: &serde_json::Value,
+) -> StorageResult<()> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT cost_json FROM kpi_ingest_runs WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    let mut merged = stored
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    if let Some(fields) = execution.as_object() {
+        for (key, value) in fields {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    merged.insert("schemaVersion".to_owned(), serde_json::json!(1));
+    let json = serde_json::Value::Object(merged).to_string();
+    let changed = conn.execute(
+        "UPDATE kpi_ingest_runs SET cost_json = ?1, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?2",
         params![json, id],
     )?;
@@ -3217,7 +3336,13 @@ mod tests {
     fn stage_once(state: &AppState, run_id: &str, holder: &str) -> i64 {
         let (revision, _) = state
             .kpi_ingest_staging()
-            .stage_observations(run_id, holder, vec![one_test_observation()])
+            .stage_observations(
+                run_id,
+                holder,
+                vec![one_test_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
         revision
     }
@@ -3658,11 +3783,18 @@ mod tests {
                 apply(&state, "run1", scenario, "worker-a");
                 let error = state
                     .kpi_ingest_staging()
-                    .stage_observations("run1", "worker-a", vec![one_test_observation()])
+                    .stage_observations(
+                        "run1",
+                        "worker-a",
+                        vec![one_test_observation()],
+                        &std::collections::BTreeMap::new(),
+                        None,
+                    )
                     .expect_err("lease scenario must refuse");
-                // Staging keeps the residual shape until #386's stage tool
-                // adopts the refined classifier.
-                assert_expected(scenario, &error, false);
+                // Since #386 staging classifies through the shared three-way
+                // `lease_refusal` — the refined vocabulary all three
+                // agent-facing intents now share.
+                assert_expected(scenario, &error, true);
             }
         }
     }
@@ -5044,5 +5176,154 @@ mod tests {
             ),
             "got {error:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Generation-guarded terminalization (#386, E1).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mark_failed_for_generation_matrix() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        for doc in ["d1", "d2", "d3", "d4"] {
+            seed_document(&connection, doc, "c1");
+        }
+        // Staged run at revision 2.
+        seed_run_raw(
+            &connection,
+            "r1",
+            "d1",
+            "c1",
+            "gpw_ifrs_annual@v1",
+            "staged",
+            None,
+            None,
+            None,
+        );
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET manifest_revision = 2 WHERE id = 'r1'",
+                [],
+            )
+            .expect("rev");
+        // Ready-to-commit run at revision 3 with a frozen hash.
+        seed_run_raw(
+            &connection,
+            "r2",
+            "d2",
+            "c1",
+            "gpw_ifrs_annual@v1",
+            "ready_to_commit",
+            None,
+            None,
+            None,
+        );
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET manifest_revision = 3, manifest_hash = 'h3' WHERE id = 'r2'",
+                [],
+            )
+            .expect("tuple");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        // Revision moved → Ok(false), run untouched.
+        assert!(!store
+            .mark_failed_for_generation("r1", "boom", &IngestGeneration::Staged { revision: 1 })
+            .expect("guarded"));
+        assert_eq!(
+            store.get_run("r1").expect("get").expect("run").status,
+            KpiIngestRunState::Staged
+        );
+        // Wrong expected state → Ok(false).
+        assert!(!store
+            .mark_failed_for_generation(
+                "r1",
+                "boom",
+                &IngestGeneration::ReadyToCommit {
+                    revision: 2,
+                    manifest_hash: "h".into()
+                }
+            )
+            .expect("guarded"));
+        // Unknown run → Ok(false).
+        assert!(!store
+            .mark_failed_for_generation("nope", "boom", &IngestGeneration::Staged { revision: 1 })
+            .expect("guarded"));
+        // Hash mismatch on ready_to_commit → Ok(false).
+        assert!(!store
+            .mark_failed_for_generation(
+                "r2",
+                "boom",
+                &IngestGeneration::ReadyToCommit {
+                    revision: 3,
+                    manifest_hash: "other".into()
+                }
+            )
+            .expect("guarded"));
+
+        // Exact staged generation → failed, lease released, Ok(true).
+        assert!(store
+            .mark_failed_for_generation("r1", "boom", &IngestGeneration::Staged { revision: 2 })
+            .expect("guarded"));
+        let failed = store.get_run("r1").expect("get").expect("run");
+        assert_eq!(failed.status, KpiIngestRunState::Failed);
+        assert_eq!(failed.last_error.as_deref(), Some("boom"));
+
+        // Exact ready generation → failed too.
+        assert!(store
+            .mark_failed_for_generation(
+                "r2",
+                "boom",
+                &IngestGeneration::ReadyToCommit {
+                    revision: 3,
+                    manifest_hash: "h3".into()
+                }
+            )
+            .expect("guarded"));
+        assert_eq!(
+            store.get_run("r2").expect("get").expect("run").status,
+            KpiIngestRunState::Failed
+        );
+    }
+
+    #[test]
+    fn mark_failed_for_generation_bounds_long_utf8_errors() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "d1", "c1");
+        seed_run_raw(
+            &connection,
+            "r1",
+            "d1",
+            "c1",
+            "gpw_ifrs_annual@v1",
+            "staged",
+            None,
+            None,
+            None,
+        );
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET manifest_revision = 1 WHERE id = 'r1'",
+                [],
+            )
+            .expect("rev");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        let long = "ł".repeat(1500); // 3000 bytes of 2-byte chars
+        assert!(store
+            .mark_failed_for_generation("r1", &long, &IngestGeneration::Staged { revision: 1 })
+            .expect("guarded"));
+        let stored = store
+            .get_run("r1")
+            .expect("get")
+            .expect("run")
+            .last_error
+            .expect("last_error");
+        assert!(stored.len() <= 2048, "bounded: {} bytes", stored.len());
+        assert!(stored.ends_with('…'), "marker present");
     }
 }

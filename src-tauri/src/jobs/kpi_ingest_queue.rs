@@ -10,16 +10,23 @@
 //! revision freezes a NEW hash (new commit generation), so two tuples never
 //! share one attention-evidence identity.
 //!
-//! Headless-only in #364: production producers arrive with the MCP workflow
-//! tools (#353) and the acquisition planner (#354). Single-armer invariant:
-//! with the one-worker `kpi_ingest` lane, reconciliation running before the
-//! pools, and no external armers yet, [`arm`] can never observe a `running`
-//! row of the generation it arms — #353 (the first concurrent armer) must
-//! revisit this invariant when it lands its invalidate/stage tools. The same
-//! topology makes [`terminalize_ingest_run`]'s check-then-`mark_failed`
-//! race-free today (nothing can invalidate/re-stage between the generation
-//! guard and the transition); #353 must make that pair atomic (a
-//! generation-guarded `mark_failed`) alongside the arming revisit.
+//! Production trigger: the #354 acquisition planner. The #353 agent path
+//! deliberately does NOT go through this queue — `stage_kpi_observations`
+//! never enqueues, and `validate_kpi_ingest`/`commit_kpi_ingest` run the same
+//! primitives synchronously in the tool call (ADR 0099 dec. 1); the queue
+//! remains the executor for automation and crash recovery, and the two paths
+//! converge on the storage atoms' revision guards.
+//!
+//! Single-armer invariant, RESOLVED at #386: the synchronous path introduces
+//! no new armer (it never calls [`arm`]) — arming stays the queue chain
+//! (validate → commit) plus startup reconciliation, so with the one-worker
+//! `kpi_ingest` lane [`arm`] still never observes a `running` row of the
+//! generation it arms; the sync×queue collision tests prove convergence. A
+//! future concurrent producer (if the #354 planner adds one) revisits this.
+//! Terminalization is generation-guarded since #386: both callers write
+//! through [`crate::storage::KpiIngestRunsStore::mark_failed_for_generation`],
+//! whose WHERE-clause guard makes the select-then-fail pair atomic — a
+//! mid-window re-stage leaves the new generation alive.
 
 use std::sync::Arc;
 
@@ -157,8 +164,9 @@ fn arm(state: &AppState, job_id: &str, kind: &'static str, payload: &str) -> Res
 }
 
 /// Arms the validation job for one staged revision. The production trigger is
-/// #353's stage tool (after `stage_observations`); today tests drive it, and
-/// startup reconciliation heals a crash between the stage and this call.
+/// the #354 acquisition planner — the #353 agent path validates synchronously
+/// and never arms (ADR 0099 dec. 1); today tests drive it, and startup
+/// reconciliation heals a crash that left a staged run without its job row.
 pub fn enqueue_validate(state: &AppState, run_id: &str, revision: i64) -> Result<(), ArmError> {
     let job_id = validate_job_id(run_id, revision);
     let payload = serde_json::to_string(&ValidatePayload {
@@ -252,47 +260,53 @@ fn ingest_failure_context(state: &AppState, job_id: &str) -> (Option<String>, Op
 
 /// Id-authoritative domain terminalization, shared by the in-process
 /// [`JobHandler::on_terminal_failure`] hook and the startup reconciliation
-/// `failed` branch: parse the generation from the job id, and mark the run
-/// `failed` ONLY if the live run still sits in this generation's queue-owned
-/// state (a receipt-confirmed terminal run is never touched; a superseded
-/// generation's failure is inert bookkeeping). Best-effort: the queue row is
-/// already the durable record.
+/// `failed` branch: parse the generation from the job id and terminalize the
+/// run through the GENERATION-GUARDED write (#386, E1): the guard sits in the
+/// storage UPDATE's WHERE clause, so a re-stage landing between this caller's
+/// selection and the write is a silent no-op — the run lives on in its new
+/// generation. Best-effort: the queue row is already the durable record.
 fn terminalize_ingest_run(state: &AppState, job_id: &str, error: &str) {
     let Some(identity) = parse_job_id(job_id) else {
         log::warn!("kpi ingest queue: unparseable terminal job id {job_id}");
         return;
     };
-    let (run_id, matches) = match &identity {
-        IngestJobIdentity::Validate { run_id, revision } => {
-            let Ok(Some(run)) = state.kpi_ingest_runs().get_run(run_id) else {
-                return;
-            };
-            (
-                run_id.clone(),
-                run.status == KpiIngestRunState::Staged && run.manifest_revision == *revision,
-            )
-        }
+    terminalize_ingest_generation(state, &identity, error);
+}
+
+/// The one-run terminalization core, parameterized on the SELECTED generation
+/// so tests can call it with a deliberately stale tuple (the exact window the
+/// generation guard closes).
+fn terminalize_ingest_generation(state: &AppState, identity: &IngestJobIdentity, error: &str) {
+    let (run_id, generation) = match identity {
+        IngestJobIdentity::Validate { run_id, revision } => (
+            run_id.clone(),
+            crate::storage::IngestGeneration::Staged {
+                revision: *revision,
+            },
+        ),
         IngestJobIdentity::Commit {
             run_id,
             revision,
             manifest_hash,
-        } => {
-            let Ok(Some(run)) = state.kpi_ingest_runs().get_run(run_id) else {
-                return;
-            };
-            (
-                run_id.clone(),
-                run.status == KpiIngestRunState::ReadyToCommit
-                    && run.manifest_revision == *revision
-                    && run.manifest_hash.as_deref() == Some(manifest_hash.as_str()),
-            )
-        }
+        } => (
+            run_id.clone(),
+            crate::storage::IngestGeneration::ReadyToCommit {
+                revision: *revision,
+                manifest_hash: manifest_hash.clone(),
+            },
+        ),
     };
-    if !matches {
-        return;
-    }
-    if let Err(error) = state.kpi_ingest_runs().mark_failed(&run_id, error) {
-        log::warn!("kpi ingest queue: could not mark run {run_id} failed: {error}");
+    match state
+        .kpi_ingest_runs()
+        .mark_failed_for_generation(&run_id, error, &generation)
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            // The generation moved (or the run is gone) — nothing to fail.
+        }
+        Err(error) => {
+            log::warn!("kpi ingest queue: could not mark run {run_id} failed: {error}");
+        }
     }
 }
 
@@ -408,6 +422,9 @@ impl JobHandler for KpiIngestCommitHandler {
             &payload.run_id,
             &payload.manifest_hash,
             payload.revision,
+            // The queue path carries no agent execution metadata (ADR 0099
+            // dec. 8: cost_json is written only by the MCP stage/commit calls).
+            None,
         ) {
             Ok(_receipt) => Ok(()),
             Err(StorageError::CommitContention { .. }) => {
@@ -476,6 +493,22 @@ pub fn reconcile_ingest_jobs(state: &AppState) -> Result<(), String> {
     );
 
     for run in queue_owned {
+        reconcile_one_run(state, &runs_store, &run)?;
+    }
+    Ok(())
+}
+
+/// One reconcile step for one SELECTED run row (#386): `run` is the snapshot
+/// the caller listed — by the time the failed-row branch writes, the live run
+/// may already sit in a newer generation, which is exactly why the write goes
+/// through the generation-guarded primitive. Extracted so tests can invoke it
+/// with a deliberately stale snapshot.
+fn reconcile_one_run(
+    state: &AppState,
+    runs_store: &crate::storage::KpiIngestRunsStore,
+    run: &KpiIngestRun,
+) -> Result<(), String> {
+    {
         let (kind, job_id, payload) = match run.status {
             KpiIngestRunState::Staged => {
                 let job_id = validate_job_id(&run.id, run.manifest_revision);
@@ -524,8 +557,28 @@ pub fn reconcile_ingest_jobs(state: &AppState) -> Result<(), String> {
                 let error = row
                     .last_error
                     .unwrap_or_else(|| "job dead-lettered on reclaim".to_owned());
-                runs_store
-                    .mark_failed(&run.id, &error)
+                // Generation-guarded (#386, E1): reconcile derived the tuple
+                // from the run row read above; a re-stage racing this window
+                // must leave the NEW generation alive — the WHERE-clause guard
+                // makes that atomic (this caller previously had no revision
+                // check at all).
+                let generation = match run.status {
+                    KpiIngestRunState::Staged => crate::storage::IngestGeneration::Staged {
+                        revision: run.manifest_revision,
+                    },
+                    KpiIngestRunState::ReadyToCommit => {
+                        crate::storage::IngestGeneration::ReadyToCommit {
+                            revision: run.manifest_revision,
+                            manifest_hash: run
+                                .manifest_hash
+                                .clone()
+                                .expect("checked non-NULL when deriving the job id above"),
+                        }
+                    }
+                    _ => unreachable!("only queue-owned states are listed"),
+                };
+                let _ = runs_store
+                    .mark_failed_for_generation(&run.id, &error, &generation)
                     .map_err(|error| error.to_string())?;
             }
             Some(row) if row.status == "pending" || row.status == "running" => {}
