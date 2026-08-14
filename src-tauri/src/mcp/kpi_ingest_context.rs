@@ -1199,10 +1199,12 @@ fn get_kpi_ingest_document(
     let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
     let cache_key = (canonical, hash.clone());
 
+    // Poison recovery: every critical section leaves the map consistent (one
+    // get / one insert), so a panicked writer must not wedge the dispatcher.
     let cache = VERIFIED_BLOBS.get_or_init(|| Mutex::new(HashMap::new()));
     let verified = cache
         .lock()
-        .expect("verified-blob cache lock")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get(&cache_key)
         .is_some_and(|&(size, cached_mtime)| size == total_bytes && cached_mtime == mtime);
 
@@ -1233,7 +1235,7 @@ fn get_kpi_ingest_document(
         }
         cache
             .lock()
-            .expect("verified-blob cache lock")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(cache_key, (total_bytes, mtime));
         let start = usize::try_from(input.offset.min(total_bytes)).expect("≤ file size");
         let end = usize::try_from(input.offset.saturating_add(input.length).min(total_bytes))
