@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.69.0 - 2026-08-14
+
+
+### Features
+
+- **mcp**: context read model and chunked document delivery (#385) (#394)
+
 ## v0.68.0 - 2026-08-14
 
 
