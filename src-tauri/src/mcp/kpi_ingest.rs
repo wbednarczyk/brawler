@@ -614,17 +614,32 @@ fn decode_cursor(cursor: &str) -> Result<(String, String), CommandError> {
         )
     };
     let (created_at, id) = cursor.split_once('|').ok_or_else(malformed)?;
-    if created_at.is_empty()
-        || id.is_empty()
-        || id.contains('|')
-        || !created_at.ends_with('Z')
-        || created_at.len() < 20
-        || !created_at.as_bytes()[..4].iter().all(u8::is_ascii_digit)
-        || !id.starts_with("kpiing_")
-    {
+    if !is_generated_timestamp(created_at) || !is_generated_run_id(id) {
         return Err(malformed());
     }
     Ok((created_at.to_owned(), id.to_owned()))
+}
+
+/// Exactly the stored `strftime('%Y-%m-%dT%H:%M:%fZ')` shape:
+/// `YYYY-MM-DDTHH:MM:SS.sssZ`, 24 bytes, digits everywhere else.
+fn is_generated_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 24
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            4 | 7 => *byte == b'-',
+            10 => *byte == b'T',
+            13 | 16 => *byte == b':',
+            19 => *byte == b'.',
+            23 => *byte == b'Z',
+            _ => byte.is_ascii_digit(),
+        })
+}
+
+/// Exactly the generated run-id shape: `kpiing_` + 32 lowercase hex.
+fn is_generated_run_id(value: &str) -> bool {
+    value
+        .strip_prefix("kpiing_")
+        .is_some_and(|hex| hex.len() == 32 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn get_kpi_ingest_status(
@@ -1191,7 +1206,14 @@ mod tests {
                 "limit {bad_limit} refuses, never clamps"
             );
         }
-        for bad_cursor in ["garbage", "a|b|c", "|x", "2026-01-01T00:00:00.000Z|"] {
+        for bad_cursor in [
+            "garbage",
+            "a|b|c",
+            "|x",
+            "2026-01-01T00:00:00.000Z|",
+            "2026-not-a-dateZ|kpiing_arbitrary",
+            "2026-01-01T00:00:00.000Z|kpiing_short",
+        ] {
             assert_eq!(
                 failure_code(acquisition_call(
                     &state,
