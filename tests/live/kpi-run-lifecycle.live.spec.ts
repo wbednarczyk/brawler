@@ -57,6 +57,15 @@ test("run lifecycle over live MCP: start → status → keepalive → cancel + b
   const portField = region.getByLabel(/Listen port|Port nasłuchu/);
   const port = Number.parseInt((await portField.inputValue()) || "8317", 10);
 
+  // Credential pre-check (sol R2 H-1 STOP branch): the OS keychain is SHARED
+  // with the real app — generating over an already-configured acquisition
+  // token would invalidate the owner's external clients. Refuse loudly and
+  // let the owner decide; an empty slot proceeds generate → use → revoke.
+  await expect(
+    region.getByText(/Brak tokenu akwizycyjnego|No acquisition token yet/),
+    "acquisition slot must be EMPTY before §G — a configured token needs owner consent",
+  ).toBeVisible();
+
   await region
     .getByRole("button", {
       name: /Generate acquisition token|Wygeneruj token akwizycyjny/,
