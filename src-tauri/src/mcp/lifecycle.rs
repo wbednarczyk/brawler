@@ -51,6 +51,10 @@ pub struct McpStatus {
     /// Last start-refusal reason (bind-in-use, missing token). `None` when
     /// running or when cleanly disabled.
     pub error: Option<String>,
+    /// Whether the running listener authenticates the `kpi_acquisition`
+    /// credential (ADR 0099 dec. 2): false when not running, when the token
+    /// is absent/unreadable, or when its digest collides with the primary.
+    pub kpi_acquisition_configured: bool,
 }
 
 /// Mutable interior guarded by the controller's `Mutex`.
@@ -86,24 +90,34 @@ impl McpLifecycle {
     }
 
     /// Start the server iff Settings enable it and a token is resolvable, using
-    /// the production keychain descriptor. Idempotent, never panics — see
+    /// the production keychain descriptors. Idempotent, never panics — see
     /// [`Self::ensure_started_with`].
     pub fn ensure_started(&self, state: &AppState) -> McpStatus {
-        self.ensure_started_with(state, &credentials::mcp_auth_token_descriptor())
+        self.ensure_started_with(
+            state,
+            &credentials::mcp_auth_token_descriptor(),
+            &credentials::mcp_kpi_acquisition_token_descriptor(),
+        )
     }
 
-    /// Core start logic, parameterized by credential descriptor so tests and the
-    /// fidelity corpus drive the identical flow against a scratch keychain slot.
+    /// Core start logic, parameterized by credential descriptors so tests and
+    /// the fidelity corpus drive the identical flow against scratch slots.
     ///
     /// Refusals are clean, not crashes:
     /// - disabled → stop (if running), no error;
-    /// - enabled + no token → not running, `error` set;
+    /// - enabled + no primary token → not running, `error` set;
     /// - enabled + token but bind fails → not running, `error` = the bind error;
-    /// - already running → no-op (idempotent), current status.
+    /// - already running → no-op (idempotent), current status;
+    /// - stalled-processor cap reached → not running, `error` set (ADR 0099).
+    ///
+    /// The acquisition token is OPTIONAL (ADR 0099 dec. 2 truth table):
+    /// absent or unreadable means the scope is unavailable — the server still
+    /// starts and `kpi_acquisition_configured` reports it.
     pub(crate) fn ensure_started_with(
         &self,
         state: &AppState,
         descriptor: &CredentialDescriptor,
+        kpi_descriptor: &CredentialDescriptor,
     ) -> McpStatus {
         let mut inner = self.inner.lock().expect("mcp lifecycle mutex not poisoned");
 
@@ -131,6 +145,21 @@ impl McpLifecycle {
             return status_of(&inner);
         }
 
+        // Stalled-processor latch (ADR 0099 dec. 2): at the cap, refuse to
+        // spawn another acceptor/processor pair until a parked processor
+        // exits. The error persists through status()/ensure_started() until
+        // the count drops — then a plain retry starts normally.
+        if crate::mcp::server::stalled_processor_count()
+            >= crate::mcp::server::STALLED_PROCESSOR_CAP
+        {
+            inner.error = Some(
+                "MCP server restart deferred: stalled connections from a previous instance — \
+                 retry after they close (or restart the app)"
+                    .to_owned(),
+            );
+            return status_of(&inner);
+        }
+
         // Resolve the bearer token (keychain, then dev env fallback). Absent →
         // clean refusal with an error surfaced in status.
         let token = match credentials::read_credential(descriptor) {
@@ -145,6 +174,10 @@ impl McpLifecycle {
             }
         };
 
+        // The acquisition token is optional: absent/unreadable ⇒ the scope is
+        // simply unavailable, the server still starts (ADR 0099 dec. 2).
+        let kpi_token = credentials::read_credential(kpi_descriptor).ok().flatten();
+
         // Bind. A failure (port in use) is captured, never a panic.
         //
         // Bounded retry on a busy port: tiny_http's internal accept thread is
@@ -154,14 +187,20 @@ impl McpLifecycle {
         // llvm-cov timing) hits it. Ten 50 ms attempts cover that window; a
         // port genuinely held by another process still surfaces the same
         // truthful error, just ~0.5 s later.
-        let mut outcome = McpServerHandle::start(state.clone(), &token, settings.port);
+        let mut outcome =
+            McpServerHandle::start(state.clone(), &token, kpi_token.as_deref(), settings.port);
         let mut attempts = 0;
         while attempts < 10 {
             match &outcome {
                 Err(error) if error.contains("failed to bind") => {
                     std::thread::sleep(std::time::Duration::from_millis(50));
                     attempts += 1;
-                    outcome = McpServerHandle::start(state.clone(), &token, settings.port);
+                    outcome = McpServerHandle::start(
+                        state.clone(),
+                        &token,
+                        kpi_token.as_deref(),
+                        settings.port,
+                    );
                 }
                 _ => break,
             }
@@ -220,6 +259,10 @@ fn status_of(inner: &Inner) -> McpStatus {
             inner.configured_port
         },
         error: inner.error.clone(),
+        kpi_acquisition_configured: inner
+            .handle
+            .as_ref()
+            .is_some_and(McpServerHandle::kpi_acquisition_active),
     }
 }
 
@@ -265,6 +308,10 @@ mod tests {
         credentials::test_mcp_auth_token_descriptor()
     }
 
+    fn kpi_descriptor() -> CredentialDescriptor {
+        credentials::test_mcp_kpi_rotation_descriptor()
+    }
+
     fn with_token() {
         credentials::scrub_provider_env_fallbacks();
         std::env::set_var(TOKEN_ENV, "deadbeefdeadbeef");
@@ -276,7 +323,7 @@ mod tests {
         let state = state_with(false, 0);
         let lifecycle = McpLifecycle::new();
 
-        let status = lifecycle.ensure_started_with(&state, &descriptor());
+        let status = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
 
         assert!(!status.running, "disabled must not run");
         assert!(
@@ -293,7 +340,7 @@ mod tests {
         let state = state_with(true, 0);
         let lifecycle = McpLifecycle::new();
 
-        let status = lifecycle.ensure_started_with(&state, &descriptor());
+        let status = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
 
         assert!(!status.running, "no token means no server");
         assert!(
@@ -308,12 +355,12 @@ mod tests {
         let state = state_with(true, free_port());
         let lifecycle = McpLifecycle::new();
 
-        let first = lifecycle.ensure_started_with(&state, &descriptor());
+        let first = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
         assert!(first.running, "first start binds: {:?}", first.error);
         let port = first.port;
 
         // Second ensure is a no-op: same running port, no rebind, no error.
-        let second = lifecycle.ensure_started_with(&state, &descriptor());
+        let second = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
         assert!(second.running);
         assert_eq!(second.port, port, "idempotent start keeps the same port");
         assert!(second.error.is_none());
@@ -331,7 +378,7 @@ mod tests {
         let state = state_with(true, free_port());
         let lifecycle = McpLifecycle::new();
 
-        let started = lifecycle.ensure_started_with(&state, &descriptor());
+        let started = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
         assert!(started.running, "start binds: {:?}", started.error);
 
         let status = lifecycle.status();
@@ -352,14 +399,14 @@ mod tests {
         let state = state_with(true, port);
         let lifecycle = McpLifecycle::new();
 
-        let started = lifecycle.ensure_started_with(&state, &descriptor());
+        let started = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
         assert!(started.running, "first bind: {:?}", started.error);
         assert_eq!(started.port, port);
 
         lifecycle.stop();
 
         // The same port must be immediately rebindable after a graceful stop.
-        let restarted = lifecycle.ensure_started_with(&state, &descriptor());
+        let restarted = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
         assert!(
             restarted.running,
             "rebind after stop: {:?}",
@@ -379,7 +426,7 @@ mod tests {
         let state = state_with(true, port);
         let lifecycle = McpLifecycle::new();
 
-        let status = lifecycle.ensure_started_with(&state, &descriptor());
+        let status = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
 
         assert!(!status.running, "cannot run on an occupied port");
         assert!(
@@ -387,5 +434,108 @@ mod tests {
             "bind failure is captured in status, never a panic"
         );
         drop(blocker);
+    }
+
+    #[test]
+    fn starts_without_the_acquisition_token_and_reports_the_scope_off() {
+        // ADR 0099 dec. 2 truth table: the acquisition token is OPTIONAL —
+        // absent means the scope is unavailable, never a start failure.
+        with_token();
+        let _ = credentials::clear_credential(&kpi_descriptor());
+        let state = state_with(true, free_port());
+        let lifecycle = McpLifecycle::new();
+
+        let status = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
+
+        assert!(
+            status.running,
+            "primary-only start runs: {:?}",
+            status.error
+        );
+        assert!(!status.kpi_acquisition_configured);
+        lifecycle.stop();
+    }
+
+    #[test]
+    fn starts_with_both_tokens_and_reports_the_scope_configured() {
+        with_token();
+        credentials::store_credential(&kpi_descriptor(), "kpi-secret-1")
+            .expect("store acquisition token in the rotation slot");
+        let state = state_with(true, free_port());
+        let lifecycle = McpLifecycle::new();
+
+        let status = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
+
+        assert!(status.running, "dual-token start runs: {:?}", status.error);
+        assert!(status.kpi_acquisition_configured);
+        lifecycle.stop();
+        let _ = credentials::clear_credential(&kpi_descriptor());
+    }
+
+    #[test]
+    fn colliding_tokens_report_the_scope_unavailable() {
+        // Fail-closed misconfiguration guard (ADR 0099 dec. 2): equal secrets
+        // must not grant the acquisition credential the Full surface.
+        with_token();
+        credentials::store_credential(&kpi_descriptor(), "deadbeefdeadbeef")
+            .expect("store the SAME secret as the primary env token");
+        let state = state_with(true, free_port());
+        let lifecycle = McpLifecycle::new();
+
+        let status = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
+
+        assert!(status.running, "the server itself runs: {:?}", status.error);
+        assert!(
+            !status.kpi_acquisition_configured,
+            "digest collision disables the scope"
+        );
+        lifecycle.stop();
+        let _ = credentials::clear_credential(&kpi_descriptor());
+    }
+
+    #[test]
+    fn the_stalled_processor_latch_refuses_starts_until_the_count_drops() {
+        // ADR 0099 dec. 2: at the cap the lifecycle refuses to spawn another
+        // acceptor/processor pair; the error persists until a parked
+        // processor exits — then a plain retry starts normally.
+        use std::sync::mpsc;
+        with_token();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let release_rx = std::sync::Arc::new(std::sync::Mutex::new(release_rx));
+        for _ in 0..crate::mcp::server::STALLED_PROCESSOR_CAP {
+            let rx = std::sync::Arc::clone(&release_rx);
+            crate::mcp::server::park_stalled_for_tests(std::thread::spawn(move || {
+                let _ = rx.lock().expect("release rx").recv();
+            }));
+        }
+        let state = state_with(true, free_port());
+        let lifecycle = McpLifecycle::new();
+
+        let refused = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
+        assert!(!refused.running, "at the cap the start is refused");
+        assert!(
+            refused
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("stalled connections")),
+            "the latch names its cause: {refused:?}"
+        );
+        // The error persists through a plain status read.
+        assert!(lifecycle.status().error.is_some());
+
+        // Release the parked threads — the count drops, a retry starts.
+        drop(release_tx);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while crate::mcp::server::stalled_processor_count() > 0 {
+            assert!(std::time::Instant::now() < deadline, "parked threads exit");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let recovered = lifecycle.ensure_started_with(&state, &descriptor(), &kpi_descriptor());
+        assert!(
+            recovered.running,
+            "below the cap the start succeeds: {:?}",
+            recovered.error
+        );
+        lifecycle.stop();
     }
 }

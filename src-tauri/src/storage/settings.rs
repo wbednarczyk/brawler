@@ -126,6 +126,11 @@ pub struct McpSettings {
     /// the MCP surface (`update_settings` is `Excluded`), so a connected agent
     /// can never enable its own writes.
     pub writes_enabled: bool,
+    /// Whether the `kpi_acquisition` scope is enabled (ADR 0099 dec. 2).
+    /// Default `false`: disabled, the acquisition token is rejected at auth
+    /// (401) like an unknown token — the kill switch covers reads too. Same
+    /// self-enable-impossible posture as `writes_enabled`.
+    pub kpi_acquisition_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -221,6 +226,9 @@ pub struct SettingsUpdate {
     /// This is the ONLY path to toggle write access — and `update_settings` is
     /// `Excluded` from the MCP registry, so an agent can never flip it itself.
     pub mcp_writes_enabled: Option<bool>,
+    /// Enable/disable the `kpi_acquisition` MCP scope (ADR 0099 dec. 2).
+    /// Default `false`; same excluded-from-MCP posture as `mcp_writes_enabled`.
+    pub kpi_acquisition_enabled: Option<bool>,
 }
 
 pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
@@ -262,6 +270,7 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             // privileged or impossible bind; `as u16` is safe post-clamp.
             port: clamp_mcp_port(setting_i64_or(connection, "mcp_port", MCP_PORT_DEFAULT)?) as u16,
             writes_enabled: setting_bool_or(connection, "mcp_writes_enabled", false)?,
+            kpi_acquisition_enabled: setting_bool_or(connection, "kpi_acquisition_enabled", false)?,
         },
         database: {
             let config = super::pool::read_pool_config(connection);
@@ -477,6 +486,19 @@ pub(crate) fn update_settings(
             connection,
             "mcp_writes_enabled",
             if mcp_writes_enabled { "true" } else { "false" },
+            "string",
+        )?;
+    }
+
+    if let Some(kpi_acquisition_enabled) = input.kpi_acquisition_enabled {
+        upsert_setting(
+            connection,
+            "kpi_acquisition_enabled",
+            if kpi_acquisition_enabled {
+                "true"
+            } else {
+                "false"
+            },
             "string",
         )?;
     }
@@ -787,6 +809,16 @@ impl SettingsStore {
         let connection = self.db.checkout()?;
 
         update_settings(&connection, input)
+    }
+
+    /// Single-row read of the `kpi_acquisition` scope gate (ADR 0099 dec. 2).
+    /// The MCP server consults this on every authenticated request — a
+    /// dedicated one-key read so unauthenticated traffic never materializes
+    /// the whole settings model.
+    pub fn kpi_acquisition_gate(&self) -> StorageResult<bool> {
+        let connection = self.db.checkout()?;
+
+        setting_bool_or(&connection, "kpi_acquisition_enabled", false)
     }
 
     pub fn set_developer_mode_enabled(&self, enabled: bool) -> StorageResult<UserSettings> {

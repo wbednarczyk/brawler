@@ -173,6 +173,7 @@ fn updates_settings_through_storage_api() {
             mcp_enabled: None,
             mcp_port: None,
             mcp_writes_enabled: None,
+            kpi_acquisition_enabled: None,
         })
         .expect("settings should update");
 
@@ -255,6 +256,7 @@ fn updates_shortcut_bindings_through_storage_api() {
             mcp_enabled: None,
             mcp_port: None,
             mcp_writes_enabled: None,
+            kpi_acquisition_enabled: None,
         })
         .expect("settings should update");
 
@@ -304,6 +306,7 @@ fn rejects_invalid_poll_interval_setting() {
         mcp_enabled: None,
         mcp_port: None,
         mcp_writes_enabled: None,
+        kpi_acquisition_enabled: None,
     });
 
     assert!(result.is_err());
@@ -336,6 +339,7 @@ fn rejects_invalid_theme_setting() {
         mcp_enabled: None,
         mcp_port: None,
         mcp_writes_enabled: None,
+        kpi_acquisition_enabled: None,
     });
 
     assert!(result.is_err());
@@ -381,6 +385,7 @@ fn rejects_invalid_locale_setting() {
         mcp_enabled: None,
         mcp_port: None,
         mcp_writes_enabled: None,
+        kpi_acquisition_enabled: None,
     });
 
     assert!(result.is_err());
@@ -560,6 +565,41 @@ fn mcp_writes_enabled_upsert_and_round_trip() {
         })
         .expect("settings should update");
     assert!(!disabled.mcp.writes_enabled);
+}
+
+#[test]
+fn kpi_acquisition_enabled_upsert_and_round_trip() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    // Absent row reads the safe default (scope off — ADR 0099 dec. 2).
+    assert!(
+        !state
+            .get_settings()
+            .expect("settings")
+            .mcp
+            .kpi_acquisition_enabled
+    );
+    assert!(!state.settings().kpi_acquisition_gate().expect("gate reads"));
+
+    let enabled = state
+        .update_settings(SettingsUpdate {
+            kpi_acquisition_enabled: Some(true),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert!(enabled.mcp.kpi_acquisition_enabled);
+    // The dedicated single-row gate read agrees with the full model.
+    assert!(state.settings().kpi_acquisition_gate().expect("gate reads"));
+
+    let disabled = state
+        .update_settings(SettingsUpdate {
+            kpi_acquisition_enabled: Some(false),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert!(!disabled.mcp.kpi_acquisition_enabled);
+    assert!(!state.settings().kpi_acquisition_gate().expect("gate reads"));
 }
 
 #[test]

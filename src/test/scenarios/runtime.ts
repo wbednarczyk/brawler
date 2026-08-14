@@ -69,6 +69,8 @@ interface RuntimeContext {
    * status payloads never carry it.
    */
   mcpToken: string | null;
+  /** The kpi_acquisition token (ADR 0099 dec. 2) — same one-time-reveal rules. */
+  mcpKpiToken: string | null;
   /**
    * MCP server live state (ADR 0078 M3). Command-only, not seeded. Mirrors the
    * lifecycle: `set_mcp_enabled` starts/stops, `mcp_status` reports. Enabling
@@ -178,6 +180,59 @@ const REGISTRY_SECTORS = new Map<string, string>(
  * returned exactly once by `regenerate_mcp_token` (mirror of the Rust
  * one-time-reveal semantics).
  */
+function kpiTokenStatus(ctx: RuntimeContext) {
+  const configured = ctx.mcpKpiToken !== null;
+  return {
+    providerId: "mcp",
+    secretKind: "kpi_acquisition_token",
+    configured,
+    storage: configured ? "os_keychain" : "not_configured",
+    label: "MCP acquisition token",
+    devFallbackAvailable: false,
+    error: null,
+  };
+}
+
+/**
+ * Mirror of the production restart-on-rotation composition (ADR 0099 dec. 2):
+ * stop + ensure_started from stored-credential truth. Disabled stays down;
+ * enabled without a primary token refuses; otherwise the server (re)starts.
+ */
+function restartMcpLifecycle(
+  d: { settings: { mcp: { enabled: boolean } } },
+  ctx: RuntimeContext,
+) {
+  if (!d.settings.mcp.enabled) {
+    ctx.mcpRunning = false;
+    ctx.mcpError = null;
+    return;
+  }
+  if (ctx.mcpToken === null) {
+    ctx.mcpRunning = false;
+    ctx.mcpError = "MCP server auth token is not configured";
+    return;
+  }
+  ctx.mcpRunning = true;
+  ctx.mcpError = null;
+}
+
+/** `McpStatus` mirror incl. the acquisition-scope availability (ADR 0099). */
+function mcpStatusOf(
+  d: { settings: { mcp: { port: number } } },
+  ctx: RuntimeContext,
+) {
+  return {
+    running: ctx.mcpRunning,
+    port: d.settings.mcp.port,
+    error: ctx.mcpError,
+    // False on digest collision with the primary (fail-closed guard).
+    kpiAcquisitionConfigured:
+      ctx.mcpRunning &&
+      ctx.mcpKpiToken !== null &&
+      ctx.mcpKpiToken !== ctx.mcpToken,
+  };
+}
+
 function mcpTokenStatus(ctx: RuntimeContext) {
   const configured = ctx.mcpToken !== null;
   return {
@@ -3461,6 +3516,11 @@ function buildHandlers(): Record<string, Handler> {
           ),
           // The act-tier write gate (ADR 0088 M3), default off.
           writesEnabled: pick("mcpWritesEnabled", d.settings.mcp.writesEnabled),
+          // The kpi_acquisition scope gate (ADR 0099 dec. 2), default off.
+          kpiAcquisitionEnabled: pick(
+            "kpiAcquisitionEnabled",
+            d.settings.mcp.kpiAcquisitionEnabled,
+          ),
         },
         aiProviders: {
           ...ai,
@@ -3511,17 +3571,35 @@ function buildHandlers(): Record<string, Handler> {
     // plaintext token is returned exactly once (regenerate); status/revoke
     // report only configuration state. Deterministic pseudo-token: the shared
     // id counter hex-padded to the real 64-char width, unique per call.
-    regenerate_mcp_token: (_d, _a, ctx) => {
+    regenerate_mcp_token: (d, _a, ctx) => {
       const seq = ctx.nextId("mcp_token").replace(/\D/g, "") || "0";
       const token = Number(seq).toString(16).padStart(64, "0");
       ctx.mcpToken = token;
+      // Rotation restarts the listener (ADR 0099 dec. 2) — mirror it.
+      restartMcpLifecycle(d, ctx);
       return { token, status: mcpTokenStatus(ctx) };
     },
-    revoke_mcp_token: (_d, _a, ctx) => {
+    revoke_mcp_token: (d, _a, ctx) => {
       ctx.mcpToken = null;
+      // Revoking the primary stops the server (restart refuses: no token).
+      restartMcpLifecycle(d, ctx);
       return mcpTokenStatus(ctx);
     },
     mcp_token_status: (_d, _a, ctx) => mcpTokenStatus(ctx),
+    regenerate_kpi_acquisition_token: (d, _a, ctx) => {
+      const seq = ctx.nextId("mcp_kpi_token").replace(/\D/g, "") || "0";
+      const token = Number(seq).toString(16).padStart(64, "1");
+      ctx.mcpKpiToken = token;
+      restartMcpLifecycle(d, ctx);
+      return { token, status: kpiTokenStatus(ctx) };
+    },
+    revoke_kpi_acquisition_token: (d, _a, ctx) => {
+      ctx.mcpKpiToken = null;
+      // The server keeps running; only the scope becomes unavailable.
+      restartMcpLifecycle(d, ctx);
+      return kpiTokenStatus(ctx);
+    },
+    kpi_acquisition_token_status: (_d, _a, ctx) => kpiTokenStatus(ctx),
 
     // --- MCP server lifecycle (ADR 0078 M3). Mirrors `set_mcp_enabled_impl`:
     // persists `mcp.enabled` AND flips the live listener; enabling without a
@@ -3537,17 +3615,9 @@ function buildHandlers(): Record<string, Handler> {
         ctx.mcpRunning = enabled;
         ctx.mcpError = null;
       }
-      return {
-        running: ctx.mcpRunning,
-        port: d.settings.mcp.port,
-        error: ctx.mcpError,
-      };
+      return mcpStatusOf(d, ctx);
     },
-    mcp_status: (d, _a, ctx) => ({
-      running: ctx.mcpRunning,
-      port: d.settings.mcp.port,
-      error: ctx.mcpError,
-    }),
+    mcp_status: (d, _a, ctx) => mcpStatusOf(d, ctx),
 
     // Mock fidelity: the real commands store/clear the key for EXACTLY the
     // named provider and report that provider's status — never another row.
@@ -3768,6 +3838,7 @@ export function createMockRuntime(
     decisionEntries: [],
     reportExpectations: [],
     mcpToken: null,
+    mcpKpiToken: null,
     mcpRunning: false,
     mcpError: null,
   };

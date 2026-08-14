@@ -94,6 +94,13 @@ export function useSettingsController({
     updateSettings({ mcpWritesEnabled: nextEnabled });
   }
 
+  // The kpi_acquisition scope gate (ADR 0099 dec. 2). Off by default; off means
+  // the acquisition token is rejected at auth entirely (reads included). Same
+  // MCP-excluded posture as the writes toggle.
+  function updateKpiAcquisitionEnabled(nextEnabled: boolean) {
+    updateSettings({ kpiAcquisitionEnabled: nextEnabled });
+  }
+
   function updateYoutubeTranscriptionModel(nextModel: string) {
     updateSettings({ youtubeTranscriptionModel: nextModel });
   }
@@ -238,6 +245,7 @@ export function useSettingsController({
     updateLogMaxFileBytes,
     updateLogMaxFiles,
     updateBackfillYears,
+    updateKpiAcquisitionEnabled,
     updateMcpPort,
     updateMcpWritesEnabled,
     updatePinnedCompanyIds,

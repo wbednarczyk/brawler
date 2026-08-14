@@ -35,7 +35,22 @@ export function setMcpEnabled(enabled: boolean) {
   return callCommand<McpStatus>("set_mcp_enabled", { enabled });
 }
 
-/** Current server status: `{ running, port, error }`. Bind/token errors surface here. */
+/** Current server status: `{ running, port, error, kpiAcquisitionConfigured }`. Bind/token errors surface here. */
 export function mcpStatus() {
   return callCommand<McpStatus>("mcp_status");
+}
+
+/** Status of the `kpi_acquisition` credential (ADR 0099 dec. 2). Never carries the token. */
+export function kpiAcquisitionTokenStatus() {
+  return callCommand<CredentialStatus>("kpi_acquisition_token_status");
+}
+
+/** Generate + store the acquisition token (plaintext returned exactly once) and restart the listener. */
+export function regenerateKpiAcquisitionToken() {
+  return callCommand<McpTokenGenerated>("regenerate_kpi_acquisition_token");
+}
+
+/** Remove the acquisition token and restart the listener (the scope becomes unavailable). */
+export function revokeKpiAcquisitionToken() {
+  return callCommand<CredentialStatus>("revoke_kpi_acquisition_token");
 }

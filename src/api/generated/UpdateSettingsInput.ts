@@ -27,4 +27,9 @@ mcpPort?: number,
  * This is the ONLY path to toggle write access — and `update_settings` is
  * `Excluded` from the MCP registry, so an agent can never flip it itself.
  */
-mcpWritesEnabled?: boolean, };
+mcpWritesEnabled?: boolean, 
+/**
+ * Enable/disable the `kpi_acquisition` MCP scope (ADR 0099 dec. 2).
+ * Default `false`; same excluded-from-MCP posture as `mcp_writes_enabled`.
+ */
+kpiAcquisitionEnabled?: boolean, };

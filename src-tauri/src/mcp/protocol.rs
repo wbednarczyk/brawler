@@ -19,10 +19,12 @@ use crate::app_state::AppState;
 /// is why the dispatcher rejects arrays with −32600.
 pub const SUPPORTED_PROTOCOL_VERSION: &str = "2025-06-18";
 
-/// Dispatch one raw JSON-RPC message. Returns `Some(response_json)` for
-/// requests (success or error envelope) and `None` for notifications, which
-/// must not be answered (the HTTP layer maps `None` to `202 Accepted`).
-pub fn dispatch(state: &AppState, raw: &str) -> Option<String> {
+/// Dispatch one raw JSON-RPC message under the caller's authenticated scope
+/// (ADR 0099 dec. 2 — resolved by the server from the matched bearer digest).
+/// Returns `Some(response_json)` for requests (success or error envelope) and
+/// `None` for notifications, which must not be answered (the HTTP layer maps
+/// `None` to `202 Accepted`).
+pub fn dispatch(state: &AppState, scope: registry::McpScope, raw: &str) -> Option<String> {
     let message: Value = match serde_json::from_str(raw) {
         Ok(value) => value,
         Err(error) => {
@@ -79,8 +81,8 @@ pub fn dispatch(state: &AppState, raw: &str) -> Option<String> {
     Some(match method {
         "initialize" => handle_initialize(id, &params),
         "ping" => success_response(id, json!({})),
-        "tools/list" => success_response(id, json!({ "tools": registry::descriptors() })),
-        "tools/call" => handle_tools_call(state, id, &params),
+        "tools/list" => success_response(id, json!({ "tools": registry::descriptors(scope) })),
+        "tools/call" => handle_tools_call(state, scope, id, &params),
         other => error_response(id, -32601, &format!("method not found: {other}")),
     })
 }
@@ -114,7 +116,12 @@ fn handle_initialize(id: Value, params: &Value) -> String {
 /// `tools/call`: strict param validation (−32602), then run the tool. Domain
 /// failures become a tool result with `isError: true` carrying the ADR 0070
 /// error envelope; unknown tools / bad arguments are protocol errors (−32602).
-fn handle_tools_call(state: &AppState, id: Value, params: &Value) -> String {
+fn handle_tools_call(
+    state: &AppState,
+    scope: registry::McpScope,
+    id: Value,
+    params: &Value,
+) -> String {
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return error_response(id, -32602, "params.name (string) is required");
     };
@@ -123,7 +130,7 @@ fn handle_tools_call(state: &AppState, id: Value, params: &Value) -> String {
         Some(arguments @ Value::Object(_)) => arguments.clone(),
         Some(_) => return error_response(id, -32602, "params.arguments must be an object"),
     };
-    match registry::call(state, name, &arguments) {
+    match registry::call(state, scope, name, &arguments) {
         Ok(ToolOutcome::Success(payload)) => success_response(
             id,
             json!({
@@ -186,7 +193,8 @@ mod tests {
     }
 
     fn dispatch_value(state: &AppState, raw: &str) -> Value {
-        let response = dispatch(state, raw).expect("a response for a request");
+        let response =
+            dispatch(state, registry::McpScope::Full, raw).expect("a response for a request");
         serde_json::from_str(&response).expect("response is valid JSON")
     }
 
@@ -289,6 +297,7 @@ mod tests {
         assert_eq!(
             dispatch(
                 &s,
+                registry::McpScope::Full,
                 r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#
             ),
             None
@@ -298,6 +307,7 @@ mod tests {
         assert_eq!(
             dispatch(
                 &s,
+                registry::McpScope::Full,
                 r#"{"jsonrpc":"2.0","method":"notifications/cancelled"}"#
             ),
             None
@@ -370,7 +380,7 @@ mod tests {
 
         let s = state();
         seed_dossier_company(&s);
-        let handle = crate::mcp::server::McpServerHandle::start(s, &token, port)
+        let handle = crate::mcp::server::McpServerHandle::start(s, &token, None, port)
             .expect("harness server binds");
         eprintln!("MCP harness READY on http://127.0.0.1:{port}/mcp for {secs}s");
         std::thread::sleep(std::time::Duration::from_secs(secs));
@@ -482,7 +492,7 @@ mod tests {
             proptest::string::string_regex(".{0,200}").unwrap(),
             arb_json().prop_map(|v| v.to_string()),
         ]) {
-            let response = dispatch(shared_state(), &raw);
+            let response = dispatch(shared_state(), registry::McpScope::Full, &raw);
             if let Some(text) = response {
                 let parsed: Value = serde_json::from_str(&text)
                     .expect("every response the dispatcher emits is valid JSON");

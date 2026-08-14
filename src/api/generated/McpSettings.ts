@@ -19,4 +19,11 @@ port: number,
  * the MCP surface (`update_settings` is `Excluded`), so a connected agent
  * can never enable its own writes.
  */
-writesEnabled: boolean, };
+writesEnabled: boolean, 
+/**
+ * Whether the `kpi_acquisition` scope is enabled (ADR 0099 dec. 2).
+ * Default `false`: disabled, the acquisition token is rejected at auth
+ * (401) like an unknown token — the kill switch covers reads too. Same
+ * self-enable-impossible posture as `writes_enabled`.
+ */
+kpiAcquisitionEnabled: boolean, };

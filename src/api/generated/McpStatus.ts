@@ -19,4 +19,10 @@ port: number,
  * Last start-refusal reason (bind-in-use, missing token). `None` when
  * running or when cleanly disabled.
  */
-error: string | null, };
+error: string | null, 
+/**
+ * Whether the running listener authenticates the `kpi_acquisition`
+ * credential (ADR 0099 dec. 2): false when not running, when the token
+ * is absent/unreadable, or when its digest collides with the primary.
+ */
+kpiAcquisitionConfigured: boolean, };

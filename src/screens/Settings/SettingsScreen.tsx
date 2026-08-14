@@ -89,6 +89,7 @@ export function SettingsScreen() {
     onBackfillYearsChange,
     onMcpPortChange,
     onMcpWritesEnabledChange,
+  onKpiAcquisitionEnabledChange,
     onShortcutBindingsChange,
     onYoutubeTranscriptionModelChange,
     onYoutubeTranscriptionTimeoutChange,
@@ -252,6 +253,7 @@ export function SettingsScreen() {
               settings={settings}
               onMcpPortChange={onMcpPortChange}
               onMcpWritesEnabledChange={onMcpWritesEnabledChange}
+          onKpiAcquisitionEnabledChange={onKpiAcquisitionEnabledChange}
             />
           ) : null}
           {activeSettingsTab === "license" ? (
