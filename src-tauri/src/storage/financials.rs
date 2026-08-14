@@ -2504,7 +2504,10 @@ fn ulid_suffix() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    format!("{:x}", timestamp % 0xFFFFFFFF)
+    // Zero-padded to a FIXED 8 hex chars: for ~3 days of every ~50-day modulo
+    // cycle the remainder is short, and every id-shape consumer (snapshot
+    // redaction expects exactly 8) would flake for that whole window (#384).
+    format!("{:08x}", timestamp % 0xFFFFFFFF)
 }
 
 fn validate_reference_exists(
@@ -2689,6 +2692,13 @@ impl FinancialsStore {
         let connection = self.db.checkout()?;
 
         create_kpi_definition(&connection, input)
+    }
+
+    /// One period by id — the MCP run-status DTO resolves a `period_id`-only
+    /// pin's natural key through this (#384).
+    pub fn get_financial_period(&self, id: &str) -> StorageResult<FinancialPeriod> {
+        let connection = self.db.checkout()?;
+        get_financial_period(&connection, id)
     }
 
     pub fn list_financial_periods(

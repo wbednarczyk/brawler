@@ -47,6 +47,15 @@ pub enum CommandErrorCode {
     /// dec. 3). Returned only over the MCP boundary; the message names the
     /// required field (e.g. a non-empty `origins` array).
     ProvenanceRequired,
+    /// The caller's KPI-ingest-run lease lapsed (ADR 0099). Retryable via
+    /// `start_kpi_ingest(runId)` — the idempotent re-claim.
+    RunLeaseExpired,
+    /// Another holder claimed the KPI ingest run after lease expiry (ADR
+    /// 0099). Not retryable; abandon the run.
+    RunTakenOver,
+    /// The request cannot be satisfied within the response budget (ADR 0099
+    /// dec. 7). Retryable after narrowing/paginating the request.
+    ResponseBudgetExceeded,
     /// An unexpected internal failure with no more specific code.
     Internal,
 }
@@ -157,6 +166,16 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::InvalidKpiIngestRunValue { .. } => InvalidInput,
         StorageError::RunPeriodCompanyMismatch { .. } => InvalidInput,
         StorageError::RunLeaseNotHeld { .. } => Conflict,
+        // The caller's own lease lapsed — the frozen retryable remedy (ADR
+        // 0099): re-claim via start_kpi_ingest(runId).
+        StorageError::RunLeaseExpired { .. } => RunLeaseExpired,
+        // Another holder owns the run after expiry — frozen non-retryable.
+        StorageError::RunTakenOver { .. } => RunTakenOver,
+        // Claiming a run outside the claimable states conflicts with its
+        // lifecycle state (a claim is not a state transition).
+        StorageError::RunNotClaimable { .. } => Conflict,
+        // A set-once context value already holds a different value.
+        StorageError::RunContextValueConflict { .. } => Conflict,
         // Caller-supplied document/company ids that do not cohere.
         StorageError::RunDocumentCompanyMismatch { .. } => InvalidInput,
         // Overwriting the immutable source snapshot hash conflicts with the

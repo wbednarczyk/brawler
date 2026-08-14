@@ -175,7 +175,7 @@ keeps it exact — do not hand-edit):
 
 <!-- BEGIN GENERATED MCP CATALOG — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->
 
-**Read tools** — always available once the server is on (44):
+**Read tools** — always available once the server is on (46):
 
 | Tool | What it does |
 | --- | --- |
@@ -223,8 +223,10 @@ keeps it exact — do not hand-edit):
 | `list_alert_rules` | The alert-rule catalog: every configured rule (trigger, scope, enabled state). Fired events are read via list_attention_events. |
 | `list_flagged_extraction_outcomes` | One company's extraction-coverage gaps: the fiscal periods where the deterministic pipeline emitted nothing (a flagged/failed outcome). Complements list_flagged_fact_provenance (flagged facts that DID emit) — the coverage-gap review surface. |
 | `list_unclassified_filings` | Official filings (ESPI/EBI) the deterministic rule classifier could not place — the explicit unclassified bucket, never guessed at. Optionally scoped to one company. Classify one with classify_filing. |
+| `list_pending_kpi_ingests` | List claimable KPI ingest runs (discovered/source_captured/extracting/validation_failed), newest first, keyset-paginated (limit ≤ 50, default 20). |
+| `get_kpi_ingest_status` | Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (58):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (60):
 
 | Tool | What it does |
 | --- | --- |
@@ -286,5 +288,7 @@ keeps it exact — do not hand-edit):
 | `backfill_company_history` | Run an on-track history backfill for one company (`companyId`); progress via get_backfill_progress. |
 | `run_structured_extraction` | Run the deterministic structured-first extraction pipeline over one company report+period (`mode`: autopilot \| assist). |
 | `rerun_extraction_outcome` | Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`). |
+| `start_kpi_ingest` | Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId (+ optional scope/dataQuality/period) creates the run, claims the lease, pins the source bytes, and enters extraction once context is complete. Resume: runId re-claims idempotently (the explicit keepalive) and attaches missing context set-once. Provenance is the run pipeline itself; no citation carrier here. |
+| `cancel_kpi_ingest` | Cancel a KPI ingest run in any pre-commit state (releases its lease). Refuses `committing` and terminal states. |
 
 <!-- END GENERATED MCP CATALOG -->
