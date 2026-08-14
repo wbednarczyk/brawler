@@ -3913,8 +3913,9 @@ export function createMockRuntime(
       ctx.companySectors.clear();
       ctx.decisionEntries = [];
       ctx.reportExpectations = [];
-      // MCP token + lifecycle state (ADR 0078 M1/M3).
+      // MCP token + lifecycle state (ADR 0078 M1/M3, ADR 0099).
       ctx.mcpToken = null;
+      ctx.mcpKpiToken = null;
       ctx.mcpRunning = false;
       ctx.mcpError = null;
     },

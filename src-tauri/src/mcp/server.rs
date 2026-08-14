@@ -873,6 +873,13 @@ mod tests {
             "stop must be bounded, took {:?}",
             started.elapsed()
         );
+        // Proof the stall was REAL: stop parked the stuck processor (had
+        // tiny_http never handed the request over, nothing would be parked
+        // and this test would pass vacuously).
+        assert!(
+            stalled_processor_count() >= 1,
+            "the withheld body must actually stall the processor"
+        );
 
         // The listener is truly released: a fresh server binds the SAME port
         // immediately (the lifecycle retry ladder is not needed here).
@@ -916,6 +923,11 @@ mod tests {
         std::thread::sleep(Duration::from_millis(150));
 
         server.stop();
+        // Proof the stall was real (same rationale as the sibling test).
+        assert!(
+            stalled_processor_count() >= 1,
+            "the withheld body must actually stall the processor"
+        );
         drop(stalled);
 
         // The queued request must never DISPATCH: tiny_http auto-answers a
