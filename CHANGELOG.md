@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.66.0 - 2026-08-14
+
+
+### Features
+
+- **mcp**: acquisition-scoped credential and gate (#382) (#391)
+
 ## v0.65.8 - 2026-08-13
 
 
