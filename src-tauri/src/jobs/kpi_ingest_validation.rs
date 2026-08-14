@@ -60,8 +60,9 @@ fn parse_missing_reasons(raw: Option<&str>) -> MissingReasons {
 /// 1. Load the run; refuse a non-`staged` run (`Conflict`) before doing any
 ///    other work.
 /// 2. Load the current revision's staged observations.
-/// 3. Stamp (or read back) the `expected_kpis_json` completeness snapshot —
-///    set-once, frozen from here on for this revision's attempts.
+/// 3. Consume the creation-time `expected_kpis_json` stamp (ADR 0099 dec. 6);
+///    a legacy raw-seeded row with a NULL column is live-stamped here as the
+///    fallback — set-once either way, frozen for every later attempt.
 /// 4. Resolve each observation's definition via the sector-aware resolver
 ///    (`storage::kpi_extraction::KpiExtractionStore::resolve_kpi_definition`).
 /// 5. Batch-read slot-aware history for every resolved definition
@@ -122,21 +123,28 @@ pub fn validate_kpi_ingest_run(
         ));
     }
 
-    // Stamp (set-once, status/revision guarded) or read back the already-
-    // stamped snapshot -- frozen for this revision's every attempt from here.
-    let expected_keys = state
-        .financials()
-        .expected_primary_metric_keys(&run.company_id)?
-        .unwrap_or_default();
-    let stamp = ExpectedKpis {
-        schema_version: 1,
-        source: "kpi_relevance".to_owned(),
-        pack_version: None,
-        keys: expected_keys,
+    // Consume the creation-time stamp verbatim (ADR 0099 dec. 6) — the bytes
+    // are what staging/commit byte-compare against. A legacy raw-seeded row
+    // (NULL column) is live-stamped as the fallback: set-once, status/revision
+    // guarded, source "kpi_relevance", packVersion null.
+    let effective_json = match run.expected_kpis_json.clone() {
+        Some(stamped) => stamped,
+        None => {
+            let expected_keys = state
+                .financials()
+                .expected_primary_metric_keys(&run.company_id)?
+                .unwrap_or_default();
+            let stamp = ExpectedKpis {
+                schema_version: 1,
+                source: "kpi_relevance".to_owned(),
+                pack_version: None,
+                keys: expected_keys,
+            };
+            let stamp_json = serde_json::to_string(&stamp)
+                .map_err(|e| CommandError::new(CommandErrorCode::Internal, e.to_string()))?;
+            runs_store.stamp_expected_kpis(run_id, revision, &stamp_json)?
+        }
     };
-    let stamp_json = serde_json::to_string(&stamp)
-        .map_err(|e| CommandError::new(CommandErrorCode::Internal, e.to_string()))?;
-    let effective_json = runs_store.stamp_expected_kpis(run_id, revision, &stamp_json)?;
     let effective: ExpectedKpis = serde_json::from_str(&effective_json).map_err(|e| {
         CommandError::new(
             CommandErrorCode::Internal,

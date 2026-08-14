@@ -38,7 +38,7 @@ RunStatus = {
 ExecutionMeta = { "client": "…", "model": "…", "skillVersion": "…", "repairRounds": 0, "tokensIn": 0, "tokensOut": 0, "costUsd": 0.0 }
 ```
 
-- `period`, `expectedKpis`, `lease`, `progress`, `execution` are nullable objects (discovered/legacy rows carry NULLs); `missingReasons` normalizes stored NULL to `{}`. `ExecutionMeta.client` is required (≤128 B); the other fields are optional, strings ≤128 B, numerics non-negative; `cost_json` = `{"schemaVersion": 1}` + `ExecutionMeta` verbatim (one schema everywhere).
+- `period`, `expectedKpis`, `lease`, `progress`, `execution` are nullable objects; `missingReasons` normalizes stored NULL to `{}`. Since #383 a freshly created run carries a non-null `expectedKpis` stamped at creation (`packVersion` = its `profile_version`) — `expectedKpis` is NULL, and `packVersion` nullable, **only** for legacy raw-seeded rows (live-stamped by first validation with `packVersion: null`). `ExecutionMeta.client` is required (≤128 B); the other fields are optional, strings ≤128 B, numerics non-negative; `cost_json` = `{"schemaVersion": 1}` + `ExecutionMeta` verbatim (one schema everywhere).
 - **Two period vocabularies**: `StartPeriodType = Q1|H1|9M|FY` (start input — the validator refuses the rest via `run.unsupported_period_grammar`, so a run doomed to fail cannot start); `StoredPeriodType = FY|H1|H2|Q1|Q2|Q3|Q4|9M|M01..M12` (status/list output — durable rows may carry the full storage vocabulary).
 
 The nine tools:

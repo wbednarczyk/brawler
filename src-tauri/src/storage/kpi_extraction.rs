@@ -562,8 +562,9 @@ pub(super) struct PinnedFactInput<'a> {
 /// 5): validates the pinned definition still exists, matches the manifest's
 /// `metricKey`, and is still ELIGIBLE for `company_id` (mirrors
 /// [`resolve_kpi_definition`]'s own WHERE acceptance — company-scoped must
-/// name this company, sector-scoped must match this company's sector,
-/// everything else must be company-unscoped — without re-resolving), then
+/// name this company, sector-scoped must match either eligibility axis via
+/// [`sector_definition_matches`], everything else must be company-unscoped —
+/// without re-resolving), then
 /// validates `statement_basis` vocabulary (unreachable from a real validator;
 /// a raw-tampered stored manifest is the only path here — same defensive
 /// class as [`SealedManifest::seal`]'s F4 finding). Shares
@@ -596,9 +597,14 @@ pub(super) fn record_pinned_fact(
     }
     let (company_sector, _source) =
         super::companies::get_company_sector(connection, input.company_id)?;
+    let statement_type = super::companies::get_statement_type(connection, input.company_id)?;
     let eligible = match scope.as_str() {
         "company" => definition_company_id.as_deref() == Some(input.company_id),
-        "sector" => definition_sector.is_some() && definition_sector == company_sector,
+        "sector" => sector_definition_matches(
+            definition_sector.as_deref(),
+            company_sector.as_deref(),
+            &statement_type,
+        ),
         _ => definition_company_id.is_none(),
     };
     if !eligible {
@@ -986,22 +992,48 @@ pub struct ResolvedKpiDefinition {
     pub value_kind: String,
 }
 
+/// One sector-scoped definition eligibility rule, shared in spirit with the
+/// resolver's SQL predicate below (the truth-table test drives IDENTICAL cases
+/// through both): a sector-scoped definition matches on TWO axes — the raw
+/// directory `companies.sector` (runtime-created definitions, e.g. "Gry"), OR
+/// the derived `statement_type` (the seeded statement packs, data-model.md
+/// §731) guarded to non-`industrial` so the classification default never
+/// matches anything the old NULL-sector behavior did not.
+fn sector_definition_matches(
+    definition_sector: Option<&str>,
+    company_sector: Option<&str>,
+    statement_type: &str,
+) -> bool {
+    match definition_sector {
+        None => false,
+        Some(definition_sector) => {
+            company_sector == Some(definition_sector)
+                || (statement_type != "industrial" && definition_sector == statement_type)
+        }
+    }
+}
+
 /// Resolves a KPI definition by metric key, without creating one (the
 /// structured pipeline only emits seeded catalog metrics) — the SAME
 /// sector-aware precedence #361's manifest validator resolves observations
-/// against (data-model.md § Rejestr kodów / resolver): company-scoped >
-/// canonical > sector-scoped MATCHING the company's sector > every remaining
-/// global non-sector definition, lexicographic by id. A sector-scoped
-/// definition for a DIFFERENT sector is excluded entirely, not merely
-/// deprioritized (a bank must never resolve an industrial sector pack); a
-/// company with no classified sector never gets a sector-scoped row either
-/// (`sector = ?3` against a bound `NULL` matches nothing in SQL).
+/// against (data-model.md § Rejestr kodów / resolver). Sector-scoped
+/// definitions match on TWO axes (see [`sector_definition_matches`]): the raw
+/// `companies.sector` OR the non-`industrial` `statement_type`; full
+/// precedence company-scoped > canonical > raw-sector match > statement-type
+/// match > every remaining global non-sector definition, lexicographic by id
+/// within a rank. A sector-scoped definition matching NEITHER axis is
+/// excluded entirely, not merely deprioritized (a bank must never resolve an
+/// industrial sector pack); a company with no raw sector and the default
+/// `'industrial'` classification never gets a sector-scoped row (`sector =
+/// ?3` against a bound `NULL` matches nothing in SQL; the `!= 'industrial'`
+/// guard closes the statement axis).
 fn resolve_kpi_definition(
     connection: &Connection,
     company_id: &str,
     metric_key: &str,
 ) -> StorageResult<Option<ResolvedKpiDefinition>> {
     let (sector, _source) = super::companies::get_company_sector(connection, company_id)?;
+    let statement_type = super::companies::get_statement_type(connection, company_id)?;
     let existing: Option<(String, String, String)> = connection
         .query_row(
             "
@@ -1010,7 +1042,8 @@ fn resolve_kpi_definition(
               AND (
                     (scope = 'company' AND company_id = ?2)
                  OR scope = 'canonical'
-                 OR (scope = 'sector' AND sector = ?3)
+                 OR (scope = 'sector'
+                     AND (sector = ?3 OR (?4 != 'industrial' AND sector = ?4)))
                  OR (scope NOT IN ('company', 'sector') AND company_id IS NULL)
               )
             ORDER BY
@@ -1018,12 +1051,13 @@ fn resolve_kpi_definition(
                 WHEN scope = 'company' AND company_id = ?2 THEN 0
                 WHEN scope = 'canonical' THEN 1
                 WHEN scope = 'sector' AND sector = ?3 THEN 2
-                ELSE 3
+                WHEN scope = 'sector' AND sector = ?4 THEN 3
+                ELSE 4
               END,
               id
             LIMIT 1
             ",
-            params![metric_key.trim(), company_id, sector],
+            params![metric_key.trim(), company_id, sector, statement_type],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
@@ -2772,6 +2806,193 @@ mod tests {
             resolve_definition_by_metric_key(&connection, &company_id, "net_interest_margin")
                 .expect("resolve");
         assert_eq!(resolved, None);
+    }
+
+    /// Dual-axis regression (a): a runtime definition scoped to a RAW
+    /// directory sector ("Gry") keeps resolving exactly as before the
+    /// statement-type axis existed.
+    #[test]
+    fn resolver_keeps_matching_a_raw_directory_sector_definition() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        super::super::companies::set_company_sector(&connection, &company_id, Some("Gry"))
+            .expect("set sector");
+        insert_definition(
+            &connection,
+            "kpidef_arpu__s_gry",
+            "sector",
+            None,
+            Some("Gry"),
+            "arpu",
+        );
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, &company_id, "arpu").expect("resolve");
+        assert_eq!(resolved.as_deref(), Some("kpidef_arpu__s_gry"));
+    }
+
+    /// Dual-axis regression (b): the `'industrial'` classification default
+    /// never opens the statement axis — a company with no raw sector still
+    /// matches nothing, even against a runtime `sector='industrial'` row.
+    #[test]
+    fn resolver_never_matches_an_industrial_statement_type_definition() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        insert_definition(
+            &connection,
+            "kpidef_widget__s_industrial",
+            "sector",
+            None,
+            Some("industrial"),
+            "widget_output",
+        );
+
+        let resolved = resolve_definition_by_metric_key(&connection, &company_id, "widget_output")
+            .expect("resolve");
+        assert_eq!(resolved, None);
+    }
+
+    /// Dual-axis (c) — red before the fix: the seeded statement packs use the
+    /// `statement_type` vocabulary, so a classified issuer resolves its pack
+    /// even when its raw directory sector says something else (or nothing).
+    #[test]
+    fn resolver_matches_the_statement_type_axis_for_a_classified_issuer() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        connection
+            .execute(
+                "UPDATE companies SET statement_type = 'banking' WHERE id = ?1",
+                [&company_id],
+            )
+            .expect("classify");
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, &company_id, "net_interest_income")
+                .expect("resolve");
+        assert_eq!(resolved.as_deref(), Some("kpidef_bank_net_interest_income"));
+    }
+
+    /// Dual-axis collision (d): when a raw-sector definition and a
+    /// statement-type definition both carry the same metric key, the raw
+    /// match wins by RANK — even when its id sorts lexicographically last.
+    #[test]
+    fn a_raw_sector_definition_outranks_the_statement_type_axis() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, _doc) = seed_company_and_document(&connection);
+        super::super::companies::set_company_sector(
+            &connection,
+            &company_id,
+            Some("banki komercyjne"),
+        )
+        .expect("set sector");
+        connection
+            .execute(
+                "UPDATE companies SET statement_type = 'banking' WHERE id = ?1",
+                [&company_id],
+            )
+            .expect("classify");
+        // Sorts AFTER the seeded kpidef_bank_net_interest_income — only rank
+        // can make it win.
+        insert_definition(
+            &connection,
+            "kpidef_zz_nii__s_raw",
+            "sector",
+            None,
+            Some("banki komercyjne"),
+            "net_interest_income",
+        );
+
+        let resolved =
+            resolve_definition_by_metric_key(&connection, &company_id, "net_interest_income")
+                .expect("resolve");
+        assert_eq!(resolved.as_deref(), Some("kpidef_zz_nii__s_raw"));
+    }
+
+    /// Dual-axis (e): the SQL predicate and the Rust twin
+    /// (`sector_definition_matches`, pinned-commit eligibility) agree on the
+    /// same truth table — mirror fidelity is asserted, not assumed.
+    #[test]
+    fn sector_eligibility_truth_table_agrees_between_sql_and_rust() {
+        // (definition sector, raw company sector, statement_type, eligible)
+        let cases: [(&str, Option<&str>, &str, bool); 5] = [
+            ("Gry", Some("Gry"), "industrial", true),
+            ("industrial", None, "industrial", false),
+            ("banking", None, "banking", true),
+            ("banking", Some("banki komercyjne"), "banking", true),
+            ("banking", Some("Gry"), "industrial", false),
+        ];
+        for (definition_sector, raw_sector, statement_type, eligible) in cases {
+            assert_eq!(
+                sector_definition_matches(Some(definition_sector), raw_sector, statement_type),
+                eligible,
+                "rust: def={definition_sector} raw={raw_sector:?} statement={statement_type}"
+            );
+
+            let connection = open_in_memory_database().expect("db");
+            let (company_id, _doc) = seed_company_and_document(&connection);
+            if let Some(raw) = raw_sector {
+                super::super::companies::set_company_sector(&connection, &company_id, Some(raw))
+                    .expect("set sector");
+            }
+            connection
+                .execute(
+                    "UPDATE companies SET statement_type = ?1 WHERE id = ?2",
+                    params![statement_type, company_id],
+                )
+                .expect("classify");
+            insert_definition(
+                &connection,
+                "kpidef_truth_case",
+                "sector",
+                None,
+                Some(definition_sector),
+                "truth_case_metric",
+            );
+            let resolved =
+                resolve_definition_by_metric_key(&connection, &company_id, "truth_case_metric")
+                    .expect("resolve");
+            assert_eq!(
+                resolved.is_some(),
+                eligible,
+                "sql: def={definition_sector} raw={raw_sector:?} statement={statement_type}"
+            );
+        }
+        assert!(!sector_definition_matches(None, Some("Gry"), "banking"));
+    }
+
+    /// Class guardrail (ADR 0099 dec. 6 / #383 sol R1): every key of every
+    /// extraction-profile pack RESOLVES to a definition for a company of that
+    /// statement type — a pack can never demand an unresolvable key again.
+    #[test]
+    fn every_profile_pack_key_resolves_for_its_statement_type() {
+        use crate::storage::kpi_ingest_profiles::{expected_pack, PROFILE_VERSIONS};
+        for statement_type in [
+            "industrial",
+            "banking",
+            "insurance",
+            "specialty_finance",
+            "brokerage",
+            "reit",
+        ] {
+            let connection = open_in_memory_database().expect("db");
+            let (company_id, _doc) = seed_company_and_document(&connection);
+            connection
+                .execute(
+                    "UPDATE companies SET statement_type = ?1 WHERE id = ?2",
+                    params![statement_type, company_id],
+                )
+                .expect("classify");
+            for profile in PROFILE_VERSIONS {
+                for key in expected_pack(profile, statement_type) {
+                    let resolved = resolve_definition_by_metric_key(&connection, &company_id, key)
+                        .expect("resolve");
+                    assert!(
+                        resolved.is_some(),
+                        "{profile} × {statement_type}: pack key {key} does not resolve"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
