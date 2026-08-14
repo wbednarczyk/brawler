@@ -719,6 +719,7 @@ mod tests {
         let state = crate::storage::AppState::new(open_in_memory_database().expect("db"));
         let outcome = super::super::registry::call(
             &state,
+            super::super::registry::McpScope::Full,
             "get_company_dossier",
             &json!({"company": "GPW:NOPE"}),
         )

@@ -1720,6 +1720,26 @@ export const plText: Record<string, string> = {
   "Active": "Aktywny",
   "Stopped": "Zatrzymany",
   "Allow write tools": "Zezwól na narzędzia zapisu",
+  "Allow acquisition access": "Zezwól na dostęp akwizycyjny",
+  "A separate key for a report-ingest assistant: it sees only the KPI-ingest workflow, never notes, settings or deletes. Off = the key stops working entirely. The ingest tools themselves arrive in a later update.":
+    "Osobny klucz dla asystenta wprowadzającego raporty: widzi wyłącznie proces wprowadzania KPI — nigdy notatek, ustawień ani usuwania. Wyłączony = klucz przestaje działać całkowicie. Same narzędzia wprowadzania pojawią się w kolejnej aktualizacji.",
+  "Acquisition token": "Token akwizycyjny",
+  "Credential unavailable": "Kredencjał niedostępny",
+  "No acquisition token yet — generate one to hand an ingest assistant its own limited key.":
+    "Brak tokenu akwizycyjnego — wygeneruj go, aby dać asystentowi wprowadzania własny, ograniczony klucz.",
+  "Configured, disabled — turn the switch on to activate it.":
+    "Skonfigurowany, wyłączony — włącz przełącznik, aby go aktywować.",
+  "Acquisition access is active.": "Dostęp akwizycyjny jest aktywny.",
+  "Configured but unavailable — the two tokens collide; rotate one of them.":
+    "Skonfigurowany, ale niedostępny — oba tokeny kolidują; zrotuj jeden z nich.",
+  "Configured — it activates when the server starts.":
+    "Skonfigurowany — aktywuje się po uruchomieniu serwera.",
+  "Copy acquisition token": "Kopiuj token akwizycyjny",
+  "Generate acquisition token": "Wygeneruj token akwizycyjny",
+  "Regenerate acquisition token": "Wygeneruj nowy token akwizycyjny",
+  "Revoke acquisition token": "Unieważnij token akwizycyjny",
+  "Revoke this token? Any ingest assistant using it stops working until you generate a new one.":
+    "Unieważnić ten token? Każdy asystent wprowadzania, który go używa, przestanie działać, dopóki nie wygenerujesz nowego.",
   "Writes on": "Zapis włączony",
   "Read-only": "Tylko odczyt",
   "Write tools require citations; deletes and settings stay UI-only. Off by default — an assistant can never turn this on itself.":

@@ -868,7 +868,7 @@
     },
     {
       "name": "mcp auth token status + regenerate + revoke lifecycle (ADR 0078 M1)",
-      "_comment": "The MCP bearer token lives in the OS keychain (ADR 0078 decision 4). Keychain persistence is platform-dependent: on CI/dev Linux the keyring mock backend is EntryOnly (a stored secret is not readable back through a fresh entry), so the corpus asserts only the platform-independent intersection: status/revoke report the token absent (providerId mcp, secretKind auth_token) and regenerate dispatches on both sides. The regenerate step's token is random on the Rust side and deterministic in the mock, so no field of its result is asserted. Token semantics (64 lowercase hex, unique per call, plaintext returned exactly once, never logged) are pinned by the Rust unit tests in commands/mcp.rs; the mock's plaintext-once mirror by the final revoke step, which proves a set token reads back as not configured after revocation. Both replayers scrub BRAWLER_MCP_TOKEN (dev env fallback) before this journey per the scrub-hermeticity rule (docs/testing.md).",
+      "_comment": "The MCP bearer token journeys drive the SAME composed production wrappers (ADR 0099: rotate/revoke restart the listener from stored-credential truth, and regenerate enforces the read-back==plaintext rule), pointed at the persistent rotation-test descriptors whose in-memory backend gives coherent read-back on every platform. EntryOnly keyring truthfulness is pinned separately by the credentials.rs unit tests on the real-keyring scratch slot. Token semantics (64 lowercase hex, unique per call, plaintext returned exactly once, never logged) are pinned by the Rust unit tests in commands/mcp.rs. Both replayers scrub BRAWLER_MCP_TOKEN before this journey per the scrub-hermeticity rule (docs/testing.md).",
       "steps": [
         {
           "command": "revoke_mcp_token",
@@ -893,7 +893,58 @@
           "input": {}
         },
         {
+          "command": "mcp_token_status",
+          "input": {},
+          "expectField": {
+            "providerId": "mcp",
+            "secretKind": "auth_token",
+            "configured": true
+          }
+        },
+        {
           "command": "revoke_mcp_token",
+          "input": {},
+          "expectField": {
+            "configured": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "mcp kpi_acquisition token status + regenerate + revoke lifecycle (ADR 0099 dec. 2)",
+      "_comment": "The acquisition credential mirrors the primary's lifecycle through the same composed production wrappers on its own rotation-test descriptor (distinct secretKind kpi_acquisition_token). Starts with revoke so the process-global in-memory rotation slot never leaks state across journeys. Both replayers scrub the env fallbacks first (docs/testing.md).",
+      "steps": [
+        {
+          "command": "revoke_kpi_acquisition_token",
+          "input": {},
+          "expectField": {
+            "providerId": "mcp",
+            "secretKind": "kpi_acquisition_token",
+            "configured": false
+          }
+        },
+        {
+          "command": "kpi_acquisition_token_status",
+          "input": {},
+          "expectField": {
+            "providerId": "mcp",
+            "secretKind": "kpi_acquisition_token",
+            "configured": false
+          }
+        },
+        {
+          "command": "regenerate_kpi_acquisition_token",
+          "input": {}
+        },
+        {
+          "command": "kpi_acquisition_token_status",
+          "input": {},
+          "expectField": {
+            "configured": true
+          }
+        },
+        {
+          "command": "revoke_kpi_acquisition_token",
           "input": {},
           "expectField": {
             "configured": false
@@ -1314,7 +1365,10 @@
           "command": "mark_attention_events_seen",
           "input": {
             "input": {
-              "ids": ["$eid", "no_such_event"]
+              "ids": [
+                "$eid",
+                "no_such_event"
+              ]
             }
           }
         },

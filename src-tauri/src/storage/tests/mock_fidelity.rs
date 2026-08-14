@@ -599,29 +599,70 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
-        // MCP token lifecycle (ADR 0078 M1). Same command helpers production
-        // uses, pointed at the TEST keychain slot so a run on a machine with a
-        // persistent keychain backend never touches the real
-        // `brawler/mcp/auth_token` entry.
+        // MCP token lifecycle (ADR 0078 M1 + ADR 0099 restart-on-rotation).
+        // The SAME composed wrappers production uses (rotate/revoke restart
+        // the listener from stored-credential truth), pointed at the
+        // rotation-test descriptors: their in-memory backend gives the
+        // persistent read-back the production read-back rule requires, which
+        // the EntryOnly Linux keyring cannot (EntryOnly truthfulness itself
+        // is pinned by the credentials.rs unit tests on the real-keyring
+        // scratch slot).
         "regenerate_mcp_token" => serde_json::to_value(
-            crate::commands::mcp::regenerate_mcp_token_impl(
-                &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+            crate::commands::mcp::regenerate_token_with_restart_impl(
+                state,
+                lifecycle,
+                &crate::providers::credentials::test_mcp_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
             )
             .expect("regenerate_mcp_token"),
         )
         .unwrap(),
         "revoke_mcp_token" => serde_json::to_value(
-            crate::commands::mcp::revoke_mcp_token_impl(
-                &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+            crate::commands::mcp::revoke_token_with_restart_impl(
+                state,
+                lifecycle,
+                &crate::providers::credentials::test_mcp_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
             )
             .expect("revoke_mcp_token"),
         )
         .unwrap(),
         "mcp_token_status" => serde_json::to_value(
             crate::commands::mcp::mcp_token_status_impl(
-                &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+                &crate::providers::credentials::test_mcp_rotation_descriptor(),
             )
             .expect("mcp_token_status"),
+        )
+        .unwrap(),
+        "regenerate_kpi_acquisition_token" => serde_json::to_value(
+            crate::commands::mcp::regenerate_token_with_restart_impl(
+                state,
+                lifecycle,
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
+            )
+            .expect("regenerate_kpi_acquisition_token"),
+        )
+        .unwrap(),
+        "revoke_kpi_acquisition_token" => serde_json::to_value(
+            crate::commands::mcp::revoke_token_with_restart_impl(
+                state,
+                lifecycle,
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_rotation_descriptor(),
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
+            )
+            .expect("revoke_kpi_acquisition_token"),
+        )
+        .unwrap(),
+        "kpi_acquisition_token_status" => serde_json::to_value(
+            crate::commands::mcp::mcp_token_status_impl(
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
+            )
+            .expect("kpi_acquisition_token_status"),
         )
         .unwrap(),
         // MCP server lifecycle (ADR 0078 M3). Drives the real `McpLifecycle`
@@ -636,6 +677,7 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
                 state,
                 lifecycle,
                 &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+                &crate::providers::credentials::test_mcp_kpi_rotation_descriptor(),
             )
             .expect("set_mcp_enabled"),
         )

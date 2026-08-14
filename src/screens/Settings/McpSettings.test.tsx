@@ -40,15 +40,14 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     ).toBeInTheDocument();
     expect(within(region).getByText("Stopped")).toBeInTheDocument();
 
-    // Generate a token, then enabling succeeds and the pill flips to Running.
+    // Generate a token: rotation restarts the listener from keychain truth
+    // (ADR 0099 dec. 2) and the toggle's setting persisted from the refused
+    // attempt — the server comes up without a second click, and the fresh
+    // status fetch shows it.
     await user.click(
       within(region).getByRole("button", { name: "Generate token" }),
     );
     await within(region).findByLabelText("Access token");
-
-    await user.click(
-      within(region).getByRole("switch", { name: "Enable the server" }),
-    );
     expect(await within(region).findByText("Active")).toBeInTheDocument();
 
     // The enabled state persists: navigate away and back, the section re-reads
@@ -204,6 +203,98 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { mcpWritesEnabled: true },
     });
+  });
+
+  // ADR 0099 dec. 2: the acquisition scope is a second, limited credential
+  // with its own gate toggle (kill switch at auth) and its own token section.
+  it("toggles the acquisition gate through update_settings and explains the scope", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const region = await openMcpSection(user);
+
+    const gateToggle = within(region).getByRole("switch", {
+      name: "Allow acquisition access",
+    });
+    expect(gateToggle).not.toBeChecked();
+    expect(
+      within(region).getByText(/sees only the KPI-ingest workflow/i),
+    ).toBeInTheDocument();
+    // Honest transitional copy: the credential exists before its tools do.
+    expect(
+      within(region).getByText(/ingest tools themselves arrive in a later update/i),
+    ).toBeInTheDocument();
+
+    await user.click(gateToggle);
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { kpiAcquisitionEnabled: true },
+    });
+  });
+
+  it("manages the acquisition token and refreshes the live server status", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const region = await openMcpSection(user);
+
+    expect(
+      within(region).getByText(/No acquisition token yet/i),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(region).getByRole("button", { name: "Generate acquisition token" }),
+    );
+    expect(invoke).toHaveBeenCalledWith("regenerate_kpi_acquisition_token");
+    // Every rotate/revoke restarts the listener, so the section re-fetches
+    // the live status (ADR 0099 dec. 2 — the restart outcome never goes stale).
+    expect(invoke).toHaveBeenCalledWith("mcp_status");
+    const tokenField = await within(region).findByLabelText<HTMLInputElement>(
+      "Acquisition token",
+    );
+    expect(tokenField.value.length).toBeGreaterThan(0);
+    // Gate off ⇒ the composed state says configured-but-disabled.
+    expect(
+      within(region).getByText(/Configured, disabled/i),
+    ).toBeInTheDocument();
+
+    // Revoke behind an inline confirm, mirroring the primary token.
+    await user.click(
+      within(region).getByRole("button", { name: "Revoke acquisition token" }),
+    );
+    await user.click(
+      within(region).getByRole("button", { name: "Revoke acquisition token" }),
+    );
+    expect(invoke).toHaveBeenCalledWith("revoke_kpi_acquisition_token");
+    expect(
+      await within(region).findByText(/No acquisition token yet/i),
+    ).toBeInTheDocument();
+  });
+
+  it("revoking the primary token refreshes the pill to Stopped (the restart refused)", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const region = await openMcpSection(user);
+
+    // Token + enabled server first.
+    await user.click(
+      within(region).getByRole("button", { name: "Generate token" }),
+    );
+    await within(region).findByLabelText("Access token");
+    await user.click(
+      within(region).getByRole("switch", { name: "Enable the server" }),
+    );
+    expect(await within(region).findByText("Active")).toBeInTheDocument();
+
+    // Revoke: the restart refuses (no token) and the SECTION shows it without
+    // a remount — the fresh mcp_status fetch is the fix under test.
+    await user.click(
+      within(region).getByRole("button", { name: "Revoke token" }),
+    );
+    await user.click(
+      within(region).getByRole("button", { name: "Revoke token" }),
+    );
+    expect(await within(region).findByText("Stopped")).toBeInTheDocument();
+    expect(
+      await within(region).findByText(/auth token is not configured/i),
+    ).toBeInTheDocument();
   });
 
   it("has no accessibility violations", async () => {

@@ -899,6 +899,7 @@ mod tests {
         seed_company(&state);
         let outcome = registry::call(
             &state,
+            registry::McpScope::Full,
             "list_financial_facts",
             &json!({"company": "GPW:TST"}),
         )
@@ -926,7 +927,13 @@ mod tests {
     fn companies_domain_snapshot() {
         let state = state();
         seed_company(&state);
-        let outcome = registry::call(&state, "list_companies", &json!({})).expect("domain outcome");
+        let outcome = registry::call(
+            &state,
+            registry::McpScope::Full,
+            "list_companies",
+            &json!({}),
+        )
+        .expect("domain outcome");
         let payload = match outcome {
             ToolOutcome::Success(value) => value,
             ToolOutcome::Failure(error) => panic!("list_companies failed: {error:?}"),
@@ -941,6 +948,7 @@ mod tests {
         seed_company(&state);
         let outcome = registry::call(
             &state,
+            registry::McpScope::Full,
             "list_notebook_entries",
             &json!({"company": "GPW:TST"}),
         )
@@ -959,6 +967,7 @@ mod tests {
         let state = state();
         let outcome = registry::call(
             &state,
+            registry::McpScope::Full,
             "get_company_health",
             &json!({"company": "GPW:NOPE"}),
         )

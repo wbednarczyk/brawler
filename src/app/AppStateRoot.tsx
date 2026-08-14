@@ -837,6 +837,7 @@ export function AppStateRoot({
     updateBackfillYears,
     updateMcpPort,
     updateMcpWritesEnabled,
+    updateKpiAcquisitionEnabled,
     updateLogLevel,
     updateLogMaxFileBytes,
     updateLogMaxFiles,
@@ -2177,6 +2178,7 @@ export function AppStateRoot({
                     onBackfillYearsChange: updateBackfillYears,
                     onMcpPortChange: updateMcpPort,
                     onMcpWritesEnabledChange: updateMcpWritesEnabled,
+    onKpiAcquisitionEnabledChange: updateKpiAcquisitionEnabled,
                     onShortcutBindingsChange: updateShortcutBindings,
                     onYoutubeTranscriptionModelChange:
                       updateYoutubeTranscriptionModel,

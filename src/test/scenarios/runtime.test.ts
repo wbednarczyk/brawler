@@ -277,6 +277,24 @@ describe("mock runtime — round-trip mutations", () => {
     expect(watchlists).toHaveLength(1);
   });
 
+  it("reset clears BOTH mcp tokens — scenarios must not inherit credentials", async () => {
+    // ADR 0099: the acquisition token is context state like the primary; a
+    // reset that leaked it would make token-status tests order-dependent.
+    const runtime = createMockRuntime("minimal");
+    await runtime.invoke("regenerate_mcp_token", {});
+    await runtime.invoke("regenerate_kpi_acquisition_token", {});
+    runtime.reset();
+    const primary = (await runtime.invoke("mcp_token_status", {})) as {
+      configured: boolean;
+    };
+    const acquisition = (await runtime.invoke(
+      "kpi_acquisition_token_status",
+      {},
+    )) as { configured: boolean };
+    expect(primary.configured).toBe(false);
+    expect(acquisition.configured).toBe(false);
+  });
+
   it("reset to a different scenario swaps the dataset", async () => {
     const runtime = createMockRuntime("minimal");
     runtime.reset("rich");

@@ -561,7 +561,7 @@ const settings: UserSettings = {
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
   queue: { sourcesWorkers: 2, autopilotWorkers: 3 },
   pinnedCompanyIds: [],
-  mcp: { enabled: false, port: 8317, writesEnabled: false },
+  mcp: { enabled: false, port: 8317, writesEnabled: false, kpiAcquisitionEnabled: false },
 };
 
 const licenseStatus: LicenseStatus = {

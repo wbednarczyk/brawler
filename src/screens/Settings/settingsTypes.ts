@@ -33,6 +33,7 @@ export type SettingsScreenProps = {
   onBackfillYearsChange: (backfillYears: number) => void;
   onMcpPortChange: (port: number) => void;
   onMcpWritesEnabledChange: (enabled: boolean) => void;
+  onKpiAcquisitionEnabledChange: (enabled: boolean) => void;
   onShortcutBindingsChange: (
     shortcutBindings: Record<string, ShortcutBindingSetting>,
   ) => void;

@@ -1293,6 +1293,7 @@ Initial keys:
 - `mcp_enabled`
 - `mcp_port`
 - `mcp_writes_enabled`
+- `kpi_acquisition_enabled`
 - `log_level`
 - `log_max_files`
 - `log_max_file_bytes`
@@ -1305,6 +1306,7 @@ Rules:
 - `backfill_years` (ADR 0077 §3) is the years of company history the on-track backfill covers. No seed row: tolerant read defaults to `3`, clamped to `[1, 10]` on both read and write (never rejected, like the pool settings). The backfill job reads it live; the const in `jobs/backfill.rs` is only the last-resort fallback if the settings read fails.
 - `mcp_enabled` / `mcp_port` (ADR 0078 decision 4): the MCP server toggle (default `false`) and port (default `8317`, clamped `[1024, 65535]` on read and write). No seed rows: tolerant reads fall back to the defaults; the bearer token itself lives in the OS keychain, never in settings.
 - `mcp_writes_enabled` ([ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) M3): the MCP `act` (write) tier gate. Default `false` (stored as a `"true"`/`"false"` string row, like `mcp_enabled`); no seed row, tolerant read. It is the ONLY toggle for agent writes, and `update_settings` is itself excluded from the MCP registry — so a connected agent can never enable its own writes.
+- `kpi_acquisition_enabled` ([ADR 0099](adr/0099-acquisition-mcp-surface-mechanics.md) dec. 2): the `kpi_acquisition` MCP scope gate. Default `false`, same storage/tolerant-read/excluded-from-MCP posture as `mcp_writes_enabled`; off means the acquisition bearer is rejected at auth (401, reads included). The MCP server reads it per request through a dedicated single-key read (`SettingsStore::kpi_acquisition_gate`), never the full settings model.
 - **Retired settings keys** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)): the in-app AI analysis layer's settings keys are no longer read or written; only the Gemini transcription provider/model/timeout keys remain.
 - `similarity_strategy`: legacy key from the retired embedding-model similarity strategy ([ADR 0080](adr/0080-retire-embedding-model.md)); an old database may still hold the value `embedding` — reads map it to `static`, and there is no setter for it anymore.
 - Default YouTube transcription provider is `provider_gemini` — the only remaining AI provider setting (transcription is data acquisition, not analysis; ADR 0084 decision 3).

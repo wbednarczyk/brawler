@@ -34,6 +34,32 @@ use crate::storage;
 // Capability tiers + provenance
 // ============================================================================
 
+/// The authenticated identity of an MCP request (ADR 0099 dec. 2). Resolved
+/// by the server from the matched bearer digest and threaded through
+/// `dispatch` → `descriptors`/`call`: `Full` sees the whole exposed surface;
+/// `KpiAcquisition` sees only [`KPI_ACQUISITION_TOOLS`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpScope {
+    Full,
+    KpiAcquisition,
+}
+
+/// The acquisition scope's tool allowlist — exactly the nine workflow tools,
+/// nothing else (ADR 0099 dec. 3; widening it is a deliberate ADR change).
+/// Empty until the tools land (#384–#386).
+pub const KPI_ACQUISITION_TOOLS: &[&str] = &[];
+
+impl McpScope {
+    /// Whether a tool name exists on this scope's surface. Out-of-scope names
+    /// are indistinguishable from unknown tools (`-32602`).
+    fn allows(self, tool_name: &str) -> bool {
+        match self {
+            McpScope::Full => true,
+            McpScope::KpiAcquisition => KPI_ACQUISITION_TOOLS.contains(&tool_name),
+        }
+    }
+}
+
 /// The MCP capability tier of a command (ADR 0088 dec. 2). Every command is
 /// classified into exactly one; only `read` entries are ever exposed as tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1189,6 +1215,9 @@ fn classifications() -> Vec<RegistryEntry> {
         excluded("mcp_token_status"),
         excluded("set_mcp_enabled"),
         excluded("mcp_status"),
+        excluded("regenerate_kpi_acquisition_token"),
+        excluded("revoke_kpi_acquisition_token"),
+        excluded("kpi_acquisition_token_status"),
         // ---- Excluded: dev / diagnostics mutations + OS side effects -------
         excluded("clear_diagnostic_events"),
         excluded("open_logs_directory"),
@@ -1303,13 +1332,14 @@ fn citations_nonempty(value: Option<&Value>) -> bool {
 // ============================================================================
 
 /// The `tools` array of the `tools/list` response, built from the exposed
-/// registry entries (never a hand-rolled list). The insta snapshot of the full
-/// response freezes this contract (ADR 0078 G-1).
-pub fn descriptors() -> Value {
+/// registry entries (never a hand-rolled list), filtered to the caller's
+/// scope (ADR 0099 dec. 3). The insta snapshot of the Full-scope response
+/// freezes that contract (ADR 0078 G-1).
+pub fn descriptors(scope: McpScope) -> Value {
     Value::Array(
         entries()
             .into_iter()
-            .filter(|entry| entry.exposed)
+            .filter(|entry| entry.exposed && scope.allows(entry.tool_name))
             .filter_map(|entry| {
                 entry.spec.map(|spec| {
                     serde_json::json!({
@@ -1329,8 +1359,18 @@ pub fn descriptors() -> Value {
 /// [`validate_provenance`] check on the raw arguments BEFORE the handler runs, so
 /// a rejected write never touches storage. Both gate rejections are typed
 /// domain failures (`ToolOutcome::Failure`, `isError: true`) — never protocol
-/// errors. An unexposed or unknown name is `UnknownTool`.
-pub fn call(state: &AppState, name: &str, arguments: &Value) -> Result<ToolOutcome, ToolCallError> {
+/// errors. An unexposed or unknown name is `UnknownTool` — and so is any name
+/// outside the caller's scope allowlist (ADR 0099 dec. 3: the surface does
+/// not exist for that identity).
+pub fn call(
+    state: &AppState,
+    scope: McpScope,
+    name: &str,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    if !scope.allows(name) {
+        return Err(ToolCallError::UnknownTool(name.to_owned()));
+    }
     for entry in entries() {
         if entry.exposed && entry.tool_name == name {
             if let Some(spec) = entry.spec {
@@ -1477,7 +1517,7 @@ mod tests {
             ("list_financial_facts", &["company"], &["company"]),
         ];
 
-        let tools = descriptors();
+        let tools = descriptors(McpScope::Full);
         let tools = tools.as_array().expect("tools array");
         let exposed = entries().iter().filter(|entry| entry.exposed).count();
         assert_eq!(
@@ -1635,7 +1675,7 @@ mod tests {
         );
 
         // `tools/list` advertises exactly the exposed tools.
-        let listed: BTreeSet<String> = descriptors()
+        let listed: BTreeSet<String> = descriptors(McpScope::Full)
             .as_array()
             .expect("tools array")
             .iter()
@@ -1650,7 +1690,7 @@ mod tests {
         // `structuredContent` to be a record, so a bare array/scalar must have
         // been wrapped by the `tools::run` envelope (issue #249).
         for (name, arguments, may_fail) in inputs {
-            let outcome = call(&state, name, arguments)
+            let outcome = call(&state, McpScope::Full, name, arguments)
                 .unwrap_or_else(|error| panic!("{name} rejected minimal input: {error:?}"));
             match outcome {
                 ToolOutcome::Success(value) => assert!(
@@ -1734,6 +1774,7 @@ mod tests {
         // A fully valid create note — but writes are off.
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_notebook_entry",
             &json!({
                 "companyId": company_id,
@@ -1766,6 +1807,7 @@ mod tests {
         // Origins — create note with an empty origins array.
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_notebook_entry",
             &json!({
                 "companyId": company_id,
@@ -1795,6 +1837,7 @@ mod tests {
         // SourceEvidence — create claim without sourceEvidenceId.
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_management_claim",
             &json!({ "companyId": company_id, "statement": "guidance" }),
         )
@@ -1804,6 +1847,7 @@ mod tests {
         // FactCitation — create fact without a citation.
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_financial_fact",
             &json!({
                 "companyId": company_id,
@@ -1819,6 +1863,7 @@ mod tests {
         // citation) must NOT satisfy the gate (epic #285 T9 defect closure).
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_financial_fact",
             &json!({
                 "companyId": company_id,
@@ -1834,6 +1879,7 @@ mod tests {
         // CitationsJson (batch) — set verdicts where a result carries no citations.
         let outcome = call(
             &state,
+            McpScope::Full,
             "set_qualitative_verdicts",
             &json!({
                 "frameworkId": framework_id,
@@ -1862,6 +1908,7 @@ mod tests {
         set_writes_enabled(&state, true);
         let outcome = call(
             &state,
+            McpScope::Full,
             "set_qualitative_verdicts",
             &json!({
                 "frameworkId": framework_id,
@@ -1918,6 +1965,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_financial_fact",
             &json!({
                 "companyId": company_id,
@@ -2008,6 +2056,7 @@ mod tests {
         set_writes_enabled(&state, true);
         let outcome = call(
             &state,
+            McpScope::Full,
             "update_financial_fact",
             &json!({
                 "id": fact.id,
@@ -2046,6 +2095,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_financial_fact",
             &json!({
                 "companyId": company_id,
@@ -2145,6 +2195,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_notebook_entry",
             &json!({
                 "companyId": company.id,
@@ -2199,6 +2250,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_kpi_definition",
             &json!({
                 "scope": "company",
@@ -2243,6 +2295,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_kpi_definition",
             &json!({
                 "scope": "company",
@@ -2290,6 +2343,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_kpi_definition",
             &json!({
                 "scope": "company",
@@ -2330,6 +2384,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_kpi_definition",
             &json!({
                 "scope": "company",
@@ -2385,6 +2440,7 @@ mod tests {
 
         let write = call(
             &state,
+            McpScope::Full,
             "set_qualitative_verdicts",
             &json!({
                 "frameworkId": framework_id,
@@ -2407,6 +2463,7 @@ mod tests {
         // The read tool speaks qualified tickers.
         let read = call(
             &state,
+            McpScope::Full,
             "get_quality_assessment",
             &json!({ "company": "GPW:TST" }),
         )
@@ -2436,6 +2493,7 @@ mod tests {
 
         let outcome = call(
             &state,
+            McpScope::Full,
             "create_company",
             &json!({
                 "exchange": "GPW",
@@ -2756,7 +2814,7 @@ mod tests {
             "every NETWORK_TRIGGERS_NOT_INVOKED_IN_TESTS entry must be an exposed act tool"
         );
 
-        let listed: BTreeSet<String> = descriptors()
+        let listed: BTreeSet<String> = descriptors(McpScope::Full)
             .as_array()
             .expect("tools array")
             .iter()
@@ -2769,7 +2827,7 @@ mod tests {
 
             // Toggle OFF ⇒ writes_disabled, before the handler runs.
             set_writes_enabled(&state, false);
-            let off = call(&state, name, arguments).expect("domain outcome");
+            let off = call(&state, McpScope::Full, name, arguments).expect("domain outcome");
             assert_eq!(
                 failure_code(off),
                 CommandErrorCode::WritesDisabled,
@@ -2784,7 +2842,7 @@ mod tests {
                 continue;
             }
             set_writes_enabled(&state, true);
-            let outcome = call(&state, name, arguments)
+            let outcome = call(&state, McpScope::Full, name, arguments)
                 .unwrap_or_else(|error| panic!("{name} raised a protocol error on ON: {error:?}"));
             // Every success payload is a JSON OBJECT — MCP requires
             // `structuredContent` to be a record (issue #249).
@@ -2906,6 +2964,7 @@ mod tests {
 
         let unknown_field = call(
             &state,
+            McpScope::Full,
             "capture_report_document",
             &json!({
                 "companyId": company_id,
@@ -2926,6 +2985,7 @@ mod tests {
         let url = "http://example.com/doc.pdf";
         let first = call(
             &state,
+            McpScope::Full,
             "capture_report_document",
             &json!({ "companyId": company_id, "url": url }),
         )
@@ -2954,6 +3014,7 @@ mod tests {
         // UNIQUE(company_id, url) behavior, unaffected by the new gates).
         let second = call(
             &state,
+            McpScope::Full,
             "capture_report_document",
             &json!({ "companyId": company_id, "url": url }),
         )
@@ -2986,6 +3047,7 @@ mod tests {
 
         let unknown_field = call(
             &state,
+            McpScope::Full,
             "record_financial_facts",
             &json!({
                 "companyId": company_id,
@@ -3007,6 +3069,7 @@ mod tests {
 
         let one_blank_citation = call(
             &state,
+            McpScope::Full,
             "record_financial_facts",
             &json!({
                 "companyId": company_id,
@@ -3068,7 +3131,7 @@ mod tests {
         let (company_id, _, _) = seed_company_framework(&state);
         let feed_item_id = seed_unclassified_official_filing(&state, &company_id);
 
-        let listed: BTreeSet<String> = descriptors()
+        let listed: BTreeSet<String> = descriptors(McpScope::Full)
             .as_array()
             .expect("tools array")
             .iter()
@@ -3078,7 +3141,13 @@ mod tests {
         assert!(listed.contains("classify_filing"));
 
         // The read tool returns the seeded filing.
-        let read = call(&state, "list_unclassified_filings", &json!({})).expect("domain outcome");
+        let read = call(
+            &state,
+            McpScope::Full,
+            "list_unclassified_filings",
+            &json!({}),
+        )
+        .expect("domain outcome");
         let payload = match read {
             ToolOutcome::Success(value) => value,
             other => panic!("read failed: {other:?}"),
@@ -3092,6 +3161,7 @@ mod tests {
         // classify_filing is writes-gated OFF (the default), before any write.
         let off = call(
             &state,
+            McpScope::Full,
             "classify_filing",
             &json!({ "feedItemId": feed_item_id, "category": "significant_contract" }),
         )
@@ -3107,5 +3177,49 @@ mod tests {
             })
             .expect("signals")
             .is_empty());
+    }
+
+    #[test]
+    fn the_acquisition_scope_lists_exactly_its_allowlist() {
+        // ADR 0099 dec. 3 — both directions: the scoped surface IS the
+        // allowlist (empty until #384–#386), and every allowlisted name must
+        // be an exposed tool (a typo'd entry would silently vanish).
+        let scoped = descriptors(McpScope::KpiAcquisition);
+        let names: Vec<&str> = scoped
+            .as_array()
+            .expect("array")
+            .iter()
+            .map(|tool| tool["name"].as_str().expect("name"))
+            .collect();
+        assert_eq!(names, KPI_ACQUISITION_TOOLS.to_vec());
+
+        let exposed: Vec<&str> = entries()
+            .into_iter()
+            .filter(|entry| entry.exposed)
+            .map(|entry| entry.tool_name)
+            .collect();
+        for name in KPI_ACQUISITION_TOOLS {
+            assert!(
+                exposed.contains(name),
+                "allowlisted tool {name} is not an exposed registry entry"
+            );
+        }
+    }
+
+    #[test]
+    fn a_full_only_tool_is_unknown_to_the_acquisition_scope() {
+        // ADR 0099 dec. 3: outside the allowlist the surface does not exist
+        // for that identity — the same UnknownTool/-32602 as a typo, never a
+        // permission-flavored error that confirms the tool exists.
+        let state =
+            crate::storage::AppState::new(crate::storage::open_in_memory_database().expect("db"));
+        let error = call(
+            &state,
+            McpScope::KpiAcquisition,
+            "list_companies",
+            &json!({}),
+        )
+        .expect_err("out-of-scope must be unknown");
+        assert!(matches!(error, ToolCallError::UnknownTool(name) if name == "list_companies"));
     }
 }

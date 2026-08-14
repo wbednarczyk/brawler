@@ -22,6 +22,12 @@ const MCP_AUTH_TOKEN_TARGET: &str = "brawler/mcp/auth_token";
 const MCP_AUTH_TOKEN_ACCOUNT: &str = "mcp:auth_token";
 const MCP_AUTH_TOKEN_ENV_VAR: &str = "BRAWLER_MCP_TOKEN";
 
+// The acquisition-scoped MCP credential (ADR 0099 decision 2): a second bearer
+// whose scope sees only the KPI-ingest workflow tools.
+const MCP_KPI_ACQUISITION_TOKEN_TARGET: &str = "brawler/mcp/kpi_acquisition_token";
+const MCP_KPI_ACQUISITION_TOKEN_ACCOUNT: &str = "mcp:kpi_acquisition_token";
+const MCP_KPI_ACQUISITION_TOKEN_ENV_VAR: &str = "BRAWLER_MCP_KPI_ACQUISITION_TOKEN";
+
 /// Test support: remove every provider dev-fallback env var so hermetic tests
 /// asserting missing-credential behavior cannot inherit the developer's shell
 /// (guardrail 2026-07-11: an exported `GEMINI_API_KEY` turned three `jobs::`
@@ -36,6 +42,7 @@ pub(crate) fn scrub_provider_env_fallbacks() {
         // Not a provider key, but the same dev-fallback class: an exported
         // MCP token would flip missing-token assertions (ADR 0078 M1).
         MCP_AUTH_TOKEN_ENV_VAR,
+        MCP_KPI_ACQUISITION_TOKEN_ENV_VAR,
     ] {
         std::env::remove_var(var);
     }
@@ -133,6 +140,20 @@ pub fn mcp_auth_token_descriptor() -> CredentialDescriptor {
     }
 }
 
+/// The acquisition-scoped MCP bearer-token descriptor (ADR 0099 decision 2).
+/// Distinct `secret_kind` so the frontend can tell the two token statuses
+/// apart; same store/read/clear/status flow as the primary.
+pub fn mcp_kpi_acquisition_token_descriptor() -> CredentialDescriptor {
+    CredentialDescriptor {
+        provider_id: "mcp",
+        secret_kind: "kpi_acquisition_token",
+        label: "MCP acquisition token",
+        target: MCP_KPI_ACQUISITION_TOKEN_TARGET,
+        account: MCP_KPI_ACQUISITION_TOKEN_ACCOUNT,
+        development_env_var: Some(MCP_KPI_ACQUISITION_TOKEN_ENV_VAR),
+    }
+}
+
 /// Test support: an MCP descriptor pointing at a scratch keychain slot, so a
 /// test/corpus run on a machine with a persistent keychain backend (native
 /// Windows) never reads or clobbers the owner's real MCP token. Same identity
@@ -146,6 +167,36 @@ pub(crate) fn test_mcp_auth_token_descriptor() -> CredentialDescriptor {
         target: "brawler/test/mcp/auth_token",
         account: "test:mcp:auth_token",
         development_env_var: Some(MCP_AUTH_TOKEN_ENV_VAR),
+    }
+}
+
+/// Test support: rotation-test descriptors backed by the in-memory test
+/// backend (target prefix routes them there). The real keyring on dev/CI
+/// Linux is EntryOnly (write-only), so live-rotation tests — which must read
+/// back the token they just generated — need a persistent seam. The scratch
+/// descriptor above deliberately STAYS on the real keyring: it is the
+/// EntryOnly-truthfulness coverage.
+#[cfg(test)]
+pub(crate) fn test_mcp_rotation_descriptor() -> CredentialDescriptor {
+    CredentialDescriptor {
+        provider_id: "mcp",
+        secret_kind: "auth_token",
+        label: "MCP server auth token",
+        target: "brawler/test-memory/mcp/auth_token",
+        account: "test-memory:mcp:auth_token",
+        development_env_var: Some(MCP_AUTH_TOKEN_ENV_VAR),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_mcp_kpi_rotation_descriptor() -> CredentialDescriptor {
+    CredentialDescriptor {
+        provider_id: "mcp",
+        secret_kind: "kpi_acquisition_token",
+        label: "MCP acquisition token",
+        target: "brawler/test-memory/mcp/kpi_acquisition_token",
+        account: "test-memory:mcp:kpi_acquisition_token",
+        development_env_var: Some(MCP_KPI_ACQUISITION_TOKEN_ENV_VAR),
     }
 }
 
@@ -219,7 +270,56 @@ pub fn clear_legacy_credentials() {
     }
 }
 
+/// Whether a descriptor routes to the in-memory test backend (rotation-test
+/// slots under `brawler/test-memory/` — a persistent read-back seam the
+/// EntryOnly dev/CI keyring cannot provide). Production descriptors never
+/// carry the prefix; every call site is `#[cfg(test)]`-gated.
+#[cfg(test)]
+fn uses_test_memory_backend(descriptor: &CredentialDescriptor) -> bool {
+    descriptor.target.starts_with("brawler/test-memory/")
+}
+
+#[cfg(test)]
+mod test_memory_backend {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    static STORE: OnceLock<Mutex<HashMap<&'static str, String>>> = OnceLock::new();
+
+    pub(super) fn map() -> MutexGuard<'static, HashMap<&'static str, String>> {
+        STORE
+            .get_or_init(|| Mutex::new(HashMap::new()))
+            .lock()
+            .expect("test memory credential store poisoned")
+    }
+}
+
+#[cfg(test)]
+fn test_memory_secret(descriptor: &CredentialDescriptor) -> Option<String> {
+    test_memory_backend::map().get(descriptor.target).cloned()
+}
+
 fn credential_status(descriptor: &CredentialDescriptor) -> CredentialStatus {
+    #[cfg(test)]
+    if uses_test_memory_backend(descriptor) {
+        return match test_memory_secret(descriptor) {
+            Some(_) => status(descriptor, true, "os_keychain", false, None),
+            None => {
+                let dev = development_env_secret(descriptor).is_some();
+                status(
+                    descriptor,
+                    dev,
+                    if dev {
+                        "development_environment"
+                    } else {
+                        "not_configured"
+                    },
+                    dev,
+                    None,
+                )
+            }
+        };
+    }
     match read_os_keychain_secret(descriptor) {
         Ok(Some(_)) => status(descriptor, true, "os_keychain", false, None),
         Ok(None) => {
@@ -279,6 +379,12 @@ fn set_credential_secret(
         return Err(CredentialError::EmptySecret);
     }
 
+    #[cfg(test)]
+    if uses_test_memory_backend(descriptor) {
+        test_memory_backend::map().insert(descriptor.target, secret.to_owned());
+        return Ok(credential_status(descriptor));
+    }
+
     os_keychain_entry(descriptor)
         .and_then(|entry| {
             entry
@@ -312,6 +418,11 @@ fn verified_save_status(
 fn clear_credential_secret(
     descriptor: &CredentialDescriptor,
 ) -> Result<CredentialStatus, CredentialError> {
+    #[cfg(test)]
+    if uses_test_memory_backend(descriptor) {
+        test_memory_backend::map().remove(descriptor.target);
+        return Ok(credential_status(descriptor));
+    }
     let entry = os_keychain_entry(descriptor)?;
     match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(credential_status(descriptor)),
@@ -322,6 +433,10 @@ fn clear_credential_secret(
 fn read_credential_secret(
     descriptor: &CredentialDescriptor,
 ) -> Result<Option<String>, CredentialError> {
+    #[cfg(test)]
+    if uses_test_memory_backend(descriptor) {
+        return Ok(test_memory_secret(descriptor).or_else(|| development_env_secret(descriptor)));
+    }
     match read_os_keychain_secret(descriptor) {
         Ok(Some(secret)) => Ok(Some(secret)),
         Ok(None) => Ok(development_env_secret(descriptor)),
@@ -500,6 +615,45 @@ mod tests {
         assert_eq!(descriptor.secret_kind, "auth_token");
         assert_ne!(descriptor.target, mcp_auth_token_descriptor().target);
         assert_ne!(descriptor.account, mcp_auth_token_descriptor().account);
+    }
+
+    #[test]
+    fn kpi_acquisition_descriptor_targets_its_own_keychain_slot() {
+        // ADR 0099 decision 2: the acquisition credential is a distinct
+        // keychain identity — a distinct secret_kind so the frontend can tell
+        // the two token statuses apart, and its own env fallback for stdio.
+        let descriptor = mcp_kpi_acquisition_token_descriptor();
+
+        assert_eq!(descriptor.provider_id, "mcp");
+        assert_eq!(descriptor.secret_kind, "kpi_acquisition_token");
+        assert_eq!(descriptor.target, "brawler/mcp/kpi_acquisition_token");
+        assert_eq!(descriptor.account, "mcp:kpi_acquisition_token");
+        assert_eq!(
+            descriptor.development_env_var,
+            Some("BRAWLER_MCP_KPI_ACQUISITION_TOKEN")
+        );
+        assert_ne!(descriptor.target, mcp_auth_token_descriptor().target);
+    }
+
+    #[test]
+    fn rotation_descriptors_round_trip_through_the_memory_backend() {
+        // The rotation slots must behave like a PERSISTENT keychain (store →
+        // read-back → clear), which the EntryOnly dev/CI keyring cannot do —
+        // that is their whole reason to exist (ADR 0099 dec. 2 test seam).
+        scrub_provider_env_fallbacks();
+        let descriptor = test_mcp_rotation_descriptor();
+
+        let stored = store_credential(&descriptor, "rotation-secret").expect("store succeeds");
+        assert!(stored.configured);
+        assert_eq!(stored.storage, "os_keychain");
+        assert_eq!(
+            read_credential(&descriptor).expect("read succeeds"),
+            Some("rotation-secret".to_owned())
+        );
+
+        let cleared = clear_credential(&descriptor).expect("clear succeeds");
+        assert!(!cleared.configured);
+        assert_eq!(read_credential(&descriptor).expect("read succeeds"), None);
     }
 
     #[test]
