@@ -488,9 +488,18 @@ pub fn derive_report_period(
     state: &AppState,
     document: &crate::storage::ReportDocument,
 ) -> Option<(i64, &'static str, String)> {
-    // Read the persisted derivation first — a fresh-enough hit avoids ALL file IO.
+    // Read the persisted derivation first — a fresh-enough hit avoids ALL file
+    // IO. A hit requires BOTH the current grammar version and matching content
+    // provenance (migration 0140): both hashes present and equal — `None ==
+    // None` never counts, so legacy rows and recaptured documents re-derive
+    // and overwrite (self-healing) instead of serving a period computed from
+    // different bytes.
     if let Ok(Some(cached)) = state.financials().cached_derived_period(&document.id) {
-        if cached.derivation_version >= DERIVATION_VERSION {
+        let provenance_matches = matches!(
+            (cached.content_hash.as_deref(), document.content_hash.as_deref()),
+            (Some(cached_hash), Some(document_hash)) if cached_hash == document_hash
+        );
+        if cached.derivation_version >= DERIVATION_VERSION && provenance_matches {
             if !cached.has_period {
                 return None; // persisted none-marker: never re-parse
             }
@@ -504,7 +513,7 @@ pub fn derive_report_period(
             // Unexpected shape (e.g. an unknown interned label) — fall through and
             // re-derive rather than trust a row this code could not have written.
         }
-        // Older version → re-derive and overwrite below.
+        // Older version / stale provenance → re-derive and overwrite below.
     }
 
     let derived = derive_report_period_uncached(state, document);
@@ -512,12 +521,14 @@ pub fn derive_report_period(
     // Persist ONLY once the document is ingested (fetched, with a stored file):
     // its bytes — hence its derived period — are then stable. Caching a
     // pre-fetch `None` would poison a document into never being re-derived after
-    // it is fetched.
+    // it is fetched. The stamped hash comes from the SAME document snapshot the
+    // derivation read, never a re-query of the mutable row.
     if document.fetch_status == "fetched" && document.local_path.is_some() {
         let _ = state.financials().store_derived_period(
             &document.id,
             derived.as_ref().map(|(fy, pt, pe)| (*fy, *pt, pe.as_str())),
             DERIVATION_VERSION,
+            document.content_hash.as_deref(),
         );
     }
 
@@ -1673,7 +1684,10 @@ mod tests {
                 &document.id,
                 Some("ssf.pdf"),
                 Some("application/pdf"),
-                None,
+                // The real capture path always records the content hash
+                // (report_documents_capture.rs) — the provenance-aware cache
+                // predicate (migration 0140) needs the realistic shape.
+                Some(&format!("{:064x}", bytes.len())),
                 Some(bytes.len() as i64),
             )
             .expect("mark fetched");
@@ -1979,6 +1993,9 @@ mod tests {
                 &document_id,
                 Some((1999, "FY", "1999-12-31")),
                 DERIVATION_VERSION - 1,
+                // Matching provenance on purpose: this test isolates VERSION
+                // staleness (the provenance axis has its own tests).
+                document.content_hash.as_deref(),
             )
             .expect("plant a stale-version row");
 
@@ -3069,5 +3086,103 @@ mod tests {
                 .and_then(|v| v.as_str()),
             Some("html_aggregator")
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Provenance-aware derived-period cache (#385, migration 0140).
+    // -----------------------------------------------------------------------
+
+    /// Simulate a recapture: new bytes on disk, new content hash on the row —
+    /// exactly what `mark_report_document_fetched` does on a re-fetch.
+    fn recapture_with(state: &AppState, document_id: &str, cover: &[&str], hash: &str) {
+        let document = state.get_report_document(document_id).expect("document");
+        let local_path = document.local_path.expect("local path");
+        let bytes = minimal_text_pdf(cover);
+        std::fs::write(state.data_dir().join(&local_path), &bytes).expect("rewrite pdf");
+        let connection = state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "UPDATE report_documents SET content_hash = ?1, byte_size = ?2 WHERE id = ?3",
+                rusqlite::params![hash, bytes.len() as i64, document_id],
+            )
+            .expect("update hash");
+    }
+
+    #[test]
+    fn a_recaptured_document_re_derives_instead_of_serving_the_stale_cache() {
+        let (state, document_id) = seed_untitled_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+            "za okres 6 miesiecy zakonczony 30.06.2025",
+        ]);
+        let document = state.get_report_document(&document_id).expect("document");
+        assert_eq!(
+            derive_report_period(&state, &document),
+            Some((2025, "H1", "2025-06-30".to_owned()))
+        );
+
+        // Recapture with DIFFERENT content: a version-only cache hit would keep
+        // serving H1 2025; the provenance predicate must re-derive.
+        recapture_with(
+            &state,
+            &document_id,
+            &[
+                "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+                "za okres 3 miesiecy zakonczony 31.03.2026",
+            ],
+            "b000000000000000000000000000000000000000000000000000000000000002",
+        );
+        let recaptured = state.get_report_document(&document_id).expect("document");
+        assert_eq!(
+            derive_report_period(&state, &recaptured),
+            Some((2026, "Q1", "2026-03-31".to_owned())),
+            "stale provenance must re-derive from the new bytes"
+        );
+        let cached = state
+            .financials()
+            .cached_derived_period(&document_id)
+            .expect("cache read")
+            .expect("row");
+        assert_eq!(
+            cached.content_hash.as_deref(),
+            Some("b000000000000000000000000000000000000000000000000000000000000002"),
+            "the overwrite stamped the new provenance"
+        );
+    }
+
+    #[test]
+    fn a_legacy_null_hash_cache_row_backfills_on_the_next_read() {
+        let (state, document_id) = seed_untitled_pdf(&[
+            "SKONSOLIDOWANE SPRAWOZDANIE FINANSOWE GRUPY KAPITALOWEJ ABC",
+            "za okres 6 miesiecy zakonczony 30.06.2025",
+        ]);
+        let document = state.get_report_document(&document_id).expect("document");
+
+        // Plant a CURRENT-version row with a bogus period and NO provenance —
+        // the pre-0140 legacy shape. `None == None` must not count as a hit.
+        state
+            .financials()
+            .store_derived_period(
+                &document_id,
+                Some((1999, "FY", "1999-12-31")),
+                DERIVATION_VERSION,
+                None,
+            )
+            .expect("plant legacy row");
+
+        assert_eq!(
+            derive_report_period(&state, &document),
+            Some((2025, "H1", "2025-06-30".to_owned())),
+            "a provenance-less row is a miss, not a hit"
+        );
+        let cached = state
+            .financials()
+            .cached_derived_period(&document_id)
+            .expect("cache read")
+            .expect("row");
+        assert_eq!(
+            cached.content_hash, document.content_hash,
+            "the re-derivation backfilled the provenance"
+        );
+        assert_eq!(cached.fiscal_year, Some(2025));
     }
 }

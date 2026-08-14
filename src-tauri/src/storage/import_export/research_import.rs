@@ -549,6 +549,21 @@ fn apply_quality_frameworks(
     summary.user_metrics_skipped = 0;
 
     for metric in &document.user_metrics {
+        // Same identity bound as the create path (#385): the context read
+        // model's response-budget arithmetic requires EVERY definition writer
+        // to bound these two strings.
+        if !crate::storage::financials::kpi_definition_identity_ok(metric.id.trim()) {
+            return Err(StorageError::InvalidResearchValue {
+                key: "user_metric_id",
+                value: metric.id.clone(),
+            });
+        }
+        if !crate::storage::financials::kpi_definition_identity_ok(metric.metric_key.trim()) {
+            return Err(StorageError::InvalidResearchValue {
+                key: "user_metric_key",
+                value: metric.metric_key.clone(),
+            });
+        }
         let exists: bool = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM kpi_definitions WHERE id = ?1)",
             [&metric.id],

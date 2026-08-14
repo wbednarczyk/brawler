@@ -957,7 +957,10 @@ mod tests {
             &doc.id,
             Some("ssf.pdf"),
             Some("application/pdf"),
-            None,
+            // The real capture path always records the content hash — the
+            // provenance-aware cache-hit predicate (migration 0140) needs the
+            // realistic shape or the cache can never hit.
+            Some(&format!("{:064x}", bytes.len())),
             Some(bytes.len() as i64),
         )
         .expect("mark fetched");

@@ -52,6 +52,8 @@ pub enum McpScope {
 pub const KPI_ACQUISITION_TOOLS: &[&str] = &[
     "start_kpi_ingest",
     "list_pending_kpi_ingests",
+    "get_kpi_ingest_context",
+    "get_kpi_ingest_document",
     "get_kpi_ingest_status",
     "cancel_kpi_ingest",
 ];
@@ -299,7 +301,7 @@ pub fn entries() -> Vec<RegistryEntry> {
 /// scopes (Full is a superset; the acquisition allowlist is
 /// [`KPI_ACQUISITION_TOOLS`]). Order here == the allowlist == the wire.
 fn kpi_acquisition_tools() -> Vec<RegistryEntry> {
-    use super::kpi_ingest;
+    use super::{kpi_ingest, kpi_ingest_context};
     vec![
         exposed_act_scoped(
             "start_kpi_ingest",
@@ -319,6 +321,26 @@ fn kpi_acquisition_tools() -> Vec<RegistryEntry> {
              validation_failed), newest first, keyset-paginated (limit ≤ 50, default 20).",
             tools::tool_schema::<kpi_ingest::ListPendingKpiIngestsInput>,
             kpi_ingest::list_pending_kpi_ingests_handler,
+        ),
+        exposed_read(
+            "get_kpi_ingest_context",
+            "get_kpi_ingest_context",
+            "Everything one report's extraction needs, within hard budgets (≤256 KiB): run \
+             status, document metadata, the derived-period hint, the expected+minted KPI \
+             catalog, validator-equivalent plausibility evidence per slot, profile doctrine \
+             and repair-manifest access. Sections (catalog/plausibility/manifest) paginate \
+             via cursors; the manifest is served only via section calls. Pure read.",
+            tools::tool_schema::<kpi_ingest_context::GetKpiIngestContextInput>,
+            kpi_ingest_context::get_kpi_ingest_context_handler,
+        ),
+        exposed_read(
+            "get_kpi_ingest_document",
+            "get_kpi_ingest_document",
+            "Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed \
+             source blob, verified against the frozen sourceContentHash — the portable \
+             document delivery channel. Available once the source is captured. Pure read.",
+            tools::tool_schema::<kpi_ingest_context::GetKpiIngestDocumentInput>,
+            kpi_ingest_context::get_kpi_ingest_document_handler,
         ),
         exposed_read(
             "get_kpi_ingest_status",
@@ -1521,8 +1543,10 @@ fn act_gate(
 /// gated fetch, promoted from classified-but-unexposed).
 /// #384 (+4, all MCP-only): 46 read (+ list_pending_kpi_ingests +
 /// get_kpi_ingest_status) + 60 act (+ start_kpi_ingest + cancel_kpi_ingest).
+/// #385 (+2, MCP-only): 48 read (+ get_kpi_ingest_context +
+/// get_kpi_ingest_document).
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 106;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 108;
 
 #[cfg(test)]
 mod tests {
@@ -1757,11 +1781,21 @@ mod tests {
             // Triage (ADR 0088 dec. 4).
             ("list_flagged_extraction_outcomes", company.clone(), false),
             ("list_unclassified_filings", json!({}), false),
-            // Acquisition lifecycle reads (ADR 0099, #384).
+            // Acquisition lifecycle reads (ADR 0099, #384/#385).
             ("list_pending_kpi_ingests", json!({}), false),
             (
                 "get_kpi_ingest_status",
                 json!({ "runId": "kpiing_missing" }),
+                true,
+            ),
+            (
+                "get_kpi_ingest_context",
+                json!({ "runId": "kpiing_missing" }),
+                true,
+            ),
+            (
+                "get_kpi_ingest_document",
+                json!({ "runId": "kpiing_missing", "offset": 0, "length": 1 }),
                 true,
             ),
         ];

@@ -22,6 +22,7 @@
 
 pub mod acts;
 pub mod kpi_ingest;
+pub mod kpi_ingest_context;
 pub mod lifecycle;
 pub mod protocol;
 pub mod reads;

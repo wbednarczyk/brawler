@@ -703,6 +703,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "kpi_ingest_validation_attempts",
         sql: include_str!("../../migrations/0139_kpi_ingest_validation_attempts.sql"),
     },
+    Migration {
+        version: 140,
+        name: "derived_period_content_hash",
+        sql: include_str!("../../migrations/0140_derived_period_content_hash.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

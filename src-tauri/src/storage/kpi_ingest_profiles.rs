@@ -106,6 +106,46 @@ pub fn expected_pack(profile_version: &str, statement_type: &str) -> &'static [&
     }
 }
 
+/// The profile's extraction doctrine (#385): short imperative rules the MCP
+/// context read model serves verbatim as `profileRules`. Content is VERSIONED
+/// BEHAVIOR — a semantic change to any rule requires a new `@vN` profile
+/// version (the golden test freezes full equality per version); each rule is
+/// ≤512 UTF-8 bytes (contracts.md § Budgets).
+pub fn profile_rules(profile_version: &str) -> &'static [&'static str] {
+    match profile_version {
+        "gpw_ifrs_annual@v1" => &[
+            "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
+            "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
+            "net_profit and per-share figures are owners-of-parent when the report splits non-controlling interests; otherwise total.",
+            "Annual income and cash-flow lines are full-year flows; balance-sheet lines are point_in_time at period end.",
+            "Preserve rawValue exactly as printed and set unitScale from the statement header; normalizedValue is the value in base units (rawValue scaled by unitScale).",
+            "Cite every value: page plus table or row, with a short quote.",
+        ],
+        "gpw_interim@v1" => &[
+            "Stage the period the run declares; pick the report column matching that window — never derive quarters by subtraction.",
+            "Interim income and cash-flow figures are year-to-date: stage them with measureWindow=cumulative against the declared period; balance-sheet lines are point_in_time at the interim date.",
+            "Prefer consolidated; owners-of-parent attribution when NCI is split.",
+            "Set unitScale from the statement header and cite page plus table for every value.",
+        ],
+        "gpw_preliminary@v1" => &[
+            "Preliminary reports carry only headline figures: stage revenue and net_profit only (banking: net_profit only); do not mine full statements.",
+            "Start or resume the run with dataQuality=preliminary before staging; the final report supersedes these values.",
+            "Confirm scope from the report wording and cite the exact sentence.",
+        ],
+        "nc_uor@v1" => &[
+            "NewConnect UoR reports use Polish accounting-act vocabulary; map lines to the catalog by meaning, not literal translation.",
+            "UoR statements are usually standalone; set scope=standalone unless a consolidated section exists.",
+            "Amounts are commonly thousands of PLN — read the header and set unitScale accordingly.",
+            "Use missingReasons for expected keys the report genuinely lacks.",
+        ],
+        "company_characteristic@v1" => &[
+            "This profile records durable company characteristics, not periodic KPIs; stage point_in_time values only.",
+            "There is no expected pack: stage exactly what the document states, with precise citations.",
+        ],
+        _ => &[],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -267,5 +307,74 @@ mod tests {
         assert!(!is_registered_profile_version("gpw_ifrs_annual@v2"));
         assert!(!is_registered_profile_version("gpw_ifrs_annual"));
         assert!(!is_registered_profile_version("p1"));
+    }
+
+    /// The doctrine is versioned behavior (#385): full-equality goldens per
+    /// `@v1` profile — a silent wording change that shifts extraction meaning
+    /// fails here; a deliberate one requires a new profile version.
+    #[test]
+    fn profile_rules_v1_are_frozen_verbatim() {
+        assert_eq!(
+            profile_rules("gpw_ifrs_annual@v1"),
+            &[
+                "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
+                "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
+                "net_profit and per-share figures are owners-of-parent when the report splits non-controlling interests; otherwise total.",
+                "Annual income and cash-flow lines are full-year flows; balance-sheet lines are point_in_time at period end.",
+                "Preserve rawValue exactly as printed and set unitScale from the statement header; normalizedValue is the value in base units (rawValue scaled by unitScale).",
+                "Cite every value: page plus table or row, with a short quote.",
+            ]
+        );
+        assert_eq!(
+            profile_rules("gpw_interim@v1"),
+            &[
+                "Stage the period the run declares; pick the report column matching that window — never derive quarters by subtraction.",
+                "Interim income and cash-flow figures are year-to-date: stage them with measureWindow=cumulative against the declared period; balance-sheet lines are point_in_time at the interim date.",
+                "Prefer consolidated; owners-of-parent attribution when NCI is split.",
+                "Set unitScale from the statement header and cite page plus table for every value.",
+            ]
+        );
+        assert_eq!(
+            profile_rules("gpw_preliminary@v1"),
+            &[
+                "Preliminary reports carry only headline figures: stage revenue and net_profit only (banking: net_profit only); do not mine full statements.",
+                "Start or resume the run with dataQuality=preliminary before staging; the final report supersedes these values.",
+                "Confirm scope from the report wording and cite the exact sentence.",
+            ]
+        );
+        assert_eq!(
+            profile_rules("nc_uor@v1"),
+            &[
+                "NewConnect UoR reports use Polish accounting-act vocabulary; map lines to the catalog by meaning, not literal translation.",
+                "UoR statements are usually standalone; set scope=standalone unless a consolidated section exists.",
+                "Amounts are commonly thousands of PLN — read the header and set unitScale accordingly.",
+                "Use missingReasons for expected keys the report genuinely lacks.",
+            ]
+        );
+        assert_eq!(
+            profile_rules("company_characteristic@v1"),
+            &[
+                "This profile records durable company characteristics, not periodic KPIs; stage point_in_time values only.",
+                "There is no expected pack: stage exactly what the document states, with precise citations.",
+            ]
+        );
+    }
+
+    /// Every registered profile has non-empty doctrine, every rule fits the
+    /// frozen ≤512-byte budget (contracts.md § Budgets), and an unregistered
+    /// version has none.
+    #[test]
+    fn profile_rules_are_present_and_byte_bounded() {
+        for version in PROFILE_VERSIONS {
+            let rules = profile_rules(version);
+            assert!(!rules.is_empty(), "{version} must carry doctrine");
+            for rule in rules {
+                assert!(
+                    rule.len() <= 512,
+                    "{version} rule exceeds 512 bytes: {rule}"
+                );
+            }
+        }
+        assert!(profile_rules("gpw_ifrs_annual@v2").is_empty());
     }
 }
