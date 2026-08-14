@@ -47,6 +47,13 @@ fn clean_observation() -> NewStagedObservation {
 /// Drives a fresh run to `staged` with one [`clean_observation`], returning
 /// `(state, run_id, revision)`.
 fn staged_run() -> (AppState, String, i64) {
+    staged_run_with_profile("company_characteristic@v1")
+}
+
+/// [`staged_run`], with the caller's registry profile — the mechanics
+/// fixtures use `company_characteristic@v1` (empty union on a raw company,
+/// completeness gate skipped); the pack-path tests pick a financial profile.
+fn staged_run_with_profile(profile_version: &str) -> (AppState, String, i64) {
     let connection = open_in_memory_database().expect("db");
     seed_company_and_document(&connection);
     let state = AppState::new(connection);
@@ -56,7 +63,7 @@ fn staged_run() -> (AppState, String, i64) {
             report_document_id: "doc1".to_owned(),
             company_id: "c1".to_owned(),
             period_id: None,
-            profile_version: "p1".to_owned(),
+            profile_version: profile_version.to_owned(),
             scope: Some("standalone".to_owned()),
             data_quality: Some("final".to_owned()),
             period_fiscal_year: Some(2025),
@@ -109,9 +116,11 @@ fn ready_path_creates_an_attempt_and_freezes_the_run_hash() {
     assert_eq!(attempt.outcome, "ready");
     assert_eq!(attempt.attempt, 1);
 
-    // The stamped completeness snapshot is readable back on the run.
+    // The creation-time completeness snapshot is readable back on the run
+    // (ADR 0099 dec. 6: stamped by create_run_if_absent, not by validation).
     let stamped = run.expected_kpis_json.expect("snapshot stamped");
-    assert!(stamped.contains("\"source\":\"kpi_relevance\""));
+    assert!(stamped.contains("\"source\":\"kpi_relevance+profile_pack\""));
+    assert!(stamped.contains("\"packVersion\":\"company_characteristic@v1\""));
 }
 
 #[test]
@@ -176,7 +185,7 @@ fn refuses_a_run_that_is_not_staged() {
             report_document_id: "doc1".to_owned(),
             company_id: "c1".to_owned(),
             period_id: None,
-            profile_version: "p1".to_owned(),
+            profile_version: "company_characteristic@v1".to_owned(),
             scope: None,
             data_quality: None,
             period_fiscal_year: None,
@@ -244,4 +253,77 @@ fn legacy_ready_row_without_an_attempt_is_repaired_by_invalidate_and_revalidate(
         .expect("query ok")
         .expect("a real attempt now exists");
     assert_eq!(attempt.attempt, 1, "the SAME revision's first REAL attempt");
+}
+
+/// ADR 0099 dec. 6 (#383): a financial profile's creation-time stamp makes
+/// the completeness gate real — staging only `revenue` against the 5-key
+/// industrial floor fails with the other four keys named, and the manifest
+/// carries the non-null `packVersion`.
+#[test]
+fn a_financial_profile_demands_its_floor_via_the_creation_stamp() {
+    let (state, run_id, _revision) = staged_run_with_profile("gpw_ifrs_annual@v1");
+
+    let result = validate_kpi_ingest_run(&state, &run_id).expect("validate");
+    assert_eq!(result.outcome, "failed");
+    let expected = result
+        .manifest
+        .expected_kpis
+        .as_ref()
+        .expect("snapshot in manifest");
+    assert_eq!(
+        expected.pack_version.as_deref(),
+        Some("gpw_ifrs_annual@v1"),
+        "the manifest carries the creation-time packVersion"
+    );
+    let completeness = result
+        .manifest
+        .completeness
+        .as_ref()
+        .expect("completeness computed for a non-empty snapshot");
+    let missing: Vec<&str> = completeness
+        .missing
+        .iter()
+        .filter(|m| m.reason.is_none())
+        .map(|m| m.metric_key.as_str())
+        .collect();
+    assert_eq!(
+        missing,
+        [
+            "net_profit",
+            "operating_profit",
+            "total_assets",
+            "total_equity"
+        ],
+        "every unstaged floor key is missing without reason"
+    );
+}
+
+/// The legacy-NULL fallback: a raw row whose `expected_kpis_json` is NULL is
+/// live-stamped by validation exactly as before #383 — source
+/// `kpi_relevance`, `packVersion` null — and still reaches `ready`.
+#[test]
+fn a_legacy_null_row_falls_back_to_the_live_stamp() {
+    let (state, run_id, _revision) = staged_run();
+    let connection = state.checkout_for_tests().expect("raw");
+    connection
+        .execute(
+            "UPDATE kpi_ingest_runs SET expected_kpis_json = NULL WHERE id = ?1",
+            [&run_id],
+        )
+        .expect("null out the creation stamp");
+    drop(connection);
+
+    let result = validate_kpi_ingest_run(&state, &run_id).expect("validate");
+    assert_eq!(result.outcome, "ready");
+    let run = state
+        .kpi_ingest_runs()
+        .get_run(&run_id)
+        .expect("get")
+        .expect("some");
+    let stamped = run
+        .expected_kpis_json
+        .expect("live-stamped by the fallback");
+    assert!(stamped.contains("\"source\":\"kpi_relevance\""));
+    assert!(!stamped.contains("profile_pack"));
+    assert!(stamped.contains("\"packVersion\":null"));
 }

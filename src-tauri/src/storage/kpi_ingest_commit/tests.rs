@@ -59,7 +59,13 @@ fn observation(metric_key: &str, value: &str) -> NewStagedObservation {
     // ("flow") — `period.window_kind_mismatch` flags the mismatch otherwise.
     let measure_window = if matches!(
         metric_key,
-        "total_assets" | "total_equity" | "cash" | "net_debt" | "shares_outstanding"
+        "total_assets"
+            | "total_equity"
+            | "cash"
+            | "net_debt"
+            | "shares_outstanding"
+            | "total_loans"
+            | "total_deposits"
     ) {
         "point_in_time"
     } else {
@@ -93,7 +99,7 @@ fn create_run(
             report_document_id: doc.to_owned(),
             company_id: company.to_owned(),
             period_id,
-            profile_version: "p1".to_owned(),
+            profile_version: "company_characteristic@v1".to_owned(),
             scope: Some(scope.to_owned()),
             data_quality: Some("final".to_owned()),
             period_fiscal_year: Some(2025),
@@ -157,6 +163,75 @@ fn ready_fixture(scope: &str, observations: Vec<NewStagedObservation>) -> ReadyF
 // ---------------------------------------------------------------------
 // Group 1: E2E happy path (real validation).
 // ---------------------------------------------------------------------
+
+/// #383 end-to-end proof of the statement-type resolver axis + creation
+/// stamp: a classified banking company with NO raw directory sector runs a
+/// financial profile, stages its full 7-key floor, validates `ready` against
+/// the creation-time stamp, and commits — the sector-pack facts (e.g.
+/// `net_interest_income`) materialize. Red before the dual-axis fix: the
+/// banking observations never resolved a definition.
+#[test]
+fn a_banking_run_covers_its_floor_and_commits_the_pack_facts() {
+    let connection = open_in_memory_database().expect("db");
+    seed_company_and_document(&connection, "c1", "doc1");
+    connection
+        .execute(
+            "UPDATE companies SET statement_type = 'banking' WHERE id = 'c1'",
+            [],
+        )
+        .expect("classify");
+    let state = AppState::new(connection);
+    let run = state
+        .kpi_ingest_runs()
+        .create_run_if_absent(&NewKpiIngestRun {
+            report_document_id: "doc1".to_owned(),
+            company_id: "c1".to_owned(),
+            period_id: None,
+            profile_version: "gpw_ifrs_annual@v1".to_owned(),
+            scope: Some("consolidated".to_owned()),
+            data_quality: Some("final".to_owned()),
+            period_fiscal_year: Some(2025),
+            period_type: Some("FY".to_owned()),
+        })
+        .expect("create run");
+
+    let observations = [
+        "net_interest_income",
+        "net_fee_commission_income",
+        "net_profit",
+        "total_assets",
+        "total_deposits",
+        "total_equity",
+        "total_loans",
+    ]
+    .iter()
+    .map(|key| observation(key, "1000"))
+    .collect();
+    let (revision, manifest_hash) = drive_to_ready(&state, &run.id, observations);
+
+    let receipt = state
+        .kpi_ingest_commit()
+        .commit_manifest(&run.id, &manifest_hash, revision)
+        .expect("commit");
+    assert_eq!(receipt.accepted_count, 7);
+    assert_eq!(receipt.terminal_status, "complete");
+
+    let connection = state.checkout_for_tests().expect("raw");
+    let nii_facts: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM financial_facts f
+             JOIN kpi_definitions d ON d.id = f.definition_id
+             WHERE d.metric_key = 'net_interest_income'
+               AND d.id = 'kpidef_bank_net_interest_income'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(
+        nii_facts, 1,
+        "the sector-pack fact landed on the seeded banking definition"
+    );
+}
 
 #[test]
 fn commit_writes_period_facts_provenance_and_finalizes_the_run() {

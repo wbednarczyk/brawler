@@ -64,7 +64,7 @@ fn create_run(state: &AppState, doc: &str, company: &str) -> KpiIngestRun {
             report_document_id: doc.to_owned(),
             company_id: company.to_owned(),
             period_id: None,
-            profile_version: "p1".to_owned(),
+            profile_version: "company_characteristic@v1".to_owned(),
             scope: Some("standalone".to_owned()),
             data_quality: Some("final".to_owned()),
             period_fiscal_year: Some(2025),

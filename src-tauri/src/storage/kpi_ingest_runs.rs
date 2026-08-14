@@ -600,7 +600,11 @@ impl KpiIngestRunsStore {
     /// Idempotent create: if a NON-TERMINAL run already exists for the
     /// (document, company, profile) triple, return it unchanged; otherwise
     /// insert a new `discovered` run with an opaque id. Validates the document
-    /// belongs to the given company first (`RunDocumentCompanyMismatch`).
+    /// belongs to the given company first (`RunDocumentCompanyMismatch`), and
+    /// `profile_version` against the extraction-profile registry (ADR 0099
+    /// dec. 6). A fresh run is stamped here with its frozen `expected_kpis_json`
+    /// denominator — the union of the company's live relevance and the
+    /// profile's statement-type pack; validation consumes this stamp.
     pub fn create_run_if_absent(&self, new_run: &NewKpiIngestRun) -> StorageResult<KpiIngestRun> {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -620,6 +624,12 @@ impl KpiIngestRunsStore {
                     value: quality.to_owned(),
                 });
             }
+        }
+        if !super::kpi_ingest_profiles::is_registered_profile_version(&new_run.profile_version) {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "profile_version",
+                value: new_run.profile_version.clone(),
+            });
         }
 
         // Period descriptor (ADR 0098 dec. 3, B2 sol review round 2):
@@ -774,6 +784,28 @@ impl KpiIngestRunsStore {
             return raw_to_domain(raw);
         }
 
+        // Creation-time expected-KPI stamp (ADR 0099 dec. 6): relevance ∪
+        // profile pack, frozen for the run's whole life — definitions minted
+        // later can never widen the denominator (ADR 0093 dec. 4). Both reads
+        // stay on THIS transaction (a pooled store wrapper here would take a
+        // second checkout inside an Immediate tx).
+        let statement_type = super::companies::get_statement_type(&tx, &new_run.company_id)?;
+        let mut keys = super::financials::expected_primary_metric_keys(&tx, &new_run.company_id)?
+            .unwrap_or_default();
+        keys.extend(
+            super::kpi_ingest_profiles::expected_pack(&new_run.profile_version, &statement_type)
+                .iter()
+                .map(|k| (*k).to_owned()),
+        );
+        let stamp = crate::fundamentals::kpi_manifest::ExpectedKpis {
+            schema_version: 1,
+            source: "kpi_relevance+profile_pack".to_owned(),
+            pack_version: Some(new_run.profile_version.clone()),
+            keys,
+        };
+        let expected_kpis_json =
+            serde_json::to_string(&stamp).expect("ExpectedKpis serialization is total");
+
         let id = generate_run_id(
             &new_run.report_document_id,
             &new_run.company_id,
@@ -782,8 +814,8 @@ impl KpiIngestRunsStore {
         tx.execute(
             "INSERT INTO kpi_ingest_runs
                 (id, report_document_id, company_id, period_id, profile_version, scope, data_quality,
-                 period_fiscal_year, period_type)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 period_fiscal_year, period_type, expected_kpis_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 id,
                 new_run.report_document_id,
@@ -794,6 +826,7 @@ impl KpiIngestRunsStore {
                 new_run.data_quality,
                 new_run.period_fiscal_year,
                 new_run.period_type,
+                expected_kpis_json,
             ],
         )?;
 
@@ -969,16 +1002,16 @@ impl KpiIngestRunsStore {
         Err(wrong_state(id, status, KpiIngestRunState::Staged))
     }
 
-    /// Stamps the run's `expected_kpis_json` completeness-denominator snapshot
-    /// EXACTLY ONCE (#361 data-model.md § Stempel): set-once, status- and
-    /// revision-guarded — `WHERE status='staged' AND manifest_revision=?
-    /// AND manifest_hash IS NULL AND expected_kpis_json IS NULL`. A 0-row
-    /// UPDATE is not automatically a refusal: if the column is already
-    /// non-NULL the snapshot was already stamped (by an earlier validation
-    /// attempt — possibly on an earlier revision; the snapshot is per-RUN,
-    /// ADR 0098 dec. 4 "stamped on the run at start") and this returns it
-    /// unchanged — only a wrong status/revision is a typed refusal. Once
-    /// stamped, the snapshot is frozen for the run's whole lifetime: the
+    /// LEGACY-NULL fallback stamp of `expected_kpis_json` (ADR 0099 dec. 6:
+    /// the primary stamp is written by [`Self::create_run_if_absent`] at
+    /// creation; only a raw-seeded legacy row with a NULL column reaches this
+    /// writer). Set-once, status- and revision-guarded — `WHERE status='staged'
+    /// AND manifest_revision=? AND manifest_hash IS NULL AND
+    /// expected_kpis_json IS NULL`. A 0-row UPDATE is not automatically a
+    /// refusal: if the column is already non-NULL the snapshot exists (from
+    /// creation, or an earlier validation attempt on a legacy row) and this
+    /// returns it unchanged — only a wrong status/revision is a typed refusal.
+    /// Once stamped, the snapshot is frozen for the run's whole lifetime: the
     /// validator, #362 and #363 all read this column, never live
     /// `kpi_relevance`, so a later relevance change never changes any
     /// revision's denominator.
@@ -1650,10 +1683,10 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let first = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         let second = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create again");
         assert_eq!(
             first.id, second.id,
@@ -1667,7 +1700,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let first = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         // Seed the first run as terminal directly (no production status seam).
         let connection = state.checkout_for_tests().expect("raw connection");
@@ -1680,7 +1713,7 @@ mod tests {
         drop(connection);
 
         let second = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create after terminal");
         assert_ne!(
             first.id, second.id,
@@ -1694,10 +1727,10 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let p1 = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create p1");
         let p2 = store
-            .create_run_if_absent(&new_run(doc, company, "p2"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_interim@v1"))
             .expect("create p2");
         assert_ne!(p1.id, p2.id);
     }
@@ -1712,7 +1745,7 @@ mod tests {
         let store = state.kpi_ingest_runs();
 
         let error = store
-            .create_run_if_absent(&new_run("doc1", "c2", "p1"))
+            .create_run_if_absent(&new_run("doc1", "c2", "gpw_ifrs_annual@v1"))
             .expect_err("document belongs to c1, not c2");
         assert!(matches!(
             error,
@@ -1834,7 +1867,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
 
         let error = store.claim_next("worker-a", 0).expect_err("must reject");
@@ -1862,7 +1895,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         let claimed = store
             .claim_next("worker-a", 60)
@@ -1907,7 +1940,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         store.claim_next("worker-a", 60).expect("claim");
 
@@ -1994,7 +2027,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&new_run(doc, company, "p1"))
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         store.claim_next("worker-a", 3600).expect("claim");
 
@@ -2082,10 +2115,10 @@ mod tests {
         let store = state.kpi_ingest_runs();
 
         let r1 = store
-            .create_run_if_absent(&new_run("doc1", "c1", "p1"))
+            .create_run_if_absent(&new_run("doc1", "c1", "gpw_ifrs_annual@v1"))
             .expect("r1");
         let r2 = store
-            .create_run_if_absent(&new_run("doc2", "c2", "p1"))
+            .create_run_if_absent(&new_run("doc2", "c2", "gpw_ifrs_annual@v1"))
             .expect("r2");
 
         assert!(store.get_run("does-not-exist").expect("get").is_none());
@@ -2272,14 +2305,14 @@ mod tests {
         let (doc, company) = ("doc1", "c1");
 
         // Unknown document is NotFound, never a company mismatch.
-        let missing_doc = new_run("doc-missing", company, "p1");
+        let missing_doc = new_run("doc-missing", company, "gpw_ifrs_annual@v1");
         let error = store
             .create_run_if_absent(&missing_doc)
             .expect_err("unknown document");
         assert!(matches!(error, StorageError::MissingIngestReference { .. }));
 
         // Unknown period.
-        let mut unknown_period = new_run(doc, company, "p1");
+        let mut unknown_period = new_run(doc, company, "gpw_ifrs_annual@v1");
         unknown_period.period_id = Some("finper_missing".to_owned());
         let error = store
             .create_run_if_absent(&unknown_period)
@@ -2287,7 +2320,7 @@ mod tests {
         assert!(matches!(error, StorageError::MissingIngestReference { .. }));
 
         // Period owned by another company.
-        let mut foreign_period = new_run(doc, company, "p1");
+        let mut foreign_period = new_run(doc, company, "gpw_ifrs_annual@v1");
         foreign_period.period_id = Some("finper_other".to_owned());
         let error = store
             .create_run_if_absent(&foreign_period)
@@ -2298,13 +2331,13 @@ mod tests {
         ));
 
         // Invalid vocabulary values are typed refusals, not raw CHECK conflicts.
-        let mut bad_scope = new_run(doc, company, "p1");
+        let mut bad_scope = new_run(doc, company, "gpw_ifrs_annual@v1");
         bad_scope.scope = Some("group".to_owned());
         assert!(matches!(
             store.create_run_if_absent(&bad_scope).expect_err("scope"),
             StorageError::InvalidKpiIngestRunValue { key: "scope", .. }
         ));
-        let mut bad_quality = new_run(doc, company, "p1");
+        let mut bad_quality = new_run(doc, company, "gpw_ifrs_annual@v1");
         bad_quality.data_quality = Some("draft".to_owned());
         assert!(matches!(
             store
@@ -2315,6 +2348,220 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// ADR 0099 dec. 6: `profile_version` is validated against the extraction-
+    /// profile registry at creation — stale, future, bare and free-form
+    /// strings are all typed refusals.
+    #[test]
+    fn create_run_rejects_a_profile_version_outside_the_registry() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        for bad in [
+            "p1",
+            "gpw_ifrs_annual@v0",
+            "gpw_ifrs_annual@v2",
+            "gpw_ifrs_annual",
+        ] {
+            assert!(
+                matches!(
+                    store
+                        .create_run_if_absent(&new_run("doc1", "c1", bad))
+                        .expect_err("must refuse"),
+                    StorageError::InvalidKpiIngestRunValue {
+                        key: "profile_version",
+                        ..
+                    }
+                ),
+                "profile_version {bad} must be refused"
+            );
+        }
+    }
+
+    fn parsed_stamp(run: &KpiIngestRun) -> crate::fundamentals::kpi_manifest::ExpectedKpis {
+        serde_json::from_str(run.expected_kpis_json.as_deref().expect("stamp present"))
+            .expect("stamp parses")
+    }
+
+    fn seed_relevance(connection: &Connection, company: &str, definition_id: &str) {
+        connection
+            .execute(
+                "INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+                 VALUES (?1, ?2, ?3, 'active', 'curated', 'primary')",
+                params![
+                    format!("kpirel_{company}_{definition_id}"),
+                    company,
+                    definition_id
+                ],
+            )
+            .expect("relevance");
+    }
+
+    /// The pack contributes independently of relevance: a raw banking company
+    /// with ZERO relevance rows still gets the full 7-key banking floor.
+    #[test]
+    fn creation_stamps_the_banking_floor_independent_of_relevance() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        connection
+            .execute(
+                "UPDATE companies SET statement_type = 'banking' WHERE id = 'c1'",
+                [],
+            )
+            .expect("classify");
+        let state = AppState::new(connection);
+
+        let run = state
+            .kpi_ingest_runs()
+            .create_run_if_absent(&new_run("doc1", "c1", "gpw_ifrs_annual@v1"))
+            .expect("create");
+        let stamp = parsed_stamp(&run);
+        assert_eq!(stamp.source, "kpi_relevance+profile_pack");
+        assert_eq!(stamp.pack_version.as_deref(), Some("gpw_ifrs_annual@v1"));
+        let keys: Vec<&str> = stamp.keys.iter().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            [
+                "net_fee_commission_income",
+                "net_interest_income",
+                "net_profit",
+                "total_assets",
+                "total_deposits",
+                "total_equity",
+                "total_loans",
+            ],
+            "exactly the banking floor — no revenue, no operating_profit"
+        );
+    }
+
+    /// The relevance side of the union: a curated primary relevance row for a
+    /// key OUTSIDE the industrial floor (ebitda) joins the stamp.
+    #[test]
+    fn creation_stamp_unions_live_relevance_with_the_pack() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_relevance(&connection, "c1", "kpidef_ebitda");
+        let state = AppState::new(connection);
+
+        let run = state
+            .kpi_ingest_runs()
+            .create_run_if_absent(&new_run("doc1", "c1", "gpw_ifrs_annual@v1"))
+            .expect("create");
+        let stamp = parsed_stamp(&run);
+        assert!(
+            stamp.keys.contains("ebitda"),
+            "relevance key joins the union"
+        );
+        for floor_key in [
+            "revenue",
+            "operating_profit",
+            "net_profit",
+            "total_assets",
+            "total_equity",
+        ] {
+            assert!(
+                stamp.keys.contains(floor_key),
+                "floor key {floor_key} present"
+            );
+        }
+    }
+
+    /// Owner decision 2026-08-14: the union applies to EVERY profile —
+    /// `company_characteristic`'s empty pack never zeroes out live relevance.
+    #[test]
+    fn company_characteristic_unions_relevance_with_an_empty_pack() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_relevance(&connection, "c1", "kpidef_ebitda");
+        let state = AppState::new(connection);
+
+        let run = state
+            .kpi_ingest_runs()
+            .create_run_if_absent(&new_run("doc1", "c1", "company_characteristic@v1"))
+            .expect("create");
+        let stamp = parsed_stamp(&run);
+        assert_eq!(
+            stamp.pack_version.as_deref(),
+            Some("company_characteristic@v1")
+        );
+        let keys: Vec<&str> = stamp.keys.iter().map(String::as_str).collect();
+        assert_eq!(keys, ["ebitda"], "relevance union with an empty pack");
+    }
+
+    /// The idempotent hit returns the run with its FROZEN stamp — relevance
+    /// changes after creation never restamp (ADR 0093 dec. 4).
+    #[test]
+    fn an_idempotent_hit_never_restamps() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        let first = store
+            .create_run_if_absent(&new_run("doc1", "c1", "gpw_ifrs_annual@v1"))
+            .expect("create");
+        {
+            let connection = state.checkout_for_tests().expect("raw connection");
+            seed_relevance(&connection, "c1", "kpidef_ebitda");
+        }
+        let second = store
+            .create_run_if_absent(&new_run("doc1", "c1", "gpw_ifrs_annual@v1"))
+            .expect("idempotent");
+        assert_eq!(second.id, first.id);
+        assert_eq!(
+            second.expected_kpis_json, first.expected_kpis_json,
+            "byte-identical frozen stamp"
+        );
+        assert!(!parsed_stamp(&second).keys.contains("ebitda"));
+    }
+
+    /// The legacy-NULL fallback writer: refuses a `discovered` row, and is
+    /// set-once against an existing (creation-time) stamp.
+    #[test]
+    fn stamp_expected_kpis_refuses_wrong_status_and_is_set_once() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "doc1", "c1");
+        seed_run_raw(
+            &connection,
+            "run-legacy",
+            "doc1",
+            "c1",
+            "p1",
+            "discovered",
+            None,
+            None,
+            None,
+        );
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        // Wrong status (discovered, NULL column) → typed refusal.
+        assert!(matches!(
+            store
+                .stamp_expected_kpis("run-legacy", 1, "{}")
+                .expect_err("discovered must refuse"),
+            StorageError::InvalidStagingRevision { .. }
+        ));
+
+        // A created (creation-stamped) run ignores a competing snapshot and
+        // returns the frozen bytes unchanged.
+        let run = store
+            .create_run_if_absent(&new_run("doc1", "c1", "gpw_ifrs_annual@v1"))
+            .expect("create");
+        let frozen = run.expected_kpis_json.clone().expect("stamped at creation");
+        let returned = store
+            .stamp_expected_kpis(&run.id, 1, "{\"schemaVersion\":9}")
+            .expect("set-once read-back");
+        assert_eq!(returned, frozen);
     }
 
     /// Test 10 (#359 plan): the run's period descriptor — all-or-none,
@@ -2339,7 +2586,7 @@ mod tests {
         let store = state.kpi_ingest_runs();
 
         // A descriptor with no period_id succeeds.
-        let mut with_descriptor = new_run("doc1", "c1", "p1");
+        let mut with_descriptor = new_run("doc1", "c1", "gpw_ifrs_annual@v1");
         with_descriptor.period_fiscal_year = Some(2025);
         with_descriptor.period_type = Some("FY".to_owned());
         let created = store
@@ -2350,7 +2597,7 @@ mod tests {
         assert!(created.period_id.is_none());
 
         // A partial descriptor is refused.
-        let mut partial = new_run("doc1", "c1", "p2");
+        let mut partial = new_run("doc1", "c1", "gpw_interim@v1");
         partial.period_fiscal_year = Some(2025);
         let error = store
             .create_run_if_absent(&partial)
@@ -2364,7 +2611,7 @@ mod tests {
         ));
 
         // A descriptor that contradicts an explicit period_id is refused.
-        let mut contradictory = new_run("doc1", "c1", "p3");
+        let mut contradictory = new_run("doc1", "c1", "gpw_preliminary@v1");
         contradictory.period_id = Some("finper1".to_owned());
         contradictory.period_fiscal_year = Some(2024);
         contradictory.period_type = Some("FY".to_owned());
@@ -2379,9 +2626,9 @@ mod tests {
             }
         ));
 
-        // A second create on the SAME active triple ("p1") with a DIFFERENT
+        // A second create on the SAME active triple (one profile) with a DIFFERENT
         // descriptor conflicts with the already-running one.
-        let mut conflicting = new_run("doc1", "c1", "p1");
+        let mut conflicting = new_run("doc1", "c1", "gpw_ifrs_annual@v1");
         conflicting.period_fiscal_year = Some(2024);
         conflicting.period_type = Some("FY".to_owned());
         let error = store
@@ -2420,10 +2667,10 @@ mod tests {
 
         // Existing run holds a period_id (FY2025); request carries only a
         // DESCRIPTOR for FY2024 — must conflict, not silently reuse.
-        let mut with_id = new_run("doc1", "c1", "p1");
+        let mut with_id = new_run("doc1", "c1", "gpw_ifrs_annual@v1");
         with_id.period_id = Some("finper_fy2025".to_owned());
         let created = store.create_run_if_absent(&with_id).expect("create");
-        let mut descriptor_mismatch = new_run("doc1", "c1", "p1");
+        let mut descriptor_mismatch = new_run("doc1", "c1", "gpw_ifrs_annual@v1");
         descriptor_mismatch.period_fiscal_year = Some(2024);
         descriptor_mismatch.period_type = Some("FY".to_owned());
         let error = store
@@ -2435,7 +2682,7 @@ mod tests {
         ));
 
         // The matching descriptor for the SAME period is idempotent.
-        let mut descriptor_match = new_run("doc1", "c1", "p1");
+        let mut descriptor_match = new_run("doc1", "c1", "gpw_ifrs_annual@v1");
         descriptor_match.period_fiscal_year = Some(2025);
         descriptor_match.period_type = Some("FY".to_owned());
         let same = store
@@ -2445,13 +2692,13 @@ mod tests {
 
         // Reverse direction: existing run holds a descriptor; request carries
         // a period_id resolving to a different natural key — must conflict.
-        let mut with_descriptor = new_run("doc2", "c1", "p1");
+        let mut with_descriptor = new_run("doc2", "c1", "gpw_ifrs_annual@v1");
         with_descriptor.period_fiscal_year = Some(2024);
         with_descriptor.period_type = Some("FY".to_owned());
         let created2 = store
             .create_run_if_absent(&with_descriptor)
             .expect("create");
-        let mut id_mismatch = new_run("doc2", "c1", "p1");
+        let mut id_mismatch = new_run("doc2", "c1", "gpw_ifrs_annual@v1");
         id_mismatch.period_id = Some("finper_fy2025".to_owned());
         let error = store
             .create_run_if_absent(&id_mismatch)
@@ -2481,7 +2728,7 @@ mod tests {
     ) -> KpiIngestRun {
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+            .create_run_if_absent(&ready_new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         store.claim_next(holder, 3600).expect("claim");
         store
@@ -2594,7 +2841,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+            .create_run_if_absent(&ready_new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         store.claim_next("worker-a", 3600).expect("claim");
         store
@@ -2631,7 +2878,7 @@ mod tests {
         for (requirement, build) in cases {
             let (state, doc, company) = setup_one_company_doc();
             let store = state.kpi_ingest_runs();
-            let mut run_def = new_run(doc, company, "p1");
+            let mut run_def = new_run(doc, company, "gpw_ifrs_annual@v1");
             build(&mut run_def);
             let run = store.create_run_if_absent(&run_def).expect("create");
             store.claim_next("worker-a", 3600).expect("claim");
@@ -2656,7 +2903,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+            .create_run_if_absent(&ready_new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         let before = store.get_run(&run.id).expect("get").expect("some");
         let error = store
@@ -2715,7 +2962,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+            .create_run_if_absent(&ready_new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         let before = store.get_run(&run.id).expect("get").expect("some");
         let connection = store.db.checkout().expect("checkout");
@@ -2816,7 +3063,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+            .create_run_if_absent(&ready_new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         let before = store.get_run(&run.id).expect("get").expect("some");
         let error = store
@@ -2874,7 +3121,7 @@ mod tests {
                 let (state, doc, company) = setup_one_company_doc();
                 let store = state.kpi_ingest_runs();
                 let run = store
-                    .create_run_if_absent(&new_run(doc, company, "p1"))
+                    .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
                     .expect("create");
                 apply(&state, &run.id, scenario, "worker-a");
                 let error = store
@@ -2887,7 +3134,7 @@ mod tests {
                 let (state, doc, company) = setup_one_company_doc();
                 let store = state.kpi_ingest_runs();
                 let run = store
-                    .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+                    .create_run_if_absent(&ready_new_run(doc, company, "gpw_ifrs_annual@v1"))
                     .expect("create");
                 store.claim_next("worker-a", 3600).expect("claim");
                 store
@@ -3415,7 +3662,7 @@ mod tests {
         let (state, doc, company) = setup_one_company_doc();
         let store = state.kpi_ingest_runs();
         let run = store
-            .create_run_if_absent(&ready_new_run(doc, company, "p1"))
+            .create_run_if_absent(&ready_new_run(doc, company, "gpw_ifrs_annual@v1"))
             .expect("create");
         store.claim_next("worker-a", 60).expect("claim");
         // Simulate the retired lease-free path: hash present, still discovered.

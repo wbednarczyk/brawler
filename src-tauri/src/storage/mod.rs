@@ -57,6 +57,7 @@ mod insider;
 mod jobs;
 mod kpi_extraction;
 mod kpi_ingest_commit;
+mod kpi_ingest_profiles;
 mod kpi_ingest_runs;
 mod kpi_ingest_staging;
 mod licensing;
@@ -126,6 +127,9 @@ pub use fundamentals_provenance::{
 };
 pub use fx_rates::FxRatesStore;
 pub use kpi_ingest_commit::KpiIngestCommitStore;
+pub use kpi_ingest_profiles::{
+    expected_pack, is_registered_profile_version, resolve_profile_version, PROFILE_VERSIONS,
+};
 pub use kpi_ingest_runs::{
     KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun, ValidationAttempt,
 };
