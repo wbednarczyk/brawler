@@ -5161,3 +5161,51 @@ fn migration_0138_creates_kpi_staging_tables_and_run_period_columns() {
         "re-run must reach exactly the expected migration count",
     );
 }
+
+#[test]
+fn migration_0140_adds_derived_period_content_hash_tolerant_of_legacy_rows() {
+    // #385: 0140 appends `document_derived_periods.content_hash`. A cache row
+    // written before the column upgrades cleanly and reads back NULL — which
+    // the provenance-aware cache-hit predicate treats as a miss (self-healing
+    // re-derivation), never as matching provenance.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 139).expect("apply schema up to pre-0140");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+             VALUES ('d1', 'c1', 'espi_attachment', 'https://x/d1.pdf', 'fetched')",
+            [],
+        )
+        .expect("seed document");
+    connection
+        .execute(
+            "INSERT INTO document_derived_periods
+                (report_document_id, has_period, fiscal_year, period_type, period_end,
+                 derivation_version, derived_at)
+             VALUES ('d1', 1, 2024, 'FY', '2024-12-31', 2, '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("seed a legacy pre-0140 cache row");
+
+    apply_migrations(&mut connection).expect("upgrade to latest");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "upgrade should reach the latest migration",
+    );
+    let hash: Option<String> = connection
+        .query_row(
+            "SELECT content_hash FROM document_derived_periods WHERE report_document_id = 'd1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the new column is present and readable on the legacy row");
+    assert_eq!(hash, None, "a legacy row has no provenance — a cache miss");
+}

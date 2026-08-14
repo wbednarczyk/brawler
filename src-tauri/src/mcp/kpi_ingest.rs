@@ -38,7 +38,7 @@ const RUN_LEASE_SECONDS: i64 = 1800;
 /// version in the run's execution metadata instead.
 const ACQUISITION_CONTRACT_VERSION: &str = "acquisition-mcp@v1";
 
-const SNAPSHOT_DIR: &str = "report_snapshots";
+pub(super) const SNAPSHOT_DIR: &str = "report_snapshots";
 
 // ============================================================================
 // Inputs
@@ -150,7 +150,7 @@ pub struct RunIdInput {
 // Wire DTOs (MCP-only — no TS consumer, no ts_rs; contracts.md § Planned)
 // ============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodDto {
     pub fiscal_year: i64,
@@ -158,14 +158,14 @@ pub struct PeriodDto {
     pub period_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeaseDto {
     pub holder: String,
     pub expires_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunStatusDto {
     pub run_id: String,
@@ -232,7 +232,7 @@ fn holder(scope: McpScope) -> &'static str {
 
 /// Control characters are rejected in every text field (contracts.md § Planned
 /// conventions) — this bounds JSON-escaping expansion at ×2.
-fn reject_control_chars(field: &'static str, value: &str) -> Result<(), CommandError> {
+pub(super) fn reject_control_chars(field: &'static str, value: &str) -> Result<(), CommandError> {
     if value.chars().any(|c| c < '\u{20}') {
         return Err(CommandError::new(
             CommandErrorCode::InvalidInput,
@@ -244,7 +244,10 @@ fn reject_control_chars(field: &'static str, value: &str) -> Result<(), CommandE
 
 /// Resolves a `period_id`-only pin's natural key so the wire `period` object
 /// is populated whenever the run HAS a period identity (contracts shape).
-fn period_dto(state: &AppState, run: &KpiIngestRun) -> Result<Option<PeriodDto>, CommandError> {
+pub(super) fn period_dto(
+    state: &AppState,
+    run: &KpiIngestRun,
+) -> Result<Option<PeriodDto>, CommandError> {
     if let (Some(fiscal_year), Some(period_type)) =
         (run.period_fiscal_year, run.period_type.as_deref())
     {
@@ -267,7 +270,7 @@ fn period_dto(state: &AppState, run: &KpiIngestRun) -> Result<Option<PeriodDto>,
 
 /// Parses a stored JSON column; a NULL is `None`, malformed bytes are a typed
 /// `internal` (never a silent null).
-fn parse_stored_json(
+pub(super) fn parse_stored_json(
     column: &'static str,
     stored: Option<&str>,
 ) -> Result<Option<Value>, CommandError> {
@@ -282,7 +285,10 @@ fn parse_stored_json(
     }
 }
 
-fn run_status_dto(state: &AppState, run: &KpiIngestRun) -> Result<RunStatusDto, CommandError> {
+pub(super) fn run_status_dto(
+    state: &AppState,
+    run: &KpiIngestRun,
+) -> Result<RunStatusDto, CommandError> {
     // `missingReasons` normalizes stored NULL to {}; a stored non-object is
     // corrupt (the schema is an object ledger).
     let missing_reasons =
@@ -351,7 +357,10 @@ fn run_summary_dto(state: &AppState, run: &KpiIngestRun) -> Result<RunSummaryDto
     })
 }
 
-fn get_existing_run(state: &AppState, run_id: &str) -> Result<KpiIngestRun, CommandError> {
+pub(super) fn get_existing_run(
+    state: &AppState,
+    run_id: &str,
+) -> Result<KpiIngestRun, CommandError> {
     state.kpi_ingest_runs().get_run(run_id)?.ok_or_else(|| {
         CommandError::new(
             CommandErrorCode::NotFound,
@@ -691,21 +700,24 @@ pub fn cancel_kpi_ingest_handler(
     run(arguments, |input| cancel_kpi_ingest(state, input))
 }
 
+/// Shared test substrate for the KPI-ingest MCP modules (#385): this module's
+/// tests and `kpi_ingest_context`'s use the same throwaway-data-dir state and
+/// registry-dispatch helpers — one copy, no drift.
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_support {
     use super::*;
     use crate::mcp::registry::call;
-    use crate::storage::{open_in_memory_database, SettingsUpdate};
+    use crate::storage::open_in_memory_database;
     use serde_json::json;
 
     static TEST_DIR_SEQ: AtomicU64 = AtomicU64::new(0);
 
-    const DOC_BYTES: &[u8] = b"%PDF-1.4 test report bytes v1";
+    pub(crate) const DOC_BYTES: &[u8] = b"%PDF-1.4 test report bytes v1";
 
     /// State with a real (per-test, throwaway) data dir, one company and one
     /// FETCHED document whose bytes exist on disk — the substrate every
     /// lifecycle tool runs against.
-    fn test_state() -> AppState {
+    pub(crate) fn test_state() -> AppState {
         let dir = std::env::temp_dir().join(format!(
             "brawler-kpi-mcp-{}-{}",
             std::process::id(),
@@ -733,7 +745,12 @@ mod tests {
         AppState::with_data_dir(connection, dir)
     }
 
-    fn seed_document_row(state: &AppState, id: &str, local_path: Option<&str>, status: &str) {
+    pub(crate) fn seed_document_row(
+        state: &AppState,
+        id: &str,
+        local_path: Option<&str>,
+        status: &str,
+    ) {
         let connection = state.checkout_for_tests().expect("raw");
         connection
             .execute(
@@ -745,25 +762,25 @@ mod tests {
             .expect("document row");
     }
 
-    fn success(outcome: ToolOutcome) -> Value {
+    pub(crate) fn success(outcome: ToolOutcome) -> Value {
         match outcome {
             ToolOutcome::Success(value) => value,
             ToolOutcome::Failure(error) => panic!("expected Success, got Failure: {error:?}"),
         }
     }
 
-    fn failure_code(outcome: ToolOutcome) -> CommandErrorCode {
+    pub(crate) fn failure_code(outcome: ToolOutcome) -> CommandErrorCode {
         match outcome {
             ToolOutcome::Failure(error) => error.code,
             ToolOutcome::Success(value) => panic!("expected Failure, got Success: {value}"),
         }
     }
 
-    fn acquisition_call(state: &AppState, name: &str, args: &Value) -> ToolOutcome {
+    pub(crate) fn acquisition_call(state: &AppState, name: &str, args: &Value) -> ToolOutcome {
         call(state, McpScope::KpiAcquisition, name, args).expect("domain outcome")
     }
 
-    fn full_start_args() -> Value {
+    pub(crate) fn full_start_args() -> Value {
         json!({
             "documentId": "doc1",
             "profileId": "gpw_ifrs_annual",
@@ -772,6 +789,15 @@ mod tests {
             "period": { "fiscalYear": 2025, "periodType": "FY" }
         })
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::*;
+    use super::*;
+    use crate::mcp::registry::call;
+    use crate::storage::SettingsUpdate;
+    use serde_json::json;
 
     fn expire_lease_raw(state: &AppState, run_id: &str) {
         let connection = state.checkout_for_tests().expect("raw");

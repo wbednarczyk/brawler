@@ -1967,3 +1967,64 @@ fn relocalize_preserves_non_template_field_values() {
         "a non-template field value must not be relocalized"
     );
 }
+
+#[test]
+fn research_import_bounds_user_metric_identities() {
+    // #385: the shared KPI-definition identity bound applies to the research
+    // import too — it inserts `kpi_definitions` rows directly, so an oversized
+    // or control-character metric key/id in a doctored export file must refuse
+    // instead of minting an unbounded catalog identity.
+    let source = AppState::new(open_in_memory_database().expect("database should initialize"));
+    source
+        .create_kpi_definition(NewKpiDefinition {
+            scope: "user".to_owned(),
+            company_id: None,
+            sector: None,
+            metric_key: "rule_of_40".to_owned(),
+            label: "Rule of 40".to_owned(),
+            value_kind: "percentage".to_owned(),
+            unit: None,
+            computation: "derived".to_owned(),
+            formula: None,
+            display_format: None,
+            origin: None,
+            statement_group: None,
+        })
+        .expect("custom metric creates");
+    let export = source.export_research_data().expect("export");
+
+    let mut doctored: serde_json::Value =
+        serde_json::from_str(&export.contents).expect("export parses");
+    doctored["userMetrics"][0]["metricKey"] = serde_json::Value::String("x".repeat(300));
+    let target = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let error = target
+        .apply_research_import(&doctored.to_string())
+        .expect_err("an oversized imported metric key must refuse");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidResearchValue {
+                key: "user_metric_key",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+
+    let mut doctored: serde_json::Value =
+        serde_json::from_str(&export.contents).expect("export parses");
+    doctored["userMetrics"][0]["id"] = serde_json::Value::String("bad\u{0007}id".to_owned());
+    let error = target
+        .apply_research_import(&doctored.to_string())
+        .expect_err("a control-character imported id must refuse");
+    assert!(
+        matches!(
+            error,
+            StorageError::InvalidResearchValue {
+                key: "user_metric_id",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+}

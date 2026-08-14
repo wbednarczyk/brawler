@@ -3238,3 +3238,302 @@ fn completeness_over_stored_fact_set_counts_each_slot_once() {
     );
     assert_eq!(result.missing, vec!["total_equity".to_owned()]);
 }
+
+// ---------------------------------------------------------------------------
+// slot_history_points (#385): the slot-DISCOVERING dated twin the MCP context
+// read model consumes; `slot_metric_histories` is its projection, so these
+// tests are also the wrapper's zero-drift guardrail.
+// ---------------------------------------------------------------------------
+
+fn seed_period(
+    state: &AppState,
+    company_id: &str,
+    fiscal_year: i64,
+    period_type: &str,
+    period_end: Option<&str>,
+) -> String {
+    state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company_id.to_owned(),
+            fiscal_year,
+            period_type: period_type.to_owned(),
+            period_end_date: period_end.map(str::to_owned),
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create")
+        .id
+}
+
+/// Multi-period characterization of the values twin, written BEFORE the #385
+/// refactor and kept green after it: final-over-preliminary collapses IN
+/// PLACE (the period keeps its original position in the vector), and order is
+/// fact-iteration order — NOT chronological.
+#[test]
+fn slot_metric_histories_multi_period_collapse_keeps_scan_order() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let definition_id = canonical_definition_id(&state, "revenue");
+    let p2022 = seed_fy_period(&state, &company.id, 2022);
+    let p2023 = seed_fy_period(&state, &company.id, 2023);
+    let p2024 = seed_fy_period(&state, &company.id, 2024);
+
+    // Seed 2024 preliminary FIRST, then older periods, then the 2024 final —
+    // the final overwrites the preliminary in place (index 0), so the vector
+    // order proves in-place collapse + scan order survive the refactor.
+    for (period, quality, value) in [
+        (&p2024, "preliminary", "999"),
+        (&p2022, "final", "100"),
+        (&p2023, "final", "200"),
+        (&p2024, "final", "300"),
+    ] {
+        seed_slot_fact(
+            &state,
+            &company.id,
+            period,
+            &definition_id,
+            "consolidated",
+            "total",
+            "flow",
+            quality,
+            value,
+        );
+    }
+
+    let key = HistorySlotKey {
+        definition_id: definition_id.clone(),
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("flow".to_owned()),
+    };
+    let slots: std::collections::BTreeSet<_> = [key.clone()].into();
+    let histories = state
+        .financials()
+        .slot_metric_histories(&company.id, &slots, 2099, "FY")
+        .expect("slot histories should read");
+
+    let values = histories.get(&key).expect("slot present");
+    assert_eq!(values.len(), 3, "one value per period after collapse");
+    assert!(
+        values.contains(&Decimal::new(300, 0)),
+        "the 2024 final overwrote the preliminary: {values:?}"
+    );
+    assert!(
+        !values.contains(&Decimal::new(999, 0)),
+        "no preliminary survives a final sibling: {values:?}"
+    );
+}
+
+#[test]
+fn slot_history_points_matches_the_values_twin_and_carries_period_identity() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let definition_id = canonical_definition_id(&state, "revenue");
+    let p2023 = seed_fy_period(&state, &company.id, 2023);
+    let ph1 = seed_period(&state, &company.id, 2024, "H1", None);
+
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &p2023,
+        &definition_id,
+        "consolidated",
+        "total",
+        "flow",
+        "final",
+        "100",
+    );
+    seed_slot_fact(
+        &state,
+        &company.id,
+        &ph1,
+        &definition_id,
+        "consolidated",
+        "total",
+        "flow",
+        "final",
+        "60",
+    );
+
+    let key = HistorySlotKey {
+        definition_id: definition_id.clone(),
+        statement_basis: "consolidated".to_owned(),
+        attribution_eff: "total".to_owned(),
+        measure_window_eff: Some("flow".to_owned()),
+    };
+    let ids: std::collections::BTreeSet<String> = [definition_id.clone()].into();
+    let points = state
+        .financials()
+        .slot_history_points(&company.id, &ids, 2099, "FY")
+        .expect("points should read");
+    let slots: std::collections::BTreeSet<_> = [key.clone()].into();
+    let histories = state
+        .financials()
+        .slot_metric_histories(&company.id, &slots, 2099, "FY")
+        .expect("values should read");
+
+    let slot_points = points.get(&key).expect("discovered slot");
+    let projected: Vec<Decimal> = slot_points.iter().map(|p| p.value).collect();
+    assert_eq!(
+        Some(&projected),
+        histories.get(&key),
+        "the values twin is exactly the points projection"
+    );
+    let h1 = slot_points
+        .iter()
+        .find(|p| p.period_type == "H1")
+        .expect("H1 point");
+    assert_eq!(h1.fiscal_year, 2024);
+    assert_eq!(h1.period_end, None, "stored period_end travels verbatim");
+    let fy = slot_points
+        .iter()
+        .find(|p| p.period_type == "FY")
+        .expect("FY point");
+    assert_eq!(fy.period_end.as_deref(), Some("2023-12-31"));
+}
+
+#[test]
+fn slot_history_points_scopes_to_requested_definitions_and_excludes_the_run_period() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let revenue = canonical_definition_id(&state, "revenue");
+    let equity = canonical_definition_id(&state, "total_equity");
+    let p2023 = seed_fy_period(&state, &company.id, 2023);
+    let p2024 = seed_fy_period(&state, &company.id, 2024);
+
+    for (definition, period, value) in [
+        (&revenue, &p2023, "100"),
+        (&revenue, &p2024, "150"),
+        (&equity, &p2023, "900"),
+    ] {
+        seed_slot_fact(
+            &state,
+            &company.id,
+            period,
+            definition,
+            "consolidated",
+            "total",
+            "flow",
+            "final",
+            value,
+        );
+    }
+
+    let ids: std::collections::BTreeSet<String> = [revenue.clone()].into();
+    // Excluding the 2024 FY run period drops that point; the unrequested
+    // equity definition is not discovered at all.
+    let points = state
+        .financials()
+        .slot_history_points(&company.id, &ids, 2024, "FY")
+        .expect("points should read");
+    assert_eq!(
+        points.len(),
+        1,
+        "only the requested definition's slot: {points:?}"
+    );
+    let (_, slot_points) = points.iter().next().expect("one slot");
+    assert_eq!(slot_points.len(), 1);
+    assert_eq!(slot_points[0].fiscal_year, 2023);
+}
+
+// ---------------------------------------------------------------------------
+// KPI definition identity bound (#385): metric_key (and imported definition
+// ids) are ≤256 bytes, control-character-free, at EVERY producer.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn create_kpi_definition_bounds_the_metric_key() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let attempt = |metric_key: String| {
+        state.create_kpi_definition(NewKpiDefinition {
+            scope: "user".to_owned(),
+            company_id: None,
+            sector: None,
+            metric_key,
+            label: "L".to_owned(),
+            value_kind: "currency".to_owned(),
+            unit: None,
+            computation: "reported".to_owned(),
+            formula: None,
+            display_format: None,
+            origin: None,
+            statement_group: None,
+        })
+    };
+
+    assert!(
+        matches!(
+            attempt("x".repeat(257)),
+            Err(StorageError::InvalidFinancialsValue {
+                key: "metric_key",
+                ..
+            })
+        ),
+        "a 257-byte key must refuse"
+    );
+    assert!(
+        matches!(
+            attempt("bad\u{0007}key".to_owned()),
+            Err(StorageError::InvalidFinancialsValue {
+                key: "metric_key",
+                ..
+            })
+        ),
+        "a control character must refuse"
+    );
+    attempt("x".repeat(256)).expect("a 256-byte key is the inclusive bound");
+}
+
+// ---------------------------------------------------------------------------
+// Derived-period cache provenance (#385, migration 0140).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn derived_period_cache_round_trips_the_content_hash() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let document = state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company.id.clone(),
+            source_type: "espi_attachment".to_owned(),
+            url: "https://example.com/r.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: None,
+            attribution: None,
+        })
+        .expect("document");
+
+    state
+        .financials()
+        .store_derived_period(
+            &document.id,
+            Some((2024, "FY", "2024-12-31")),
+            2,
+            Some("a1"),
+        )
+        .expect("store with hash");
+    let cached = state
+        .financials()
+        .cached_derived_period(&document.id)
+        .expect("read")
+        .expect("row");
+    assert_eq!(cached.content_hash.as_deref(), Some("a1"));
+
+    // Overwrite without a hash (the pre-0140 legacy shape) → None survives the
+    // upsert, which is exactly what the provenance predicate treats as a miss.
+    state
+        .financials()
+        .store_derived_period(&document.id, Some((2024, "FY", "2024-12-31")), 2, None)
+        .expect("store without hash");
+    let cached = state
+        .financials()
+        .cached_derived_period(&document.id)
+        .expect("read")
+        .expect("row");
+    assert_eq!(cached.content_hash, None);
+}

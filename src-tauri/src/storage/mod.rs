@@ -116,10 +116,11 @@ pub use events::EventStore;
 pub use feed::FeedStore;
 pub use financials::FinancialsStore;
 pub use financials::{
-    CanonicalComparisonFact, FinancialFact, FinancialPeriod, HistorySlotKey, KpiDefinition,
-    KpiRelevance, ListFinancialFactsInput, ListFinancialPeriodsInput, ListKpiDefinitionsInput,
-    NewFinancialFact, NewFinancialPeriod, NewKpiDefinition, NewKpiRelevance, PeriodFactCoverage,
-    UpdateFinancialFact, UpdateFinancialPeriod, UpdateKpiRelevance,
+    CanonicalComparisonFact, FinancialFact, FinancialPeriod, HistoryPoint, HistorySlotKey,
+    KpiDefinition, KpiRelevance, ListFinancialFactsInput, ListFinancialPeriodsInput,
+    ListKpiDefinitionsInput, NewFinancialFact, NewFinancialPeriod, NewKpiDefinition,
+    NewKpiRelevance, PeriodFactCoverage, UpdateFinancialFact, UpdateFinancialPeriod,
+    UpdateKpiRelevance,
 };
 pub use fundamentals_provenance::{
     ExtractionOutcome, FactProvenance, FactTierBreakdown, FlaggedFact, FundamentalsProvenanceStore,
@@ -128,7 +129,8 @@ pub use fundamentals_provenance::{
 pub use fx_rates::FxRatesStore;
 pub use kpi_ingest_commit::KpiIngestCommitStore;
 pub use kpi_ingest_profiles::{
-    expected_pack, is_registered_profile_version, resolve_profile_version, PROFILE_VERSIONS,
+    expected_pack, is_registered_profile_version, profile_rules as kpi_ingest_profile_rules,
+    resolve_profile_version, PROFILE_VERSIONS,
 };
 pub use kpi_ingest_runs::{
     KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun, RunContextAttach,

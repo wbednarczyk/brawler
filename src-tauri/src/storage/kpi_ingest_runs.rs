@@ -428,6 +428,24 @@ fn validate_period_type_value(period_type: &str) -> StorageResult<()> {
     }
 }
 
+/// Bound `last_error` at its single write boundary (#385): ≤2048 UTF-8 bytes,
+/// truncated on a char boundary with an `…` marker. The MCP context read model
+/// embeds `RunStatus` (and its stored `lastError`) verbatim — its 256 KiB
+/// response budget is provable only with every variable-length column bounded
+/// at the producer.
+fn bound_last_error(message: &str) -> String {
+    const MAX: usize = 2048;
+    const MARKER: &str = "…";
+    if message.len() <= MAX {
+        return message.to_owned();
+    }
+    let mut end = MAX - MARKER.len();
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{MARKER}", &message[..end])
+}
+
 fn wrong_state(id: &str, actual: KpiIngestRunState, to: KpiIngestRunState) -> StorageError {
     StorageError::InvalidRunTransition {
         id: id.to_owned(),
@@ -992,6 +1010,17 @@ impl KpiIngestRunsStore {
                 .iter()
                 .map(|k| (*k).to_owned()),
         );
+        // Stamp-size invariant (#385): the MCP context read model returns the
+        // stamp verbatim inside every RunStatus, so its response-budget
+        // arithmetic (contracts.md § Budgets) requires a hard bound here — a
+        // company with more than 256 primary expected KPIs is a data error,
+        // not a run to create.
+        if keys.len() > 256 {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "expected_kpis",
+                value: format!("{} keys exceed the 256-key stamp bound", keys.len()),
+            });
+        }
         let stamp = crate::fundamentals::kpi_manifest::ExpectedKpis {
             schema_version: 1,
             source: "kpi_relevance+profile_pack".to_owned(),
@@ -1294,6 +1323,49 @@ impl KpiIngestRunsStore {
             .map_err(StorageError::from)
     }
 
+    /// The single most recent validation attempt for `run_id` — `ORDER BY
+    /// revision DESC, attempt DESC LIMIT 1`, INCLUDING `failed` outcomes
+    /// (#385). This is the repair-loop's "last manifest": a `validation_failed`
+    /// run's row-level `manifest_hash` is NULL by design (staging re-zeroes
+    /// it), so [`Self::get_validation_attempt`] (ready-only) cannot serve it.
+    pub fn latest_validation_attempt(
+        &self,
+        run_id: &str,
+    ) -> StorageResult<Option<ValidationAttempt>> {
+        let connection = self.db.checkout()?;
+        connection
+            .query_row(
+                "SELECT id, run_id, revision, attempt, outcome, manifest_hash, manifest_json, created_at \
+                 FROM kpi_ingest_validation_attempts WHERE run_id = ?1 \
+                 ORDER BY revision DESC, attempt DESC LIMIT 1",
+                [run_id],
+                map_validation_attempt_row,
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
+    /// One validation attempt by its id, scoped to `run_id` (#385): the
+    /// manifest-section cursor pins the attempt it started paginating, and the
+    /// table is append-only — a pinned id always resolves for as long as the
+    /// run exists.
+    pub fn validation_attempt_by_id(
+        &self,
+        run_id: &str,
+        attempt_id: &str,
+    ) -> StorageResult<Option<ValidationAttempt>> {
+        let connection = self.db.checkout()?;
+        connection
+            .query_row(
+                "SELECT id, run_id, revision, attempt, outcome, manifest_hash, manifest_json, created_at \
+                 FROM kpi_ingest_validation_attempts WHERE run_id = ?1 AND id = ?2",
+                params![run_id, attempt_id],
+                map_validation_attempt_row,
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
     /// `{discovered, source_captured, extracting, staged, validation_failed,
     /// ready_to_commit} -> cancelled` (#360): system/user-initiated
     /// cancellation from ANY pre-commit state. Releases the lease
@@ -1333,6 +1405,10 @@ impl KpiIngestRunsStore {
     /// `staged`, the commit job's for `ready_to_commit` — ADR 0098 dec. 6).
     /// Releases the lease unconditionally. Never legal from `committing`.
     pub fn mark_failed(&self, id: &str, last_error: &str) -> StorageResult<()> {
+        // Write-boundary bound (#385): the MCP context read model embeds
+        // `RunStatus` verbatim, so every stored variable-length field must be
+        // bounded at its producer.
+        let last_error = bound_last_error(last_error);
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
@@ -4763,5 +4839,210 @@ mod tests {
             .list_pending_runs(Some("nope"), None, 10)
             .expect("filtered");
         assert!(filtered.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Validation-attempt readers (#385).
+    // -----------------------------------------------------------------------
+
+    fn seed_attempt_raw(
+        connection: &Connection,
+        id: &str,
+        run_id: &str,
+        revision: i64,
+        attempt: i64,
+        outcome: &str,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO kpi_ingest_validation_attempts
+                    (id, run_id, revision, attempt, outcome, manifest_hash, manifest_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    id,
+                    run_id,
+                    revision,
+                    attempt,
+                    outcome,
+                    format!("hash-{id}"),
+                    format!("{{\"runId\":\"{run_id}\",\"revision\":{revision}}}"),
+                ],
+            )
+            .expect("attempt row");
+    }
+
+    #[test]
+    fn latest_validation_attempt_is_highest_revision_then_attempt_including_failed() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "d1", "c1");
+        seed_run_raw(
+            &connection,
+            "r1",
+            "d1",
+            "c1",
+            "gpw_ifrs_annual@v1",
+            "staged",
+            None,
+            None,
+            None,
+        );
+        seed_attempt_raw(&connection, "a1", "r1", 1, 1, "ready");
+        seed_attempt_raw(&connection, "a2", "r1", 2, 1, "failed");
+        seed_attempt_raw(&connection, "a3", "r1", 2, 2, "failed");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        let latest = store
+            .latest_validation_attempt("r1")
+            .expect("read")
+            .expect("some");
+        assert_eq!(
+            latest.id, "a3",
+            "revision DESC, attempt DESC — failed counts"
+        );
+        assert_eq!(latest.outcome, "failed");
+
+        assert!(store
+            .latest_validation_attempt("nope")
+            .expect("read")
+            .is_none());
+    }
+
+    #[test]
+    fn validation_attempt_by_id_is_scoped_to_the_run() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "d1", "c1");
+        seed_document(&connection, "d2", "c1");
+        seed_run_raw(
+            &connection,
+            "r1",
+            "d1",
+            "c1",
+            "gpw_ifrs_annual@v1",
+            "staged",
+            None,
+            None,
+            None,
+        );
+        seed_run_raw(
+            &connection,
+            "r2",
+            "d2",
+            "c1",
+            "gpw_ifrs_annual@v1",
+            "staged",
+            None,
+            None,
+            None,
+        );
+        seed_attempt_raw(&connection, "a1", "r1", 1, 1, "ready");
+        let state = AppState::new(connection);
+        let store = state.kpi_ingest_runs();
+
+        assert_eq!(
+            store
+                .validation_attempt_by_id("r1", "a1")
+                .expect("read")
+                .expect("some")
+                .id,
+            "a1"
+        );
+        assert!(
+            store
+                .validation_attempt_by_id("r2", "a1")
+                .expect("read")
+                .is_none(),
+            "another run's attempt id never resolves"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Write-time bounds (#385).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mark_failed_bounds_last_error_at_2048_bytes_on_a_char_boundary() {
+        let (state, doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let run = store
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
+            .expect("create");
+
+        // 2-byte chars force the boundary walk; 1500 of them = 3000 bytes.
+        let long = "ą".repeat(1500);
+        store.mark_failed(&run.id, &long).expect("mark failed");
+
+        let after = store.get_run(&run.id).expect("read").expect("run");
+        let stored = after.last_error.expect("last_error");
+        assert!(
+            stored.len() <= 2048,
+            "stored {} bytes — the write boundary must bound it",
+            stored.len()
+        );
+        assert!(stored.ends_with('…'), "truncation carries the marker");
+
+        // A short error is stored verbatim (the existing "boom" contract).
+        {
+            let connection = state.checkout_for_tests().expect("raw connection");
+            seed_document(&connection, "d2", company);
+        }
+        let run2 = store
+            .create_run_if_absent(&new_run("d2", company, "gpw_ifrs_annual@v1"))
+            .expect("create");
+        store.mark_failed(&run2.id, "boom").expect("mark failed");
+        assert_eq!(
+            store
+                .get_run(&run2.id)
+                .expect("read")
+                .expect("run")
+                .last_error
+                .as_deref(),
+            Some("boom")
+        );
+    }
+
+    #[test]
+    fn create_run_refuses_an_expected_stamp_beyond_256_keys() {
+        let connection = open_in_memory_database().expect("db");
+        seed_company(&connection, "c1");
+        seed_document(&connection, "d1", "c1");
+        for i in 0..257 {
+            connection
+                .execute(
+                    "INSERT INTO kpi_definitions (id, scope, metric_key, label, value_kind)
+                     VALUES (?1, 'user', ?2, ?3, 'currency')",
+                    params![
+                        format!("kd{i}"),
+                        format!("custom_metric_{i}"),
+                        format!("Custom {i}"),
+                    ],
+                )
+                .expect("definition");
+            connection
+                .execute(
+                    "INSERT INTO kpi_relevance (id, company_id, definition_id, source, rank)
+                     VALUES (?1, 'c1', ?2, 'manual', 'primary')",
+                    params![format!("kr{i}"), format!("kd{i}")],
+                )
+                .expect("relevance");
+        }
+        let state = AppState::new(connection);
+
+        let error = state
+            .kpi_ingest_runs()
+            .create_run_if_absent(&new_run("d1", "c1", "gpw_ifrs_annual@v1"))
+            .expect_err("a 257+-key stamp is a data error, not a run");
+        assert!(
+            matches!(
+                error,
+                StorageError::InvalidKpiIngestRunValue {
+                    key: "expected_kpis",
+                    ..
+                }
+            ),
+            "got {error:?}"
+        );
     }
 }

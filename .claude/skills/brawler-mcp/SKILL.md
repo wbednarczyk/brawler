@@ -175,7 +175,7 @@ keeps it exact — do not hand-edit):
 
 <!-- BEGIN GENERATED MCP CATALOG — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->
 
-**Read tools** — always available once the server is on (46):
+**Read tools** — always available once the server is on (48):
 
 | Tool | What it does |
 | --- | --- |
@@ -224,6 +224,8 @@ keeps it exact — do not hand-edit):
 | `list_flagged_extraction_outcomes` | One company's extraction-coverage gaps: the fiscal periods where the deterministic pipeline emitted nothing (a flagged/failed outcome). Complements list_flagged_fact_provenance (flagged facts that DID emit) — the coverage-gap review surface. |
 | `list_unclassified_filings` | Official filings (ESPI/EBI) the deterministic rule classifier could not place — the explicit unclassified bucket, never guessed at. Optionally scoped to one company. Classify one with classify_filing. |
 | `list_pending_kpi_ingests` | List claimable KPI ingest runs (discovered/source_captured/extracting/validation_failed), newest first, keyset-paginated (limit ≤ 50, default 20). |
+| `get_kpi_ingest_context` | Everything one report's extraction needs, within hard budgets (≤256 KiB): run status, document metadata, the derived-period hint, the expected+minted KPI catalog, validator-equivalent plausibility evidence per slot, profile doctrine and repair-manifest access. Sections (catalog/plausibility/manifest) paginate via cursors; the manifest is served only via section calls. Pure read. |
+| `get_kpi_ingest_document` | Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed source blob, verified against the frozen sourceContentHash — the portable document delivery channel. Available once the source is captured. Pure read. |
 | `get_kpi_ingest_status` | Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease. |
 
 **Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (60):

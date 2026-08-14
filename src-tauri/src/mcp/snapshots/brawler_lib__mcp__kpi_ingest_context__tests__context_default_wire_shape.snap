@@ -1,0 +1,183 @@
+---
+source: src/mcp/kpi_ingest_context.rs
+expression: redacted
+---
+{
+  "catalog": [
+    {
+      "definitionId": "kpidef_net_profit",
+      "label": "Net profit",
+      "metricKey": "net_profit",
+      "origin": "seed",
+      "statementGroup": "income",
+      "unit": null,
+      "valueKind": "monetary"
+    },
+    {
+      "definitionId": "kpidef_operating_profit",
+      "label": "Operating profit (EBIT)",
+      "metricKey": "operating_profit",
+      "origin": "seed",
+      "statementGroup": "income",
+      "unit": null,
+      "valueKind": "monetary"
+    },
+    {
+      "definitionId": "kpidef_revenue",
+      "label": "Revenue",
+      "metricKey": "revenue",
+      "origin": "seed",
+      "statementGroup": "income",
+      "unit": null,
+      "valueKind": "monetary"
+    },
+    {
+      "definitionId": "kpidef_total_assets",
+      "label": "Total assets",
+      "metricKey": "total_assets",
+      "origin": "seed",
+      "statementGroup": "balance",
+      "unit": null,
+      "valueKind": "monetary"
+    },
+    {
+      "definitionId": "kpidef_total_equity",
+      "label": "Total equity",
+      "metricKey": "total_equity",
+      "origin": "seed",
+      "statementGroup": "balance",
+      "unit": null,
+      "valueKind": "monetary"
+    }
+  ],
+  "derivedPeriod": null,
+  "document": {
+    "byteSize": 29,
+    "contentType": null,
+    "localPath": "report_documents/doc1.pdf",
+    "title": null,
+    "url": "https://x/doc1.pdf"
+  },
+  "manifestAvailable": false,
+  "plausibility": [
+    {
+      "abstentionReason": "thin_history",
+      "median": null,
+      "metricKey": "net_profit",
+      "nonZeroCount": 0,
+      "recentPoints": [],
+      "slot": {
+        "attribution": "total",
+        "definitionId": "kpidef_net_profit",
+        "measureWindow": "flow",
+        "scope": "standalone"
+      },
+      "slotOrigin": "candidate"
+    },
+    {
+      "abstentionReason": "thin_history",
+      "median": null,
+      "metricKey": "operating_profit",
+      "nonZeroCount": 0,
+      "recentPoints": [],
+      "slot": {
+        "attribution": "total",
+        "definitionId": "kpidef_operating_profit",
+        "measureWindow": "flow",
+        "scope": "standalone"
+      },
+      "slotOrigin": "candidate"
+    },
+    {
+      "abstentionReason": "thin_history",
+      "median": null,
+      "metricKey": "revenue",
+      "nonZeroCount": 0,
+      "recentPoints": [],
+      "slot": {
+        "attribution": "total",
+        "definitionId": "kpidef_revenue",
+        "measureWindow": "flow",
+        "scope": "standalone"
+      },
+      "slotOrigin": "candidate"
+    },
+    {
+      "abstentionReason": "thin_history",
+      "median": null,
+      "metricKey": "total_assets",
+      "nonZeroCount": 0,
+      "recentPoints": [],
+      "slot": {
+        "attribution": "total",
+        "definitionId": "kpidef_total_assets",
+        "measureWindow": "point_in_time",
+        "scope": "standalone"
+      },
+      "slotOrigin": "candidate"
+    },
+    {
+      "abstentionReason": "thin_history",
+      "median": null,
+      "metricKey": "total_equity",
+      "nonZeroCount": 0,
+      "recentPoints": [],
+      "slot": {
+        "attribution": "total",
+        "definitionId": "kpidef_total_equity",
+        "measureWindow": "point_in_time",
+        "scope": "standalone"
+      },
+      "slotOrigin": "candidate"
+    }
+  ],
+  "profileRules": [
+    "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
+    "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
+    "net_profit and per-share figures are owners-of-parent when the report splits non-controlling interests; otherwise total.",
+    "Annual income and cash-flow lines are full-year flows; balance-sheet lines are point_in_time at period end.",
+    "Preserve rawValue exactly as printed and set unitScale from the statement header; normalizedValue is the value in base units (rawValue scaled by unitScale).",
+    "Cite every value: page plus table or row, with a short quote."
+  ],
+  "run": {
+    "attemptCount": 1,
+    "companyId": "c1",
+    "createdAt": "[timestamp]",
+    "dataQuality": "final",
+    "documentId": "doc1",
+    "execution": null,
+    "expectedKpis": {
+      "keys": [
+        "net_profit",
+        "operating_profit",
+        "revenue",
+        "total_assets",
+        "total_equity"
+      ],
+      "packVersion": "gpw_ifrs_annual@v1",
+      "schemaVersion": 1,
+      "source": "kpi_relevance+profile_pack"
+    },
+    "lastError": null,
+    "lease": {
+      "expiresAt": "[timestamp]",
+      "holder": "mcp:kpi_acquisition"
+    },
+    "manifestHash": null,
+    "missingReasons": {},
+    "period": {
+      "fiscalYear": 2025,
+      "periodId": null,
+      "periodType": "FY"
+    },
+    "profileVersion": "gpw_ifrs_annual@v1",
+    "progress": null,
+    "revision": 0,
+    "runId": "kpiing_[uid]",
+    "scope": "standalone",
+    "sourceContentHash": "de33edfe682b7788bbaf714482eb8c0b7d9f164da2b81ec7b6ed71a9ce720862",
+    "status": "extracting",
+    "updatedAt": "[timestamp]"
+  },
+  "truncated": {}
+}

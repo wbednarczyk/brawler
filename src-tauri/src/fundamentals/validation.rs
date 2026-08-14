@@ -403,7 +403,7 @@ const HISTORY_PLAUSIBILITY_RATIO: i64 = 100;
 
 /// Whether `metric_key`'s scale is set by corporate actions (splits) rather than
 /// performance, so a >100× move is legitimate and must not be flagged.
-fn is_split_sensitive_metric(metric_key: &str) -> bool {
+pub(crate) fn is_split_sensitive_metric(metric_key: &str) -> bool {
     matches!(
         metric_key,
         "eps_basic" | "eps_diluted" | "dividend_per_share" | "shares_outstanding"

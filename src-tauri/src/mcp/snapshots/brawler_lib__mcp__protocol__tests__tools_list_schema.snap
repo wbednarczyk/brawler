@@ -2619,6 +2619,81 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "list_pending_kpi_ingests"
       },
       {
+        "description": "Everything one report's extraction needs, within hard budgets (≤256 KiB): run status, document metadata, the derived-period hint, the expected+minted KPI catalog, validator-equivalent plausibility evidence per slot, profile doctrine and repair-manifest access. Sections (catalog/plausibility/manifest) paginate via cursors; the manifest is served only via section calls. Pure read.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "definitions": {
+            "ContextSection": {
+              "enum": [
+                "catalog",
+                "plausibility",
+                "manifest"
+              ],
+              "type": "string"
+            }
+          },
+          "properties": {
+            "cursor": {
+              "description": "Continuation cursor from a previous truncated response (section calls only).",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Page size for a section call (≤ the section's cap; default = the cap).",
+              "format": "int64",
+              "type": "integer"
+            },
+            "runId": {
+              "type": "string"
+            },
+            "section": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ContextSection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omit for the full default context; name a section to paginate it."
+            }
+          },
+          "required": [
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "get_kpi_ingest_context"
+      },
+      {
+        "description": "Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed source blob, verified against the frozen sourceContentHash — the portable document delivery channel. Available once the source is captured. Pure read.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "length": {
+              "format": "uint64",
+              "maximum": 262144,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "runId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "length",
+            "offset",
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "get_kpi_ingest_document"
+      },
+      {
         "description": "Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease.",
         "inputSchema": {
           "additionalProperties": false,

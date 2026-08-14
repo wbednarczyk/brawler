@@ -398,6 +398,16 @@ fn normalize_kpi_definition_statement_group(
     }
 }
 
+/// Write-boundary bound for a KPI definition identity string (metric key or a
+/// caller-supplied definition id): ≤256 UTF-8 bytes, non-empty, no control
+/// characters (U+0000–001F). The MCP context read model's response-budget
+/// arithmetic (contracts.md § Budgets) is provable only because identities are
+/// bounded at EVERY producer — [`create_kpi_definition`] and the research
+/// import, which inserts rows directly (#385).
+pub(super) fn kpi_definition_identity_ok(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 256 && !value.chars().any(|c| (c as u32) < 0x20)
+}
+
 pub(super) fn create_kpi_definition(
     connection: &Connection,
     input: NewKpiDefinition,
@@ -415,7 +425,7 @@ pub(super) fn create_kpi_definition(
     let origin = normalize_kpi_definition_origin(input.origin)?;
     let statement_group = normalize_kpi_definition_statement_group(input.statement_group)?;
 
-    if metric_key.is_empty() {
+    if !kpi_definition_identity_ok(&metric_key) {
         return Err(StorageError::InvalidFinancialsValue {
             key: "metric_key",
             value: metric_key,
@@ -1628,11 +1638,67 @@ pub(super) fn slot_metric_histories(
     exclude_fiscal_year: i64,
     exclude_period_type: &str,
 ) -> StorageResult<std::collections::HashMap<HistorySlotKey, Vec<Decimal>>> {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeSet, HashMap};
 
+    // Thin projection of `slot_history_points` (#385): same scan, same
+    // filters, same in-place collapse, same order — restricted to the
+    // requested slots and stripped to bare values. Requested-but-empty slots
+    // stay present as empty vecs (pre-seeded-keys-only shape).
     let mut result: HashMap<HistorySlotKey, Vec<Decimal>> =
         slots.iter().map(|key| (key.clone(), Vec::new())).collect();
     if slots.is_empty() {
+        return Ok(result);
+    }
+    let definition_ids: BTreeSet<String> = slots
+        .iter()
+        .map(|slot| slot.definition_id.clone())
+        .collect();
+    let mut points = slot_history_points(
+        connection,
+        company_id,
+        &definition_ids,
+        exclude_fiscal_year,
+        exclude_period_type,
+    )?;
+    for (key, values) in result.iter_mut() {
+        if let Some(slot_points) = points.remove(key) {
+            *values = slot_points.into_iter().map(|point| point.value).collect();
+        }
+    }
+    Ok(result)
+}
+
+/// One dated point of a slot history: the period identity travels with the
+/// value so read models can present chronology without re-joining facts
+/// (#385). Points keep the exact scan order and collapse of
+/// [`slot_metric_histories`] — which is a projection of this function, so the
+/// validator's history input and the MCP plausibility evidence cannot drift
+/// apart by construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryPoint {
+    pub fiscal_year: i64,
+    pub period_type: String,
+    pub period_end: Option<String>,
+    pub value: Decimal,
+}
+
+/// Slot-DISCOVERING twin of [`slot_metric_histories`]: buckets every slot the
+/// company's facts realize for the requested definition ids (the caller does
+/// not guess `attribution`/`measure_window` combinations), with the same
+/// filters (`variant='reported'`, the excluded `(fiscal_year, period_type)`
+/// periods dropped) and the same final-over-preliminary in-place collapse, in
+/// the same fact-iteration order.
+pub(super) fn slot_history_points(
+    connection: &Connection,
+    company_id: &str,
+    definition_ids: &std::collections::BTreeSet<String>,
+    exclude_fiscal_year: i64,
+    exclude_period_type: &str,
+) -> StorageResult<std::collections::HashMap<HistorySlotKey, Vec<HistoryPoint>>> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut result: HashMap<HistorySlotKey, Vec<HistoryPoint>> = HashMap::new();
+    if definition_ids.is_empty() {
         return Ok(result);
     }
 
@@ -1651,6 +1717,8 @@ pub(super) fn slot_metric_histories(
         })
         .map(|p| p.id.clone())
         .collect();
+    let period_by_id: HashMap<&str, &FinancialPeriod> =
+        periods.iter().map(|p| (p.id.as_str(), p)).collect();
 
     let facts = list_financial_facts(
         connection,
@@ -1670,18 +1738,20 @@ pub(super) fn slot_metric_histories(
         if excluded.contains(&fact.period_id) {
             continue;
         }
+        if !definition_ids.contains(&fact.definition_id) {
+            continue;
+        }
+        // FK guarantees the period row exists; a dangling reference would be
+        // a broken DB, and skipping it beats inventing a period identity.
+        let Some(period) = period_by_id.get(fact.period_id.as_str()) else {
+            continue;
+        };
         let key = HistorySlotKey {
             definition_id: fact.definition_id.clone(),
             statement_basis: fact.statement_basis.clone(),
             attribution_eff: fact.attribution.clone(),
             measure_window_eff: Some(fact.measure_window.clone()),
         };
-        // Only requested slots ever get an entry pre-seeded above; a fact
-        // whose slot dims weren't asked for is simply not this caller's
-        // concern (mirrors `metric_histories`' pre-seeded-keys-only shape).
-        if !result.contains_key(&key) {
-            continue;
-        }
         let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
             continue;
         };
@@ -1692,12 +1762,18 @@ pub(super) fn slot_metric_histories(
                 continue;
             }
         }
-        let values = result.get_mut(&key).expect("checked contains_key above");
+        let point = HistoryPoint {
+            fiscal_year: period.fiscal_year,
+            period_type: period.period_type.clone(),
+            period_end: period.period_end_date.clone(),
+            value,
+        };
+        let points = result.entry(key).or_default();
         match slot_index.get(&rank_key) {
-            Some(&idx) => values[idx] = value,
+            Some(&idx) => points[idx] = point,
             None => {
-                slot_index.insert(rank_key.clone(), values.len());
-                values.push(value);
+                slot_index.insert(rank_key.clone(), points.len());
+                points.push(point);
             }
         }
         slot_rank.insert(rank_key, rank);
@@ -1715,6 +1791,11 @@ pub struct CachedDerivedPeriod {
     pub period_type: Option<String>,
     pub period_end: Option<String>,
     pub derivation_version: i64,
+    /// `content_hash` of the exact `ReportDocument` snapshot the derivation
+    /// read (migration 0140). `None` on legacy rows — a provenance-aware
+    /// cache hit requires BOTH hashes present and equal (`None == None` never
+    /// counts), so legacy rows self-heal by re-deriving on their next read.
+    pub content_hash: Option<String>,
 }
 
 /// The five slot-dimension columns of a fact with per-column defaults applied —
@@ -2919,6 +3000,28 @@ impl FinancialsStore {
         )
     }
 
+    /// Slot-discovering dated histories for the MCP context read model (#385):
+    /// see [`slot_history_points`] for the exact relationship to
+    /// [`Self::slot_metric_histories`] (that function is a projection of this
+    /// one — same scan, filters, collapse and order).
+    pub fn slot_history_points(
+        &self,
+        company_id: &str,
+        definition_ids: &std::collections::BTreeSet<String>,
+        exclude_fiscal_year: i64,
+        exclude_period_type: &str,
+    ) -> StorageResult<std::collections::HashMap<HistorySlotKey, Vec<HistoryPoint>>> {
+        let connection = self.db.checkout()?;
+
+        slot_history_points(
+            &connection,
+            company_id,
+            definition_ids,
+            exclude_fiscal_year,
+            exclude_period_type,
+        )
+    }
+
     /// The cached period derivation for one document, if any (migration 0109).
     /// A hit lets `derive_report_period` skip the file read + text extraction the
     /// last-resort cover-page tier would otherwise run on every call.
@@ -2930,7 +3033,8 @@ impl FinancialsStore {
 
         connection
             .query_row(
-                "SELECT has_period, fiscal_year, period_type, period_end, derivation_version
+                "SELECT has_period, fiscal_year, period_type, period_end, derivation_version,
+                        content_hash
                  FROM document_derived_periods
                  WHERE report_document_id = ?1",
                 [report_document_id],
@@ -2941,6 +3045,7 @@ impl FinancialsStore {
                         period_type: row.get(2)?,
                         period_end: row.get(3)?,
                         derivation_version: row.get(4)?,
+                        content_hash: row.get(5)?,
                     })
                 },
             )
@@ -2958,6 +3063,7 @@ impl FinancialsStore {
         report_document_id: &str,
         period: Option<(i64, &str, &str)>,
         derivation_version: i64,
+        content_hash: Option<&str>,
     ) -> StorageResult<()> {
         let connection = self.db.checkout()?;
 
@@ -2968,14 +3074,15 @@ impl FinancialsStore {
         connection.execute(
             "INSERT INTO document_derived_periods (
                 report_document_id, has_period, fiscal_year, period_type, period_end,
-                derivation_version, derived_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                derivation_version, content_hash, derived_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             ON CONFLICT(report_document_id) DO UPDATE SET
                 has_period = excluded.has_period,
                 fiscal_year = excluded.fiscal_year,
                 period_type = excluded.period_type,
                 period_end = excluded.period_end,
                 derivation_version = excluded.derivation_version,
+                content_hash = excluded.content_hash,
                 derived_at = excluded.derived_at",
             params![
                 report_document_id,
@@ -2983,7 +3090,8 @@ impl FinancialsStore {
                 fiscal_year,
                 period_type,
                 period_end,
-                derivation_version
+                derivation_version,
+                content_hash
             ],
         )?;
         Ok(())

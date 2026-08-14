@@ -232,7 +232,7 @@ impl Code {
     }
 }
 
-fn abstention_reason_str(reason: AbstentionReason) -> &'static str {
+pub(crate) fn abstention_reason_str(reason: AbstentionReason) -> &'static str {
     match reason {
         AbstentionReason::ThinHistory => "thin_history",
         AbstentionReason::SplitSensitive => "split_sensitive",
@@ -240,7 +240,7 @@ fn abstention_reason_str(reason: AbstentionReason) -> &'static str {
     }
 }
 
-fn decimal_str(value: Decimal) -> String {
+pub(crate) fn decimal_str(value: Decimal) -> String {
     value.normalize().to_string()
 }
 
