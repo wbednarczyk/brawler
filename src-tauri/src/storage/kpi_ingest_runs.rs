@@ -219,13 +219,212 @@ fn lease_is_live_on_connection(conn: &Connection, id: &str, holder: &str) -> Sto
     .map_err(StorageError::from)
 }
 
-/// The three lease-failure scenarios (wrong holder / expired / absent) all
-/// collapse to the SAME typed refusal — `RunLeaseNotHeld` — across every
-/// agent-facing intent (#360 F9 r2 shared corpus).
+/// The residual lease-failure shape — an absent lease, or a foreign lease
+/// that is no longer live (#360 F9 r2 shared corpus). The two agent-facing
+/// specializations split out in #384: [`lease_refusal`] classifies a caller's
+/// own expired lease as `RunLeaseExpired` and a LIVE foreign lease as
+/// `RunTakenOver` (the frozen ADR 0099 remedies).
 fn lease_not_held(id: &str, holder: &str) -> StorageError {
     StorageError::RunLeaseNotHeld {
         id: id.to_owned(),
         holder: holder.to_owned(),
+    }
+}
+
+/// Three-way lease-refusal classification (ADR 0099, #384): the caller's OWN
+/// lease expired → `RunLeaseExpired` (retryable via `start_kpi_ingest(runId)`);
+/// a LIVE foreign lease → `RunTakenOver` (abandon); anything else (absent, or
+/// foreign-and-expired) → `RunLeaseNotHeld`. The TTL is not a correctness
+/// mechanism — a lease may lapse between claim and any later guarded step.
+fn lease_refusal(
+    conn: &Connection,
+    raw: &RawRun,
+    id: &str,
+    holder: &str,
+) -> StorageResult<StorageError> {
+    Ok(match raw.lease_holder.as_deref() {
+        Some(current) if current == holder => {
+            if lease_is_live_on_connection(conn, id, current)? {
+                // A live same-holder lease never reaches a refusal branch on
+                // its own; a racing writer is surfaced as the residual shape.
+                lease_not_held(id, holder)
+            } else {
+                StorageError::RunLeaseExpired {
+                    id: id.to_owned(),
+                    holder: holder.to_owned(),
+                }
+            }
+        }
+        Some(current) => {
+            if lease_is_live_on_connection(conn, id, current)? {
+                StorageError::RunTakenOver {
+                    id: id.to_owned(),
+                    holder: current.to_owned(),
+                }
+            } else {
+                lease_not_held(id, holder)
+            }
+        }
+        None => lease_not_held(id, holder),
+    })
+}
+
+/// The first set-once context field whose stored value differs from the
+/// requested one ([`KpiIngestRunsStore::attach_run_context`]'s 0-row
+/// classification) — field order scope → data_quality → period.
+fn classify_context_conflict(
+    raw: &RawRun,
+    ctx: &RunContextAttach<'_>,
+    id: &str,
+) -> Option<StorageError> {
+    if let (Some(requested), Some(existing)) = (ctx.scope, raw.scope.as_deref()) {
+        if requested != existing {
+            return Some(StorageError::RunContextValueConflict {
+                id: id.to_owned(),
+                key: "scope",
+                existing: existing.to_owned(),
+                requested: requested.to_owned(),
+            });
+        }
+    }
+    if let (Some(requested), Some(existing)) = (ctx.data_quality, raw.data_quality.as_deref()) {
+        if requested != existing {
+            return Some(StorageError::RunContextValueConflict {
+                id: id.to_owned(),
+                key: "data_quality",
+                existing: existing.to_owned(),
+                requested: requested.to_owned(),
+            });
+        }
+    }
+    if let Some((fy, pt)) = ctx.period {
+        if let (Some(existing_fy), Some(existing_pt)) =
+            (raw.period_fiscal_year, raw.period_type.as_deref())
+        {
+            if existing_fy != fy || existing_pt != pt {
+                return Some(StorageError::RunContextValueConflict {
+                    id: id.to_owned(),
+                    key: "period",
+                    existing: format!("{existing_fy}/{existing_pt}"),
+                    requested: format!("{fy}/{pt}"),
+                });
+            }
+        }
+    }
+    None
+}
+
+/// [`KpiIngestRunsStore::claim_run`]'s body, parameterized on the transaction
+/// clock — production passes a freshly-read `strftime` timestamp, tests a
+/// fixed one (the deterministic seam for the `lease_expires_at == now`
+/// boundary: `>` renews, `<=` claims).
+fn claim_run_on_connection(
+    tx: &Connection,
+    id: &str,
+    holder: &str,
+    lease_seconds: i64,
+    now: &str,
+) -> StorageResult<KpiIngestRun> {
+    let modifier = format!("+{lease_seconds} seconds");
+
+    // (a) Renewal: same holder, live lease — the keepalive. No attempt++.
+    let renewal_sql = format!(
+        "UPDATE kpi_ingest_runs
+         SET lease_expires_at = strftime('%Y-%m-%dT%H:%M:%fZ', ?4, ?3),
+             last_heartbeat_at = ?4,
+             updated_at = ?4
+         WHERE id = ?1 AND status IN {CLAIMABLE_STATUSES_SQL}
+           AND lease_holder = ?2 AND lease_expires_at > ?4
+         RETURNING {RUN_COLUMNS}"
+    );
+    let renewed: Option<RawRun> = tx
+        .query_row(
+            &renewal_sql,
+            params![id, holder, modifier, now],
+            map_raw_row,
+        )
+        .optional()?;
+    if let Some(raw) = renewed {
+        return raw_to_domain(raw);
+    }
+
+    // (b) Claim: absent or expired lease (any holder). attempt++.
+    let claim_sql = format!(
+        "UPDATE kpi_ingest_runs
+         SET lease_holder = ?2,
+             lease_expires_at = strftime('%Y-%m-%dT%H:%M:%fZ', ?4, ?3),
+             last_heartbeat_at = ?4,
+             attempt_count = attempt_count + 1,
+             updated_at = ?4
+         WHERE id = ?1 AND status IN {CLAIMABLE_STATUSES_SQL}
+           AND (lease_expires_at IS NULL OR lease_expires_at <= ?4)
+         RETURNING {RUN_COLUMNS}"
+    );
+    let claimed: Option<RawRun> = tx
+        .query_row(&claim_sql, params![id, holder, modifier, now], map_raw_row)
+        .optional()?;
+    if let Some(raw) = claimed {
+        return raw_to_domain(raw);
+    }
+
+    // 0 rows on both branches — classify on the same transaction.
+    let Some(raw) = read_raw_run(tx, id)? else {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    };
+    let status = KpiIngestRunState::parse(&raw.status)?;
+    if !status.is_agent_claimable() {
+        return Err(StorageError::RunNotClaimable {
+            id: id.to_owned(),
+            status: status.as_str().to_owned(),
+        });
+    }
+    // Claimable + neither branch matched ⇒ a lease is live under another
+    // holder as of THIS transaction's clock (a live same-holder lease would
+    // have renewed). Compare against the same bound `now` for consistency.
+    match (raw.lease_holder.as_deref(), raw.lease_expires_at.as_deref()) {
+        (Some(current), Some(expires)) if current != holder && expires > now => {
+            Err(StorageError::RunTakenOver {
+                id: id.to_owned(),
+                holder: current.to_owned(),
+            })
+        }
+        _ => Err(lease_not_held(id, holder)),
+    }
+}
+
+/// Vocabulary validation shared by [`KpiIngestRunsStore::create_run_if_absent`]
+/// and [`KpiIngestRunsStore::attach_run_context`] (#384) — one place, both
+/// writers.
+fn validate_scope_value(scope: &str) -> StorageResult<()> {
+    if matches!(scope, "standalone" | "consolidated") {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidKpiIngestRunValue {
+            key: "scope",
+            value: scope.to_owned(),
+        })
+    }
+}
+
+fn validate_data_quality_value(quality: &str) -> StorageResult<()> {
+    if matches!(quality, "final" | "preliminary" | "estimated") {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidKpiIngestRunValue {
+            key: "data_quality",
+            value: quality.to_owned(),
+        })
+    }
+}
+
+fn validate_period_type_value(period_type: &str) -> StorageResult<()> {
+    if PERIOD_TYPE_VALUES.contains(&period_type) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidKpiIngestRunValue {
+            key: "period_type",
+            value: period_type.to_owned(),
+        })
     }
 }
 
@@ -414,6 +613,17 @@ pub struct NewKpiIngestRun {
     pub data_quality: Option<String>,
     pub period_fiscal_year: Option<i64>,
     pub period_type: Option<String>,
+}
+
+/// Set-once context values [`KpiIngestRunsStore::attach_run_context`] fills on
+/// a claimed run (#384): each `Some` either fills a NULL column or must equal
+/// the stored value. `period` carries the all-or-none natural-key descriptor
+/// `(fiscal_year, period_type)`.
+#[derive(Debug, Clone, Default)]
+pub struct RunContextAttach<'a> {
+    pub scope: Option<&'a str>,
+    pub data_quality: Option<&'a str>,
+    pub period: Option<(i64, &'a str)>,
 }
 
 /// A stored run (the full read model). No `ts_rs` — this is a headless
@@ -610,20 +820,10 @@ impl KpiIngestRunsStore {
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
         if let Some(scope) = new_run.scope.as_deref() {
-            if !matches!(scope, "standalone" | "consolidated") {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "scope",
-                    value: scope.to_owned(),
-                });
-            }
+            validate_scope_value(scope)?;
         }
         if let Some(quality) = new_run.data_quality.as_deref() {
-            if !matches!(quality, "final" | "preliminary" | "estimated") {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "data_quality",
-                    value: quality.to_owned(),
-                });
-            }
+            validate_data_quality_value(quality)?;
         }
         if !super::kpi_ingest_profiles::is_registered_profile_version(&new_run.profile_version) {
             return Err(StorageError::InvalidKpiIngestRunValue {
@@ -638,12 +838,7 @@ impl KpiIngestRunsStore {
         match (new_run.period_fiscal_year, new_run.period_type.as_deref()) {
             (None, None) => {}
             (Some(_), Some(period_type)) => {
-                if !PERIOD_TYPE_VALUES.contains(&period_type) {
-                    return Err(StorageError::InvalidKpiIngestRunValue {
-                        key: "period_type",
-                        value: period_type.to_owned(),
-                    });
-                }
+                validate_period_type_value(period_type)?;
             }
             _ => {
                 return Err(StorageError::InvalidKpiIngestRunValue {
@@ -893,7 +1088,7 @@ impl KpiIngestRunsStore {
                 Some(existing) if existing != source_content_hash => {
                     Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() })
                 }
-                _ => Err(lease_not_held(id, holder)),
+                _ => Err(lease_refusal(&tx, &raw, id, holder)?),
             }
         };
         tx.commit()?;
@@ -942,7 +1137,7 @@ impl KpiIngestRunsStore {
         } else if raw.lease_holder.as_deref() != Some(holder)
             || !lease_is_live_on_connection(&tx, id, holder)?
         {
-            Err(lease_not_held(id, holder))
+            Err(lease_refusal(&tx, &raw, id, holder)?)
         } else if raw.scope.is_none() {
             Err(StorageError::RunTransitionPrerequisiteMissing {
                 id: id.to_owned(),
@@ -1218,6 +1413,201 @@ impl KpiIngestRunsStore {
                 rows
             }
         };
+        raws.into_iter().map(raw_to_domain).collect()
+    }
+
+    /// Targeted atomic claim/renewal of ONE run (ADR 0099 dec. 4, #384) —
+    /// `start_kpi_ingest`'s lease primitive. Three-way semantics: the same
+    /// holder with a LIVE lease renews (expiry + heartbeat extended, NO
+    /// `attempt_count` increment — the explicit keepalive); an absent or
+    /// expired lease (any holder, including the caller's own expired one — an
+    /// expired lease is never resurrected, mirroring [`Self::heartbeat`]) is
+    /// claimed with `attempt_count + 1`; a LIVE foreign lease refuses with
+    /// `RunTakenOver`. A non-claimable status refuses with `RunNotClaimable`
+    /// (a claim is not a state transition — `InvalidRunTransition` would have
+    /// to lie about a `to` state). The transaction reads `now` ONCE and binds
+    /// it in every predicate/write — one consistent timestamp per call.
+    pub fn claim_run(
+        &self,
+        id: &str,
+        holder: &str,
+        lease_seconds: i64,
+    ) -> StorageResult<KpiIngestRun> {
+        if lease_seconds <= 0 {
+            return Err(StorageError::InvalidRunLeaseDuration {
+                seconds: lease_seconds,
+            });
+        }
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let now: String =
+            tx.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
+                row.get(0)
+            })?;
+        let run = claim_run_on_connection(&tx, id, holder, lease_seconds, &now)?;
+        tx.commit()?;
+        Ok(run)
+    }
+
+    /// Set-once attach of the run's extraction context (ADR 0099, #384) —
+    /// `start_kpi_ingest`'s resume path fills whatever `create_run_if_absent`
+    /// left NULL. Requires a live lease for `holder`; legal in the claimable
+    /// states. Each supplied value either fills a NULL column or matches the
+    /// stored value (idempotent); a differing value is a typed
+    /// `RunContextValueConflict`. The period descriptor is all-or-none by
+    /// construction and cross-checked against an existing `period_id` pin.
+    /// All-`None` input returns without touching the database.
+    pub fn attach_run_context(
+        &self,
+        id: &str,
+        holder: &str,
+        ctx: &RunContextAttach<'_>,
+    ) -> StorageResult<()> {
+        if ctx.scope.is_none() && ctx.data_quality.is_none() && ctx.period.is_none() {
+            return Ok(());
+        }
+        if let Some(scope) = ctx.scope {
+            validate_scope_value(scope)?;
+        }
+        if let Some(quality) = ctx.data_quality {
+            validate_data_quality_value(quality)?;
+        }
+        if let Some((_, period_type)) = ctx.period {
+            validate_period_type_value(period_type)?;
+        }
+        let (fiscal_year, period_type) = match ctx.period {
+            Some((fy, pt)) => (Some(fy), Some(pt)),
+            None => (None, None),
+        };
+
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        // Cross-check an attached descriptor against an existing period pin
+        // BEFORE the write (inside the same Immediate transaction): the
+        // descriptor must name the pinned period's natural key.
+        if let Some((fy, pt)) = ctx.period {
+            let pinned: Option<(i64, String)> = tx
+                .query_row(
+                    "SELECT p.fiscal_year, p.period_type
+                     FROM kpi_ingest_runs r JOIN financial_periods p ON p.id = r.period_id
+                     WHERE r.id = ?1",
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            if let Some((pinned_fy, pinned_pt)) = pinned {
+                if pinned_fy != fy || pinned_pt != pt {
+                    return Err(StorageError::RunContextValueConflict {
+                        id: id.to_owned(),
+                        key: "period",
+                        existing: format!("{pinned_fy}/{pinned_pt}"),
+                        requested: format!("{fy}/{pt}"),
+                    });
+                }
+            }
+        }
+
+        let sql = format!(
+            "UPDATE kpi_ingest_runs SET
+                scope = COALESCE(scope, ?2),
+                data_quality = COALESCE(data_quality, ?3),
+                period_fiscal_year = COALESCE(period_fiscal_year, ?4),
+                period_type = COALESCE(period_type, ?5),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?1 AND status IN {CLAIMABLE_STATUSES_SQL}
+               AND lease_holder = ?6
+               AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+               AND (?2 IS NULL OR scope IS NULL OR scope = ?2)
+               AND (?3 IS NULL OR data_quality IS NULL OR data_quality = ?3)
+               AND (?4 IS NULL OR (period_fiscal_year IS NULL AND period_type IS NULL)
+                    OR (period_fiscal_year = ?4 AND period_type = ?5))"
+        );
+        let changed = tx.execute(
+            &sql,
+            params![
+                id,
+                ctx.scope,
+                ctx.data_quality,
+                fiscal_year,
+                period_type,
+                holder
+            ],
+        )?;
+        if changed == 1 {
+            tx.commit()?;
+            return Ok(());
+        }
+
+        let Some(raw) = read_raw_run(&tx, id)? else {
+            return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+        };
+        let status = KpiIngestRunState::parse(&raw.status)?;
+        let result = if !status.is_agent_claimable() {
+            Err(StorageError::RunNotClaimable {
+                id: id.to_owned(),
+                status: status.as_str().to_owned(),
+            })
+        } else if raw.lease_holder.as_deref() != Some(holder)
+            || !lease_is_live_on_connection(&tx, id, holder)?
+        {
+            Err(lease_refusal(&tx, &raw, id, holder)?)
+        } else if let Some(conflict) = classify_context_conflict(&raw, ctx, id) {
+            Err(conflict)
+        } else {
+            // Every guard re-reads as satisfied — a write raced the
+            // classification window; surface the residual lease refusal.
+            Err(lease_not_held(id, holder))
+        };
+        tx.commit()?;
+        result
+    }
+
+    /// Keyset-paginated pending list (#384): pending = the claimable states.
+    /// `after` is the exclusive `(created_at, id)` cursor of the previous
+    /// page's last row; ordering is `created_at DESC, id DESC` (uniform
+    /// direction — deliberately diverging from [`Self::list_runs`]' `id ASC`
+    /// tie-break, which cannot express a single row-value comparison).
+    pub fn list_pending_runs(
+        &self,
+        company_id: Option<&str>,
+        after: Option<(&str, &str)>,
+        limit: usize,
+    ) -> StorageResult<Vec<KpiIngestRun>> {
+        let connection = self.db.checkout()?;
+        // ponytail: unfiltered pages scan a tens-of-rows table; add a
+        // (created_at DESC, id DESC) index if this table ever grows hot.
+        let mut sql = format!(
+            "SELECT {RUN_COLUMNS} FROM kpi_ingest_runs
+             WHERE status IN {CLAIMABLE_STATUSES_SQL}"
+        );
+        let mut parameters: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(company) = company_id {
+            sql.push_str(&format!(" AND company_id = ?{}", parameters.len() + 1));
+            parameters.push(Box::new(company.to_owned()));
+        }
+        if let Some((created_at, id)) = after {
+            sql.push_str(&format!(
+                " AND (created_at, id) < (?{}, ?{})",
+                parameters.len() + 1,
+                parameters.len() + 2
+            ));
+            parameters.push(Box::new(created_at.to_owned()));
+            parameters.push(Box::new(id.to_owned()));
+        }
+        sql.push_str(&format!(
+            " ORDER BY created_at DESC, id DESC LIMIT ?{}",
+            parameters.len() + 1
+        ));
+        parameters.push(Box::new(limit as i64));
+
+        let mut statement = connection.prepare(&sql)?;
+        let raws: Vec<RawRun> = statement
+            .query_map(
+                rusqlite::params_from_iter(parameters.iter().map(|p| p.as_ref())),
+                map_raw_row,
+            )?
+            .collect::<Result<_, _>>()?;
         raws.into_iter().map(raw_to_domain).collect()
     }
 
@@ -3074,10 +3464,29 @@ mod tests {
     }
 
     // --- Test 3: caller/lease — shared table-driven corpus for the three
-    // agent-facing intents (F9 r2) ---------------------------------------
+    // agent-facing intents (F9 r2; #384 splits the refined classification:
+    // a live FOREIGN lease → RunTakenOver and the caller's own EXPIRED lease
+    // → RunLeaseExpired on the lease_refusal-classified intents, while
+    // staging keeps the residual RunLeaseNotHeld until #386's tools land) ---
 
     #[test]
     fn agent_intents_share_the_same_three_lease_failure_scenarios() {
+        fn assert_expected(scenario: Scenario, error: &StorageError, refined: bool) {
+            match (scenario, refined) {
+                (Scenario::WrongHolder, true) => assert!(
+                    matches!(error, StorageError::RunTakenOver { .. }),
+                    "live foreign lease → RunTakenOver, got {error:?}"
+                ),
+                (Scenario::Expired, true) => assert!(
+                    matches!(error, StorageError::RunLeaseExpired { .. }),
+                    "own expired lease → RunLeaseExpired, got {error:?}"
+                ),
+                _ => assert!(
+                    matches!(error, StorageError::RunLeaseNotHeld { .. }),
+                    "residual shape, got {error:?}"
+                ),
+            }
+        }
         #[derive(Clone, Copy)]
         enum Scenario {
             WrongHolder,
@@ -3127,7 +3536,7 @@ mod tests {
                 let error = store
                     .mark_source_captured(&run.id, "worker-a", "hash1")
                     .expect_err("lease scenario must refuse");
-                assert!(matches!(error, StorageError::RunLeaseNotHeld { .. }));
+                assert_expected(scenario, &error, true);
             }
             // begin_extracting.
             {
@@ -3144,7 +3553,7 @@ mod tests {
                 let error = store
                     .begin_extracting(&run.id, "worker-a", "instr-1")
                     .expect_err("lease scenario must refuse");
-                assert!(matches!(error, StorageError::RunLeaseNotHeld { .. }));
+                assert_expected(scenario, &error, true);
             }
             // stage_observations (back-fit, #360).
             {
@@ -3175,7 +3584,9 @@ mod tests {
                     .kpi_ingest_staging()
                     .stage_observations("run1", "worker-a", vec![one_test_observation()])
                     .expect_err("lease scenario must refuse");
-                assert!(matches!(error, StorageError::RunLeaseNotHeld { .. }));
+                // Staging keeps the residual shape until #386's stage tool
+                // adopts the refined classifier.
+                assert_expected(scenario, &error, false);
             }
         }
     }
@@ -3851,5 +4262,506 @@ mod tests {
             .expect_err("committing must refuse mark_failed");
         assert!(matches!(error, StorageError::InvalidRunTransition { .. }));
         assert_eq!(before, store.get_run("run1").expect("get").expect("some"));
+    }
+
+    // ---- claim_run / lease classification / attach / list_pending (#384) ----
+
+    fn expire_lease_raw(state: &AppState, id: &str) {
+        let connection = state.checkout_for_tests().expect("raw connection");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET lease_expires_at = \
+                 strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 seconds') WHERE id = ?1",
+                [id],
+            )
+            .expect("expire lease");
+    }
+
+    #[test]
+    fn claim_run_claims_renews_and_counts_attempts() {
+        let (state, doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let run = store
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
+            .expect("create");
+        assert_eq!(run.attempt_count, 0);
+
+        // First claim: attempt 0 -> 1.
+        let claimed = store.claim_run(&run.id, "mcp:full", 3600).expect("claim");
+        assert_eq!(claimed.attempt_count, 1);
+        assert_eq!(claimed.lease_holder.as_deref(), Some("mcp:full"));
+        let first_expiry = claimed.lease_expires_at.clone().expect("lease set");
+
+        // Same-holder live re-claim = renewal (the keepalive): NO attempt++.
+        let renewed = store.claim_run(&run.id, "mcp:full", 7200).expect("renew");
+        assert_eq!(renewed.attempt_count, 1, "keepalive never increments");
+        assert!(
+            renewed.lease_expires_at.expect("lease") > first_expiry,
+            "renewal extends the lease"
+        );
+
+        // Same-holder EXPIRED re-claim is a fresh claim (never resurrected).
+        expire_lease_raw(&state, &run.id);
+        let reclaimed = store.claim_run(&run.id, "mcp:full", 3600).expect("reclaim");
+        assert_eq!(reclaimed.attempt_count, 2);
+    }
+
+    /// The issue-named takeover collision, on the deterministic fixed clock:
+    /// just BEFORE expiry the foreign claim refuses (`RunTakenOver`), AT the
+    /// exact expiry instant it succeeds (the `<=` claim branch) with one
+    /// increment, and the ousted holder then gets `RunTakenOver` back.
+    #[test]
+    fn claim_run_takeover_collision_around_the_expiry_instant() {
+        let (state, doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let run = store
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
+            .expect("create");
+        {
+            let connection = state.checkout_for_tests().expect("raw connection");
+            connection
+                .execute(
+                    "UPDATE kpi_ingest_runs SET lease_holder = 'mcp:full', \
+                     lease_expires_at = '2026-01-01T00:00:00.000Z', \
+                     last_heartbeat_at = '2026-01-01T00:00:00.000Z', \
+                     attempt_count = 1 WHERE id = ?1",
+                    [&run.id],
+                )
+                .expect("seed lease");
+
+            // Just before expiry: the lease is live -> RunTakenOver.
+            let error = claim_run_on_connection(
+                &connection,
+                &run.id,
+                "mcp:kpi_acquisition",
+                60,
+                "2025-12-31T23:59:59.999Z",
+            )
+            .expect_err("live foreign lease must refuse");
+            assert!(
+                matches!(error, StorageError::RunTakenOver { ref holder, .. } if holder == "mcp:full"),
+                "got {error:?}"
+            );
+
+            // AT the expiry instant: `lease_expires_at <= now` claims.
+            let claimed = claim_run_on_connection(
+                &connection,
+                &run.id,
+                "mcp:kpi_acquisition",
+                60,
+                "2026-01-01T00:00:00.000Z",
+            )
+            .expect("equality is the claim branch");
+            assert_eq!(claimed.attempt_count, 2, "exactly one increment");
+            assert_eq!(claimed.lease_holder.as_deref(), Some("mcp:kpi_acquisition"));
+
+            // The ousted holder now sees the live takeover.
+            let error = claim_run_on_connection(
+                &connection,
+                &run.id,
+                "mcp:full",
+                60,
+                "2026-01-01T00:00:30.000Z",
+            )
+            .expect_err("live foreign lease");
+            assert!(matches!(
+                error,
+                StorageError::RunTakenOver { ref holder, .. } if holder == "mcp:kpi_acquisition"
+            ));
+        }
+    }
+
+    #[test]
+    fn claim_run_refuses_non_claimable_unknown_and_bad_duration() {
+        let (state, doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        {
+            let connection = state.checkout_for_tests().expect("raw connection");
+            seed_run_raw(
+                &connection,
+                "run-staged",
+                doc,
+                company,
+                "p1",
+                "staged",
+                None,
+                None,
+                None,
+            );
+            seed_document(&connection, "doc2", company);
+            seed_run_raw(
+                &connection,
+                "run-done",
+                "doc2",
+                company,
+                "p1",
+                "complete",
+                None,
+                None,
+                None,
+            );
+        }
+        assert!(matches!(
+            store
+                .claim_run("run-staged", "mcp:full", 60)
+                .expect_err("staged is not claimable"),
+            StorageError::RunNotClaimable { ref status, .. } if status == "staged"
+        ));
+        assert!(matches!(
+            store
+                .claim_run("run-done", "mcp:full", 60)
+                .expect_err("terminal is not claimable"),
+            StorageError::RunNotClaimable { .. }
+        ));
+        assert!(matches!(
+            store
+                .claim_run("missing", "mcp:full", 60)
+                .expect_err("unknown id"),
+            StorageError::KpiIngestRunNotFound { .. }
+        ));
+        assert!(matches!(
+            store
+                .claim_run("run-staged", "mcp:full", 0)
+                .expect_err("bad duration"),
+            StorageError::InvalidRunLeaseDuration { seconds: 0 }
+        ));
+    }
+
+    /// The full three-way refusal classification, exercised through every
+    /// guarded step that uses `lease_refusal` (claim_run itself can only ever
+    /// demonstrate `RunTakenOver` — absent/expired leases are successful
+    /// claims by design).
+    #[test]
+    fn lease_refusals_classify_three_ways_through_attach_mark_and_begin() {
+        let (state, doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let run = store
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
+            .expect("create");
+        let attach_scope = RunContextAttach {
+            scope: Some("standalone"),
+            ..RunContextAttach::default()
+        };
+
+        // (a) Same holder, expired -> RunLeaseExpired.
+        store.claim_run(&run.id, "mcp:full", 3600).expect("claim");
+        expire_lease_raw(&state, &run.id);
+        assert!(matches!(
+            store
+                .attach_run_context(&run.id, "mcp:full", &attach_scope)
+                .expect_err("expired own lease"),
+            StorageError::RunLeaseExpired { .. }
+        ));
+        assert!(matches!(
+            store
+                .mark_source_captured(&run.id, "mcp:full", "hash-x")
+                .expect_err("expired own lease"),
+            StorageError::RunLeaseExpired { .. }
+        ));
+
+        // (b) Live foreign lease -> RunTakenOver.
+        store
+            .claim_run(&run.id, "mcp:kpi_acquisition", 3600)
+            .expect("takeover after expiry succeeds");
+        assert!(matches!(
+            store
+                .attach_run_context(&run.id, "mcp:full", &attach_scope)
+                .expect_err("live foreign lease"),
+            StorageError::RunTakenOver { ref holder, .. } if holder == "mcp:kpi_acquisition"
+        ));
+        assert!(matches!(
+            store
+                .mark_source_captured(&run.id, "mcp:full", "hash-x")
+                .expect_err("live foreign lease"),
+            StorageError::RunTakenOver { .. }
+        ));
+
+        // (c) Absent lease -> RunLeaseNotHeld.
+        store
+            .release_lease(&run.id, "mcp:kpi_acquisition")
+            .expect("release");
+        assert!(matches!(
+            store
+                .attach_run_context(&run.id, "mcp:full", &attach_scope)
+                .expect_err("no lease at all"),
+            StorageError::RunLeaseNotHeld { .. }
+        ));
+
+        // begin_extracting classifies the same three ways (fresh run driven to
+        // source_captured first).
+        let connection = state.checkout_for_tests().expect("raw connection");
+        seed_document(&connection, "doc-b", company);
+        drop(connection);
+        let run2 = store
+            .create_run_if_absent(&NewKpiIngestRun {
+                report_document_id: "doc-b".to_owned(),
+                company_id: company.to_owned(),
+                period_id: None,
+                profile_version: "gpw_ifrs_annual@v1".to_owned(),
+                scope: Some("standalone".to_owned()),
+                data_quality: Some("final".to_owned()),
+                period_fiscal_year: Some(2025),
+                period_type: Some("FY".to_owned()),
+            })
+            .expect("create 2");
+        store.claim_run(&run2.id, "mcp:full", 3600).expect("claim");
+        store
+            .mark_source_captured(&run2.id, "mcp:full", "hash-2")
+            .expect("capture");
+        expire_lease_raw(&state, &run2.id);
+        assert!(matches!(
+            store
+                .begin_extracting(&run2.id, "mcp:full", "v1")
+                .expect_err("expired own lease"),
+            StorageError::RunLeaseExpired { .. }
+        ));
+        store
+            .claim_run(&run2.id, "mcp:kpi_acquisition", 3600)
+            .expect("takeover");
+        assert!(matches!(
+            store
+                .begin_extracting(&run2.id, "mcp:full", "v1")
+                .expect_err("live foreign lease"),
+            StorageError::RunTakenOver { .. }
+        ));
+    }
+
+    #[test]
+    fn attach_run_context_fills_set_once_and_reports_the_first_conflict() {
+        let (state, doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let run = store
+            .create_run_if_absent(&new_run(doc, company, "gpw_ifrs_annual@v1"))
+            .expect("create");
+        store.claim_run(&run.id, "mcp:full", 3600).expect("claim");
+
+        // All-None is a pure no-op.
+        store
+            .attach_run_context(&run.id, "mcp:full", &RunContextAttach::default())
+            .expect("no-op");
+
+        // Fill scope; same-value re-attach is idempotent; different conflicts.
+        let scope_only = RunContextAttach {
+            scope: Some("standalone"),
+            ..RunContextAttach::default()
+        };
+        store
+            .attach_run_context(&run.id, "mcp:full", &scope_only)
+            .expect("fill scope");
+        store
+            .attach_run_context(&run.id, "mcp:full", &scope_only)
+            .expect("idempotent same value");
+        assert!(matches!(
+            store
+                .attach_run_context(
+                    &run.id,
+                    "mcp:full",
+                    &RunContextAttach {
+                        scope: Some("consolidated"),
+                        ..RunContextAttach::default()
+                    },
+                )
+                .expect_err("scope conflict"),
+            StorageError::RunContextValueConflict { key: "scope", .. }
+        ));
+
+        // Fill the rest; a later differing period conflicts.
+        store
+            .attach_run_context(
+                &run.id,
+                "mcp:full",
+                &RunContextAttach {
+                    data_quality: Some("final"),
+                    period: Some((2025, "FY")),
+                    ..RunContextAttach::default()
+                },
+            )
+            .expect("fill rest");
+        assert!(matches!(
+            store
+                .attach_run_context(
+                    &run.id,
+                    "mcp:full",
+                    &RunContextAttach {
+                        period: Some((2024, "FY")),
+                        ..RunContextAttach::default()
+                    },
+                )
+                .expect_err("period conflict"),
+            StorageError::RunContextValueConflict { key: "period", .. }
+        ));
+        let stored = store.get_run(&run.id).expect("get").expect("some");
+        assert_eq!(stored.scope.as_deref(), Some("standalone"));
+        assert_eq!(stored.data_quality.as_deref(), Some("final"));
+        assert_eq!(stored.period_fiscal_year, Some(2025));
+        assert_eq!(stored.period_type.as_deref(), Some("FY"));
+
+        // Invalid vocabulary refuses before any lease consideration.
+        assert!(matches!(
+            store
+                .attach_run_context(
+                    &run.id,
+                    "mcp:full",
+                    &RunContextAttach {
+                        scope: Some("group"),
+                        ..RunContextAttach::default()
+                    },
+                )
+                .expect_err("bad scope token"),
+            StorageError::InvalidKpiIngestRunValue { key: "scope", .. }
+        ));
+    }
+
+    #[test]
+    fn attach_run_context_cross_checks_an_existing_period_pin() {
+        let (state, doc, company) = setup_one_company_doc();
+        {
+            let connection = state.checkout_for_tests().expect("raw connection");
+            connection
+                .execute(
+                    "INSERT INTO financial_periods (id, company_id, fiscal_year, period_type)
+                     VALUES ('finper-fy', ?1, 2025, 'FY')",
+                    [company],
+                )
+                .expect("seed period");
+        }
+        let store = state.kpi_ingest_runs();
+        let mut with_pin = new_run(doc, company, "gpw_ifrs_annual@v1");
+        with_pin.period_id = Some("finper-fy".to_owned());
+        let run = store.create_run_if_absent(&with_pin).expect("create");
+        store.claim_run(&run.id, "mcp:full", 3600).expect("claim");
+
+        // Matching descriptor attaches cleanly.
+        store
+            .attach_run_context(
+                &run.id,
+                "mcp:full",
+                &RunContextAttach {
+                    period: Some((2025, "FY")),
+                    ..RunContextAttach::default()
+                },
+            )
+            .expect("matching descriptor");
+
+        // A descriptor contradicting the pin refuses BEFORE any write.
+        let connection = state.checkout_for_tests().expect("raw connection");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET period_fiscal_year = NULL, period_type = NULL \
+                 WHERE id = ?1",
+                [&run.id],
+            )
+            .expect("clear descriptor");
+        drop(connection);
+        assert!(matches!(
+            store
+                .attach_run_context(
+                    &run.id,
+                    "mcp:full",
+                    &RunContextAttach {
+                        period: Some((2024, "FY")),
+                        ..RunContextAttach::default()
+                    },
+                )
+                .expect_err("pin mismatch"),
+            StorageError::RunContextValueConflict { key: "period", .. }
+        ));
+    }
+
+    #[test]
+    fn list_pending_runs_pages_the_claimable_set_with_a_keyset_cursor() {
+        let (state, _doc, company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        {
+            let connection = state.checkout_for_tests().expect("raw connection");
+            for (index, id) in ["run-a", "run-b", "run-c", "run-d", "run-e"]
+                .iter()
+                .enumerate()
+            {
+                // One document per run — the active-triple uniqueness index
+                // allows only one live run per (doc, company, profile).
+                let doc_id = format!("doc-{id}");
+                seed_document(&connection, &doc_id, company);
+                seed_run_raw(
+                    &connection,
+                    id,
+                    &doc_id,
+                    company,
+                    "p1",
+                    "discovered",
+                    None,
+                    None,
+                    None,
+                );
+                connection
+                    .execute(
+                        "UPDATE kpi_ingest_runs SET created_at = ?2 WHERE id = ?1",
+                        params![id, format!("2026-01-0{}T00:00:00.000Z", index + 1)],
+                    )
+                    .expect("stamp created_at");
+            }
+            // Terminal and mid-pipeline rows never appear.
+            seed_document(&connection, "doc-x", company);
+            seed_run_raw(
+                &connection,
+                "run-f",
+                "doc-x",
+                company,
+                "p1",
+                "complete",
+                None,
+                None,
+                None,
+            );
+            seed_run_raw(
+                &connection,
+                "run-g",
+                "doc-x",
+                company,
+                "p1",
+                "staged",
+                None,
+                None,
+                None,
+            );
+        }
+
+        let page1 = store.list_pending_runs(None, None, 2).expect("page 1");
+        assert_eq!(
+            page1.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["run-e", "run-d"],
+            "newest first, id DESC tie-break"
+        );
+        let cursor = (page1[1].created_at.as_str(), page1[1].id.as_str());
+        let page2 = store
+            .list_pending_runs(None, Some(cursor), 2)
+            .expect("page 2");
+        assert_eq!(
+            page2.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["run-c", "run-b"]
+        );
+        let cursor = (page2[1].created_at.as_str(), page2[1].id.as_str());
+        let page3 = store
+            .list_pending_runs(None, Some(cursor), 2)
+            .expect("page 3");
+        assert_eq!(
+            page3.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["run-a"],
+            "the tail page; every claimable row seen exactly once"
+        );
+        let cursor = (page3[0].created_at.as_str(), page3[0].id.as_str());
+        assert!(
+            store
+                .list_pending_runs(None, Some(cursor), 2)
+                .expect("page 4")
+                .is_empty(),
+            "a page ending exactly at the last row yields an empty next page"
+        );
+
+        // Company filter: a foreign company's rows are absent.
+        let filtered = store
+            .list_pending_runs(Some("nope"), None, 10)
+            .expect("filtered");
+        assert!(filtered.is_empty());
     }
 }

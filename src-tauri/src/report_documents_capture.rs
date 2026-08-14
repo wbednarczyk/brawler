@@ -209,7 +209,9 @@ fn store_fetched_document(
     Ok(local_path)
 }
 
-fn content_hash_hex(bytes: &[u8]) -> String {
+/// SHA-256 lowercase-hex of a byte buffer — shared with the MCP source-blob
+/// pin (#384), which must hash exactly the bytes it writes.
+pub(crate) fn content_hash_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let digest = hasher.finalize();

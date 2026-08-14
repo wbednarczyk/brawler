@@ -747,7 +747,12 @@ three gates:
 caller and no mock-runtime handler** — the documented headless-only network/
 acquisition drivers `run_aggregator_fundamentals_pull` and `rebuild_fundamentals`
 (contracts.md) — are exempt from corpus membership: the corpus verifies the TS
-mock against the backend, and these commands have no mock half to keep faithful
+mock against the backend, and these commands have no mock half to keep faithful.
+The same exemption covers the **MCP-only acquisition workflow tools** (ADR 0099,
+#384+): they have no Tauri command twin and no mock-runtime handler; their
+behavioral coverage is the registry/storage integration tests
+(`registry::call` against real storage) plus the shared `CommandErrorCode`
+vocabulary
 (same reason `run_structured_extraction` is absent). The exemption expires for a
 command the moment it gains a frontend/mock caller — add it to the corpus in the
 same change.

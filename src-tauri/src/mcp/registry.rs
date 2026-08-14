@@ -46,8 +46,15 @@ pub enum McpScope {
 
 /// The acquisition scope's tool allowlist — exactly the nine workflow tools,
 /// nothing else (ADR 0099 dec. 3; widening it is a deliberate ADR change).
-/// Empty until the tools land (#384–#386).
-pub const KPI_ACQUISITION_TOOLS: &[&str] = &[];
+/// The four lifecycle tools landed with #384; the remaining five arrive with
+/// #385/#386 at their contract positions. Declared in `entries()` order (the
+/// ordered wire contract).
+pub const KPI_ACQUISITION_TOOLS: &[&str] = &[
+    "start_kpi_ingest",
+    "list_pending_kpi_ingests",
+    "get_kpi_ingest_status",
+    "cancel_kpi_ingest",
+];
 
 impl McpScope {
     /// Whether a tool name exists on this scope's surface. Out-of-scope names
@@ -126,7 +133,17 @@ impl ProvenanceRequirement {
 pub struct ToolSpec {
     pub description: &'static str,
     pub schema: fn() -> Value,
-    pub handler: fn(&AppState, &Value) -> Result<ToolOutcome, ToolCallError>,
+    pub handler: ToolHandler,
+}
+
+/// A tool's dispatch fn. Almost every handler is scope-blind (`Plain`);
+/// `Scoped` passes the authenticated [`McpScope`] through for the one consumer
+/// that derives its lease holder from the credential (`start_kpi_ingest`,
+/// ADR 0099 dec. 4).
+#[derive(Clone, Copy)]
+pub enum ToolHandler {
+    Plain(fn(&AppState, &Value) -> Result<ToolOutcome, ToolCallError>),
+    Scoped(fn(&AppState, McpScope, &Value) -> Result<ToolOutcome, ToolCallError>),
 }
 
 /// One row of the registry: the classification of a Tauri command plus, when
@@ -208,7 +225,7 @@ fn exposed_read(
         spec: Some(ToolSpec {
             description,
             schema,
-            handler,
+            handler: ToolHandler::Plain(handler),
         }),
     }
 }
@@ -233,7 +250,30 @@ fn exposed_act(
         spec: Some(ToolSpec {
             description,
             schema,
-            handler,
+            handler: ToolHandler::Plain(handler),
+        }),
+    }
+}
+
+/// [`exposed_act`], but the handler receives the authenticated scope
+/// (`ToolHandler::Scoped`) — sole consumer: `start_kpi_ingest` (#384).
+fn exposed_act_scoped(
+    command_name: &'static str,
+    provenance: Option<ProvenanceRequirement>,
+    description: &'static str,
+    schema: fn() -> Value,
+    handler: fn(&AppState, McpScope, &Value) -> Result<ToolOutcome, ToolCallError>,
+) -> RegistryEntry {
+    RegistryEntry {
+        tool_name: command_name,
+        command_name,
+        tier: CapabilityTier::Act,
+        provenance,
+        exposed: true,
+        spec: Some(ToolSpec {
+            description,
+            schema,
+            handler: ToolHandler::Scoped(handler),
         }),
     }
 }
@@ -249,8 +289,54 @@ pub fn entries() -> Vec<RegistryEntry> {
     let mut entries = exposed_tools();
     entries.extend(read_wave_tools());
     entries.extend(act_wave_tools());
+    entries.extend(kpi_acquisition_tools());
     entries.extend(classifications());
     entries
+}
+
+/// The acquisition-workflow tools (ADR 0099, #384) — MCP-only
+/// (`tool_name == command_name`, no Tauri command twin), visible to BOTH
+/// scopes (Full is a superset; the acquisition allowlist is
+/// [`KPI_ACQUISITION_TOOLS`]). Order here == the allowlist == the wire.
+fn kpi_acquisition_tools() -> Vec<RegistryEntry> {
+    use super::kpi_ingest;
+    vec![
+        exposed_act_scoped(
+            "start_kpi_ingest",
+            None,
+            "Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId \
+             (+ optional scope/dataQuality/period) creates the run, claims the lease, pins \
+             the source bytes, and enters extraction once context is complete. Resume: runId \
+             re-claims idempotently (the explicit keepalive) and attaches missing context \
+             set-once. Provenance is the run pipeline itself; no citation carrier here.",
+            tools::tool_schema::<kpi_ingest::StartKpiIngestInput>,
+            kpi_ingest::start_kpi_ingest_handler,
+        ),
+        exposed_read(
+            "list_pending_kpi_ingests",
+            "list_pending_kpi_ingests",
+            "List claimable KPI ingest runs (discovered/source_captured/extracting/\
+             validation_failed), newest first, keyset-paginated (limit ≤ 50, default 20).",
+            tools::tool_schema::<kpi_ingest::ListPendingKpiIngestsInput>,
+            kpi_ingest::list_pending_kpi_ingests_handler,
+        ),
+        exposed_read(
+            "get_kpi_ingest_status",
+            "get_kpi_ingest_status",
+            "Full status of one KPI ingest run (state, context, lease, expected KPIs, \
+             progress). Pure read — never touches the lease.",
+            tools::tool_schema::<kpi_ingest::RunIdInput>,
+            kpi_ingest::get_kpi_ingest_status_handler,
+        ),
+        exposed_act(
+            "cancel_kpi_ingest",
+            None,
+            "Cancel a KPI ingest run in any pre-commit state (releases its lease). \
+             Refuses `committing` and terminal states.",
+            tools::tool_schema::<kpi_ingest::RunIdInput>,
+            kpi_ingest::cancel_kpi_ingest_handler,
+        ),
+    ]
 }
 
 /// The four exposed MVP read tools (ADR 0078 dec. 5), each over its backing
@@ -1374,12 +1460,21 @@ pub fn call(
     for entry in entries() {
         if entry.exposed && entry.tool_name == name {
             if let Some(spec) = entry.spec {
-                if entry.tier == CapabilityTier::Act {
+                // The acquisition scope bypasses the Full-scope writes toggle
+                // by design (ADR 0099 dec. 2): its gate already ran at
+                // authentication (`kpiAcquisitionEnabled` — disabled means the
+                // token never authenticates), and without the bypass the
+                // unattended credential is dead whenever `mcpWritesEnabled` is
+                // off. Full-scope calls stay gated like every act tool.
+                if entry.tier == CapabilityTier::Act && scope == McpScope::Full {
                     if let Some(gate) = act_gate(state, entry.provenance, arguments) {
                         return Ok(ToolOutcome::Failure(gate));
                     }
                 }
-                return (spec.handler)(state, arguments);
+                return match spec.handler {
+                    ToolHandler::Plain(handler) => handler(state, arguments),
+                    ToolHandler::Scoped(handler) => handler(state, scope, arguments),
+                };
             }
         }
     }
@@ -1424,8 +1519,10 @@ fn act_gate(
 /// record_financial_facts (ADR 0093 dec. 6, epic #285 T7 — MCP-only, no Tauri
 /// command twin), capture_report_document (ADR 0093 dec. 5, epic #285 T8 —
 /// gated fetch, promoted from classified-but-unexposed).
+/// #384 (+4, all MCP-only): 46 read (+ list_pending_kpi_ingests +
+/// get_kpi_ingest_status) + 60 act (+ start_kpi_ingest + cancel_kpi_ingest).
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 102;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 106;
 
 #[cfg(test)]
 mod tests {
@@ -1660,6 +1757,13 @@ mod tests {
             // Triage (ADR 0088 dec. 4).
             ("list_flagged_extraction_outcomes", company.clone(), false),
             ("list_unclassified_filings", json!({}), false),
+            // Acquisition lifecycle reads (ADR 0099, #384).
+            ("list_pending_kpi_ingests", json!({}), false),
+            (
+                "get_kpi_ingest_status",
+                json!({ "runId": "kpiing_missing" }),
+                true,
+            ),
         ];
 
         // The map covers exactly the exposed `read` set.
@@ -2780,6 +2884,10 @@ mod tests {
                 json!({ "companyId": company_id, "reportDocumentId": "x", "fiscalYear": 2025, "periodType": "FY", "periodEnd": "2025-12-31" }),
             ),
             ("rerun_extraction_outcome", json!({ "outcomeId": "x" })),
+            // Acquisition lifecycle acts (ADR 0099, #384) — domain failures on
+            // the minimal inputs (unknown run), which the umbrella accepts.
+            ("start_kpi_ingest", json!({ "runId": "kpiing_missing" })),
+            ("cancel_kpi_ingest", json!({ "runId": "kpiing_missing" })),
         ];
 
         // Networked / heavy triggers: the toggle-ON minimal-input invocation is

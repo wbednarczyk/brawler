@@ -131,7 +131,8 @@ pub use kpi_ingest_profiles::{
     expected_pack, is_registered_profile_version, resolve_profile_version, PROFILE_VERSIONS,
 };
 pub use kpi_ingest_runs::{
-    KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun, ValidationAttempt,
+    KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun, RunContextAttach,
+    ValidationAttempt,
 };
 pub use kpi_ingest_staging::{
     CommitReceipt, KpiIngestStagingStore, NewCommitReceipt, NewStagedObservation, StagedObservation,

@@ -1,0 +1,44 @@
+---
+source: src/mcp/kpi_ingest.rs
+expression: redacted
+---
+{
+  "attemptCount": 1,
+  "companyId": "c1",
+  "createdAt": "[timestamp]",
+  "dataQuality": "final",
+  "documentId": "doc1",
+  "execution": null,
+  "expectedKpis": {
+    "keys": [
+      "net_profit",
+      "operating_profit",
+      "revenue",
+      "total_assets",
+      "total_equity"
+    ],
+    "packVersion": "gpw_ifrs_annual@v1",
+    "schemaVersion": 1,
+    "source": "kpi_relevance+profile_pack"
+  },
+  "lastError": null,
+  "lease": {
+    "expiresAt": "[timestamp]",
+    "holder": "mcp:kpi_acquisition"
+  },
+  "manifestHash": null,
+  "missingReasons": {},
+  "period": {
+    "fiscalYear": 2025,
+    "periodId": null,
+    "periodType": "FY"
+  },
+  "profileVersion": "gpw_ifrs_annual@v1",
+  "progress": null,
+  "revision": 0,
+  "runId": "kpiing_[uid]",
+  "scope": "standalone",
+  "sourceContentHash": "de33edfe682b7788bbaf714482eb8c0b7d9f164da2b81ec7b6ed71a9ce720862",
+  "status": "extracting",
+  "updatedAt": "[timestamp]"
+}

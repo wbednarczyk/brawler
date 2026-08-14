@@ -2502,6 +2502,153 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "rerun_extraction_outcome"
+      },
+      {
+        "description": "Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId (+ optional scope/dataQuality/period) creates the run, claims the lease, pins the source bytes, and enters extraction once context is complete. Resume: runId re-claims idempotently (the explicit keepalive) and attaches missing context set-once. Provenance is the run pipeline itself; no citation carrier here.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "definitions": {
+            "RunDataQualityInput": {
+              "enum": [
+                "final",
+                "preliminary",
+                "estimated"
+              ],
+              "type": "string"
+            },
+            "RunScopeInput": {
+              "enum": [
+                "standalone",
+                "consolidated"
+              ],
+              "type": "string"
+            },
+            "StartPeriodInput": {
+              "additionalProperties": false,
+              "properties": {
+                "fiscalYear": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "periodType": {
+                  "$ref": "#/definitions/StartPeriodType"
+                }
+              },
+              "required": [
+                "fiscalYear",
+                "periodType"
+              ],
+              "type": "object"
+            },
+            "StartPeriodType": {
+              "description": "The START period vocabulary (contracts.md § Planned): `Q1|H1|9M|FY` only — the validator refuses everything else via `run.unsupported_period_grammar`, so a run doomed to fail cannot start. The schema IS the enforcement.",
+              "enum": [
+                "Q1",
+                "H1",
+                "9M",
+                "FY"
+              ],
+              "type": "string"
+            }
+          },
+          "properties": {
+            "dataQuality": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RunDataQualityInput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "documentId": {
+              "type": "string"
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/StartPeriodInput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "profileId": {
+              "type": "string"
+            },
+            "runId": {
+              "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RunScopeInput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "name": "start_kpi_ingest"
+      },
+      {
+        "description": "List claimable KPI ingest runs (discovered/source_captured/extracting/validation_failed), newest first, keyset-paginated (limit ≤ 50, default 20).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companyId": {
+              "type": "string"
+            },
+            "cursor": {
+              "type": "string"
+            },
+            "limit": {
+              "format": "int64",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_pending_kpi_ingests"
+      },
+      {
+        "description": "Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "runId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "get_kpi_ingest_status"
+      },
+      {
+        "description": "Cancel a KPI ingest run in any pre-commit state (releases its lease). Refuses `committing` and terminal states.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "runId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "runId"
+          ],
+          "type": "object"
+        },
+        "name": "cancel_kpi_ingest"
       }
     ]
   }

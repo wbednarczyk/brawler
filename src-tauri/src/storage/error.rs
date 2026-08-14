@@ -119,6 +119,25 @@ pub enum StorageError {
     #[error("invalid kpi ingest run lease duration: {seconds} seconds (must be > 0)")]
     InvalidRunLeaseDuration { seconds: i64 },
     #[error(
+        "kpi ingest run {id} was claimed by holder {holder} after lease expiry — abandon the run"
+    )]
+    RunTakenOver { id: String, holder: String },
+    #[error(
+        "kpi ingest run {id} lease for {holder} has expired — re-claim via start_kpi_ingest(runId)"
+    )]
+    RunLeaseExpired { id: String, holder: String },
+    #[error("kpi ingest run {id} is not claimable in status {status}")]
+    RunNotClaimable { id: String, status: String },
+    #[error(
+        "kpi ingest run {id} context value {key} is already '{existing}' and cannot become '{requested}' (set-once)"
+    )]
+    RunContextValueConflict {
+        id: String,
+        key: &'static str,
+        existing: String,
+        requested: String,
+    },
+    #[error(
         "kpi ingest run {id} lease invariant violated: status={status} holds a non-null lease"
     )]
     RunLeaseInvariantViolation { id: String, status: String },
