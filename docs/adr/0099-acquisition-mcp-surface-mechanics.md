@@ -6,7 +6,7 @@ Deciders: maintainer. Area: MCP port, fundamentals, security.
 
 ## Context
 
-Epic #352 delivered the transactional ingestion core (durable runs, staging, deterministic manifests, atomic commit, queue integration) — but headless: `create_run_if_absent` has no production caller and the only agent path is the demoted `record_financial_facts`. Epic #353 builds the real surface: a compact run-based MCP workflow behind an acquisition-scoped credential (ADR 0098 dec. 9). This ADR freezes the mechanics the wire contract in [contracts.md § Planned](../contracts.md) is written against. Wire shapes themselves live in contracts.md; this ADR records the decisions and their rejected alternatives.
+Epic #352 delivered the transactional ingestion core (durable runs, staging, deterministic manifests, atomic commit, queue integration) — but headless: `create_run_if_absent` has no production caller and the only agent path is the demoted `record_financial_facts`. Epic #353 builds the real surface: a compact run-based MCP workflow behind an acquisition-scoped credential (ADR 0098 dec. 9). This ADR freezes the mechanics the wire contract in [contracts.md § KPI acquisition workflow tools](../contracts.md) is written against. Wire shapes themselves live in contracts.md; this ADR records the decisions and their rejected alternatives.
 
 ## Decisions
 

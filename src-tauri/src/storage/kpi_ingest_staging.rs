@@ -343,6 +343,8 @@ impl KpiIngestStagingStore {
         run_id: &str,
         holder: &str,
         observations: Vec<NewStagedObservation>,
+        missing_reasons: &std::collections::BTreeMap<String, String>,
+        execution: Option<&serde_json::Value>,
     ) -> StorageResult<(i64, Vec<StagedObservation>)> {
         if observations.is_empty() {
             return Err(StorageError::InvalidKpiIngestRunValue {
@@ -409,10 +411,12 @@ impl KpiIngestStagingStore {
                 .as_deref()
                 .is_some_and(|expires| expires > now.as_str());
         if !lease_live {
-            return Err(StorageError::RunLeaseNotHeld {
-                id: run_id.to_owned(),
-                holder: holder.to_owned(),
-            });
+            // Three-way classification (#386, promised at #384): own-expired →
+            // RunLeaseExpired, live-foreign → RunTakenOver, residual →
+            // RunLeaseNotHeld.
+            return Err(super::kpi_ingest_runs::lease_refusal_on_connection(
+                &tx, run_id, holder,
+            )?);
         }
         if period_id.is_none() && (period_fiscal_year.is_none() || period_type.is_none()) {
             return Err(StorageError::InvalidKpiIngestRunValue {
@@ -490,11 +494,23 @@ impl KpiIngestStagingStore {
             )
             .optional()?;
         let Some(new_revision) = new_revision else {
-            return Err(StorageError::RunLeaseNotHeld {
-                id: run_id.to_owned(),
-                holder: holder.to_owned(),
-            });
+            // Mid-batch expiry or takeover: classify three-way too (#386).
+            return Err(super::kpi_ingest_runs::lease_refusal_on_connection(
+                &tx, run_id, holder,
+            )?);
         };
+
+        // missingReasons travel in the SAME staging transaction (contracts.md
+        // tool 5): the map is REQUIRED and `{}` is the explicit clear — every
+        // revision replaces the whole declaration, never a destructive default.
+        let missing_reasons_json = serde_json::to_string(missing_reasons)?;
+        tx.execute(
+            "UPDATE kpi_ingest_runs SET missing_reasons_json = ?1 WHERE id = ?2",
+            params![missing_reasons_json, run_id],
+        )?;
+        if let Some(execution) = execution {
+            super::kpi_ingest_runs::merge_cost_json_on_connection(&tx, run_id, execution)?;
+        }
 
         for (ordinal, (observation, currency, mapping_status)) in normalized.into_iter().enumerate()
         {
@@ -1127,6 +1143,8 @@ mod tests {
                 run_id,
                 TEST_HOLDER,
                 vec![one_observation(), one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
             )
             .expect("first stage");
         assert_eq!(revision, 1);
@@ -1157,7 +1175,13 @@ mod tests {
         .expect("flip to validation_failed");
 
         let (revision2, observations2) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("restage");
         assert_eq!(revision2, 2);
         assert_eq!(observations2.len(), 1);
@@ -1190,7 +1214,13 @@ mod tests {
             let store = state.kpi_ingest_staging();
 
             let error = store
-                .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
+                .stage_observations(
+                    "run1",
+                    TEST_HOLDER,
+                    vec![one_observation()],
+                    &std::collections::BTreeMap::new(),
+                    None,
+                )
                 .expect_err(&format!("status '{status}' must be refused"));
             assert!(
                 matches!(error, StorageError::InvalidRunStateForStaging { .. }),
@@ -1220,7 +1250,13 @@ mod tests {
         let store = state.kpi_ingest_staging();
 
         let error = store
-            .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
+            .stage_observations(
+                "run1",
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect_err("no period_id, no descriptor");
         assert!(matches!(
             error,
@@ -1234,14 +1270,26 @@ mod tests {
         let store = state.kpi_ingest_staging();
 
         let error = store
-            .stage_observations("kpiing_missing", TEST_HOLDER, vec![one_observation()])
+            .stage_observations(
+                "kpiing_missing",
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect_err("unknown run");
         assert!(matches!(error, StorageError::KpiIngestRunNotFound { .. }));
 
         let mut bad_currency = one_observation();
         bad_currency.currency = Some("dollars".to_owned());
         let error = store
-            .stage_observations(run_id, TEST_HOLDER, vec![bad_currency])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![bad_currency],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect_err("bad currency");
         assert!(matches!(
             error,
@@ -1267,6 +1315,8 @@ mod tests {
                 run_id,
                 TEST_HOLDER,
                 vec![one_observation(), one_observation(), one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
             )
             .expect("stage three");
         let ordinals: Vec<i64> = observations.iter().map(|o| o.ordinal).collect();
@@ -1285,7 +1335,13 @@ mod tests {
         );
 
         let (revision1, _) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("rev1");
         mark_validation_failed_on_connection(
             &state.checkout_for_tests().expect("checkout"),
@@ -1298,6 +1354,8 @@ mod tests {
                 run_id,
                 TEST_HOLDER,
                 vec![one_observation(), one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
             )
             .expect("rev2");
 
@@ -1478,6 +1536,8 @@ mod tests {
                 run_id,
                 TEST_HOLDER,
                 vec![clean_observation(), clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
             )
             .expect("stage");
         let sealed = sealed_manifest_for(run_id, revision, &rows);
@@ -1516,7 +1576,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
         let sealed = failed_sealed_manifest_for(run_id, revision, &rows);
         let manifest_hash = sealed.manifest_hash().to_owned();
@@ -1556,7 +1622,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
         state
             .kpi_ingest_runs()
@@ -1592,9 +1664,18 @@ mod tests {
         MID_BATCH_DELAY.with(|cell| cell.set(Some(std::time::Duration::from_millis(1200))));
         let error = state
             .kpi_ingest_staging()
-            .stage_observations("run1", TEST_HOLDER, vec![one_observation()])
+            .stage_observations(
+                "run1",
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect_err("an expired lease must not stage");
-        assert!(matches!(error, StorageError::RunLeaseNotHeld { .. }));
+        // #386: the mid-batch refusal classifies through the shared three-way
+        // vocabulary — the holder's OWN lease expired, so the typed remedy is
+        // `run_lease_expired` (re-claim via start), not the residual shape.
+        assert!(matches!(error, StorageError::RunLeaseExpired { .. }));
         let run = state
             .kpi_ingest_runs()
             .get_run("run1")
@@ -1609,7 +1690,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
 
         let sealed = sealed_manifest_for(run_id, revision + 1, &rows);
@@ -1643,7 +1730,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
 
         // Sealed for a DIFFERENT run id -- binding mismatch, distinct from
@@ -1679,7 +1772,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
 
         let assert_refused = |sealed: SealedManifest| {
@@ -1731,6 +1830,8 @@ mod tests {
                 run_id,
                 TEST_HOLDER,
                 vec![clean_observation(), clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
             )
             .expect("stage");
 
@@ -1760,7 +1861,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
 
         // Same observation id, but the manifest's own staged-content
@@ -1801,7 +1908,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
         let sealed = sealed_manifest_for(run_id, revision, &rows);
         let expected_codes_json = sealed.observation_verdicts()[0]
@@ -1827,7 +1940,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, rows) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
 
         // First attempt: fails.
@@ -1846,7 +1965,13 @@ mod tests {
         // Restage the SAME revision's repair (validation_failed -> staged is
         // legal, #360) and validate again -- attempt 2 for revision 2.
         let (revision2, rows2) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![clean_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("restage");
         let sealed2 = sealed_manifest_for(run_id, revision2, &rows2);
         store
@@ -2130,7 +2255,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let (revision, _) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
 
         // Simulate an issued manifest while still `staged` — structurally
@@ -2154,7 +2285,13 @@ mod tests {
         .expect("flip");
 
         store
-            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("restage");
         let run = state
             .kpi_ingest_runs()
@@ -2219,11 +2356,23 @@ mod tests {
         let barrier_b = barrier;
         let a = std::thread::spawn(move || {
             barrier_a.wait();
-            store_a.stage_observations("run1", TEST_HOLDER, vec![one_observation()])
+            store_a.stage_observations(
+                "run1",
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
         });
         let b = std::thread::spawn(move || {
             barrier_b.wait();
-            store_b.stage_observations("run1", TEST_HOLDER, vec![one_observation()])
+            store_b.stage_observations(
+                "run1",
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
         });
         let result_a = a.join().expect("thread a");
         let result_b = b.join().expect("thread b");
@@ -2262,7 +2411,13 @@ mod tests {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
         let error = store
-            .stage_observations(run_id, TEST_HOLDER, vec![])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect_err("empty batch");
         assert!(matches!(
             error,
@@ -2281,9 +2436,108 @@ mod tests {
         observation.raw_currency = Some("PLN".to_owned());
         observation.raw_unit_scale = Some("tys. zł".to_owned());
         let (_, observations) = store
-            .stage_observations(run_id, TEST_HOLDER, vec![observation])
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![observation],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
             .expect("stage");
         assert_eq!(observations[0].raw_currency.as_deref(), Some("PLN"));
         assert_eq!(observations[0].raw_unit_scale.as_deref(), Some("tys. zł"));
+    }
+
+    // --- #386: missingReasons + execution travel in the staging tx --------
+
+    #[test]
+    fn staging_writes_missing_reasons_with_replace_semantics() {
+        let (state, run_id) = setup();
+        let reasons: std::collections::BTreeMap<String, String> =
+            [("net_profit".to_owned(), "not disclosed".to_owned())].into();
+        state
+            .kpi_ingest_staging()
+            .stage_observations(run_id, TEST_HOLDER, vec![one_observation()], &reasons, None)
+            .expect("stage");
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(run_id)
+            .expect("get")
+            .expect("run");
+        assert_eq!(
+            run.missing_reasons_json.as_deref(),
+            Some(r#"{"net_profit":"not disclosed"}"#),
+            "the declaration lands in the SAME staging transaction"
+        );
+
+        // A repair revision with `{}` is the explicit clear — replace, never
+        // a merge and never a destructive default.
+        state.kpi_ingest_runs().invalidate_manifest(run_id).ok();
+        let connection = state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "UPDATE kpi_ingest_runs SET status = 'validation_failed' WHERE id = ?1",
+                [run_id],
+            )
+            .expect("force repairable state");
+        drop(connection);
+        state
+            .kpi_ingest_staging()
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .expect("re-stage");
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(run_id)
+            .expect("get")
+            .expect("run");
+        assert_eq!(
+            run.missing_reasons_json.as_deref(),
+            Some("{}"),
+            "an empty map clears the previous declaration"
+        );
+    }
+
+    #[test]
+    fn staging_merges_execution_into_cost_json_and_corrupt_stored_json_is_replaced() {
+        let (state, run_id) = setup();
+        // Corrupt pre-existing cost_json: diagnostic, so the merge replaces
+        // it fresh instead of failing the stage.
+        {
+            let connection = state.checkout_for_tests().expect("raw");
+            connection
+                .execute(
+                    "UPDATE kpi_ingest_runs SET cost_json = 'not json' WHERE id = ?1",
+                    [run_id],
+                )
+                .expect("corrupt");
+        }
+        let execution = serde_json::json!({ "client": "test-agent", "tokensIn": 5 });
+        state
+            .kpi_ingest_staging()
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![one_observation()],
+                &std::collections::BTreeMap::new(),
+                Some(&execution),
+            )
+            .expect("stage");
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(run_id)
+            .expect("get")
+            .expect("run");
+        let cost: serde_json::Value =
+            serde_json::from_str(run.cost_json.as_deref().expect("cost_json written"))
+                .expect("valid json");
+        assert_eq!(cost["schemaVersion"], 1);
+        assert_eq!(cost["client"], "test-agent");
+        assert_eq!(cost["tokensIn"], 5);
     }
 }

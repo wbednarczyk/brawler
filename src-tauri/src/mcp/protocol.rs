@@ -336,6 +336,32 @@ mod tests {
         );
     }
 
+    /// The SCOPED `tools/list` response — the acquisition credential's whole
+    /// frozen surface (ADR 0099 dec. 3/7, #386): exactly the nine workflow
+    /// tools, and the serialized response stays under the 16 KiB byte gate
+    /// (regression coverage for the compact-surface promise, contracts.md
+    /// § Budgets — the gate is coverage, not the enforcement).
+    #[test]
+    fn tools_list_scoped_snapshot_is_the_frozen_contract() {
+        let s = state();
+        let response = dispatch(
+            &s,
+            registry::McpScope::KpiAcquisition,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+        )
+        .expect("a response for a request");
+        let v: Value = serde_json::from_str(&response).expect("response is valid JSON");
+        assert!(
+            response.len() <= 16 * 1024,
+            "the scoped tools/list must stay ≤16 KiB, got {} bytes",
+            response.len()
+        );
+        insta::assert_snapshot!(
+            "tools_list_schema_acquisition",
+            serde_json::to_string_pretty(&v).expect("serializable")
+        );
+    }
+
     /// `get_company_dossier` over a seeded in-memory database. Timestamps are
     /// redacted (SQLite CURRENT_TIMESTAMP); every id in the tree is
     /// deterministic (slug/hash derived), so the rest snapshots stably.

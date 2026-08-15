@@ -46,14 +46,16 @@ pub enum McpScope {
 
 /// The acquisition scope's tool allowlist — exactly the nine workflow tools,
 /// nothing else (ADR 0099 dec. 3; widening it is a deliberate ADR change).
-/// The four lifecycle tools landed with #384; the remaining five arrive with
-/// #385/#386 at their contract positions. Declared in `entries()` order (the
-/// ordered wire contract).
+/// Complete since #386. Declared in `entries()` order (the ordered wire
+/// contract, contract positions 1-9).
 pub const KPI_ACQUISITION_TOOLS: &[&str] = &[
     "start_kpi_ingest",
     "list_pending_kpi_ingests",
     "get_kpi_ingest_context",
     "get_kpi_ingest_document",
+    "stage_kpi_observations",
+    "validate_kpi_ingest",
+    "commit_kpi_ingest",
     "get_kpi_ingest_status",
     "cancel_kpi_ingest",
 ];
@@ -258,7 +260,8 @@ fn exposed_act(
 }
 
 /// [`exposed_act`], but the handler receives the authenticated scope
-/// (`ToolHandler::Scoped`) — sole consumer: `start_kpi_ingest` (#384).
+/// (`ToolHandler::Scoped`) — consumers: `start_kpi_ingest` (#384) and
+/// `stage_kpi_observations` (#386), the two lease-holding tools.
 fn exposed_act_scoped(
     command_name: &'static str,
     provenance: Option<ProvenanceRequirement>,
@@ -301,7 +304,7 @@ pub fn entries() -> Vec<RegistryEntry> {
 /// scopes (Full is a superset; the acquisition allowlist is
 /// [`KPI_ACQUISITION_TOOLS`]). Order here == the allowlist == the wire.
 fn kpi_acquisition_tools() -> Vec<RegistryEntry> {
-    use super::{kpi_ingest, kpi_ingest_context};
+    use super::{kpi_ingest, kpi_ingest_context, kpi_ingest_submit};
     vec![
         exposed_act_scoped(
             "start_kpi_ingest",
@@ -341,6 +344,34 @@ fn kpi_acquisition_tools() -> Vec<RegistryEntry> {
              document delivery channel. Available once the source is captured. Pure read.",
             tools::tool_schema::<kpi_ingest_context::GetKpiIngestDocumentInput>,
             kpi_ingest_context::get_kpi_ingest_document_handler,
+        ),
+        exposed_act_scoped(
+            "stage_kpi_observations",
+            None,
+            "Stage the COMPLETE revision snapshot of extracted observations (1..100, with \
+             citations) plus the REQUIRED missingReasons declaration ({} = explicitly none), \
+             written in the same transaction. A repair resends every retained observation. \
+             Requires the caller's live lease. Provenance is the run pipeline itself.",
+            tools::tool_schema::<kpi_ingest_submit::StageKpiObservationsInput>,
+            kpi_ingest_submit::stage_kpi_observations_handler,
+        ),
+        exposed_act(
+            "validate_kpi_ingest",
+            None,
+            "Validate one staged revision synchronously (generation-pinned). Returns the \
+             FULL manifest — a failed manifest is the typed repair report; a raced loser \
+             gets outcome=superseded with the current run tuple.",
+            tools::tool_schema::<kpi_ingest_submit::ValidateKpiIngestInput>,
+            kpi_ingest_submit::validate_kpi_ingest_handler,
+        ),
+        exposed_act(
+            "commit_kpi_ingest",
+            None,
+            "Atomically commit a ready manifest (runId + manifestHash + revision) and return \
+             the immutable receipt. Idempotent: replaying a committed tuple returns the \
+             stored receipt verbatim; a stale tuple is a typed conflict.",
+            tools::tool_schema::<kpi_ingest_submit::CommitKpiIngestInput>,
+            kpi_ingest_submit::commit_kpi_ingest_handler,
         ),
         exposed_read(
             "get_kpi_ingest_status",
@@ -1545,8 +1576,10 @@ fn act_gate(
 /// get_kpi_ingest_status) + 60 act (+ start_kpi_ingest + cancel_kpi_ingest).
 /// #385 (+2, MCP-only): 48 read (+ get_kpi_ingest_context +
 /// get_kpi_ingest_document).
+/// #386 (+3, MCP-only): 63 act (+ stage_kpi_observations + validate_kpi_ingest
+/// + commit_kpi_ingest) — the nine-tool acquisition surface is complete.
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 108;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 111;
 
 #[cfg(test)]
 mod tests {
@@ -2918,10 +2951,31 @@ mod tests {
                 json!({ "companyId": company_id, "reportDocumentId": "x", "fiscalYear": 2025, "periodType": "FY", "periodEnd": "2025-12-31" }),
             ),
             ("rerun_extraction_outcome", json!({ "outcomeId": "x" })),
-            // Acquisition lifecycle acts (ADR 0099, #384) — domain failures on
-            // the minimal inputs (unknown run), which the umbrella accepts.
+            // Acquisition lifecycle acts (ADR 0099, #384/#386) — domain
+            // failures on the minimal inputs (unknown run), which the
+            // umbrella accepts.
             ("start_kpi_ingest", json!({ "runId": "kpiing_missing" })),
             ("cancel_kpi_ingest", json!({ "runId": "kpiing_missing" })),
+            (
+                "stage_kpi_observations",
+                json!({
+                    "runId": "kpiing_missing",
+                    "observations": [{ "rawLabel": "x", "rawValue": "1" }],
+                    "missingReasons": {}
+                }),
+            ),
+            (
+                "validate_kpi_ingest",
+                json!({ "runId": "kpiing_missing", "revision": 1 }),
+            ),
+            (
+                "commit_kpi_ingest",
+                json!({
+                    "runId": "kpiing_missing",
+                    "manifestHash": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "revision": 1
+                }),
+            ),
         ];
 
         // Networked / heavy triggers: the toggle-ON minimal-input invocation is
@@ -3324,8 +3378,8 @@ mod tests {
     #[test]
     fn the_acquisition_scope_lists_exactly_its_allowlist() {
         // ADR 0099 dec. 3 — both directions: the scoped surface IS the
-        // allowlist (empty until #384–#386), and every allowlisted name must
-        // be an exposed tool (a typo'd entry would silently vanish).
+        // allowlist (complete at nine since #386), and every allowlisted name
+        // must be an exposed tool (a typo'd entry would silently vanish).
         let scoped = descriptors(McpScope::KpiAcquisition);
         let names: Vec<&str> = scoped
             .as_array()

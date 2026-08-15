@@ -101,7 +101,13 @@ fn stage(state: &AppState, run_id: &str, observations: Vec<NewStagedObservation>
     }
     let (revision, _) = state
         .kpi_ingest_staging()
-        .stage_observations(run_id, "agent-1", observations)
+        .stage_observations(
+            run_id,
+            "agent-1",
+            observations,
+            &std::collections::BTreeMap::new(),
+            None,
+        )
         .expect("stage");
     revision
 }
@@ -916,4 +922,146 @@ fn arming_the_same_generation_twice_is_one_row_with_untouched_attempts() {
         .expect("status")
         .expect("row");
     assert_eq!(row.attempts, 0);
+}
+
+// ---------------------------------------------------------------------
+// #386: sync x queue convergence + the generation-guarded windows.
+// ---------------------------------------------------------------------
+
+/// Collision #1 (ADR 0099 dec. 1): the SYNCHRONOUS path validates first; the
+/// queue worker then picks up the now-stale validate job and must converge —
+/// arm the commit generation, never die retrying.
+#[test]
+fn a_queue_validate_job_losing_to_the_sync_path_arms_the_commit_row() {
+    let (state, run_id, revision) = staged_run(vec![clean_observation()]);
+    enqueue_validate(&state, &run_id, revision).expect("arm validate");
+
+    // The agent's synchronous validation wins the race.
+    let result = validate_kpi_ingest_run(&state, &run_id).expect("sync validate");
+    assert_eq!(result.outcome, "ready");
+    assert_eq!(
+        run_status(&state, &run_id),
+        KpiIngestRunState::ReadyToCommit
+    );
+
+    // The queue worker now processes the stale validate row: its handler
+    // re-reads, sees the moved generation, and passes the baton.
+    let worker = build_worker(state.clone());
+    assert!(worker
+        .process_one_for_kinds(&[KPI_INGEST_VALIDATE_KIND])
+        .expect("process"));
+    let commit_id = format!(
+        "{KPI_INGEST_COMMIT_KIND}:{run_id}:rev{revision}:{}",
+        result.manifest_hash
+    );
+    let commit_row = state
+        .jobs()
+        .status(&commit_id)
+        .expect("status")
+        .expect("commit row armed by the losing validate handler");
+    assert_eq!(commit_row.status, "pending");
+    assert_eq!(
+        run_status(&state, &run_id),
+        KpiIngestRunState::ReadyToCommit
+    );
+}
+
+/// Collision #2 (E1, the exact window): terminalization selected the job
+/// generation, then the agent re-staged BEFORE the write. The guarded
+/// primitive must no-op — the run lives on in the new generation. Before
+/// #386 this killed the new revision.
+#[test]
+fn stale_generation_terminalization_never_kills_a_restaged_run() {
+    let (state, run_id, revision) = staged_run(vec![clean_observation()]);
+
+    // The window: the caller selected `Validate{rev1}`, then the run moved on.
+    state.kpi_ingest_runs().invalidate_manifest(&run_id).ok();
+    {
+        let raw = state.checkout_for_tests().expect("raw");
+        raw.execute(
+            "UPDATE kpi_ingest_runs SET status = 'validation_failed' WHERE id = ?1",
+            [&run_id],
+        )
+        .expect("repairable state");
+    }
+    let new_revision = stage(&state, &run_id, vec![clean_observation()]);
+    assert_eq!(new_revision, revision + 1);
+
+    let events_before = attention_events(&state).len();
+    super::terminalize_ingest_generation(
+        &state,
+        &super::IngestJobIdentity::Validate {
+            run_id: run_id.clone(),
+            revision,
+        },
+        "retries exhausted",
+    );
+    assert_eq!(
+        run_status(&state, &run_id),
+        KpiIngestRunState::Staged,
+        "the NEW generation survives a stale terminalization"
+    );
+    assert_eq!(
+        attention_events(&state).len(),
+        events_before,
+        "no extra failure event from the no-op"
+    );
+}
+
+/// The reconcile window analog: the run snapshot reconcile selected is stale
+/// by the time the failed-row branch writes — the guarded write must leave
+/// the live (newer) generation untouched.
+#[test]
+fn reconcile_with_a_stale_run_snapshot_never_kills_the_new_generation() {
+    let (state, run_id, revision) = staged_run(vec![clean_observation()]);
+    let stale_snapshot = state
+        .kpi_ingest_runs()
+        .get_run(&run_id)
+        .expect("run")
+        .expect("exists");
+
+    // A dead-lettered job row for the OLD generation.
+    let job_id = format!("{KPI_INGEST_VALIDATE_KIND}:{run_id}:rev{revision}");
+    let payload = serde_json::json!({
+        "jobId": job_id,
+        "runId": run_id,
+        "revision": revision,
+    })
+    .to_string();
+    {
+        let raw = state.checkout_for_tests().expect("raw");
+        raw.execute(
+            "INSERT INTO job_queue (id, kind, payload, status, attempts, max_attempts, last_error)
+             VALUES (?1, ?2, ?3, 'failed', 1, 1, 'boom')",
+            rusqlite::params![job_id, KPI_INGEST_VALIDATE_KIND, payload],
+        )
+        .expect("failed row");
+    }
+
+    // The run moves on between the snapshot and the write.
+    state.kpi_ingest_runs().invalidate_manifest(&run_id).ok();
+    {
+        let raw = state.checkout_for_tests().expect("raw");
+        raw.execute(
+            "UPDATE kpi_ingest_runs SET status = 'validation_failed' WHERE id = ?1",
+            [&run_id],
+        )
+        .expect("repairable state");
+    }
+    let new_revision = stage(&state, &run_id, vec![clean_observation()]);
+    assert_eq!(new_revision, revision + 1);
+
+    let events_before = attention_events(&state).len();
+    super::reconcile_one_run(&state, &state.kpi_ingest_runs(), &stale_snapshot)
+        .expect("reconcile step");
+    assert_eq!(
+        run_status(&state, &run_id),
+        KpiIngestRunState::Staged,
+        "the stale snapshot's failed row must not kill the live generation"
+    );
+    assert_eq!(
+        attention_events(&state).len(),
+        events_before,
+        "no failure event for a superseded generation (luna P2)"
+    );
 }

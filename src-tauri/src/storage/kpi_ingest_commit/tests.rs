@@ -125,7 +125,13 @@ fn drive_to_ready(
         .expect("begin extracting");
     let (revision, _) = state
         .kpi_ingest_staging()
-        .stage_observations(run_id, "agent-1", observations)
+        .stage_observations(
+            run_id,
+            "agent-1",
+            observations,
+            &std::collections::BTreeMap::new(),
+            None,
+        )
         .expect("stage");
     let result = validate_kpi_ingest_run(state, run_id).expect("validate");
     assert_eq!(
@@ -211,7 +217,7 @@ fn a_banking_run_covers_its_floor_and_commits_the_pack_facts() {
 
     let receipt = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect("commit");
     assert_eq!(receipt.accepted_count, 7);
     assert_eq!(receipt.terminal_status, "complete");
@@ -239,7 +245,12 @@ fn commit_writes_period_facts_provenance_and_finalizes_the_run() {
     let receipt = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("commit");
 
     assert_eq!(receipt.run_id, fixture.run_id);
@@ -347,7 +358,12 @@ fn a_receipt_on_a_non_terminal_run_is_an_invariant_violation() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("a receipt on a non-terminal run violates the commit invariant");
     assert!(matches!(
         error,
@@ -398,7 +414,7 @@ fn commit_refuses_a_stale_hash_or_revision() {
     let wrong_hash = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, "not-the-real-hash", fixture.revision)
+        .commit_manifest(&fixture.run_id, "not-the-real-hash", fixture.revision, None)
         .expect_err("wrong hash");
     assert!(matches!(
         wrong_hash,
@@ -412,6 +428,7 @@ fn commit_refuses_a_stale_hash_or_revision() {
             &fixture.run_id,
             &fixture.manifest_hash,
             fixture.revision + 7,
+            None,
         )
         .expect_err("wrong revision");
     assert!(matches!(
@@ -441,7 +458,12 @@ fn commit_refuses_when_the_run_is_not_ready_to_commit() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("wrong status");
     assert!(matches!(error, StorageError::InvalidRunTransition { .. }));
 }
@@ -463,7 +485,12 @@ fn commit_refuses_a_lingering_lease() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("lease invariant violated");
     assert!(matches!(
         error,
@@ -490,7 +517,12 @@ fn commit_refuses_a_missing_validation_attempt() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("no attempt row for the run's current tuple");
     assert!(matches!(
         error,
@@ -517,7 +549,12 @@ fn commit_refuses_unparseable_manifest_bytes() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("corrupt bytes");
     assert!(matches!(error, StorageError::CorruptStoredManifest { .. }));
 }
@@ -546,7 +583,12 @@ fn commit_refuses_an_unsupported_manifest_schema_version() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("unsupported version");
     assert!(matches!(
         error,
@@ -581,7 +623,12 @@ fn commit_refuses_manifest_bytes_whose_recomputed_hash_disagrees() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("hash mismatch");
     assert!(matches!(error, StorageError::CorruptStoredManifest { .. }));
 }
@@ -603,26 +650,50 @@ fn commit_derives_partial_from_an_honest_missing_reason() {
         .expect("relevance");
     let state = AppState::new(connection);
     let run = create_run(&state, "doc1", "c1", "standalone", None);
-    let raw = state.checkout_for_tests().expect("raw");
-    raw.execute(
-        "UPDATE kpi_ingest_runs SET missing_reasons_json = '{\"net_profit\":\"not disclosed this quarter\"}' WHERE id = ?1",
-        [&run.id],
-    )
-    .expect("stamp missing reason");
-    drop(raw);
 
-    let (revision, manifest_hash) =
-        drive_to_ready(&state, &run.id, vec![observation("revenue", "1000")]);
+    // The reason travels through the PRODUCTION channel since #386: staging
+    // writes the whole missingReasons declaration in its own transaction
+    // (replace semantics — a raw pre-stamp would be clobbered by the stage).
+    let store = state.kpi_ingest_runs();
+    store.claim_next("agent-1", 3600).expect("claim");
+    store
+        .mark_source_captured(&run.id, "agent-1", "hash1")
+        .expect("capture");
+    store
+        .begin_extracting(&run.id, "agent-1", "instr-1")
+        .expect("begin extracting");
+    let reasons: std::collections::BTreeMap<String, String> = [(
+        "net_profit".to_owned(),
+        "not disclosed this quarter".to_owned(),
+    )]
+    .into();
+    let (revision, _) = state
+        .kpi_ingest_staging()
+        .stage_observations(
+            &run.id,
+            "agent-1",
+            vec![observation("revenue", "1000")],
+            &reasons,
+            None,
+        )
+        .expect("stage");
+    let result = validate_kpi_ingest_run(&state, &run.id).expect("validate");
+    assert_eq!(
+        result.outcome, "ready",
+        "{:?}",
+        result.manifest.run_diagnostics
+    );
+    let manifest_hash = result.manifest_hash;
     let receipt = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect("commit");
     assert_eq!(receipt.terminal_status, "partial");
 
     // #363: a replay of a partial commit returns the identical partial receipt.
     let replay = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect("replay");
     assert_eq!(replay, receipt);
 }
@@ -723,7 +794,7 @@ fn commit_applies_the_precedence_ladder_per_observation() {
 
     let receipt = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect("commit");
 
     let outcomes: serde_json::Value = serde_json::from_str(&receipt.outcomes_json).expect("json");
@@ -815,7 +886,7 @@ fn commit_stamps_supersedes_id_next_to_a_preliminary_sibling() {
         drive_to_ready(&state, &run.id, vec![observation("revenue", "820")]);
     let receipt = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect("commit");
     assert_eq!(receipt.accepted_count, 1);
 
@@ -856,7 +927,12 @@ fn commit_refuses_a_deleted_pinned_definition() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("pinned definition gone");
     assert!(matches!(
         error,
@@ -884,7 +960,12 @@ fn commit_refuses_a_metric_key_mismatched_pinned_definition() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("metric key mismatch");
     assert!(matches!(
         error,
@@ -908,7 +989,12 @@ fn commit_refuses_a_pinned_definition_rescoped_to_another_company() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("ineligible for this company");
     assert!(matches!(
         error,
@@ -937,7 +1023,12 @@ fn commit_rolls_back_earlier_facts_when_a_later_definition_vanishes() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("second observation's definition is gone");
     assert!(matches!(
         error,
@@ -985,7 +1076,7 @@ fn period_branch_some_some_matching_commits_with_one_shared_period_id() {
 
     let receipt = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect("commit");
     assert_eq!(receipt.period_id, Some(period_id.clone()));
 
@@ -1034,7 +1125,7 @@ fn period_branch_some_none_the_pinned_period_was_deleted_conflicts() {
 
     let error = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect_err("manifest still pins the deleted period");
     assert!(matches!(error, StorageError::CommitPeriodConflict { .. }));
 }
@@ -1059,7 +1150,12 @@ fn period_branch_none_some_the_run_gained_a_period_conflicts() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("manifest was frozen with no period");
     assert!(matches!(error, StorageError::CommitPeriodConflict { .. }));
 }
@@ -1072,7 +1168,12 @@ fn period_branch_none_none_creates_and_attaches_one_shared_period_id() {
     let receipt = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("commit");
     let after = fixture
         .state
@@ -1114,7 +1215,7 @@ fn period_branch_some_some_mismatched_natural_key_conflicts() {
 
     let error = state
         .kpi_ingest_commit()
-        .commit_manifest(&run.id, &manifest_hash, revision)
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
         .expect_err("period row no longer matches the manifest's fiscalYear");
     assert!(matches!(error, StorageError::CommitPeriodConflict { .. }));
 }
@@ -1182,7 +1283,12 @@ fn commit_refuses_a_manifest_whose_context_disagrees_with_the_live_run() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect_err("context mismatch must be refused");
     assert!(matches!(error, StorageError::CorruptStoredManifest { .. }));
 
@@ -1253,7 +1359,7 @@ fn commit_orders_a_permuted_stored_observation_array_by_ordinal() {
     let receipt = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &permuted_hash, fixture.revision)
+        .commit_manifest(&fixture.run_id, &permuted_hash, fixture.revision, None)
         .expect("commit");
     let outcomes: serde_json::Value = serde_json::from_str(&receipt.outcomes_json).expect("json");
     let ordinals: Vec<i64> = outcomes
@@ -1275,7 +1381,12 @@ fn commit_replay_returns_the_identical_stored_receipt() {
     let receipt = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("commit");
 
     let counts = |state: &AppState| -> (i64, i64) {
@@ -1297,7 +1408,12 @@ fn commit_replay_returns_the_identical_stored_receipt() {
     let replay = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("replay of a committed manifest returns the stored receipt");
     assert_eq!(
         replay, receipt,
@@ -1316,13 +1432,18 @@ fn commit_after_success_with_a_different_tuple_is_stale() {
     fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("commit");
 
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, "another-hash", fixture.revision)
+        .commit_manifest(&fixture.run_id, "another-hash", fixture.revision, None)
         .expect_err("a different hash after commit is stale, never an overwrite");
     assert!(matches!(error, StorageError::StaleManifestForCommit { .. }));
 
@@ -1333,6 +1454,7 @@ fn commit_after_success_with_a_different_tuple_is_stale() {
             &fixture.run_id,
             &fixture.manifest_hash,
             fixture.revision + 1,
+            None,
         )
         .expect_err("a different revision after commit is stale");
     assert!(matches!(error, StorageError::StaleManifestForCommit { .. }));
@@ -1347,7 +1469,12 @@ fn commit_replay_survives_corrupted_attempt_bytes() {
     let receipt = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("commit");
 
     {
@@ -1363,7 +1490,12 @@ fn commit_replay_survives_corrupted_attempt_bytes() {
     let replay = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("replay must not touch the attempt");
     assert_eq!(replay, receipt);
 }
@@ -1376,7 +1508,12 @@ fn a_receipt_disagreeing_with_its_terminal_run_is_an_invariant_violation() {
     fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, &fixture.manifest_hash, fixture.revision)
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
         .expect("commit");
 
     {
@@ -1392,7 +1529,7 @@ fn a_receipt_disagreeing_with_its_terminal_run_is_an_invariant_violation() {
     let error = fixture
         .state
         .kpi_ingest_commit()
-        .commit_manifest(&fixture.run_id, "another-hash", fixture.revision)
+        .commit_manifest(&fixture.run_id, "another-hash", fixture.revision, None)
         .expect_err("incoherent receipt/run must refuse before stale classification");
     assert!(matches!(
         error,
@@ -1417,7 +1554,7 @@ fn two_runs_of_the_same_period_commit_sequentially_and_share_the_period_row() {
     let (rev1, hash1) = drive_to_ready(&state, &run1.id, vec![observation("revenue", "1000")]);
     let receipt1 = state
         .kpi_ingest_commit()
-        .commit_manifest(&run1.id, &hash1, rev1)
+        .commit_manifest(&run1.id, &hash1, rev1, None)
         .expect("first commit");
 
     let run2 = create_run(&state, "doc2", "c1", "consolidated", None);
@@ -1431,7 +1568,7 @@ fn two_runs_of_the_same_period_commit_sequentially_and_share_the_period_row() {
     );
     let receipt2 = state
         .kpi_ingest_commit()
-        .commit_manifest(&run2.id, &hash2, rev2)
+        .commit_manifest(&run2.id, &hash2, rev2, None)
         .expect("second commit");
 
     assert_eq!(
@@ -1500,7 +1637,7 @@ fn concurrent_commits_of_the_same_run_both_return_the_winner_receipt() {
             install_pre_transaction_barrier(Arc::clone(&barrier));
             state
                 .kpi_ingest_commit()
-                .commit_manifest(&run_id, &manifest_hash, revision)
+                .commit_manifest(&run_id, &manifest_hash, revision, None)
         }));
     }
     let results: Vec<_> = handles
@@ -1535,4 +1672,67 @@ fn concurrent_commits_of_the_same_run_both_return_the_winner_receipt() {
 
     drop(state);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn commit_merges_execution_into_cost_json_and_replay_never_writes() {
+    let connection = open_in_memory_database().expect("db");
+    seed_company_and_document(&connection, "c1", "doc1");
+    let state = AppState::new(connection);
+    let run = create_run(&state, "doc1", "c1", "standalone", None);
+    let (revision, manifest_hash) =
+        drive_to_ready(&state, &run.id, vec![observation("revenue", "1000")]);
+
+    // Stage-time metadata is already in cost_json (written via the staging
+    // tx elsewhere); here seed it directly to prove the commit MERGE keeps
+    // omitted fields.
+    {
+        let raw = state.checkout_for_tests().expect("raw");
+        raw.execute(
+            r#"UPDATE kpi_ingest_runs SET cost_json = '{"schemaVersion":1,"client":"a","tokensIn":5}' WHERE id = ?1"#,
+            [&run.id],
+        )
+        .expect("seed stage-time cost");
+    }
+
+    let execution = serde_json::json!({ "client": "a", "costUsd": 0.5 });
+    state
+        .kpi_ingest_commit()
+        .commit_manifest(&run.id, &manifest_hash, revision, Some(&execution))
+        .expect("commit");
+    let cost: serde_json::Value = serde_json::from_str(
+        state
+            .kpi_ingest_runs()
+            .get_run(&run.id)
+            .expect("get")
+            .expect("run")
+            .cost_json
+            .as_deref()
+            .expect("cost_json"),
+    )
+    .expect("valid json");
+    assert_eq!(cost["client"], "a");
+    assert_eq!(cost["tokensIn"], 5, "the omitted field SURVIVES the merge");
+    assert_eq!(cost["costUsd"], 0.5);
+    assert_eq!(cost["schemaVersion"], 1);
+
+    // Replay with different execution: the stored receipt returns verbatim
+    // and cost_json is untouched (the fast path never writes).
+    let replay_execution = serde_json::json!({ "client": "b", "costUsd": 9.9 });
+    state
+        .kpi_ingest_commit()
+        .commit_manifest(&run.id, &manifest_hash, revision, Some(&replay_execution))
+        .expect("replay");
+    let after: serde_json::Value = serde_json::from_str(
+        state
+            .kpi_ingest_runs()
+            .get_run(&run.id)
+            .expect("get")
+            .expect("run")
+            .cost_json
+            .as_deref()
+            .expect("cost_json"),
+    )
+    .expect("valid json");
+    assert_eq!(after, cost, "replay is read-only — no merge, no overwrite");
 }

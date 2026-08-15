@@ -228,7 +228,7 @@ keeps it exact — do not hand-edit):
 | `get_kpi_ingest_document` | Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed source blob, verified against the frozen sourceContentHash — the portable document delivery channel. Available once the source is captured. Pure read. |
 | `get_kpi_ingest_status` | Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (60):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (63):
 
 | Tool | What it does |
 | --- | --- |
@@ -291,6 +291,9 @@ keeps it exact — do not hand-edit):
 | `run_structured_extraction` | Run the deterministic structured-first extraction pipeline over one company report+period (`mode`: autopilot \| assist). |
 | `rerun_extraction_outcome` | Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`). |
 | `start_kpi_ingest` | Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId (+ optional scope/dataQuality/period) creates the run, claims the lease, pins the source bytes, and enters extraction once context is complete. Resume: runId re-claims idempotently (the explicit keepalive) and attaches missing context set-once. Provenance is the run pipeline itself; no citation carrier here. |
+| `stage_kpi_observations` | Stage the COMPLETE revision snapshot of extracted observations (1..100, with citations) plus the REQUIRED missingReasons declaration ({} = explicitly none), written in the same transaction. A repair resends every retained observation. Requires the caller's live lease. Provenance is the run pipeline itself. |
+| `validate_kpi_ingest` | Validate one staged revision synchronously (generation-pinned). Returns the FULL manifest — a failed manifest is the typed repair report; a raced loser gets outcome=superseded with the current run tuple. |
+| `commit_kpi_ingest` | Atomically commit a ready manifest (runId + manifestHash + revision) and return the immutable receipt. Idempotent: replaying a committed tuple returns the stored receipt verbatim; a stale tuple is a typed conflict. |
 | `cancel_kpi_ingest` | Cancel a KPI ingest run in any pre-commit state (releases its lease). Refuses `committing` and terminal states. |
 
 <!-- END GENERATED MCP CATALOG -->

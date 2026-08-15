@@ -40,6 +40,15 @@ const ACQUISITION_CONTRACT_VERSION: &str = "acquisition-mcp@v1";
 
 pub(super) const SNAPSHOT_DIR: &str = "report_snapshots";
 
+/// Exactly 64 lowercase hex bytes — the grammar of every content/manifest
+/// hash on this surface (shared by the blob reader and the commit input).
+pub(super) fn is_content_hash(hash: &str) -> bool {
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 // ============================================================================
 // Inputs
 // ============================================================================
@@ -52,7 +61,7 @@ pub enum RunScopeInput {
 }
 
 impl RunScopeInput {
-    fn as_str(self) -> &'static str {
+    pub(super) fn as_str(self) -> &'static str {
         match self {
             RunScopeInput::Standalone => "standalone",
             RunScopeInput::Consolidated => "consolidated",
@@ -78,7 +87,7 @@ impl RunDataQualityInput {
     }
 }
 
-/// The START period vocabulary (contracts.md § Planned): `Q1|H1|9M|FY` only —
+/// The START period vocabulary (contracts.md § KPI acquisition workflow tools): `Q1|H1|9M|FY` only —
 /// the validator refuses everything else via `run.unsupported_period_grammar`,
 /// so a run doomed to fail cannot start. The schema IS the enforcement.
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
@@ -147,7 +156,7 @@ pub struct RunIdInput {
 }
 
 // ============================================================================
-// Wire DTOs (MCP-only — no TS consumer, no ts_rs; contracts.md § Planned)
+// Wire DTOs (MCP-only — no TS consumer, no ts_rs; contracts.md § KPI acquisition workflow tools)
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize)]
@@ -223,14 +232,14 @@ pub struct ListPendingDto {
 
 /// The lease holder derives from the CREDENTIAL, never an agent session
 /// (ADR 0099 dec. 4).
-fn holder(scope: McpScope) -> &'static str {
+pub(super) fn holder(scope: McpScope) -> &'static str {
     match scope {
         McpScope::Full => "mcp:full",
         McpScope::KpiAcquisition => "mcp:kpi_acquisition",
     }
 }
 
-/// Control characters are rejected in every text field (contracts.md § Planned
+/// Control characters are rejected in every text field (contracts.md § KPI acquisition workflow tools
 /// conventions) — this bounds JSON-escaping expansion at ×2.
 pub(super) fn reject_control_chars(field: &'static str, value: &str) -> Result<(), CommandError> {
     if value.chars().any(|c| c < '\u{20}') {
@@ -1265,7 +1274,7 @@ mod tests {
         );
     }
 
-    /// The frozen wire shape of `RunStatus` (contracts.md § Planned) — every
+    /// The frozen wire shape of `RunStatus` (contracts.md § KPI acquisition workflow tools) — every
     /// key, stable order, timestamps redacted. The run id is deterministic
     /// (a content hash of the identity triple), so it snapshots verbatim.
     #[test]
