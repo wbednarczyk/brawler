@@ -546,6 +546,24 @@ fn reconcile_one_run(
             .map_err(|error| error.to_string())?;
         match row {
             Some(row) if row.status == "failed" => {
+                // Staleness gate (luna P2): the snapshot was listed earlier —
+                // re-read the live tuple and skip BOTH the event and the
+                // transition when the generation already moved (the guarded
+                // write below would no-op anyway, but the event must not fire
+                // for a superseded generation). The residual window between
+                // this re-read and the write is closed by the WHERE-clause
+                // guard; a spurious event in that sliver is deduped (0118).
+                let live = runs_store
+                    .get_run(&run.id)
+                    .map_err(|error| error.to_string())?;
+                let still_current = live.as_ref().is_some_and(|current| {
+                    current.status == run.status
+                        && current.manifest_revision == run.manifest_revision
+                        && current.manifest_hash == run.manifest_hash
+                });
+                if !still_current {
+                    return Ok(());
+                }
                 // Event first (deduped by the 0118 partial unique index), the
                 // domain transition second: a crash between the two converges
                 // on the next startup because the run stays queue-owned.

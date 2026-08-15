@@ -426,6 +426,12 @@ fn validate_missing_reasons(reasons: &BTreeMap<String, String>) -> Result<(), Co
     for (key, reason) in reasons {
         bounded("missingReasons key", key, REASON_KEY_MAX)?;
         bounded("missingReasons reason", reason, REASON_MAX)?;
+        if key.trim().is_empty() || reason.trim().is_empty() {
+            // The canonical ledger schema requires non-empty reason strings
+            // (data-model § missing_reasons_json) — refuse at the boundary
+            // instead of staging a ledger the validator will call malformed.
+            return Err(invalid("missingReasons keys and reasons must be non-blank"));
+        }
     }
     Ok(())
 }
@@ -607,7 +613,21 @@ fn receipt_dto(receipt: CommitReceipt) -> Result<CommitReceiptDto, CommandError>
             receipt.outcomes_schema_version
         )));
     }
-    let outcomes: Vec<CommitOutcomeDto> = serde_json::from_str(&receipt.outcomes_json)
+    // The durable writer serializes `factId` explicitly (`null` for
+    // divergent) — a MISSING key is shape drift, not a legal null (luna P1).
+    let raw_outcomes: Vec<Value> = serde_json::from_str(&receipt.outcomes_json)
+        .map_err(|error| internal(format!("stored receipt outcomes are malformed: {error}")))?;
+    for raw in &raw_outcomes {
+        if !raw
+            .as_object()
+            .is_some_and(|object| object.contains_key("factId"))
+        {
+            return Err(internal(
+                "stored receipt outcome omits the explicit factId key",
+            ));
+        }
+    }
+    let outcomes: Vec<CommitOutcomeDto> = serde_json::from_value(Value::Array(raw_outcomes))
         .map_err(|error| internal(format!("stored receipt outcomes are malformed: {error}")))?;
     for outcome in &outcomes {
         let divergent = outcome.outcome == CommitOutcomeKind::Divergent;
@@ -854,11 +874,13 @@ mod tests {
         let long_reason: BTreeMap<String, String> = [("k".to_owned(), "r".repeat(513))].into();
         let control_reason: BTreeMap<String, String> =
             [("k".to_owned(), "bad\u{0001}".to_owned())].into();
+        let blank_reason: BTreeMap<String, String> = [("k".to_owned(), "  ".to_owned())].into();
         for (name, reasons) in [
             ("129 entries", too_many),
             ("129-byte key", long_key),
             ("513-byte reason", long_reason),
             ("control char reason", control_reason),
+            ("blank reason", blank_reason),
         ] {
             assert_eq!(
                 failure_code(acquisition_call(
@@ -1299,10 +1321,10 @@ mod tests {
                 "ordinal": 0,
                 "metricKey": "revenue",
                 "outcome": outcome,
+                // The durable writer always serializes the key — explicitly
+                // null when absent (luna P1).
+                "factId": if fact_id { json!("fact_1") } else { Value::Null },
             });
-            if fact_id {
-                row["factId"] = json!("fact_1");
-            }
             if detail {
                 row["detail"] = json!({ "existingFactId": "fact_2" });
             }
@@ -1351,6 +1373,11 @@ mod tests {
         }
         let error = receipt_dto(receipt_with(&outcome_row("created", true, false), 2))
             .expect_err("schema version 2");
+        assert_eq!(error.code, CommandErrorCode::Internal);
+
+        // A MISSING factId key (vs the writer's explicit null) is shape drift.
+        let missing_key = r#"[{"observationId":"o","revision":1,"ordinal":0,"metricKey":"m","outcome":"divergent","detail":{"existingFactId":"f"}}]"#;
+        let error = receipt_dto(receipt_with(missing_key, 1)).expect_err("missing factId key");
         assert_eq!(error.code, CommandErrorCode::Internal);
     }
 }

@@ -1051,11 +1051,17 @@ fn reconcile_with_a_stale_run_snapshot_never_kills_the_new_generation() {
     let new_revision = stage(&state, &run_id, vec![clean_observation()]);
     assert_eq!(new_revision, revision + 1);
 
+    let events_before = attention_events(&state).len();
     super::reconcile_one_run(&state, &state.kpi_ingest_runs(), &stale_snapshot)
         .expect("reconcile step");
     assert_eq!(
         run_status(&state, &run_id),
         KpiIngestRunState::Staged,
         "the stale snapshot's failed row must not kill the live generation"
+    );
+    assert_eq!(
+        attention_events(&state).len(),
+        events_before,
+        "no failure event for a superseded generation (luna P2)"
     );
 }
