@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.70.0 - 2026-08-15
+
+
+### Features
+
+- **mcp**: stage, validate, commit over MCP with the typed repair loop (#386) (#395)
+
 ## v0.69.0 - 2026-08-14
 
 
