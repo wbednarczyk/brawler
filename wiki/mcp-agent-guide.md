@@ -175,12 +175,15 @@ recovered later — never cancel it to tidy up.
 ### Keeping the lease alive
 
 The lease belongs to the **credential**, not to a session, and lasts **30
-minutes**. `start_kpi_ingest{ runId }` is the keepalive — an idempotent re-claim
-that doesn't count as a new attempt. Reads never touch the lease. While reading a
-long document or building a big re-stage, renew about **every 15 minutes** (half
-the TTL), watching `lease.expiresAt` in the status. A lapsed lease surfaces as
-`run_lease_expired` (recover with `start(runId)`); if someone else took the run
-after it expired you get `run_taken_over` and should simply move on.
+minutes**. `start_kpi_ingest{ runId }` is the keepalive: **while the lease is
+still live** it renews without counting as a new attempt. Reads never touch the
+lease. While reading a long document or building a big re-stage, renew about
+**every 15 minutes** (half the TTL), watching `lease.expiresAt` in the status —
+a renewal before expiry is free. If you let the lease lapse, the next
+`stage`/`validate` returns `run_lease_expired`; recovering with `start(runId)` is
+a fresh claim on a lapsed lease and **does count as a new attempt** (it
+increments `attemptCount`), so prefer keeping it alive. If someone else took the
+run after it expired you get `run_taken_over` and should simply move on.
 
 ### Choosing the profile
 
@@ -225,10 +228,9 @@ comma (`1 027 240,50` → `1027240.50`).
 **The cumulative-only rule (ADR 0093 dec. 3).** GPW interim publications
 print discrete-quarter AND cumulative columns side by side. Record ONLY the
 cumulative column (H1/9M/FY) against the cumulative period — the discrete
-quarter is skipped, it's derivable by span arithmetic. Worked example (XTB RB
-18/2026): the table shows Q2 net profit `492 198` tys. right next to H1
-`1 027 240` tys. — the correct value is `1027240000` against the H1 period,
-never the Q2 figure. A half year is period `H1`.
+quarter is skipped, it's derivable by span arithmetic. When a half-year table
+shows a discrete Q2 figure beside the cumulative H1 figure, record the H1 value
+against the `H1` period, never the Q2 figure.
 
 **Preliminary releases.** A wstępne/preliminary publication → start the run with
 `dataQuality: "preliminary"`. When the final audited report lands later, its
@@ -236,10 +238,10 @@ never the Q2 figure. A half year is period `H1`.
 do.
 
 **Watch for ambiguous labels.** The same label can appear twice in one
-publication at different windows (XTB defines "Liczba aktywnych klientów"
-both quarterly and half-yearly). Cite the exact table/row you read, and pick
-the column whose window matches the period you're recording, not the first
-match you find.
+publication at different windows — e.g. an operating metric printed both
+quarterly and half-yearly. Cite the exact table/row you read, and pick the
+column whose window matches the period you're recording, not the first match
+you find.
 
 **Chart-only values.** A figure that exists only inside a chart image isn't
 in the document's text layer — read the page visually before citing it, and

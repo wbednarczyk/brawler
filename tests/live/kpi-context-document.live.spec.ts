@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { ACQUISITION_TOOLS } from "./helpers/acquisitionTools";
 
 // §G live proof for the context read model + document delivery (#385, ADR
 // 0099): on the REAL Windows app running against a DISPOSABLE COPY of the
@@ -102,18 +103,11 @@ test("context + chunked document over live MCP: start → source_captured → co
   };
 
   try {
-    // (1) The scoped surface is exactly the six shipped tools, contract order.
+    // (1) The scoped surface is exactly the nine acquisition workflow tools.
     const listed = await rpc("tools/list");
     const names = (listed.result?.tools ?? []).map((tool) => tool.name);
-    expect(names).toEqual([
-      "start_kpi_ingest",
-      "list_pending_kpi_ingests",
-      "get_kpi_ingest_context",
-      "get_kpi_ingest_document",
-      "get_kpi_ingest_status",
-      "cancel_kpi_ingest",
-    ]);
-    console.log("scoped tools/list: exactly the 6 shipped tools in contract order");
+    expect(names).toEqual([...ACQUISITION_TOOLS]);
+    console.log("scoped tools/list: exactly the 9 acquisition tools in contract order");
 
     // (0) Preflight on the copy: no active run for this (document, profile).
     const pending = await callTool("list_pending_kpi_ingests", {});

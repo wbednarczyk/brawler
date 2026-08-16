@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { ACQUISITION_TOOLS } from "./helpers/acquisitionTools";
 
 // §G live proof for the run-lifecycle tools (#384, ADR 0099): on the REAL
 // Windows app running against a DISPOSABLE COPY of the data directory, the
@@ -107,15 +108,10 @@ test("run lifecycle over live MCP: start → status → keepalive → cancel + b
   };
 
   try {
-    // (1) The scoped surface is exactly the four lifecycle tools.
+    // (1) The scoped surface is exactly the nine acquisition workflow tools.
     const listed = await rpc("tools/list");
     const names = (listed.result?.tools ?? []).map((tool) => tool.name);
-    expect(names).toEqual([
-      "start_kpi_ingest",
-      "list_pending_kpi_ingests",
-      "get_kpi_ingest_status",
-      "cancel_kpi_ingest",
-    ]);
+    expect(names).toEqual([...ACQUISITION_TOOLS]);
     console.log("scoped tools/list on the live app: exactly the 4 lifecycle tools");
 
     // (2) Fresh start with FULL context on a real captured document → the

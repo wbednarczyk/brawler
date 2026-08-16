@@ -176,14 +176,17 @@ cancel it to "clean up".
 ### Keeping the lease alive
 
 The lease belongs to the **credential**, not your session; its TTL is **30
-minutes**. `start_kpi_ingest{ runId }` is the explicit keepalive — an idempotent
-re-claim that never increments `attemptCount`. Reads (`context`, `status`,
-`document`) never touch the lease. While reading a long document or preparing a
-large re-stage, **renew at least every ~15 minutes** (half the TTL), steering by
-the `lease.expiresAt` in the run status. If the lease lapses you get
-`run_lease_expired` — recover with `start(runId)`. If another holder claimed the
-run after expiry you get `run_taken_over` — abandon it; that is convergence, not
-a fight to reclaim.
+minutes**. `start_kpi_ingest{ runId }` is the explicit keepalive: **while your
+lease is still live**, it renews it without incrementing `attemptCount`. Reads
+(`context`, `status`, `document`) never touch the lease. So while reading a long
+document or preparing a large re-stage, **renew at least every ~15 minutes**
+(half the TTL), steering by the `lease.expiresAt` in the run status — a renewal
+before expiry is free. If you let the lease lapse, the next `stage`/`validate`
+returns `run_lease_expired`; you recover with `start(runId)`, but that is a fresh
+claim on a lapsed lease and **does increment `attemptCount`** — so keep it alive
+rather than reclaiming. If another holder claimed the run after your lease
+expired you get `run_taken_over` — abandon it; that is convergence, not a fight
+to reclaim.
 
 ### Choosing the profile (fresh runs only)
 
@@ -212,6 +215,11 @@ checkable. A citation with no locator at all fails validation as
 
 ### Reading the source document
 
+<!-- EDITOR NOTE (epic #353 DoD): keep this skill FREE of single-document knowledge —
+     no specific issuer, report code (e.g. "RB N/YYYY"), or exact figures from one
+     filing. Illustrate the doctrine generically; a worked example must not name a
+     real document or its numbers. -->
+
 This doctrine is about the SOURCE format and holds regardless of tooling — it
 governs the `normalizedValue`, `measureWindow`, and `citation` you stage.
 
@@ -228,20 +236,18 @@ spaces; the decimal separator is a comma (`1 027 240,50` → `1027240.50`).
 **Cumulative-only recording (ADR 0093 dec. 3).** A GPW interim publication
 prints discrete-quarter AND cumulative columns side by side — record ONLY the
 cumulative column (H1/9M/FY) against the cumulative period; skip the
-discrete-quarter column, it's derivable by span arithmetic. Worked example
-(XTB RB 18/2026): the table shows Q2 net profit `492 198` tys. right next to
-H1 `1 027 240` tys. — stage `1027240000` against the H1 period, never the
-Q2 figure. A half year is period `H1`.
+discrete-quarter column, it's derivable by span arithmetic. When a half-year
+table shows a discrete Q2 figure beside the cumulative H1 figure, stage the H1
+number against the `H1` period, never the Q2 number.
 
 **Preliminary flag.** A wstępne/preliminary release → start the run with
 `dataQuality: "preliminary"`. The later final audited report supersedes it
 automatically at commit (ADR 0093 dec. 2) — no follow-up write needed.
 
-**Ambiguous label trap.** The same label can be defined twice at different
-windows in one publication (XTB: "Liczba aktywnych klientów" appears both as
-a quarterly figure and a half-year figure). Cite the exact table/row you
-read and pick the column whose `measureWindow` matches the period you're
-staging — never the first match.
+**Ambiguous label trap.** The same label can appear twice at different windows
+in one publication — e.g. an operating metric printed both as a quarterly figure
+and as a half-year figure. Cite the exact table/row you read and pick the column
+whose `measureWindow` matches the period you're staging — never the first match.
 
 **Raster-chart caveat.** A value that exists only inside a chart image is not
 in the document's text layer — read the page visually before citing it, and

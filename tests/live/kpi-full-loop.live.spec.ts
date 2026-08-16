@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
+import { ACQUISITION_TOOLS } from "./helpers/acquisitionTools";
 
 // §G live proof for the FULL write loop (#386, ADR 0099 dec. 1) — the crown of
 // epic #353: on the REAL Windows app against a DISPOSABLE COPY of the data
@@ -129,17 +130,7 @@ test("full loop over live MCP: start → stage(broken) → failed → repair →
     const names = (JSON.parse(rawBody).result?.tools ?? []).map(
       (tool: { name: string }) => tool.name,
     );
-    expect(names).toEqual([
-      "start_kpi_ingest",
-      "list_pending_kpi_ingests",
-      "get_kpi_ingest_context",
-      "get_kpi_ingest_document",
-      "stage_kpi_observations",
-      "validate_kpi_ingest",
-      "commit_kpi_ingest",
-      "get_kpi_ingest_status",
-      "cancel_kpi_ingest",
-    ]);
+    expect(names).toEqual([...ACQUISITION_TOOLS]);
     console.log("scoped tools/list: all NINE tools, contract order, ≤16 KiB");
 
     // (2) Start fresh with full context → extracting.
