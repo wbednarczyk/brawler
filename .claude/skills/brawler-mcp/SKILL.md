@@ -1,6 +1,6 @@
 ---
 name: brawler-mcp
-description: Use when you (an AI agent) are connected to Brawler over its MCP server and need to read the user's investment research or write back into it — including running the KPI-acquisition workflow ("process all pending KPI ingests"). Covers tool discovery, the read/act tiers, the mandatory-source (provenance) rules per write family, the run-based KPI ingest workflow (start → stage → validate → commit, with lease keepalive and the typed repair loop), internal-id conventions, the permanent denylist, and safe read→analyze→write sequences. Load it before your first tools/call against Brawler.
+description: Use when you (an AI agent) are connected to Brawler over its MCP server and need to read the user's investment research or write back into it — including acquiring KPIs from an issuer report ("process all pending KPI ingests", staging observations, resuming a pending run, a lease that expired, a validation that failed). Covers tool discovery, the read/act tiers, mandatory-source (provenance) rules, the KPI-ingest run workflow, internal-id conventions, the permanent denylist, and safe read→analyze→write sequences. Load it before your first tools/call against Brawler.
 ---
 
 # Talking to Brawler over MCP
