@@ -29,9 +29,15 @@
 //      name-set-only compare let a hand-edited description, or a hand-added
 //      line inside the do-not-edit span, drift silently while still passing.
 //      The sections are machine-generated (name + description from the
-//      snapshot, split read vs act by name prefix) and must never be
+//      tools/list snapshot, split read vs act by the REGISTRY-TRUTH capability
+//      manifest — never a tool-name regex, #387) and must never be
 //      hand-edited; regenerate with
 //      `node scripts/check/docs-drift.mjs --write-mcp-catalog`.
+//   7. MCP manifest/snapshot coherence (#387): the capability manifest, the
+//      full tools/list snapshot, and the acquisition-scoped snapshot stay
+//      mutually consistent (order + deep-equal projection), and each doc's
+//      hand-authored acquisition-workflow inventory covers exactly the nine
+//      acquisition tools.
 //
 // Extraction heuristics (contracts.md documents commands two ways — both are
 // captured):
@@ -48,7 +54,7 @@
 // itself broke silently — fail loud instead of passing vacuously.
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -443,8 +449,22 @@ function checkAdrHygiene(writeIndex) {
 
 const MCP_SNAPSHOT_REL =
   "src-tauri/src/mcp/snapshots/brawler_lib__mcp__protocol__tests__tools_list_schema.snap";
+// The acquisition-scoped tools/list snapshot and the registry-truth capability
+// manifest (#387, ADR 0065): the manifest is the ONLY artifact carrying each
+// tool's authoritative `tier` (the wire `tools/list` shape omits it), so the
+// catalog split reads it instead of guessing read/act from the tool name.
+const MCP_ACQ_SNAPSHOT_REL =
+  "src-tauri/src/mcp/snapshots/brawler_lib__mcp__protocol__tests__tools_list_schema_acquisition.snap";
+const MCP_MANIFEST_REL =
+  "src-tauri/src/mcp/snapshots/brawler_lib__mcp__registry__tests__mcp_registry_manifest.snap";
 const MCP_CATALOG_BEGIN = "<!-- BEGIN GENERATED MCP CATALOG";
 const MCP_CATALOG_END = "<!-- END GENERATED MCP CATALOG -->";
+// The hand-authored acquisition-workflow tool inventory (#387): the rewritten
+// playbook lists the nine workflow tools between these markers; the gate parses
+// the span and asserts its unique name set equals the manifest's acquisition
+// set (operational sequencing in the surrounding prose is tested separately).
+const ACQ_WORKFLOW_BEGIN = "<!-- BEGIN ACQUISITION WORKFLOW TOOLS -->";
+const ACQ_WORKFLOW_END = "<!-- END ACQUISITION WORKFLOW TOOLS -->";
 // Every file that must carry an in-sync generated catalog section.
 const MCP_CATALOG_TARGETS = ["wiki/mcp-agent-guide.md", ".claude/skills/brawler-mcp/SKILL.md"];
 
@@ -455,29 +475,115 @@ function escapeRe(s) {
 const MCP_CATALOG_SPAN_RE = new RegExp(
   `${escapeRe(MCP_CATALOG_BEGIN)}[\\s\\S]*?${escapeRe(MCP_CATALOG_END)}`,
 );
+const ACQ_WORKFLOW_SPAN_RE = new RegExp(
+  `${escapeRe(ACQ_WORKFLOW_BEGIN)}[\\s\\S]*?${escapeRe(ACQ_WORKFLOW_END)}`,
+);
 
-// The snapshot file is an insta snapshot: a `---`-delimited YAML header followed
-// by the pretty-printed tools/list JSON. The JSON is everything from the first
-// `{` (the header carries no braces).
-function readMcpSnapshotTools() {
-  const text = readText(MCP_SNAPSHOT_REL);
+// Both the snapshot files and the manifest are insta snapshots: a `---`-delimited
+// YAML header (no braces) followed by a pretty-printed JSON body. The JSON is
+// everything from the first `{`.
+function readSnapshotJson(relPath) {
+  const text = readText(relPath);
   const jsonStart = text.indexOf("{");
-  if (jsonStart === -1) throw new Error("no JSON body found");
-  const parsed = JSON.parse(text.slice(jsonStart));
-  const tools = parsed?.result?.tools;
+  if (jsonStart === -1) throw new Error(`no JSON body found in ${relPath}`);
+  return JSON.parse(text.slice(jsonStart));
+}
+
+function readMcpSnapshotTools() {
+  const tools = readSnapshotJson(MCP_SNAPSHOT_REL)?.result?.tools;
   if (!Array.isArray(tools)) throw new Error("result.tools is not an array");
   return tools.map((t) => ({ name: String(t.name), description: String(t.description ?? "") }));
 }
 
-// Tier split is derived deterministically from the tool name: read tools are
-// named get_* / list_* / search_*, act tools carry a mutation verb prefix. A
-// future read tool under a new verb would land in "act" — harmless for the
-// drift contract (the gate only asserts the NAME SET matches the snapshot).
-function isMcpReadTool(name) {
-  return /^(get|list|search)_/.test(name);
+// The registry-truth manifest: [{name, tier: "read"|"act", acquisition}] in
+// registry order. Validates schema, name uniqueness, and the tier vocabulary,
+// then returns the ordered list plus a name->entry map (#387). Pure — exported
+// for the negative test.
+export function parseManifestTools(tools) {
+  if (!Array.isArray(tools)) throw new Error("manifest.tools is not an array");
+  const byName = new Map();
+  for (const entry of tools) {
+    if (
+      typeof entry?.name !== "string" ||
+      (entry.tier !== "read" && entry.tier !== "act") ||
+      typeof entry.acquisition !== "boolean"
+    ) {
+      throw new Error(`manifest entry malformed: ${JSON.stringify(entry)}`);
+    }
+    if (byName.has(entry.name)) throw new Error(`manifest duplicate tool: ${entry.name}`);
+    byName.set(entry.name, entry);
+  }
+  return { tools, byName };
 }
 
-function buildMcpCatalogBlock(tools) {
+function readMcpManifest() {
+  return parseManifestTools(readSnapshotJson(MCP_MANIFEST_REL)?.tools);
+}
+
+// The pure manifest/snapshot coherence assertions (#387) — no IO, returns a
+// list of error strings. `inventories` is [{rel, names: Set|null}] (null =
+// markers absent). Exported for the negative test.
+export function manifestCoherenceErrors(manifest, full, acquisition, inventories) {
+  const out = [];
+
+  // (a) full tools/list names in EXACTLY the manifest's order.
+  const manifestNames = manifest.tools.map((t) => t.name);
+  const fullNames = full.map((t) => String(t.name));
+  if (JSON.stringify(fullNames) !== JSON.stringify(manifestNames)) {
+    out.push(
+      "docs-drift: the capability manifest is out of sync with the full tools/list snapshot" +
+        " (name set or order differs).\n    regenerate the manifest: cargo insta accept" +
+        " (after `cargo nextest run capability_manifest_is_the_frozen_contract`).",
+    );
+  }
+
+  // (b) acquisition tools/list = ordered deep-equal projection of the full
+  //     surface filtered to the manifest's acquisition tools.
+  const acqExpected = full.filter((t) => manifest.byName.get(String(t.name))?.acquisition === true);
+  if (JSON.stringify(acquisition) !== JSON.stringify(acqExpected)) {
+    out.push(
+      "docs-drift: the scoped acquisition tools/list is not the ordered projection of the full" +
+        " surface (KPI_ACQUISITION_TOOLS ∩ tools/list). Regenerate the scoped snapshot" +
+        " (cargo insta accept) after a deliberate surface change.",
+    );
+  }
+
+  // (c) each doc's workflow inventory covers exactly the acquisition set.
+  const acqSet = new Set(manifest.tools.filter((t) => t.acquisition).map((t) => t.name));
+  for (const { rel, names } of inventories) {
+    if (names === null) {
+      out.push(
+        `docs-drift: ${rel} has no acquisition-workflow markers (\`${ACQ_WORKFLOW_BEGIN}\` / \`${ACQ_WORKFLOW_END}\`).`,
+      );
+      continue;
+    }
+    const missing = [...acqSet].filter((n) => !names.has(n)).sort();
+    const extra = [...names].filter((n) => !acqSet.has(n)).sort();
+    if (missing.length || extra.length) {
+      out.push(
+        `docs-drift: ${rel} acquisition-workflow inventory != the nine acquisition tools.` +
+          (missing.length ? `\n    missing: ${missing.join(", ")}` : "") +
+          (extra.length ? `\n    extra: ${extra.join(", ")}` : ""),
+      );
+    }
+  }
+
+  return out;
+}
+
+// Extract the backticked tool names inside a doc's ACQUISITION WORKFLOW span;
+// null when the markers are absent. Pure — exported for the negative test.
+export function extractWorkflowInventoryNames(fileText) {
+  const span = ACQ_WORKFLOW_SPAN_RE.exec(fileText);
+  if (!span) return null;
+  const names = new Set();
+  const nameRe = /`([a-z0-9_]+)`/g;
+  let m;
+  while ((m = nameRe.exec(span[0]))) names.add(m[1]);
+  return names;
+}
+
+export function buildMcpCatalogBlock(tools, manifest) {
   const cell = (s) => s.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
   const table = (rows) =>
     [
@@ -485,8 +591,9 @@ function buildMcpCatalogBlock(tools) {
       "| --- | --- |",
       ...rows.map((t) => `| \`${t.name}\` | ${cell(t.description)} |`),
     ].join("\n");
-  const reads = tools.filter((t) => isMcpReadTool(t.name));
-  const acts = tools.filter((t) => !isMcpReadTool(t.name));
+  const tierOf = (name) => manifest.byName.get(name)?.tier;
+  const reads = tools.filter((t) => tierOf(t.name) === "read");
+  const acts = tools.filter((t) => tierOf(t.name) === "act");
   return [
     `${MCP_CATALOG_BEGIN} — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->`,
     "",
@@ -512,7 +619,8 @@ function extractMcpCatalogNames(fileText) {
   return names;
 }
 
-function checkMcpCatalog(writeCatalog) {
+function checkMcpCatalog(writeCatalog, manifest) {
+  if (!manifest) return; // coherence check already reported the parse failure
   let tools;
   try {
     tools = readMcpSnapshotTools();
@@ -529,7 +637,7 @@ function checkMcpCatalog(writeCatalog) {
     return;
   }
   const snapshotNames = new Set(tools.map((t) => t.name));
-  const block = buildMcpCatalogBlock(tools);
+  const block = buildMcpCatalogBlock(tools, manifest);
 
   for (const rel of MCP_CATALOG_TARGETS) {
     const abs = resolve(repoRoot, rel);
@@ -585,23 +693,71 @@ function checkMcpCatalog(writeCatalog) {
   }
 }
 
+// Manifest/snapshot coherence (#387, ADR 0065): registry-driven read/act plus
+// dual-snapshot awareness. This is artifact coherence and docs coverage — NOT
+// independent registry verification (manifest, full snapshot, and acquisition
+// snapshot all derive from the same `entries()`; each has its own frozen Rust
+// test). It catches partially-regenerated artifacts and a workflow inventory
+// that drifts from the acquisition surface. Returns the parsed manifest for the
+// catalog split, or null on a parse failure (already reported).
+function checkMcpManifestCoherence() {
+  let manifest;
+  let full;
+  let acquisition;
+  try {
+    manifest = readMcpManifest();
+    full = readSnapshotJson(MCP_SNAPSHOT_REL)?.result?.tools;
+    acquisition = readSnapshotJson(MCP_ACQ_SNAPSHOT_REL)?.result?.tools;
+  } catch (e) {
+    errors.push(`docs-drift: could not parse the MCP manifest/snapshots: ${e.message}.`);
+    return null;
+  }
+  if (!Array.isArray(full) || !Array.isArray(acquisition)) {
+    errors.push("docs-drift: MCP tools/list snapshot(s) have no result.tools array.");
+    return null;
+  }
+
+  const inventories = [];
+  for (const rel of MCP_CATALOG_TARGETS) {
+    let names;
+    try {
+      names = extractWorkflowInventoryNames(readText(rel));
+    } catch {
+      errors.push(`docs-drift: MCP catalog target ${rel} is missing.`);
+      continue;
+    }
+    inventories.push({ rel, names });
+  }
+
+  for (const msg of manifestCoherenceErrors(manifest, full, acquisition, inventories)) {
+    errors.push(msg);
+  }
+  return manifest;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-const writeIndex = process.argv.includes("--write-adr-index");
-const writeCatalog = process.argv.includes("--write-mcp-catalog");
+// Guarded so importing this module (the negative test) never runs the gate.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const writeIndex = process.argv.includes("--write-adr-index");
+  const writeCatalog = process.argv.includes("--write-mcp-catalog");
 
-checkCommands();
-checkScreens();
-checkSettingsKeys();
-checkAdrHygiene(writeIndex);
-checkMcpCatalog(writeCatalog);
+  checkCommands();
+  checkScreens();
+  checkSettingsKeys();
+  checkAdrHygiene(writeIndex);
+  const mcpManifest = checkMcpManifestCoherence();
+  checkMcpCatalog(writeCatalog, mcpManifest);
 
-if (errors.length > 0) {
-  console.error(`✖ docs-drift: ${errors.length} spec↔code drift instance(s) found (ADR 0065):\n`);
-  for (const e of errors) console.error(`  - ${e}\n`);
-  process.exit(1);
+  if (errors.length > 0) {
+    console.error(`✖ docs-drift: ${errors.length} spec↔code drift instance(s) found (ADR 0065):\n`);
+    for (const e of errors) console.error(`  - ${e}\n`);
+    process.exit(1);
+  }
+
+  console.log(
+    "✓ docs-drift: contracts.md, ui-information-architecture.md, and data-model.md match the code; ADR hygiene intact.",
+  );
 }
-
-console.log("✓ docs-drift: contracts.md, ui-information-architecture.md, and data-model.md match the code; ADR hygiene intact.");

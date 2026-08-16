@@ -2053,6 +2053,121 @@ mod tests {
         );
     }
 
+    /// Mark a definition as a company's PRIMARY relevant KPI — the real source
+    /// `expected_primary_metric_keys` (financials.rs) reads, so `start_kpi_ingest`
+    /// stamps it into the run's expected set at creation exactly as production
+    /// does (no hand-written stamp).
+    fn seed_primary_relevance(state: &AppState, definition_id: &str) {
+        let connection = state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+                 VALUES (?1, 'c1', ?2, 'active', 'manual', 'primary')",
+                rusqlite::params![format!("krel-{definition_id}"), definition_id],
+            )
+            .expect("relevance row");
+    }
+
+    /// A REALISTIC populated default context (sol #387 B1): unlike the
+    /// adversarial baseline (which plants a producer-invalid 259 KB `last_error`
+    /// to force shrinking), this seeds a producer-valid run through the real
+    /// read path — both pageable sections full to their caps, each slot carrying
+    /// the maximum recent history, output strings near their byte caps — and
+    /// proves the ≤256 KiB budget holds WITHOUT any shrink. Cardinalities are
+    /// asserted first so a future fixture shrinkage cannot leave a vacuous green.
+    #[test]
+    fn a_realistic_full_context_fits_the_budget_without_shrinking() {
+        let state = test_state();
+        // 64 CANONICAL definitions, each marked a PRIMARY relevant KPI for the
+        // company and given eight consolidated FY facts (the run's FY2025 is
+        // excluded from history). `start_kpi_ingest` then stamps them into the
+        // run's expected set through the real producer path — agent-minted
+        // definitions never enter that set (ADR 0093 dec. 4). Labels near
+        // LABEL_MAX; every slot carries RECENT_POINTS_MAX points.
+        for idx in 0..CATALOG_PAGE_MAX {
+            let id = format!("kdpop{idx:02}");
+            let key = format!("mkey_{idx:02}");
+            let label = format!(
+                "Skonsolidowany wskaźnik operacyjny numer {idx:02} — pozycja sprawozdania z \
+                 całkowitych dochodów grupy kapitałowej w ujęciu narastającym, wyrażona w tysiącach \
+                 złotych, wraz z komentarzem zarządu o czynnikach zmiany rok do roku i sezonowości"
+            );
+            seed_definition_raw(
+                &state,
+                &id,
+                "canonical",
+                None,
+                &key,
+                &label,
+                "currency",
+                "system",
+            );
+            seed_primary_relevance(&state, &id);
+            for year in 2016..2024 {
+                seed_period_and_fact(
+                    &state,
+                    &format!("finper_c1_{year}_fy"),
+                    year,
+                    "FY",
+                    &id,
+                    &format!("{year}000000"),
+                );
+            }
+        }
+
+        // Start consolidated (matching the seeded facts' basis) with full context.
+        // The expected-KPI stamp is now the natural union of the company's primary
+        // relevance and the profile pack — no hand-written stamp.
+        let run_id = success(acquisition_call(
+            &state,
+            "start_kpi_ingest",
+            &json!({
+                "documentId": "doc1",
+                "profileId": "gpw_ifrs_annual",
+                "scope": "consolidated",
+                "dataQuality": "final",
+                "period": { "fiscalYear": 2025, "periodType": "FY" }
+            }),
+        ))["runId"]
+            .as_str()
+            .expect("runId")
+            .to_owned();
+
+        let payload = success(context(&state, json!({ "runId": run_id })));
+        let catalog = payload["catalog"].as_array().expect("catalog");
+        let plausibility = payload["plausibility"].as_array().expect("plausibility");
+
+        // Pinned cardinalities FIRST — both sections full to their page caps, and
+        // at least one slot carries the maximum recent history.
+        assert_eq!(
+            catalog.len(),
+            CATALOG_PAGE_MAX,
+            "catalog full to its page cap"
+        );
+        assert_eq!(
+            plausibility.len(),
+            PLAUSIBILITY_PAGE_MAX,
+            "plausibility full to its page cap (not byte-shrunk below it)"
+        );
+        let max_points = plausibility
+            .iter()
+            .filter_map(|entry| entry["recentPoints"].as_array().map(Vec::len))
+            .max()
+            .expect("a slot with history");
+        assert_eq!(
+            max_points, RECENT_POINTS_MAX,
+            "a slot carries the max recent history"
+        );
+
+        // The realistic full-page response fits the budget with no shrink.
+        let serialized = serde_json::to_vec(&payload).expect("serialize");
+        assert!(
+            serialized.len() <= RESPONSE_BUDGET_BYTES,
+            "a realistic full context fits the budget: {} bytes",
+            serialized.len()
+        );
+    }
+
     // ------------------------------------------------------------------
     // get_kpi_ingest_document
     // ------------------------------------------------------------------

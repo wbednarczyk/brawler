@@ -90,7 +90,7 @@ write family:
 
 | Write family | Tools | Must carry |
 | --- | --- | --- |
-| Research notes | `create_notebook_entry` | a non-empty `origins[]` tracing to a source — `sourceType` one of `feed_item` / `transcript_segment` / `ai_analysis` / `manual` / `external_url` (plus required `tags`, may be empty, and `kind`: `manual`/`observation`/`claim`/`question`/`follow_up`) |
+| Research notes | `create_notebook_entry` | a non-empty `origins[]` tracing to a source — `sourceType` one of `feed_item` / `transcript_segment` / `ai_analysis` / `manual` / `external_url` / `report_document` (plus required `tags`, may be empty, and `kind`: `manual`/`observation`/`claim`/`question`/`follow_up`) |
 | Notes from a transcript | `create_note_from_transcript_selection` | the selected `transcriptSegmentIds` (the selection *is* the origin) |
 | Management claims | `create_management_claim`, `update_management_claim` | `sourceEvidenceId` (the filing/transcript the claim was made in) |
 | Financial facts | `create_financial_fact`, `update_financial_fact` | `sourceDocumentRef` — a non-blank citation. Never `attribution`: that field is the fact's slot dimension (`total`/`owners_of_parent`/`nci`), not a citation carrier |
@@ -102,36 +102,120 @@ original origins, `set_claim_verdict`'s evidence is the optional
 `verifyingFactId`) have no extra citation requirement — integrity is enforced
 at create time.
 
-## Ingesting an issuer publication (writes on)
+## Ingesting an issuer publication: the KPI acquisition workflow
 
-**Which path (ADR 0098):** if `start_kpi_ingest` is absent from the server's
-`tools/list`, the legacy `capture_report_document` → `record_financial_facts`
-ritual below is the only supported temporary report-ingest route. Once the
-run-workflow tools are present, ingestion goes through start → stage →
-validate → commit; the direct fact tools are then repair-only.
+Turning an issuer's report into stored financial figures is a **run-based
+workflow** (ADR 0098 / ADR 0099), and it is the **only** supported path — an
+agent never writes canonical facts directly for a normal report. This runs
+behind its own **acquisition credential** (Settings → MCP server → the
+acquisition token): a scoped token whose entire surface is the nine workflow
+tools, and whose act tools are **not** gated by the write toggle above (that
+scope is enabled once, at authentication). Handing an agent an acquisition token
+and *"process all pending KPI ingests"* is a complete instruction — here is what
+that means.
 
-This is the ritual for turning a report — an ESPI/EBI filing, a preliminary
-results PDF — into cited facts, claims, notes, and events (ADR 0093, the
-scenario epic #285 was built for).
+<!-- BEGIN ACQUISITION WORKFLOW TOOLS -->
+The nine workflow tools, in contract order:
 
-1. **Capture** the document — `capture_report_document` with its URL. Keep
-   the returned `documentId`; it's the citation anchor for every step below.
-2. **Read/extract** — read the document and note, for every figure you plan
-   to record, which page and table/row it came from.
-3. **Mint any missing metrics** — the catalog doesn't have every
-   issuer-specific KPI (broker client counts, CFD lots, net deposits, …).
-   `create_kpi_definition` with a snake_case ASCII `metric_key` and
-   `scope: "company"`; the definition's `origin` is stamped `agent`
-   automatically.
-4. **One batch write per fiscal period** — `record_financial_facts`, citing
-   the page + row label per fact (e.g. `"p.12, tab. 3, row 'Zysk netto'"`).
-5. **Route everything else** through the mapping table below.
+1. `start_kpi_ingest` — claim or resume a run; an idempotent keepalive.
+2. `list_pending_kpi_ingests` — the pending-run work queue (paginated).
+3. `get_kpi_ingest_context` — catalog, plausibility evidence, profile doctrine.
+4. `get_kpi_ingest_document` — the pinned source bytes, in chunks.
+5. `stage_kpi_observations` — write the complete revision snapshot.
+6. `validate_kpi_ingest` — the typed manifest / repair report.
+7. `commit_kpi_ingest` — atomic, idempotent commit of the validated manifest.
+8. `get_kpi_ingest_status` — a pure status read.
+9. `cancel_kpi_ingest` — abandon a pre-commit run.
+<!-- END ACQUISITION WORKFLOW TOOLS -->
+
+### The loop: process all pending ingests
+
+**Draining the queue.** Call `list_pending_kpi_ingests` with no cursor, process
+**every** run on that page, then follow `nextCursor` page by page until one comes
+back empty. Then start over from no cursor and repeat, stopping only when the
+first page is empty. (Never re-list before processing the runs you already saw —
+they would simply reappear, and the loop would never end.)
+
+For each pending run the steps are: **claim → read the context (and the document
+itself, in chunks, when the period/scope aren't known yet) → stage the complete
+set of observations → validate → repair if needed → commit → confirm.**
+
+- **Claim** with `start_kpi_ingest{ runId }` — this takes (or renews) the lease.
+  A resume never re-picks the profile; that was fixed when the run was created.
+- **Read the context** with `get_kpi_ingest_context{ runId }`: the catalog of
+  metric definitions (so you can map a Polish line to a metric), the plausibility
+  evidence (per-slot medians and recent history — the validator's own yardstick),
+  and the profile rules. When the reporting period, scope, or data quality is
+  still unknown, read the source bytes with `get_kpi_ingest_document{ runId,
+  offset, length }` (up to 262144 bytes per chunk) until `eof`.
+- **Stage** with `stage_kpi_observations{ runId, observations, missingReasons }`.
+  Each stage is the **complete** snapshot of a revision — a repair resends every
+  observation, not just the fixed one. `missingReasons` is required (`{}` = you
+  omitted nothing on purpose). Cite every observation (see below).
+- **Validate** with `validate_kpi_ingest{ runId, revision }`, passing the
+  `revision` the stage returned. `ready` → commit; `failed` → the returned
+  manifest **is** the repair report, flagging exactly what to fix; `superseded` →
+  something else moved the run, so re-read it and start over.
+- **Repair, but bounded.** On `failed`, fix the flagged observations, re-stage
+  the complete snapshot, and re-validate — **at most twice**. If the same
+  problems repeat or you have nothing new to add, stop and hand the manifest
+  diagnostics back to the user. (This cap is the agent's own discipline, not a
+  server limit.)
+- **Commit** with `commit_kpi_ingest{ runId, manifestHash, revision }` → a
+  receipt listing the accepted facts and each observation's outcome. Commit is
+  idempotent: replaying it returns the identical receipt.
+- **Confirm** with `get_kpi_ingest_status{ runId }` — a terminal `complete` (or
+  `partial`, when a `missingReasons` gap was declared).
+
+`cancel_kpi_ingest` is **not** part of the happy path: cancelling after commit is
+a `conflict`. Cancel only a run you deliberately abandon before committing; a run
+whose two repair rounds were exhausted stays `validation_failed` and can be
+recovered later — never cancel it to tidy up.
+
+### Keeping the lease alive
+
+The lease belongs to the **credential**, not to a session, and lasts **30
+minutes**. `start_kpi_ingest{ runId }` is the keepalive — an idempotent re-claim
+that doesn't count as a new attempt. Reads never touch the lease. While reading a
+long document or building a big re-stage, renew about **every 15 minutes** (half
+the TTL), watching `lease.expiresAt` in the status. A lapsed lease surfaces as
+`run_lease_expired` (recover with `start(runId)`); if someone else took the run
+after it expired you get `run_taken_over` and should simply move on.
+
+### Choosing the profile
+
+A **fresh** start needs a `profileId` from the fixed registry (a resume never
+changes it):
+
+| Report type | `profileId` |
+| --- | --- |
+| Annual IFRS / ESEF report | `gpw_ifrs_annual` |
+| Interim (final) report | `gpw_interim` |
+| Preliminary (wstępne) release | `gpw_preliminary` |
+| NewConnect UoR | `nc_uor` |
+| Company-characteristic pack | `company_characteristic` |
+
+If the document doesn't make the type clear, the agent should ask rather than
+guess; an unknown `profileId` is refused at start.
+
+### Citing each observation
+
+Every observation carries a `citation { page, table, row, quote }` — the exact
+place the figure was read. The page is always given; table/row pin a figure
+inside a statement; the declared unit goes in the quote so the scaling can be
+checked. An observation with no locator fails validation as `citation.missing` —
+which is simply the repair report asking for the source.
+
+### Reading the source document
+
+This doctrine is about the source format itself and holds no matter how the
+figures are stored — it governs the value, window, and citation staged.
 
 **Unit scaling.** Polish statements state the unit in the table header:
 `(w tys. PLN)` means store the FULL base unit — multiply the printed number
-by 1,000; `(w mln PLN)` → ×1,000,000. `valueNumeric` is always base-unit PLN
-(or the stated currency), never the printed thousands/millions figure. Cite
-the declared unit in the citation text so the scaling is checkable later.
+by 1,000; `(w mln PLN)` → ×1,000,000. The stored value is always base-unit PLN
+(or the stated currency), never the printed thousands/millions figure, and the
+declared scale is recorded so it can be checked later.
 
 **Parenthesized negatives.** `(419 996)` in a Polish statement means
 **−419996** (thousands) — it's a sign convention, not a label or a range.
@@ -140,17 +224,16 @@ comma (`1 027 240,50` → `1027240.50`).
 
 **The cumulative-only rule (ADR 0093 dec. 3).** GPW interim publications
 print discrete-quarter AND cumulative columns side by side. Record ONLY the
-cumulative column (H1/9M/FY) into the cumulative period — the discrete
+cumulative column (H1/9M/FY) against the cumulative period — the discrete
 quarter is skipped, it's derivable by span arithmetic. Worked example (XTB RB
 18/2026): the table shows Q2 net profit `492 198` tys. right next to H1
-`1 027 240` tys. — the correct write is `1027240000` against the H1 period,
-never the Q2 figure. `periodType` for a half year is `"H1"`, `periodEnd`
-`YYYY-06-30`.
+`1 027 240` tys. — the correct value is `1027240000` against the H1 period,
+never the Q2 figure. A half year is period `H1`.
 
-**Preliminary releases.** A wstępne/preliminary publication →
-`dataQuality: "preliminary"` on the batch. When the final audited report
-lands later, its `final` write supersedes the preliminary one automatically
-at creation time — nothing else to do.
+**Preliminary releases.** A wstępne/preliminary publication → start the run with
+`dataQuality: "preliminary"`. When the final audited report lands later, its
+`final` figures supersede the preliminary ones automatically — nothing else to
+do.
 
 **Watch for ambiguous labels.** The same label can appear twice in one
 publication at different windows (XTB defines "Liczba aktywnych klientów"
@@ -162,21 +245,29 @@ match you find.
 in the document's text layer — read the page visually before citing it, and
 cite the page number. Never estimate a chart value from its axis.
 
-**Refusals during the ritual.** `provenance_required` means a citation is
-missing from the input — fix it, don't retry unchanged. `writes_disabled`
-means the owner hasn't flipped *Settings → MCP server → Allow write tools* —
-ask them, don't try to work around it.
+### Direct fact writes are repair-only
 
-### Mapping doctrine: report content → tool
+Normal ingestion always goes through the workflow above. The direct fact tools —
+`record_financial_facts`, `create_financial_fact`, `update_financial_fact` — are
+**Full-scope, low-level repair tools** (ADR 0098): for a human or Full-scope
+agent to hand-fix a fact the workflow can't express, **never** for reporting a
+normal ingest. They aren't on the acquisition scope at all. And
+`capture_report_document` is a **producer handoff**, not part of acquisition:
+fetching a document and turning a URL into a `documentId` is done by the UI, the
+Full scope, or the automatic planner — the acquisition credential itself
+discovers and captures nothing; it only processes runs that already exist.
 
-| Report content | Tool | Notes |
+Everything else a report contains routes to a **Full-scope** write, outside the
+acquisition workflow:
+
+| Report content | Tool | Scope |
 | --- | --- | --- |
-| P&L / balance-sheet / KPI figures | `record_financial_facts` | per-fact citation (page + row label); legacy/low-level — repair-only once the run-workflow tools are present |
-| Management guidance with numbers ("costs +30% in 2026", "marketing +50%") | `create_management_claim` | structured target fields (`targetMetricKey`/comparator/value, due year/period) + `sourceEvidenceId` = the captured document id |
-| One-off narrative events (a KNF penalty, a donation) | `create_notebook_entry` | `report_document` origin |
-| Dividend declarations/payments | `create_company_event` | |
-| The upcoming final report date | `create_report_expectation` | feeds the report-season calendar |
-| Post-balance-date trading updates ("92.8k new clients in July") | `create_notebook_entry` | **never** `record_financial_facts` — the datum belongs to a period not yet closed |
+| P&L / balance-sheet / KPI figures | the run workflow (`stage_kpi_observations`) | acquisition |
+| Management guidance with numbers ("costs +30% in 2026") | `create_management_claim` (`sourceEvidenceId` = the document id) | Full-scope |
+| One-off narrative events (a KNF penalty, a donation) | `create_notebook_entry` (`report_document` origin) | Full-scope |
+| Dividend declarations/payments | `create_company_event` | Full-scope |
+| The upcoming final report date | `create_report_expectation` | Full-scope |
+| Post-balance-date trading updates ("92.8k new clients in July") | `create_notebook_entry` — **never** a fact (period not yet closed) | Full-scope |
 
 ## The full tool catalog
 
