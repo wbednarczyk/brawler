@@ -16,13 +16,16 @@ Everything here is **decision support — never phrase output as buy/sell/hold**
 
 ## Discovery: read vs act
 
-Call `tools/list` first. Tools fall in two tiers, tellable by name:
+Call `tools/list` first. Every tool the server exposes is classified into one of
+two tiers by the server itself (the registry, not its name — the tool catalog
+below carries the authoritative split); the name is only a hint:
 
-- **Read** — `get_*` / `list_* / search_*`. Always available. Use them freely to
-  understand the workspace before doing anything else.
-- **Act** — every other verb (`create_*`, `update_*`, `set_*`, `mark_*`,
+- **Read** — usually `get_*` / `list_*` / `search_*`. Always available. Use them
+  freely to understand the workspace before doing anything else.
+- **Act** — the writes (typically `create_*`, `update_*`, `set_*`, `mark_*`,
   `confirm_*`, `trigger_*`, `run_*`, …). These **write**. They are always listed
-  even when disabled.
+  even when disabled. When a name doesn't fit the usual prefix, trust the
+  catalog's tier, not the verb.
 
 **Act tools may be off.** On the **primary (Full-scope) token**, writes are
 gated by a user setting (default OFF). If you call an act tool while writes are

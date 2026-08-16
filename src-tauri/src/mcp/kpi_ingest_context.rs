@@ -2082,10 +2082,11 @@ mod tests {
     #[test]
     fn a_realistic_full_context_fits_the_budget_without_shrinking() {
         let state = test_state();
-        // 64 company/agent definitions: each resolves (scope='company') AND is a
-        // minted catalog extra, with a label near LABEL_MAX. Eight consolidated
-        // FY facts each (the run's FY2025 is excluded from history) → every slot
-        // carries RECENT_POINTS_MAX points.
+        // 64 CANONICAL definitions the run's expected keys resolve to — a
+        // producer-valid denominator (agent-minted definitions never enter the
+        // expected set, ADR 0093 dec. 4). Labels near LABEL_MAX; eight
+        // consolidated FY facts each (the run's FY2025 is excluded from history)
+        // → every slot carries RECENT_POINTS_MAX points.
         let mut keys = Vec::new();
         for idx in 0..CATALOG_PAGE_MAX {
             let id = format!("kdpop{idx:02}");
@@ -2098,12 +2099,12 @@ mod tests {
             seed_definition_raw(
                 &state,
                 &id,
-                "company",
-                Some("c1"),
+                "canonical",
+                None,
                 &key,
                 &label,
                 "currency",
-                "agent",
+                "system",
             );
             for year in 2016..2024 {
                 seed_period_and_fact(
