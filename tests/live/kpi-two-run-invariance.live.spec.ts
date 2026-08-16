@@ -121,14 +121,15 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
     return { isError: result?.isError === true, payload: structured as Record<string, any> };
   };
 
-  const startFresh = async (client: string) => {
+  // start_kpi_ingest carries no `execution` field (contract: only stage/commit
+  // do) — the driver label rides on those calls instead.
+  const startFresh = async () => {
     const started = await callTool("start_kpi_ingest", {
       documentId,
       profileId: payload.profileId,
       scope: payload.scope,
       dataQuality: payload.dataQuality,
       period: payload.period,
-      execution: { client },
     });
     expect(started.isError, JSON.stringify(started.payload)).toBe(false);
     expect(started.payload.status).toBe("extracting");
@@ -177,30 +178,34 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
     // (3) SERVER INVARIANCE — two runs cancelled without committing, so both
     //     validate against the SAME (empty) fact store; identical observations
     //     ⇒ byte-identical canonicalized manifest.
-    const runA = await startFresh("alpha");
+    const runA = await startFresh();
     // (6) Context sufficiency: read the source only via chunked document reads.
     const context = await callTool("get_kpi_ingest_context", { runId: runA });
     expect(context.isError).toBe(false);
     let offset = 0;
     let eof = false;
+    let totalBytes = Infinity;
     let chunks = 0;
-    while (!eof && chunks < 64) {
+    // Drive the loop by the document's own totalBytes (reports can exceed the
+    // 16 MiB a fixed 64-chunk cap would allow); keep a generous safety cap.
+    while (!eof && offset < totalBytes && chunks < 512) {
       const chunk = await callTool("get_kpi_ingest_document", {
         runId: runA,
         offset,
         length: 262144,
       });
       expect(chunk.isError).toBe(false);
+      totalBytes = chunk.payload.totalBytes as number;
       offset += chunk.payload.length as number;
       eof = chunk.payload.eof === true;
       chunks += 1;
     }
-    expect(eof, "the document is fully readable via chunked reads to EOF").toBe(true);
+    expect(eof, `document readable via chunked reads to EOF (${offset}/${totalBytes} B)`).toBe(true);
     const revA = await stage(runA, "alpha");
     const manifestA = (await validateReady(runA, revA)).manifest;
     await callTool("cancel_kpi_ingest", { runId: runA });
 
-    const runB = await startFresh("beta");
+    const runB = await startFresh();
     const revB = await stage(runB, "beta");
     const manifestB = (await validateReady(runB, revB)).manifest;
     await callTool("cancel_kpi_ingest", { runId: runB });
@@ -213,7 +218,7 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
 
     // (4) CROSS-RUN COMMIT determinism — run C creates the facts, run D commits
     //     the same observations and must reobserve them (no new canonical facts).
-    const runC = await startFresh("alpha");
+    const runC = await startFresh();
     const revC = await stage(runC, "alpha");
     const readyC = await validateReady(runC, revC);
     const receiptC = await callTool("commit_kpi_ingest", {
@@ -232,7 +237,7 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
       if (outcome.factId) factIdByKey.set(outcome.metricKey, outcome.factId);
     }
 
-    const runD = await startFresh("beta");
+    const runD = await startFresh();
     const revD = await stage(runD, "beta");
     const readyD = await validateReady(runD, revD);
     const receiptD = await callTool("commit_kpi_ingest", {
@@ -266,13 +271,10 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
 
     // (5) Cooperative resume — a fresh run's bare start(runId) keepalive renews
     //     the LIVE lease without incrementing attemptCount.
-    const runE = await startFresh("alpha");
+    const runE = await startFresh();
     const before = await callTool("get_kpi_ingest_status", { runId: runE });
     const attemptsBefore = before.payload.attemptCount as number;
-    const resumed = await callTool("start_kpi_ingest", {
-      runId: runE,
-      execution: { client: "beta" },
-    });
+    const resumed = await callTool("start_kpi_ingest", { runId: runE });
     expect(resumed.isError, JSON.stringify(resumed.payload)).toBe(false);
     const after = await callTool("get_kpi_ingest_status", { runId: runE });
     expect(
