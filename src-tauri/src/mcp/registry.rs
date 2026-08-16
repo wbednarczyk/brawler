@@ -1729,6 +1729,61 @@ mod tests {
         }
     }
 
+    /// The registry-truth capability manifest the docs-drift gate consumes
+    /// (#387, ADR 0065): the ordered exposed surface with each tool's
+    /// authoritative `tier` and acquisition-scope membership. The wire
+    /// `tools/list` shape deliberately omits `tier` ([`descriptors`]), so this
+    /// committed snapshot is the ONLY registry-truth artifact the JS catalog
+    /// gate can read — it splits read/act from `tier` here instead of
+    /// re-deriving it from a tool-name regex.
+    fn capability_manifest() -> Value {
+        let tools: Vec<Value> = entries()
+            .iter()
+            .filter(|entry| entry.exposed)
+            .map(|entry| {
+                let tier = match entry.tier {
+                    CapabilityTier::Read => "read",
+                    CapabilityTier::Act => "act",
+                    CapabilityTier::Excluded => {
+                        unreachable!("excluded commands are never exposed as tools")
+                    }
+                };
+                json!({
+                    "name": entry.tool_name,
+                    "tier": tier,
+                    "acquisition": KPI_ACQUISITION_TOOLS.contains(&entry.tool_name),
+                })
+            })
+            .collect();
+        json!({ "schemaVersion": 1, "tools": tools })
+    }
+
+    /// The capability manifest is a frozen, committed snapshot (`cargo insta
+    /// accept` to regenerate — CI runs without `INSTA_UPDATE`, so a tier change
+    /// or a newly-exposed tool reddens here). The docs-drift gate reads this
+    /// file to classify read/act by registry truth, not a name regex (#387).
+    #[test]
+    fn capability_manifest_is_the_frozen_contract() {
+        let manifest = capability_manifest();
+        // Coherence the JS gate relies on: the manifest's acquisition tools are
+        // exactly `KPI_ACQUISITION_TOOLS`, in the frozen contract order.
+        let acquisition: Vec<&str> = manifest["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter(|tool| tool["acquisition"] == json!(true))
+            .map(|tool| tool["name"].as_str().expect("tool name"))
+            .collect();
+        assert_eq!(
+            acquisition, KPI_ACQUISITION_TOOLS,
+            "manifest acquisition set must equal KPI_ACQUISITION_TOOLS in contract order"
+        );
+        insta::assert_snapshot!(
+            "mcp_registry_manifest",
+            serde_json::to_string_pretty(&manifest).expect("serializable")
+        );
+    }
+
     /// The read wave's umbrella proof (ADR 0088 dec. 2): every exposed `read`
     /// tool is listed in `tools/list` AND callable against a seeded DB with a
     /// minimal valid input — none may `500`/panic or reject its own minimal

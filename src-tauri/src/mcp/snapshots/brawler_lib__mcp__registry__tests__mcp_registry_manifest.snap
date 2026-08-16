@@ -1,0 +1,564 @@
+---
+source: src/mcp/registry.rs
+expression: "serde_json::to_string_pretty(&manifest).expect(\"serializable\")"
+---
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "acquisition": false,
+      "name": "get_company_dossier",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "search_research",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_claims_due",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_quality_assessment",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_companies",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_company_basic_info",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_watchlists",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_watchlist_memberships",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_feed_items",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_company_signals",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_company_events",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_financial_facts",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_financial_periods",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_kpi_definitions",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_flagged_fact_provenance",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_price_context",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_kpi_comparison",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_sector_percentiles",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_valuation_runs",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_ownership_overview",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_insider_overview",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_short_positions",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_analyst_recommendations",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_company_health",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_red_flags",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_report_documents_view",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_report_diff_candidates",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_report_diff",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_video_transcript_jobs",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_transcript_segments",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_notebook_entries",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_management_claims",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_report_expectations",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_decision_entries",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_research_questions",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_report_season",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_attention_events",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_latest_morning_briefing",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_autopilot_runs",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_autopilot_run",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_quality_frameworks",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_alert_rules",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_flagged_extraction_outcomes",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "list_unclassified_filings",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "create_notebook_entry",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_note_from_transcript_selection",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_notebook_entry",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_management_claim",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_management_claim",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "set_claim_verdict",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_financial_fact",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_financial_fact",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "capture_report_document",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "record_financial_facts",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "set_qualitative_verdicts",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_research_question",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_research_question",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_evidence_link",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_research_reminder",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_research_reminder",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_decision_entry",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_report_expectation",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_report_expectation",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "record_expectation_resolution",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_company_event",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_kpi_definition",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_kpi_relevance",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_kpi_relevance",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_quality_framework",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_quality_framework",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_framework_criterion",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_framework_criterion",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_alert_rule",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_alert_rule",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_company",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "create_watchlist",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "add_company_to_watchlist",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "remove_company_from_watchlist",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "update_feed_item_state",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "mark_report_prepared",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "mark_report_processed",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "mark_research_scope_reviewed",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "confirm_company_signal",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "reject_company_signal",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "classify_filing",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "confirm_derived_event",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "acknowledge_red_flag",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "set_ownership_holder_type",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "mark_attention_event_seen",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "dismiss_attention_event",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "set_autopilot_run_notification_state",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "evaluate_framework",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "compute_comparative_valuation",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "set_alert_rule_enabled",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "trigger_autopilot_run",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "generate_morning_briefing",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "refresh_sources",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "refresh_source",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "run_aggregator_fundamentals_pull",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "backfill_company_history",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "run_structured_extraction",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "rerun_extraction_outcome",
+      "tier": "act"
+    },
+    {
+      "acquisition": true,
+      "name": "start_kpi_ingest",
+      "tier": "act"
+    },
+    {
+      "acquisition": true,
+      "name": "list_pending_kpi_ingests",
+      "tier": "read"
+    },
+    {
+      "acquisition": true,
+      "name": "get_kpi_ingest_context",
+      "tier": "read"
+    },
+    {
+      "acquisition": true,
+      "name": "get_kpi_ingest_document",
+      "tier": "read"
+    },
+    {
+      "acquisition": true,
+      "name": "stage_kpi_observations",
+      "tier": "act"
+    },
+    {
+      "acquisition": true,
+      "name": "validate_kpi_ingest",
+      "tier": "act"
+    },
+    {
+      "acquisition": true,
+      "name": "commit_kpi_ingest",
+      "tier": "act"
+    },
+    {
+      "acquisition": true,
+      "name": "get_kpi_ingest_status",
+      "tier": "read"
+    },
+    {
+      "acquisition": true,
+      "name": "cancel_kpi_ingest",
+      "tier": "act"
+    }
+  ]
+}
