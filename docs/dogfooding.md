@@ -31,6 +31,16 @@ anything that felt slow, confusing, or wrong. A feeling counts as a finding.
   and, when it names a defect class, the [guardrail-harvest](../.claude/skills/guardrail-harvest/SKILL.md) loop.
 - The run itself is entered in the epic-closure retrospective (or the audit's tracking issue, if run standalone): note date + build + verdict there — continuous release ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) has no release-prep step or hand-written release notes.
 
+## KPI acquisition: two-client dogfood (#389, epic #353 DoD)
+
+Prove the acquisition workflow on **two real MCP clients** — Claude and Codex — driving the same report. Run on a **disposable sandbox** (never the owner's live data): `make pr-binary PR=<n>`, stop the owner app, copy the data dir, launch the sandbox exe (`scripts/windows/dev-live.ps1 -ExePath …`). Mint an acquisition token in Settings → MCP (generate → use → **revoke** at the end; the token is in the shared OS keychain, so revoke even after deleting the sandbox).
+
+- **Automated (Claude-side, mechanical):** `make live-drive LIVE_SPEC=tests/live/kpi-two-run-invariance.live.spec.ts` with `BRAWLER_T6_DOC_ID` + `BRAWLER_T6_PAYLOAD` — nine-tool scoped surface ≤16 KiB, no write capability on the token (`-32602`), server invariance (two runs → byte-identical canonicalized manifest), reobserve (no duplicate facts), cooperative-resume keepalive, chunked-document-only.
+- **Genuine Codex client:** build the bridge for the OS Codex runs on (`cargo build --bin brawler-mcp-stdio`), then `codex mcp add brawler -- <bridge> --port <p> --token <acquisition>`. Drive with `codex exec --dangerously-bypass-approvals-and-sandbox "…"` (the bypass is required for Codex to run MCP tool calls non-interactively). Codex genuinely does `tools/list` (nine tools) → `start` → `stage` → `validate` (`ready`) — the same workflow the Claude driver runs.
+- **Owner judgment (irreducibly human):** is `"process all pending KPI ingests"` a sufficient instruction unaided? Does the skill carry any single-document knowledge? Record findings per below.
+
+Teardown: cancel/leave no committed facts, revoke the token, `rm` the sandbox, relaunch the owner app, and confirm the owner DB is **delta-zero** vs the pre-run baseline.
+
 ## Earlier exploratory checkpoints (ADR 0081)
 
 Three cadences move real-app validation earlier than release closure. In every one, **automation collects mechanics + evidence; a human answers whether the journey is clear, useful, and trustworthy** — automation never prints a quality verdict. Windows-native behavior is the desktop authority.
