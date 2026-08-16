@@ -2053,23 +2053,19 @@ mod tests {
         );
     }
 
-    /// Override a run's expected-KPI stamp to a producer-valid key set (a run
-    /// legitimately carries up to 256 expected keys, contracts.md § Budgets).
-    fn set_expected_keys(state: &AppState, run_id: &str, keys: &[String]) {
-        let stamp = json!({
-            "schemaVersion": 1,
-            "source": "expected_primary_metric_keys+profile",
-            "packVersion": "gpw_ifrs_annual@v1",
-            "keys": keys,
-        })
-        .to_string();
+    /// Mark a definition as a company's PRIMARY relevant KPI — the real source
+    /// `expected_primary_metric_keys` (financials.rs) reads, so `start_kpi_ingest`
+    /// stamps it into the run's expected set at creation exactly as production
+    /// does (no hand-written stamp).
+    fn seed_primary_relevance(state: &AppState, definition_id: &str) {
         let connection = state.checkout_for_tests().expect("raw");
         connection
             .execute(
-                "UPDATE kpi_ingest_runs SET expected_kpis_json = ?1 WHERE id = ?2",
-                rusqlite::params![stamp, run_id],
+                "INSERT INTO kpi_relevance (id, company_id, definition_id, status, source, rank)
+                 VALUES (?1, 'c1', ?2, 'active', 'manual', 'primary')",
+                rusqlite::params![format!("krel-{definition_id}"), definition_id],
             )
-            .expect("stamp expected keys");
+            .expect("relevance row");
     }
 
     /// A REALISTIC populated default context (sol #387 B1): unlike the
@@ -2082,12 +2078,12 @@ mod tests {
     #[test]
     fn a_realistic_full_context_fits_the_budget_without_shrinking() {
         let state = test_state();
-        // 64 CANONICAL definitions the run's expected keys resolve to — a
-        // producer-valid denominator (agent-minted definitions never enter the
-        // expected set, ADR 0093 dec. 4). Labels near LABEL_MAX; eight
-        // consolidated FY facts each (the run's FY2025 is excluded from history)
-        // → every slot carries RECENT_POINTS_MAX points.
-        let mut keys = Vec::new();
+        // 64 CANONICAL definitions, each marked a PRIMARY relevant KPI for the
+        // company and given eight consolidated FY facts (the run's FY2025 is
+        // excluded from history). `start_kpi_ingest` then stamps them into the
+        // run's expected set through the real producer path — agent-minted
+        // definitions never enter that set (ADR 0093 dec. 4). Labels near
+        // LABEL_MAX; every slot carries RECENT_POINTS_MAX points.
         for idx in 0..CATALOG_PAGE_MAX {
             let id = format!("kdpop{idx:02}");
             let key = format!("mkey_{idx:02}");
@@ -2106,6 +2102,7 @@ mod tests {
                 "currency",
                 "system",
             );
+            seed_primary_relevance(&state, &id);
             for year in 2016..2024 {
                 seed_period_and_fact(
                     &state,
@@ -2116,10 +2113,11 @@ mod tests {
                     &format!("{year}000000"),
                 );
             }
-            keys.push(key);
         }
 
         // Start consolidated (matching the seeded facts' basis) with full context.
+        // The expected-KPI stamp is now the natural union of the company's primary
+        // relevance and the profile pack — no hand-written stamp.
         let run_id = success(acquisition_call(
             &state,
             "start_kpi_ingest",
@@ -2134,7 +2132,6 @@ mod tests {
             .as_str()
             .expect("runId")
             .to_owned();
-        set_expected_keys(&state, &run_id, &keys);
 
         let payload = success(context(&state, json!({ "runId": run_id })));
         let catalog = payload["catalog"].as_array().expect("catalog");
