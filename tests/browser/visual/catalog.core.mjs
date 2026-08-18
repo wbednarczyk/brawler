@@ -26,6 +26,16 @@ const RAW_CATALOG = [
   { screen: "quality", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "report-documents", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "coverage", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  // The pane shot above is clipped at TIER_HEIGHT, so the actions footer has
+  // never been inside a baseline — adding an action there changed no pixel
+  // (epic #398). This narrow region shot covers the footer on its own, and
+  // stays stable when the coverage table above it changes.
+  {
+    screen: "coverage-actions",
+    spec: "visual-quality-docs.spec.ts",
+    states: ["default"],
+    tiers: M_ONLY,
+  },
   { screen: "research", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "events", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "report-season", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },

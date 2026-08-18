@@ -1,5 +1,5 @@
 import { test, expect, openApp } from "../helpers/harness";
-import { shootPanel } from "./helpers";
+import { shootPanel, shootRegion } from "./helpers";
 import type { Locator, Page } from "@playwright/test";
 
 // Visual baseline — Quality + Report-documents panels (ADR 0076 D7 / U11),
@@ -63,5 +63,17 @@ test.describe("visual — quality + report documents", () => {
     const pane = await openCoverage(page);
     await expect(pane.locator("table.coverage-table")).toBeVisible();
     await shootPanel(page, pane, "coverage");
+  });
+
+  // The pane shot above is clipped at the tier height, so the actions footer
+  // sat outside every baseline: epic #398 added a third action there and not
+  // one baseline pixel moved. Shot as its own region so the actions — the most
+  // clicked part of the panel — actually have visual coverage.
+  test("Coverage actions footer", async ({ page }) => {
+    await openApp(page);
+    const pane = await openCoverage(page);
+    const actions = pane.locator(".coverage-actions");
+    await expect(actions).toBeVisible();
+    await shootRegion(page, pane, actions, "coverage-actions");
   });
 });
