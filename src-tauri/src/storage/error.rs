@@ -111,6 +111,10 @@ pub enum StorageError {
     MissingIngestReference { table: String, id: String },
     #[error("invalid kpi ingest run value for {key}: {value}")]
     InvalidKpiIngestRunValue { key: &'static str, value: String },
+    #[error(
+        "kpi ingest run profile_version '{value}' read from a stored run is not a registered profile version — invariant corruption, not caller input (ADR 0102 dec. 13)"
+    )]
+    UnknownKpiIngestProfileVersion { value: String },
     #[error("kpi ingest run period {period} does not belong to company {company}")]
     RunPeriodCompanyMismatch { period: String, company: String },
     #[error("kpi ingest run {id} lease not held by {holder}")]

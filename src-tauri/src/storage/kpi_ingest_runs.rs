@@ -1035,7 +1035,7 @@ impl KpiIngestRunsStore {
         let mut keys = super::financials::expected_primary_metric_keys(&tx, &new_run.company_id)?
             .unwrap_or_default();
         keys.extend(
-            super::kpi_ingest_profiles::expected_pack(&new_run.profile_version, &statement_type)
+            super::kpi_ingest_profiles::expected_pack(&new_run.profile_version, &statement_type)?
                 .iter()
                 .map(|k| (*k).to_owned()),
         );

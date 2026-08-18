@@ -3,6 +3,8 @@
 //! expected-KPI pack that joins the company's live relevance union in the
 //! creation-time `expected_kpis_json` stamp.
 
+use super::{StorageError, StorageResult};
+
 /// Every registered profile version — all profiles are at `@v1`. Membership in
 /// this set IS the whole validation (no `@vN` parser until a second version of
 /// any profile exists and something must compare N's).
@@ -85,8 +87,18 @@ const PRELIMINARY_BANKING: &[&str] = &["net_profit"];
 /// The profile's expected-KPI pack for one `statement_type`. An unknown
 /// statement type falls back to the industrial floor (mirroring
 /// `get_statement_type`'s `'industrial'` default and the seeding join).
-pub fn expected_pack(profile_version: &str, statement_type: &str) -> &'static [&'static str] {
-    match profile_version {
+///
+/// `profile_version` here is the user-input validation route (ADR 0102 dec.
+/// 13): the only production caller, `create_run_if_absent`, checks
+/// `is_registered_profile_version` immediately before calling this, so an
+/// unregistered version is caller input, never a silent full-floor fallback
+/// (no `_` catch-all — a future `@v2` must be given its own arm, not inherit
+/// this one's).
+pub fn expected_pack(
+    profile_version: &str,
+    statement_type: &str,
+) -> StorageResult<&'static [&'static str]> {
+    let pack = match profile_version {
         "company_characteristic@v1" => &[],
         "gpw_preliminary@v1" => {
             if statement_type == "banking" {
@@ -95,15 +107,21 @@ pub fn expected_pack(profile_version: &str, statement_type: &str) -> &'static [&
                 PRELIMINARY
             }
         }
-        // gpw_ifrs_annual@v1 | gpw_interim@v1 | nc_uor@v1 — the full floor.
-        _ => match statement_type {
+        "gpw_ifrs_annual@v1" | "gpw_interim@v1" | "nc_uor@v1" => match statement_type {
             "banking" => FLOOR_BANKING,
             "insurance" => FLOOR_INSURANCE,
             "specialty_finance" => FLOOR_SPECIALTY_FINANCE,
             "reit" => FLOOR_REIT,
             _ => FLOOR_INDUSTRIAL, // industrial | brokerage | unknown
         },
-    }
+        other => {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "profile_version",
+                value: other.to_owned(),
+            })
+        }
+    };
+    Ok(pack)
 }
 
 /// The profile's extraction doctrine (#385): short imperative rules the MCP
@@ -111,8 +129,15 @@ pub fn expected_pack(profile_version: &str, statement_type: &str) -> &'static [&
 /// BEHAVIOR — a semantic change to any rule requires a new `@vN` profile
 /// version (the golden test freezes full equality per version); each rule is
 /// ≤512 UTF-8 bytes (contracts.md § Budgets).
-pub fn profile_rules(profile_version: &str) -> &'static [&'static str] {
-    match profile_version {
+///
+/// `profile_version` here is the stored-value route (ADR 0102 dec. 13): the
+/// only production caller reads it back off an existing run's row without
+/// re-validation, so an unregistered version reaching this function is
+/// invariant corruption, not caller input — a typed
+/// [`StorageError::UnknownKpiIngestProfileVersion`], never a silent empty
+/// doctrine (no `_` catch-all).
+pub fn profile_rules(profile_version: &str) -> StorageResult<&'static [&'static str]> {
+    let rules: &'static [&'static str] = match profile_version {
         "gpw_ifrs_annual@v1" => &[
             "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
             "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
@@ -142,8 +167,13 @@ pub fn profile_rules(profile_version: &str) -> &'static [&'static str] {
             "This profile records durable company characteristics, not periodic KPIs; stage point_in_time values only.",
             "There is no expected pack: stage exactly what the document states, with precise citations.",
         ],
-        _ => &[],
-    }
+        other => {
+            return Err(StorageError::UnknownKpiIngestProfileVersion {
+                value: other.to_owned(),
+            })
+        }
+    };
+    Ok(rules)
 }
 
 #[cfg(test)]
@@ -217,6 +247,7 @@ mod tests {
             }
             expected.extend(pack_slice(statement_type));
             let actual: BTreeSet<&str> = expected_pack("gpw_ifrs_annual@v1", statement_type)
+                .expect("registered profile")
                 .iter()
                 .copied()
                 .collect();
@@ -238,23 +269,26 @@ mod tests {
         for statement_type in STATEMENT_TYPES {
             for profile in ["gpw_ifrs_annual@v1", "gpw_interim@v1", "nc_uor@v1"] {
                 assert_eq!(
-                    set(expected_pack(profile, statement_type)),
+                    set(expected_pack(profile, statement_type).expect("registered profile")),
                     full(statement_type),
                     "{profile} × {statement_type}"
                 );
             }
-            let preliminary = expected_pack("gpw_preliminary@v1", statement_type);
+            let preliminary =
+                expected_pack("gpw_preliminary@v1", statement_type).expect("registered profile");
             if statement_type == "banking" {
                 assert_eq!(preliminary, PRELIMINARY_BANKING);
             } else {
                 assert_eq!(preliminary, PRELIMINARY);
             }
-            assert!(expected_pack("company_characteristic@v1", statement_type).is_empty());
+            assert!(expected_pack("company_characteristic@v1", statement_type)
+                .expect("registered profile")
+                .is_empty());
         }
         for profile in PROFILE_VERSIONS {
             assert_eq!(
-                expected_pack(profile, "future_unknown"),
-                expected_pack(profile, "industrial"),
+                expected_pack(profile, "future_unknown").expect("registered profile"),
+                expected_pack(profile, "industrial").expect("registered profile"),
                 "unknown statement_type falls back to the industrial floor"
             );
         }
@@ -275,7 +309,7 @@ mod tests {
             .expect("rows");
         for profile in PROFILE_VERSIONS {
             for statement_type in STATEMENT_TYPES {
-                for key in expected_pack(profile, statement_type) {
+                for key in expected_pack(profile, statement_type).expect("registered profile") {
                     assert!(
                         seeded.contains(*key),
                         "{profile} × {statement_type}: pack key {key} not in seeded kpi_definitions"
@@ -309,13 +343,40 @@ mod tests {
         assert!(!is_registered_profile_version("p1"));
     }
 
+    /// An unregistered profile version must never silently resolve to the
+    /// FULL floor pack or an empty doctrine (ADR 0102 dec. 13 — `@v2` must not
+    /// inherit either by falling through a catch-all). Two typed error
+    /// classes, one per call route (sol finding 8): `expected_pack` serves
+    /// the user-input route (validated at run creation) and returns the
+    /// existing `InvalidKpiIngestRunValue`; `profile_rules` serves the
+    /// stored-value route (read back from an existing run's row without
+    /// re-validation) and returns `UnknownKpiIngestProfileVersion` — an
+    /// unknown value there is invariant corruption, not bad input.
+    #[test]
+    fn unregistered_version_is_typed_error_never_floors() {
+        match expected_pack("gpw_ifrs_annual@v99", "industrial") {
+            Err(StorageError::InvalidKpiIngestRunValue { key, value }) => {
+                assert_eq!(key, "profile_version");
+                assert_eq!(value, "gpw_ifrs_annual@v99");
+            }
+            other => panic!("expected InvalidKpiIngestRunValue, got {other:?}"),
+        }
+
+        match profile_rules("gpw_ifrs_annual@v99") {
+            Err(StorageError::UnknownKpiIngestProfileVersion { value }) => {
+                assert_eq!(value, "gpw_ifrs_annual@v99");
+            }
+            other => panic!("expected UnknownKpiIngestProfileVersion, got {other:?}"),
+        }
+    }
+
     /// The doctrine is versioned behavior (#385): full-equality goldens per
     /// `@v1` profile — a silent wording change that shifts extraction meaning
     /// fails here; a deliberate one requires a new profile version.
     #[test]
     fn profile_rules_v1_are_frozen_verbatim() {
         assert_eq!(
-            profile_rules("gpw_ifrs_annual@v1"),
+            profile_rules("gpw_ifrs_annual@v1").expect("registered profile"),
             &[
                 "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
                 "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
@@ -326,7 +387,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            profile_rules("gpw_interim@v1"),
+            profile_rules("gpw_interim@v1").expect("registered profile"),
             &[
                 "Stage the period the run declares; pick the report column matching that window — never derive quarters by subtraction.",
                 "Interim income and cash-flow figures are year-to-date: stage them with measureWindow=cumulative against the declared period; balance-sheet lines are point_in_time at the interim date.",
@@ -335,7 +396,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            profile_rules("gpw_preliminary@v1"),
+            profile_rules("gpw_preliminary@v1").expect("registered profile"),
             &[
                 "Preliminary reports carry only headline figures: stage revenue and net_profit only (banking: net_profit only); do not mine full statements.",
                 "Start or resume the run with dataQuality=preliminary before staging; the final report supersedes these values.",
@@ -343,7 +404,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            profile_rules("nc_uor@v1"),
+            profile_rules("nc_uor@v1").expect("registered profile"),
             &[
                 "NewConnect UoR reports use Polish accounting-act vocabulary; map lines to the catalog by meaning, not literal translation.",
                 "UoR statements are usually standalone; set scope=standalone unless a consolidated section exists.",
@@ -352,7 +413,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            profile_rules("company_characteristic@v1"),
+            profile_rules("company_characteristic@v1").expect("registered profile"),
             &[
                 "This profile records durable company characteristics, not periodic KPIs; stage point_in_time values only.",
                 "There is no expected pack: stage exactly what the document states, with precise citations.",
@@ -362,11 +423,11 @@ mod tests {
 
     /// Every registered profile has non-empty doctrine, every rule fits the
     /// frozen ≤512-byte budget (contracts.md § Budgets), and an unregistered
-    /// version has none.
+    /// version is a typed error, never a silently empty doctrine.
     #[test]
     fn profile_rules_are_present_and_byte_bounded() {
         for version in PROFILE_VERSIONS {
-            let rules = profile_rules(version);
+            let rules = profile_rules(version).expect("registered profile");
             assert!(!rules.is_empty(), "{version} must carry doctrine");
             for rule in rules {
                 assert!(
@@ -375,6 +436,9 @@ mod tests {
                 );
             }
         }
-        assert!(profile_rules("gpw_ifrs_annual@v2").is_empty());
+        assert!(matches!(
+            profile_rules("gpw_ifrs_annual@v99"),
+            Err(StorageError::UnknownKpiIngestProfileVersion { .. })
+        ));
     }
 }

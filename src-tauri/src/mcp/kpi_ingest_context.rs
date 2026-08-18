@@ -687,11 +687,13 @@ fn document_meta(state: &AppState, run: &KpiIngestRun) -> Result<DocumentMetaDto
     })
 }
 
-fn profile_rules(run: &KpiIngestRun) -> Vec<String> {
-    crate::storage::kpi_ingest_profile_rules(&run.profile_version)
-        .iter()
-        .map(|rule| truncate_bytes(rule, PROFILE_RULE_MAX))
-        .collect()
+fn profile_rules(run: &KpiIngestRun) -> Result<Vec<String>, CommandError> {
+    Ok(
+        crate::storage::kpi_ingest_profile_rules(&run.profile_version)?
+            .iter()
+            .map(|rule| truncate_bytes(rule, PROFILE_RULE_MAX))
+            .collect(),
+    )
 }
 
 // ============================================================================
@@ -861,7 +863,7 @@ fn default_context(state: &AppState, run: &KpiIngestRun) -> Result<ContextDto, C
     let (resolved_expected, definitions) = resolved_catalog_inputs(state, run)?;
     let catalog_all = build_catalog(&resolved_expected, &definitions, &run.company_id);
     let plausibility_all = build_plausibility(state, run, &resolved_expected)?;
-    let rules = profile_rules(run);
+    let rules = profile_rules(run)?;
     let manifest_available = state
         .kpi_ingest_runs()
         .latest_validation_attempt(&run.id)

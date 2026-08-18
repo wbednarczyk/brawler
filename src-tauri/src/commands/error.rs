@@ -192,6 +192,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::RunLeaseInvariantViolation { .. } => Internal,
         // A stored `status` token no caller ever supplies as raw input.
         StorageError::UnknownKpiIngestRunState { .. } => Internal,
+        // A stored `profile_version` no caller ever supplies as raw input —
+        // it was validated once at run creation (ADR 0102 dec. 13).
+        StorageError::UnknownKpiIngestProfileVersion { .. } => Internal,
         // A second `create_run_if_absent` naming a different period for the
         // same active triple conflicts with the already-running triple.
         StorageError::RunPeriodConflict { .. } => Conflict,
