@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.71.0 - 2026-08-18
+
+
+### Features
+
+- **fundamentals**: full-report KPI capture from tagged filings — raw XBRL layer, IFRS-anchored vocabulary (#398) (#400)
+
 ## v0.70.0 - 2026-08-15
 
 
