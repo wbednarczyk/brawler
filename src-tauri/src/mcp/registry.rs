@@ -733,6 +733,21 @@ fn read_wave_tools() -> Vec<RegistryEntry> {
             tools::tool_schema::<reads::UnclassifiedFilingsRef>,
             reads::list_unclassified_filings_handler,
         ),
+        // ---- Raw tagged-fact capture (ADR 0100 decision 11) ----------------
+        exposed_read(
+            "get_report_tagged_fact_coverage",
+            "get_report_tagged_fact_coverage",
+            "How much of one company's tagged filings reached Fundamentals, and where the rest went: comparatives, dimensional breakdowns, note-level figures, positions awaiting a name, and conflicts. Every captured number is either projected or has a stated reason it is not.",
+            tools::tool_schema::<reads::CompanyRef>,
+            reads::get_report_tagged_fact_coverage_handler,
+        ),
+        exposed_read(
+            "get_pipeline_reextraction_progress",
+            "get_pipeline_reextraction_progress",
+            "Progress of one company's latest re-extraction batch (re-armed runs, how many have terminated, how many failed). A null batch means the company never ran one.",
+            tools::tool_schema::<reads::CompanyRef>,
+            reads::get_pipeline_reextraction_progress_handler,
+        ),
     ]
 }
 
@@ -1184,6 +1199,13 @@ fn act_wave_tools() -> Vec<RegistryEntry> {
             tools::tool_schema::<acts::RerunExtractionOutcomeInput>,
             acts::rerun_extraction_outcome_handler,
         ),
+        exposed_act(
+            "run_pipeline_reextraction",
+            None,
+            "Re-arm one company's landed ESEF runs whose stored pipeline version is stale, so the current extractor reads their filings again. Queues a durable batch; poll `get_pipeline_reextraction_progress`.",
+            tools::tool_schema::<acts::RunPipelineReextractionInput>,
+            acts::run_pipeline_reextraction_handler,
+        ),
     ]
 }
 
@@ -1202,19 +1224,18 @@ fn classifications() -> Vec<RegistryEntry> {
         // skip is a defect (ADR 0088 dec. 2). Grouped by why.
         //
         // Infra / liveness / diagnostics — no investor-facing data:
-        read("health"),                             // process liveness probe
-        read("database_status"),                    // DB engine/migration diagnostics
-        read("backup_status"),                      // local-backup infra status
-        read("get_history_sweep_progress"),         // quote-backfill job progress (UI)
-        read("get_pipeline_reextraction_progress"), // re-extraction batch job progress (UI)
-        read("get_backfill_progress"),              // backfill job progress (UI)
-        read("get_scheduler_status"),               // scheduler/ops status
-        read("list_diagnostic_events"),             // diagnostics/ops event log
-        read("get_diagnostic_summary"),             // diagnostics/ops rollup
-        read("list_source_reconciliation"),         // source-reconciliation diagnostics
-        read("get_log_status"),                     // log-file status (ops)
-        read("list_log_entries"),                   // app log lines (ops)
-        read("get_local_metrics_snapshot"),         // local perf metrics (ops)
+        read("health"),                     // process liveness probe
+        read("database_status"),            // DB engine/migration diagnostics
+        read("backup_status"),              // local-backup infra status
+        read("get_history_sweep_progress"), // quote-backfill job progress (UI)
+        read("get_backfill_progress"),      // backfill job progress (UI)
+        read("get_scheduler_status"),       // scheduler/ops status
+        read("list_diagnostic_events"),     // diagnostics/ops event log
+        read("get_diagnostic_summary"),     // diagnostics/ops rollup
+        read("list_source_reconciliation"), // source-reconciliation diagnostics
+        read("get_log_status"),             // log-file status (ops)
+        read("list_log_entries"),           // app log lines (ops)
+        read("get_local_metrics_snapshot"), // local perf metrics (ops)
         // Settings / config / credentials — sensitive or UI-only config:
         read("get_settings"),       // app settings surface (UI/config)
         read("get_license_status"), // licensing state (config)
@@ -1259,11 +1280,9 @@ fn classifications() -> Vec<RegistryEntry> {
         // EXPOSED reads — carried by read_wave_tools() (ADR 0088 dec. 4, M4).
         read("list_unmatched_source_items"), // unmatched-source triage (no MCP tool yet)
         // Layer 1 raw-tagged-fact trust surface (ADR 0100, epic #398 final
-        // slice): an owner-facing Coverage/promotion view, not core
-        // investor-facing content an agent composes research from — the
-        // agent's own KPI-acquisition path (kpi_ingest_*) already covers
-        // writing named observations.
-        read("get_report_tagged_fact_coverage"), // Coverage panel's compact funnel line (UI)
+        // slice). `get_report_tagged_fact_coverage` is EXPOSED (decision 11)
+        // — carried by read_wave_tools(); the concept list stays unexposed
+        // because it exists only to feed the owner-only promotion action.
         read("list_uncrosswalked_concepts"), // "positions the program doesn't know yet" list (UI)
         // promote_uncrosswalked_concept is the OWNER'S OWN authority (ADR
         // 0100 decision 10): "the owner may promote a captured position into
@@ -1309,12 +1328,6 @@ fn classifications() -> Vec<RegistryEntry> {
         act("backfill_company_health_facts", None),
         act("backfill_ownership_extraction", None),
         act("run_history_sweep", None),
-        // Re-arms already-landed runs for the pipeline's current capability
-        // version (epic #398 Item B) — a maintenance/UI action over EXISTING
-        // stored data, not a research write an agent would compose; the KPI
-        // acquisition surface (kpi_ingest_*) already covers the agent's own
-        // write path.
-        act("run_pipeline_reextraction", None),
         act("rebuild_fundamentals", None),
         act("refresh_gpw_company_registry", None),
         act("refresh_gpw_company_registry_if_stale", None),
@@ -1597,8 +1610,14 @@ fn act_gate(
 /// get_kpi_ingest_document).
 /// #386 (+3, MCP-only): 63 act (+ stage_kpi_observations + validate_kpi_ingest
 /// + commit_kpi_ingest) — the nine-tool acquisition surface is complete.
+///
+/// #398 (ADR 0100 decision 11, three more): 50 read, adding
+/// `get_report_tagged_fact_coverage` and `get_pipeline_reextraction_progress`;
+/// 64 act, adding `run_pipeline_reextraction`.
+/// `promote_uncrosswalked_concept` stays permanently `Excluded` — an agent may
+/// re-read and measure, only the owner may name (decision 10).
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 111;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 114;
 
 #[cfg(test)]
 mod tests {
@@ -1888,6 +1907,9 @@ mod tests {
             // Triage (ADR 0088 dec. 4).
             ("list_flagged_extraction_outcomes", company.clone(), false),
             ("list_unclassified_filings", json!({}), false),
+            // Raw tagged-fact capture (ADR 0100 decision 11).
+            ("get_report_tagged_fact_coverage", company.clone(), false),
+            ("get_pipeline_reextraction_progress", company.clone(), false),
             // Acquisition lifecycle reads (ADR 0099, #384/#385).
             ("list_pending_kpi_ingests", json!({}), false),
             (
@@ -3025,6 +3047,10 @@ mod tests {
                 json!({ "companyId": company_id, "reportDocumentId": "x", "fiscalYear": 2025, "periodType": "FY", "periodEnd": "2025-12-31" }),
             ),
             ("rerun_extraction_outcome", json!({ "outcomeId": "x" })),
+            (
+                "run_pipeline_reextraction",
+                json!({ "companyId": company_id }),
+            ),
             // Acquisition lifecycle acts (ADR 0099, #384/#386) — domain
             // failures on the minimal inputs (unknown run), which the
             // umbrella accepts.

@@ -947,6 +947,33 @@ act_handler!(
     }
 );
 
+/// Re-extraction is company-scoped and takes the internal id, like every act
+/// (ADR 0100 decision 11).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RunPipelineReextractionInput {
+    pub company_id: String,
+}
+
+act_handler!(
+    run_pipeline_reextraction_handler,
+    RunPipelineReextractionInput,
+    |state, input| {
+        crate::commands::pipeline_reextraction::start_pipeline_reextraction(
+            state,
+            &input.company_id,
+        )
+        .map_err(|message| {
+            let code = if message == "company_not_found" {
+                CommandErrorCode::NotFound
+            } else {
+                CommandErrorCode::Internal
+            };
+            CommandError::new(code, message)
+        })
+    }
+);
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct RunStructuredExtractionInput {

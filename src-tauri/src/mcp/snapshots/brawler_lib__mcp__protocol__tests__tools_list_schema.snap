@@ -1,6 +1,5 @@
 ---
 source: src/mcp/protocol.rs
-assertion_line: 333
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -681,6 +680,40 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "list_unclassified_filings"
+      },
+      {
+        "description": "How much of one company's tagged filings reached Fundamentals, and where the rest went: comparatives, dimensional breakdowns, note-level figures, positions awaiting a name, and conflicts. Every captured number is either projected or has a stated reason it is not.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_report_tagged_fact_coverage"
+      },
+      {
+        "description": "Progress of one company's latest re-extraction batch (re-armed runs, how many have terminated, how many failed). A null batch means the company never ran one.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_pipeline_reextraction_progress"
       },
       {
         "description": "Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article/transcript (provenance). References the company by its internal id (from list_companies).",
@@ -2507,6 +2540,22 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "type": "object"
         },
         "name": "rerun_extraction_outcome"
+      },
+      {
+        "description": "Re-arm one company's landed ESEF runs whose stored pipeline version is stale, so the current extractor reads their filings again. Queues a durable batch; poll `get_pipeline_reextraction_progress`.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "companyId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "companyId"
+          ],
+          "type": "object"
+        },
+        "name": "run_pipeline_reextraction"
       },
       {
         "description": "Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId (+ optional scope/dataQuality/period) creates the run, claims the lease, pins the source bytes, and enters extraction once context is complete. Resume: runId re-claims idempotently (the explicit keepalive) and attaches missing context set-once. Provenance is the run pipeline itself; no citation carrier here.",

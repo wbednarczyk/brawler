@@ -724,6 +724,43 @@ pub fn get_autopilot_run_handler(
 }
 
 // ============================================================================
+// Raw tagged-fact capture (ADR 0100 decision 11)
+// ============================================================================
+
+/// How much of one company's filings reached Fundamentals, and where the rest
+/// went. Read-only counters over the Layer 1 store — the same funnel the
+/// Coverage panel shows. Naming a captured-but-uncurated position stays the
+/// owner's own authority (`promote_uncrosswalked_concept` is permanently
+/// excluded, ADR 0100 decision 10): an agent may re-read and measure, only the
+/// owner may name.
+pub fn get_report_tagged_fact_coverage_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input: CompanyRef| {
+        let company = resolve_company(state, &input.company)?;
+        crate::commands::tagged_fact_promotion::compute_tagged_fact_coverage(state, &company.id)
+            .map_err(internal)
+    })
+}
+
+/// Progress of the company's latest re-extraction batch (`null` batch when it
+/// never ran one) — the read half of `run_pipeline_reextraction`.
+pub fn get_pipeline_reextraction_progress_handler(
+    state: &AppState,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input: CompanyRef| {
+        let company = resolve_company(state, &input.company)?;
+        crate::commands::pipeline_reextraction::compute_pipeline_reextraction_progress(
+            state,
+            &company.id,
+        )
+        .map_err(internal)
+    })
+}
+
+// ============================================================================
 // Quality frameworks catalog
 // ============================================================================
 

@@ -227,6 +227,16 @@ expression: "serde_json::to_string_pretty(&manifest).expect(\"serializable\")"
     },
     {
       "acquisition": false,
+      "name": "get_report_tagged_fact_coverage",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
+      "name": "get_pipeline_reextraction_progress",
+      "tier": "read"
+    },
+    {
+      "acquisition": false,
       "name": "create_notebook_entry",
       "tier": "act"
     },
@@ -513,6 +523,11 @@ expression: "serde_json::to_string_pretty(&manifest).expect(\"serializable\")"
     {
       "acquisition": false,
       "name": "rerun_extraction_outcome",
+      "tier": "act"
+    },
+    {
+      "acquisition": false,
+      "name": "run_pipeline_reextraction",
       "tier": "act"
     },
     {
