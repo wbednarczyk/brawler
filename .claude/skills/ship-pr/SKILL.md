@@ -21,8 +21,9 @@ Operational sequence for landing work under continuous release ([ADR 0090](../..
 7. **Watch CI to the exact head SHA** (`gh pr checks <n>`; confirm `headRefOid` matches your push). Poll loop:
    ```bash
    for i in $(seq 1 60); do out=$(gh pr checks <n>); \
-     echo "$out" | grep -qE "pending|skipping" || break; sleep 30; done
+     echo "$out" | grep -q "pending" || break; sleep 30; done
    ```
+   Wait only on `pending` — never on `skipping`: skipped jobs are **terminal** (a docs-only PR keeps them forever and still satisfies required checks), so a loop that waits for `skipping` to clear hangs to timeout.
 
 ## Failure triage (decide class BEFORE touching anything)
 
