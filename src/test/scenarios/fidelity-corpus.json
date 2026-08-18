@@ -681,6 +681,87 @@
       ]
     },
     {
+      "name": "version-aware re-extraction starts a batch and reports empty progress (epic #398 Item B)",
+      "_comment": "A re-extraction batch selects the company's successful ESEF-tier runs with a stale stored pipeline version and re-arms them; unlike the history sweep it is NOT gated on automation mode (it reprocesses already-stored documents on explicit user request, the same posture as the per-period 'Try again' action). Report documents/runs are seeded only through the network-bound path, so the batch runs over an empty company: it finds zero candidates, leaving runsTotal/runsDone/runsFailed at 0. Candidate-selection correctness is pinned by the Rust unit tests in jobs/pipeline_reextraction.rs and the TS mock scenario tests.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "REEXT",
+              "displayName": "Reextraction Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "run_pipeline_reextraction",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "status": "queued",
+            "companyId": "company_gpw_reext"
+          }
+        },
+        {
+          "command": "get_pipeline_reextraction_progress",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "runsTotal": 0,
+            "runsDone": 0,
+            "runsFailed": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "raw tagged-fact coverage + uncrosswalked concepts read empty for a fresh company (ADR 0100, epic #398)",
+      "_comment": "Layer 1 rows are seeded only through the (unmodeled) extraction pipeline, never a command, so a fresh company reads the empty state on both. Per-row/per-bucket correctness (the projection re-derivation, the promotion write) is pinned by the Rust storage/command unit tests.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "RTFC",
+              "displayName": "Raw Tagged Facts Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "get_report_tagged_fact_coverage",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "rawStored": 0,
+            "projected": 0,
+            "dimensional": 0,
+            "noteLevel": 0,
+            "awaitingName": 0,
+            "conflicting": 0
+          }
+        },
+        {
+          "command": "list_uncrosswalked_concepts",
+          "input": {
+            "companyId": "$cid"
+          }
+        }
+      ]
+    },
+    {
       "name": "decision journal create + list + kind filter (ADR 0071 J2)",
       "_comment": "Decision entries are immutable, per-company judgments (ADR 0071). Seed-free: create a company, record a buy, assert it lists, then assert the kind filter excludes it. Ordering (decided_at, not created_at) is pinned by the Rust storage tests; this corpus proves both dispatchers implement create/list + the kind filter and key entries by the scoped company.",
       "steps": [

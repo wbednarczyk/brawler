@@ -1,17 +1,34 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, Pencil, Plus, Save, Trash2, X } from "lucide-react";
-import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
+import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
-import { FACT_FORMS, METRIC_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
+import { AWAITS_NAMING_FORMS, FACT_FORMS, ITEM_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import { formatFinancialValue } from "../../shared/format/financialValue";
-import { buildFactMatrix, type FactMatrixGroupKey } from "./factMatrix";
+import { buildFactMatrix, buildStatementTabs, isSubtotalRow, type StatementTabKey } from "./factMatrix";
 import { FundamentalsPeriodsSection } from "./FundamentalsPeriodsSection";
 import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
-import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, Modal, SectionHeader, SelectField, Sparkline, StatusChip, TextField, TrendChart } from "../../ui";
+import {
+  ActionRow,
+  Button,
+  EmptyState,
+  ErrorText,
+  InfoGrid,
+  InlineConfirm,
+  Modal,
+  SearchField,
+  SectionHeader,
+  SegmentedControl,
+  SegmentedControlOption,
+  SelectField,
+  Sparkline,
+  StatusChip,
+  TextField,
+  TrendChart,
+} from "../../ui";
 import { listFactProvenance, type FactProvenance } from "../../api/fundamentalsExtraction";
 import { getReportDocumentsView } from "../../api/reportDocuments";
 import { getPriceContext } from "../../api/marketData";
@@ -33,6 +50,10 @@ type FundamentalsPanelProps = {
   financialPeriods: FinancialPeriod[];
   financialFacts: FinancialFact[];
   kpiDefinitions: KpiDefinition[];
+  // Epic #398 "Kluczowe" statement tab: active/primary kpi_relevance rows
+  // (ADR 0092). Optional/defaulted so a standalone render (e.g. tests) that
+  // doesn't care about the Kluczowe selection can omit it.
+  kpiRelevance?: KpiRelevance[];
   fundamentalsForm: FundamentalsForm;
   financialFactForm: FinancialFactForm;
   selectedFinancialFactId: string | null;
@@ -132,13 +153,14 @@ function factQualityTone(quality: string): "warn" | "accent" | "neutral" {
 }
 
 /**
- * Display label for a {@link FactMatrixGroupKey} (card #307's grouped
- * matrix): the approved mockup's fixed group names. A pure module-level
- * function (mirrors `tierLabel`/`factQualityLabel`) so it is unit-testable
- * without rendering.
+ * Display label for a {@link StatementTabKey} (epic #398 statement switcher):
+ * the approved mockup's fixed tab names. A pure module-level function (mirrors
+ * `tierLabel`/`factQualityLabel`) so it is unit-testable without rendering.
  */
-export function factMatrixGroupLabel(key: FactMatrixGroupKey, text: (value: string) => string): string {
+export function statementTabLabel(key: StatementTabKey, text: (value: string) => string): string {
   switch (key) {
+    case "key":
+      return text("Key figures");
     case "income":
       return text("Income statement");
     case "balance":
@@ -147,11 +169,33 @@ export function factMatrixGroupLabel(key: FactMatrixGroupKey, text: (value: stri
       return text("Cash flow");
     case "per_share":
       return text("Per share");
-    case "company":
-      return text("Company operating KPIs");
     default:
-      return text("Other metrics");
+      return text("Operating");
   }
+}
+
+/**
+ * Completeness-bar "N of M positions" line (epic #398): how many of the
+ * active statement's rows carry a value in the most recent period column. A
+ * pure module-level function so it is unit-testable without rendering.
+ */
+export function statementCompletenessLabel(current: number, total: number, locale: LocaleCode): string {
+  const noun = pluralNoun(locale, total, ITEM_FORMS);
+  return locale === "pl" ? `${current} z ${total} ${noun}` : `${current} of ${total} ${noun}`;
+}
+
+/**
+ * Completeness-bar "N awaiting a catalog name" line (epic #398): the honest,
+ * never-silently-absent count of rows the matrix synthesized a placeholder
+ * for (`FactMatrixRow.isSynthetic`) because no `kpi_definitions` catalog row
+ * matched their metric id yet.
+ */
+export function uncataloguedPositionsLabel(count: number, locale: LocaleCode): string {
+  const noun = pluralNoun(locale, count, ITEM_FORMS);
+  const verb = pluralNoun(locale, count, AWAITS_NAMING_FORMS);
+  return locale === "pl"
+    ? `${count} ${noun} ${verb} na nazwanie`
+    : `${count} ${noun} ${verb} a catalog name`;
 }
 
 export function FundamentalsPanel({
@@ -160,6 +204,7 @@ export function FundamentalsPanel({
   financialPeriods,
   financialFacts,
   kpiDefinitions,
+  kpiRelevance = [],
   fundamentalsForm,
   financialFactForm,
   selectedFinancialFactId,
@@ -190,17 +235,15 @@ export function FundamentalsPanel({
   const [autopilotExpanded, setAutopilotExpanded] = useState(false);
   const [formsExpanded, setFormsExpanded] = useState(false);
 
-  // Grouped fact matrix (card #307): collapse state per display group, keyed
-  // by companion set of collapsed keys — all groups expanded by default (an
-  // empty set), matching the approved mockup's default state.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<FactMatrixGroupKey>>(new Set());
-  function toggleGroupCollapsed(key: FactMatrixGroupKey) {
-    setCollapsedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  // Statement switcher (epic #398): one statement in view at a time — replaces
+  // the old all-groups-expanded collapsible list. "Kluczowe" is the default
+  // view (approved mockup). Switching statements clears the find query so a
+  // leftover filter from the previous statement can't hide every row.
+  const [activeStatementTab, setActiveStatementTab] = useState<StatementTabKey>("key");
+  const [findQuery, setFindQuery] = useState("");
+  function selectStatementTab(key: StatementTabKey) {
+    setActiveStatementTab(key);
+    setFindQuery("");
   }
 
   // Structured-first provenance (ADR 0061): the source tier + validation verdict
@@ -318,6 +361,59 @@ export function FundamentalsPanel({
     () => buildFactMatrix(financialPeriods, financialFacts, allDefinitions),
     [financialPeriods, financialFacts, allDefinitions],
   );
+
+  // "Kluczowe" tab selection (ADR 0092): the company's active/primary
+  // kpi_relevance rows, by definitionId.
+  const keyDefinitionIds = useMemo(
+    () =>
+      new Set(
+        kpiRelevance
+          .filter((relevance) => relevance.status === "active" && relevance.rank === "primary")
+          .map((relevance) => relevance.definitionId),
+      ),
+    [kpiRelevance],
+  );
+  const statementTabs = useMemo(
+    () => buildStatementTabs(factMatrix, keyDefinitionIds),
+    [factMatrix, keyDefinitionIds],
+  );
+  const activeTab = statementTabs.find((tab) => tab.key === activeStatementTab) ?? statementTabs[0];
+
+  // Find-a-position (epic #398): filters the ACTIVE statement's rows by
+  // localized name — a 150-row statement often has one line the user wants,
+  // not the whole tab.
+  const matrixFindQuery = findQuery.trim().toLowerCase();
+  const visibleMatrixRows = matrixFindQuery
+    ? activeTab.rows.filter((row) =>
+        localizedKpiLabel(row.definition, locale).toLowerCase().includes(matrixFindQuery),
+      )
+    : activeTab.rows;
+
+  // Completeness bar (epic #398): "N of M" = how many of the active
+  // statement's rows carry a value in the most recent period column — never
+  // "M of M" by construction, since every matrix row already has a fact
+  // SOMEWHERE (buildFactMatrix only rows facts that exist).
+  const latestMatrixPeriod = factMatrix.periods[factMatrix.periods.length - 1];
+  const currentPeriodFactCount = latestMatrixPeriod
+    ? activeTab.rows.filter((row) => row.cells[latestMatrixPeriod.id]).length
+    : 0;
+  const uncataloguedCount = activeTab.rows.filter((row) => row.isSynthetic).length;
+
+  // Origin chip (epic #398): the source tier of the active statement's
+  // current-period facts, when they agree — a mixed statement (e.g. some
+  // rows still aggregator-sourced, others issuer-tagged) says so explicitly
+  // rather than picking one tier and implying uniform provenance.
+  const currentPeriodSourceTiers = latestMatrixPeriod
+    ? new Set(
+        activeTab.rows
+          .map((row) => row.cells[latestMatrixPeriod.id])
+          .filter((fact): fact is NonNullable<typeof fact> => Boolean(fact))
+          .map((fact) => provenanceById[fact.id]?.sourceTier)
+          .filter((tier): tier is string => Boolean(tier)),
+      )
+    : new Set<string>();
+  const originTier = currentPeriodSourceTiers.size === 1 ? [...currentPeriodSourceTiers][0] : null;
+  const originIsMixed = currentPeriodSourceTiers.size > 1;
 
   // Trends must compare like-for-like periods: mixing a full-year figure with
   // quarters distorts the line. When any quarterly/half-year period exists, the
@@ -447,132 +543,151 @@ export function FundamentalsPanel({
 
         <div className="fundamentals-workspace">
           {factMatrix.rows.length > 0 ? (
-            /* The KPI × period matrix is DELIBERATE wide content: it scrolls inside
-               this bounded wrapper (data-hscroll exempts it from the layout gate). */
-            <div className="facts-matrix-scroll" data-hscroll aria-label={text("Financial facts matrix")}>
-              <table className="facts-matrix">
-                <thead>
-                  <tr>
-                    <th className="facts-matrix-corner" scope="col">
-                      {text("KPI")}
-                    </th>
-                    {factMatrix.periods.map((period) => (
-                      <th key={period.id} scope="col">
-                        {period.fiscalYear} {period.periodType.toUpperCase()}
-                      </th>
-                    ))}
-                    <th className="facts-matrix-trend-head" scope="col">
-                      {text("Trend")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {factMatrix.groups.map((group) => {
-                    const collapsed = collapsedGroups.has(group.key);
-                    return (
-                      <Fragment key={group.key}>
-                        <tr className="facts-matrix-group-row">
-                          <th
-                            className="facts-matrix-group-header"
-                            colSpan={factMatrix.periods.length + 2}
-                            scope="colgroup"
-                          >
-                            <button
-                              type="button"
-                              className="facts-matrix-group-toggle"
-                              aria-expanded={!collapsed}
-                              onClick={() => toggleGroupCollapsed(group.key)}
-                            >
-                              <span
-                                aria-hidden="true"
-                                className={`facts-matrix-group-chevron${collapsed ? " is-collapsed" : ""}`}
-                              >
-                                <ChevronRight size={14} />
-                              </span>
-                              {factMatrixGroupLabel(group.key, text)}
-                              <span className="facts-matrix-group-count">
-                                {group.rows.length} {pluralNoun(locale, group.rows.length, METRIC_FORMS)}
-                              </span>
-                            </button>
+            <>
+              {/* Statement switcher (epic #398, approved mockup): the panel takes the
+                  shape of the report — one statement in view at a time, instead of a
+                  ~150-row scroll. "Kluczowe" is the default view. */}
+              <SegmentedControl ariaLabel={text("Statement")} className="statement-switcher">
+                {statementTabs.map((tab) => (
+                  <SegmentedControlOption
+                    key={tab.key}
+                    active={tab.key === activeTab.key}
+                    onClick={() => selectStatementTab(tab.key)}
+                  >
+                    {statementTabLabel(tab.key, text)}
+                    <span className="statement-tab-count">{tab.rows.length}</span>
+                  </SegmentedControlOption>
+                ))}
+              </SegmentedControl>
+
+              {/* Find-a-position (epic #398): a 150-row statement often has one line
+                  the user wants, not the whole tab. */}
+              <SearchField
+                ariaLabel={text("Find a position")}
+                className="registry-search-field fundamentals-find"
+                clearLabel={text("Clear")}
+                onChange={setFindQuery}
+                onClear={() => setFindQuery("")}
+                placeholder={text("Find a position…")}
+                type="text"
+                value={findQuery}
+              />
+
+              {visibleMatrixRows.length > 0 ? (
+                /* The KPI × period matrix is DELIBERATE wide content: it scrolls inside
+                   this bounded wrapper (data-hscroll exempts it from the layout gate). */
+                <div className="facts-matrix-scroll" data-hscroll aria-label={text("Financial facts matrix")}>
+                  <table className="facts-matrix">
+                    <thead>
+                      <tr>
+                        <th className="facts-matrix-corner" scope="col">
+                          {text("KPI")}
+                        </th>
+                        {factMatrix.periods.map((period) => (
+                          <th key={period.id} scope="col">
+                            {period.fiscalYear} {period.periodType.toUpperCase()}
                           </th>
-                        </tr>
-                        {collapsed
-                          ? null
-                          : group.rows.map((row) => (
-                              <tr key={row.definition.id}>
-                                <th className="facts-matrix-kpi" scope="row">
-                                  {localizedKpiLabel(row.definition, locale)}
-                                </th>
-                                {factMatrix.periods.map((period) => {
-                                  const fact = row.cells[period.id];
-                                  if (!fact) {
-                                    return (
-                                      <td key={period.id} className="facts-matrix-cell-empty">
-                                        <span aria-hidden="true">—</span>
-                                      </td>
-                                    );
-                                  }
-                                  return (
-                                    <td key={period.id}>
-                                      <button
-                                        aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
-                                        className={[
-                                          "facts-matrix-cell",
-                                          selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" ")}
-                                        onClick={() => selectFinancialFact(fact.id)}
-                                        type="button"
-                                      >
-                                        {formatFinancialValue(
-                                          {
-                                            valueNumeric: fact.valueNumeric,
-                                            currency: fact.currency,
-                                            asReportedValue: fact.asReportedValue,
-                                            asReportedScale: fact.asReportedScale,
-                                            valueKind: row.definition.valueKind,
-                                            unit: row.definition.unit,
-                                            metricKey: row.definition.metricKey,
-                                          },
-                                          locale,
-                                        )}
-                                        {fact.annotation ? (
-                                          <span
-                                            className="fact-annotation-marker"
-                                            title={fact.annotation}
-                                            aria-label={`${text("Annotation")}: ${fact.annotation}`}
-                                          >
-                                            *
-                                          </span>
-                                        ) : null}
-                                        {fact.dataQuality !== "final" ? (
-                                          <span
-                                            className="fact-quality-marker"
-                                            title={factQualityLabel(fact.dataQuality, text)}
-                                            aria-label={`${text("Data quality")}: ${factQualityLabel(fact.dataQuality, text)}`}
-                                          >
-                                            ‡
-                                          </span>
-                                        ) : null}
-                                      </button>
-                                    </td>
-                                  );
-                                })}
-                                <td className="facts-matrix-trend">
-                                  <Sparkline
-                                    values={seriesValuesFor(row)}
-                                    ariaLabel={`${localizedKpiLabel(row.definition, locale)} ${text("trend")}`}
-                                  />
+                        ))}
+                        <th className="facts-matrix-trend-head" scope="col">
+                          {text("Trend")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleMatrixRows.map((row) => (
+                        // Subtotal emphasis (approved mockup): a statement's own
+                        // subtotal lines render heavier with a top rule — the
+                        // hierarchy that makes ~38 rows in one statement legible.
+                        <tr key={row.definition.id} className={isSubtotalRow(row) ? "facts-matrix-subtotal" : undefined}>
+                          <th className="facts-matrix-kpi" scope="row">
+                            {localizedKpiLabel(row.definition, locale)}
+                          </th>
+                          {factMatrix.periods.map((period) => {
+                            const fact = row.cells[period.id];
+                            if (!fact) {
+                              return (
+                                <td key={period.id} className="facts-matrix-cell-empty">
+                                  <span aria-hidden="true">—</span>
                                 </td>
-                              </tr>
-                            ))}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                              );
+                            }
+                            return (
+                              <td key={period.id}>
+                                <button
+                                  aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
+                                  className={[
+                                    "facts-matrix-cell",
+                                    selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                  onClick={() => selectFinancialFact(fact.id)}
+                                  type="button"
+                                >
+                                  {formatFinancialValue(
+                                    {
+                                      valueNumeric: fact.valueNumeric,
+                                      currency: fact.currency,
+                                      asReportedValue: fact.asReportedValue,
+                                      asReportedScale: fact.asReportedScale,
+                                      valueKind: row.definition.valueKind,
+                                      unit: row.definition.unit,
+                                      metricKey: row.definition.metricKey,
+                                    },
+                                    locale,
+                                  )}
+                                  {fact.annotation ? (
+                                    <span
+                                      className="fact-annotation-marker"
+                                      title={fact.annotation}
+                                      aria-label={`${text("Annotation")}: ${fact.annotation}`}
+                                    >
+                                      *
+                                    </span>
+                                  ) : null}
+                                  {fact.dataQuality !== "final" ? (
+                                    <span
+                                      className="fact-quality-marker"
+                                      title={factQualityLabel(fact.dataQuality, text)}
+                                      aria-label={`${text("Data quality")}: ${factQualityLabel(fact.dataQuality, text)}`}
+                                    >
+                                      ‡
+                                    </span>
+                                  ) : null}
+                                </button>
+                              </td>
+                            );
+                          })}
+                          <td className="facts-matrix-trend">
+                            <Sparkline
+                              values={seriesValuesFor(row)}
+                              ariaLabel={`${localizedKpiLabel(row.definition, locale)} ${text("trend")}`}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyState>{text("No positions match your search.")}</EmptyState>
+              )}
+
+              {/* Source/completeness bar (epic #398): origin of the active statement's
+                  latest-period facts, "N of M positions" filled, and the honest
+                  never-silently-absent count still awaiting a catalog name. */}
+              <div className="fundamentals-completeness-bar">
+                {originTier ? (
+                  <StatusChip tone="accent">{tierLabel(originTier, text)}</StatusChip>
+                ) : originIsMixed ? (
+                  <StatusChip tone="neutral">{text("Mixed sources")}</StatusChip>
+                ) : null}
+                <span>{statementCompletenessLabel(currentPeriodFactCount, activeTab.rows.length, locale)}</span>
+                {uncataloguedCount > 0 ? (
+                  <StatusChip tone="warn">{uncataloguedPositionsLabel(uncataloguedCount, locale)}</StatusChip>
+                ) : null}
+              </div>
+            </>
           ) : (
             <EmptyState>{text("No financial facts yet.")}</EmptyState>
           )}

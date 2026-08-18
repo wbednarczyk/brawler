@@ -17,4 +17,10 @@ origin?: string,
  * unlike `origin`, nothing forces this field); validated against the
  * fixed vocabulary, never freeform.
  */
-statementGroup?: string, };
+statementGroup?: string, 
+/**
+ * `instant | duration` (default `duration`, ADR 0100 decision 6, epic
+ * #398). Optional on every live writer, like `statement_group`; unlike
+ * `origin`, nothing forces this to a fixed value regardless of caller.
+ */
+periodNature?: string, };

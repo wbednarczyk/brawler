@@ -144,6 +144,7 @@ function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
     displayFormat: null,
     origin: "seed",
     statementGroup: "other",
+    periodNature: "duration",
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
   };

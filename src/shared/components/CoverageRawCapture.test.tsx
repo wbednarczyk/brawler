@@ -1,0 +1,72 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+
+import { CoverageRawCapture } from "./CoverageRawCapture";
+import { getReportTaggedFactCoverage, listUncrosswalkedConcepts } from "../../api/taggedFactPromotion";
+import type { TaggedFactCoverageCounts } from "../../api/taggedFactPromotion";
+
+vi.mock("../../api/taggedFactPromotion", () => ({
+  getReportTaggedFactCoverage: vi.fn(),
+  listUncrosswalkedConcepts: vi.fn(),
+  promoteUncrosswalkedConcept: vi.fn(),
+}));
+
+const getReportTaggedFactCoverageMock = vi.mocked(getReportTaggedFactCoverage);
+const listUncrosswalkedConceptsMock = vi.mocked(listUncrosswalkedConcepts);
+
+function counts(overrides: Partial<TaggedFactCoverageCounts> = {}): TaggedFactCoverageCounts {
+  return {
+    rawStored: 426,
+    projected: 68,
+    dimensional: 228,
+    noteLevel: 51,
+    awaitingName: 60,
+    conflicting: 7,
+    ...overrides,
+  };
+}
+
+describe("CoverageRawCapture", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listUncrosswalkedConceptsMock.mockResolvedValue([]);
+  });
+
+  it("renders the compact line's six counts", async () => {
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts());
+    render(<CoverageRawCapture companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("426")).toBeInTheDocument();
+    expect(screen.getByText("68")).toBeInTheDocument();
+    expect(screen.getByText("228")).toBeInTheDocument();
+    expect(screen.getByText("51")).toBeInTheDocument();
+    expect(screen.getByText("60")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(getReportTaggedFactCoverageMock).toHaveBeenCalledWith("company_gpw_cdr");
+  });
+
+  it("renders nothing for a company with no tagged capture yet", async () => {
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ rawStored: 0, projected: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0 }));
+    const { container } = render(<CoverageRawCapture companyId="company_gpw_cdr" />);
+
+    // Wait for the fetch to settle without asserting on a specific string —
+    // the whole point is that NOTHING renders.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("the disclosure button names the count and toggles aria-expanded", async () => {
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts());
+    render(<CoverageRawCapture companyId="company_gpw_cdr" />);
+
+    const toggle = await screen.findByRole("button", {
+      name: /Positions the program doesn't know yet/,
+    });
+    // The button names the action in words, never a bare count (the raw
+    // occurrence count already shown in the InfoGrid above is a different
+    // unit than the list's distinct-position count, so it is not repeated
+    // here — accuracy over a redundant number).
+    expect(toggle).toHaveTextContent("Positions the program doesn't know yet");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+});

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -8,7 +8,7 @@ import { getPriceContext } from "../../api/marketData";
 import { getKpiComparison } from "../../api/comparison";
 import type { KpiComparison } from "../../api/comparison";
 import { listFactProvenance } from "../../api/fundamentalsExtraction";
-import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
+import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 import { buildScenario } from "../../test/scenarios/scenarios";
 
 // The Autopilot / custom-KPI child fields load state via the mocked `invoke`
@@ -247,6 +247,7 @@ function kpiDef(id: string, metricKey: string, valueKind: string): KpiDefinition
     displayFormat: null,
     origin: "seed",
     statementGroup: "other",
+    periodNature: "duration",
     createdAt: "",
     updatedAt: "",
   };
@@ -334,6 +335,26 @@ function n1Comparison(): KpiComparison {
   };
 }
 
+// A real company always has an active/primary "core floor" of kpi_relevance
+// rows seeded at creation (ADR 0092 layer 1) — the Kluczowe default tab is
+// never empty in practice. Mark this fixture's own KPI set as key so tests
+// that click a matrix cell find it under the default tab, matching a real
+// company rather than the edge case of relevance data not having run yet.
+function keyRelevance(definitionId: string): KpiRelevance {
+  return {
+    id: `rel_${definitionId}`,
+    companyId: "company_gpw_cdr",
+    definitionId,
+    status: "active",
+    source: "core",
+    rank: "primary",
+    firstSeenPeriod: null,
+    lastSeenPeriod: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
 const periodsProps = {
   ...panelProps,
   financialPeriods: [period("p_2023", 2023), period("p_2024", 2024)],
@@ -347,6 +368,7 @@ const periodsProps = {
     kpiDef("def_net_profit", "net_profit", "monetary"),
     kpiDef("def_gm", "gross_margin", "percentage"),
   ],
+  kpiRelevance: ["def_revenue", "def_net_profit", "def_gm"].map(keyRelevance),
 };
 
 describe("FundamentalsPanel periods × deltas section", () => {
@@ -507,7 +529,12 @@ describe("FundamentalsPanel preliminary-data marker and detail chip (ADR 0093 de
       ),
     };
 
+    const user = userEvent.setup();
     render(<FundamentalsPanel {...scenarioProps} />);
+
+    // No kpi_relevance override here — this fixture's KPI lands under the
+    // default "Operating" bucket (statementGroup "other"), not Kluczowe.
+    await user.click(await screen.findByRole("button", { name: /Operating/ }));
 
     const supersededCell = await screen.findByRole("button", { name: "Net profit, 2025 FY" });
     const preliminaryOnlyCell = screen.getByRole("button", { name: "Net profit, 2026 FY" });
@@ -642,26 +669,132 @@ describe("FundamentalsPanel fact detail modal (card #307)", () => {
   });
 });
 
-// Card #307: rows collapse under a display group derived from the KPI
-// definition's statementGroup; the toggle is a real, keyboard/click-reachable
-// button (jsdom-testable — the tier width switch itself stays browser-only).
-describe("FundamentalsPanel grouped matrix rows (card #307)", () => {
-  it("toggles a group's collapsed state on header click, hiding then re-showing its rows", async () => {
-    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+// Statement switcher (epic #398, approved mockup docs/mockups/fundamentals-150-rows.html):
+// the panel shows ONE statement at a time — "Kluczowe" ("Key figures") by
+// default — instead of the old all-groups-expanded collapsible list.
+describe("FundamentalsPanel statement switcher (epic #398)", () => {
+  // The periods × deltas section (out of scope here) also fires on mount
+  // whenever the matrix has rows; stub it to an empty read model.
+  beforeEach(() => {
+    vi.mocked(getKpiComparison).mockResolvedValue({
+      granularity: "annual",
+      metricKeys: [],
+      axis: [],
+      series: [],
+    });
+  });
+
+  function statementKpiDef(
+    id: string,
+    metricKey: string,
+    overrides: Partial<Pick<KpiDefinition, "scope" | "statementGroup">> = {},
+  ): KpiDefinition {
+    return {
+      id,
+      scope: overrides.scope ?? "global",
+      companyId: null,
+      sector: null,
+      metricKey,
+      label: metricKey,
+      valueKind: "monetary",
+      unit: null,
+      computation: "reported",
+      formula: null,
+      displayFormat: null,
+      origin: "seed",
+      statementGroup: overrides.statementGroup ?? "other",
+      periodNature: "duration",
+      createdAt: "",
+      updatedAt: "",
+    };
+  }
+
+  const statementDefs = [
+    statementKpiDef("def_revenue", "revenue", { statementGroup: "income" }),
+    statementKpiDef("def_total_assets", "total_assets", { statementGroup: "balance" }),
+    statementKpiDef("def_broker_clients", "broker_clients", { scope: "company" }),
+  ];
+  const statementProps = {
+    ...panelProps,
+    financialPeriods: [period("p_2024", 2024)],
+    financialFacts: [
+      fact("f_revenue", "def_revenue", "p_2024"),
+      fact("f_total_assets", "def_total_assets", "p_2024"),
+      fact("f_broker_clients", "def_broker_clients", "p_2024"),
+    ],
+    kpiDefinitions: statementDefs,
+    kpiRelevance: [
+      {
+        id: "rel_revenue",
+        companyId: "company_gpw_cdr",
+        definitionId: "def_revenue",
+        status: "active",
+        source: "manual",
+        rank: "primary",
+        firstSeenPeriod: null,
+        lastSeenPeriod: null,
+        createdAt: "",
+        updatedAt: "",
+      },
+    ],
+  };
+
+  it("defaults to the Kluczowe (Key figures) tab, showing only the active/primary kpi_relevance rows", async () => {
+    render(<FundamentalsPanel {...statementProps} />);
+
+    const keyTab = await screen.findByRole("button", { name: /Key figures/ });
+    expect(keyTab).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: /revenue, 2024 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /total_assets, 2024 ANNUAL/i })).toBeNull();
+  });
+
+  it("switches statements on tab click, changing the visible rows, with badges matching each tab's row count", async () => {
     const user = userEvent.setup();
-    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+    render(<FundamentalsPanel {...statementProps} />);
 
-    // All three sample definitions default to statementGroup "other" — one group.
-    const toggle = await screen.findByRole("button", { name: /Other/ });
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(container.querySelector(".facts-matrix-kpi")).not.toBeNull();
+    const incomeTab = await screen.findByRole("button", { name: /Income statement/ });
+    // One row (revenue) is statementGroup "income".
+    expect(within(incomeTab).getByText("1")).toBeInTheDocument();
+    const balanceTab = screen.getByRole("button", { name: /Balance sheet/ });
+    expect(within(balanceTab).getByText("1")).toBeInTheDocument();
 
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(container.querySelector(".facts-matrix-kpi")).toBeNull();
+    await user.click(incomeTab);
+    expect(incomeTab).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: /revenue, 2024 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /total_assets, 2024 ANNUAL/i })).toBeNull();
 
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(container.querySelector(".facts-matrix-kpi")).not.toBeNull();
+    await user.click(balanceTab);
+    expect(balanceTab).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: /total_assets, 2024 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /revenue, 2024 ANNUAL/i })).toBeNull();
+  });
+
+  it("find filters rows within the active statement only", async () => {
+    const user = userEvent.setup();
+    render(<FundamentalsPanel {...statementProps} />);
+
+    const operatingTab = await screen.findByRole("button", { name: /Operating/ });
+    await user.click(operatingTab);
+    expect(await screen.findByRole("button", { name: /broker_clients, 2024 ANNUAL/i })).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Find a position" }), "nomatch");
+    expect(screen.queryByRole("button", { name: /broker_clients, 2024 ANNUAL/i })).toBeNull();
+    expect(await screen.findByText("No positions match your search.")).toBeInTheDocument();
+  });
+
+  it("reports the completeness bar's uncatalogued-position count for a synthesized row", async () => {
+    const withSynthetic = {
+      ...statementProps,
+      // No matching kpi_definitions row for this fact's definitionId — the
+      // matrix synthesizes a placeholder row (isSynthetic: true).
+      financialFacts: [...statementProps.financialFacts, fact("f_unknown", "def_unknown", "p_2024")],
+    };
+    const user = userEvent.setup();
+    render(<FundamentalsPanel {...withSynthetic} />);
+
+    const operatingTab = await screen.findByRole("button", { name: /Operating/ });
+    await user.click(operatingTab);
+
+    expect(await screen.findByText("1 item awaits a catalog name")).toBeInTheDocument();
   });
 });

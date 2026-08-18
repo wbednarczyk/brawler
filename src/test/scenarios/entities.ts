@@ -1009,6 +1009,7 @@ export function makeKpiDefinition(): KpiDefinition {
     displayFormat: "currency",
     origin: "seed",
     statementGroup: "other",
+    periodNature: "duration",
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
   };

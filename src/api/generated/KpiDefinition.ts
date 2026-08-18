@@ -17,4 +17,16 @@ origin: string,
  * row (company/user/agent-created); the matrix's own display rule routes
  * `scope='company'` rows into "KPI operacyjne spółki" ahead of this field.
  */
-statementGroup: string, createdAt: string, updatedAt: string, };
+statementGroup: string, 
+/**
+ * `instant | duration` (migration `0141`, ADR 0100 decision 6, epic
+ * #398): whether this metric is measured at a point in time (a balance,
+ * a share count, a quote) or accumulated over a span (almost everything
+ * else, INCLUDING ratios — a ratio is duration-reported yet never
+ * TTM-eligible, a separate axis `is_ttm_eligible` decides). The storage
+ * truth `fundamentals::metrics::measure_window_for`/`is_ttm_eligible`
+ * read instead of the retired `STOCK_METRIC_KEYS` const. DEFAULT
+ * `duration` — the pre-existing no-definition fallback those two
+ * functions already used.
+ */
+periodNature: string, createdAt: string, updatedAt: string, };

@@ -1317,13 +1317,18 @@ export const plText: Record<string, string> = {
   "Awaiting the final report": "Oczekuje na finalny raport",
   "Source citation": "Cytat źródłowy",
   // ("as of" is a shared key defined later in this map.)
-  // Grouped fundamentals matrix (card #307): collapsible display-group headers.
+  // Statement switcher (epic #398, approved mockup): fixed tab labels, "Kluczowe" first.
   "Income statement": "Rachunek wyników",
   "Balance sheet": "Bilans",
   "Cash flow": "Przepływy pieniężne",
   "Per share": "Na akcję",
-  "Company operating KPIs": "KPI operacyjne spółki",
-  "Other metrics": "Pozostałe",
+  "Key figures": "Kluczowe",
+  "Operating": "Operacyjne",
+  "Statement": "Sprawozdanie",
+  "Find a position": "Znajdź pozycję",
+  "Find a position…": "Znajdź pozycję…",
+  "No positions match your search.": "Żadna pozycja nie pasuje do wyszukiwania.",
+  "Mixed sources": "Różne źródła",
   "Investor relations reports page": "Strona raportów relacji inwestorskich",
   "Used to fetch reports when a filing has no attachment. The URL rarely changes.":
     "Używana do pobierania raportów, gdy komunikat nie ma załącznika. Adres URL rzadko się zmienia.",
@@ -1560,6 +1565,13 @@ export const plText: Record<string, string> = {
   "This company isn't tracked by this source": "Ta spółka nie jest śledzona przez to źródło",
   "History sweep is taking longer than expected — reopen this company to check its status.":
     "Przemiatanie historii trwa dłużej niż zwykle — otwórz spółkę ponownie, aby sprawdzić jej stan.",
+  // Epic #398 Item B — version-aware re-extraction footer action.
+  "Re-extract with latest pipeline": "Wydobądź ponownie najnowszym pipeline'em",
+  "Re-extracting…": "Ponowne wydobywanie…",
+  "Re-extraction failed": "Ponowne wydobycie nie powiodło się",
+  "Re-extracted {n}": "Wydobyto ponownie {n}",
+  "Re-extraction is taking longer than expected — reopen this company to check its status.":
+    "Ponowne wydobywanie trwa dłużej niż zwykle — otwórz spółkę ponownie, aby sprawdzić jej stan.",
   // T3.3 (ADR 0077 §3): sweep drain counter, truncation honesty, metadata-only
   // Data cell, and the configurable backfill-depth control.
   "Extracting… {done}/{total}": "Wydobywanie… {done}/{total}",
@@ -1914,6 +1926,35 @@ export const plText: Record<string, string> = {
   "No reader could handle this document": "Żaden czytnik nie poradził sobie z tym dokumentem",
   "The reporting period could not be determined": "Nie udało się ustalić okresu sprawozdawczego",
   "The document could not be read": "Nie udało się odczytać dokumentu",
+  // Raw tagged-fact capture proof + promotion (ADR 0100, epic #398 final
+  // slice): the Coverage panel's compact "what did the program read from the
+  // report" line, and the "positions the program doesn't know yet" list with
+  // its promote action. Copy register matches the owner-approved mockup
+  // (docs/mockups/raw-tagged-facts-panel.html) verbatim where it applies.
+  "Raw report capture": "Surowe dane z raportu",
+  "What the program read from the report": "Co program wyczytał z raportu",
+  "Every number from the report is either in Fundamentals or has a reason it isn't yet.":
+    "Każda liczba z raportu jest albo w Fundamentach, albo ma powód, dla którego jej tam nie ma.",
+  "Numbers in the report": "Liczb w raporcie",
+  "In Fundamentals": "W Fundamentach",
+  "Split into parts": "Rozpisane na części",
+  "From notes": "Z objaśnień",
+  "No name yet": "Bez nazwy",
+  "Conflicting values": "Sprzeczne wartości",
+  "Positions the program doesn't know yet": "Pozycje, których program jeszcze nie zna",
+  "As of a date": "stan na dzień",
+  "For the period": "za okres",
+  "name in the report: {concept}": "nazwa w raporcie: {concept}",
+  "no translation yet": "brak tłumaczenia",
+  "issuer's own position, named by the company": "własna pozycja spółki, nazwa podana przez emitenta",
+  "Show in Fundamentals": "Pokaż w Fundamentach",
+  "Adding…": "Dodawanie…",
+  "Checking for unnamed positions…": "Sprawdzanie nienazwanych pozycji…",
+  "Couldn't load unnamed positions.": "Nie udało się wczytać nienazwanych pozycji.",
+  "Nothing captured yet that the program doesn't already know how to name.":
+    "Program nie napotkał jeszcze pozycji, których nie umie nazwać.",
+  "Captured from tagged reports but not (yet) named in the catalog — ranked by how many companies report them.":
+    "Wychwycone z otagowanych raportów, ale jeszcze nienazwane w katalogu — uszeregowane według liczby spółek, które je raportują.",
   // Validation-gate detail lines (the expanded flagged-period evidence).
   "Assets = Liabilities + Equity": "Aktywa = zobowiązania + kapitał własny",
   "reported {actual}, expected {expected}": "wykazano {actual}, oczekiwano {expected}",
