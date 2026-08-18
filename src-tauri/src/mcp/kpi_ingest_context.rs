@@ -129,16 +129,58 @@ pub struct DerivedPeriodDto {
     pub period_end: String,
 }
 
+/// Two-tier wire shape (ADR 0101 dec. 7/9): `Full` is today's shape verbatim
+/// (byte-identical) for resolved-expected and company-agent rows; `Compact`
+/// carries only `{metricKey, label}` for the remaining ~373 canonical rows —
+/// enough for an agent's reuse-or-propose decision without the ≈85 KiB a full
+/// catalog would cost (server-side propose validation is the real guard, not
+/// what the agent can see). `#[serde(untagged)]` keeps `Full` wire-identical
+/// to the pre-widening struct; `definitionId` is kept internally on `Compact`
+/// (never serialized) for stable keyset pagination.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CatalogEntryDto {
-    pub definition_id: String,
-    pub metric_key: String,
-    pub label: String,
-    pub unit: Option<String>,
-    pub statement_group: String,
-    pub value_kind: String,
-    pub origin: String,
+#[serde(untagged)]
+pub enum CatalogEntryDto {
+    #[serde(rename_all = "camelCase")]
+    Full {
+        definition_id: String,
+        metric_key: String,
+        label: String,
+        unit: Option<String>,
+        statement_group: String,
+        value_kind: String,
+        origin: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Compact {
+        #[serde(skip)]
+        definition_id: String,
+        metric_key: String,
+        label: String,
+    },
+}
+
+impl CatalogEntryDto {
+    fn metric_key(&self) -> &str {
+        match self {
+            Self::Full { metric_key, .. } | Self::Compact { metric_key, .. } => metric_key,
+        }
+    }
+
+    fn definition_id(&self) -> &str {
+        match self {
+            Self::Full { definition_id, .. } | Self::Compact { definition_id, .. } => definition_id,
+        }
+    }
+
+    /// Sort/pagination tier: `Full` (0) always precedes `Compact` (1) so the
+    /// default call's truncated first page is dominated by the entries an
+    /// agent needs immediately (ADR 0101 dec. 7).
+    fn tier(&self) -> u8 {
+        match self {
+            Self::Full { .. } => 0,
+            Self::Compact { .. } => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,6 +236,12 @@ pub struct ContextDto {
     pub document: DocumentMetaDto,
     pub derived_period: Option<DerivedPeriodDto>,
     pub catalog: Vec<CatalogEntryDto>,
+    /// Metric keys present in `catalog` (this page) that are not members of
+    /// the run's expected set — ADR 0101 dec. 8: explicit, so their absence
+    /// from `plausibility` is never misread as "no history exists" for a
+    /// metric nobody asked this run to observe. Cheap: a set-difference
+    /// against `run.expectedKpis.keys`, zero additional queries.
+    pub not_requested: Vec<String>,
     pub plausibility: Vec<PlausibilityEntryDto>,
     pub profile_rules: Vec<String>,
     pub manifest_available: bool,
@@ -235,6 +283,7 @@ pub struct DocumentChunkDto {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CatalogCursor {
+    t: u8,
     m: String,
     d: String,
 }
@@ -396,8 +445,8 @@ fn resolved_expected_definitions(
     Ok(resolved)
 }
 
-fn catalog_entry(definition: &KpiDefinition) -> CatalogEntryDto {
-    CatalogEntryDto {
+fn catalog_entry_full(definition: &KpiDefinition) -> CatalogEntryDto {
+    CatalogEntryDto::Full {
         definition_id: definition.id.clone(),
         metric_key: definition.metric_key.clone(),
         label: truncate_bytes(&definition.label, LABEL_MAX),
@@ -411,10 +460,22 @@ fn catalog_entry(definition: &KpiDefinition) -> CatalogEntryDto {
     }
 }
 
-/// The full sorted catalog: definitions for the expected keys plus the
-/// company's minted extras (`origin == "agent"` — ADR 0093 dec. 4 vocabulary),
-/// deduped by definition id, sorted by `(metricKey, definitionId)` for stable
-/// keyset pagination.
+fn catalog_entry_compact(definition: &KpiDefinition) -> CatalogEntryDto {
+    CatalogEntryDto::Compact {
+        definition_id: definition.id.clone(),
+        metric_key: definition.metric_key.clone(),
+        label: truncate_bytes(&definition.label, LABEL_MAX),
+    }
+}
+
+/// The full sorted catalog (ADR 0101 dec. 7): FULL metadata for the expected
+/// keys plus the company's minted extras (`origin == "agent"` — ADR 0093
+/// dec. 4 vocabulary), COMPACT `{metricKey, label}` for every other canonical
+/// (shared, `company_id IS NULL`) definition — the full canon, not just what
+/// this run happened to ask for. Deduped by definition id, sorted by
+/// `(tier, metricKey, definitionId)`: tier keeps every Full entry ahead of
+/// every Compact entry so the default call's truncated first page is never
+/// dominated by canon the agent didn't ask about.
 fn build_catalog(
     resolved_expected: &[(String, KpiDefinition)],
     definitions: &[KpiDefinition],
@@ -424,19 +485,29 @@ fn build_catalog(
     for (_, definition) in resolved_expected {
         by_id
             .entry(definition.id.clone())
-            .or_insert_with(|| catalog_entry(definition));
+            .or_insert_with(|| catalog_entry_full(definition));
     }
     for definition in definitions {
         if definition.origin == "agent" && definition.company_id.as_deref() == Some(company_id) {
             by_id
                 .entry(definition.id.clone())
-                .or_insert_with(|| catalog_entry(definition));
+                .or_insert_with(|| catalog_entry_full(definition));
+        }
+    }
+    for definition in definitions {
+        if definition.company_id.is_none() {
+            by_id
+                .entry(definition.id.clone())
+                .or_insert_with(|| catalog_entry_compact(definition));
         }
     }
     let mut entries: Vec<CatalogEntryDto> = by_id.into_values().collect();
     entries.sort_by(|a, b| {
-        (a.metric_key.as_str(), a.definition_id.as_str())
-            .cmp(&(b.metric_key.as_str(), b.definition_id.as_str()))
+        (a.tier(), a.metric_key(), a.definition_id()).cmp(&(
+            b.tier(),
+            b.metric_key(),
+            b.definition_id(),
+        ))
     });
     entries
 }
@@ -702,8 +773,9 @@ fn profile_rules(run: &KpiIngestRun) -> Result<Vec<String>, CommandError> {
 
 fn catalog_cursor_for(entry: &CatalogEntryDto) -> String {
     encode_cursor(&CatalogCursor {
-        m: entry.metric_key.clone(),
-        d: entry.definition_id.clone(),
+        t: entry.tier(),
+        m: entry.metric_key().to_owned(),
+        d: entry.definition_id().to_owned(),
     })
 }
 
@@ -724,8 +796,8 @@ fn catalog_start_index(
     match cursor {
         SectionCursor::Start => 0,
         SectionCursor::After(after) => entries.partition_point(|entry| {
-            (entry.metric_key.as_str(), entry.definition_id.as_str())
-                <= (after.m.as_str(), after.d.as_str())
+            (entry.tier(), entry.metric_key(), entry.definition_id())
+                <= (after.t, after.m.as_str(), after.d.as_str())
         }),
     }
 }
@@ -863,6 +935,10 @@ fn default_context(state: &AppState, run: &KpiIngestRun) -> Result<ContextDto, C
     let (resolved_expected, definitions) = resolved_catalog_inputs(state, run)?;
     let catalog_all = build_catalog(&resolved_expected, &definitions, &run.company_id);
     let plausibility_all = build_plausibility(state, run, &resolved_expected)?;
+    let expected_metric_keys: BTreeSet<&str> = resolved_expected
+        .iter()
+        .map(|(key, _)| key.as_str())
+        .collect();
     let rules = profile_rules(run)?;
     let manifest_available = state
         .kpi_ingest_runs()
@@ -887,11 +963,18 @@ fn default_context(state: &AppState, run: &KpiIngestRun) -> Result<ContextDto, C
             ),
             manifest: manifest_available.then_some(true),
         };
+        let catalog_page = &catalog_all[..catalog_kept];
+        let not_requested: Vec<String> = catalog_page
+            .iter()
+            .filter(|entry| !expected_metric_keys.contains(entry.metric_key()))
+            .map(|entry| entry.metric_key().to_owned())
+            .collect();
         let dto = ContextDto {
             run: run_dto.clone(),
             document: document.clone(),
             derived_period: derived_period.clone(),
-            catalog: catalog_all[..catalog_kept].to_vec(),
+            catalog: catalog_page.to_vec(),
+            not_requested,
             plausibility: plausibility_all[..plausibility_kept].to_vec(),
             profile_rules: rules.clone(),
             manifest_available,
@@ -970,7 +1053,7 @@ fn section_context(
                         next_cursor,
                     })
                 },
-                |entry| format!("catalog entry {}", entry.definition_id),
+                |entry| format!("catalog entry {}", entry.definition_id()),
             )?;
             Ok(SectionDto {
                 run_id: run.id.clone(),
@@ -1458,45 +1541,191 @@ mod tests {
             !keys.contains(&"user_only_metric"),
             "a user-origin company definition is not a minted extra"
         );
-        let sorted: Vec<&str> = {
-            let mut sorted = keys.clone();
-            sorted.sort_unstable();
-            sorted
-        };
-        assert_eq!(keys, sorted, "catalog is sorted by metric key");
+        // Full entries (expected + agent-minted) sort ahead of every compact
+        // canonical entry (ADR 0101 dec. 7/9 tier order), not plain alphabetical
+        // — the two Full keys here stay internally sorted.
+        let full_keys: Vec<&str> = keys
+            .iter()
+            .copied()
+            .filter(|key| *key == "net_profit" || *key == "custom_pipeline_yield")
+            .collect();
+        let mut sorted_full = full_keys.clone();
+        sorted_full.sort_unstable();
+        assert_eq!(
+            full_keys, sorted_full,
+            "full-tier entries sort by metric key"
+        );
     }
 
+    /// ADR 0101 dec. 7/9: `build_catalog` now widens to every canonical
+    /// definition (`company_id IS NULL`), not just what this run expected —
+    /// crossing the `CATALOG_PAGE_MAX` boundary, so the default call's
+    /// `catalog` is always a truncated prefix; walking the `catalog` section
+    /// cursor to exhaustion must reach the full canon exactly once each.
     #[test]
-    fn catalog_section_pagination_yields_every_row_exactly_once() {
+    fn catalog_section_pagination_reaches_full_canon_without_duplicates() {
         let state = test_state();
         let run_id = started_run(&state);
-        let full = success(context(&state, json!({ "runId": run_id })));
-        let all: Vec<String> = full["catalog"]
-            .as_array()
-            .expect("catalog")
-            .iter()
-            .map(|entry| entry["definitionId"].as_str().expect("id").to_owned())
-            .collect();
-        assert!(all.len() >= 5, "the industrial floor seeds ≥5 entries");
+
+        let canonical_count: i64 = {
+            let connection = state.checkout_for_tests().expect("raw");
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM kpi_definitions WHERE company_id IS NULL",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("count")
+        };
+        assert!(
+            canonical_count as usize > CATALOG_PAGE_MAX,
+            "the widened canon crosses the {CATALOG_PAGE_MAX}-entry page boundary: \
+             {canonical_count}"
+        );
 
         let mut walked: Vec<String> = Vec::new();
         let mut cursor: Option<String> = None;
         loop {
-            let mut args = json!({ "runId": run_id, "section": "catalog", "limit": 2 });
+            let mut args = json!({ "runId": run_id, "section": "catalog", "limit": 64 });
             if let Some(cursor) = &cursor {
                 args["cursor"] = json!(cursor);
             }
             let page = success(context(&state, args));
             assert_eq!(page["section"], "catalog");
             for entry in page["catalog"].as_array().expect("page") {
-                walked.push(entry["definitionId"].as_str().expect("id").to_owned());
+                walked.push(entry["metricKey"].as_str().expect("key").to_owned());
             }
             match page["nextCursor"].as_str() {
                 Some(next) => cursor = Some(next.to_owned()),
                 None => break,
             }
         }
-        assert_eq!(walked, all, "pagination is lossless and duplicate-free");
+        assert_eq!(
+            walked.len(),
+            canonical_count as usize,
+            "every canonical row reached exactly once"
+        );
+        let mut deduped = walked.clone();
+        deduped.sort_unstable();
+        deduped.dedup();
+        assert_eq!(deduped.len(), walked.len(), "no duplicates across pages");
+
+        // The default call's own catalog is a prefix of the full walk, with a
+        // cursor signalling truncation (the canon now always exceeds one page).
+        let full = success(context(&state, json!({ "runId": run_id })));
+        let default_page: Vec<String> = full["catalog"]
+            .as_array()
+            .expect("catalog")
+            .iter()
+            .map(|entry| entry["metricKey"].as_str().expect("key").to_owned())
+            .collect();
+        assert_eq!(
+            &walked[..default_page.len()],
+            default_page.as_slice(),
+            "the default call's catalog page is a prefix of the full walk"
+        );
+        assert!(
+            full["truncated"]["catalog"].is_string(),
+            "the default call's catalog is always truncated once the canon exceeds one page"
+        );
+    }
+
+    /// ADR 0101 dec. 7: the catalog now carries every canonical definition,
+    /// not only what this run expected — an agent can check "does this
+    /// already exist" before proposing.
+    #[test]
+    fn catalog_includes_compact_canonical_beyond_expected() {
+        let state = test_state();
+        let run_id = started_run(&state);
+        let payload = success(context(&state, json!({ "runId": run_id })));
+        let expected: BTreeSet<String> = payload["run"]["expectedKpis"]["keys"]
+            .as_array()
+            .expect("expected keys")
+            .iter()
+            .map(|key| key.as_str().expect("key").to_owned())
+            .collect();
+        let catalog = payload["catalog"].as_array().expect("catalog");
+        assert!(
+            catalog.len() > expected.len(),
+            "the widened catalog carries canon beyond the expected floor: {} vs {}",
+            catalog.len(),
+            expected.len()
+        );
+        let compact = catalog
+            .iter()
+            .find(|entry| !expected.contains(entry["metricKey"].as_str().expect("key")))
+            .expect("a canonical entry beyond expected");
+        let mut keys: Vec<&str> = compact
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["label", "metricKey"],
+            "a canon entry beyond expected is the compact shape: {compact}"
+        );
+    }
+
+    /// ADR 0101 dec. 7/9: full metadata is reserved for the run's expected
+    /// keys and the company's agent-minted extras; every other canonical row
+    /// is the compact `{metricKey, label}` projection.
+    #[test]
+    fn expected_and_agent_entries_carry_full_metadata_compact_rest() {
+        let state = test_state();
+        seed_definition_raw(
+            &state,
+            "kdmint2",
+            "company",
+            Some("c1"),
+            "custom_pipeline_yield_2",
+            "Custom pipeline yield 2",
+            "currency",
+            "agent",
+        );
+        let run_id = started_run(&state);
+        let payload = success(context(&state, json!({ "runId": run_id })));
+        let catalog = payload["catalog"].as_array().expect("catalog");
+
+        for key in ["net_profit", "custom_pipeline_yield_2"] {
+            let entry = catalog
+                .iter()
+                .find(|entry| entry["metricKey"] == key)
+                .unwrap_or_else(|| panic!("{key} present in catalog"));
+            assert!(
+                entry["definitionId"].is_string(),
+                "{key} carries definitionId: {entry}"
+            );
+            assert!(
+                entry["statementGroup"].is_string(),
+                "{key} carries statementGroup: {entry}"
+            );
+            assert!(
+                entry["valueKind"].is_string(),
+                "{key} carries valueKind: {entry}"
+            );
+            assert!(entry["origin"].is_string(), "{key} carries origin: {entry}");
+        }
+
+        let expected: BTreeSet<String> = payload["run"]["expectedKpis"]["keys"]
+            .as_array()
+            .expect("expected keys")
+            .iter()
+            .map(|key| key.as_str().expect("key").to_owned())
+            .collect();
+        let compact = catalog
+            .iter()
+            .find(|entry| {
+                let key = entry["metricKey"].as_str().expect("key");
+                key != "custom_pipeline_yield_2" && !expected.contains(key)
+            })
+            .expect("a compact canonical entry");
+        assert!(
+            compact["definitionId"].is_null(),
+            "compact entry omits definitionId: {compact}"
+        );
     }
 
     #[test]
@@ -1803,6 +2032,50 @@ mod tests {
             scopes.into_iter().collect::<Vec<_>>(),
             vec!["consolidated", "standalone"],
             "no attached scope → evidence for both bases"
+        );
+    }
+
+    /// ADR 0101 dec. 8: plausibility stays computed only from `expected`
+    /// (cost unchanged — `build_plausibility` is untouched by this slice);
+    /// a catalog key outside `expected` is `notRequested`, an explicit signal
+    /// on the response rather than a silent absence a caller could misread
+    /// as "no history exists".
+    #[test]
+    fn plausibility_not_requested_for_unexpected_key() {
+        let state = test_state();
+        let run_id = started_run(&state);
+        let payload = success(context(&state, json!({ "runId": run_id })));
+        let expected: BTreeSet<String> = payload["run"]["expectedKpis"]["keys"]
+            .as_array()
+            .expect("expected keys")
+            .iter()
+            .map(|key| key.as_str().expect("key").to_owned())
+            .collect();
+        let unexpected_key = payload["catalog"]
+            .as_array()
+            .expect("catalog")
+            .iter()
+            .map(|entry| entry["metricKey"].as_str().expect("key").to_owned())
+            .find(|key| !expected.contains(key))
+            .expect("a catalog key outside expected");
+
+        assert!(
+            payload["notRequested"]
+                .as_array()
+                .expect("notRequested")
+                .iter()
+                .any(|key| key.as_str() == Some(unexpected_key.as_str())),
+            "the unexpected key reads as notRequested: {:?}",
+            payload["notRequested"]
+        );
+        assert!(
+            !payload["plausibility"]
+                .as_array()
+                .expect("plausibility")
+                .iter()
+                .any(|entry| entry["metricKey"] == unexpected_key),
+            "an unrequested key never gets plausibility evidence — absence, not a computed \
+             abstention"
         );
     }
 

@@ -140,8 +140,14 @@ For each pending run:
 2. **Read the context.** `get_kpi_ingest_context{ runId }` → the `catalog`
    (definition ids, metric keys, labels, units — everything you need to map a
    Polish line to a metric), `plausibility` (per-slot medians and recent history,
-   the validator's own evidence), and `profileRules`. When the period, scope, or
-   data quality is still unknown, read the source itself:
+   the validator's own evidence), and `profileRules`. The catalog carries the
+   full canon, not just this run's expected keys — full metadata for the
+   expected keys and your own company's minted extras, `{metricKey, label}`
+   only for the rest; **page the catalog to the end of its cursor before
+   proposing anything** (ADR 0101 dec. 7) — a key with no `plausibility` entry
+   and outside `run.expectedKpis.keys` is `notRequested`, not "no history".
+   When the period, scope, or data quality is still unknown, read the source
+   itself:
    `get_kpi_ingest_document{ runId, offset, length }` (length ≤ 262144) chunk by
    chunk until `eof` — the figures and the reporting period live in the document,
    not the run row.

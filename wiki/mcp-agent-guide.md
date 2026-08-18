@@ -145,9 +145,14 @@ set of observations → validate → repair if needed → commit → confirm.**
 - **Read the context** with `get_kpi_ingest_context{ runId }`: the catalog of
   metric definitions (so you can map a Polish line to a metric), the plausibility
   evidence (per-slot medians and recent history — the validator's own yardstick),
-  and the profile rules. When the reporting period, scope, or data quality is
-  still unknown, read the source bytes with `get_kpi_ingest_document{ runId,
-  offset, length }` (up to 262144 bytes per chunk) until `eof`.
+  and the profile rules. The catalog carries the full canon, not just this run's
+  expected keys — full metadata for the expected keys and your own company's
+  minted extras, `{metricKey, label}` only for the rest; **page the catalog to
+  the end of its cursor before proposing anything** (ADR 0101 dec. 7) — a key
+  with no `plausibility` entry and outside `run.expectedKpis.keys` is
+  `notRequested`, not "no history". When the reporting period, scope, or data
+  quality is still unknown, read the source bytes with `get_kpi_ingest_document{
+  runId, offset, length }` (up to 262144 bytes per chunk) until `eof`.
 - **Stage** with `stage_kpi_observations{ runId, observations, missingReasons }`.
   Each stage is the **complete** snapshot of a revision — a repair resends every
   observation, not just the fixed one. `missingReasons` is required (`{}` = you
