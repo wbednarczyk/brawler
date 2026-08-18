@@ -1354,6 +1354,45 @@ mod tests {
         assert_eq!(counts.conflicting, 0);
     }
 
+    /// sol round 4: a PRESENT derived-period row wins unconditionally. When
+    /// the declared reporting date is absent from the tagged dates, the
+    /// honest outcome is ZERO selected and everything comparative — never a
+    /// silent switch to the latest tagged date, which would let a
+    /// subsequent-events note instant impersonate the reporting period.
+    #[test]
+    fn coverage_counts_never_substitutes_a_tagged_date_for_the_declared_reporting_date() {
+        let mut connection = open_in_memory_database().expect("db");
+        seed_company_and_document(&connection, "c1", "doc1");
+
+        let mut fact = basic_fact("reports/i.xhtml", "f1", "Assets");
+        fact.period_type = "instant".to_owned();
+        fact.roles = vec![role("balance")];
+        replace_tagged_facts(&mut connection, "doc1", "c1", &extraction_with(vec![fact]))
+            .expect("replace");
+
+        // The document DECLARES 2024-12-30; the only tagged date is
+        // 2024-12-31 (basic_fact's period_end).
+        connection
+            .execute(
+                "INSERT INTO document_derived_periods
+                     (report_document_id, has_period, fiscal_year, period_type, period_end,
+                      derivation_version)
+                 VALUES ('doc1', 1, 2024, 'FY', '2024-12-30', 1)",
+                [],
+            )
+            .expect("seed derived period");
+
+        let counts = coverage_counts(&connection, "c1").expect("coverage counts");
+        assert_eq!(
+            counts.projected, 0,
+            "no tagged fact carries the declared reporting date — nothing may claim selection"
+        );
+        assert_eq!(
+            counts.comparative, 1,
+            "the tagged date is honestly a non-reporting period"
+        );
+    }
+
     #[test]
     fn coverage_counts_reports_a_genuine_value_disagreement_as_conflicting_never_projected() {
         let mut connection = open_in_memory_database().expect("db");

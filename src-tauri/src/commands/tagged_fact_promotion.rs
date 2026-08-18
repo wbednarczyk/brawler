@@ -174,22 +174,25 @@ fn concept_matches(fact_ns: &str, fact_local: &str, ns: &str, local: &str) -> bo
     }
 }
 
-/// The company-scoped `metric_key` a promoted concept mints (sol round 3,
-/// finding 1): a standard concept keeps its local name; an extension carries
-/// a stable namespace discriminator (sha256 prefix of the namespace URI —
-/// ADR 0100 decision 2's "namespace-URI digest"), so `ifrs-full:Foo` and
-/// `issuer:Foo` promoted at one company can never share a definition.
+/// The company-scoped `metric_key` a promoted concept mints (sol rounds
+/// 3/4): a standard concept keeps its local name (local names are unique
+/// within the IFRS taxonomy by construction); an extension gets a
+/// fixed-length key from the FULL sha256 of `(namespace, local)` — ADR 0100
+/// decision 2's "namespace-URI digest" at full strength, because a
+/// truncated prefix is birthday-collidable by a crafted namespace, and a
+/// collision would silently merge two concepts into one definition. The
+/// human-readable name lives in `label`; this key is identity, not prose.
 fn promoted_metric_key(namespace_uri: &str, local: &str) -> String {
     if is_standard_taxonomy_concept(namespace_uri) {
         return local.to_owned();
     }
     use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(namespace_uri.as_bytes());
-    let mut hex = String::with_capacity(8);
-    for byte in &digest[..4] {
+    let digest = Sha256::digest(format!("{namespace_uri}\u{1f}{local}").as_bytes());
+    let mut hex = String::with_capacity(64);
+    for byte in digest.iter() {
         hex.push_str(&format!("{byte:02x}"));
     }
-    format!("{local}__xns_{hex}")
+    format!("xconcept_{hex}")
 }
 
 /// Reads the ONE report document's stored bytes and parses its label
@@ -621,10 +624,16 @@ mod tests {
         )
         .expect("promote");
 
-        // An issuer extension's key carries the stable namespace digest
-        // (sol round 3, finding 1): `issuer:Foo` and `ifrs-full:Foo`
-        // promoted at one company can never share a definition.
-        assert_eq!(promoted.metric_key, "PozostaleUslugiObce__xns_141c451c");
+        // An issuer extension's key is the full-strength namespace+name
+        // digest (sol rounds 3/4): `issuer:Foo` and `ifrs-full:Foo` promoted
+        // at one company can never share a definition, and a crafted
+        // namespace cannot birthday-collide a truncated prefix.
+        let expected_key = promoted_metric_key(
+            "http://issuer.example.com/2025-12-31",
+            "PozostaleUslugiObce",
+        );
+        assert!(expected_key.starts_with("xconcept_") && expected_key.len() == 73);
+        assert_eq!(promoted.metric_key, expected_key);
         assert_eq!(
             promoted.label_source, "technical",
             "no stored document bytes to resolve a label from — must fall back honestly"
@@ -641,7 +650,7 @@ mod tests {
             .expect("list definitions");
         let definition = definitions
             .iter()
-            .find(|d| d.metric_key == "PozostaleUslugiObce__xns_141c451c")
+            .find(|d| d.metric_key == expected_key)
             .expect("company-scoped definition exists");
         assert_eq!(definition.scope, "company");
         assert_eq!(definition.company_id.as_deref(), Some(company_id.as_str()));

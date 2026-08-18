@@ -2809,7 +2809,15 @@ fn corpus_concept_harvest_report() {
                 let entry = seen
                     .entry((
                         is_standard,
-                        fact.concept_namespace_uri.clone(),
+                        // Standard taxonomy-year namespaces are VERSIONS of
+                        // one vocabulary (sol round 4): normalize them to
+                        // one key so three issuers on three annual releases
+                        // count as three issuers of one concept.
+                        if is_standard {
+                            String::new()
+                        } else {
+                            fact.concept_namespace_uri.clone()
+                        },
                         fact.concept_local_name.clone(),
                     ))
                     .or_insert_with(|| {

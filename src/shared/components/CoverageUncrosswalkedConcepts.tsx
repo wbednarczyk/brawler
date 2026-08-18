@@ -87,8 +87,13 @@ export function CoverageUncrosswalkedConcepts({ companyId, reloadKey = 0 }: Prop
     };
   }, [companyId, reloadKey, refreshTick]);
 
+  // Busy-state identity is (namespace, local name), like everything else in
+  // this panel — two same-named rows must never share a spinner.
+  const conceptIdentity = (row: UncrosswalkedConceptRow) =>
+    `${row.conceptNamespaceUri}#${row.conceptLocalName}`;
+
   const promote = async (row: UncrosswalkedConceptRow) => {
-    setPromotingConcept(row.conceptLocalName);
+    setPromotingConcept(conceptIdentity(row));
     setPromoteError(null);
     try {
       const promoted = await promoteUncrosswalkedConcept(
@@ -144,7 +149,7 @@ export function CoverageUncrosswalkedConcepts({ companyId, reloadKey = 0 }: Prop
             periodNatureLabel(row.periodNature, text),
             text("name in the report: {concept}").replace("{concept}", row.conceptLocalName),
           ].join(" · ");
-          const busy = promotingConcept === row.conceptLocalName;
+          const busy = promotingConcept === conceptIdentity(row);
           return (
             <ListRow
               key={`${row.conceptNamespaceUri}#${row.conceptLocalName}`}

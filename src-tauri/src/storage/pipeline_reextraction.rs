@@ -107,14 +107,21 @@ impl PipelineReextractionStore {
             )
             .optional()?;
         if let Some(existing) = active {
-            let job_exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM job_queue WHERE id = ?1)",
-                params![existing.id],
+            // A `queued` batch is alive only while a RUNNABLE job of the
+            // right kind backs it (sol round 4): a job that exhausted its
+            // retries and went terminal — or a row of some other kind
+            // squatting on the id — leaves the batch permanently inert, and
+            // returning it forever would impersonate progress. A `running`
+            // batch needs no pending job (its job is executing or being
+            // reclaimed by the queue's own crash recovery).
+            let backing_job_alive: bool = tx.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM job_queue
+                     WHERE id = ?1 AND kind = ?2 AND status IN ('pending', 'running'))",
+                params![existing.id, job_kind],
                 |row| row.get(0),
             )?;
-            // A `running` batch's job row can be legitimately terminal;
-            // only a `queued` batch with NO job row at all is inert.
-            if existing.status != "queued" || job_exists {
+            if existing.status != "queued" || backing_job_alive {
                 tx.commit()?;
                 return Ok((existing, false));
             }
@@ -122,7 +129,7 @@ impl PipelineReextractionStore {
                 "
                 UPDATE pipeline_reextraction_batches
                 SET status = 'failed',
-                    error = 'orphaned: no job row existed for this queued batch',
+                    error = 'orphaned: no runnable job backed this queued batch',
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                 WHERE id = ?1
                 ",
@@ -134,8 +141,12 @@ impl PipelineReextractionStore {
             "INSERT INTO pipeline_reextraction_batches (id, company_id) VALUES (?1, ?2)",
             params![id, company_id],
         )?;
+        // Plain INSERT (sol round 4): `next_batch_id` already avoids ids
+        // taken in either table, and if a collision slips through anyway the
+        // whole transaction rolls back — a batch is never committed with its
+        // job silently suppressed.
         tx.execute(
-            "INSERT OR IGNORE INTO job_queue (id, kind, payload, max_attempts)
+            "INSERT INTO job_queue (id, kind, payload, max_attempts)
              VALUES (?1, ?2, ?3, ?4)",
             params![id, job_kind, job_payload(&id), job_max_attempts.max(1)],
         )?;
@@ -250,17 +261,27 @@ impl PipelineReextractionStore {
 
 /// A unique batch id (`pipeline_reextraction:{company}:{nanos}`), bumped on
 /// the rare same-instant collision so a rapid pair of batches never share a
-/// row.
+/// row. The id doubles as the durable JOB id, so uniqueness is checked in
+/// BOTH tables (sol round 4): a candidate colliding in `job_queue` alone
+/// would otherwise commit a batch whose job insert was silently suppressed.
 fn next_batch_id(connection: &Connection, company_id: &str) -> StorageResult<String> {
     let nanos = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
     let base = format!("pipeline_reextraction:{company_id}:{nanos}");
     let mut candidate = base.clone();
     let mut suffix = 2;
-    while batch_exists(connection, &candidate)? {
+    while batch_exists(connection, &candidate)? || job_exists(connection, &candidate)? {
         candidate = format!("{base}_{suffix}");
         suffix += 1;
     }
     Ok(candidate)
+}
+
+fn job_exists(connection: &Connection, id: &str) -> StorageResult<bool> {
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM job_queue WHERE id = ?1)",
+        params![id],
+        |row| row.get(0),
+    )?)
 }
 
 fn batch_exists(connection: &Connection, id: &str) -> StorageResult<bool> {
@@ -313,6 +334,81 @@ mod tests {
             })
             .expect("company")
             .id
+    }
+
+    /// sol round 4: a queued batch is alive only while a RUNNABLE job of
+    /// the right kind backs it. A terminal (retries-exhausted) job leaves
+    /// the batch inert — the next start must fail it and mint a fresh pair,
+    /// never return it as if it were progress.
+    #[test]
+    fn a_queued_batch_whose_job_went_terminal_is_failed_and_replaced() {
+        let s = state();
+        let c = company(&s);
+        let (first, created) = s
+            .pipeline_reextraction()
+            .create_batch_with_job_if_none_active(&c, "pipeline_reextraction", 2, |id| {
+                format!("{{\"batch_id\":\"{id}\"}}")
+            })
+            .expect("first pair");
+        assert!(created);
+
+        // Simulate retries exhausted: the job row goes terminal while the
+        // batch never left `queued`.
+        {
+            let connection = s.checkout_for_tests().expect("checkout");
+            connection
+                .execute(
+                    "UPDATE job_queue SET status = 'failed' WHERE id = ?1",
+                    params![first.id],
+                )
+                .expect("job terminal");
+        }
+
+        let (second, created) = s
+            .pipeline_reextraction()
+            .create_batch_with_job_if_none_active(&c, "pipeline_reextraction", 2, |id| {
+                format!("{{\"batch_id\":\"{id}\"}}")
+            })
+            .expect("second pair");
+        assert!(created, "an inert batch is never returned as progress");
+        assert_ne!(second.id, first.id);
+        let orphaned = s
+            .pipeline_reextraction()
+            .get_batch(&first.id)
+            .expect("orphaned batch");
+        assert_eq!(orphaned.status, "failed");
+    }
+
+    /// Same rule for a WRONG-KIND row squatting on the id: it does not back
+    /// this batch, so the batch is inert and replaced.
+    #[test]
+    fn a_queued_batch_backed_only_by_a_wrong_kind_job_is_failed_and_replaced() {
+        let s = state();
+        let c = company(&s);
+        let (first, _) = s
+            .pipeline_reextraction()
+            .create_batch_with_job_if_none_active(&c, "pipeline_reextraction", 2, |id| {
+                format!("{{\"batch_id\":\"{id}\"}}")
+            })
+            .expect("first pair");
+        {
+            let connection = s.checkout_for_tests().expect("checkout");
+            connection
+                .execute(
+                    "UPDATE job_queue SET kind = 'something_else' WHERE id = ?1",
+                    params![first.id],
+                )
+                .expect("kind drift");
+        }
+
+        let (second, created) = s
+            .pipeline_reextraction()
+            .create_batch_with_job_if_none_active(&c, "pipeline_reextraction", 2, |id| {
+                format!("{{\"batch_id\":\"{id}\"}}")
+            })
+            .expect("second pair");
+        assert!(created);
+        assert_ne!(second.id, first.id);
     }
 
     #[test]
