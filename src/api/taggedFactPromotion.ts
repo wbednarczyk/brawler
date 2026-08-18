@@ -30,7 +30,14 @@ export async function listUncrosswalkedConcepts(
 // reachable by an agent (MCP registry: excluded).
 export async function promoteUncrosswalkedConcept(
   companyId: string,
+  conceptNamespaceUri: string,
   conceptLocalName: string,
 ): Promise<PromotedConcept> {
-  return invoke("promote_uncrosswalked_concept", { companyId, conceptLocalName });
+  // The concept's identity is (namespace, local name): a standard concept
+  // and an issuer extension sharing a local name are different positions.
+  return invoke("promote_uncrosswalked_concept", {
+    companyId,
+    conceptNamespaceUri,
+    conceptLocalName,
+  });
 }

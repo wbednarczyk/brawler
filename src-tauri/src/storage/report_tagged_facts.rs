@@ -583,6 +583,11 @@ pub struct TaggedFactCoverageCounts {
     /// Layer 1, decision 9) — visible here so an unreadable number still has
     /// a stated reason it is not in Fundamentals.
     pub unparsed: i64,
+    /// Raw occurrences folded into another candidate rather than becoming
+    /// one themselves (sol round 2, finding 8): equal-value repeats beyond
+    /// the first, and shorter duration windows superseded by the cumulative
+    /// figure sharing their end date. Their reason is "already counted once".
+    pub repeated: i64,
 }
 
 fn coverage_counts(
@@ -607,7 +612,8 @@ fn coverage_counts(
     let mut awaiting_name = 0i64;
     let mut conflicting = 0i64;
     let mut unparsed = 0i64;
-    for doc_facts in by_document.values() {
+    let mut repeated = 0i64;
+    for (document_id, doc_facts) in &by_document {
         let has_presentation_linkbase = doc_facts.iter().any(|f| !f.roles.is_empty());
         // A dimensionless row whose value never parsed reaches no projection
         // bucket (step 1 skips it) — count it here so every raw number keeps
@@ -627,11 +633,23 @@ fn coverage_counts(
         let mut period_ends: Vec<&str> = doc_facts.iter().map(|f| f.period_end.as_str()).collect();
         period_ends.sort_unstable();
         period_ends.dedup();
-        // The filing's OWN balance date is the latest period end it tags;
-        // every earlier one is a comparative, which Layer 2 never writes
-        // (decision 7) — so only the latest period's candidates may be
-        // presented as headed for Fundamentals.
-        let own_period_end = period_ends.last().copied();
+        // The filing's OWN period comes from the derived-period cache when
+        // one exists (the document's DECLARED reporting date, sol round 2 —
+        // a later-dated note instant must not demote the real reporting
+        // period to a comparative); the latest tagged date is the fallback
+        // for a document never derived.
+        let declared: Option<String> = connection
+            .query_row(
+                "SELECT period_end FROM document_derived_periods
+                 WHERE report_document_id = ?1 AND has_period = 1",
+                params![*document_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let own_period_end: Option<&str> = declared
+            .as_deref()
+            .filter(|d| period_ends.contains(d))
+            .or_else(|| period_ends.last().copied());
         for period_end in period_ends.iter().copied() {
             let result = crate::fundamentals::extraction::esef::projection::project_period(
                 doc_facts,
@@ -643,7 +661,21 @@ fn coverage_counts(
             } else {
                 comparative += result.facts.len() as i64;
             }
-            conflicting += result.conflicts.len() as i64;
+            // Fact-level counts (sol round 2, finding 8): a conflict slot
+            // built from two raw rows explains TWO numbers; an equal-value
+            // repeat's extra occurrences and a superseded shorter window
+            // have "already counted once" as their reason.
+            conflicting += result
+                .conflicts
+                .iter()
+                .map(|c| c.contributing_fact_identities.len() as i64)
+                .sum::<i64>();
+            repeated += result
+                .facts
+                .iter()
+                .map(|f| f.contributing_fact_identities.len() as i64 - 1)
+                .sum::<i64>();
+            repeated += result.shorter_window_skipped as i64;
             note_level += result.non_primary_statement_skipped as i64;
             awaiting_name += result.uncrosswalked_fact_count as i64;
         }
@@ -658,6 +690,7 @@ fn coverage_counts(
         awaiting_name,
         conflicting,
         unparsed,
+        repeated,
     })
 }
 
@@ -707,18 +740,25 @@ fn harvest_uncrosswalked_concepts_for_company(
             .map(|entry| entry.concept)
             .collect();
 
-    let mut global_counts: HashMap<String, i64> = HashMap::new();
+    // Keyed by (namespace, local name) — sol round 2: an issuer extension
+    // reusing a standard local name is a DIFFERENT concept and must neither
+    // inflate the standard concept's distinct-issuer count nor borrow it.
+    let mut global_counts: HashMap<(String, String), i64> = HashMap::new();
     {
         let mut statement = connection.prepare(
-            "SELECT concept_local_name, COUNT(DISTINCT company_id)
-             FROM report_tagged_facts GROUP BY concept_local_name",
+            "SELECT concept_namespace_uri, concept_local_name, COUNT(DISTINCT company_id)
+             FROM report_tagged_facts GROUP BY concept_namespace_uri, concept_local_name",
         )?;
         let rows = statement.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         })?;
         for row in rows {
-            let (concept, count) = row?;
-            global_counts.insert(concept, count);
+            let (namespace, concept, count) = row?;
+            global_counts.insert((namespace, concept), count);
         }
     }
 
@@ -743,7 +783,10 @@ fn harvest_uncrosswalked_concepts_for_company(
         period_types: std::collections::HashSet<String>,
         roles: HashMap<String, i64>,
     }
-    let mut by_concept: HashMap<String, Agg> = HashMap::new();
+    // Aggregation key is (namespace, local name) — two same-named concepts
+    // from different namespaces are different rows in this list (sol round
+    // 2: promotion must never blur a standard concept with an extension).
+    let mut by_concept: HashMap<(String, String), Agg> = HashMap::new();
     for row in rows {
         let (concept, namespace, period_type, role_kind) = row?;
         // Only a STANDARD-namespace concept can be "already crosswalked" (sol
@@ -755,12 +798,14 @@ fn harvest_uncrosswalked_concepts_for_company(
         {
             continue;
         }
-        let entry = by_concept.entry(concept).or_insert_with(|| Agg {
-            namespace: namespace.clone(),
-            occurrences: 0,
-            period_types: std::collections::HashSet::new(),
-            roles: HashMap::new(),
-        });
+        let entry = by_concept
+            .entry((namespace.clone(), concept))
+            .or_insert_with(|| Agg {
+                namespace: namespace.clone(),
+                occurrences: 0,
+                period_types: std::collections::HashSet::new(),
+                roles: HashMap::new(),
+            });
         entry.occurrences += 1;
         entry.period_types.insert(period_type);
         if let Some(role) = role_kind {
@@ -770,7 +815,7 @@ fn harvest_uncrosswalked_concepts_for_company(
 
     let mut out: Vec<CompanyHarvestedConcept> = by_concept
         .into_iter()
-        .map(|(concept, agg)| {
+        .map(|((namespace, concept), agg)| {
             let period_nature =
                 if agg.period_types.len() == 1 && agg.period_types.contains("instant") {
                     "instant"
@@ -785,7 +830,9 @@ fn harvest_uncrosswalked_concepts_for_company(
                 .map(|(role_kind, _)| statement_group_for_role(role_kind).to_owned())
                 .unwrap_or_else(|| "other".to_owned());
             CompanyHarvestedConcept {
-                company_count: *global_counts.get(&concept).unwrap_or(&0),
+                company_count: *global_counts
+                    .get(&(namespace, concept.clone()))
+                    .unwrap_or(&0),
                 occurrence_count: agg.occurrences,
                 concept_namespace_uri: agg.namespace,
                 concept_local_name: concept,
@@ -1308,7 +1355,10 @@ mod tests {
 
         let counts = coverage_counts(&connection, "c1").expect("coverage counts");
         assert_eq!(counts.raw_stored, 2);
-        assert_eq!(counts.conflicting, 1);
+        // Fact-level accounting (sol round 2, finding 8): the ONE conflict
+        // slot explains BOTH raw rows, so both are counted here — the
+        // buckets account for numbers, not slots.
+        assert_eq!(counts.conflicting, 2);
         assert_eq!(
             counts.projected, 0,
             "a genuine disagreement must never resolve into a projected count"

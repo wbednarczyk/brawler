@@ -3792,4 +3792,52 @@ fn an_alias_source_that_already_holds_facts_is_never_redirected() {
             .all(|fact| fact.definition_id == "kpidef_inventory"),
         "both facts stay in the `inventory` series — a populated alias source is never redirected"
     );
+
+    // Per-company one-sidedness (sol round 2): company A's legacy series
+    // must not flip routing for company B — B has no `inventory` facts, so
+    // B's write redirects to `inventories` exactly as on a clean database.
+    let other = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "OTH".to_owned(),
+            display_name: "Other S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("second company");
+    state
+        .kpi_extraction()
+        .record_structured_fact(crate::storage::StructuredFactInput {
+            company_id: &other.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "repdoc_alias_guard_b",
+            metric_key: "inventory",
+            value_numeric: "700",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("alias per-company"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        })
+        .expect("company B write accepted");
+    let b_facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(other.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("company B facts");
+    assert_eq!(b_facts.len(), 1);
+    assert_eq!(
+        b_facts[0].definition_id, "kpidef_inventories",
+        "a clean company still redirects — the guard is per company, never a global switch"
+    );
 }

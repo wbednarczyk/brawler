@@ -1942,6 +1942,10 @@ export const plText: Record<string, string> = {
   "Numbers in the report": "Liczb w raporcie",
   "In Fundamentals": "W Fundamentach",
   "Earlier years, kept as context": "Wcześniejsze lata, zachowane jako kontekst",
+  "Selected for Fundamentals": "Wybrane do Fundamentów",
+  "Repeated in the report": "Powtórzone w raporcie",
+  "Every number from the report is counted below — selected for Fundamentals, or with the reason it isn't there.":
+    "Każda liczba z raportu jest policzona poniżej — wybrana do Fundamentów albo z powodem, dla którego jej tam nie ma.",
   "Could not be read": "Nie udało się odczytać",
   "Split into parts": "Rozpisane na części",
   "From notes": "Z objaśnień",

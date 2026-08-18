@@ -752,7 +752,8 @@
             "noteLevel": 0,
             "awaitingName": 0,
             "conflicting": 0,
-            "unparsed": 0
+            "unparsed": 0,
+            "repeated": 0
           }
         },
         {

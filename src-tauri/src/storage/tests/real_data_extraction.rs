@@ -2755,16 +2755,17 @@ fn corpus_concept_harvest_report() {
             .map(|entry| entry.concept)
             .collect();
 
-    // concept → (distinct issuers, occurrences, period types, one sample issuer)
-    let mut seen: BTreeMap<
-        String,
-        (
-            std::collections::BTreeSet<String>,
-            i64,
-            std::collections::BTreeSet<String>,
-            bool,
-        ),
-    > = BTreeMap::new();
+    /// Full concept identity (sol round 2): three issuers each using their
+    /// own extension named `AdjustedRevenue` are three different concepts,
+    /// never one three-issuer concept.
+    type ConceptKey = (bool, String, String); // (is_standard, namespace, local name)
+    /// (distinct issuers, occurrences, period types).
+    type ConceptAgg = (
+        std::collections::BTreeSet<String>,
+        i64,
+        std::collections::BTreeSet<String>,
+    );
+    let mut seen: BTreeMap<ConceptKey, ConceptAgg> = BTreeMap::new();
     let mut packages_read = 0usize;
     let mut packages_without_instance = 0usize;
 
@@ -2798,25 +2799,29 @@ fn corpus_concept_harvest_report() {
                 if fact.is_dimensional {
                     continue;
                 }
+                // Standard taxonomy vs issuer extension, decided by the
+                // SAME predicate production uses — only a standard concept
+                // may take a global canonical key (ADR 0100 decision 2).
+                let is_standard =
+                    crate::fundamentals::extraction::ifrs_crosswalk::is_standard_ifrs_namespace(
+                        &fact.concept_namespace_uri,
+                    );
                 let entry = seen
-                    .entry(fact.concept_local_name.clone())
+                    .entry((
+                        is_standard,
+                        fact.concept_namespace_uri.clone(),
+                        fact.concept_local_name.clone(),
+                    ))
                     .or_insert_with(|| {
                         (
                             std::collections::BTreeSet::new(),
                             0,
                             std::collections::BTreeSet::new(),
-                            false,
                         )
                     });
                 entry.0.insert(company.ticker.clone());
                 entry.1 += 1;
                 entry.2.insert(fact.period_type.clone());
-                // Standard taxonomy vs issuer extension. Only a standard
-                // concept may take a global canonical key — an extension is a
-                // company's own vocabulary and must stay issuer-qualified
-                // (ADR 0100 decision 2), so the two never share a ranking.
-                entry.3 |= fact.concept_namespace_uri.contains("/ifrs/")
-                    || fact.concept_namespace_uri.contains("ifrs-full");
             }
         }
     }
@@ -2828,9 +2833,14 @@ fn corpus_concept_harvest_report() {
         data_dir.display()
     );
 
+    // Crosswalked = a STANDARD concept whose local name has an entry. An
+    // extension is uncurated by definition — its path to Fundamentals is
+    // owner promotion, never the global crosswalk.
     let mut uncurated: Vec<_> = seen
         .iter()
-        .filter(|(concept, _)| !crosswalked.contains(concept.as_str()))
+        .filter(|((is_standard, _, local), _)| {
+            !(*is_standard && crosswalked.contains(local.as_str()))
+        })
         .collect();
     uncurated.sort_by(|a, b| {
         b.1 .0
@@ -2851,13 +2861,13 @@ fn corpus_concept_harvest_report() {
         "{:>7}  {:>6}  {:<10}  {:<9}  concept",
         "issuers", "occurs", "period", "standard"
     );
-    for (concept, (issuers, occurrences, period_types, in_statement)) in uncurated {
+    for ((is_standard, _namespace, concept), (issuers, occurrences, period_types)) in uncurated {
         println!(
             "{:>7}  {:>6}  {:<10}  {:<9}  {concept}",
             issuers.len(),
             occurrences,
             period_types.iter().cloned().collect::<Vec<_>>().join("|"),
-            if *in_statement { "ifrs" } else { "ext" },
+            if *is_standard { "ifrs" } else { "ext" },
         );
     }
 }

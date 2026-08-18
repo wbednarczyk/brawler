@@ -49,14 +49,22 @@ export function CoverageRawCapture({ companyId, reloadKey = 0 }: Props) {
     <div role="group" className="coverage-raw-capture" aria-label={text("Raw report capture")}>
       <SectionHeader level="h3" title={text("What the program read from the report")} />
       <Hint>
-        {text("Every number from the report is either in Fundamentals or has a reason it isn't yet.")}
+        {text(
+          "Every number from the report is counted below — selected for Fundamentals, or with the reason it isn't there.",
+        )}
       </Hint>
       <InfoGrid
         ariaLabel={text("Raw report capture")}
         items={[
           { label: text("Numbers in the report"), value: counts.rawStored },
-          { label: text("In Fundamentals"), value: counts.projected },
+          // "Selected", not "in": the deterministic rule picked these, and
+          // the validation gate downstream may still refuse one — the label
+          // must not promise persistence (sol round 2, finding 8).
+          { label: text("Selected for Fundamentals"), value: counts.projected },
           { label: text("Earlier years, kept as context"), value: counts.comparative },
+          ...(counts.repeated > 0
+            ? [{ label: text("Repeated in the report"), value: counts.repeated }]
+            : []),
           { label: text("Split into parts"), value: counts.dimensional },
           { label: text("From notes"), value: counts.noteLevel },
           { label: text("No name yet"), value: counts.awaitingName },

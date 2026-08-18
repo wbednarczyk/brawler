@@ -75,6 +75,44 @@ impl PipelineReextractionStore {
         self.get_batch(&id)
     }
 
+    /// Create a queued batch UNLESS the company's latest batch is still
+    /// `queued`/`running` — then return that one. Check and insert run in a
+    /// single IMMEDIATE transaction (sol round 2, finding 12): two
+    /// concurrent MCP calls must never both observe "no active batch" and
+    /// mint two. Returns `(batch, created)` so the caller knows whether a
+    /// job still needs enqueueing.
+    pub fn create_batch_if_none_active(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<(PipelineReextractionBatch, bool)> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let active: Option<PipelineReextractionBatch> = tx
+            .query_row(
+                "
+                SELECT * FROM pipeline_reextraction_batches
+                WHERE company_id = ?1 AND status IN ('queued', 'running')
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                ",
+                [company_id],
+                map_batch_row,
+            )
+            .optional()?;
+        if let Some(existing) = active {
+            tx.commit()?;
+            return Ok((existing, false));
+        }
+        let id = next_batch_id(&tx, company_id)?;
+        tx.execute(
+            "INSERT INTO pipeline_reextraction_batches (id, company_id) VALUES (?1, ?2)",
+            params![id, company_id],
+        )?;
+        tx.commit()?;
+        drop(connection);
+        Ok((self.get_batch(&id)?, true))
+    }
+
     /// Fetch one batch by id.
     pub fn get_batch(&self, id: &str) -> StorageResult<PipelineReextractionBatch> {
         let connection = self.db.checkout()?;

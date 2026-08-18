@@ -113,12 +113,18 @@ pub async fn list_uncrosswalked_concepts(
 #[tauri::command]
 pub async fn promote_uncrosswalked_concept(
     company_id: String,
+    concept_namespace_uri: String,
     concept_local_name: String,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<PromotedConcept, String> {
     let state = state.inner().clone();
     crate::jobs::scheduler::run_blocking_task(move || {
-        promote_uncrosswalked_concept_core(&state, &company_id, &concept_local_name)
+        promote_uncrosswalked_concept_core(
+            &state,
+            &company_id,
+            &concept_namespace_uri,
+            &concept_local_name,
+        )
     })
     .await
 }
@@ -255,18 +261,26 @@ pub(crate) fn compute_uncrosswalked_concepts(
 pub(crate) fn promote_uncrosswalked_concept_core(
     state: &AppState,
     company_id: &str,
+    concept_namespace_uri: &str,
     concept_local_name: &str,
 ) -> Result<PromotedConcept, String> {
     if !company_exists(state, company_id)? {
         return Err("company_not_found".to_owned());
     }
 
+    // The concept's identity is (namespace, local name) — sol round 2: a
+    // standard `ifrs-full:Revenue` and an issuer `issuer:Revenue` are
+    // different concepts, and promoting one must never sweep in the other's
+    // observations.
     let rows: Vec<StoredTaggedFact> = state
         .report_tagged_facts()
         .facts_for_company(company_id)
         .map_err(|error| error.to_string())?
         .into_iter()
-        .filter(|f| f.concept_local_name == concept_local_name)
+        .filter(|f| {
+            f.concept_local_name == concept_local_name
+                && f.concept_namespace_uri == concept_namespace_uri
+        })
         .collect();
     if rows.is_empty() {
         return Err("concept_not_captured".to_owned());
@@ -281,7 +295,10 @@ pub(crate) fn promote_uncrosswalked_concept_core(
         .map_err(|error| error.to_string())?;
     let (statement_group, period_nature) = harvested
         .iter()
-        .find(|c| c.concept_local_name == concept_local_name)
+        .find(|c| {
+            c.concept_local_name == concept_local_name
+                && c.concept_namespace_uri == concept_namespace_uri
+        })
         .map(|c| (c.statement_group.clone(), c.period_nature.clone()))
         .unwrap_or_else(|| ("other".to_owned(), "duration".to_owned()));
 
@@ -511,8 +528,13 @@ mod tests {
         assert_eq!(before[0].label_source, "technical");
         assert_eq!(before[0].human_label, "SomeStandardConceptNotYetCurated");
 
-        promote_uncrosswalked_concept_core(&s, &company_id, "SomeStandardConceptNotYetCurated")
-            .expect("promote");
+        promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+            "SomeStandardConceptNotYetCurated",
+        )
+        .expect("promote");
 
         let after = compute_uncrosswalked_concepts(&s, &company_id).expect("after");
         assert_eq!(
@@ -541,8 +563,13 @@ mod tests {
             "500",
         );
 
-        let promoted = promote_uncrosswalked_concept_core(&s, &company_id, "PozostaleUslugiObce")
-            .expect("promote");
+        let promoted = promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://issuer.example.com/2025-12-31",
+            "PozostaleUslugiObce",
+        )
+        .expect("promote");
 
         assert_eq!(promoted.metric_key, "PozostaleUslugiObce");
         assert_eq!(
@@ -581,9 +608,13 @@ mod tests {
             "1234",
         );
 
-        let promoted =
-            promote_uncrosswalked_concept_core(&s, &company_id, "SomeStandardConceptNotYetCurated")
-                .expect("promote");
+        let promoted = promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+            "SomeStandardConceptNotYetCurated",
+        )
+        .expect("promote");
 
         assert_eq!(promoted.label, "SomeStandardConceptNotYetCurated");
         assert_eq!(promoted.label_source, "technical");
@@ -603,8 +634,13 @@ mod tests {
             "777",
         );
 
-        let promoted =
-            promote_uncrosswalked_concept_core(&s, &company_id, "SomeConcept").expect("promote");
+        let promoted = promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+            "SomeConcept",
+        )
+        .expect("promote");
         assert_eq!(promoted.facts_projected, 1);
 
         let facts = s
@@ -635,10 +671,20 @@ mod tests {
             "777",
         );
 
-        let first =
-            promote_uncrosswalked_concept_core(&s, &company_id, "SomeConcept").expect("first");
-        let second =
-            promote_uncrosswalked_concept_core(&s, &company_id, "SomeConcept").expect("second");
+        let first = promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+            "SomeConcept",
+        )
+        .expect("first");
+        let second = promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+            "SomeConcept",
+        )
+        .expect("second");
 
         assert_eq!(first.definition_id, second.definition_id);
         assert_eq!(
@@ -691,8 +737,13 @@ mod tests {
             )
             .expect("replace");
 
-        let promoted =
-            promote_uncrosswalked_concept_core(&s, &company_id, "SomeConcept").expect("promote");
+        let promoted = promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+            "SomeConcept",
+        )
+        .expect("promote");
         assert_eq!(
             promoted.facts_projected, 0,
             "a genuine disagreement must never resolve by document order"
@@ -703,8 +754,13 @@ mod tests {
     fn promote_rejects_a_concept_this_company_never_captured() {
         let s = state();
         let company_id = company(&s);
-        let error = promote_uncrosswalked_concept_core(&s, &company_id, "NeverSeen")
-            .expect_err("must be rejected");
+        let error = promote_uncrosswalked_concept_core(
+            &s,
+            &company_id,
+            "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+            "NeverSeen",
+        )
+        .expect_err("must be rejected");
         assert_eq!(error, "concept_not_captured");
     }
 }

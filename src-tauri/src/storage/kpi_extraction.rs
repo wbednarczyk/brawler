@@ -1040,20 +1040,22 @@ fn resolve_kpi_definition(
     // Curated alias (ADR 0100 decision 12): a dead catalog key means the
     // live key it was fragmented from. The redirect is guarded by the
     // one-sidedness rule AT RUNTIME, not just in the curation table (sol
-    // review finding 9): it applies only while the source key's own
-    // definitions hold ZERO facts on THIS database. On a database where the
-    // source key already carries a series (an import, an older schema, a
-    // manual entry), the redirect never fires — redirecting there would
-    // split one series across two keys, the exact repaint ADR 0077 dec. 8
-    // forbids. Never chained, never applied in reverse.
+    // review finding 9): it applies only while the source key holds ZERO
+    // facts FOR THIS COMPANY. Per-company, not database-global (sol round
+    // 2): one company's legacy `inventory` series must never flip write
+    // routing for every other company — each company's series stays
+    // internally consistent, which is the whole point. On a company whose
+    // source-key series already exists, the redirect never fires —
+    // redirecting there would split one series across two keys, the exact
+    // repaint ADR 0077 dec. 8 forbids. Never chained, never in reverse.
     let metric_key = match crate::fundamentals::kpi_aliases::resolve(metric_key.trim()) {
         Some(target) => {
             let source_has_facts: bool = connection.query_row(
                 "SELECT EXISTS(
                      SELECT 1 FROM financial_facts f
                      JOIN kpi_definitions d ON d.id = f.definition_id
-                     WHERE d.metric_key = ?1)",
-                params![metric_key.trim()],
+                     WHERE d.metric_key = ?1 AND f.company_id = ?2)",
+                params![metric_key.trim(), company_id],
                 |row| row.get(0),
             )?;
             if source_has_facts {

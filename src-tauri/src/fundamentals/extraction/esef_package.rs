@@ -110,8 +110,13 @@ pub(crate) fn extract_all_instances_counted(bytes: &[u8]) -> (Vec<(String, Vec<u
     };
 
     let mut names: Vec<String> = Vec::new();
+    let mut skipped: i64 = 0;
     for i in 0..archive.len() {
         let Ok(file) = archive.by_index(i) else {
+            // An unreadable entry might have been an instance — count it, so
+            // the extraction is marked truncated, never complete-looking
+            // (sol round 2, finding 4).
+            skipped += 1;
             continue;
         };
         if !file.is_file() {
@@ -125,7 +130,6 @@ pub(crate) fn extract_all_instances_counted(bytes: &[u8]) -> (Vec<(String, Vec<u
     names.sort();
 
     let mut out = Vec::with_capacity(names.len());
-    let mut skipped: i64 = 0;
     for name in names {
         let Ok(mut file) = archive.by_name(&name) else {
             skipped += 1;

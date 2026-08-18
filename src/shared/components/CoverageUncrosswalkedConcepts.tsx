@@ -91,7 +91,11 @@ export function CoverageUncrosswalkedConcepts({ companyId, reloadKey = 0 }: Prop
     setPromotingConcept(row.conceptLocalName);
     setPromoteError(null);
     try {
-      const promoted = await promoteUncrosswalkedConcept(companyId, row.conceptLocalName);
+      const promoted = await promoteUncrosswalkedConcept(
+        companyId,
+        row.conceptNamespaceUri,
+        row.conceptLocalName,
+      );
       setRows((current) =>
         current.map((existing) =>
           existing.conceptLocalName === row.conceptLocalName

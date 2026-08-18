@@ -24,6 +24,7 @@ function counts(overrides: Partial<TaggedFactCoverageCounts> = {}): TaggedFactCo
     awaitingName: 60,
     conflicting: 7,
     unparsed: 0,
+    repeated: 0,
     ...overrides,
   };
 }
@@ -48,6 +49,7 @@ describe("CoverageRawCapture", () => {
     // Zero unparsed rows: the bucket stays hidden rather than rendering a
     // permanent zero row.
     expect(screen.queryByText("Could not be read")).not.toBeInTheDocument();
+    expect(screen.queryByText("Repeated in the report")).not.toBeInTheDocument();
     expect(getReportTaggedFactCoverageMock).toHaveBeenCalledWith("company_gpw_cdr");
   });
 
@@ -60,7 +62,7 @@ describe("CoverageRawCapture", () => {
   });
 
   it("renders nothing for a company with no tagged capture yet", async () => {
-    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ rawStored: 0, projected: 0, comparative: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0, unparsed: 0 }));
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ rawStored: 0, projected: 0, comparative: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0, unparsed: 0, repeated: 0 }));
     const { container } = render(<CoverageRawCapture companyId="company_gpw_cdr" />);
 
     // Wait for the fetch to settle without asserting on a specific string —

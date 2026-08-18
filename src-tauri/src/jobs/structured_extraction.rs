@@ -957,8 +957,11 @@ fn capture_layer1_tagged_facts(
         Ok(true) => return, // unchanged bytes + extractor version — nothing to do
         Ok(false) => {}
         Err(error) => {
-            log::warn!(
-                "tagged-fact freshness check failed for report document {report_document_id}: {error}"
+            record_layer1_capture_diagnostic(
+                state,
+                report_document_id,
+                "freshness_check_failed",
+                &error.to_string(),
             );
             return;
         }
@@ -969,7 +972,15 @@ fn capture_layer1_tagged_facts(
         source_content_hash: Some(source_hash),
         extractor_version: TAGGED_FACT_EXTRACTOR_VERSION,
         state: if !generation.has_instance {
-            "no_instance".to_owned()
+            // A package whose only candidates were SKIPPED unread is
+            // truncated, not instance-free: "no_instance" must mean "we
+            // looked and there was nothing", never "we could not look"
+            // (sol round 2, finding 4).
+            if generation.truncation.is_some() {
+                "truncated".to_owned()
+            } else {
+                "no_instance".to_owned()
+            }
         } else if let Some(reason) = generation.truncation.as_deref() {
             // Visible incompleteness (sol review finding 4): a reader error
             // or a skipped package entry means the counts cover only what
@@ -993,8 +1004,40 @@ fn capture_layer1_tagged_facts(
         company_id,
         &extraction,
     ) {
-        log::warn!("tagged-fact capture failed for report document {report_document_id}: {error}");
+        record_layer1_capture_diagnostic(
+            state,
+            report_document_id,
+            "capture_write_failed",
+            &error.to_string(),
+        );
     }
+}
+
+/// A swallowed Layer 1 failure is never ONLY a log line (sol round 2,
+/// finding 4): capture is best-effort by design (Layer 2 must not fail with
+/// it — ADR 0100 decision 1), but the loss has to be visible where the owner
+/// looks, so it lands in `diagnostic_events`. The diagnostic write itself is
+/// best-effort too — a database that cannot write the extraction likely
+/// cannot write the diagnostic either, and the log line remains the floor.
+fn record_layer1_capture_diagnostic(
+    state: &AppState,
+    report_document_id: &str,
+    stage: &str,
+    error: &str,
+) {
+    log::warn!("tagged-fact capture {stage} for report document {report_document_id}: {error}");
+    let _ = state.record_diagnostic_event(crate::storage::NewDiagnosticEvent {
+        occurred_at: None,
+        module: "report_tagged_facts_capture".to_owned(),
+        scope: Some(crate::storage::DiagnosticScope {
+            scope_type: "report_document".to_owned(),
+            id: Some(report_document_id.to_owned()),
+        }),
+        stage: stage.to_owned(),
+        severity: "warning".to_owned(),
+        message: format!("Layer 1 tagged-fact capture did not persist: {error}"),
+        metadata: None,
+    });
 }
 
 /// Runs the structured pipeline for one report document and persists the

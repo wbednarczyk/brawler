@@ -33,4 +33,11 @@ comparative: number, dimensional: number, noteLevel: number, awaitingName: numbe
  * Layer 1, decision 9) — visible here so an unreadable number still has
  * a stated reason it is not in Fundamentals.
  */
-unparsed: number, };
+unparsed: number, 
+/**
+ * Raw occurrences folded into another candidate rather than becoming
+ * one themselves (sol round 2, finding 8): equal-value repeats beyond
+ * the first, and shorter duration windows superseded by the cumulative
+ * figure sharing their end date. Their reason is "already counted once".
+ */
+repeated: number, };

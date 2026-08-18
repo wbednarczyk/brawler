@@ -87,6 +87,7 @@ describe("CoverageUncrosswalkedConcepts", () => {
 
     expect(promoteUncrosswalkedConceptMock).toHaveBeenCalledWith(
       "company_gpw_cdr",
+      "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
       "DeferredTaxLiabilities",
     );
     expect(await screen.findByText("In Fundamentals")).toBeInTheDocument();
