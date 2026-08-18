@@ -18,6 +18,8 @@ The job queue (`jobs/kpi_ingest_queue`) remains the executor for #354 automation
 
 Rejected: stage→enqueue + status polling as the agent path (bloats the repair loop; the whole validation result must return to the agent anyway).
 
+**Amended (2026-08-18, [ADR 0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) dec. 12):** `validate_kpi_ingest` and `commit_kpi_ingest` responses become bounded summaries, not the full manifest/receipt; full data moves to paged `get_kpi_ingest_context` reads.
+
 ### 2. A second bearer credential with its own enablement gate
 
 The `kpi_acquisition` credential is a second bearer token in the OS keychain (`brawler/mcp/kpi_acquisition_token`, descriptor beside the primary), with its own generate/rotate/revoke/status commands and a Settings → MCP entry point. The server holds two digests; a digest match resolves to `McpScope::Full | McpScope::KpiAcquisition`, threaded through the whole server → protocol → registry boundary (today auth collapses to a boolean before dispatch and `tools/list` is unconditional — the signatures gain an identity parameter).
@@ -33,6 +35,8 @@ Rejected: the global bearer as the acquisition credential (ADR 0098 dec. 9); tok
 `start_kpi_ingest`, `list_pending_kpi_ingests`, `get_kpi_ingest_context`, `get_kpi_ingest_document`, `stage_kpi_observations`, `validate_kpi_ingest`, `commit_kpi_ingest`, `get_kpi_ingest_status`, `cancel_kpi_ingest` — no additional read tools: the context read model covers catalog, comparison facts and document bytes. Widening the allowlist is a deliberate ADR change. Calling any tool outside the allowlist returns `-32602` unknown-tool — the surface does not exist for that identity. Full scope is a superset (it sees the nine new tools; the #365 capability-conditional demotion of `record_financial_facts` activates automatically). `record_financial_facts`, `create_financial_fact`, `update_financial_fact`, `capture_report_document` stay outside the acquisition scope (repair and capture belong to Full).
 
 Producer/handoff contract: the acquisition scope discovers and captures nothing. Capture and URL→`documentId` resolution belong to the UI, the Full scope, or the #354 planner; "process all pending KPI ingests" presumes pending runs exist (or a `documentId` handed to the agent). Before #354, the #366 fixture is prepared by the owner/Full scope and handed off.
+
+**Amended (2026-08-18, [ADR 0101](0101-agent-proposed-kpi-definitions-and-full-catalog-visibility.md) dec. 1):** the allowlist is deliberately widened 9→10 with `propose_kpi_definition` — the freeze rationale above covered read tools only; it never reasoned about a write gap on this scope.
 
 Additive `CommandError` codes (the enum is additive-only and the envelope has no structured detail field, so subtypes must be codes): `run_lease_expired`, `run_taken_over`, `response_budget_exceeded` — retry semantics in the contracts.md code table.
 
@@ -53,6 +57,8 @@ A const registry: `profile_id ∈ {gpw_ifrs_annual, gpw_interim, gpw_preliminary
 ### 7. Response budgets are runtime mechanisms, not test fixtures
 
 Numeric caps with defined overflow behavior — never silent truncation. String limits are UTF-8 BYTE limits; control characters (U+0000–U+001F) are rejected in all text fields, which bounds serde_json escaping expansion at ×2 and makes the transport arithmetic provable (a schema-valid stage request always reaches tool validation below the 1 MiB body cap). Context overflow returns a truncated section plus a cursor (`section`-scoped follow-up calls), never a dead end. The scoped `tools/list` gets its own frozen snapshot and count (frozen in #386 when all nine tools exist); byte gates are regression coverage, not the enforcement. Full-scope frozen tool count after the epic: 111. Numbers are frozen in contracts.md; raising a cap is an additive change.
+
+**Amended (2026-08-18, [ADR 0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) dec. 10):** the per-call cap arithmetic here is unchanged and now bounds a chunk, not necessarily the whole revision; a new aggregate cap applies at finalize.
 
 ### 8. Execution metadata is diagnostic and atomic
 
