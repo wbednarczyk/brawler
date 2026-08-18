@@ -806,8 +806,10 @@ pub(crate) struct Layer1Generation {
     dimensional_count: i64,
     /// Whether the route carried at least one readable instance — a package
     /// with none is `state = "no_instance"`, never conflated with "extracted
-    /// zero facts from a real instance".
-    has_instance: bool,
+    /// zero facts from a real instance". `pub(crate)` so the corpus concept
+    /// harvest (`storage::tests::real_data_extraction`) can tell the two apart
+    /// the same way the job does.
+    pub(crate) has_instance: bool,
     /// Whether ANY presentation-linkbase role was attached to ANY fact in
     /// this generation — `false` for a bare (non-package) iXBRL instance,
     /// which carries no `*_pre.xml` at all, and for a package whose linkbase

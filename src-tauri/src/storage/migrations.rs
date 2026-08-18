@@ -745,6 +745,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "repair_quick_ratio_dead_input",
         sql: include_str!("../../migrations/0147_repair_quick_ratio_dead_input.sql"),
     },
+    Migration {
+        version: 148,
+        name: "ifrs_crosswalk_corpus_harvest",
+        sql: include_str!("../../migrations/0148_ifrs_crosswalk_corpus_harvest.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
