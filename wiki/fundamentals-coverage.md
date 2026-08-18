@@ -16,13 +16,16 @@ trusted one owns the slot:
 1. **Your own edits** — untouchable. No automatic path ever overwrites a value
    you typed in. If a source later disagrees with you, Brawler records an
    informational note (see *Flagged periods*), never a change.
-2. **ESEF annual reports** — the issuer's own iXBRL-tagged filing. The only
-   source for figures the aggregator doesn't publish (cash, EPS, long-term
-   debt, total liabilities, group equity).
+2. **ESEF annual reports** — the issuer's own iXBRL-tagged filing, read in
+   FULL since v0.71: every number the report tags is captured raw (~400 per
+   annual report), and every position the shared IFRS vocabulary knows lands
+   in Fundamentals under a stable name. For the periods such a filing
+   covers, the filing — not the aggregator — is the breadth source.
 3. **Structured/positional xHTML** filings and the **ESPI "Wybrane dane
    finansowe" cover table** from interim komunikaty (parsed the moment the
    feed item arrives — the figures outlive the carrier item).
-4. **BiznesRadar — the primary source for core KPIs.** Once a day Brawler
+4. **BiznesRadar — the primary source for periods no tagged filing
+   covers.** Once a day Brawler
    politely reads three public report pages per tracked company (income
    statement, balance sheet, cash flow) and ingests **every period column**
    they carry — a newly tracked company gets its whole reported history on day
@@ -76,6 +79,35 @@ waits for your click.
 Some cells are honestly empty: BiznesRadar's pages simply don't publish every
 line (no cash, no total liabilities, equity only for parent shareholders), so
 those figures exist only for periods with an ESEF filing.
+
+### What the program read from the report
+
+For a company with a tagged (ESEF) filing, Coverage shows one compact line
+accounting for **every number in the report**: how many were selected for
+Fundamentals, how many belong to earlier years (kept as context), how many are
+per-segment breakdowns or note-level figures, how many repeat inside the
+filing, how many still await a name, and how many conflict. A number is either
+selected or has its stated reason — never silently gone.
+
+**Positions the program doesn't know yet** expands into the list of captured
+positions with no name in the shared vocabulary, ranked by how many companies
+report them. Each row carries the issuer's own published label when the filing
+has one (honestly marked "no translation yet" otherwise) and a **Show in
+Fundamentals** action — promoting is your call alone; no automatic path ever
+names a metric.
+
+### The three history actions
+
+- **Fetch older reports** — brings in filings Brawler doesn't have yet, then
+  reads what it fetched.
+- **Read the ones not read yet** — reads already-stored reports whose periods
+  still lack figures (no re-download).
+- **Read everything again** — re-reads already-read reports with the current
+  pipeline, so a widened vocabulary reaches filings that landed before it.
+  Works regardless of the automation switch: it only reprocesses what is
+  already on disk.
+
+Fetching brings in reports; reading turns stored reports into numbers.
 
 ## Fixing and adding figures
 
