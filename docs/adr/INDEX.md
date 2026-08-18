@@ -99,3 +99,4 @@
 - [0097](0097-toasts-are-action-feedback-only.md) — Toasts Are Action Feedback Only — Ambient Attention Lives in Today — Accepted (2026-08-06, owner sign-off on the #330 plan)
 - [0098](0098-mcp-native-kpi-acquisition-lifecycle.md) — MCP-native KPI acquisition lifecycle — Accepted (2026-08-10, owner decision after the 2026-08 vendor study)
 - [0099](0099-acquisition-mcp-surface-mechanics.md) — Acquisition MCP surface mechanics — Accepted (2026-08-13, owner decision at epic #353 planning; 4 adversarial review
+- [0100](0100-two-layer-tagged-fact-capture-and-ifrs-vocabulary.md) — Two-layer tagged-fact capture and the IFRS-anchored metric vocabulary — Proposed (2026-08-17, owner decision at epic #398 planning; 3 adversarial review
