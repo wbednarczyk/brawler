@@ -1516,6 +1516,87 @@ fn every_canonical_derived_metric_is_computable_from_a_representative_fact_set()
     }
 }
 
+/// A derived formula must never reference a metric key declared dead
+/// (`fundamentals::kpi_aliases`) — ADR 0100 decision 12.
+///
+/// The computability gate above cannot catch this: it seeds a fact for EVERY
+/// reported definition, including the dead ones, so `quick_ratio` computed
+/// happily in the test while returning nothing for every real company —
+/// `inventory` holds zero facts, `inventories` holds them all. The metric was
+/// silently unavailable from the day it was seeded (repaired by migration
+/// `0147`). This gate reddens on the class, not the instance: declare a key an
+/// alias source and any formula still reading it fails here.
+#[test]
+fn no_derived_formula_references_an_alias_source() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions");
+
+    // Identifier-boundary match: `inventory` must not fire on `inventories`.
+    let references = |formula: &str, key: &str| {
+        formula.match_indices(key).any(|(at, _)| {
+            let before = formula[..at].chars().next_back();
+            let after = formula[at + key.len()..].chars().next();
+            let boundary =
+                |c: Option<char>| !matches!(c, Some(c) if c.is_alphanumeric() || c == '_');
+            boundary(before) && boundary(after)
+        })
+    };
+
+    for def in &definitions {
+        let Some(formula) = def.formula.as_ref().filter(|f| !f.trim().is_empty()) else {
+            continue;
+        };
+        for alias in crate::fundamentals::kpi_aliases::aliases() {
+            assert!(
+                !references(formula, alias.from),
+                "derived metric `{}` reads `{}`, which is a dead alias of `{}` and holds no facts — \
+                 the metric would never compute for a real company (formula {formula:?})",
+                def.metric_key,
+                alias.from,
+                alias.to
+            );
+        }
+    }
+}
+
+/// The other half of decision 12's one-sidedness: an alias source must name a
+/// real catalog row (so redirecting it is meaningful) and the target must too.
+#[test]
+fn every_alias_names_two_seeded_catalog_keys() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let keys: std::collections::HashSet<String> = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions")
+        .into_iter()
+        .map(|def| def.metric_key)
+        .collect();
+
+    for alias in crate::fundamentals::kpi_aliases::aliases() {
+        assert!(
+            keys.contains(alias.from),
+            "alias source `{}` is not a seeded catalog key — nothing resolves it",
+            alias.from
+        );
+        assert!(
+            keys.contains(alias.to),
+            "alias target `{}` is not a seeded catalog key — the redirect would drop the fact",
+            alias.to
+        );
+    }
+}
+
 #[test]
 fn every_stock_metric_key_backfills_to_instant_period_nature() {
     // ADR 0100 decision 6, epic #398: `STOCK_METRIC_KEYS` (metrics.rs) is

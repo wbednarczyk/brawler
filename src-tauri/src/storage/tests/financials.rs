@@ -3635,3 +3635,74 @@ fn derived_period_cache_round_trips_the_content_hash() {
         .expect("row");
     assert_eq!(cached.content_hash, None);
 }
+
+// ---------------------------------------------------------------------------
+// Curated catalog aliases (ADR 0100 decision 12, epic #398)
+// ---------------------------------------------------------------------------
+
+/// A write under a dead catalog key lands in the live key's slot. `inventory`
+/// and `inventories` are both canonical rows; only the second one has ever
+/// held facts, so a writer that reaches the first would file into a series
+/// nothing reads. The redirect happens in the resolver, so no caller changes.
+#[test]
+fn a_write_under_an_alias_source_lands_on_the_live_definition() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .kpi_extraction()
+        .record_structured_fact(crate::storage::StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "repdoc_alias",
+            metric_key: "inventory",
+            value_numeric: "4200",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("alias test"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        })
+        .expect("the aliased write must be accepted");
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions");
+    let live = definitions
+        .iter()
+        .find(|def| def.metric_key == "inventories")
+        .expect("inventories is seeded");
+    let dead = definitions
+        .iter()
+        .find(|def| def.metric_key == "inventory")
+        .expect("inventory is still seeded — an alias never deletes a row");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts list");
+    assert_eq!(facts.len(), 1, "exactly one fact was written");
+    assert_eq!(
+        facts[0].definition_id, live.id,
+        "the fact must land on `inventories`, the key that carries the series"
+    );
+    assert_ne!(
+        facts[0].definition_id, dead.id,
+        "nothing may file into the dead key"
+    );
+}

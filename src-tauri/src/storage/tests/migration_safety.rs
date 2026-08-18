@@ -5348,6 +5348,67 @@ fn migration_0143_seeds_new_crosswalk_keys_and_never_disturbs_a_reused_definitio
     assert_eq!(count_after, count);
 }
 
+/// Migration `0147` (ADR 0100 decision 12, epic #398): `quick_ratio`'s seeded
+/// formula read `inventory`, a canonical row that has never held a fact —
+/// every extractor and the aggregator write `inventories`. The metric was
+/// therefore unavailable for every company from the day `0048` seeded it, and
+/// looked exactly like "the issuer did not report it".
+///
+/// Proves the repair on a database frozen BEFORE the migration (so the broken
+/// state is real, not assumed), that it is idempotent, and that it never
+/// rewrites a formula the owner changed themselves (no repaint, ADR 0077 d.8).
+#[test]
+fn migration_0147_repairs_quick_ratio_and_leaves_an_owner_edited_formula_alone() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 146).expect("apply schema up to pre-0147");
+
+    let before: String = connection
+        .query_row(
+            "SELECT formula FROM kpi_definitions WHERE id = 'kpidef_quick_ratio'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("quick_ratio is seeded by 0048");
+    assert_eq!(
+        before, "(current_assets - inventory) / current_liabilities",
+        "the pre-0147 state must be the broken formula this migration exists to repair"
+    );
+
+    apply_migrations(&mut connection).expect("apply 0147");
+    let after: String = connection
+        .query_row(
+            "SELECT formula FROM kpi_definitions WHERE id = 'kpidef_quick_ratio'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("quick_ratio survives the repair");
+    assert_eq!(
+        after, "(current_assets - inventories) / current_liabilities",
+        "0147 must repoint the formula at the key that actually holds facts"
+    );
+
+    // Idempotent, and blind to a formula that is no longer the seeded text.
+    connection
+        .execute(
+            "UPDATE kpi_definitions SET formula = 'current_assets / current_liabilities'
+             WHERE id = 'kpidef_quick_ratio'",
+            [],
+        )
+        .expect("owner edit");
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    let owner_edited: String = connection
+        .query_row(
+            "SELECT formula FROM kpi_definitions WHERE id = 'kpidef_quick_ratio'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("owner-edited row survives");
+    assert_eq!(
+        owner_edited, "current_assets / current_liabilities",
+        "a formula the owner changed is never rewritten by a re-run"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Migration 0144 (ADR 0100 decision 6, 2nd paragraph; epic #398): repairs
 // every existing `measure_window='flow'` fact whose definition is

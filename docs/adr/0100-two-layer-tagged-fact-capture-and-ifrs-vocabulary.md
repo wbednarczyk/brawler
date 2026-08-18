@@ -106,6 +106,16 @@ The motivation is concrete: re-reading already-stored reports is exactly the kin
 
 Consequence: the Full-scope frozen tool count rises by three, so its snapshot and count assertions move with this change — deliberately, as evidence of the widening.
 
+### 12. A dead catalog key is redirected by a curated alias, never left to rot
+
+Decision 2 stops the ESEF path from minting duplicates. It does not repair the duplicates that already exist: `inventory` (migration `0048`) and `inventories` (`0084`) are both canonical rows for the same figure, and only the second has ever held a fact (771 across 44 companies). The cost was not theoretical — the seeded `quick_ratio` formula read `inventory`, so the metric evaluated to unavailable for **every company since it was seeded**, indistinguishable from an issuer that never reported it.
+
+A curated alias table (`fundamentals::kpi_aliases`) names each dead key and the live key it means. It is consulted by `resolve_kpi_definition` after an exact match fails, so a writer reaching the dead key files into the live series with no caller change.
+
+The table is **one-sided and evidence-proven**: an alias source must hold no facts. A pair where both sides carry facts is a *merge*, which needs its own migration and its own evidence — never an entry here. That asymmetry is what separates an alias from a repaint (ADR 0077 dec. 8): nothing is renamed and no two real series are joined; a key that was always empty simply stops being a place a fact can land.
+
+Two gates keep it closed. `no_derived_formula_references_an_alias_source` refuses a formula that reads a dead key — the check that would have caught `quick_ratio`, which the existing computability gate could not, because it seeds a fact for every definition including the dead ones. `every_alias_names_two_seeded_catalog_keys` refuses an alias naming a key the catalog does not have. Repairing an already-broken formula is a forward migration (`0147`), matched on the exact seeded text so an owner-edited row is never rewritten.
+
 ## Consequences
 
 - **ADR 0086 is amended for periods a tagged filing covers**: the issuer package, not the aggregator, is the breadth source there. The precedence ladder is unchanged (`esef` already outranks `html_aggregator`); `docs/product-spec.md`'s "issuer filings corroborate" wording changes with it.

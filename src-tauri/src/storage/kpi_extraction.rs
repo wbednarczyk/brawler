@@ -1037,6 +1037,12 @@ fn resolve_kpi_definition(
     company_id: &str,
     metric_key: &str,
 ) -> StorageResult<Option<ResolvedKpiDefinition>> {
+    // Curated alias, applied BEFORE the lookup (ADR 0100 decision 12): a key
+    // that exists in the catalog but holds no facts means the live key it was
+    // fragmented from, so the fact lands in the series a reader actually
+    // reads. One-sided and never chained — see `fundamentals::kpi_aliases`.
+    let metric_key = crate::fundamentals::kpi_aliases::resolve(metric_key.trim())
+        .unwrap_or_else(|| metric_key.trim());
     let (sector, _source) = super::companies::get_company_sector(connection, company_id)?;
     let statement_type = super::companies::get_statement_type(connection, company_id)?;
     let existing: Option<(String, String, String, String)> = connection
@@ -1062,7 +1068,7 @@ fn resolve_kpi_definition(
               id
             LIMIT 1
             ",
-            params![metric_key.trim(), company_id, sector, statement_type],
+            params![metric_key, company_id, sector, statement_type],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;

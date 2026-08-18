@@ -740,6 +740,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "pipeline_reextraction_batches",
         sql: include_str!("../../migrations/0146_pipeline_reextraction_batches.sql"),
     },
+    Migration {
+        version: 147,
+        name: "repair_quick_ratio_dead_input",
+        sql: include_str!("../../migrations/0147_repair_quick_ratio_dead_input.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
