@@ -794,6 +794,7 @@ mod tests {
     /// A valid iXBRL instance (declares the inline-XBRL namespace, carries `ix:`
     /// facts at 2024-09-30).
     const IXBRL_XHTML: &[u8] = br#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2024-09-30</xbrli:instant></xbrli:period></xbrli:context>

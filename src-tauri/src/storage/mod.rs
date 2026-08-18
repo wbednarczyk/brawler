@@ -181,7 +181,7 @@ pub use management_holdings::{
 pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
-pub use migrations::{open_database, open_in_memory_database};
+pub use migrations::{open_database, open_database_readonly, open_in_memory_database};
 pub use morning_briefings::{
     compose_briefing, BriefingSources, ComposedBriefing, ComposedBriefingItem, MorningBriefing,
     MorningBriefingItem, MorningBriefingStore,

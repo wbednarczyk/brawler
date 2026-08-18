@@ -57,10 +57,27 @@ const REEXTRACTION_TRIGGER: &str = "manual";
 
 /// Start a version-aware re-extraction batch for a company: create a queued
 /// batch row + enqueue its durable job.
+///
+/// **Idempotent while one is in flight** (sol review finding 12): if the
+/// company's latest batch is still `queued`/`running`, THAT batch is
+/// returned and nothing new is created — this command is reachable over MCP,
+/// and without the guard a looping agent could mint unbounded durable batch
+/// rows and queue jobs (each scanning up to 500 runs on the shared autopilot
+/// lane). A new batch is only ever created after the previous one reaches a
+/// terminal state.
 pub fn enqueue_pipeline_reextraction(
     state: &AppState,
     company_id: &str,
 ) -> Result<PipelineReextractionBatch, String> {
+    if let Some(existing) = state
+        .pipeline_reextraction()
+        .get_latest_batch(company_id)
+        .map_err(|error| error.to_string())?
+    {
+        if matches!(existing.status.as_str(), "queued" | "running") {
+            return Ok(existing);
+        }
+    }
     let batch = state
         .pipeline_reextraction()
         .create_batch(company_id)

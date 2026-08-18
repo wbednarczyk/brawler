@@ -95,9 +95,18 @@ pub fn extract_instance(bytes: &[u8]) -> Option<Vec<u8>> {
 /// router uses, so routing and this enumeration can never disagree on what
 /// counts as an instance. Deterministic order (sorted by entry name).
 pub fn extract_all_instances(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    extract_all_instances_counted(bytes).0
+}
+
+/// [`extract_all_instances`] plus the count of candidate entries that were
+/// SKIPPED (unreadable, or over [`MAX_INSTANCE_BYTES`]) — sol review finding
+/// 4: a silently skipped entry made "encountered = stored" pass while whole
+/// instances went missing; the caller records the count so the extraction is
+/// marked truncated, never complete-looking.
+pub(crate) fn extract_all_instances_counted(bytes: &[u8]) -> (Vec<(String, Vec<u8>)>, i64) {
     let reader = std::io::Cursor::new(bytes);
     let Ok(mut archive) = zip::ZipArchive::new(reader) else {
-        return Vec::new();
+        return (Vec::new(), 0);
     };
 
     let mut names: Vec<String> = Vec::new();
@@ -116,15 +125,19 @@ pub fn extract_all_instances(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
     names.sort();
 
     let mut out = Vec::with_capacity(names.len());
+    let mut skipped: i64 = 0;
     for name in names {
         let Ok(mut file) = archive.by_name(&name) else {
+            skipped += 1;
             continue;
         };
         if file.size() > MAX_INSTANCE_BYTES {
+            skipped += 1;
             continue;
         }
         let mut buf = Vec::with_capacity(file.size() as usize);
         if file.read_to_end(&mut buf).is_err() {
+            skipped += 1;
             continue;
         }
         let prefix = &buf[..buf.len().min(64 * 1024)];
@@ -132,7 +145,7 @@ pub fn extract_all_instances(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
             out.push((name, buf));
         }
     }
-    out
+    (out, skipped)
 }
 
 /// Role-family classification table (ADR 0100 decision 3): standard IFRS

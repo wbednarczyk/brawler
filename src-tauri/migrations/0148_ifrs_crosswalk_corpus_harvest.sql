@@ -26,6 +26,49 @@
 -- canonical ids so a re-run, or a key that later gains a curated override, is
 -- never clobbered.
 
+-- Self-healing preamble (sol review finding 10): `INSERT OR IGNORE` is the
+-- exact mechanism migration 0125 documents as silently suppressing a
+-- canonical seed when a malformed non-canonical row squats on the bare
+-- `kpidef_<key>` id (possible again only via an import of pre-0125 data).
+-- Re-key any such row first — 0125's own statements, verbatim semantics —
+-- so no seed below can vanish without error. A clean database matches
+-- nothing and this is a no-op.
+PRAGMA defer_foreign_keys = ON;
+
+CREATE TEMP TABLE _m0148_rekey AS
+SELECT
+    d.id AS old_id,
+    d.id || '__'
+        || CASE d.scope WHEN 'company' THEN 'c' WHEN 'sector' THEN 's' ELSE d.scope END
+        || '_'
+        || CASE d.scope
+               WHEN 'company' THEN IFNULL(d.company_id, '')
+               WHEN 'sector' THEN IFNULL(d.sector, '')
+               ELSE IFNULL(d.company_id, IFNULL(d.sector, ''))
+           END AS new_id
+FROM kpi_definitions d
+WHERE d.scope <> 'canonical'
+  AND d.id = 'kpidef_' || LOWER(d.metric_key);
+
+UPDATE kpi_definitions
+SET id = (SELECT r.new_id FROM _m0148_rekey r WHERE r.old_id = id),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id IN (SELECT old_id FROM _m0148_rekey);
+
+UPDATE kpi_relevance
+SET definition_id = (
+        SELECT r.new_id FROM _m0148_rekey r WHERE r.old_id = definition_id
+    )
+WHERE definition_id IN (SELECT old_id FROM _m0148_rekey);
+
+UPDATE financial_facts
+SET definition_id = (
+        SELECT r.new_id FROM _m0148_rekey r WHERE r.old_id = definition_id
+    )
+WHERE definition_id IN (SELECT old_id FROM _m0148_rekey);
+
+DROP TABLE _m0148_rekey;
+
 INSERT OR IGNORE INTO kpi_definitions
     (id, scope, metric_key, label, value_kind, unit, computation, formula, origin, statement_group, period_nature) VALUES
 ('kpidef_accruals_classified_as_current', 'canonical', 'accruals_classified_as_current',
@@ -66,13 +109,13 @@ INSERT OR IGNORE INTO kpi_definitions
  'Adjustment — finance costs', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_adj_finance_income_cost', 'canonical', 'adj_finance_income_cost',
  'Adjustment — finance income cost', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_adj_gain_loss_on_disposal_of_investments_in_subsidiaries_jvs', 'canonical', 'adj_gain_loss_on_disposal_of_investments_in_subsidiaries_jvs',
+('kpidef_adj_disposal_gains_subsidiaries_joint_ventures_associates', 'canonical', 'adj_disposal_gains_subsidiaries_joint_ventures_associates',
  'Adjustment — gain loss on disposal of investments in subsidiaries joint ventures and associates', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_adj_gains_losses_on_change_in_fair_value_of_derivatives', 'canonical', 'adj_gains_losses_on_change_in_fair_value_of_derivatives',
  'Adjustment — gains losses on change in fair value of derivatives', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_adj_impairment_loss_in_pl_goodwill', 'canonical', 'adj_impairment_loss_in_pl_goodwill',
+('kpidef_adj_goodwill_impairment_in_profit_or_loss', 'canonical', 'adj_goodwill_impairment_in_profit_or_loss',
  'Adjustment — impairment loss recognised in profit or loss goodwill', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_adj_impairment_loss_reversal_of_impairment_loss_in_pl', 'canonical', 'adj_impairment_loss_reversal_of_impairment_loss_in_pl',
+('kpidef_adj_impairment_loss_reversal_in_profit_or_loss', 'canonical', 'adj_impairment_loss_reversal_in_profit_or_loss',
  'Adjustment — impairment loss reversal of impairment loss recognised in profit or loss', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_adj_interest_expense', 'canonical', 'adj_interest_expense',
  'Adjustment — interest expense', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
@@ -88,7 +131,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Adjustment — undistributed profits of investments (equity method)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_adjusted_weighted_average_shares', 'canonical', 'adjusted_weighted_average_shares',
  'Adjusted weighted average shares', 'count', NULL, 'reported', NULL, 'seed', 'other', 'duration'),
-('kpidef_adjustments_to_reconcile_profit_loss_excl_changes_in_working', 'canonical', 'adjustments_to_reconcile_profit_loss_excl_changes_in_working',
+('kpidef_adj_to_reconcile_profit_loss_excl_working_capital', 'canonical', 'adj_to_reconcile_profit_loss_excl_working_capital',
  'Adjustments to reconcile profit loss excluding changes in working capital', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_basic_earnings_loss_per_share_from_discontinued_operations', 'canonical', 'basic_earnings_loss_per_share_from_discontinued_operations',
  'Basic earnings loss per share from discontinued operations', 'monetary', NULL, 'reported', NULL, 'seed', 'per_share', 'duration'),
@@ -102,13 +145,13 @@ INSERT OR IGNORE INTO kpi_definitions
  'Cash advances and loans made to related parties', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_cash_flows_from_losing_control_of_subsidiaries_investing', 'canonical', 'cash_flows_from_losing_control_of_subsidiaries_investing',
  'Cash flows from losing control of subsidiaries or other businesses (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_cash_flows_from_used_in_change_in_shortterm_deposits_and', 'canonical', 'cash_flows_from_used_in_change_in_shortterm_deposits_and',
+('kpidef_change_in_short_term_deposits_and_investments_cash_flows', 'canonical', 'change_in_short_term_deposits_and_investments_cash_flows',
  'Cash flows from decrease increase in shortterm deposits and investments', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_cash_flows_from_used_in_operations_before_changes_in_working', 'canonical', 'cash_flows_from_used_in_operations_before_changes_in_working',
+('kpidef_cash_flows_from_operations_before_working_capital_changes', 'canonical', 'cash_flows_from_operations_before_working_capital_changes',
  'Cash flows from operations before changes in working capital', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_cash_receipts_from_repayment_of_advances_and_loans_made_to', 'canonical', 'cash_receipts_from_repayment_of_advances_and_loans_made_to',
+('kpidef_repayments_received_of_loans_made_to_related_parties', 'canonical', 'repayments_received_of_loans_made_to_related_parties',
  'Cash receipts from repayment of advances and loans made to related parties', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_cash_receipts_from_repayment_of_advances_and_loans_made_to_other', 'canonical', 'cash_receipts_from_repayment_of_advances_and_loans_made_to_other',
+('kpidef_repayments_received_of_loans_made_to_other_parties', 'canonical', 'repayments_received_of_loans_made_to_other_parties',
  'Cash receipts from repayment of advances and loans made to other parties (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_change_in_working_capital', 'canonical', 'change_in_working_capital',
  'Increase decrease in working capital', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
@@ -130,7 +173,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Changes in inventories of finished goods and work in progress', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_cost_of_merchandise_sold', 'canonical', 'cost_of_merchandise_sold',
  'Cost of merchandise sold', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
-('kpidef_current_assets_excl_assets_held_for_sale', 'canonical', 'current_assets_excl_assets_held_for_sale',
+('kpidef_current_assets_excl_held_for_sale_or_distribution', 'canonical', 'current_assets_excl_held_for_sale_or_distribution',
  'Current assets excluding assets or disposal groups classified as held for sale or as held for distribution to owners', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_current_bonds_issued_and_current_portion_of_bonds_issued', 'canonical', 'current_bonds_issued_and_current_portion_of_bonds_issued',
  'Current bonds issued and current portion of noncurrent bonds issued', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
@@ -162,7 +205,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Current prepaid expenses', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_current_prepayments', 'canonical', 'current_prepayments',
  'Current prepayments', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
-('kpidef_current_prepayments_and_current_accrued_income_excl_current', 'canonical', 'current_prepayments_and_current_accrued_income_excl_current',
+('kpidef_current_prepayments_and_accrued_income_excl_contract_assets', 'canonical', 'current_prepayments_and_accrued_income_excl_contract_assets',
  'Current prepayments and current accrued income excluding current contract assets', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_current_provisions', 'canonical', 'current_provisions',
  'Current provisions', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
@@ -170,7 +213,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Current receivables from taxes excluding income tax', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_current_restricted_cash', 'canonical', 'current_restricted_cash',
  'Current restricted cash and cash equivalents', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
-('kpidef_current_secured_bank_loans_received_and_current_portion_of', 'canonical', 'current_secured_bank_loans_received_and_current_portion_of',
+('kpidef_current_secured_bank_loans_and_current_portion_of_noncurrent', 'canonical', 'current_secured_bank_loans_and_current_portion_of_noncurrent',
  'Current secured bank loans received and current portion of noncurrent secured bank loans received', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_depreciation_amortisation', 'canonical', 'depreciation_amortisation',
  'Depreciation and amortisation expense', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
@@ -202,7 +245,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Gain recognised in bargain purchase transaction', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_gains_losses_on_cash_flow_hedges_before_tax', 'canonical', 'gains_losses_on_cash_flow_hedges_before_tax',
  'Gains losses on cash flow hedges before tax', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
-('kpidef_gains_losses_on_exchange_differences_on_translation_in_pl', 'canonical', 'gains_losses_on_exchange_differences_on_translation_in_pl',
+('kpidef_fx_translation_gains_losses_in_profit_or_loss', 'canonical', 'fx_translation_gains_losses_in_profit_or_loss',
  'Gains losses on exchange differences on translation recognised in profit or loss', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_gains_losses_on_exchange_differences_on_translation_net_of_tax', 'canonical', 'gains_losses_on_exchange_differences_on_translation_net_of_tax',
  'Gains losses on exchange differences on translation net of tax', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
@@ -210,7 +253,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Gains losses on net monetary position', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_general_and_administrative_expense', 'canonical', 'general_and_administrative_expense',
  'General and administrative expense', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
-('kpidef_impairment_loss_reversal_of_impairment_loss_in_pl', 'canonical', 'impairment_loss_reversal_of_impairment_loss_in_pl',
+('kpidef_impairment_loss_reversal_in_profit_or_loss', 'canonical', 'impairment_loss_reversal_in_profit_or_loss',
  'Impairment loss reversal of impairment loss recognised in profit or loss', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_income_tax_relating_to_cash_flow_hedges_of_oci', 'canonical', 'income_tax_relating_to_cash_flow_hedges_of_oci',
  'Income tax relating to cash flow hedges of OCI', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
@@ -234,7 +277,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Investments in associates (equity method)', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_investments_in_joint_ventures_equity_method', 'canonical', 'investments_in_joint_ventures_equity_method',
  'Investments in joint ventures (equity method)', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
-('kpidef_investments_in_subsidiaries_jvs_associates', 'canonical', 'investments_in_subsidiaries_jvs_associates',
+('kpidef_investments_in_subsidiaries_joint_ventures_associates', 'canonical', 'investments_in_subsidiaries_joint_ventures_associates',
  'Investments in subsidiaries joint ventures and associates', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_issue_of_equity', 'canonical', 'issue_of_equity',
  'Issue of equity', 'monetary', NULL, 'reported', NULL, 'seed', 'other', 'duration'),
@@ -250,7 +293,9 @@ INSERT OR IGNORE INTO kpi_definitions
  'Net deferred tax liabilities', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_net_profit_continuing', 'canonical', 'net_profit_continuing',
  'Profit loss from continuing operations', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
-('kpidef_noncurrent_accruals_and_noncurrent_deferred_income_including', 'canonical', 'noncurrent_accruals_and_noncurrent_deferred_income_including',
+('kpidef_noncurrent_assets_held_for_sale_or_distribution', 'canonical', 'noncurrent_assets_held_for_sale_or_distribution',
+ 'Non-current assets held for sale or for distribution to owners', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
+('kpidef_noncurrent_accruals_and_deferred_income_incl_contracts', 'canonical', 'noncurrent_accruals_and_deferred_income_incl_contracts',
  'Noncurrent accruals and noncurrent deferred income including noncurrent contract liabilities', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_noncurrent_accrued_income_excl_noncurrent_contract_assets', 'canonical', 'noncurrent_accrued_income_excl_noncurrent_contract_assets',
  'Noncurrent accrued income excluding noncurrent contract assets', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
@@ -276,7 +321,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Noncurrent portion of noncurrent secured bank loans received', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_noncurrent_prepayments', 'canonical', 'noncurrent_prepayments',
  'Noncurrent prepayments', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
-('kpidef_noncurrent_prepayments_and_noncurrent_accrued_income_excl', 'canonical', 'noncurrent_prepayments_and_noncurrent_accrued_income_excl',
+('kpidef_noncurrent_prepayments_accrued_income_excl_contract_assets', 'canonical', 'noncurrent_prepayments_accrued_income_excl_contract_assets',
  'Noncurrent prepayments and noncurrent accrued income excluding noncurrent contract assets', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_noncurrent_provisions', 'canonical', 'noncurrent_provisions',
  'Noncurrent provisions', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
@@ -305,7 +350,7 @@ INSERT OR IGNORE INTO kpi_definitions
 ('kpidef_operating_expense', 'canonical', 'operating_expense',
  'Operating expense', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_other_adj_noncash_items', 'canonical', 'other_adj_noncash_items',
- 'Other Adjustment — noncash items', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
+ 'Adjustment — other non-cash items', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_other_assets', 'canonical', 'other_assets',
  'Other assets', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_other_cash_payments_to_acquire_other_entity_securities_investing', 'canonical', 'other_cash_payments_to_acquire_other_entity_securities_investing',
@@ -336,7 +381,7 @@ INSERT OR IGNORE INTO kpi_definitions
  'Other inflows outflows of cash (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_other_inflows_outflows_of_cash_operating', 'canonical', 'other_inflows_outflows_of_cash_operating',
  'Other inflows outflows of cash (operating)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_other_longterm_provisions', 'canonical', 'other_longterm_provisions',
+('kpidef_other_long_term_provisions', 'canonical', 'other_long_term_provisions',
  'Other longterm provisions', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_other_noncurrent_assets', 'canonical', 'other_noncurrent_assets',
  'Other noncurrent assets', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
@@ -363,7 +408,7 @@ INSERT OR IGNORE INTO kpi_definitions
 ('kpidef_proceeds_from_government_grants_investing', 'canonical', 'proceeds_from_government_grants_investing',
  'Proceeds from government grants (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_proceeds_from_issuing_shares', 'canonical', 'proceeds_from_issuing_shares',
- 'Proceeds from issuing shares', 'count', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
+ 'Proceeds from issuing shares', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_proceeds_from_ownership_changes_in_subsidiaries', 'canonical', 'proceeds_from_ownership_changes_in_subsidiaries',
  'Proceeds from changes in ownership interests in subsidiaries', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_proceeds_from_sales_of_intangible_assets_investing', 'canonical', 'proceeds_from_sales_of_intangible_assets_investing',
@@ -374,9 +419,9 @@ INSERT OR IGNORE INTO kpi_definitions
  'Proceeds from sales of investment property', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_proceeds_from_sales_of_ppe_investing', 'canonical', 'proceeds_from_sales_of_ppe_investing',
  'Proceeds from sales of PP&E (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_proceeds_from_sales_or_maturity_of_financial_instr_investing', 'canonical', 'proceeds_from_sales_or_maturity_of_financial_instr_investing',
+('kpidef_proceeds_from_sales_or_maturity_of_financial_instruments', 'canonical', 'proceeds_from_sales_or_maturity_of_financial_instruments',
  'Proceeds from sales or maturity of financial instruments (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
-('kpidef_purchase_of_financial_instr_investing', 'canonical', 'purchase_of_financial_instr_investing',
+('kpidef_purchase_of_financial_instruments_investing', 'canonical', 'purchase_of_financial_instruments_investing',
  'Purchase of financial instruments (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
 ('kpidef_purchase_of_intangible_assets_investing', 'canonical', 'purchase_of_intangible_assets_investing',
  'Purchase of intangible assets (investing)', 'monetary', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
@@ -402,23 +447,23 @@ INSERT OR IGNORE INTO kpi_definitions
  'Revenue from rendering of services', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_revenue_from_sale_of_goods', 'canonical', 'revenue_from_sale_of_goods',
  'Revenue from sale of goods', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
-('kpidef_rightofuse_assets_that_do_not_meet_definition_of_investment', 'canonical', 'rightofuse_assets_that_do_not_meet_definition_of_investment',
+('kpidef_right_of_use_assets_not_investment_property', 'canonical', 'right_of_use_assets_not_investment_property',
  'Rightofuse assets that do not meet definition of investment property', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_sale_or_issue_of_treasury_shares', 'canonical', 'sale_or_issue_of_treasury_shares',
- 'Sale or issue of treasury shares', 'count', NULL, 'reported', NULL, 'seed', 'cash_flow', 'duration'),
+ 'Sale or issue of treasury shares', 'monetary', NULL, 'reported', NULL, 'seed', 'other', 'duration'),
 ('kpidef_sales_and_marketing_expense', 'canonical', 'sales_and_marketing_expense',
  'Sales and marketing expense', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_selling_expense', 'canonical', 'selling_expense',
  'Selling expense', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_services_expense', 'canonical', 'services_expense',
  'Services expense', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
-('kpidef_share_of_oci_of_associates_and_jvs_equity_method_reclassifiable', 'canonical', 'share_of_oci_of_associates_and_jvs_equity_method_reclassifiable',
+('kpidef_share_of_oci_of_associates_jvs_reclassifiable_net_of_tax', 'canonical', 'share_of_oci_of_associates_jvs_reclassifiable_net_of_tax',
  'Share of OCI of associates and joint ventures (equity method) (reclassifiable) net of tax', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_share_of_profit_loss_of_associates_and_jvs_equity_method', 'canonical', 'share_of_profit_loss_of_associates_and_jvs_equity_method',
  'Share of profit loss of associates and joint ventures (equity method)', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
 ('kpidef_share_of_profit_loss_of_joint_ventures_equity_method', 'canonical', 'share_of_profit_loss_of_joint_ventures_equity_method',
  'Share of profit loss of joint ventures (equity method)', 'monetary', NULL, 'reported', NULL, 'seed', 'income', 'duration'),
-('kpidef_shortterm_borrowings', 'canonical', 'shortterm_borrowings',
+('kpidef_short_term_borrowings', 'canonical', 'short_term_borrowings',
  'Shortterm borrowings', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),
 ('kpidef_statutory_reserve', 'canonical', 'statutory_reserve',
  'Statutory reserve', 'monetary', NULL, 'reported', NULL, 'seed', 'balance', 'instant'),

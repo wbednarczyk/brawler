@@ -56,10 +56,17 @@ export function CoverageRawCapture({ companyId, reloadKey = 0 }: Props) {
         items={[
           { label: text("Numbers in the report"), value: counts.rawStored },
           { label: text("In Fundamentals"), value: counts.projected },
+          { label: text("Earlier years, kept as context"), value: counts.comparative },
           { label: text("Split into parts"), value: counts.dimensional },
           { label: text("From notes"), value: counts.noteLevel },
           { label: text("No name yet"), value: counts.awaitingName },
           { label: text("Conflicting values"), value: counts.conflicting },
+          // Hidden at zero: an unreadable number is rare, and a permanent
+          // zero row would read as noise — but when one exists it MUST be
+          // visible, or the "every number has a reason" sentence is false.
+          ...(counts.unparsed > 0
+            ? [{ label: text("Could not be read"), value: counts.unparsed }]
+            : []),
         ]}
       />
       <Button

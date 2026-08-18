@@ -15,9 +15,11 @@
 //! from becoming a quiet repaint (ADR 0077 decision 8).
 //!
 //! Resolution happens at the write boundary
-//! (`storage::kpi_extraction::resolve_kpi_definition`, after an exact match
-//! fails), so a fact written under the dead key lands in the live key's slot
-//! with no caller change. The alias is never applied in reverse.
+//! (`storage::kpi_extraction::resolve_kpi_definition`) and redirects ONLY
+//! while the source key's definitions hold zero facts on the database at
+//! hand — the one-sidedness rule is enforced per write, not merely asserted
+//! here. A database where the source key already carries a series (import,
+//! older schema, manual entry) never redirects. Never applied in reverse.
 
 /// A dead catalog key and the live key it means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

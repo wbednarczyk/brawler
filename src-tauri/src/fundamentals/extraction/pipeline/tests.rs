@@ -34,6 +34,7 @@ fn balance_role() -> NewTaggedFactRole {
 fn balance_fact(concept: &str, identity: &str, period_end: &str, value: i64) -> NewTaggedFact {
     NewTaggedFact {
         fact_identity: identity.to_owned(),
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
         concept_local_name: concept.to_owned(),
         period_type: "instant".to_owned(),
         period_end: period_end.to_owned(),
@@ -229,6 +230,7 @@ fn a_bare_instance_with_no_linkbase_still_projects_its_crosswalked_facts() {
     let facts = vec![
         NewTaggedFact {
             fact_identity: "assets".to_owned(),
+            concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
             concept_local_name: "Assets".to_owned(),
             period_type: "instant".to_owned(),
             period_end: END.to_owned(),
@@ -239,6 +241,7 @@ fn a_bare_instance_with_no_linkbase_still_projects_its_crosswalked_facts() {
         },
         NewTaggedFact {
             fact_identity: "liabilities".to_owned(),
+            concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
             concept_local_name: "Liabilities".to_owned(),
             period_type: "instant".to_owned(),
             period_end: END.to_owned(),
@@ -249,6 +252,7 @@ fn a_bare_instance_with_no_linkbase_still_projects_its_crosswalked_facts() {
         },
         NewTaggedFact {
             fact_identity: "equity".to_owned(),
+            concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
             concept_local_name: "Equity".to_owned(),
             period_type: "instant".to_owned(),
             period_end: END.to_owned(),

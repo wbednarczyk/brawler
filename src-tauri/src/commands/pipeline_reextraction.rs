@@ -148,6 +148,27 @@ mod tests {
         assert_eq!(error, "company_not_found");
     }
 
+    /// sol review finding 12: this command is agent-reachable over MCP, so a
+    /// loop of calls must NOT mint unbounded durable batches — while one is
+    /// queued/running, every further call returns THAT batch.
+    #[test]
+    fn a_second_start_while_one_is_in_flight_returns_the_same_batch() {
+        let s = state();
+        let c = company(&s);
+
+        let first = start_pipeline_reextraction(&s, &c).expect("first start");
+        let second = start_pipeline_reextraction(&s, &c).expect("second start");
+        assert_eq!(
+            first.id, second.id,
+            "no second batch while the first is still queued"
+        );
+        assert!(s
+            .jobs()
+            .pending_payload(&first.id)
+            .expect("payload query")
+            .is_some());
+    }
+
     #[test]
     fn run_pipeline_reextraction_creates_a_batch_and_queues_its_job() {
         let s = state();

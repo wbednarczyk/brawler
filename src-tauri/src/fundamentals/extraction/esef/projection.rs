@@ -3,14 +3,19 @@
 //!
 //! A pure function over Layer 1 raw tagged-fact rows
 //! (`crate::storage::NewTaggedFact` — the exact shape [`super::layer1`]
-//! produces and `report_tagged_facts` stores 1:1): dimensionless-only ->
-//! primary-statement role selection with statement precedence -> crosswalk
-//! resolution -> full write-slot duplicate resolution, in that order, BEFORE
-//! any of the pipeline's existing metric-key-only collapses
-//! (`esef::dedup_longest_duration`, `extraction::fact_set_for_period`,
-//! `jobs::structured_extraction`'s `seen_keys`) — those would otherwise let
-//! XML document order pick the winner among several legitimately-tagged
-//! occurrences of the same concept.
+//! produces and `report_tagged_facts` stores 1:1): dimensionless-only with a
+//! concept-level primary-statement filter -> namespace-gated crosswalk
+//! resolution -> full write-slot duplicate resolution per (statement basis,
+//! metric key, duration window), in that order, BEFORE any of the pipeline's
+//! existing metric-key-only collapses (`esef::dedup_longest_duration`,
+//! `extraction::fact_set_for_period`, `jobs::structured_extraction`'s
+//! `seen_keys`) — those would otherwise let XML document order pick the
+//! winner among several legitimately-tagged occurrences of one concept.
+//!
+//! The primary-statement selector is CONCEPT-level by nature (sol review
+//! finding 2): a presentation linkbase relates concepts to roles, so no
+//! per-occurrence statement ranking is expressible — same-concept repeats
+//! resolve by value equality (repeat vs typed conflict), never by role.
 //!
 //! Only the requested `period_end` is projected (ADR 0100 decision 7):
 //! comparative periods stay in Layer 1, never written by this module's
@@ -40,33 +45,47 @@ use super::super::ifrs_crosswalk;
 use super::super::{ExtractedFact, FactPeriod, SourceTier, StatementBasis};
 use crate::storage::NewTaggedFact;
 
-/// Statement-role precedence for a profit-and-loss concept tagged under
-/// several roles (ADR 0100 decision 4): the income statement's own occurrence
-/// wins over the comprehensive-income statement, which wins over the
-/// cash-flow reconciliation (which may carry an inverted `sign`). `balance`
-/// is a disjoint statement family that never competes with these three in
-/// real data — kept in the same total order so the rule is one function, not
-/// a special case.
-fn role_precedence(role_kind: &str) -> Option<u8> {
-    match role_kind {
-        "income" => Some(0),
-        "comprehensive_income" => Some(1),
-        "cash_flow" => Some(2),
-        "balance" => Some(3),
-        _ => None,
-    }
+/// Whether this occurrence's concept participates in any PRIMARY-STATEMENT
+/// presentation role (balance / income / comprehensive_income / cash_flow) —
+/// decision 3's selector. `None`-equivalent roles (decision 3's `other`,
+/// which also covers a bare, non-package instance with no linkbase to attach
+/// roles from at all) mean "not projected", never a guess.
+///
+/// This is a CONCEPT-LEVEL test, and it can be nothing stronger (sol review
+/// finding 2): an XBRL presentation linkbase relates CONCEPTS to roles, so
+/// the parser attaches one identical role set to every occurrence of a
+/// concept — two occurrences of `ProfitLoss` (the income-statement line and
+/// the cash-flow reconciliation's opening line) are indistinguishable by
+/// role. Same-concept repeats therefore resolve by VALUE EQUALITY in step 3
+/// (equal → one re-observed fact; divergent → a typed conflict), never by a
+/// per-occurrence statement ranking the linkbase cannot express.
+fn is_primary_statement(fact: &NewTaggedFact) -> bool {
+    fact.roles.iter().any(|r| {
+        matches!(
+            r.role_kind.as_str(),
+            "balance" | "income" | "comprehensive_income" | "cash_flow"
+        )
+    })
 }
 
-/// The best (lowest-rank) primary-statement role this occurrence carries, or
-/// `None` when none of its roles classify as balance/income/comprehensive_
-/// income/cash_flow — decision 3's `other` (which also covers a bare,
-/// non-package instance with no linkbase to attach roles from at all) is the
-/// same "not projected" outcome either way, never a guess.
-fn best_role(fact: &NewTaggedFact) -> Option<u8> {
-    fact.roles
-        .iter()
-        .filter_map(|r| role_precedence(&r.role_kind))
-        .min()
+/// Statement basis for one instance of a multi-document package, derived
+/// from its entry path (epic #398 corpus evidence: TXT ships standalone and
+/// consolidated filings under Polish-named folders in one package; ESEF
+/// itself is a consolidated-IFRS mandate, so consolidated is the default).
+/// A heuristic over the only per-instance evidence the package carries —
+/// applied per instance so a standalone filing is never silently stamped
+/// consolidated (sol review finding 3).
+fn basis_of(package_entry_path: &str) -> StatementBasis {
+    let path = package_entry_path.to_lowercase();
+    if path.contains("jednostkow")
+        || path.contains("separate")
+        || path.contains("standalone")
+        || path.contains("unconsolidated")
+    {
+        StatementBasis::Standalone
+    } else {
+        StatementBasis::Consolidated
+    }
 }
 
 fn decimal_of(fact: &NewTaggedFact) -> Option<Decimal> {
@@ -101,6 +120,9 @@ pub struct ProjectedFact {
 pub struct SlotConflict {
     pub metric_key: String,
     pub period_end: String,
+    /// The instance's derived basis — a standalone and a consolidated filing
+    /// in one package are separate slots and never conflict with each other.
+    pub statement_basis: StatementBasis,
     pub contributing_fact_identities: Vec<String>,
 }
 
@@ -123,25 +145,31 @@ pub struct ProjectionResult {
     /// bucket), since a dashboard count of raw numbers must not collapse to
     /// the distinct-concept count a repeated position would understate.
     pub uncrosswalked_fact_count: usize,
+    /// Duration occurrences dropped because a LONGER span ending at the same
+    /// date exists in the slot (Q3's 3-month figure next to its 9-month
+    /// year-to-date — cumulative GPW reporting keeps the longest window;
+    /// sol review finding 3). Counted, never a conflict.
+    pub shorter_window_skipped: usize,
 }
 
 /// Projects Layer 1 rows for exactly one `period_end` into Layer 2 ESEF
-/// candidates, per ADR 0100 decision 4's required order:
-/// 1. dimensionless only;
-/// 2. primary-statement role filter + statement precedence;
-/// 3. crosswalk resolution;
-/// 4. full write-slot duplicate resolution (repeat vs typed conflict).
+/// candidates, per ADR 0100 decision 4 (as amended after sol's review):
+/// 1. dimensionless only, with a usable value, concept-level
+///    primary-statement filter;
+/// 2. crosswalk resolution (standard IFRS namespace required);
+/// 3. full write-slot duplicate resolution per (statement basis, metric):
+///    longest duration window wins over shorter spans sharing its end date,
+///    then value equality separates a repeat from a typed conflict.
 ///
 /// `has_presentation_linkbase` is document-level evidence (ADR 0100 decision
 /// 3 regression fix, epic #398): a bare iXBRL instance (not inside a ZIP
 /// package) carries no `*_pre.xml` to attach roles from, so EVERY one of its
-/// facts would fail step 2's role filter and the document would silently
+/// facts would fail step 1's role filter and the document would silently
 /// project zero facts — a real regression for a document class that simply
-/// cannot supply the evidence the strict selector needs. When `false`, step
-/// 2 is skipped entirely (no role requirement, no precedence grouping) and
-/// every dimensionless, valued candidate proceeds straight to crosswalk
-/// resolution — the pre-epic selection for this tier. A package that DOES
-/// carry a linkbase (`true`) keeps the strict path unchanged.
+/// cannot supply the evidence the strict selector needs. When `false`, the
+/// role filter is skipped and every dimensionless, valued candidate proceeds
+/// straight to crosswalk resolution — the pre-epic selection for this tier.
+/// A package that DOES carry a linkbase (`true`) keeps the strict path.
 ///
 /// Pure: `facts` is whatever generation the caller has in hand (freshly
 /// extracted, or read back from `report_tagged_facts`) — this function never
@@ -173,52 +201,51 @@ pub fn project_period(
             // is a candidate (never a guess at which role it would have
             // carried).
             candidates.push(f);
-        } else if best_role(f).is_some() {
+        } else if is_primary_statement(f) {
             candidates.push(f);
         } else {
             result.non_primary_statement_skipped += 1;
         }
     }
 
-    // ---- Step 2: statement precedence, grouped by concept -----------------
-    // Only meaningful when role data exists to break a tie on; with no
-    // linkbase every candidate survives unchanged (the fallback above).
-    let precedence_survivors: Vec<&NewTaggedFact> = if has_presentation_linkbase {
-        let mut by_concept: BTreeMap<&str, Vec<&NewTaggedFact>> = BTreeMap::new();
-        for f in candidates {
-            by_concept
-                .entry(f.concept_local_name.as_str())
-                .or_default()
-                .push(f);
-        }
-        let mut survivors = Vec::new();
-        for occurrences in by_concept.into_values() {
-            let min_rank = occurrences
-                .iter()
-                .filter_map(|f| best_role(f))
-                .min()
-                .expect("every member of this group passed the role filter above");
-            survivors.extend(
-                occurrences
-                    .into_iter()
-                    .filter(|f| best_role(f) == Some(min_rank)),
-            );
-        }
-        survivors
-    } else {
-        candidates
-    };
+    // There is deliberately NO per-occurrence statement-precedence step here
+    // (sol review finding 2): the presentation linkbase relates CONCEPTS to
+    // roles, so every occurrence of one concept carries an identical role
+    // set and no ranking can tell them apart. The selector above is the
+    // whole of decision 3; same-concept repeats resolve by value equality in
+    // step 3 below. An earlier revision carried a ranking step whose only
+    // passing evidence was a test fabricating per-occurrence role vectors
+    // the parser cannot produce — removed as unimplementable, not merely
+    // unimplemented (ADR 0100 decision 3, amended).
+    let precedence_survivors = candidates;
 
-    // ---- Step 3: crosswalk resolution --------------------------------------
+    // ---- Step 2: crosswalk resolution --------------------------------------
     let crosswalk: std::collections::HashMap<&str, &ifrs_crosswalk::CrosswalkEntry> =
         ifrs_crosswalk::entries()
             .iter()
             .map(|entry| (entry.concept, entry))
             .collect();
-    let mut by_metric: BTreeMap<&'static str, Vec<&NewTaggedFact>> = BTreeMap::new();
+    // Grouped by the REAL slot dimensions this tier varies on (sol review
+    // finding 3): statement basis (a multi-document package can carry a
+    // standalone AND a consolidated filing — never merged) and metric key.
+    // `period_start` is handled inside the group below.
+    let mut by_slot: BTreeMap<(&'static str, &'static str), Vec<&NewTaggedFact>> = BTreeMap::new();
     for f in precedence_survivors {
-        match crosswalk.get(f.concept_local_name.as_str()) {
-            Some(entry) => by_metric.entry(entry.metric_key).or_default().push(f),
+        // The crosswalk names STANDARD taxonomy concepts only (sol review
+        // finding 1): an issuer-extension concept that reuses a standard
+        // local name (issuer-namespace `Revenue`) must never resolve to the
+        // global key — it stays uncrosswalked until the owner promotes it
+        // under its issuer-qualified identity (ADR 0100 decisions 2/10).
+        let entry = if ifrs_crosswalk::is_standard_ifrs_namespace(&f.concept_namespace_uri) {
+            crosswalk.get(f.concept_local_name.as_str())
+        } else {
+            None
+        };
+        match entry {
+            Some(entry) => by_slot
+                .entry((basis_of(&f.package_entry_path).as_str(), entry.metric_key))
+                .or_default()
+                .push(f),
             None => {
                 result
                     .uncrosswalked_concepts
@@ -228,10 +255,35 @@ pub fn project_period(
         }
     }
 
-    // ---- Step 4: full write-slot duplicate resolution ----------------------
-    // The slot is (metric_key, period_end) here — see the module doc for why
-    // the other slot dimensions are constant for this tier.
-    for (metric_key, occurrences) in by_metric {
+    // ---- Step 3: full write-slot duplicate resolution ----------------------
+    // Within one (basis, metric) slot, several DURATION spans can
+    // legitimately end at the target period_end — a Q3 filing tags the
+    // 3-month quarter AND the 9-month year-to-date figure with the same end
+    // date. GPW interim reporting is cumulative, so the LONGEST span
+    // (earliest period_start) is the reported figure for the period and the
+    // shorter windows are counted, never conflated into a conflict (parity
+    // with the retired parser's `dedup_longest_duration`; sol review
+    // finding 3). Only after that does value equality separate a repeat
+    // from a typed conflict.
+    for ((basis_str, metric_key), mut occurrences) in by_slot {
+        let longest_start: Option<String> = occurrences
+            .iter()
+            .filter(|f| f.period_type != "instant")
+            .filter_map(|f| f.period_start.clone())
+            .min();
+        if let Some(longest) = longest_start.as_deref() {
+            let before = occurrences.len();
+            occurrences.retain(|f| {
+                f.period_type == "instant" || f.period_start.as_deref() == Some(longest)
+            });
+            result.shorter_window_skipped += before - occurrences.len();
+        }
+
+        let basis = if basis_str == "standalone" {
+            StatementBasis::Standalone
+        } else {
+            StatementBasis::Consolidated
+        };
         let first = occurrences[0];
         let first_value = decimal_of(first).expect("filtered to a usable value in step 1");
         let all_agree = occurrences
@@ -247,9 +299,7 @@ pub fn project_period(
                     metric_key: metric_key.to_owned(),
                     value: first_value,
                     period: period_of(first),
-                    // ESEF is a consolidated-IFRS mandate (parity with the
-                    // Layer 2 `parse_esef` parser).
-                    basis: Some(StatementBasis::Consolidated),
+                    basis: Some(basis),
                     currency: first.unit_measure.clone(),
                     tier: SourceTier::Esef,
                     citation: first.concept_local_name.clone(),
@@ -260,6 +310,7 @@ pub fn project_period(
             result.conflicts.push(SlotConflict {
                 metric_key: metric_key.to_owned(),
                 period_end: period_end.to_owned(),
+                statement_basis: basis,
                 contributing_fact_identities: identities,
             });
         }
@@ -280,11 +331,14 @@ mod tests {
         }
     }
 
+    const IFRS_NS: &str = "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full";
+
     /// A minimal balance-sheet fact builder: instant, dimensionless, PLN,
-    /// classified `balance` unless overridden.
+    /// standard IFRS namespace, classified `balance` unless overridden.
     fn balance_fact(concept: &str, identity: &str, value: &str) -> NewTaggedFact {
         NewTaggedFact {
             fact_identity: identity.to_owned(),
+            concept_namespace_uri: IFRS_NS.to_owned(),
             concept_local_name: concept.to_owned(),
             period_type: "instant".to_owned(),
             period_end: "2025-12-31".to_owned(),
@@ -295,17 +349,26 @@ mod tests {
         }
     }
 
-    /// A minimal duration (P&L) fact builder.
-    fn duration_fact(concept: &str, identity: &str, value: &str, role_kind: &str) -> NewTaggedFact {
+    /// A minimal duration (P&L) fact builder. `roles` carries the CONCEPT'S
+    /// whole role set — the parser attaches one identical set to every
+    /// occurrence of a concept, so a test giving two occurrences different
+    /// role vectors would fabricate evidence the parser cannot produce.
+    fn duration_fact(
+        concept: &str,
+        identity: &str,
+        value: &str,
+        role_kinds: &[&str],
+    ) -> NewTaggedFact {
         NewTaggedFact {
             fact_identity: identity.to_owned(),
+            concept_namespace_uri: IFRS_NS.to_owned(),
             concept_local_name: concept.to_owned(),
             period_type: "duration".to_owned(),
             period_start: Some("2025-01-01".to_owned()),
             period_end: "2025-12-31".to_owned(),
             unit_measure: Some("PLN".to_owned()),
             value_numeric: Some(value.to_owned()),
-            roles: vec![role(role_kind)],
+            roles: role_kinds.iter().map(|k| role(k)).collect(),
             ..Default::default()
         }
     }
@@ -314,30 +377,44 @@ mod tests {
         v.parse().unwrap()
     }
 
+    /// The real corpus shape (XTB tags `ProfitLoss` 3x per filing): every
+    /// occurrence of a concept carries the concept's whole role set — the
+    /// income-statement line and the cash-flow reconciliation's opening line
+    /// are indistinguishable by role. Equal normalized values resolve as ONE
+    /// re-observed fact tracing back to every occurrence.
     #[test]
-    fn income_occurrence_wins_over_the_cash_flow_reconciliation_with_an_inverted_sign() {
+    fn same_concept_tagged_across_statements_with_equal_values_is_one_reobserved_fact() {
         let facts = vec![
-            duration_fact("ProfitLoss", "income_occ", "100", "income"),
-            duration_fact("ProfitLoss", "cfo_occ", "-100", "cash_flow"),
+            duration_fact("ProfitLoss", "income_occ", "100", &["income", "cash_flow"]),
+            duration_fact("ProfitLoss", "cfo_occ", "100", &["income", "cash_flow"]),
         ];
         let projected = project_period(&facts, "2025-12-31", true);
 
         assert_eq!(projected.facts.len(), 1);
         let net_profit = &projected.facts[0];
         assert_eq!(net_profit.fact.metric_key, "net_profit");
-        assert_eq!(
-            net_profit.fact.value,
-            d("100"),
-            "the income statement's value must win, never the inverted cash-flow one"
-        );
-        assert_eq!(
-            net_profit.contributing_fact_identities,
-            vec!["income_occ".to_owned()]
-        );
-        assert!(
-            projected.conflicts.is_empty(),
-            "precedence must resolve this before it ever reaches slot dedup"
-        );
+        assert_eq!(net_profit.fact.value, d("100"));
+        let mut ids = net_profit.contributing_fact_identities.clone();
+        ids.sort();
+        assert_eq!(ids, vec!["cfo_occ".to_owned(), "income_occ".to_owned()]);
+        assert!(projected.conflicts.is_empty());
+    }
+
+    /// DIVERGENT normalized values of one concept in one period are a typed
+    /// conflict — the linkbase is concept-level, so no statement ranking can
+    /// choose between them (ADR 0100 decision 3 as amended; sol finding 2).
+    /// A conflict is the honest outcome: the filing itself is inconsistent.
+    #[test]
+    fn same_concept_divergent_values_across_statements_is_a_typed_conflict_never_a_pick() {
+        let facts = vec![
+            duration_fact("ProfitLoss", "income_occ", "100", &["income", "cash_flow"]),
+            duration_fact("ProfitLoss", "cfo_occ", "-100", &["income", "cash_flow"]),
+        ];
+        let projected = project_period(&facts, "2025-12-31", true);
+
+        assert!(projected.facts.is_empty());
+        assert_eq!(projected.conflicts.len(), 1);
+        assert_eq!(projected.conflicts[0].metric_key, "net_profit");
     }
 
     #[test]
@@ -348,13 +425,90 @@ mod tests {
             "ProfitLoss",
             "ci_occ",
             "250",
-            "comprehensive_income",
+            &["comprehensive_income"],
         )];
         let projected = project_period(&facts, "2025-12-31", true);
 
         assert_eq!(projected.facts.len(), 1);
         assert_eq!(projected.facts[0].fact.metric_key, "net_profit");
         assert_eq!(projected.facts[0].fact.value, d("250"));
+    }
+
+    /// A Q3 filing tags the 3-month quarter AND the cumulative 9-month
+    /// figure with the same period end. The longest window is the reported
+    /// figure (GPW cumulative convention, `dedup_longest_duration` parity);
+    /// the shorter one is counted, never a conflict (sol finding 3).
+    #[test]
+    fn a_shorter_duration_window_sharing_the_period_end_never_conflicts_with_the_ytd_figure() {
+        let ytd = NewTaggedFact {
+            period_start: Some("2025-01-01".to_owned()),
+            ..duration_fact("Revenue", "ytd_occ", "90", &["income"])
+        };
+        let q3_only = NewTaggedFact {
+            period_start: Some("2025-07-01".to_owned()),
+            ..duration_fact("Revenue", "q3_occ", "30", &["income"])
+        };
+        let projected = project_period(&[ytd, q3_only], "2025-12-31", true);
+
+        assert_eq!(projected.facts.len(), 1);
+        assert_eq!(projected.facts[0].fact.value, d("90"));
+        assert_eq!(
+            projected.facts[0].contributing_fact_identities,
+            vec!["ytd_occ".to_owned()]
+        );
+        assert!(projected.conflicts.is_empty());
+        assert_eq!(projected.shorter_window_skipped, 1);
+    }
+
+    /// A package carrying a standalone AND a consolidated filing (the TXT
+    /// corpus shape) projects BOTH, on separate statement bases — never a
+    /// conflict, never a silent consolidated stamp (sol finding 3).
+    #[test]
+    fn standalone_and_consolidated_instances_project_separately_never_conflict() {
+        let consolidated = NewTaggedFact {
+            package_entry_path: "reports/skonsolidowane/raport.xhtml".to_owned(),
+            ..balance_fact("Assets", "cons_occ", "150")
+        };
+        let standalone = NewTaggedFact {
+            package_entry_path: "Jednostkowe Sprawozdanie finansowe/raport.xhtml".to_owned(),
+            ..balance_fact("Assets", "solo_occ", "100")
+        };
+        let projected = project_period(&[consolidated, standalone], "2025-12-31", true);
+
+        assert!(projected.conflicts.is_empty());
+        assert_eq!(projected.facts.len(), 2);
+        let mut by_basis: Vec<(Option<StatementBasis>, Decimal)> = projected
+            .facts
+            .iter()
+            .map(|pf| (pf.fact.basis, pf.fact.value))
+            .collect();
+        by_basis.sort_by_key(|(basis, _)| format!("{basis:?}"));
+        assert_eq!(
+            by_basis,
+            vec![
+                (Some(StatementBasis::Consolidated), d("150")),
+                (Some(StatementBasis::Standalone), d("100")),
+            ]
+        );
+    }
+
+    /// An issuer-extension concept that reuses a STANDARD local name must
+    /// never resolve to the global key (sol finding 1): the namespace, not
+    /// the local name, is the concept's identity.
+    #[test]
+    fn an_issuer_extension_reusing_a_standard_local_name_never_resolves_to_the_global_key() {
+        let extension = NewTaggedFact {
+            concept_namespace_uri: "http://www.example-issuer.com/xbrl/2025-12-31".to_owned(),
+            ..duration_fact("Revenue", "ext_occ", "120", &["income"])
+        };
+        let projected = project_period(&[extension], "2025-12-31", true);
+
+        assert!(
+            projected.facts.is_empty(),
+            "an extension must never align with the standard `revenue` series"
+        );
+        assert!(projected.uncrosswalked_concepts.contains("Revenue"));
+        assert_eq!(projected.uncrosswalked_fact_count, 1);
     }
 
     #[test]
@@ -422,7 +576,7 @@ mod tests {
 
     #[test]
     fn a_row_with_no_primary_statement_role_is_never_projected_and_is_counted() {
-        let facts = vec![duration_fact("Assets", "eq1", "10", "equity_changes")];
+        let facts = vec![duration_fact("Assets", "eq1", "10", &["equity_changes"])];
         let projected = project_period(&facts, "2025-12-31", true);
 
         assert!(projected.facts.is_empty());
@@ -476,6 +630,7 @@ mod tests {
     fn roleless_fact(concept: &str, identity: &str, value: &str) -> NewTaggedFact {
         NewTaggedFact {
             fact_identity: identity.to_owned(),
+            concept_namespace_uri: IFRS_NS.to_owned(),
             concept_local_name: concept.to_owned(),
             period_type: "instant".to_owned(),
             period_end: "2025-12-31".to_owned(),

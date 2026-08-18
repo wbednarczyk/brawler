@@ -21,6 +21,7 @@ const BILANS: &str = include_str!("../../../samples/biznesradar_bilans_cdr.html"
 
 /// A balanced iXBRL statement — the ESEF-route document the rebuild re-extracts.
 const ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
   xmlns:xbrli="http://www.xbrl.org/2003/instance"
   xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
   <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>

@@ -2650,7 +2650,11 @@ fn concept_harvest_report() {
         return;
     }
 
-    let connection = open_database(&db_path).expect("open real db");
+    // Read-only for real (sol review finding 5): `open_database` applies
+    // every pending migration on open, so this diagnostic would MUTATE the
+    // database it claims only to read. A schema too old for the query fails
+    // loudly at the query instead.
+    let connection = open_database_readonly(&db_path).expect("open real db read-only");
     let state = AppState::new(connection);
     // Harness sanity BEFORE reading the result: an empty Layer 1 store makes
     // "no uncrosswalked concepts" indistinguishable from "nothing was ever
@@ -2735,7 +2739,8 @@ fn corpus_concept_harvest_report() {
         return;
     }
 
-    let connection = open_database(&db_path).expect("open real db");
+    // Read-only for real (sol review finding 5), same as above.
+    let connection = open_database_readonly(&db_path).expect("open real db read-only");
     // The packages live in the real Tauri data dir, not next to the database
     // copy (same convention as the recall/precision harness above).
     let state = match std::env::var("BRAWLER_REAL_DATA_DIR") {

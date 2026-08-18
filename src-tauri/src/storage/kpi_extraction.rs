@@ -1037,12 +1037,33 @@ fn resolve_kpi_definition(
     company_id: &str,
     metric_key: &str,
 ) -> StorageResult<Option<ResolvedKpiDefinition>> {
-    // Curated alias, applied BEFORE the lookup (ADR 0100 decision 12): a key
-    // that exists in the catalog but holds no facts means the live key it was
-    // fragmented from, so the fact lands in the series a reader actually
-    // reads. One-sided and never chained — see `fundamentals::kpi_aliases`.
-    let metric_key = crate::fundamentals::kpi_aliases::resolve(metric_key.trim())
-        .unwrap_or_else(|| metric_key.trim());
+    // Curated alias (ADR 0100 decision 12): a dead catalog key means the
+    // live key it was fragmented from. The redirect is guarded by the
+    // one-sidedness rule AT RUNTIME, not just in the curation table (sol
+    // review finding 9): it applies only while the source key's own
+    // definitions hold ZERO facts on THIS database. On a database where the
+    // source key already carries a series (an import, an older schema, a
+    // manual entry), the redirect never fires — redirecting there would
+    // split one series across two keys, the exact repaint ADR 0077 dec. 8
+    // forbids. Never chained, never applied in reverse.
+    let metric_key = match crate::fundamentals::kpi_aliases::resolve(metric_key.trim()) {
+        Some(target) => {
+            let source_has_facts: bool = connection.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM financial_facts f
+                     JOIN kpi_definitions d ON d.id = f.definition_id
+                     WHERE d.metric_key = ?1)",
+                params![metric_key.trim()],
+                |row| row.get(0),
+            )?;
+            if source_has_facts {
+                metric_key.trim()
+            } else {
+                target
+            }
+        }
+        None => metric_key.trim(),
+    };
     let (sector, _source) = super::companies::get_company_sector(connection, company_id)?;
     let statement_type = super::companies::get_statement_type(connection, company_id)?;
     let existing: Option<(String, String, String, String)> = connection

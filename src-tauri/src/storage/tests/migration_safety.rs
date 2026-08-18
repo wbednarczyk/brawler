@@ -4429,9 +4429,12 @@ fn migration_0129_backfills_seed_origin_by_bare_id_shape_only() {
                 VALUES
                     -- A bare canonical-style id: the 0034-style seed shape.
                     ('kpidef_test_seed_metric', 'canonical', 'test_seed_metric', 'Seed Metric', 'monetary', 'reported'),
-                    -- A bare hand-written sector-pack id (the 0034/0048 shape,
-                    -- e.g. kpidef_bank_nim): no scope=canonical requirement.
-                    ('kpidef_bank_test_nim', 'sector', 'bank_test_nim', 'Bank Test NIM', 'ratio', 'reported'),
+                    -- A hand-written sector-pack id (the 0034/0048 shape,
+                    -- e.g. kpidef_bank_nim over metric_key `nim`): the id is
+                    -- prefixed, the metric_key is SHORT — so it never matches
+                    -- the bare `kpidef_<metric_key>` malformed shape that
+                    -- 0125 (and 0148's self-healing preamble) re-keys.
+                    ('kpidef_bank_test_nim', 'sector', 'test_nim', 'Bank Test NIM', 'ratio', 'reported'),
                     -- A runtime company-scoped custom KPI (UI CustomKpiManager
                     -- shape, __c_<company> discriminator).
                     ('kpidef_broker_clients__c_xtb', 'company', 'broker_clients', 'Broker Clients', 'count', 'reported'),
@@ -5751,7 +5754,24 @@ mod migration_0144 {
         apply_migrations(&mut connection).expect("apply migration 0144");
 
         assert!(fact_exists(&connection, "f_pit2"));
-        assert!(!fact_exists(&connection, "f_flow2"));
+        // sol review finding 6: a migration never deletes an observation two
+        // sources disagree about. The divergent flow row survives IN PLACE
+        // under its original measure_window, for manual resolution.
+        assert!(
+            fact_exists(&connection, "f_flow2"),
+            "a divergent flow row is preserved, never deleted"
+        );
+        let flow_window: String = connection
+            .query_row(
+                "SELECT measure_window FROM financial_facts WHERE id = 'f_flow2'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("f_flow2 row");
+        assert_eq!(
+            flow_window, "flow",
+            "the preserved divergent row keeps its original measure_window"
+        );
         let (value, tier): (String, String) = connection
             .query_row(
                 "SELECT f.value_numeric, p.source_tier
@@ -5778,8 +5798,8 @@ mod migration_0144 {
             )
             .expect("claim");
         assert_eq!(
-            claim_target, "f_pit2",
-            "the claim's soft reference is repointed"
+            claim_target, "f_flow2",
+            "the claim still points at the preserved divergent row -- nothing was repointed"
         );
 
         let (module, scope_id, metadata): (String, Option<String>, String) = connection
@@ -5794,9 +5814,10 @@ mod migration_0144 {
         assert_eq!(scope_id.as_deref(), Some("f_pit2"));
         assert!(metadata.contains("f_flow2"));
         assert!(metadata.contains("\"kept_value\":\"700\""));
-        assert!(metadata.contains("\"discarded_value\":\"999\""));
+        assert!(metadata.contains("\"divergent_value\":\"999\""));
 
-        // The immutable receipt is untouched -- its factId no longer resolves.
+        // The immutable receipt is untouched (and its factId still resolves,
+        // because the divergent row is preserved).
         let receipt_after: String = connection
             .query_row(
                 "SELECT outcomes_json FROM kpi_ingest_commit_receipts WHERE id = 'kpircpt1'",

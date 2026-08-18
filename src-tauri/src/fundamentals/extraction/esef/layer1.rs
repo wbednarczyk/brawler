@@ -22,13 +22,12 @@
 //!   no text, so the existing "could not parse an empty value" path already
 //!   yields `parse_status = "unparsed_value"` with a nil-specific message.
 //! - `ix:continuation`/`continuedAt` chains are NOT followed: a fact's value
-//!   is read from its own element text only. In the iXBRL spec continuation is
-//!   overwhelmingly used to split long `ix:nonNumeric` text blocks (which this
-//!   pass does not capture at all — see below), not short numeric monetary
-//!   facts, so no observed numeric occurrence is affected; the honest fallback
-//!   for the case it ever is used on a numeric fact is `parse_status =
-//!   "unparsed_value"` (the continued portion is simply absent from the text
-//!   the parser sees), not a wrong number.
+//!   is read from its own element text only. A numeric fact that CARRIES
+//!   `continuedAt` is therefore stored with `parse_status =
+//!   "unsupported_continuation"` and NO `value_numeric` — its local fragment
+//!   can parse cleanly while being only part of the disclosed number, so
+//!   parsing it would store a silently wrong value under an "ok" status (sol
+//!   review finding 4). The occurrence is counted, never dropped.
 //! - `ix:nonNumeric` (text-tagged facts — entity names, date blocks, free-text
 //!   disclosures) is out of scope entirely: ADR 0100's mandate is "every
 //!   disclosed **number**". These are neither encountered nor counted.
@@ -58,6 +57,11 @@ pub struct Layer1Pass {
     /// stored`; this pass never drops an occurrence it opened.
     pub stored_count: i64,
     pub dimensional_count: i64,
+    /// A reader error aborted the walk mid-document: everything after the
+    /// error was never even ENCOUNTERED, so `encountered == stored` holds
+    /// vacuously while the capture is incomplete (sol review finding 4).
+    /// The caller must mark the extraction truncated, never complete.
+    pub reader_error: Option<String>,
 }
 
 /// A resolved (or unresolved) context, keyed by its `id`.
@@ -89,6 +93,12 @@ struct PendingFact {
     format: Option<String>,
     xml_id: Option<String>,
     nil: bool,
+    /// `continuedAt` attribute — the value text continues in an
+    /// `ix:continuation` element this pass does not follow. A fact carrying
+    /// it must NEVER parse its local fragment as the whole number (sol
+    /// review finding 4: local text `12` + continuation `34` is 1234, and
+    /// `12` with `parse_status = "ok"` would be a silently wrong value).
+    continued_at: Option<String>,
     text: String,
     open_depth: usize,
 }
@@ -155,6 +165,7 @@ pub fn extract_tagged_facts(
     let mut units: HashMap<String, String> = HashMap::new();
 
     let mut depth: usize = 0;
+    let mut reader_error: Option<String> = None;
     let mut ctx_id: Option<String> = None;
     let mut ctx = ContextInfo::default();
     let mut current_dim_key: Option<String> = None;
@@ -228,6 +239,7 @@ pub fn extract_tagged_facts(
                             format: attr(&e, b"format"),
                             xml_id: attr(&e, b"id"),
                             nil: attr(&e, b"nil").as_deref() == Some("true"),
+                            continued_at: attr(&e, b"continuedAt"),
                             text: String::new(),
                             open_depth: depth,
                         });
@@ -289,6 +301,7 @@ pub fn extract_tagged_facts(
                             format: attr(&e, b"format"),
                             xml_id: attr(&e, b"id"),
                             nil: attr(&e, b"nil").as_deref() == Some("true"),
+                            continued_at: attr(&e, b"continuedAt"),
                             text: String::new(),
                             open_depth: depth,
                         });
@@ -351,7 +364,14 @@ pub fn extract_tagged_facts(
                 ns_stack.pop();
             }
             Ok(Event::Eof) => break,
-            Err(_) => break,
+            Err(error) => {
+                // Do NOT pretend the document ended: record the truncation so
+                // the extraction is marked incomplete (sol review finding 4 —
+                // a silent break here made every later fact "unencountered"
+                // and the completeness invariant vacuously green).
+                reader_error = Some(format!("XML reader error mid-document: {error}"));
+                break;
+            }
             _ => {}
         }
     }
@@ -450,6 +470,13 @@ pub fn extract_tagged_facts(
                             .to_owned(),
                     );
                 }
+                FactKind::NonFraction if p.continued_at.is_some() => {
+                    parse_status = "unsupported_continuation".to_owned();
+                    parse_error = Some(
+                        "value text continues in an ix:continuation chain this pass does not                          follow — the local fragment alone would be a wrong number, so none is                          stored (sol review finding 4)"
+                            .to_owned(),
+                    );
+                }
                 FactKind::NonFraction => {
                     let parsed = parse_ixbrl_number(&p.text, p.format.as_deref())
                         .and_then(|v| apply_scale(v, p.scale.unwrap_or(0) as i32))
@@ -518,6 +545,7 @@ pub fn extract_tagged_facts(
         encountered_count,
         stored_count,
         dimensional_count,
+        reader_error,
     }
 }
 

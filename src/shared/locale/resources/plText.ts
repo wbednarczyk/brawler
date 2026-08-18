@@ -1941,6 +1941,8 @@ export const plText: Record<string, string> = {
     "Każda liczba z raportu jest albo w Fundamentach, albo ma powód, dla którego jej tam nie ma.",
   "Numbers in the report": "Liczb w raporcie",
   "In Fundamentals": "W Fundamentach",
+  "Earlier years, kept as context": "Wcześniejsze lata, zachowane jako kontekst",
+  "Could not be read": "Nie udało się odczytać",
   "Split into parts": "Rozpisane na części",
   "From notes": "Z objaśnień",
   "No name yet": "Bez nazwy",

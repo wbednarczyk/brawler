@@ -3706,3 +3706,90 @@ fn a_write_under_an_alias_source_lands_on_the_live_definition() {
         "nothing may file into the dead key"
     );
 }
+
+/// The alias's one-sidedness is a RUNTIME guard, not a curation promise (sol
+/// review finding 9): on a database where the dead key already holds a fact
+/// (an import, an older schema, a manual entry), the redirect must never
+/// fire — redirecting there would split one series across two keys.
+#[test]
+fn an_alias_source_that_already_holds_facts_is_never_redirected() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    // Simulate the pre-alias world: a fact already sits under `inventory`.
+    // Written via the raw creation path against the dead definition directly,
+    // the way an old database or an import would have left it.
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2024,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2024-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period");
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: "kpidef_inventory".to_owned(),
+            value_numeric: "1000".to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("pre-existing inventory fact");
+
+    // A structured write under the dead key must now land on `inventory`
+    // itself — the series already exists there, so no redirect.
+    state
+        .kpi_extraction()
+        .record_structured_fact(crate::storage::StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "repdoc_alias_guard",
+            metric_key: "inventory",
+            value_numeric: "2000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("alias one-sidedness"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        })
+        .expect("write accepted");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts");
+    assert_eq!(facts.len(), 2);
+    assert!(
+        facts
+            .iter()
+            .all(|fact| fact.definition_id == "kpidef_inventory"),
+        "both facts stay in the `inventory` series — a populated alias source is never redirected"
+    );
+}

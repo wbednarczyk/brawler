@@ -824,6 +824,12 @@ pub(crate) struct Layer1Generation {
     /// never silently" counter. Always `0` when `has_presentation_linkbase`
     /// is `true`.
     no_linkbase_fallback_count: i64,
+    /// Truncation evidence (sol review finding 4): a mid-document XML reader
+    /// error, or package entries skipped unread (unreadable / oversized).
+    /// Either makes the generation INCOMPLETE — "encountered = stored" holds
+    /// only over what was actually walked — so the extraction record must
+    /// say `truncated`, never look complete.
+    truncation: Option<String>,
 }
 
 /// Only an ESEF-bearing route carries an instance to walk; every other route
@@ -831,10 +837,10 @@ pub(crate) struct Layer1Generation {
 /// (non-CI) corpus regression harness (`storage::tests::t7_cbf_corpus`) can
 /// build the exact same pipeline input production does.
 pub(crate) fn compute_layer1_generation(bytes: &[u8], route: DocumentRoute) -> Layer1Generation {
-    let instances: Vec<(String, Vec<u8>)> = match route {
-        DocumentRoute::IxbrlInstance => vec![(String::new(), bytes.to_vec())],
+    let (instances, skipped_entries): (Vec<(String, Vec<u8>)>, i64) = match route {
+        DocumentRoute::IxbrlInstance => (vec![(String::new(), bytes.to_vec())], 0),
         DocumentRoute::ZipPackage => {
-            crate::fundamentals::extraction::esef_package::extract_all_instances(bytes)
+            crate::fundamentals::extraction::esef_package::extract_all_instances_counted(bytes)
         }
         DocumentRoute::Pdf | DocumentRoute::Positional | DocumentRoute::Unsupported(_) => {
             return Layer1Generation {
@@ -845,6 +851,7 @@ pub(crate) fn compute_layer1_generation(bytes: &[u8], route: DocumentRoute) -> L
                 has_instance: false,
                 has_presentation_linkbase: false,
                 no_linkbase_fallback_count: 0,
+                truncation: None,
             };
         }
     };
@@ -866,6 +873,14 @@ pub(crate) fn compute_layer1_generation(bytes: &[u8], route: DocumentRoute) -> L
     let mut encountered_count = 0i64;
     let mut stored_count = 0i64;
     let mut dimensional_count = 0i64;
+    let mut truncation: Option<String> = if skipped_entries > 0 {
+        Some(format!(
+            "{skipped_entries} package entr{} skipped unread (unreadable or oversized)",
+            if skipped_entries == 1 { "y" } else { "ies" }
+        ))
+    } else {
+        None
+    };
     for (path, instance_bytes) in &instances {
         let pass = crate::fundamentals::extraction::esef::layer1::extract_tagged_facts(
             instance_bytes,
@@ -875,6 +890,14 @@ pub(crate) fn compute_layer1_generation(bytes: &[u8], route: DocumentRoute) -> L
         encountered_count += pass.encountered_count;
         stored_count += pass.stored_count;
         dimensional_count += pass.dimensional_count;
+        if let Some(error) = pass.reader_error {
+            let entry = if path.is_empty() { "instance" } else { path };
+            let message = format!("{entry}: {error}");
+            truncation = Some(match truncation.take() {
+                Some(existing) => format!("{existing}; {message}"),
+                None => message,
+            });
+        }
         all_facts.extend(pass.facts);
     }
 
@@ -899,6 +922,7 @@ pub(crate) fn compute_layer1_generation(bytes: &[u8], route: DocumentRoute) -> L
         has_instance: !instances.is_empty(),
         has_presentation_linkbase,
         no_linkbase_fallback_count,
+        truncation,
     }
 }
 
@@ -944,10 +968,18 @@ fn capture_layer1_tagged_facts(
     let extraction = crate::storage::TaggedFactExtraction {
         source_content_hash: Some(source_hash),
         extractor_version: TAGGED_FACT_EXTRACTOR_VERSION,
-        state: if generation.has_instance {
-            "extracted".to_owned()
-        } else {
+        state: if !generation.has_instance {
             "no_instance".to_owned()
+        } else if let Some(reason) = generation.truncation.as_deref() {
+            // Visible incompleteness (sol review finding 4): a reader error
+            // or a skipped package entry means the counts cover only what
+            // was walked — never presented as a complete extraction.
+            log::warn!(
+                "tagged-fact capture for report document {report_document_id} is TRUNCATED: {reason}"
+            );
+            "truncated".to_owned()
+        } else {
+            "extracted".to_owned()
         },
         encountered_count: generation.encountered_count,
         stored_count: generation.stored_count,
@@ -1535,7 +1567,8 @@ mod tests {
 
     #[test]
     fn route_ixbrl_markup_goes_to_the_esef_instance() {
-        let ixbrl = br#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"><body>
+        let ixbrl = br#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"><body>
             <ix:nonFraction name="ifrs-full:Revenue">100</ix:nonFraction></body></html>"#;
         assert_eq!(route_document(ixbrl), DocumentRoute::IxbrlInstance);
     }
@@ -1762,6 +1795,7 @@ mod tests {
     }
 
     const ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2026-03-31</xbrli:instant></xbrli:period></xbrli:context>
@@ -1874,6 +1908,7 @@ mod tests {
     /// (`explicitMember`) Equity component that must be filtered out.
     fn esef_package_bytes() -> Vec<u8> {
         let instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
@@ -2490,6 +2525,7 @@ mod tests {
         // Different bytes (a genuinely different package): must rebuild.
         use std::io::Write;
         let changed_instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="i"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
@@ -2535,11 +2571,13 @@ mod tests {
     fn a_multi_instance_package_yields_rows_for_every_instance() {
         let (state, company_id, document_id) = seed_esef_package();
         use std::io::Write;
-        let instance_a = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance">
+        let instance_a = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full" xmlns:xbrli="http://www.xbrl.org/2003/instance">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
       <ix:nonFraction name="ifrs-full:Assets" contextRef="c" id="a1">100</ix:nonFraction>
     </html>"#;
-        let instance_b = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance">
+        let instance_b = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full" xmlns:xbrli="http://www.xbrl.org/2003/instance">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
       <ix:nonFraction name="ifrs-full:Assets" contextRef="c" id="b1">200</ix:nonFraction>
     </html>"#;
@@ -3222,6 +3260,7 @@ mod tests {
     // 25m at 2026-03-31) — ESEF tags comparatives natively, so this exercises
     // the comparative cross-check (ADR 0061 dec. 4b) through tier 1.
     const ESEF_WITH_PRIOR: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2026-03-31</xbrli:instant></xbrli:period></xbrli:context>

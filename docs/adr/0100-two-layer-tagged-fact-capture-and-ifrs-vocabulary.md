@@ -46,13 +46,21 @@ Rejected: minting catalog definitions at extraction time (breaks the app-owned `
 
 "Dimensionless" means only "no XBRL dimension members" — it includes note totals and maturity disclosures. The package's presentation linkbase (`*_pre.xml`) groups concepts by statement, in two role families across the corpus: standard IFRS role numbers (`ias_1_role-210000` financial position, `320000`/`410000` income, `ias_7_role-520000` cash flows, `ias_1_role-610000` changes in equity) and vendor-generated Polish role names shared by several filers (`SprawozdanieZSytuacjiFinansowej`, `WynikFinansowy`, `SprawozdanieZPrzeplywowPienieznych`). An unrecognised role classifies as `other` — explicitly, never by guess.
 
-Roles are stored as a fact↔role **relation**: a concept participates in several roles, so a scalar column cannot distinguish the income-statement occurrence from the cash-flow-reconciliation one.
+Roles are stored as a fact↔role **relation**: a concept participates in several roles, so a scalar column cannot hold its role membership.
+
+**Amended (2026-08-18, sol review finding 2): the selector is CONCEPT-level, and can be nothing stronger.** A presentation linkbase relates concepts to roles, so the parser attaches one identical role set to every occurrence of a concept — the income-statement occurrence of `ProfitLoss` and the cash-flow reconciliation's opening line are indistinguishable by role. The selector answers "does this concept belong to a primary statement", never "which statement is this occurrence printed in". The original text implied a per-occurrence ranking; that is unimplementable from a presentation linkbase, and the revision that claimed to implement it was proven only by a test fabricating per-occurrence role vectors the parser cannot produce.
 
 ### 4. Projection resolves duplicates per full slot, before any existing collapse
 
 A concept is legitimately tagged **2–3 times at an identical (concept, context)** in one filing — measured: XTB `ProfitLoss` 3×, `ProfitLossBeforeTax` 2×, `OtherComprehensiveIncome` 2×; 13 such concepts, the same pattern at LPP. Net profit appears in the income statement, in comprehensive income, and in the indirect-method cash-flow reconciliation, where the sign convention may be inverted.
 
-Projection therefore applies statement precedence (income statement over comprehensive income over the cash-flow reconciliation for a profit-and-loss concept), then resolves per **full write slot**: identical value, currency, period, basis, window and quality is a deterministic **repeat** retaining links to every raw row; differing normalized content is a **typed conflict**. This runs *before* the metric-key-only collapses in the existing pipeline, which would otherwise erase the second candidate and let XML order decide which occurrence was stored.
+Projection resolves per **full write slot**, grouped by (statement basis, metric key) — the two dimensions this tier actually varies on (amended per sol finding 3; statement precedence between occurrences is impossible, see decision 3):
+
+- **Statement basis is derived per instance** from the package entry path (TXT ships standalone and consolidated filings in one package under Polish-named folders) — a standalone filing is never silently stamped consolidated, and the two bases never conflict with each other.
+- **Duration windows sharing an end date resolve to the longest span**: a Q3 filing tags the 3-month quarter and the cumulative 9-month figure with the same end date; GPW interim reporting is cumulative, so the longest window is the reported figure (parity with the retired parser's `dedup_longest_duration`) and the shorter ones are counted, never conflated into a conflict.
+- Only then does value equality decide: identical value and currency is a deterministic **repeat** retaining links to every raw row; differing normalized content is a **typed conflict** — the honest outcome for a filing that contradicts itself, since no concept-level evidence can choose a side.
+
+This runs *before* the metric-key-only collapses in the existing pipeline, which would otherwise erase the second candidate and let XML order decide which occurrence was stored.
 
 ### 5. Projected facts pass the existing validation gate
 
@@ -80,6 +88,8 @@ Layer 1 stores **every** period from every filing, so nothing is lost. Layer 2 c
 
 The parser today materialises only `ix:nonFraction`, and only after concept mapping, numeric parsing, context resolution and the dimensionless filter — each failed step discards the occurrence. Layer 1 defines treatment of `ix:nonFraction`, `ix:fraction`, nil facts, continuations and non-numeric tags, and stores **every supported occurrence even when normalization fails**, with a nullable normalized value and a typed parse status. The epic's ship gate asserts `encountered = stored`, not "successfully normalized", alongside zero unexplained package instances and zero uncurated in-scope primary-statement concepts.
 
+**Amended (2026-08-18, sol review finding 4)** — two ways "nothing dropped" could hold vacuously are closed: a numeric fact carrying `continuedAt` never parses its local fragment (`parse_status = "unsupported_continuation"`, no value — the fragment can parse cleanly while being only part of the disclosed number), and a mid-document reader error or a skipped package entry marks the whole extraction `truncated`, never `extracted` — "encountered = stored" is only meaningful over what was actually walked, and the record now says when that was not everything.
+
 ### 10. The owner may promote a captured position into Fundamentals; a machine still may not
 
 Decision 2 bans runtime minting so that no automated path can invent a name. That ban is about **machines guessing**, and it must not be read as banning the **owner deciding**: a captured concept the catalog has no name for is exactly the long tail this epic exists to preserve, and the investor is the only party who can say "this line matters to me".
@@ -104,15 +114,15 @@ The motivation is concrete: re-reading already-stored reports is exactly the kin
 
 `promote_uncrosswalked_concept` stays **excluded**. Decision 10 reserved promotion as the owner's own authority precisely so that no automated path names a metric; exposing it over MCP would route around that decision rather than honour it. The asymmetry is the point: an agent may re-read and measure, only the owner may name.
 
-Consequence: the Full-scope frozen tool count rises by three, so its snapshot and count assertions move with this change — deliberately, as evidence of the widening.
+Consequence: the Full-scope frozen tool count rises by three, so its snapshot and count assertions move with this change — deliberately, as evidence of the widening. `run_pipeline_reextraction` is **idempotent while a batch is in flight** (sol review finding 12): while the company's latest batch is `queued`/`running`, every further call returns that batch — an agent looping the act cannot mint unbounded durable batches or queue jobs.
 
 ### 12. A dead catalog key is redirected by a curated alias, never left to rot
 
 Decision 2 stops the ESEF path from minting duplicates. It does not repair the duplicates that already exist: `inventory` (migration `0048`) and `inventories` (`0084`) are both canonical rows for the same figure, and only the second has ever held a fact (771 across 44 companies). The cost was not theoretical — the seeded `quick_ratio` formula read `inventory`, so the metric evaluated to unavailable for **every company since it was seeded**, indistinguishable from an issuer that never reported it.
 
-A curated alias table (`fundamentals::kpi_aliases`) names each dead key and the live key it means. It is consulted by `resolve_kpi_definition` after an exact match fails, so a writer reaching the dead key files into the live series with no caller change.
+A curated alias table (`fundamentals::kpi_aliases`) names each dead key and the live key it means. `resolve_kpi_definition` consults it and redirects **only while the source key's definitions hold zero facts on the database at hand** — the one-sidedness rule is enforced at runtime, per write, not merely asserted by the curation. On a database where the source key already carries a series (an import, an older schema, a manual entry), the redirect never fires and the write lands on the source key exactly as before.
 
-The table is **one-sided and evidence-proven**: an alias source must hold no facts. A pair where both sides carry facts is a *merge*, which needs its own migration and its own evidence — never an entry here. That asymmetry is what separates an alias from a repaint (ADR 0077 dec. 8): nothing is renamed and no two real series are joined; a key that was always empty simply stops being a place a fact can land.
+The table is **one-sided and evidence-proven**: an alias source must hold no facts. A pair where both sides carry facts is a *merge*, which needs its own migration and its own evidence — never an entry here. That asymmetry — checked live, not assumed — is what separates an alias from a repaint (ADR 0077 dec. 8): nothing is renamed and no two real series are joined; a key that was always empty simply stops being a place a fact can land, and a key that turns out not to be empty is left alone.
 
 Two gates keep it closed. `no_derived_formula_references_an_alias_source` refuses a formula that reads a dead key — the check that would have caught `quick_ratio`, which the existing computability gate could not, because it seeds a fact for every definition including the dead ones. `every_alias_names_two_seeded_catalog_keys` refuses an alias naming a key the catalog does not have. Repairing an already-broken formula is a forward migration (`0147`), matched on the exact seeded text so an owner-edited row is never rewritten.
 

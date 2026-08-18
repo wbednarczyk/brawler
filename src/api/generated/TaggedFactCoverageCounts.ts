@@ -4,16 +4,33 @@
  * The Coverage panel's compact read model (ADR 0100, epic #398 UI slice):
  * every number Layer 1 captured for a company, split into what the
  * deterministic projection rule keeps and the reasons the rest is not (yet)
- * in Fundamentals. `dimensional` is a direct column count; the other four
- * non-`raw_stored` buckets are computed by re-running
+ * in Fundamentals. `dimensional` and `unparsed` are direct row counts; the
+ * projection buckets are computed by re-running
  * [`crate::fundamentals::extraction::esef::projection::project_period`] per
- * `(report_document, period_end)` — including comparative periods, which
- * Layer 1 stores but Layer 2 never writes (decision 7). So `projected` here
- * means "the deterministic rule would keep it", not "it is live in
- * `financial_facts` right now" (a stricter count is a direct
- * `financial_facts` query, unrelated to this read model). `raw_stored` may
- * exceed the other five buckets' sum by the rare count of unparsed-value
- * rows, which fit none of them — visible on the raw fact itself, out of
- * scope for this compact line.
+ * `(report_document, period_end)`. `projected` covers ONLY each filing's
+ * own (latest) period end — the one Layer 2 writes; comparative periods'
+ * candidates go to `comparative`, never inflated into `projected` (sol
+ * review finding 8). `projected` still means "the deterministic rule would
+ * keep it", not "it is live in `financial_facts` right now" — the
+ * validation gate downstream can refuse a candidate (a stricter count is a
+ * direct `financial_facts` query, unrelated to this read model).
  */
-export type TaggedFactCoverageCounts = { rawStored: number, projected: number, dimensional: number, noteLevel: number, awaitingName: number, conflicting: number, };
+export type TaggedFactCoverageCounts = { rawStored: number, 
+/**
+ * Candidate slots at each document's OWN (latest) period end — the only
+ * periods Layer 2 actually writes (ADR 0100 decision 7). Comparative
+ * periods are counted separately below, never inflated into this number
+ * (sol review finding 8).
+ */
+projected: number, 
+/**
+ * Candidate slots at every EARLIER period end in a filing — captured in
+ * Layer 1, deliberately not written (decision 7).
+ */
+comparative: number, dimensional: number, noteLevel: number, awaitingName: number, conflicting: number, 
+/**
+ * Dimensionless rows whose value never parsed (typed parse status in
+ * Layer 1, decision 9) — visible here so an unreadable number still has
+ * a stated reason it is not in Fundamentals.
+ */
+unparsed: number, };

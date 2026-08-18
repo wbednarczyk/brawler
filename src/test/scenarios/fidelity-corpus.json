@@ -747,10 +747,12 @@
           "expectField": {
             "rawStored": 0,
             "projected": 0,
+            "comparative": 0,
             "dimensional": 0,
             "noteLevel": 0,
             "awaitingName": 0,
-            "conflicting": 0
+            "conflicting": 0,
+            "unparsed": 0
           }
         },
         {

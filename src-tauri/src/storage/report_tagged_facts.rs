@@ -411,24 +411,36 @@ fn harvest_uncrosswalked_concepts(connection: &Connection) -> StorageResult<Vec<
             .map(|entry| entry.concept)
             .collect();
 
-    let mut statement = connection.prepare(
-        "SELECT concept_local_name, COUNT(DISTINCT company_id), GROUP_CONCAT(DISTINCT period_type)
+    // Grouped by (namespace standardness, local name), never local name
+    // alone (sol review findings 1/11): an issuer extension reusing a
+    // standard local name is a DIFFERENT concept — it must neither hide
+    // behind the standard entry nor inflate the standard concept's
+    // distinct-issuer count.
+    let sql = format!(
+        "SELECT concept_local_name,
+                {pred} AS is_standard,
+                COUNT(DISTINCT company_id),
+                GROUP_CONCAT(DISTINCT period_type)
          FROM report_tagged_facts
-         GROUP BY concept_local_name
+         GROUP BY concept_local_name, is_standard
          ORDER BY COUNT(DISTINCT company_id) DESC, concept_local_name ASC",
-    )?;
+        pred =
+            crate::fundamentals::extraction::ifrs_crosswalk::STANDARD_IFRS_NAMESPACE_SQL_PREDICATE
+    );
+    let mut statement = connection.prepare(&sql)?;
     let rows = statement.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, String>(2)?,
+            row.get::<_, bool>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
         ))
     })?;
 
     let mut harvested = Vec::new();
     for row in rows {
-        let (concept_local_name, company_count, period_types_raw) = row?;
-        if crosswalked.contains(concept_local_name.as_str()) {
+        let (concept_local_name, is_standard, company_count, period_types_raw) = row?;
+        if is_standard && crosswalked.contains(concept_local_name.as_str()) {
             continue;
         }
         let mut period_types: Vec<String> =
@@ -536,17 +548,16 @@ fn to_new_fact(stored: &StoredTaggedFact) -> NewTaggedFact {
 /// The Coverage panel's compact read model (ADR 0100, epic #398 UI slice):
 /// every number Layer 1 captured for a company, split into what the
 /// deterministic projection rule keeps and the reasons the rest is not (yet)
-/// in Fundamentals. `dimensional` is a direct column count; the other four
-/// non-`raw_stored` buckets are computed by re-running
+/// in Fundamentals. `dimensional` and `unparsed` are direct row counts; the
+/// projection buckets are computed by re-running
 /// [`crate::fundamentals::extraction::esef::projection::project_period`] per
-/// `(report_document, period_end)` — including comparative periods, which
-/// Layer 1 stores but Layer 2 never writes (decision 7). So `projected` here
-/// means "the deterministic rule would keep it", not "it is live in
-/// `financial_facts` right now" (a stricter count is a direct
-/// `financial_facts` query, unrelated to this read model). `raw_stored` may
-/// exceed the other five buckets' sum by the rare count of unparsed-value
-/// rows, which fit none of them — visible on the raw fact itself, out of
-/// scope for this compact line.
+/// `(report_document, period_end)`. `projected` covers ONLY each filing's
+/// own (latest) period end — the one Layer 2 writes; comparative periods'
+/// candidates go to `comparative`, never inflated into `projected` (sol
+/// review finding 8). `projected` still means "the deterministic rule would
+/// keep it", not "it is live in `financial_facts` right now" — the
+/// validation gate downstream can refuse a candidate (a stricter count is a
+/// direct `financial_facts` query, unrelated to this read model).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -556,11 +567,22 @@ fn to_new_fact(stored: &StoredTaggedFact) -> NewTaggedFact {
 #[serde(rename_all = "camelCase")]
 pub struct TaggedFactCoverageCounts {
     pub raw_stored: i64,
+    /// Candidate slots at each document's OWN (latest) period end — the only
+    /// periods Layer 2 actually writes (ADR 0100 decision 7). Comparative
+    /// periods are counted separately below, never inflated into this number
+    /// (sol review finding 8).
     pub projected: i64,
+    /// Candidate slots at every EARLIER period end in a filing — captured in
+    /// Layer 1, deliberately not written (decision 7).
+    pub comparative: i64,
     pub dimensional: i64,
     pub note_level: i64,
     pub awaiting_name: i64,
     pub conflicting: i64,
+    /// Dimensionless rows whose value never parsed (typed parse status in
+    /// Layer 1, decision 9) — visible here so an unreadable number still has
+    /// a stated reason it is not in Fundamentals.
+    pub unparsed: i64,
 }
 
 fn coverage_counts(
@@ -580,21 +602,47 @@ fn coverage_counts(
     }
 
     let mut projected = 0i64;
+    let mut comparative = 0i64;
     let mut note_level = 0i64;
     let mut awaiting_name = 0i64;
     let mut conflicting = 0i64;
+    let mut unparsed = 0i64;
     for doc_facts in by_document.values() {
         let has_presentation_linkbase = doc_facts.iter().any(|f| !f.roles.is_empty());
+        // A dimensionless row whose value never parsed reaches no projection
+        // bucket (step 1 skips it) — count it here so every raw number keeps
+        // a stated reason (decision 9; sol review finding 8).
+        unparsed += doc_facts
+            .iter()
+            .filter(|f| {
+                // The projection's own step-1 predicate: a value the rule
+                // cannot use, absent OR non-decimal.
+                !f.is_dimensional
+                    && f.value_numeric
+                        .as_deref()
+                        .and_then(|s| s.parse::<rust_decimal::Decimal>().ok())
+                        .is_none()
+            })
+            .count() as i64;
         let mut period_ends: Vec<&str> = doc_facts.iter().map(|f| f.period_end.as_str()).collect();
         period_ends.sort_unstable();
         period_ends.dedup();
-        for period_end in period_ends {
+        // The filing's OWN balance date is the latest period end it tags;
+        // every earlier one is a comparative, which Layer 2 never writes
+        // (decision 7) — so only the latest period's candidates may be
+        // presented as headed for Fundamentals.
+        let own_period_end = period_ends.last().copied();
+        for period_end in period_ends.iter().copied() {
             let result = crate::fundamentals::extraction::esef::projection::project_period(
                 doc_facts,
                 period_end,
                 has_presentation_linkbase,
             );
-            projected += result.facts.len() as i64;
+            if Some(period_end) == own_period_end {
+                projected += result.facts.len() as i64;
+            } else {
+                comparative += result.facts.len() as i64;
+            }
             conflicting += result.conflicts.len() as i64;
             note_level += result.non_primary_statement_skipped as i64;
             awaiting_name += result.uncrosswalked_fact_count as i64;
@@ -604,10 +652,12 @@ fn coverage_counts(
     Ok(TaggedFactCoverageCounts {
         raw_stored,
         projected,
+        comparative,
         dimensional,
         note_level,
         awaiting_name,
         conflicting,
+        unparsed,
     })
 }
 
@@ -696,7 +746,13 @@ fn harvest_uncrosswalked_concepts_for_company(
     let mut by_concept: HashMap<String, Agg> = HashMap::new();
     for row in rows {
         let (concept, namespace, period_type, role_kind) = row?;
-        if crosswalked.contains(concept.as_str()) {
+        // Only a STANDARD-namespace concept can be "already crosswalked" (sol
+        // review finding 1): an issuer extension reusing a standard local
+        // name must surface in this list under its own identity, never be
+        // hidden by the standard entry it shadows.
+        if crate::fundamentals::extraction::ifrs_crosswalk::is_standard_ifrs_namespace(&namespace)
+            && crosswalked.contains(concept.as_str())
+        {
             continue;
         }
         let entry = by_concept.entry(concept).or_insert_with(|| Agg {

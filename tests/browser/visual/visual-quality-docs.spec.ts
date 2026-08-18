@@ -80,8 +80,11 @@ test.describe("visual — quality + report documents", () => {
   // Same blind spot, second instance (ADR 0045 guardrail harvest): the
   // unnamed-positions list is below the fold AND behind a disclosure, so it
   // was in no baseline either — and it shipped with the position name clipped
-  // to one character at this width. A region shot of its own is the check that
-  // reddens when the row layout regresses.
+  // to one character at this width. A region shot catches a layout
+  // regression LOCALLY — honest scope: CI ignores screenshot comparisons
+  // (playwright.config.ts `ignoreSnapshots` on CI), so this reddens on the
+  // developer's machine and in `make ui-smoke`, not in CI (sol review
+  // finding 11).
   test("Unnamed positions list", async ({ page }) => {
     await openApp(page);
     const pane = await openCoverage(page);

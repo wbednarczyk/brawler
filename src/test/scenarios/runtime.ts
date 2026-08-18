@@ -3549,9 +3549,12 @@ function buildHandlers(): Record<string, Handler> {
     get_report_tagged_fact_coverage: (_d, a) => {
       const companyId = str(unwrap(a).companyId) ?? "";
       if (companyId !== "company_gpw_cdr") {
-        return { rawStored: 0, projected: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0 };
+        return { rawStored: 0, projected: 0, comparative: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0, unparsed: 0 };
       }
-      return { rawStored: 426, projected: 68, dimensional: 228, noteLevel: 51, awaitingName: 2, conflicting: 1 };
+      // Bucket split mirrors the Rust read model (sol review finding 8):
+      // `projected` covers only each filing's own period; comparatives and
+      // unparsed rows have their own stated reasons.
+      return { rawStored: 426, projected: 68, comparative: 12, dimensional: 228, noteLevel: 51, awaitingName: 2, conflicting: 1, unparsed: 0 };
     },
     list_uncrosswalked_concepts: (_d, a, ctx) => {
       const companyId = str(unwrap(a).companyId) ?? "";

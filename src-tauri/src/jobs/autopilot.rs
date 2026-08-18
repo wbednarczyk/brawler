@@ -1034,6 +1034,7 @@ mod tests {
 
     // A minimal balanced ESEF/iXBRL instance (45m = 20m + 25m at 2026-03-31).
     const ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2026-03-31</xbrli:instant></xbrli:period></xbrli:context>

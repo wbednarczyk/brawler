@@ -18,10 +18,12 @@ function counts(overrides: Partial<TaggedFactCoverageCounts> = {}): TaggedFactCo
   return {
     rawStored: 426,
     projected: 68,
+    comparative: 12,
     dimensional: 228,
     noteLevel: 51,
     awaitingName: 60,
     conflicting: 7,
+    unparsed: 0,
     ...overrides,
   };
 }
@@ -32,21 +34,33 @@ describe("CoverageRawCapture", () => {
     listUncrosswalkedConceptsMock.mockResolvedValue([]);
   });
 
-  it("renders the compact line's six counts", async () => {
+  it("renders the compact line's counts, comparatives split from projected", async () => {
     getReportTaggedFactCoverageMock.mockResolvedValue(counts());
     render(<CoverageRawCapture companyId="company_gpw_cdr" />);
 
     expect(await screen.findByText("426")).toBeInTheDocument();
     expect(screen.getByText("68")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("228")).toBeInTheDocument();
     expect(screen.getByText("51")).toBeInTheDocument();
     expect(screen.getByText("60")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
+    // Zero unparsed rows: the bucket stays hidden rather than rendering a
+    // permanent zero row.
+    expect(screen.queryByText("Could not be read")).not.toBeInTheDocument();
     expect(getReportTaggedFactCoverageMock).toHaveBeenCalledWith("company_gpw_cdr");
   });
 
+  it("an unreadable number is visible with its own stated reason", async () => {
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ unparsed: 3 }));
+    render(<CoverageRawCapture companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("Could not be read")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
   it("renders nothing for a company with no tagged capture yet", async () => {
-    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ rawStored: 0, projected: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0 }));
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ rawStored: 0, projected: 0, comparative: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0, unparsed: 0 }));
     const { container } = render(<CoverageRawCapture companyId="company_gpw_cdr" />);
 
     // Wait for the fetch to settle without asserting on a specific string —

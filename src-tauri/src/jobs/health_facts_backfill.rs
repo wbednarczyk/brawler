@@ -118,6 +118,7 @@ mod tests {
     /// (Assets = Liabilities + Equity) — the "old" stored facts, extracted before
     /// the v0.57 concept-map extension.
     const CORE_ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
@@ -131,6 +132,7 @@ mod tests {
     /// PLUS the four v0.57 health concepts. Values are internally consistent
     /// (current ⊂ total, retained ⊂ equity, long-term ⊂ liabilities).
     const FULL_ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>

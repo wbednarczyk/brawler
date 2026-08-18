@@ -750,12 +750,32 @@ const MIGRATIONS: &[Migration] = &[
         name: "ifrs_crosswalk_corpus_harvest",
         sql: include_str!("../../migrations/0148_ifrs_crosswalk_corpus_harvest.sql"),
     },
+    Migration {
+        version: 149,
+        name: "repair_crosswalk_seed_semantics",
+        sql: include_str!("../../migrations/0149_repair_crosswalk_seed_semantics.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
     let mut connection = Connection::open(path)?;
     apply_migrations(&mut connection)?;
     Ok(connection)
+}
+
+/// Opens WITHOUT applying migrations, enforced by SQLite's own read-only
+/// flag — for read-only diagnostics pointed at a real database (sol review
+/// finding 5: `open_database` migrates on open, so a "read-only" harvest
+/// against the owner's copy silently rewrote it through 0141+). A schema too
+/// old for the caller's query fails loudly at the query, never by mutating
+/// the file. `no_mutex` matches the pool's threading assumption elsewhere;
+/// diagnostics are single-threaded anyway.
+pub fn open_database_readonly(path: impl AsRef<Path>) -> StorageResult<Connection> {
+    use rusqlite::OpenFlags;
+    Ok(Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?)
 }
 
 pub fn open_in_memory_database() -> StorageResult<Connection> {

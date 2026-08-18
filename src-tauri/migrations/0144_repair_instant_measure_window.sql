@@ -37,13 +37,25 @@
 --    tier, and record a `diagnostic_events` row (both fact ids/values/tiers)
 --    for manual review -- a stronger incoming tier never silently overrides
 --    an already-correctly-typed row through this repair.
---  * The flow-side loser is deleted after repointing its mutable references
---    (`financial_facts.supersedes_id`, `management_claims.verifying_fact_id`,
+--  * ONLY the equal-value (re-observation) loser is deleted, after
+--    repointing its mutable references (`financial_facts.supersedes_id`,
+--    `management_claims.verifying_fact_id`,
 --    `autopilot_run.produced_fact_ids_json` -- the same inventory migration
---    0108 enumerates). Immutable ingest receipts
+--    0108 enumerates). A DIVERGENT flow row is NEVER deleted: a migration
+--    never destroys an observation two sources disagree about (testing.md:
+--    a migration never deletes user data) -- it stays in place under its
+--    original `measure_window`, and the diagnostic row is the pointer for
+--    the owner's manual resolution. Immutable ingest receipts
 --    (`kpi_ingest_commit_receipts.outcomes_json`) are NEVER rewritten -- a
 --    historical factId embedded there may no longer resolve after this
 --    repair (documented in data-model.md).
+--
+-- EDIT NOTE (2026-08-18, sol review finding 6): the divergent branch
+-- originally deleted the flow row after recording the diagnostic. This file
+-- was corrected before any release; the single database that had already
+-- applied version 144 (the owner's) is verified to have had ZERO collision
+-- rows (no `migration_0144` diagnostic events exist there), so the old and
+-- new content are behavior-identical everywhere version 144 ever ran.
 --
 -- Value equality is a trimmed string compare (the `create_or_reobserve_
 -- financial_fact` fallback path) -- sufficient here because every fact is
@@ -74,10 +86,16 @@ JOIN kpi_definitions d ON d.id = f.definition_id
 WHERE f.measure_window = 'flow'
   AND d.period_nature = 'instant';
 
+-- Repoint-and-delete applies ONLY to equal-value re-observations. A
+-- divergent flow row is preserved in place (see the edit note above), so it
+-- must keep its references and its row.
 CREATE TEMP TABLE _m0144_repoints AS
-SELECT flow_id AS old_id, pit_id AS new_id
-FROM _m0144_targets
-WHERE pit_id IS NOT NULL;
+SELECT t.flow_id AS old_id, t.pit_id AS new_id
+FROM _m0144_targets t
+JOIN financial_facts ff ON ff.id = t.flow_id
+JOIN financial_facts pf ON pf.id = t.pit_id
+WHERE t.pit_id IS NOT NULL
+  AND TRIM(ff.value_numeric) = TRIM(pf.value_numeric);
 
 CREATE TEMP TABLE _m0144_collisions AS
 SELECT
@@ -162,14 +180,14 @@ SELECT
     c.pit_id,
     'migration_0144',
     'warning',
-    'measure_window repair collision: a flow-tier fact diverged from the already-correct point_in_time fact for the same slot; the point_in_time value was kept, the flow-tier row was discarded (ADR 0100 decision 6)',
+    'measure_window repair collision: a flow-tier fact diverged from the already-correct point_in_time fact for the same slot; the point_in_time value was kept and the flow-tier row was left in place under its original measure_window for manual resolution (ADR 0100 decision 6)',
     json_object(
         'kept_fact_id', c.pit_id,
         'kept_value', pf.value_numeric,
         'kept_source_tier', c.pit_tier,
-        'discarded_fact_id', c.flow_id,
-        'discarded_value', ff.value_numeric,
-        'discarded_source_tier', c.flow_tier,
+        'divergent_fact_id', c.flow_id,
+        'divergent_value', ff.value_numeric,
+        'divergent_source_tier', c.flow_tier,
         'definition_id', t.definition_id,
         'period_id', t.period_id
     )
@@ -201,7 +219,7 @@ UPDATE financial_facts
 SET supersedes_id = (SELECT new_id FROM _m0144_repoints WHERE old_id = financial_facts.supersedes_id)
 WHERE supersedes_id IN (SELECT old_id FROM _m0144_repoints);
 
--- 5) Delete the collision losers, then their now-orphaned provenance rows
+-- 5) Delete the equal-value collision losers, then their now-orphaned provenance rows
 --    (the fact goes first so no fact is ever left without its provenance
 --    row mid-statement -- migrations 0102/0107/0108 pattern).
 DELETE FROM financial_facts
