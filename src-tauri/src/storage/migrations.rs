@@ -708,6 +708,38 @@ const MIGRATIONS: &[Migration] = &[
         name: "derived_period_content_hash",
         sql: include_str!("../../migrations/0140_derived_period_content_hash.sql"),
     },
+    Migration {
+        version: 141,
+        name: "kpi_definition_period_nature",
+        sql: include_str!("../../migrations/0141_kpi_definition_period_nature.sql"),
+    },
+    Migration {
+        version: 142,
+        name: "report_tagged_facts",
+        sql: include_str!("../../migrations/0142_report_tagged_facts.sql"),
+    },
+    Migration {
+        version: 143,
+        name: "ifrs_crosswalk_kpi_definitions",
+        sql: include_str!("../../migrations/0143_ifrs_crosswalk_kpi_definitions.sql"),
+    },
+    Migration {
+        version: 144,
+        name: "repair_instant_measure_window",
+        sql: include_str!("../../migrations/0144_repair_instant_measure_window.sql"),
+    },
+    Migration {
+        version: 145,
+        name: "report_tagged_fact_extractions_linkbase_fallback",
+        sql: include_str!(
+            "../../migrations/0145_report_tagged_fact_extractions_linkbase_fallback.sql"
+        ),
+    },
+    Migration {
+        version: 146,
+        name: "pipeline_reextraction_batches",
+        sql: include_str!("../../migrations/0146_pipeline_reextraction_batches.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
