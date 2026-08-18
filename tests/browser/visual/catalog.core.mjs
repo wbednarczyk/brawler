@@ -36,6 +36,14 @@ const RAW_CATALOG = [
     states: ["default"],
     tiers: M_ONLY,
   },
+  // Below the fold AND behind a disclosure — the same blind spot, which is why
+  // its rows shipped with the position name clipped to one character (#398).
+  {
+    screen: "coverage-unnamed-positions",
+    spec: "visual-quality-docs.spec.ts",
+    states: ["default"],
+    tiers: M_ONLY,
+  },
   { screen: "research", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "events", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "report-season", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },

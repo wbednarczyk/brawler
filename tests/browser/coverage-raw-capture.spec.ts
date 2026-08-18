@@ -44,7 +44,7 @@ test("expanding the unnamed-positions list shows rows and does not overflow", as
   const section = page.locator(
     '.company-coverage[data-company-id="company_gpw_cdr"] .coverage-raw-capture',
   );
-  await section.getByRole("button", { name: /Positions the program doesn't know yet/ }).click();
+  await section.getByRole("button", { name: /Show the unnamed positions/ }).click();
 
   const list = section.locator(".coverage-uncrosswalked-concepts");
   await expect(list).toBeVisible();
@@ -63,7 +63,7 @@ test("promoting a position updates the row in place", async ({ page }) => {
   const section = page.locator(
     '.company-coverage[data-company-id="company_gpw_cdr"] .coverage-raw-capture',
   );
-  await section.getByRole("button", { name: /Positions the program doesn't know yet/ }).click();
+  await section.getByRole("button", { name: /Show the unnamed positions/ }).click();
 
   const list = section.locator(".coverage-uncrosswalked-concepts");
   const row = list.locator("li", { hasText: "Pozostałe usługi obce" });

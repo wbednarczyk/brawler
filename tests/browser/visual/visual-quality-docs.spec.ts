@@ -76,4 +76,19 @@ test.describe("visual — quality + report documents", () => {
     await expect(actions).toBeVisible();
     await shootRegion(page, pane, actions, "coverage-actions");
   });
+
+  // Same blind spot, second instance (ADR 0045 guardrail harvest): the
+  // unnamed-positions list is below the fold AND behind a disclosure, so it
+  // was in no baseline either — and it shipped with the position name clipped
+  // to one character at this width. A region shot of its own is the check that
+  // reddens when the row layout regresses.
+  test("Unnamed positions list", async ({ page }) => {
+    await openApp(page);
+    const pane = await openCoverage(page);
+    const capture = pane.locator(".coverage-raw-capture");
+    await capture.getByRole("button", { name: /Show the unnamed positions/ }).click();
+    const list = capture.locator(".coverage-uncrosswalked-concepts");
+    await expect(list).toBeVisible();
+    await shootRegion(page, pane, list, "coverage-unnamed-positions");
+  });
 });

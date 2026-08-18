@@ -2652,6 +2652,28 @@ fn concept_harvest_report() {
 
     let connection = open_database(&db_path).expect("open real db");
     let state = AppState::new(connection);
+    // Harness sanity BEFORE reading the result: an empty Layer 1 store makes
+    // "no uncrosswalked concepts" indistinguishable from "nothing was ever
+    // captured", and the reassuring branch below would then report a curated
+    // vocabulary that was never exercised. A check that cannot fail is worse
+    // than no check, so a store with zero tagged facts is a hard failure.
+    let captured = state
+        .list_companies()
+        .expect("companies")
+        .iter()
+        .any(|company| {
+            !state
+                .report_tagged_facts()
+                .facts_for_company(&company.id)
+                .expect("layer 1 facts")
+                .is_empty()
+        });
+    assert!(
+        captured,
+        "concept_harvest_report: {db_path} holds no report_tagged_facts rows — \
+         re-extract before harvesting, or the report is vacuously clean"
+    );
+
     let harvested = state
         .report_tagged_facts()
         .harvest_uncrosswalked_concepts()

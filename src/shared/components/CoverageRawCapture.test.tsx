@@ -60,13 +60,13 @@ describe("CoverageRawCapture", () => {
     render(<CoverageRawCapture companyId="company_gpw_cdr" />);
 
     const toggle = await screen.findByRole("button", {
-      name: /Positions the program doesn't know yet/,
+      name: /Show the unnamed positions/,
     });
     // The button names the action in words, never a bare count (the raw
     // occurrence count already shown in the InfoGrid above is a different
     // unit than the list's distinct-position count, so it is not repeated
     // here — accuracy over a redundant number).
-    expect(toggle).toHaveTextContent("Positions the program doesn't know yet");
+    expect(toggle).toHaveTextContent("Show the unnamed positions");
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 });

@@ -72,11 +72,12 @@ export function CoverageRawCapture({ companyId, reloadKey = 0 }: Props) {
         ) : (
           <ChevronRight size={14} aria-hidden="true" />
         )}
-        {/* No count here: the InfoGrid above already states the raw
-            occurrence count ("No name yet"), and the list this expands into
-            names its own count of DISTINCT positions — repeating the
-            occurrence number here would misleadingly promise that many rows. */}
-        {text("Positions the program doesn't know yet")}
+        {/* A control, not a second title: the section it reveals carries the
+            heading (and the count of DISTINCT positions). Repeating the
+            heading here rendered the same sentence twice, one line apart.
+            No count here either — the InfoGrid above states the raw
+            occurrence count ("No name yet"), which is a different number. */}
+        {expanded ? text("Hide the unnamed positions") : text("Show the unnamed positions")}
       </Button>
       {expanded ? (
         <CoverageUncrosswalkedConcepts companyId={companyId} reloadKey={reloadKey} />
