@@ -177,6 +177,7 @@ mod tests {
                     formula: None,
                     value_kind: "ratio".to_owned(),
                     unit: None,
+                    period_nature: "duration".to_owned(),
                 },
             );
         }

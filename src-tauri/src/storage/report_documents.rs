@@ -232,7 +232,7 @@ pub(super) fn create_or_find_with_status(
 
 /// Report-bytes protection contract (data-model.md § Report Document Model
 /// retention; ADR 0098 dec. 3, card #359 — the first implementation of this
-/// doc-only contract). FOUR semantic legs, FIVE physical `EXISTS` (b splits
+/// doc-only contract). FIVE semantic legs, SIX physical `EXISTS` (b splits
 /// into notebook evidence and management-claim evidence, columns confirmed
 /// against their migrations):
 ///
@@ -244,7 +244,11 @@ pub(super) fn create_or_find_with_status(
 ///     company_signals.feed_item_id` (migrations 0035/0041); (d) any durable
 ///     `kpi_ingest_runs` row referencing the document, in ANY state
 ///     (migration 0137, ADR 0098 dec. 3 — a run's citations must stay
-///     verifiable even if the run failed/was cancelled).
+///     verifiable even if the run failed/was cancelled); (e) a
+///     `report_tagged_fact_extractions` row for the document, in ANY state
+///     (migration 0142, ADR 0100 dec. 8 — Layer 1 is derived data rebuilt
+///     from the document's bytes, so a pruned document can never be
+///     rebuilt; mirrors leg (d)'s "any state" rule for the same reason).
 const PROTECTION_EXISTS_CLAUSES: &str = "
     EXISTS (SELECT 1 FROM financial_facts
             WHERE source_document_ref = ?1 AND confirmation_state = 'confirmed')
@@ -256,6 +260,7 @@ const PROTECTION_EXISTS_CLAUSES: &str = "
                JOIN report_documents rd ON rd.origin_ref = cs.feed_item_id
                WHERE rd.id = ?1 AND cs.status = 'confirmed')
     OR EXISTS (SELECT 1 FROM kpi_ingest_runs WHERE report_document_id = ?1)
+    OR EXISTS (SELECT 1 FROM report_tagged_fact_extractions WHERE report_document_id = ?1)
 ";
 
 /// Whether a document's bytes are under the retention protection contract

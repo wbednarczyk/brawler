@@ -174,3 +174,27 @@ fn rejects_invalid_diagnostic_values() {
         }
     ));
 }
+
+/// Integrity events bypass the developer-mode gate (sol review round 3/4):
+/// they carry data-loss evidence (a swallowed Layer 1 capture failure), and a
+/// settings flag must never decide whether the owner learns about lost data.
+/// The ordinary diagnostic path above stays gated — this is the ONE ungated
+/// door, for integrity only.
+#[test]
+fn integrity_events_persist_with_developer_mode_off() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    // Default profile — developer mode NOT enabled.
+    let event = state
+        .diagnostics()
+        .record_integrity_event(sample_event())
+        .expect("integrity event should record")
+        .expect("event should be stored despite developer mode being off");
+    assert!(event.id.starts_with("diagnostic_event_"));
+
+    let listed = state
+        .list_diagnostic_events(10)
+        .expect("diagnostic events should list");
+    assert_eq!(listed.len(), 1, "the integrity event is durably visible");
+}

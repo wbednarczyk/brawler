@@ -3,11 +3,13 @@ import {
   listFinancialFacts,
   listFinancialPeriods,
   listKpiDefinitions,
+  listKpiRelevance,
 } from "../../api/financials";
 import type {
   FinancialFact,
   FinancialPeriod,
   KpiDefinition,
+  KpiRelevance,
 } from "../../api/financialsTypes";
 import { useLocale } from "../../shared/locale";
 import {
@@ -40,6 +42,11 @@ export function useCockpitFundamentals(companyId: string, revision = 0) {
   const [financialPeriods, setFinancialPeriods] = useState<FinancialPeriod[]>([]);
   const [financialFacts, setFinancialFacts] = useState<FinancialFact[]>([]);
   const [kpiDefinitions, setKpiDefinitions] = useState<KpiDefinition[]>([]);
+  // Epic #398 "Kluczowe" statement tab: the company's active/primary KPI
+  // selection (ADR 0092). Best-effort like the panel's other side reads — a
+  // load failure just leaves the Kluczowe tab empty rather than blocking the
+  // rest of the panel (folded into the same load-error surface below).
+  const [kpiRelevance, setKpiRelevance] = useState<KpiRelevance[]>([]);
   const [fundamentalsForm, setFundamentalsForm] = useState<FundamentalsForm>(EMPTY_FUNDAMENTALS_FORM);
   const [financialFactForm, setFinancialFactForm] = useState<FinancialFactForm>(EMPTY_FACT_FORM);
   const [selectedFinancialFactId, setSelectedFinancialFactId] = useState<string | null>(null);
@@ -66,12 +73,14 @@ export function useCockpitFundamentals(companyId: string, revision = 0) {
       listFinancialPeriods({ companyId }),
       listFinancialFacts({ companyId }),
       listKpiDefinitions({ companyId }),
+      listKpiRelevance(companyId),
     ])
-      .then(([periods, facts, definitions]) => {
+      .then(([periods, facts, definitions, relevance]) => {
         if (cancelled) return;
         setFinancialPeriods(periods);
         setFinancialFacts(facts);
         setKpiDefinitions(definitions);
+        setKpiRelevance(relevance);
       })
       .catch((reason) => {
         if (!cancelled) {
@@ -111,6 +120,7 @@ export function useCockpitFundamentals(companyId: string, revision = 0) {
     financialPeriods,
     financialFacts,
     kpiDefinitions,
+    kpiRelevance,
     fundamentalsForm,
     financialFactForm,
     selectedFinancialFactId,

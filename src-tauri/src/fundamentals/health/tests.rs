@@ -17,6 +17,7 @@ fn def_reported() -> MetricDef {
         formula: None,
         value_kind: "monetary".to_owned(),
         unit: None,
+        period_nature: "duration".to_owned(),
     }
 }
 
@@ -26,6 +27,7 @@ fn def_derived(formula: &str) -> MetricDef {
         formula: crate::fundamentals::metrics::parse_formula(formula),
         value_kind: "ratio".to_owned(),
         unit: None,
+        period_nature: "duration".to_owned(),
     }
 }
 
@@ -59,6 +61,15 @@ fn defs() -> HashMap<String, MetricDef> {
         "current_ratio".to_owned(),
         def_derived("current_assets / current_liabilities"),
     );
+    // Mirrors migration `0141`'s backfill (STOCK_METRIC_KEYS): the
+    // balance-sheet/share-count keys in `reported` above are point-in-time
+    // stocks, not durations -- kept in sync with the real seeded catalog
+    // rather than hand-picked here.
+    for key in crate::fundamentals::metrics::STOCK_METRIC_KEYS {
+        if let Some(def) = m.get_mut(*key) {
+            def.period_nature = "instant".to_owned();
+        }
+    }
     m
 }
 

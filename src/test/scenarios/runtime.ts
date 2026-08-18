@@ -37,6 +37,7 @@ import type { InsiderOverview } from "../../api/insider";
 import type { RedFlagsView } from "../../api/redFlags";
 import type { AnalystRecommendationsView } from "../../api/analystRecommendations";
 import type { CommandError } from "../../api/generated/CommandError";
+import type { UncrosswalkedConceptRow } from "../../api/generated/UncrosswalkedConceptRow";
 
 export type {
   MockRuntimeControls,
@@ -81,6 +82,15 @@ interface RuntimeContext {
    */
   mcpRunning: boolean;
   mcpError: string | null;
+  /**
+   * "Positions the program doesn't know yet" (ADR 0100 decision 10, epic
+   * #398) for the ONE hardcoded company the browser narrow-window spec
+   * exercises (`company_gpw_cdr`) — command-only, not a `ScenarioData`
+   * seeded collection, since Layer 1 has no seeding command in the real
+   * backend either. Mutated in place by `promote_uncrosswalked_concept` so a
+   * re-fetch in the same test run reflects the promotion.
+   */
+  uncrosswalkedConcepts: UncrosswalkedConceptRow[];
 }
 
 export interface MockRuntime {
@@ -3486,6 +3496,96 @@ function buildHandlers(): Record<string, Handler> {
       return { sweep, runsTotal: 0, runsDone: 0, runsFailed: 0 };
     },
 
+    // Version-aware re-extraction (epic #398 Item B). Re-arms the company's
+    // successful ESEF-tier runs whose stored pipeline version is stale — NOT
+    // gated on automation mode (it reprocesses already-stored documents on
+    // explicit request, the "Try again" posture, not new automation). The
+    // mock has no stale-run population to select from (per-candidate
+    // correctness is pinned by the Rust unit tests + the dual-execution
+    // fidelity corpus); run_pipeline_reextraction returns a freshly queued
+    // batch, get_pipeline_reextraction_progress the completed batch.
+    run_pipeline_reextraction: (_d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return {
+        id: `pipeline_reextraction:${companyId}:mock`,
+        companyId,
+        status: "queued",
+        candidatesTotal: 0,
+        runsEnqueued: 0,
+        runsFailed: 0,
+        enqueuedRunIds: [],
+        error: null,
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      };
+    },
+    get_pipeline_reextraction_progress: (_d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const batch = {
+        id: `pipeline_reextraction:${companyId}:mock`,
+        companyId,
+        status: "completed" as const,
+        candidatesTotal: 0,
+        runsEnqueued: 0,
+        runsFailed: 0,
+        enqueuedRunIds: [],
+        error: null,
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      };
+      return { batch, runsTotal: 0, runsDone: 0, runsFailed: 0 };
+    },
+
+    // Layer 1 raw-tagged-fact read model + promotion (ADR 0100, epic #398
+    // final slice). Report documents/tagged facts are seeded only through the
+    // (unmodeled) extraction pipeline, never a command, so this stays a
+    // command-only state map — not a `ScenarioData` seeded collection — the
+    // same idiom `irReportUrls`/`companySectors` above use. Every company
+    // reads the empty state EXCEPT one hardcoded company (CD Projekt), which
+    // carries a small fixed sample so the narrow-window browser spec
+    // (`tests/browser/coverage-raw-capture.spec.ts`) has real content to
+    // measure overflow against; per-row/per-bucket correctness is pinned by
+    // the Rust unit tests and the dual-execution fidelity corpus.
+    get_report_tagged_fact_coverage: (_d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      if (companyId !== "company_gpw_cdr") {
+        return { rawStored: 0, projected: 0, comparative: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0, unparsed: 0, repeated: 0 };
+      }
+      // Bucket split mirrors the Rust read model (sol review finding 8):
+      // `projected` covers only each filing's own period; comparatives and
+      // unparsed rows have their own stated reasons.
+      return { rawStored: 426, projected: 68, comparative: 12, dimensional: 228, noteLevel: 51, awaitingName: 2, conflicting: 1, unparsed: 0, repeated: 4 };
+    },
+    list_uncrosswalked_concepts: (_d, a, ctx) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      if (companyId !== "company_gpw_cdr") return [];
+      return ctx.uncrosswalkedConcepts;
+    },
+    promote_uncrosswalked_concept: (_d, a, ctx) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const conceptLocalName = str(input.conceptLocalName) ?? "";
+      const conceptNamespaceUri = str(input.conceptNamespaceUri) ?? "";
+      // Identity is (namespace, local name), mirroring the real command.
+      const row = ctx.uncrosswalkedConcepts.find(
+        (c) =>
+          c.conceptLocalName === conceptLocalName &&
+          c.conceptNamespaceUri === conceptNamespaceUri,
+      );
+      if (companyId !== "company_gpw_cdr" || !row) {
+        throw new Error("concept_not_captured");
+      }
+      row.alreadyPromoted = true;
+      row.promotedDefinitionId = ctx.nextId("kpidef");
+      return {
+        definitionId: row.promotedDefinitionId,
+        metricKey: row.conceptLocalName,
+        label: row.humanLabel,
+        labelSource: row.labelSource,
+        factsProjected: 1,
+      };
+    },
+
     // --- Settings / developer mode / diagnostics ---
     update_settings: (d, a) => {
       // The frontend sends a FLAT partial update; the backend maps the
@@ -3841,6 +3941,32 @@ export function createMockRuntime(
     mcpKpiToken: null,
     mcpRunning: false,
     mcpError: null,
+    uncrosswalkedConcepts: [
+      {
+        conceptLocalName: "SomeStandardConceptNotYetCurated",
+        conceptNamespaceUri: "http://xbrl.ifrs.org/taxonomy/2023/ifrs-full",
+        companyCount: 6,
+        occurrenceCount: 2,
+        statementGroup: "balance",
+        periodNature: "instant",
+        humanLabel: "SomeStandardConceptNotYetCurated",
+        labelSource: "technical",
+        alreadyPromoted: false,
+        promotedDefinitionId: null,
+      },
+      {
+        conceptLocalName: "PozostaleUslugiObce",
+        conceptNamespaceUri: "http://issuer.example.com/2025-12-31",
+        companyCount: 1,
+        occurrenceCount: 1,
+        statementGroup: "income",
+        periodNature: "duration",
+        humanLabel: "Pozostałe usługi obce",
+        labelSource: "issuer",
+        alreadyPromoted: false,
+        promotedDefinitionId: null,
+      },
+    ],
   };
 
   /** Raw settlement layer: the Deliverable A seam, then the handler table. */

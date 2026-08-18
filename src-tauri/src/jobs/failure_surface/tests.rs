@@ -59,6 +59,7 @@ fn the_classification_covers_the_registry_and_nothing_else() {
         crate::jobs::autopilot::AUTOPILOT_STAGE_KIND,
         crate::jobs::morning_briefing::MORNING_BRIEFING_KIND,
         crate::jobs::history_sweep::HISTORY_SWEEP_KIND,
+        crate::jobs::pipeline_reextraction::PIPELINE_REEXTRACTION_KIND,
         crate::jobs::ownership_extraction::OWNERSHIP_EXTRACTION_KIND,
         crate::jobs::management_holdings_extraction::MANAGEMENT_EXTRACTION_KIND,
         crate::jobs::quote_backfill::QUOTE_BACKFILL_KIND,

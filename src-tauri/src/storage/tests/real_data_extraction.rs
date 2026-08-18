@@ -248,8 +248,14 @@ fn real_data_extraction_recall_precision() {
         };
 
         let format = SourceFormat::resolve(report_document.content_type.as_deref(), local_path);
-        let esef_bytes: Option<Vec<u8>> = match format {
-            SourceFormat::Xhtml => Some(bytes),
+        let layer1_facts: Option<Vec<crate::storage::NewTaggedFact>> = match format {
+            SourceFormat::Xhtml => Some(
+                crate::jobs::structured_extraction::compute_layer1_generation(
+                    &bytes,
+                    crate::jobs::structured_extraction::DocumentRoute::IxbrlInstance,
+                )
+                .facts,
+            ),
             SourceFormat::Pdf => {
                 // The PDF fact-extraction arm is retired (ADR 0086 dec. 1); a
                 // PDF-only document has no surviving tier to feed.
@@ -268,7 +274,11 @@ fn real_data_extraction_recall_precision() {
 
         let input = PipelineInput {
             period_end: &doc.period_end,
-            esef_bytes: esef_bytes.as_deref(),
+            layer1_facts: layer1_facts.as_deref(),
+            // This harness's `SourceFormat` has no ZIP-package concept (unlike
+            // `t7_cbf_corpus`'s `run_new`) — every xhtml document routes bare,
+            // so it never carries linkbase evidence.
+            has_presentation_linkbase: false,
             prior: prior.as_ref(),
             prior_period_end: prior_end.as_deref(),
             expected_keys: None,
@@ -2602,6 +2612,270 @@ fn esef_positional_ground_truth_scores() {
             "WARN esef_positional_ground_truth_scores: {} corpus-integrity violation(s) \
              (non-required run):\n  - {listing}",
             integrity_violations.len()
+        );
+    }
+}
+
+/// Concept-harvest command (ADR 0100 decision 2, epic #398): prints every
+/// Layer 1 (`report_tagged_facts`) concept with no crosswalk entry
+/// (`fundamentals::extraction::ifrs_crosswalk`), ranked by distinct-company
+/// count with its observed `period_type`(s) — the input for the next
+/// crosswalk seed migration. Read-only: no writes, so (unlike the sweep
+/// harnesses above) it is safe to point directly at a real database, though a
+/// throwaway copy is still recommended.
+///
+/// **Inert in CI** — skips with a printed message unless `BRAWLER_REAL_DB` is
+/// set. Prints no floor/assertion beyond harness sanity: this is a diagnostic
+/// report, not a gate (the `esef_positional_ground_truth_scores` pattern).
+///
+/// Run it manually from `src-tauri/`:
+///
+/// ```text
+/// BRAWLER_REAL_DB=../private/realdata/brawler.sqlite3 \
+///   cargo nextest run -p brawler concept_harvest_report \
+///     --run-ignored all --no-capture
+/// ```
+#[test]
+#[ignore = "developer diagnostic; needs BRAWLER_REAL_DB"]
+fn concept_harvest_report() {
+    let Ok(db_path) = std::env::var("BRAWLER_REAL_DB") else {
+        eprintln!(
+            "SKIP concept_harvest_report: set BRAWLER_REAL_DB to a copy of the owner's database \
+             (see private/realdata/README.md)"
+        );
+        return;
+    };
+    if !std::path::Path::new(&db_path).is_file() {
+        eprintln!("SKIP concept_harvest_report: no database at {db_path}");
+        return;
+    }
+
+    // Read-only for real (sol review finding 5): `open_database` applies
+    // every pending migration on open, so this diagnostic would MUTATE the
+    // database it claims only to read. A schema too old for the query fails
+    // loudly at the query instead.
+    let connection = open_database_readonly(&db_path).expect("open real db read-only");
+    let state = AppState::new(connection);
+    // Harness sanity BEFORE reading the result: an empty Layer 1 store makes
+    // "no uncrosswalked concepts" indistinguishable from "nothing was ever
+    // captured", and the reassuring branch below would then report a curated
+    // vocabulary that was never exercised. A check that cannot fail is worse
+    // than no check, so a store with zero tagged facts is a hard failure.
+    let captured = state
+        .list_companies()
+        .expect("companies")
+        .iter()
+        .any(|company| {
+            !state
+                .report_tagged_facts()
+                .facts_for_company(&company.id)
+                .expect("layer 1 facts")
+                .is_empty()
+        });
+    assert!(
+        captured,
+        "concept_harvest_report: {db_path} holds no report_tagged_facts rows — \
+         re-extract before harvesting, or the report is vacuously clean"
+    );
+
+    let harvested = state
+        .report_tagged_facts()
+        .harvest_uncrosswalked_concepts()
+        .expect("harvest query");
+
+    if harvested.is_empty() {
+        println!(
+            "concept_harvest_report: every observed Layer 1 concept already has a crosswalk entry"
+        );
+        return;
+    }
+
+    println!(
+        "concept_harvest_report: {} uncrosswalked concept(s), ranked by distinct-company count",
+        harvested.len()
+    );
+    println!("{:>6}  {:<12}  concept", "issuers", "period_type");
+    for row in &harvested {
+        println!(
+            "{:>6}  {:<12}  {}",
+            row.company_count,
+            row.period_types.join("|"),
+            row.concept_local_name
+        );
+    }
+}
+
+/// Corpus-wide concept harvest (ADR 0100 decision 2, epic #398) — the input
+/// for a crosswalk seed migration that is honest about cross-issuer evidence.
+///
+/// `concept_harvest_report` above reads whatever Layer 1 already holds, which
+/// on a live database is only the reports the app has re-extracted so far.
+/// Curating from that is the selectivity trap the two-layer split exists to
+/// avoid: a concept seen at ONE issuer is not evidence of a shared vocabulary.
+/// This harness instead walks EVERY stored report document on disk, computes
+/// the Layer 1 generation the pipeline would produce, and ranks uncrosswalked
+/// concepts by how many distinct issuers tag them — the whole corpus, not the
+/// re-extracted slice. It never writes: the database is read for its document
+/// inventory only, the packages are read from `data_dir`.
+///
+/// **Inert in CI** — skips unless `BRAWLER_REAL_DB` is set.
+///
+/// ```text
+/// BRAWLER_REAL_DB=../private/realdata/brawler.sqlite3 \
+///   cargo test corpus_concept_harvest_report -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "developer diagnostic; needs BRAWLER_REAL_DB"]
+fn corpus_concept_harvest_report() {
+    let Ok(db_path) = std::env::var("BRAWLER_REAL_DB") else {
+        eprintln!(
+            "SKIP corpus_concept_harvest_report: set BRAWLER_REAL_DB to a copy of the owner's \
+             database (see private/realdata/README.md)"
+        );
+        return;
+    };
+    if !std::path::Path::new(&db_path).is_file() {
+        eprintln!("SKIP corpus_concept_harvest_report: no database at {db_path}");
+        return;
+    }
+
+    // Read-only for real (sol review finding 5), same as above.
+    let connection = open_database_readonly(&db_path).expect("open real db read-only");
+    // The packages live in the real Tauri data dir, not next to the database
+    // copy (same convention as the recall/precision harness above).
+    let state = match std::env::var("BRAWLER_REAL_DATA_DIR") {
+        Ok(dir) => AppState::with_data_dir(connection, PathBuf::from(dir)),
+        Err(_) => AppState::new(connection),
+    };
+    let data_dir = state.data_dir();
+
+    let crosswalked: std::collections::HashSet<&str> =
+        crate::fundamentals::extraction::ifrs_crosswalk::entries()
+            .iter()
+            .map(|entry| entry.concept)
+            .collect();
+
+    /// Full concept identity (sol round 2): three issuers each using their
+    /// own extension named `AdjustedRevenue` are three different concepts,
+    /// never one three-issuer concept.
+    type ConceptKey = (bool, String, String); // (is_standard, namespace, local name)
+    /// (distinct issuers, occurrences, period types).
+    type ConceptAgg = (
+        std::collections::BTreeSet<String>,
+        i64,
+        std::collections::BTreeSet<String>,
+    );
+    let mut seen: BTreeMap<ConceptKey, ConceptAgg> = BTreeMap::new();
+    let mut packages_read = 0usize;
+    let mut packages_without_instance = 0usize;
+
+    for company in state.list_companies().expect("companies") {
+        let documents = state
+            .list_report_documents_by_company(&company.id)
+            .expect("report documents");
+        for document in &documents {
+            let Some(local_path) = document.local_path.as_deref() else {
+                continue;
+            };
+            let Ok(bytes) = std::fs::read(data_dir.join(local_path)) else {
+                continue;
+            };
+            let route = crate::jobs::structured_extraction::route_document(&bytes);
+            let generation =
+                crate::jobs::structured_extraction::compute_layer1_generation(&bytes, route);
+            if !generation.has_instance {
+                if matches!(
+                    route,
+                    crate::jobs::structured_extraction::DocumentRoute::ZipPackage
+                ) {
+                    packages_without_instance += 1;
+                }
+                continue;
+            }
+            packages_read += 1;
+            for fact in &generation.facts {
+                // Dimensional occurrences are stored but never projected, so
+                // they are not naming candidates (decision 1).
+                if fact.is_dimensional {
+                    continue;
+                }
+                // Standard taxonomy vs issuer extension, decided by the
+                // SAME predicate production uses — only a standard concept
+                // may take a global canonical key (ADR 0100 decision 2).
+                let is_standard =
+                    crate::fundamentals::extraction::ifrs_crosswalk::is_standard_ifrs_namespace(
+                        &fact.concept_namespace_uri,
+                    );
+                let entry = seen
+                    .entry((
+                        is_standard,
+                        // Standard taxonomy-year namespaces are VERSIONS of
+                        // one vocabulary (sol round 4): normalize them to
+                        // one key so three issuers on three annual releases
+                        // count as three issuers of one concept.
+                        if is_standard {
+                            String::new()
+                        } else {
+                            fact.concept_namespace_uri.clone()
+                        },
+                        fact.concept_local_name.clone(),
+                    ))
+                    .or_insert_with(|| {
+                        (
+                            std::collections::BTreeSet::new(),
+                            0,
+                            std::collections::BTreeSet::new(),
+                        )
+                    });
+                entry.0.insert(company.ticker.clone());
+                entry.1 += 1;
+                entry.2.insert(fact.period_type.clone());
+            }
+        }
+    }
+
+    assert!(
+        packages_read > 0,
+        "corpus_concept_harvest_report: no report document under {} yielded an iXBRL instance — \
+         point BRAWLER_REAL_DB at a database whose report_documents are on this disk",
+        data_dir.display()
+    );
+
+    // Crosswalked = a STANDARD concept whose local name has an entry. An
+    // extension is uncurated by definition — its path to Fundamentals is
+    // owner promotion, never the global crosswalk.
+    let mut uncurated: Vec<_> = seen
+        .iter()
+        .filter(|((is_standard, _, local), _)| {
+            !(*is_standard && crosswalked.contains(local.as_str()))
+        })
+        .collect();
+    uncurated.sort_by(|a, b| {
+        b.1 .0
+            .len()
+            .cmp(&a.1 .0.len())
+            .then_with(|| b.1 .1.cmp(&a.1 .1))
+            .then_with(|| a.0.cmp(b.0))
+    });
+
+    println!(
+        "corpus_concept_harvest_report: {packages_read} instance-bearing document(s), \
+         {packages_without_instance} package(s) with no instance, {} distinct dimensionless \
+         concept(s), {} of them uncrosswalked",
+        seen.len(),
+        uncurated.len()
+    );
+    println!(
+        "{:>7}  {:>6}  {:<10}  {:<9}  concept",
+        "issuers", "occurs", "period", "standard"
+    );
+    for ((is_standard, _namespace, concept), (issuers, occurrences, period_types)) in uncurated {
+        println!(
+            "{:>7}  {:>6}  {:<10}  {:<9}  {concept}",
+            issuers.len(),
+            occurrences,
+            period_types.iter().cloned().collect::<Vec<_>>().join("|"),
+            if *is_standard { "ifrs" } else { "ext" },
         );
     }
 }

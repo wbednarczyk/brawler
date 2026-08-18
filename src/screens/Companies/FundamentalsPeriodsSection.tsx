@@ -148,6 +148,12 @@ export function FundamentalsPeriodsSection({
       );
     }
     const parsed = Number(delta);
+    // Deliberate, mockup-approved simplification (epic #398): coloring is the
+    // raw sign of the delta, not a metric-aware "is this good for the
+    // business" judgment — a cost line stored as an increasingly negative
+    // fact naturally comes out red on a growing cost, which reads correctly
+    // by construction, but a metric with no such convention would not.
+    // Reversible: swap in a per-metric "good direction" once one exists.
     const direction =
       parsed > 0 ? "fundamentals-periods-up" : parsed < 0 ? "fundamentals-periods-dn" : "";
     return <span className={direction}>{formatDelta(locale, delta, valueKind)}</span>;

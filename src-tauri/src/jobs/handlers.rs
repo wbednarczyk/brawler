@@ -45,6 +45,13 @@ pub use crate::jobs::morning_briefing::MORNING_BRIEFING_KIND;
 /// deterministic CPU parse chained from ingestion — assigned to the **autopilot**
 /// lane (the history-sweep family), never a provider call. Defined with the job.
 pub use crate::jobs::ownership_extraction::OWNERSHIP_EXTRACTION_KIND;
+/// Job kind: a version-aware re-extraction batch (epic #398 Item B). The
+/// payload carries `{batchId}`; the handler re-arms the company's successful
+/// ESEF-tier runs whose stored pipeline version is stale, through the same
+/// `rearm_run` + stage-queue primitives the history sweep's own re-arm uses —
+/// a SEPARATE selector and durable record, so the sweep's "never re-arm an
+/// emitted run" rule stays untouched. Defined with the job.
+pub use crate::jobs::pipeline_reextraction::PIPELINE_REEXTRACTION_KIND;
 
 /// A morning briefing (ADR 0068 decision 4). Runs the composer + optional
 /// narrative and returns its Result: a storage-level failure returns `Err` (the
@@ -149,6 +156,23 @@ impl JobHandler for ManagementExtractionHandler {
 
     fn failure_subject(&self, payload: &str, state: &AppState) -> Option<String> {
         payload_report_document_title(payload, state)
+    }
+}
+
+/// A version-aware re-extraction batch (epic #398 Item B). Runs the batch
+/// directly and returns its Result: a storage-level abort returns `Err` (the
+/// batch row already recorded the failure, so no user-visible state is lost),
+/// while a normal completion (including zero candidates — a settled company)
+/// returns `Ok`.
+struct PipelineReextractionHandler;
+
+impl JobHandler for PipelineReextractionHandler {
+    fn kind(&self) -> &'static str {
+        PIPELINE_REEXTRACTION_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::pipeline_reextraction::run_pipeline_reextraction_job(state, payload)
     }
 }
 
@@ -337,6 +361,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
     let mut worker = JobWorker::new(state);
     worker.register(Arc::new(MorningBriefingHandler));
     worker.register(Arc::new(HistorySweepHandler));
+    worker.register(Arc::new(PipelineReextractionHandler));
     worker.register(Arc::new(OwnershipExtractionHandler));
     worker.register(Arc::new(ManagementExtractionHandler));
     worker.register(Arc::new(AutopilotStageHandler));
@@ -401,6 +426,7 @@ pub fn pool_layout(
             kinds: vec![
                 AUTOPILOT_STAGE_KIND,
                 HISTORY_SWEEP_KIND,
+                PIPELINE_REEXTRACTION_KIND,
                 OWNERSHIP_EXTRACTION_KIND,
                 MANAGEMENT_EXTRACTION_KIND,
                 MORNING_BRIEFING_KIND,

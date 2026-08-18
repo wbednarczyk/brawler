@@ -3,6 +3,7 @@ import type {
   FinancialFact,
   FinancialPeriod,
   KpiDefinition,
+  KpiRelevance,
   ListFinancialFactsInput,
   ListFinancialPeriodsInput,
   ListKpiDefinitionsInput,
@@ -22,6 +23,13 @@ export function listKpiDefinitions(input: ListKpiDefinitionsInput) {
 
 export function createKpiDefinition(input: NewKpiDefinition) {
   return callCommand<KpiDefinition>("create_kpi_definition", { input });
+}
+
+// The company's KPI-relevance selection (ADR 0092): which definitions matter,
+// and at what rank (`primary`/`secondary`). Epic #398's "Kluczowe" statement
+// tab reads the active/primary rows — see `FundamentalsPanel.tsx`.
+export function listKpiRelevance(companyId: string) {
+  return callCommand<KpiRelevance[]>("list_kpi_relevance", { companyId });
 }
 
 // ============================================================================

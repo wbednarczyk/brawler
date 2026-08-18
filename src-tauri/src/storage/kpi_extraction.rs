@@ -233,9 +233,12 @@ pub struct StructuredFactInput<'a> {
     /// epic #285 T7). Every writer before the MCP agent batch tool passes
     /// `None` — `slot_dims` already defaults it to `total`, unchanged behavior.
     pub attribution: Option<&'a str>,
-    /// Slot dimension `flow` (default) | `stock`. Every writer before the MCP
-    /// agent batch tool passes `None` — `slot_dims` already defaults it to
-    /// `flow`, unchanged behavior.
+    /// Slot dimension `flow` | `point_in_time` | `trailing` | `cumulative` |
+    /// `duration`. Every writer passes `None` — `slot_dims` derives the
+    /// default from the resolved definition's `period_nature` (`instant` ->
+    /// `point_in_time`, else `flow`; ADR 0100 decision 6, epic #398). An
+    /// explicit value contradicting that axis is a typed
+    /// `MeasureWindowPeriodNatureMismatch` refusal.
     pub measure_window: Option<&'a str>,
     /// `final` (default, `None` normalizes to it) | `preliminary` | `estimated`
     /// (ADR 0093 decision 2), normalized at the storage write boundary
@@ -984,12 +987,14 @@ fn write_fact_provenance_fields(
 
 /// A resolved KPI definition's identity + shape — everything a caller needs
 /// beyond the bare id (#361's manifest builder needs `value_kind` too, for
-/// `unit.currency_*`/`period.window_kind_mismatch`).
+/// `unit.currency_*`, and `period_nature` for `period.window_kind_mismatch`,
+/// ADR 0100 decision 6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedKpiDefinition {
     pub definition_id: String,
     pub metric_key: String,
     pub value_kind: String,
+    pub period_nature: String,
 }
 
 /// One sector-scoped definition eligibility rule, shared in spirit with the
@@ -1032,12 +1037,41 @@ fn resolve_kpi_definition(
     company_id: &str,
     metric_key: &str,
 ) -> StorageResult<Option<ResolvedKpiDefinition>> {
+    // Curated alias (ADR 0100 decision 12): a dead catalog key means the
+    // live key it was fragmented from. The redirect is guarded by the
+    // one-sidedness rule AT RUNTIME, not just in the curation table (sol
+    // review finding 9): it applies only while the source key holds ZERO
+    // facts FOR THIS COMPANY. Per-company, not database-global (sol round
+    // 2): one company's legacy `inventory` series must never flip write
+    // routing for every other company — each company's series stays
+    // internally consistent, which is the whole point. On a company whose
+    // source-key series already exists, the redirect never fires —
+    // redirecting there would split one series across two keys, the exact
+    // repaint ADR 0077 dec. 8 forbids. Never chained, never in reverse.
+    let metric_key = match crate::fundamentals::kpi_aliases::resolve(metric_key.trim()) {
+        Some(target) => {
+            let source_has_facts: bool = connection.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM financial_facts f
+                     JOIN kpi_definitions d ON d.id = f.definition_id
+                     WHERE d.metric_key = ?1 AND f.company_id = ?2)",
+                params![metric_key.trim(), company_id],
+                |row| row.get(0),
+            )?;
+            if source_has_facts {
+                metric_key.trim()
+            } else {
+                target
+            }
+        }
+        None => metric_key.trim(),
+    };
     let (sector, _source) = super::companies::get_company_sector(connection, company_id)?;
     let statement_type = super::companies::get_statement_type(connection, company_id)?;
-    let existing: Option<(String, String, String)> = connection
+    let existing: Option<(String, String, String, String)> = connection
         .query_row(
             "
-            SELECT id, metric_key, value_kind FROM kpi_definitions
+            SELECT id, metric_key, value_kind, period_nature FROM kpi_definitions
             WHERE metric_key = ?1
               AND (
                     (scope = 'company' AND company_id = ?2)
@@ -1057,17 +1091,20 @@ fn resolve_kpi_definition(
               id
             LIMIT 1
             ",
-            params![metric_key.trim(), company_id, sector, statement_type],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            params![metric_key, company_id, sector, statement_type],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    Ok(existing.map(
-        |(definition_id, metric_key, value_kind)| ResolvedKpiDefinition {
-            definition_id,
-            metric_key,
-            value_kind,
-        },
-    ))
+    Ok(
+        existing.map(|(definition_id, metric_key, value_kind, period_nature)| {
+            ResolvedKpiDefinition {
+                definition_id,
+                metric_key,
+                value_kind,
+                period_nature,
+            }
+        }),
+    )
 }
 
 /// [`resolve_kpi_definition`], bare id only — the shape
@@ -3085,5 +3122,152 @@ mod tests {
         let second =
             resolve_definition_by_metric_key(&connection, &company_id, "revenue").expect("resolve");
         assert_eq!(first, second);
+    }
+
+    // -------------------------------------------------------------------
+    // ADR 0100 decision 6 (2nd paragraph), epic #398: the slot-write
+    // `measure_window` default derives from the resolved definition's
+    // `period_nature` instead of hard-defaulting to 'flow'. Exercised
+    // through the REAL structured/aggregator writer paths, not the
+    // `slot_dims` helper directly.
+    // -------------------------------------------------------------------
+
+    fn stored_measure_window(connection: &Connection, fact_id: &str) -> String {
+        connection
+            .query_row(
+                "SELECT measure_window FROM financial_facts WHERE id = ?1",
+                [fact_id],
+                |row| row.get(0),
+            )
+            .expect("fact should exist")
+    }
+
+    fn balance_input<'a>(
+        company_id: &'a str,
+        document_id: &'a str,
+        value: &'a str,
+        measure_window: Option<&'a str>,
+    ) -> StructuredFactInput<'a> {
+        StructuredFactInput {
+            company_id,
+            fiscal_year: 2024,
+            period_type: "FY",
+            period_end: Some("2024-12-31"),
+            report_document_id: document_id,
+            // `total_assets` is `instant`-natured (migration 0141 backfill).
+            metric_key: "total_assets",
+            value_numeric: value,
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("ESEF | Assets"),
+            attribution: None,
+            measure_window,
+            data_quality: None,
+        }
+    }
+
+    #[test]
+    fn none_measure_window_defaults_to_point_in_time_for_an_instant_metric() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let commit = record_structured_fact(
+            &connection,
+            balance_input(&company_id, &document_id, "1000", None),
+        )
+        .expect("structured write should succeed");
+        let fact_id = created_id(commit);
+        assert_eq!(
+            stored_measure_window(&connection, &fact_id),
+            "point_in_time"
+        );
+    }
+
+    #[test]
+    fn none_measure_window_still_defaults_to_flow_for_a_duration_metric() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        // `revenue` is `duration`-natured (the catalog default).
+        let commit =
+            record_structured_fact(&connection, issuer_input(&company_id, &document_id, "1000"))
+                .expect("structured write should succeed");
+        let fact_id = created_id(commit);
+        assert_eq!(stored_measure_window(&connection, &fact_id), "flow");
+    }
+
+    #[test]
+    fn an_explicit_measure_window_contradicting_period_nature_is_a_typed_refusal() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        // `flow` on the `instant`-natured `total_assets` is a genuine class
+        // contradiction.
+        let error = record_structured_fact(
+            &connection,
+            balance_input(&company_id, &document_id, "1000", Some("flow")),
+        )
+        .expect_err("a flow window on an instant metric must be refused");
+        assert!(
+            matches!(
+                error,
+                StorageError::MeasureWindowPeriodNatureMismatch {
+                    ref measure_window,
+                    ref period_nature,
+                    ..
+                } if measure_window == "flow" && period_nature == "instant"
+            ),
+            "expected a typed measure_window/period_nature mismatch, got {error:?}"
+        );
+
+        // The converse direction: `point_in_time` on the `duration`-natured
+        // `revenue` is refused too.
+        let mut duration_bad = issuer_input(&company_id, &document_id, "1000");
+        duration_bad.measure_window = Some("point_in_time");
+        let error = record_structured_fact(&connection, duration_bad)
+            .expect_err("point_in_time on a duration metric must be refused");
+        assert!(
+            matches!(
+                error,
+                StorageError::MeasureWindowPeriodNatureMismatch {
+                    ref measure_window,
+                    ref period_nature,
+                    ..
+                } if measure_window == "point_in_time" && period_nature == "duration"
+            ),
+            "expected a typed measure_window/period_nature mismatch, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn cumulative_and_trailing_over_a_duration_metric_are_accepted() {
+        let connection = open_in_memory_database().expect("db");
+        let (company_id, document_id) = seed_company_and_document(&connection);
+
+        let mut cumulative = issuer_input(&company_id, &document_id, "1000");
+        cumulative.measure_window = Some("cumulative");
+        let commit =
+            record_structured_fact(&connection, cumulative).expect("cumulative must be accepted");
+        assert_eq!(
+            stored_measure_window(&connection, &created_id(commit)),
+            "cumulative"
+        );
+
+        // A distinct period so the second write lands in a fresh slot rather
+        // than re-observing the first.
+        let mut trailing = issuer_input(&company_id, &document_id, "1000");
+        trailing.fiscal_year = 2023;
+        trailing.period_end = Some("2023-12-31");
+        trailing.measure_window = Some("trailing");
+        let commit =
+            record_structured_fact(&connection, trailing).expect("trailing must be accepted");
+        assert_eq!(
+            stored_measure_window(&connection, &created_id(commit)),
+            "trailing"
+        );
     }
 }

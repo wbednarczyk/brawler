@@ -55,7 +55,7 @@ Acceptance criteria:
 - Theme defaults to dark.
 - User can add at least one company without understanding internal IDs.
 - Empty states are useful but not marketing-like.
-- Tracking a company offers a **Backfill history** action that captures
+- Tracking a company offers a **Fetch older reports** action that captures
   ~3 years of official-source report documents without duplicating data on
   repeated runs ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
 

@@ -1,6 +1,5 @@
 ---
 source: src/mcp/reads.rs
-assertion_line: 921
 expression: redact(&payload)
 ---
 {

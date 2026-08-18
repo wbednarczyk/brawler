@@ -37,6 +37,7 @@ function definition(
     displayFormat: null,
     origin: "seed",
     statementGroup: overrides.statementGroup ?? "other",
+    periodNature: "duration",
     createdAt: "",
     updatedAt: "",
   };
@@ -187,7 +188,7 @@ describe("buildFactMatrix", () => {
 // operacyjne spółki" group ahead of `statementGroup`, and any group with no
 // rows omitted entirely.
 function rowFor(def: KpiDefinition): FactMatrixRow {
-  return { definition: def, cells: {} };
+  return { definition: def, cells: {}, isSynthetic: false };
 }
 
 describe("groupFactMatrixRows", () => {

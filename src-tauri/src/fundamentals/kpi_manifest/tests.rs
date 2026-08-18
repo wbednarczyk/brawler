@@ -32,10 +32,20 @@ fn base_run() -> ManifestRunInput {
 /// fixture's value (100s-10,000s range) that the plausibility gate stays
 /// `Plausible` unless a test deliberately overrides `history`.
 fn resolved_def(metric_key: &str, value_kind: &str) -> ResolvedDefinitionInput {
+    // Mirrors migration `0141`'s backfill: a key in `STOCK_METRIC_KEYS` is
+    // `instant`, everything else `duration` — so `window_kind_mismatch_*`
+    // tests below exercise the real classification, not a hand-picked one.
+    let period_nature = if crate::fundamentals::metrics::STOCK_METRIC_KEYS.contains(&metric_key) {
+        "instant"
+    } else {
+        "duration"
+    }
+    .to_owned();
     ResolvedDefinitionInput {
         definition_id: format!("kpidef_{metric_key}"),
         metric_key: metric_key.to_owned(),
         value_kind: value_kind.to_owned(),
+        period_nature,
         history: SlotHistoryInput {
             values: vec![amt("1000"), amt("1500")],
         },

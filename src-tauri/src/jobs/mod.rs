@@ -12,6 +12,7 @@ pub mod kpi_ingest_validation;
 pub mod management_holdings_extraction;
 pub mod morning_briefing;
 pub mod ownership_extraction;
+pub mod pipeline_reextraction;
 pub mod queue;
 pub mod quote_backfill;
 pub mod quote_daily_pull;

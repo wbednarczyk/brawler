@@ -1,5 +1,5 @@
 import { test, expect, openApp } from "../helpers/harness";
-import { shootPanel } from "./helpers";
+import { shootPanel, shootRegion } from "./helpers";
 import type { Locator, Page } from "@playwright/test";
 
 // Visual baseline — Quality + Report-documents panels (ADR 0076 D7 / U11),
@@ -63,5 +63,35 @@ test.describe("visual — quality + report documents", () => {
     const pane = await openCoverage(page);
     await expect(pane.locator("table.coverage-table")).toBeVisible();
     await shootPanel(page, pane, "coverage");
+  });
+
+  // The pane shot above is clipped at the tier height, so the actions footer
+  // sat outside every baseline: epic #398 added a third action there and not
+  // one baseline pixel moved. Shot as its own region so the actions — the most
+  // clicked part of the panel — actually have visual coverage.
+  test("Coverage actions footer", async ({ page }) => {
+    await openApp(page);
+    const pane = await openCoverage(page);
+    const actions = pane.locator(".coverage-actions");
+    await expect(actions).toBeVisible();
+    await shootRegion(page, pane, actions, "coverage-actions");
+  });
+
+  // Same blind spot, second instance (ADR 0045 guardrail harvest): the
+  // unnamed-positions list is below the fold AND behind a disclosure, so it
+  // was in no baseline either — and it shipped with the position name clipped
+  // to one character at this width. A region shot catches a layout
+  // regression LOCALLY — honest scope: CI ignores screenshot comparisons
+  // (playwright.config.ts `ignoreSnapshots` on CI), so this reddens on the
+  // developer's machine and in `make ui-smoke`, not in CI (sol review
+  // finding 11).
+  test("Unnamed positions list", async ({ page }) => {
+    await openApp(page);
+    const pane = await openCoverage(page);
+    const capture = pane.locator(".coverage-raw-capture");
+    await capture.getByRole("button", { name: /Show the unnamed positions/ }).click();
+    const list = capture.locator(".coverage-uncrosswalked-concepts");
+    await expect(list).toBeVisible();
+    await shootRegion(page, pane, list, "coverage-unnamed-positions");
   });
 });

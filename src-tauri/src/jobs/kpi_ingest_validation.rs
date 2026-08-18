@@ -213,6 +213,7 @@ pub fn validate_kpi_ingest_run(
                     definition_id: resolved.definition_id,
                     metric_key: resolved.metric_key,
                     value_kind: resolved.value_kind,
+                    period_nature: resolved.period_nature,
                     history: SlotHistoryInput { values: history },
                 }
             });

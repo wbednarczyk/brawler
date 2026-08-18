@@ -807,6 +807,27 @@ adapter's ingest test. Adding an ingest path keeps it on the spine
 transform in `storage::feed_matching` (the normalization SSOT) ships with the
 ADR 0049 invariant treatment.
 
+### KPI ingest fault-injection coverage (#366)
+
+The transactional ingestion core (#352) is exercised against failure at every
+seam between staging, validation and commit — restart, retry, concurrency. The
+"suite" is this named, auditable map, not a separate harness; a new failure mode
+adds a row. Live-agent fidelity is the XTB re-ingest dogfood (ADR 0088 dec. 5),
+not a live fault-injection controller — the #353 two-holder attempt proved
+WSL↔Windows-fragile and the typed refusals are unit-proven ([dogfooding.md](dogfooding.md)).
+
+| Failure mode | Test |
+|---|---|
+| Two stagers race one run → one winner, loser typed-refused | `stage_observations_two_threads_exactly_one_winner` (`storage/kpi_ingest_staging.rs`) |
+| Restage while the old generation runs | `a_restage_while_the_old_generation_runs_arms_a_new_row` (`jobs/kpi_ingest_queue/tests.rs`) |
+| Commit retry budget + exhaustion terminalizes | `the_chained_commit_row_owns_a_fresh_retry_budget`, `commit_exhaustion_terminalizes_the_run_through_the_hook` |
+| Restart reconciliation (armed/inconsistent/dead-lettered/superseded) | `reconcile_*` family + `a_malformed_payload_terminalizes_the_id_named_run_live_and_after_restart` |
+| Crash mid-`committing` → reclaim by receipt presence (receipt→finalize, no-receipt→retryable) | `reclaim_finalizes_committing_runs_with_a_matching_receipt_and_is_idempotent` + the `reclaim_*` family (`storage/kpi_ingest_runs.rs`), prod path `reclaim_ingest_runs_on_startup` from `lib.rs` startup |
+| Commit is atomic — any failure rolls back the period row | `commit_rolls_back_earlier_facts_when_a_later_definition_vanishes` (`storage/kpi_ingest_commit/tests.rs`) |
+| Concurrent commit of the SAME run → both get the winner receipt | `concurrent_commits_of_the_same_run_both_return_the_winner_receipt` |
+| A commit that loses the `BEGIN IMMEDIATE` writer lock → typed `CommitContention`, run untouched, retries clean (a held lock stands in for the concurrent writer) | `a_commit_that_loses_the_writer_lock_is_typed_contention_then_retries_clean` (#366) |
+| Lease takeover after expiry / lease lost mid-batch | `a_takeover_after_expiry_succeeds_and_the_ousted_holder_is_told` (`mcp/kpi_ingest.rs`), `stage_observations_refuses_when_the_lease_expires_mid_batch` (`storage/kpi_ingest_staging.rs`) |
+
 ### Mutation testing scope
 
 `make audit-mutants` (`cargo-mutants`) is the strong signal that the property and

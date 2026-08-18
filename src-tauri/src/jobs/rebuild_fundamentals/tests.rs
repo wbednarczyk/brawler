@@ -21,6 +21,7 @@ const BILANS: &str = include_str!("../../../samples/biznesradar_bilans_cdr.html"
 
 /// A balanced iXBRL statement — the ESEF-route document the rebuild re-extracts.
 const ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
   xmlns:xbrli="http://www.xbrl.org/2003/instance"
   xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
   <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
@@ -111,14 +112,28 @@ fn seed_state() -> (AppState, String) {
             attribution: None,
         })
         .expect("document");
-    std::fs::write(dir.join("report.xhtml"), ESEF).expect("write esef");
+    // A package, not a bare instance (ADR 0100 decision 3, epic #398): a bare
+    // iXBRL instance has no presentation linkbase to read, so its facts get
+    // no role rows and never survive Layer 2 projection.
+    let esef_package = crate::test_support::esef_package_zip(
+        ESEF,
+        &[
+            ("Assets", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+            (
+                "Liabilities",
+                crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+            ),
+            ("Equity", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+        ],
+    );
+    std::fs::write(dir.join("report.xhtml"), &esef_package).expect("write esef");
     state
         .mark_report_document_fetched(
             &document.id,
             Some("report.xhtml"),
-            Some("application/xhtml+xml"),
+            Some("application/octet-stream"),
             None,
-            Some(ESEF.len() as i64),
+            Some(esef_package.len() as i64),
         )
         .expect("mark fetched");
 

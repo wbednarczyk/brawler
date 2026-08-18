@@ -330,3 +330,67 @@
     justify-content: center;
   }
 }
+
+/* ── Raw tagged-fact capture (ADR 0100, epic #398) ────────────────────────── */
+
+.coverage-raw-capture {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.coverage-uncrosswalked-concepts,
+.coverage-uncrosswalked-failed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Only the failure block start-aligns (its Retry button must not stretch). The
+   list itself must fill the column: `justify-items: start` sized the <ul> to
+   max-content, so the widest concept name pushed the action button past the
+   pane's right edge instead of ellipsizing. */
+.coverage-uncrosswalked-failed {
+  justify-items: start;
+}
+
+/* Row body: TWO LINES — the position name and its action on the identity line,
+   the "where it was tagged" meta wrapping underneath. Same shape, same reason
+   as `.coverage-flagged-row` above: inside one flex line the name competed with
+   a prose meta AND a two-word button, and on the real quarter-ultrawide pane it
+   lost — the name rendered as a single character plus an ellipsis. The name is
+   an identity field; it does not share a line with prose. */
+.coverage-uncrosswalked-list .ui-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  width: 100%;
+}
+
+.coverage-uncrosswalked-list .ui-list-row-main {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+/* The action (or the "in Fundamentals" chip once promoted) keeps its intrinsic
+   width at the row's right edge, so it lands at the same x on every row. */
+.coverage-uncrosswalked-list .ui-list-row > :last-child {
+  grid-row: 1;
+  grid-column: 2;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.coverage-uncrosswalked-list .ui-list-row-meta {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  white-space: normal;
+  overflow: visible;
+  font-size: var(--font-xs);
+}

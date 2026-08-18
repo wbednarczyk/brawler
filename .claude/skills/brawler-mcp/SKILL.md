@@ -288,7 +288,7 @@ keeps it exact — do not hand-edit):
 
 <!-- BEGIN GENERATED MCP CATALOG — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->
 
-**Read tools** — always available once the server is on (48):
+**Read tools** — always available once the server is on (50):
 
 | Tool | What it does |
 | --- | --- |
@@ -336,12 +336,14 @@ keeps it exact — do not hand-edit):
 | `list_alert_rules` | The alert-rule catalog: every configured rule (trigger, scope, enabled state). Fired events are read via list_attention_events. |
 | `list_flagged_extraction_outcomes` | One company's extraction-coverage gaps: the fiscal periods where the deterministic pipeline emitted nothing (a flagged/failed outcome). Complements list_flagged_fact_provenance (flagged facts that DID emit) — the coverage-gap review surface. |
 | `list_unclassified_filings` | Official filings (ESPI/EBI) the deterministic rule classifier could not place — the explicit unclassified bucket, never guessed at. Optionally scoped to one company. Classify one with classify_filing. |
+| `get_report_tagged_fact_coverage` | How much of one company's tagged filings reached Fundamentals, and where the rest went: comparatives, dimensional breakdowns, note-level figures, positions awaiting a name, and conflicts. Every captured number is either projected or has a stated reason it is not. |
+| `get_pipeline_reextraction_progress` | Progress of one company's latest re-extraction batch (re-armed runs, how many have terminated, how many failed). A null batch means the company never ran one. |
 | `list_pending_kpi_ingests` | List claimable KPI ingest runs (discovered/source_captured/extracting/validation_failed), newest first, keyset-paginated (limit ≤ 50, default 20). |
 | `get_kpi_ingest_context` | Everything one report's extraction needs, within hard budgets (≤256 KiB): run status, document metadata, the derived-period hint, the expected+minted KPI catalog, validator-equivalent plausibility evidence per slot, profile doctrine and repair-manifest access. Sections (catalog/plausibility/manifest) paginate via cursors; the manifest is served only via section calls. Pure read. |
 | `get_kpi_ingest_document` | Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed source blob, verified against the frozen sourceContentHash — the portable document delivery channel. Available once the source is captured. Pure read. |
 | `get_kpi_ingest_status` | Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (63):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (64):
 
 | Tool | What it does |
 | --- | --- |
@@ -403,6 +405,7 @@ keeps it exact — do not hand-edit):
 | `backfill_company_history` | Run an on-track history backfill for one company (`companyId`); progress via get_backfill_progress. |
 | `run_structured_extraction` | Run the deterministic structured-first extraction pipeline over one company report+period (`mode`: autopilot \| assist). |
 | `rerun_extraction_outcome` | Re-run the deterministic pipeline for a recorded extraction outcome slot (`outcomeId`). |
+| `run_pipeline_reextraction` | Re-arm one company's landed ESEF runs whose stored pipeline version is stale, so the current extractor reads their filings again. Queues a durable batch; poll `get_pipeline_reextraction_progress`. |
 | `start_kpi_ingest` | Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId (+ optional scope/dataQuality/period) creates the run, claims the lease, pins the source bytes, and enters extraction once context is complete. Resume: runId re-claims idempotently (the explicit keepalive) and attaches missing context set-once. Provenance is the run pipeline itself; no citation carrier here. |
 | `stage_kpi_observations` | Stage the COMPLETE revision snapshot of extracted observations (1..100, with citations) plus the REQUIRED missingReasons declaration ({} = explicitly none), written in the same transaction. A repair resends every retained observation. Requires the caller's live lease. Provenance is the run pipeline itself. |
 | `validate_kpi_ingest` | Validate one staged revision synchronously (generation-pinned). Returns the FULL manifest — a failed manifest is the typed repair report; a raced loser gets outcome=superseded with the current run tuple. |

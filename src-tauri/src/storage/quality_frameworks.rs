@@ -1203,7 +1203,7 @@ pub(super) fn load_metrics_context(
 ) -> StorageResult<MetricsContext> {
     // Definitions (scope precedence: company first, then global buckets).
     let mut def_statement = connection.prepare(
-        "SELECT metric_key, computation, formula, value_kind, unit, scope
+        "SELECT metric_key, computation, formula, value_kind, unit, scope, period_nature
          FROM kpi_definitions
          WHERE scope IN ('canonical', 'user', 'sector')
             OR (scope = 'company' AND company_id = ?1)
@@ -1217,11 +1217,12 @@ pub(super) fn load_metrics_context(
             row.get::<_, Option<String>>(2)?,
             row.get::<_, String>(3)?,
             row.get::<_, Option<String>>(4)?,
+            row.get::<_, String>(6)?,
         ))
     })?;
     let mut definitions: HashMap<String, MetricDef> = HashMap::new();
     for row in def_rows {
-        let (metric_key, computation, formula, value_kind, unit) = row?;
+        let (metric_key, computation, formula, value_kind, unit, period_nature) = row?;
         definitions.entry(metric_key).or_insert_with(|| {
             let computation = if computation == "derived" {
                 Computation::Derived
@@ -1236,6 +1237,7 @@ pub(super) fn load_metrics_context(
                 formula,
                 value_kind,
                 unit,
+                period_nature,
             }
         });
     }

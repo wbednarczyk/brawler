@@ -708,12 +708,74 @@ const MIGRATIONS: &[Migration] = &[
         name: "derived_period_content_hash",
         sql: include_str!("../../migrations/0140_derived_period_content_hash.sql"),
     },
+    Migration {
+        version: 141,
+        name: "kpi_definition_period_nature",
+        sql: include_str!("../../migrations/0141_kpi_definition_period_nature.sql"),
+    },
+    Migration {
+        version: 142,
+        name: "report_tagged_facts",
+        sql: include_str!("../../migrations/0142_report_tagged_facts.sql"),
+    },
+    Migration {
+        version: 143,
+        name: "ifrs_crosswalk_kpi_definitions",
+        sql: include_str!("../../migrations/0143_ifrs_crosswalk_kpi_definitions.sql"),
+    },
+    Migration {
+        version: 144,
+        name: "repair_instant_measure_window",
+        sql: include_str!("../../migrations/0144_repair_instant_measure_window.sql"),
+    },
+    Migration {
+        version: 145,
+        name: "report_tagged_fact_extractions_linkbase_fallback",
+        sql: include_str!(
+            "../../migrations/0145_report_tagged_fact_extractions_linkbase_fallback.sql"
+        ),
+    },
+    Migration {
+        version: 146,
+        name: "pipeline_reextraction_batches",
+        sql: include_str!("../../migrations/0146_pipeline_reextraction_batches.sql"),
+    },
+    Migration {
+        version: 147,
+        name: "repair_quick_ratio_dead_input",
+        sql: include_str!("../../migrations/0147_repair_quick_ratio_dead_input.sql"),
+    },
+    Migration {
+        version: 148,
+        name: "ifrs_crosswalk_corpus_harvest",
+        sql: include_str!("../../migrations/0148_ifrs_crosswalk_corpus_harvest.sql"),
+    },
+    Migration {
+        version: 149,
+        name: "repair_crosswalk_seed_semantics",
+        sql: include_str!("../../migrations/0149_repair_crosswalk_seed_semantics.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
     let mut connection = Connection::open(path)?;
     apply_migrations(&mut connection)?;
     Ok(connection)
+}
+
+/// Opens WITHOUT applying migrations, enforced by SQLite's own read-only
+/// flag — for read-only diagnostics pointed at a real database (sol review
+/// finding 5: `open_database` migrates on open, so a "read-only" harvest
+/// against the owner's copy silently rewrote it through 0141+). A schema too
+/// old for the caller's query fails loudly at the query, never by mutating
+/// the file. `no_mutex` matches the pool's threading assumption elsewhere;
+/// diagnostics are single-threaded anyway.
+pub fn open_database_readonly(path: impl AsRef<Path>) -> StorageResult<Connection> {
+    use rusqlite::OpenFlags;
+    Ok(Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?)
 }
 
 pub fn open_in_memory_database() -> StorageResult<Connection> {

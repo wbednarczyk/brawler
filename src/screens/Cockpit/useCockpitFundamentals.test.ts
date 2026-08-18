@@ -6,17 +6,20 @@ import {
   listFinancialFacts,
   listFinancialPeriods,
   listKpiDefinitions,
+  listKpiRelevance,
 } from "../../api/financials";
 
 vi.mock("../../api/financials", () => ({
   listFinancialFacts: vi.fn(),
   listFinancialPeriods: vi.fn(),
   listKpiDefinitions: vi.fn(),
+  listKpiRelevance: vi.fn(),
 }));
 
 const listFinancialFactsMock = vi.mocked(listFinancialFacts);
 const listFinancialPeriodsMock = vi.mocked(listFinancialPeriods);
 const listKpiDefinitionsMock = vi.mocked(listKpiDefinitions);
+const listKpiRelevanceMock = vi.mocked(listKpiRelevance);
 
 describe("useCockpitFundamentals", () => {
   beforeEach(() => {
@@ -24,6 +27,7 @@ describe("useCockpitFundamentals", () => {
     listFinancialFactsMock.mockResolvedValue([]);
     listFinancialPeriodsMock.mockResolvedValue([]);
     listKpiDefinitionsMock.mockResolvedValue([]);
+    listKpiRelevanceMock.mockResolvedValue([]);
   });
 
   // Cross-panel staleness fix: a sibling report-documents extraction bumps the

@@ -1,6 +1,6 @@
 # ADR 0086: Aggregator-primary fundamentals, PDF-fact retirement, review-free facts
 
-Status: Accepted (2026-07-21, owner decisions at Track C planning); decisions 2 and 7 superseded on completion by [ADR 0098](0098-mcp-native-kpi-acquisition-lifecycle.md) (BiznesRadar: primary → witness/complement per slot; agent: additive → agent-first)
+Status: Accepted (2026-07-21, owner decisions at Track C planning); decisions 2 and 7 superseded on completion by [ADR 0098](0098-mcp-native-kpi-acquisition-lifecycle.md) (BiznesRadar: primary → witness/complement per slot; agent: additive → agent-first); **amended for tagged filings by [ADR 0100](0100-two-layer-tagged-fact-capture-and-ifrs-vocabulary.md)** (epic #398): where an ESEF/iXBRL package exists, full capture reads ~400 tagged facts per report against the aggregator's ~20–30, so the issuer package is the **breadth source** for the periods it covers and the aggregator corroborates. The precedence ladder is unchanged — `esef` already outranks `html_aggregator`; only the stated posture moves.
 
 Deciders: maintainer. Area: fundamentals, sources, architecture.
 

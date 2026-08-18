@@ -8,6 +8,14 @@ import type { CoveragePeriodRow, FundamentalsCoverage } from "../../api/fundamen
 import { backfillCompanyHistory, getBackfillProgress } from "../../api/sources";
 import { getHistorySweepProgress, runHistorySweep } from "../../api/historySweep";
 import type { HistorySweep, HistorySweepProgress } from "../../api/historySweep";
+import {
+  getPipelineReextractionProgress,
+  runPipelineReextraction,
+} from "../../api/pipelineReextraction";
+import type {
+  PipelineReextractionBatch,
+  PipelineReextractionProgress,
+} from "../../api/pipelineReextraction";
 import type { BackfillProgress } from "../../api/types";
 import { getCompanyAutopilot } from "../../api/autopilot";
 import {
@@ -28,6 +36,10 @@ vi.mock("../../api/historySweep", () => ({
   getHistorySweepProgress: vi.fn(),
   runHistorySweep: vi.fn(),
 }));
+vi.mock("../../api/pipelineReextraction", () => ({
+  getPipelineReextractionProgress: vi.fn(),
+  runPipelineReextraction: vi.fn(),
+}));
 vi.mock("../../api/autopilot", () => ({
   getCompanyAutopilot: vi.fn(),
 }));
@@ -44,6 +56,8 @@ const backfillCompanyHistoryMock = vi.mocked(backfillCompanyHistory);
 const getBackfillProgressMock = vi.mocked(getBackfillProgress);
 const getHistorySweepProgressMock = vi.mocked(getHistorySweepProgress);
 const runHistorySweepMock = vi.mocked(runHistorySweep);
+const getPipelineReextractionProgressMock = vi.mocked(getPipelineReextractionProgress);
+const runPipelineReextractionMock = vi.mocked(runPipelineReextraction);
 const getCompanyAutopilotMock = vi.mocked(getCompanyAutopilot);
 const listFlaggedExtractionOutcomesMock = vi.mocked(listFlaggedExtractionOutcomes);
 const listFlaggedFactProvenanceMock = vi.mocked(listFlaggedFactProvenance);
@@ -94,6 +108,26 @@ function progress(s: HistorySweep | null): HistorySweepProgress {
   return { sweep: s, runsTotal: 0, runsDone: 0, runsFailed: 0 };
 }
 
+function batch(overrides: Partial<PipelineReextractionBatch> = {}): PipelineReextractionBatch {
+  return {
+    id: "pipeline_reextraction:company_gpw_cdr:1",
+    companyId: "company_gpw_cdr",
+    status: "completed",
+    candidatesTotal: 2,
+    runsEnqueued: 2,
+    runsFailed: 0,
+    enqueuedRunIds: [],
+    error: null,
+    createdAt: "2026-06-15T10:00:00Z",
+    updatedAt: "2026-06-15T10:01:00Z",
+    ...overrides,
+  };
+}
+
+function reextractProgress(b: PipelineReextractionBatch | null): PipelineReextractionProgress {
+  return { batch: b, runsTotal: 0, runsDone: 0, runsFailed: 0 };
+}
+
 // `pendingProposals` is dropped from the DTO by the ADR 0084 clean cut but still
 // present on the not-yet-regenerated binding. Spread it so these samples satisfy
 // both shapes — the panel reads only `flaggedFacts`.
@@ -136,6 +170,8 @@ describe("CompanyCoveragePanel", () => {
       updatedAt: "2026-06-15T10:01:00Z",
     });
     runHistorySweepMock.mockResolvedValue(sweep({ status: "queued" }));
+    getPipelineReextractionProgressMock.mockResolvedValue(reextractProgress(null));
+    runPipelineReextractionMock.mockResolvedValue(batch({ status: "queued" }));
     listFlaggedExtractionOutcomesMock.mockResolvedValue([]);
     listFlaggedFactProvenanceMock.mockResolvedValue([]);
     rerunExtractionOutcomeMock.mockResolvedValue({
@@ -353,8 +389,8 @@ describe("CompanyCoveragePanel", () => {
 
   it("enables both history actions for an opted-in company (idle state)", async () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
-    const backfill = await screen.findByRole("button", { name: /Backfill history/ });
-    const extract = screen.getByRole("button", { name: /Extract missing periods/ });
+    const backfill = await screen.findByRole("button", { name: /Fetch older reports/ });
+    const extract = screen.getByRole("button", { name: /Read the ones not read yet/ });
     expect(backfill).toBeEnabled();
     expect(extract).toBeEnabled();
   });
@@ -364,10 +400,68 @@ describe("CompanyCoveragePanel", () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
     expect(await screen.findByText("Enable automation to extract history.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Backfill history/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Extract missing periods/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Fetch older reports/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Read the ones not read yet/ })).toBeDisabled();
     // The status line names the off state explicitly.
     expect(screen.getByRole("status")).toHaveTextContent("Automation off");
+  });
+
+  // --- Re-extraction footer action (epic #398 Item B) ---
+
+  // Unlike Backfill/Extract-missing, re-extraction reprocesses already-stored
+  // documents on explicit request (the "Try again" posture) — it must stay
+  // usable even when automation is off, never silently disabled alongside
+  // the automation-gated actions.
+  it("keeps the re-extract action enabled when automation is off", async () => {
+    getCompanyAutopilotMock.mockResolvedValue({ companyId: "company_gpw_cdr", mode: "off" });
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
+
+    await screen.findByText("Enable automation to extract history.");
+    expect(
+      screen.getByRole("button", { name: /Read everything again/ }),
+    ).toBeEnabled();
+  });
+
+  it("runs a re-extraction batch and refreshes siblings once it settles", async () => {
+    getPipelineReextractionProgressMock
+      .mockResolvedValueOnce(reextractProgress(null)) // initial mount load
+      .mockResolvedValue(reextractProgress(batch({ status: "completed", runsEnqueued: 3 })));
+    const onHistoryRefreshed = vi.fn();
+    render(
+      <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
+    );
+
+    const reextract = await screen.findByRole("button", {
+      name: /Read everything again/,
+    });
+    await userEvent.click(reextract);
+
+    await waitFor(() => expect(runPipelineReextractionMock).toHaveBeenCalledWith("company_gpw_cdr"));
+    await waitFor(() => expect(onHistoryRefreshed).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("status")).toHaveTextContent("Re-extracted 3");
+  });
+
+  // The other two footer actions must not double-fire while a re-extraction
+  // batch is in flight (all three share the `busy` gate).
+  it("disables the other footer actions while a re-extraction batch is in flight", async () => {
+    let resolveBatch: (value: PipelineReextractionBatch) => void = () => {};
+    runPipelineReextractionMock.mockReturnValue(
+      new Promise<PipelineReextractionBatch>((resolve) => {
+        resolveBatch = resolve;
+      }),
+    );
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
+
+    const reextract = await screen.findByRole("button", {
+      name: /Read everything again/,
+    });
+    await userEvent.click(reextract);
+
+    expect(await screen.findByRole("button", { name: /Re-extracting…/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Fetch older reports/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Read the ones not read yet/ })).toBeDisabled();
+
+    resolveBatch(batch({ status: "completed" }));
   });
 
   it("shows the backfilling phase while a backfill runs, then refreshes siblings", async () => {
@@ -382,7 +476,7 @@ describe("CompanyCoveragePanel", () => {
       <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
     );
 
-    const backfill = await screen.findByRole("button", { name: /Backfill history/ });
+    const backfill = await screen.findByRole("button", { name: /Fetch older reports/ });
     await userEvent.click(backfill);
     // While in flight the button shows the running label and both actions disable.
     expect(await screen.findByRole("button", { name: /Backfilling…/ })).toBeDisabled();
@@ -412,7 +506,7 @@ describe("CompanyCoveragePanel", () => {
       <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
     );
 
-    const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+    const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
     await userEvent.click(extract);
 
     await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
@@ -453,7 +547,7 @@ describe("CompanyCoveragePanel", () => {
         />,
       );
 
-      const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+      const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
       await user.click(extract);
       await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
 
@@ -510,7 +604,7 @@ describe("CompanyCoveragePanel", () => {
         <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
       );
 
-      const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+      const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
       await user.click(extract);
       await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
 
@@ -562,7 +656,7 @@ describe("CompanyCoveragePanel", () => {
         <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
       );
 
-      const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+      const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
       await user.click(extract);
       await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
 
@@ -708,7 +802,7 @@ describe("CompanyCoveragePanel", () => {
     );
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
-    await screen.findByRole("button", { name: /Backfill history/ });
+    await screen.findByRole("button", { name: /Fetch older reports/ });
     expect(screen.queryByText(/^AI:/)).not.toBeInTheDocument();
   });
 });

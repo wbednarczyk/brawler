@@ -260,6 +260,7 @@ fn creates_company_custom_kpi_definition() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("custom KPI definition should create");
 
@@ -296,6 +297,7 @@ fn new_kpi_definition_with_origin(
         display_format: None,
         origin: origin.map(str::to_owned),
         statement_group: None,
+        period_nature: None,
     }
 }
 
@@ -385,6 +387,7 @@ fn new_kpi_definition_with_statement_group(
         display_format: None,
         origin: None,
         statement_group: statement_group.map(str::to_owned),
+        period_nature: None,
     }
 }
 
@@ -448,6 +451,92 @@ fn create_kpi_definition_rejects_an_unknown_statement_group_token() {
 }
 
 // ---------------------------------------------------------------------------
+// `kpi_definitions.period_nature` vocabulary guard (ADR 0100 decision 6,
+// epic #398): `instant | duration` — validated the same way as
+// `statement_group`, absent/empty normalizing to the `duration` default (the
+// pre-existing `is_ttm_eligible`/`measure_window_for` no-definition
+// fallback, `fundamentals::metrics`).
+// ---------------------------------------------------------------------------
+
+fn new_kpi_definition_with_period_nature(
+    company_id: &str,
+    metric_key: &str,
+    period_nature: Option<&str>,
+) -> NewKpiDefinition {
+    NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: Some(company_id.to_owned()),
+        sector: None,
+        metric_key: metric_key.to_owned(),
+        label: metric_key.to_owned(),
+        value_kind: "count".to_owned(),
+        unit: None,
+        computation: "reported".to_owned(),
+        formula: None,
+        display_format: None,
+        origin: None,
+        statement_group: None,
+        period_nature: period_nature.map(str::to_owned),
+    }
+}
+
+#[test]
+fn create_kpi_definition_accepts_every_period_nature_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    for (index, token) in ["instant", "duration"].into_iter().enumerate() {
+        let definition = state
+            .create_kpi_definition(new_kpi_definition_with_period_nature(
+                &company.id,
+                &format!("period_nature_metric_{index}"),
+                Some(token),
+            ))
+            .expect("a vocabulary token is a valid period_nature");
+        assert_eq!(definition.period_nature, token);
+    }
+}
+
+#[test]
+fn create_kpi_definition_defaults_absent_period_nature_to_duration() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let definition = state
+        .create_kpi_definition(new_kpi_definition_with_period_nature(
+            &company.id,
+            "no_nature_metric",
+            None,
+        ))
+        .expect("absent period_nature defaults");
+    assert_eq!(definition.period_nature, "duration");
+}
+
+#[test]
+fn create_kpi_definition_rejects_an_unknown_period_nature_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .create_kpi_definition(new_kpi_definition_with_period_nature(
+            &company.id,
+            "garbage_nature_metric",
+            Some("garbage"),
+        ))
+        .expect_err("an unknown period_nature token must never be silently stored");
+    assert!(matches!(
+        error,
+        StorageError::InvalidFinancialsValue {
+            key: "period_nature",
+            ..
+        }
+    ));
+}
+
+// ---------------------------------------------------------------------------
 // kpi_definitions id scoping (issue #149, T7 slice 2). The unique INDEX is
 // (metric_key, scope, company_id, sector) — a metric key legitimately exists
 // once per scope bucket. The PRIMARY KEY must therefore carry the same
@@ -490,6 +579,7 @@ fn company_scoped_definition_coexists_with_canonical_same_metric_key() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("a company-scoped definition must not collide with the canonical row");
 
@@ -551,6 +641,7 @@ fn sector_scoped_definition_coexists_with_canonical_same_metric_key() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("a sector-scoped definition must not collide with the canonical row");
 
@@ -587,6 +678,7 @@ fn two_companies_may_each_scope_the_same_metric_key() {
         display_format: None,
         origin: None,
         statement_group: None,
+        period_nature: None,
     };
 
     let a = state
@@ -619,6 +711,7 @@ fn company_scoped_facts_do_not_leak_into_canonical_metric_history() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("company-scoped definition should create");
 
@@ -2115,6 +2208,7 @@ fn company_scoped_definition_list_includes_the_canonical_catalog() {
                 display_format: None,
                 origin: None,
                 statement_group: None,
+                period_nature: None,
             })
             .expect("custom definition");
     }
@@ -3109,6 +3203,7 @@ fn slot_metric_histories_company_scoped_definition_has_its_own_history() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("company-scoped definition should create");
     let p2023 = seed_fy_period(&state, &company.id, 2023);
@@ -3403,10 +3498,12 @@ fn slot_history_points_scopes_to_requested_definitions_and_excludes_the_run_peri
     let p2023 = seed_fy_period(&state, &company.id, 2023);
     let p2024 = seed_fy_period(&state, &company.id, 2024);
 
-    for (definition, period, value) in [
-        (&revenue, &p2023, "100"),
-        (&revenue, &p2024, "150"),
-        (&equity, &p2023, "900"),
+    for (definition, period, value, measure_window) in [
+        (&revenue, &p2023, "100", "flow"),
+        (&revenue, &p2024, "150", "flow"),
+        // total_equity is `instant`-natured (ADR 0100 decision 6) — its own
+        // slot uses `point_in_time`, never `flow`.
+        (&equity, &p2023, "900", "point_in_time"),
     ] {
         seed_slot_fact(
             &state,
@@ -3415,7 +3512,7 @@ fn slot_history_points_scopes_to_requested_definitions_and_excludes_the_run_peri
             definition,
             "consolidated",
             "total",
-            "flow",
+            measure_window,
             "final",
             value,
         );
@@ -3461,6 +3558,7 @@ fn create_kpi_definition_bounds_the_metric_key() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
     };
 
@@ -3536,4 +3634,210 @@ fn derived_period_cache_round_trips_the_content_hash() {
         .expect("read")
         .expect("row");
     assert_eq!(cached.content_hash, None);
+}
+
+// ---------------------------------------------------------------------------
+// Curated catalog aliases (ADR 0100 decision 12, epic #398)
+// ---------------------------------------------------------------------------
+
+/// A write under a dead catalog key lands in the live key's slot. `inventory`
+/// and `inventories` are both canonical rows; only the second one has ever
+/// held facts, so a writer that reaches the first would file into a series
+/// nothing reads. The redirect happens in the resolver, so no caller changes.
+#[test]
+fn a_write_under_an_alias_source_lands_on_the_live_definition() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .kpi_extraction()
+        .record_structured_fact(crate::storage::StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "repdoc_alias",
+            metric_key: "inventory",
+            value_numeric: "4200",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("alias test"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        })
+        .expect("the aliased write must be accepted");
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions");
+    let live = definitions
+        .iter()
+        .find(|def| def.metric_key == "inventories")
+        .expect("inventories is seeded");
+    let dead = definitions
+        .iter()
+        .find(|def| def.metric_key == "inventory")
+        .expect("inventory is still seeded — an alias never deletes a row");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts list");
+    assert_eq!(facts.len(), 1, "exactly one fact was written");
+    assert_eq!(
+        facts[0].definition_id, live.id,
+        "the fact must land on `inventories`, the key that carries the series"
+    );
+    assert_ne!(
+        facts[0].definition_id, dead.id,
+        "nothing may file into the dead key"
+    );
+}
+
+/// The alias's one-sidedness is a RUNTIME guard, not a curation promise (sol
+/// review finding 9): on a database where the dead key already holds a fact
+/// (an import, an older schema, a manual entry), the redirect must never
+/// fire — redirecting there would split one series across two keys.
+#[test]
+fn an_alias_source_that_already_holds_facts_is_never_redirected() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    // Simulate the pre-alias world: a fact already sits under `inventory`.
+    // Written via the raw creation path against the dead definition directly,
+    // the way an old database or an import would have left it.
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2024,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2024-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period");
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: "kpidef_inventory".to_owned(),
+            value_numeric: "1000".to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("pre-existing inventory fact");
+
+    // A structured write under the dead key must now land on `inventory`
+    // itself — the series already exists there, so no redirect.
+    state
+        .kpi_extraction()
+        .record_structured_fact(crate::storage::StructuredFactInput {
+            company_id: &company.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "repdoc_alias_guard",
+            metric_key: "inventory",
+            value_numeric: "2000",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("alias one-sidedness"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        })
+        .expect("write accepted");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts");
+    assert_eq!(facts.len(), 2);
+    assert!(
+        facts
+            .iter()
+            .all(|fact| fact.definition_id == "kpidef_inventory"),
+        "both facts stay in the `inventory` series — a populated alias source is never redirected"
+    );
+
+    // Per-company one-sidedness (sol round 2): company A's legacy series
+    // must not flip routing for company B — B has no `inventory` facts, so
+    // B's write redirects to `inventories` exactly as on a clean database.
+    let other = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "OTH".to_owned(),
+            display_name: "Other S.A.".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("second company");
+    state
+        .kpi_extraction()
+        .record_structured_fact(crate::storage::StructuredFactInput {
+            company_id: &other.id,
+            fiscal_year: 2025,
+            period_type: "FY",
+            period_end: Some("2025-12-31"),
+            report_document_id: "repdoc_alias_guard_b",
+            metric_key: "inventory",
+            value_numeric: "700",
+            currency: Some("PLN"),
+            confirmation_state: "confirmed",
+            source_tier: "esef",
+            extraction_method: "api",
+            validation_status: "passed",
+            drift_json: None,
+            citation: Some("alias per-company"),
+            attribution: None,
+            measure_window: None,
+            data_quality: None,
+        })
+        .expect("company B write accepted");
+    let b_facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(other.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("company B facts");
+    assert_eq!(b_facts.len(), 1);
+    assert_eq!(
+        b_facts[0].definition_id, "kpidef_inventories",
+        "a clean company still redirects — the guard is per company, never a global switch"
+    );
 }

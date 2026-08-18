@@ -50,6 +50,7 @@ pub fn failure_surface(kind: &str) -> Option<FailureSurface> {
     use crate::jobs::management_holdings_extraction::MANAGEMENT_EXTRACTION_KIND;
     use crate::jobs::morning_briefing::MORNING_BRIEFING_KIND;
     use crate::jobs::ownership_extraction::OWNERSHIP_EXTRACTION_KIND;
+    use crate::jobs::pipeline_reextraction::PIPELINE_REEXTRACTION_KIND;
     use crate::jobs::quote_backfill::QUOTE_BACKFILL_KIND;
     use crate::jobs::scheduler::{REGISTRY_REFRESH_KIND, SOURCE_REFRESH_KIND};
     use crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND;
@@ -81,6 +82,7 @@ pub fn failure_surface(kind: &str) -> Option<FailureSurface> {
         // the run state describe the same terminal failure once each.
         MORNING_BRIEFING_KIND
         | HISTORY_SWEEP_KIND
+        | PIPELINE_REEXTRACTION_KIND
         | OWNERSHIP_EXTRACTION_KIND
         | MANAGEMENT_EXTRACTION_KIND
         | QUOTE_BACKFILL_KIND

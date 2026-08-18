@@ -1028,6 +1028,7 @@ function kpiDefinition(
     // Matches the real seed: canonical KPIs backfill origin "seed" (0129).
     origin: "seed",
     statementGroup: "other",
+    periodNature: "duration",
     createdAt: NOW,
     updatedAt: NOW,
   };

@@ -8,6 +8,12 @@ export type FactMatrixRow = {
   definition: KpiDefinition;
   // periodId -> fact for that KPI in that period (sparse).
   cells: Record<string, FinancialFact>;
+  // Epic #398 completeness bar: true when no `kpi_definitions` catalog row
+  // matched this fact's definitionId, so `buildFactMatrix` synthesized a
+  // placeholder from the raw metric id (`syntheticDefinition` below). This is
+  // the honest "still awaiting a catalog name" signal — never silently
+  // dropped, always counted.
+  isSynthetic: boolean;
 };
 
 export type FactMatrixGroupKey =
@@ -121,6 +127,7 @@ export function buildFactMatrix(
   ];
 
   const rows: FactMatrixRow[] = orderedIds.map((definitionId) => {
+    const isSynthetic = !definitionsById.has(definitionId);
     const definition = definitionsById.get(definitionId) ?? syntheticDefinition(definitionId);
     const cells: Record<string, FinancialFact> = {};
     // Final-preferred cell selection (ADR 0093 dec. 2): `preliminary` and
@@ -144,10 +151,84 @@ export function buildFactMatrix(
       cells[fact.periodId] = fact;
       cellRank[fact.periodId] = rank;
     }
-    return { definition, cells };
+    return { definition, cells, isSynthetic };
   });
 
   return { periods: sortedPeriods, rows, groups: groupFactMatrixRows(rows) };
+}
+
+// ============================================================================
+// Statement switcher (epic #398): the panel takes the shape of the report —
+// the user picks ONE statement at a time instead of scrolling a ~150-row
+// flat/grouped list. Reuses the existing display grouping above; "operational"
+// merges the "company" and "other" FactMatrixGroup buckets into the single
+// switcher tab the approved mockup calls "Operacyjne" (IA doc: "statement_group
+// ... plus scope='company' for the operational tab").
+// ============================================================================
+
+export type StatementTabKey = "key" | "income" | "balance" | "cash_flow" | "per_share" | "operational";
+
+export type StatementTab = {
+  key: StatementTabKey;
+  rows: FactMatrixRow[];
+};
+
+const STATEMENT_TAB_ORDER: Exclude<StatementTabKey, "key">[] = [
+  "income",
+  "balance",
+  "cash_flow",
+  "per_share",
+  "operational",
+];
+
+// Builds the fixed six-tab set, "Kluczowe" first (the panel's default view).
+// A tab always renders, even with zero rows (count badge "0") — an absent tab
+// would silently hide a statement the company simply has no rows for yet,
+// which conflicts with the epic's own "never silently absent" completeness
+// theme. `keyDefinitionIds` is the caller's resolved "Kluczowe" selection
+// (kpi_relevance rows with status='active' and rank='primary') — this module
+// stays free of any relevance-fetching concern, it only slices the matrix.
+export function buildStatementTabs(
+  matrix: FactMatrix,
+  keyDefinitionIds: ReadonlySet<string>,
+): StatementTab[] {
+  const byGroup = new Map(matrix.groups.map((group) => [group.key, group.rows]));
+  const operational = [...(byGroup.get("company") ?? []), ...(byGroup.get("other") ?? [])];
+  const rowsByTab: Record<Exclude<StatementTabKey, "key">, FactMatrixRow[]> = {
+    income: byGroup.get("income") ?? [],
+    balance: byGroup.get("balance") ?? [],
+    cash_flow: byGroup.get("cash_flow") ?? [],
+    per_share: byGroup.get("per_share") ?? [],
+    operational,
+  };
+  return [
+    { key: "key", rows: matrix.rows.filter((row) => keyDefinitionIds.has(row.definition.id)) },
+    ...STATEMENT_TAB_ORDER.map((key) => ({ key, rows: rowsByTab[key] })),
+  ];
+}
+
+// Subtotal emphasis (approved mockup, epic #398): statement subtotals render
+// heavier with a top rule — the hierarchy that makes ~38 rows in one statement
+// legible where a flat list is not.
+//
+// ponytail: `kpi_definitions` carries no structural `is_subtotal`/similar
+// marker (checked storage/financials.rs + data-model.md — the closest field,
+// `computation`, is a free-text default 'reported', not a subtotal flag), so
+// this is a hardcoded whitelist of the canonical income-statement subtotal
+// metric keys the mockup names (gross/operating/pre-tax/net profit). Known
+// ceiling: a company whose crosswalk maps a subtotal to a different key (or a
+// non-income-statement subtotal, e.g. a balance-sheet total) gets no emphasis.
+// Upgrade path: a durable `kpi_definitions.is_subtotal` column, once a
+// follow-up task defines and seeds it.
+export const SUBTOTAL_METRIC_KEYS: ReadonlySet<string> = new Set([
+  "gross_profit",
+  "operating_profit",
+  "wdf_pretax_profit",
+  "net_profit",
+]);
+
+export function isSubtotalRow(row: FactMatrixRow): boolean {
+  return SUBTOTAL_METRIC_KEYS.has(row.definition.metricKey);
 }
 
 // Placeholder definition for a fact whose KPI definition isn't loaded, so the
@@ -168,6 +249,7 @@ function syntheticDefinition(definitionId: string): KpiDefinition {
     displayFormat: null,
     origin: "user",
     statementGroup: "other",
+    periodNature: "duration",
     createdAt: "",
     updatedAt: "",
   };

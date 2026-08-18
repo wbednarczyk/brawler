@@ -57,6 +57,16 @@ pub struct KpiDefinition {
     /// row (company/user/agent-created); the matrix's own display rule routes
     /// `scope='company'` rows into "KPI operacyjne spółki" ahead of this field.
     pub statement_group: String,
+    /// `instant | duration` (migration `0141`, ADR 0100 decision 6, epic
+    /// #398): whether this metric is measured at a point in time (a balance,
+    /// a share count, a quote) or accumulated over a span (almost everything
+    /// else, INCLUDING ratios — a ratio is duration-reported yet never
+    /// TTM-eligible, a separate axis `is_ttm_eligible` decides). The storage
+    /// truth `fundamentals::metrics::measure_window_for`/`is_ttm_eligible`
+    /// read instead of the retired `STOCK_METRIC_KEYS` const. DEFAULT
+    /// `duration` — the pre-existing no-definition fallback those two
+    /// functions already used.
+    pub period_nature: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -183,6 +193,10 @@ pub struct NewKpiDefinition {
     /// unlike `origin`, nothing forces this field); validated against the
     /// fixed vocabulary, never freeform.
     pub statement_group: Option<String>,
+    /// `instant | duration` (default `duration`, ADR 0100 decision 6, epic
+    /// #398). Optional on every live writer, like `statement_group`; unlike
+    /// `origin`, nothing forces this to a fixed value regardless of caller.
+    pub period_nature: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -331,6 +345,7 @@ pub(super) fn list_kpi_definitions(
             display_format,
             origin,
             statement_group,
+            period_nature,
             created_at,
             updated_at
         FROM kpi_definitions
@@ -398,6 +413,27 @@ fn normalize_kpi_definition_statement_group(
     }
 }
 
+/// Canonicalizes `kpi_definitions.period_nature` at the write boundary (ADR
+/// 0100 decision 6, epic #398, mirrors `normalize_kpi_definition_statement_group`).
+/// Absent/empty -> the `duration` default — the same no-definition fallback
+/// `fundamentals::metrics::is_ttm_eligible`/`measure_window_for` already use
+/// for a key absent from the catalog; any other token is a typed refusal.
+fn normalize_kpi_definition_period_nature(period_nature: Option<String>) -> StorageResult<String> {
+    let value = period_nature
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("duration")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "instant" | "duration" => Ok(value),
+        _ => Err(StorageError::InvalidFinancialsValue {
+            key: "period_nature",
+            value,
+        }),
+    }
+}
+
 /// Write-boundary bound for a KPI definition identity string (metric key or a
 /// caller-supplied definition id): ≤256 UTF-8 bytes, non-empty, no control
 /// characters (U+0000–001F). The MCP context read model's response-budget
@@ -424,6 +460,7 @@ pub(super) fn create_kpi_definition(
     let display_format = empty_string_to_none(input.display_format.map(|s| s.trim().to_owned()));
     let origin = normalize_kpi_definition_origin(input.origin)?;
     let statement_group = normalize_kpi_definition_statement_group(input.statement_group)?;
+    let period_nature = normalize_kpi_definition_period_nature(input.period_nature)?;
 
     if !kpi_definition_identity_ok(&metric_key) {
         return Err(StorageError::InvalidFinancialsValue {
@@ -454,8 +491,9 @@ pub(super) fn create_kpi_definition(
             formula,
             display_format,
             origin,
-            statement_group
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            statement_group,
+            period_nature
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
         ",
         params![
             id,
@@ -470,7 +508,8 @@ pub(super) fn create_kpi_definition(
             formula,
             display_format,
             origin,
-            statement_group
+            statement_group,
+            period_nature
         ],
     )?;
 
@@ -1812,7 +1851,10 @@ pub(super) struct SlotDims {
     pub data_quality: String,
 }
 
-pub(super) fn slot_dims(input: &NewFinancialFact) -> StorageResult<SlotDims> {
+pub(super) fn slot_dims(
+    connection: &Connection,
+    input: &NewFinancialFact,
+) -> StorageResult<SlotDims> {
     fn or_default(value: &Option<String>, fallback: &str) -> String {
         value
             .as_deref()
@@ -1825,9 +1867,77 @@ pub(super) fn slot_dims(input: &NewFinancialFact) -> StorageResult<SlotDims> {
         statement_basis: or_default(&input.statement_basis, "consolidated"),
         attribution: normalize_attribution(input.attribution.clone())?,
         variant: or_default(&input.variant, "reported"),
-        measure_window: or_default(&input.measure_window, "flow"),
+        measure_window: resolve_measure_window(connection, input)?,
         data_quality: normalize_data_quality(input.data_quality.clone())?,
     })
+}
+
+/// `kpi_definitions.period_nature` for a definition id, tolerating a missing
+/// row — an invalid `definition_id` surfaces later at `validate_reference_exists`,
+/// so this stays a lookup, never a refusal (ADR 0100 decision 6, epic #398).
+fn definition_period_nature(
+    connection: &Connection,
+    definition_id: &str,
+) -> StorageResult<Option<String>> {
+    connection
+        .query_row(
+            "SELECT period_nature FROM kpi_definitions WHERE id = ?1",
+            [definition_id.trim()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+/// Whether a `measure_window` slot-dimension value's flow/stock class
+/// contradicts a `period_nature` (ADR 0100 decision 6, 2nd paragraph): an
+/// `instant` definition only ever accepts `point_in_time`; any other
+/// definition (`duration`, or absent) never accepts `point_in_time`.
+/// `cumulative`/`trailing`/`flow`/`duration` — every non-`point_in_time`
+/// token — are legitimate over a duration metric; only the genuine
+/// instant-vs-duration class contradiction is refused, not the
+/// unconstrained `financial_facts.measure_window` vocabulary itself.
+fn measure_window_contradicts_period_nature(measure_window: &str, period_nature: &str) -> bool {
+    (period_nature == "instant") != (measure_window == "point_in_time")
+}
+
+/// The `measure_window` slot dimension at the write boundary: an explicit
+/// caller value always wins, UNLESS it contradicts the resolved definition's
+/// `period_nature` — a typed refusal (ADR 0100 decision 6), never a silent
+/// override, so one metric can never acquire two window classes across its
+/// history. `None`/empty derives the default from `period_nature` via the
+/// same `measure_window_for` the manifest-validation/ingest-context call
+/// sites already use (`fundamentals::metrics`): `instant` -> `point_in_time`,
+/// everything else (including no resolved definition) -> `flow`.
+fn resolve_measure_window(
+    connection: &Connection,
+    input: &NewFinancialFact,
+) -> StorageResult<String> {
+    let period_nature = definition_period_nature(connection, &input.definition_id)?;
+    let requested = input
+        .measure_window
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match requested {
+        None => Ok(crate::fundamentals::metrics::measure_window_for(
+            period_nature.as_deref(),
+            None,
+        )
+        .to_owned()),
+        Some(explicit) => {
+            if let Some(nature) = period_nature.as_deref() {
+                if measure_window_contradicts_period_nature(explicit, nature) {
+                    return Err(StorageError::MeasureWindowPeriodNatureMismatch {
+                        definition_id: input.definition_id.trim().to_owned(),
+                        measure_window: explicit.to_owned(),
+                        period_nature: nature.to_owned(),
+                    });
+                }
+            }
+            Ok(explicit.to_owned())
+        }
+    }
 }
 
 /// The already-committed fact occupying a fully-qualified slot, if any — the
@@ -1986,7 +2096,7 @@ pub(super) fn create_or_reobserve_financial_fact(
 ) -> StorageResult<FactWriteOutcome> {
     let period_id = input.period_id.trim().to_owned();
     let definition_id = input.definition_id.trim().to_owned();
-    let dims = slot_dims(&input)?;
+    let dims = slot_dims(connection, &input)?;
     if let Some(existing) = find_fact_by_slot(connection, &period_id, &definition_id, &dims)? {
         let incoming = input.value_numeric.trim().to_owned();
         let same_value = match (
@@ -2028,7 +2138,7 @@ pub(super) fn create_financial_fact(
     let period_id = input.period_id.trim().to_owned();
     let definition_id = input.definition_id.trim().to_owned();
     let value_numeric = input.value_numeric.trim().to_owned();
-    let dims = slot_dims(&input)?;
+    let dims = slot_dims(connection, &input)?;
     let SlotDims {
         statement_basis,
         attribution,
@@ -2321,6 +2431,7 @@ fn get_kpi_definition(connection: &Connection, id: &str) -> StorageResult<KpiDef
                 display_format,
                 origin,
                 statement_group,
+                period_nature,
                 created_at,
                 updated_at
             FROM kpi_definitions
@@ -2431,8 +2542,9 @@ fn kpi_definition_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KpiDefin
         display_format: row.get(10)?,
         origin: row.get(11)?,
         statement_group: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        period_nature: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }
 

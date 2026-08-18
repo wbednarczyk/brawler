@@ -977,6 +977,42 @@ fn document_bytes_are_protected_reports_true_and_false() {
 }
 
 #[test]
+fn document_bytes_are_protected_by_a_tagged_fact_extraction_in_any_state() {
+    // ADR 0100 decision 8: Layer 1 is derived data rebuilt from the
+    // document's stored bytes, so a pruned document could never be
+    // rebuilt — a report_tagged_fact_extractions row (any state, mirroring
+    // the kpi_ingest_runs leg) must protect the document's bytes.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let protected_doc = fresh_doc(&state, &company.id, "tagged-fact-protected");
+    {
+        let raw = state.checkout_for_tests().expect("raw connection");
+        raw.execute(
+            "INSERT INTO report_tagged_fact_extractions
+                (report_document_id, extractor_version, state)
+             VALUES (?1, 1, 'extraction_failed')",
+            params![protected_doc.id],
+        )
+        .expect("seed extraction record");
+    }
+    let unprotected_doc = fresh_doc(&state, &company.id, "tagged-fact-unprotected");
+
+    let raw = state.checkout_for_tests().expect("raw connection");
+    assert!(
+        crate::storage::report_documents::document_bytes_are_protected(&raw, &protected_doc.id)
+            .expect("predicate should run"),
+        "a document with a tagged-fact extraction record (any state) must report protected"
+    );
+    assert!(
+        !crate::storage::report_documents::document_bytes_are_protected(&raw, &unprotected_doc.id)
+            .expect("predicate should run"),
+        "a document with no extraction record must report unprotected"
+    );
+}
+
+#[test]
 fn mark_metadata_only_succeeds_on_an_unprotected_document() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

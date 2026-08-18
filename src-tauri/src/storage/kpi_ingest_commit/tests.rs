@@ -1674,6 +1674,126 @@ fn concurrent_commits_of_the_same_run_both_return_the_winner_receipt() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A commit that loses the writer lock returns typed `CommitContention` —
+/// never a raw SQLite error — leaves the run untouched at `ready_to_commit`,
+/// and succeeds on retry once the lock releases. This is the contention leg
+/// #366 names that unit coverage lacked: the same-run race above converges to
+/// the winner receipt, but the busy→no-receipt branch that mints
+/// `CommitContention` (`kpi_ingest_commit.rs` ~263-275, 571-582) had no test.
+/// Deterministic by construction — rather than race two `commit_manifest`
+/// calls (whose interleaving is nondeterministic), an independent connection
+/// holds the single WAL writer lock while ONE commit attempts `BEGIN
+/// IMMEDIATE` with `busy_timeout = 0`, so the loss is forced, not raced. That
+/// held lock stands in for a concurrent writer; the code path taken is
+/// identical to a real cross-run commit that loses the `BEGIN IMMEDIATE` race.
+#[test]
+fn a_commit_that_loses_the_writer_lock_is_typed_contention_then_retries_clean() {
+    use r2d2_sqlite::SqliteConnectionManager;
+
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "brawler-commit-contention-{}-{unique}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let db_path = dir.join("contention.sqlite3");
+
+    // Migrate + seed on a bootstrap connection, then drop it so the file's
+    // single writer lock is free for the pool and the blocker below.
+    {
+        let mut connection = Connection::open(&db_path).expect("open bootstrap");
+        connection
+            .pragma_update(None, "journal_mode", "WAL")
+            .expect("wal");
+        crate::storage::migrations::apply_migrations(&mut connection).expect("migrate");
+        seed_company_and_document(&connection, "c1", "doc1");
+    }
+
+    // busy_timeout = 0 so a lost `BEGIN IMMEDIATE` fails fast and typed instead
+    // of blocking — the whole point is to exercise the contention branch.
+    let manager = SqliteConnectionManager::file(&db_path).with_init(|connection| {
+        connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+        connection.pragma_update(None, "busy_timeout", 0i64)?;
+        Ok(())
+    });
+    let pool = r2d2::Pool::builder()
+        .max_size(4)
+        .build(manager)
+        .expect("build pool");
+    let state = AppState::with_pool(pool, dir.clone());
+
+    let run = create_run(&state, "doc1", "c1", "consolidated", None);
+    let (revision, manifest_hash) =
+        drive_to_ready(&state, &run.id, vec![observation("revenue", "1000")]);
+
+    // Hold the single WAL writer lock from an independent connection.
+    let mut blocker = Connection::open(&db_path).expect("open blocker");
+    blocker
+        .pragma_update(None, "busy_timeout", 0i64)
+        .expect("blocker busy_timeout");
+    let held = blocker
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .expect("blocker holds the writer lock");
+
+    let contended =
+        state
+            .kpi_ingest_commit()
+            .commit_manifest(&run.id, &manifest_hash, revision, None);
+    assert!(
+        matches!(contended, Err(StorageError::CommitContention { .. })),
+        "a lost writer lock must surface as typed CommitContention, got {contended:?}"
+    );
+
+    // The refusal is total: the run is untouched and no receipt was written.
+    let run_after = state
+        .kpi_ingest_runs()
+        .get_run(&run.id)
+        .expect("get run")
+        .expect("run exists");
+    assert_eq!(
+        run_after.status,
+        KpiIngestRunState::ReadyToCommit,
+        "a contended commit must not advance the run"
+    );
+    {
+        let connection = state.checkout_for_tests().expect("raw");
+        let receipts: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM kpi_ingest_commit_receipts",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(receipts, 0, "the contended commit wrote no receipt");
+    }
+
+    // Release the lock; the retry commits cleanly.
+    drop(held);
+    let receipt = state
+        .kpi_ingest_commit()
+        .commit_manifest(&run.id, &manifest_hash, revision, None)
+        .expect("retry after the winner releases the writer lock");
+    assert_eq!(receipt.manifest_hash, manifest_hash);
+    {
+        let connection = state.checkout_for_tests().expect("raw");
+        let receipts: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM kpi_ingest_commit_receipts",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(receipts, 1, "exactly one commit ever landed");
+    }
+
+    drop(blocker);
+    drop(state);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn commit_merges_execution_into_cost_json_and_replay_never_writes() {
     let connection = open_in_memory_database().expect("db");

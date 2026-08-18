@@ -163,14 +163,14 @@ struct PendingFact {
 
 /// Returns the local part of a possibly-prefixed name (`ix:nonFraction` →
 /// `nonFraction`, `Assets` → `Assets`).
-fn local_of(name: &[u8]) -> &[u8] {
+pub(super) fn local_of(name: &[u8]) -> &[u8] {
     match name.iter().rposition(|&b| b == b':') {
         Some(i) => &name[i + 1..],
         None => name,
     }
 }
 
-fn local_str(name: &[u8]) -> String {
+pub(super) fn local_str(name: &[u8]) -> String {
     String::from_utf8_lossy(local_of(name)).into_owned()
 }
 
@@ -183,7 +183,7 @@ fn local_str(name: &[u8]) -> String {
 /// `ixt:num-comma-decimal`). Handles thousands separators (space, NBSP, narrow
 /// NBSP, `.`/`,`), a decimal comma or dot, and accounting parentheses for
 /// negatives. Returns the unscaled magnitude with its own sign.
-fn parse_ixbrl_number(raw: &str, format: Option<&str>) -> Option<Decimal> {
+pub(super) fn parse_ixbrl_number(raw: &str, format: Option<&str>) -> Option<Decimal> {
     let mut s = raw.trim().to_string();
     if s.is_empty() {
         return None;
@@ -253,7 +253,7 @@ fn infer_decimal_comma(s: &str) -> bool {
 
 /// Applies a power-of-ten `scale` to a magnitude. Returns `None` on overflow so
 /// a hostile/garbled scale can never panic the parser — the fact is dropped.
-fn apply_scale(value: Decimal, scale: i32) -> Option<Decimal> {
+pub(super) fn apply_scale(value: Decimal, scale: i32) -> Option<Decimal> {
     if scale == 0 {
         return Some(value);
     }
@@ -512,7 +512,7 @@ enum PeriodField {
 }
 
 /// Reads an attribute value by local key from a start element.
-fn attr(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
+pub(super) fn attr(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
     e.attributes().flatten().find_map(|a| {
         if local_of(a.key.as_ref()) == key {
             // ESEF/iXBRL documents are XML 1.0 (declared or not) — the implicit
@@ -525,6 +525,19 @@ fn attr(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
         }
     })
 }
+
+/// Layer 1 raw tagged-fact capture (ADR 0100 decisions 1, 3, 9; epic #398) —
+/// a namespace-aware, unconditional occurrence reader wired alongside this
+/// module's Layer 2 `parse_esef` (unchanged). Lives in its own file/module so
+/// this one stays the Layer 2 concern it always was.
+pub mod layer1;
+
+/// Layer 1 → Layer 2 projection (ADR 0100 decisions 1, 3, 4, 7; epic #398):
+/// the deterministic replacement for this module's own `concept_to_metric_key`
+/// + `dedup_longest_duration` in `super::pipeline::run_pipeline`'s ESEF
+/// branch. `parse_esef` above is UNCHANGED — this is an independent consumer
+/// of [`layer1`]'s output, never a rewrite of it.
+pub mod projection;
 
 #[cfg(test)]
 mod tests;

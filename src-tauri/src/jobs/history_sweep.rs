@@ -794,6 +794,7 @@ mod tests {
     /// A valid iXBRL instance (declares the inline-XBRL namespace, carries `ix:`
     /// facts at 2024-09-30).
     const IXBRL_XHTML: &[u8] = br#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2024-09-30</xbrli:instant></xbrli:period></xbrli:context>
@@ -1138,15 +1139,34 @@ mod tests {
         let s = state_with_dir();
         let c = company(&s);
         s.autopilot().set_mode(&c, "assist").expect("set mode");
-        // A valid iXBRL instance — extractable, and determinism emits from it.
+        // A valid iXBRL instance, packaged with a matching presentation
+        // linkbase — extractable, and determinism emits from it. A bare
+        // instance has no linkbase to read, so its facts get no role rows and
+        // never survive Layer 2 projection (ADR 0100 decision 3, epic #398).
+        let package = crate::test_support::esef_package_zip(
+            &String::from_utf8_lossy(IXBRL_XHTML),
+            &[
+                ("Assets", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+                (
+                    "Liabilities",
+                    crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+                ),
+                ("Equity", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+            ],
+        );
+        // `.xbri`, not `.xhtml`: `resolved_container`'s un-sniffed fallback
+        // (no `detected_container` row yet, same as any freshly-marked test
+        // document) reads the stored name/content-type, not the bytes — a
+        // `.xhtml` name would misclassify a packaged ZIP as markup and sniff
+        // its (compressed) prefix for `<ix:`, finding nothing.
         let doc = fetched_file_report(
             &s,
             &c,
             "Skonsolidowane sprawozdanie finansowe Q3 2024 SSF",
             "https://example.com/ssf_q3_2024.xhtml",
-            "canonical.xhtml",
-            IXBRL_XHTML,
-            "application/xhtml+xml",
+            "canonical.xbri",
+            &package,
+            "application/octet-stream",
         );
         seed_terminal_unavailable_run(&s, &c, &doc, "not_extractable");
 

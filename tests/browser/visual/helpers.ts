@@ -133,6 +133,30 @@ export async function shootPanel(
   if (canMaximize) await maximize.click();
 }
 
+// A region INSIDE a panel that `shootPanel` cannot reach: the pane shot is
+// clipped at `TIER_HEIGHT`, so anything below the fold (a panel's actions
+// footer) never enters a baseline and can change without a single pixel of
+// diff — the failure this repo already hit once on the coverage actions
+// footer (see `shootPanel`'s maximize comment) and again in epic #398, where
+// a new footer button left every baseline green. Shot at the M tier only, in
+// both themes: a narrow region is what makes the baseline stable when the
+// content above it changes.
+export async function shootRegion(
+  page: Page,
+  pane: Locator,
+  region: Locator,
+  name: string,
+  opts: ShootOptions = {},
+): Promise<void> {
+  const state = opts.state ?? "default";
+  await setPaneSize(page, { width: TIER_WIDTH.M, height: TIER_HEIGHT, pane });
+  await region.scrollIntoViewIfNeeded();
+  await settle(page);
+  await writeContactSheetEvidence(page, region, { screen: name, state, tier: "M" });
+  await expect(region).toHaveScreenshot(`${name}-M.png`, screenshotOptions(opts));
+  await resetPaneSize(page, pane);
+}
+
 // A full-screen sidebar/home screen hosted in `.workspace`: the M-equivalent is
 // the workspace at the real project viewport (no forced size, per V3). Dark
 // additionally forces the tiers the density spec already forces on `.workspace`

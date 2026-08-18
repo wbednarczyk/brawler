@@ -220,6 +220,7 @@ mod tests {
                 display_format: None,
                 origin: None,
                 statement_group: None,
+                period_nature: None,
             })
             .expect("definition")
             .id

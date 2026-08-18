@@ -335,23 +335,25 @@ fn record_tier_upgrade_diagnostic(
         "module=structured_extraction stage=tier_upgrade company={company_id} \
          metric={metric_key} previous_tier={previous_tier} previous={previous_value} new={new_value}"
     );
-    let _ = state.record_diagnostic_event(crate::storage::NewDiagnosticEvent {
-        occurred_at: None,
-        module: "structured_extraction".to_owned(),
-        scope: Some(crate::storage::DiagnosticScope {
-            scope_type: "company".to_owned(),
-            id: Some(company_id.to_owned()),
-        }),
-        stage: "tier_upgrade".to_owned(),
-        severity: "warning".to_owned(),
-        message: "issuer tier overwrote a lower-tier stored value".to_owned(),
-        metadata: Some(serde_json::json!({
-            "metricKey": metric_key,
-            "previousValue": previous_value,
-            "previousTier": previous_tier,
-            "newValue": new_value,
-        })),
-    });
+    let _ = state
+        .diagnostics()
+        .record_integrity_event(crate::storage::NewDiagnosticEvent {
+            occurred_at: None,
+            module: "structured_extraction".to_owned(),
+            scope: Some(crate::storage::DiagnosticScope {
+                scope_type: "company".to_owned(),
+                id: Some(company_id.to_owned()),
+            }),
+            stage: "tier_upgrade".to_owned(),
+            severity: "warning".to_owned(),
+            message: "issuer tier overwrote a lower-tier stored value".to_owned(),
+            metadata: Some(serde_json::json!({
+                "metricKey": metric_key,
+                "previousValue": previous_value,
+                "previousTier": previous_tier,
+                "newValue": new_value,
+            })),
+        });
 }
 
 /// The outcome of a structured extraction attempt.
@@ -367,7 +369,10 @@ pub struct StructuredExtractionResult {
     pub skipped_fact_ids: Vec<String>,
     /// Slots re-observed with a value that disagrees with the stored fact.
     pub divergences: Vec<FactDivergence>,
-    /// Whether a deterministic **issuer** tier emitted facts this run.
+    /// Whether a deterministic **issuer** tier produced a successful accepted
+    /// observation this run — `produced_fact_ids` OR `skipped_fact_ids`
+    /// nonempty (epic #398 Item B blocker 1: a re-extraction that only
+    /// RE-OBSERVES an already-landed period is still a success, not a gap).
     /// (The ADR 0085 aggregator-fallback flag is retired — ADR 0086; stored
     /// `witness_fallback` outcome rows remain readable as legacy.)
     pub emitted: bool,
@@ -784,6 +789,264 @@ pub(crate) fn route_document(bytes: &[u8]) -> DocumentRoute {
     }
 }
 
+/// Layer 1 tagged-fact extractor version (ADR 0100 decision 8): bumping this
+/// invalidates every stored generation and forces a rebuild on next run.
+/// Bumped 1 -> 2 for the no-linkbase-fallback regression fix (epic #398):
+/// every previously-captured generation is missing `no_linkbase_fallback_
+/// count` and must be rebuilt to report it.
+const TAGGED_FACT_EXTRACTOR_VERSION: i64 = 2;
+
+/// One document's Layer 1 generation, computed PURELY from bytes (ADR 0100
+/// decisions 1/3/9, epic #398) — no storage, no freshness check. Shared by
+/// [`capture_layer1_tagged_facts`] (the storage-side capture below) and
+/// [`run_structured_extraction`]'s pipeline projection input, so the two can
+/// never disagree about which rows Layer 1 sees.
+pub(crate) struct Layer1Generation {
+    pub(crate) facts: Vec<crate::storage::NewTaggedFact>,
+    encountered_count: i64,
+    stored_count: i64,
+    dimensional_count: i64,
+    /// Whether the route carried at least one readable instance — a package
+    /// with none is `state = "no_instance"`, never conflated with "extracted
+    /// zero facts from a real instance". `pub(crate)` so the corpus concept
+    /// harvest (`storage::tests::real_data_extraction`) can tell the two apart
+    /// the same way the job does.
+    pub(crate) has_instance: bool,
+    /// Whether ANY presentation-linkbase role was attached to ANY fact in
+    /// this generation — `false` for a bare (non-package) iXBRL instance,
+    /// which carries no `*_pre.xml` at all, and for a package whose linkbase
+    /// failed to parse. Feeds `PipelineInput::has_presentation_linkbase`
+    /// (regression fix, epic #398): without this evidence the strict
+    /// primary-statement role filter cannot run, so the pipeline falls back
+    /// to the pre-epic dimensionless + crosswalk-resolved selection instead
+    /// of silently projecting zero facts.
+    pub(crate) has_presentation_linkbase: bool,
+    /// Count of dimensionless, valued facts that would use (or already use)
+    /// the no-linkbase fallback — the ADR's "record the fallback explicitly,
+    /// never silently" counter. Always `0` when `has_presentation_linkbase`
+    /// is `true`.
+    no_linkbase_fallback_count: i64,
+    /// Truncation evidence (sol review finding 4): a mid-document XML reader
+    /// error, or package entries skipped unread (unreadable / oversized).
+    /// Either makes the generation INCOMPLETE — "encountered = stored" holds
+    /// only over what was actually walked — so the extraction record must
+    /// say `truncated`, never look complete.
+    truncation: Option<String>,
+}
+
+/// Only an ESEF-bearing route carries an instance to walk; every other route
+/// yields the empty generation (nothing to extract). `pub(crate)` so the real
+/// (non-CI) corpus regression harness (`storage::tests::t7_cbf_corpus`) can
+/// build the exact same pipeline input production does.
+pub(crate) fn compute_layer1_generation(bytes: &[u8], route: DocumentRoute) -> Layer1Generation {
+    let (instances, skipped_entries): (Vec<(String, Vec<u8>)>, i64) = match route {
+        DocumentRoute::IxbrlInstance => (vec![(String::new(), bytes.to_vec())], 0),
+        DocumentRoute::ZipPackage => {
+            crate::fundamentals::extraction::esef_package::extract_all_instances_counted(bytes)
+        }
+        DocumentRoute::Pdf | DocumentRoute::Positional | DocumentRoute::Unsupported(_) => {
+            return Layer1Generation {
+                facts: Vec::new(),
+                encountered_count: 0,
+                stored_count: 0,
+                dimensional_count: 0,
+                has_instance: false,
+                has_presentation_linkbase: false,
+                no_linkbase_fallback_count: 0,
+                truncation: None,
+            };
+        }
+    };
+
+    // The presentation linkbase lives in the ZIP package; a bare (non-package)
+    // iXBRL instance carries no linkbase to read, so facts get no role rows.
+    // Without the strict role filter's own evidence, the pipeline falls back
+    // to the pre-epic dimensionless + crosswalk-resolved selection for this
+    // document rather than silently projecting zero facts (regression fix,
+    // epic #398) — see `has_presentation_linkbase` above.
+    let roles = if matches!(route, DocumentRoute::ZipPackage) {
+        crate::fundamentals::extraction::esef_package::extract_presentation_roles(bytes)
+    } else {
+        std::collections::HashMap::new()
+    };
+    let has_presentation_linkbase = !roles.is_empty();
+
+    let mut all_facts = Vec::new();
+    let mut encountered_count = 0i64;
+    let mut stored_count = 0i64;
+    let mut dimensional_count = 0i64;
+    let mut truncation: Option<String> = if skipped_entries > 0 {
+        Some(format!(
+            "{skipped_entries} package entr{} skipped unread (unreadable or oversized)",
+            if skipped_entries == 1 { "y" } else { "ies" }
+        ))
+    } else {
+        None
+    };
+    for (path, instance_bytes) in &instances {
+        let pass = crate::fundamentals::extraction::esef::layer1::extract_tagged_facts(
+            instance_bytes,
+            path,
+            &roles,
+        );
+        encountered_count += pass.encountered_count;
+        stored_count += pass.stored_count;
+        dimensional_count += pass.dimensional_count;
+        if let Some(error) = pass.reader_error {
+            let entry = if path.is_empty() { "instance" } else { path };
+            let message = format!("{entry}: {error}");
+            truncation = Some(match truncation.take() {
+                Some(existing) => format!("{existing}; {message}"),
+                None => message,
+            });
+        }
+        all_facts.extend(pass.facts);
+    }
+
+    // "Record the fallback explicitly ... so it is visible, never silent":
+    // every dimensionless, valued fact in a no-linkbase document is a
+    // fallback candidate. Zero when a linkbase exists — the fallback never
+    // runs, nothing to count.
+    let no_linkbase_fallback_count = if has_presentation_linkbase {
+        0
+    } else {
+        all_facts
+            .iter()
+            .filter(|f| !f.is_dimensional && f.value_numeric.is_some())
+            .count() as i64
+    };
+
+    Layer1Generation {
+        facts: all_facts,
+        encountered_count,
+        stored_count,
+        dimensional_count,
+        has_instance: !instances.is_empty(),
+        has_presentation_linkbase,
+        no_linkbase_fallback_count,
+        truncation,
+    }
+}
+
+/// Runs Layer 1 raw tagged-fact capture for one document, alongside (never
+/// gating) the Layer 2 pipeline in [`run_structured_extraction`] below (ADR
+/// 0100 decisions 1/8/9, epic #398 slice). Best-effort: a failure here is
+/// logged and swallowed, never propagated — Layer 2's behaviour must stay
+/// byte-identical regardless of what this does.
+///
+/// Freshness is `(source_content_hash, extractor_version)` (decision 8): an
+/// unchanged document is skipped, never re-walked (never even re-parsed).
+fn capture_layer1_tagged_facts(
+    state: &AppState,
+    company_id: &str,
+    report_document_id: &str,
+    bytes: &[u8],
+    route: DocumentRoute,
+) {
+    if !matches!(
+        route,
+        DocumentRoute::IxbrlInstance | DocumentRoute::ZipPackage
+    ) {
+        return;
+    }
+
+    let source_hash = crate::report_documents_capture::content_hash_hex(bytes);
+    match state.report_tagged_facts().is_extraction_current(
+        report_document_id,
+        &source_hash,
+        TAGGED_FACT_EXTRACTOR_VERSION,
+    ) {
+        Ok(true) => return, // unchanged bytes + extractor version — nothing to do
+        Ok(false) => {}
+        Err(error) => {
+            record_layer1_capture_diagnostic(
+                state,
+                report_document_id,
+                "freshness_check_failed",
+                &error.to_string(),
+            );
+            return;
+        }
+    }
+
+    let generation = compute_layer1_generation(bytes, route);
+    let extraction = crate::storage::TaggedFactExtraction {
+        source_content_hash: Some(source_hash),
+        extractor_version: TAGGED_FACT_EXTRACTOR_VERSION,
+        state: if !generation.has_instance {
+            // A package whose only candidates were SKIPPED unread is
+            // truncated, not instance-free: "no_instance" must mean "we
+            // looked and there was nothing", never "we could not look"
+            // (sol round 2, finding 4).
+            if generation.truncation.is_some() {
+                "truncated".to_owned()
+            } else {
+                "no_instance".to_owned()
+            }
+        } else if let Some(reason) = generation.truncation.as_deref() {
+            // Visible incompleteness (sol review finding 4): a reader error
+            // or a skipped package entry means the counts cover only what
+            // was walked — never presented as a complete extraction.
+            log::warn!(
+                "tagged-fact capture for report document {report_document_id} is TRUNCATED: {reason}"
+            );
+            "truncated".to_owned()
+        } else {
+            "extracted".to_owned()
+        },
+        encountered_count: generation.encountered_count,
+        stored_count: generation.stored_count,
+        dimensional_count: generation.dimensional_count,
+        no_linkbase_fallback_count: generation.no_linkbase_fallback_count,
+        facts: generation.facts,
+    };
+
+    if let Err(error) = state.report_tagged_facts().replace_tagged_facts(
+        report_document_id,
+        company_id,
+        &extraction,
+    ) {
+        record_layer1_capture_diagnostic(
+            state,
+            report_document_id,
+            "capture_write_failed",
+            &error.to_string(),
+        );
+    }
+}
+
+/// A swallowed Layer 1 failure is never ONLY a log line (sol round 2,
+/// finding 4): capture is best-effort by design (Layer 2 must not fail with
+/// it — ADR 0100 decision 1), but the loss has to be visible where the owner
+/// looks, so it lands in `diagnostic_events` through the UNGATED integrity
+/// path (sol round 3: the ordinary diagnostic API is developer-mode-gated
+/// and would silently record nothing on a default profile). The diagnostic
+/// write itself is best-effort too — a database that cannot write the
+/// extraction likely cannot write the diagnostic either, and the log line
+/// remains the floor.
+fn record_layer1_capture_diagnostic(
+    state: &AppState,
+    report_document_id: &str,
+    stage: &str,
+    error: &str,
+) {
+    log::warn!("tagged-fact capture {stage} for report document {report_document_id}: {error}");
+    let _ = state
+        .diagnostics()
+        .record_integrity_event(crate::storage::NewDiagnosticEvent {
+            occurred_at: None,
+            module: "report_tagged_facts_capture".to_owned(),
+            scope: Some(crate::storage::DiagnosticScope {
+                scope_type: "report_document".to_owned(),
+                id: Some(report_document_id.to_owned()),
+            }),
+            stage: stage.to_owned(),
+            severity: "warning".to_owned(),
+            message: format!("Layer 1 tagged-fact capture did not persist: {error}"),
+            metadata: None,
+        });
+}
+
 /// Runs the structured pipeline for one report document and persists the
 /// result. `mode` is the run's mode (`MODE_AUTOPILOT` / `MODE_ASSIST`); it no
 /// longer affects the per-fact `confirmation_state` — facts are review-free
@@ -872,7 +1135,21 @@ pub(crate) fn run_structured_extraction(
     // routing ADDS coverage via the ESEF/iXBRL route (the positional route is
     // classification-only since ADR 0095). An unsupported
     // container is an explicit outcome row, never an error that aborts the sweep.
-    let esef_opt: Option<Vec<u8>> = match route_document(&bytes) {
+    let route = route_document(&bytes);
+    // Layer 1 raw tagged-fact capture (ADR 0100 dec. 1/8/9, epic #398 slice):
+    // a best-effort side channel that runs alongside the Layer 2 pipeline
+    // below and never affects its outcome — any failure here is logged and
+    // swallowed, not surfaced as a `run_structured_extraction` error.
+    capture_layer1_tagged_facts(state, company_id, report_document_id, &bytes, route);
+
+    // ADR 0100 (epic #398): the ESEF tier's candidate set is now a Layer 1
+    // projection (`fundamentals::extraction::esef::projection`), not a fresh
+    // `parse_esef` over unwrapped instance bytes — so this match only needs
+    // to (a) preserve the existing route-level outcomes (a bare-Positional or
+    // real-Pdf route emits nothing, an unreadable ZIP/unsupported container is
+    // an honest error) and (b) confirm an instance actually exists before
+    // computing the Layer 1 generation below.
+    match route {
         // Bare markup that is NOT iXBRL — a pdf2htmlEX visual render or an
         // HTML export. NO extraction attempt: the positional tier is retired
         // (ADR 0095). Mirrors the `DocumentRoute::Pdf` idiom below exactly: the
@@ -893,19 +1170,16 @@ pub(crate) fn run_structured_extraction(
         }
         // Markup that IS inline-XBRL → the ESEF tier reads it as its own instance
         // (a bare `.xhtml` instance stored under any name).
-        DocumentRoute::IxbrlInstance => Some(bytes.clone()),
-        // A ZIP report package (ESEF/eSprawozdanie): unpack the inner iXBRL
-        // instance (ADR 0061 dec. 1). A ZIP with no readable instance is
-        // unreadable-by-container, recorded as such — never fed to the PDF reader.
+        DocumentRoute::IxbrlInstance => {}
+        // A ZIP report package (ESEF/eSprawozdanie): a ZIP with no readable
+        // instance is unreadable-by-container, recorded as such — never fed to
+        // the PDF reader (ADR 0061 dec. 1).
         DocumentRoute::ZipPackage => {
-            match crate::fundamentals::extraction::esef_package::extract_instance(&bytes) {
-                Some(instance) => Some(instance),
-                None => {
-                    return Err(unsupported_container(
-                        Container::Zip,
-                        "the ZIP report package holds no readable iXBRL instance",
-                    ));
-                }
+            if crate::fundamentals::extraction::esef_package::extract_instance(&bytes).is_none() {
+                return Err(unsupported_container(
+                    Container::Zip,
+                    "the ZIP report package holds no readable iXBRL instance",
+                ));
             }
         }
         // A real PDF → NO extraction attempt (ADR 0086 dec. 1: the PDF fact
@@ -934,6 +1208,12 @@ pub(crate) fn run_structured_extraction(
         }
     };
 
+    // The pipeline's own Layer 1 generation (ADR 0100 decisions 1/4/7): a
+    // second, independent computation from the same bytes — never read back
+    // from storage — so a Layer 1 write failure above can never silently
+    // widen or narrow what Layer 2 projects from.
+    let layer1 = compute_layer1_generation(&bytes, route);
+
     // --- Comparative cross-check + completeness inputs (ADR 0061 dec. 4b/4d) --
     let prior_end = prior_period_end(period_end);
     // Veto-capable priors only (ADR 0086 dec. 3/4): a lower-tier (aggregator)
@@ -946,7 +1226,8 @@ pub(crate) fn run_structured_extraction(
 
     let input = PipelineInput {
         period_end,
-        esef_bytes: esef_opt.as_deref(),
+        layer1_facts: Some(&layer1.facts),
+        has_presentation_linkbase: layer1.has_presentation_linkbase,
         prior: stored_prior.as_ref(),
         prior_period_end: prior_end.as_deref(),
         expected_keys: expected_keys.as_ref(),
@@ -1110,7 +1391,14 @@ pub(crate) fn run_structured_extraction(
         }
     }
 
-    let issuer_emitted = !produced_fact_ids.is_empty();
+    // A successful accepted ESEF observation (epic #398 Item B blocker 1): NOT
+    // "at least one Created/Upgraded" — a re-extraction of an already-landed
+    // period legitimately lands EVERY fact in `skipped_fact_ids` (Reobserved/
+    // Divergent), zero in `produced_fact_ids`, and that is still a genuine
+    // success the version-aware re-extraction (below) and the autopilot
+    // `extractionAvailable` delta must both count as `true` — only a set with
+    // NOTHING committed anywhere (fully quarantined, or empty) is a gap.
+    let issuer_emitted = !produced_fact_ids.is_empty() || !skipped_fact_ids.is_empty();
 
     // --- Persist the OUTCOME, emitting or not (ADR 0061 dec. 2 guardrail) ---
     // The emit branch above is unchanged; this records what the run concluded
@@ -1271,6 +1559,41 @@ mod tests {
         buf
     }
 
+    /// Minimal presentation-linkbase XML classifying each `(concept, role URI
+    /// suffix)` pair (ADR 0100 decision 3) — the same shape
+    /// `esef_package.rs`'s own test fixture uses (`classify_role` matches on
+    /// the role URI's trailing segment, e.g. `-210000`). Every ESEF test
+    /// fixture below must ship one of these alongside its instance: a fact
+    /// with no role never survives Layer 2 projection (ADR 0100 epic #398).
+    fn presentation_linkbase_xml(mappings: &[(&str, &str)]) -> String {
+        let links: String = mappings
+            .iter()
+            .map(|(concept, role_suffix)| {
+                format!(
+                    r#"  <link:presentationLink xlink:type="extended" xlink:role="http://x/role/{role_suffix}">
+    <link:loc xlink:type="locator" xlink:href="ifrs-full-2023.xsd#ifrs-full_{concept}" xlink:label="loc_{concept}"/>
+  </link:presentationLink>"#
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<link:linkbase xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:xlink="http://www.w3.org/1999/xlink">
+{links}
+</link:linkbase>"#
+        )
+    }
+
+    /// The balance-sheet trio every fixture below tags — classified `balance`
+    /// (role family `-210000`, ADR 0100 decision 3) so `Assets`/`Liabilities`/
+    /// `Equity` survive Layer 2 projection's primary-statement role filter.
+    const BALANCE_SHEET_ROLES: &[(&str, &str)] = &[
+        ("Assets", "ias_1_role-210000"),
+        ("Liabilities", "ias_1_role-210000"),
+        ("Equity", "ias_1_role-210000"),
+    ];
+
     // --- route_document: magic-byte container routing (card eb71488) --------
     // The routing decision is a pure function of the bytes, so it is provable
     // without an AppState — these pin every arm the router relies on.
@@ -1294,7 +1617,8 @@ mod tests {
 
     #[test]
     fn route_ixbrl_markup_goes_to_the_esef_instance() {
-        let ixbrl = br#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"><body>
+        let ixbrl = br#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"><body>
             <ix:nonFraction name="ifrs-full:Revenue">100</ix:nonFraction></body></html>"#;
         assert_eq!(route_document(ixbrl), DocumentRoute::IxbrlInstance);
     }
@@ -1521,6 +1845,7 @@ mod tests {
     }
 
     const ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2026-03-31</xbrli:instant></xbrli:period></xbrli:context>
@@ -1530,6 +1855,10 @@ mod tests {
       <ix:nonFraction name="ifrs-full:Equity" contextRef="c" unitRef="pln" scale="3">25 000</ix:nonFraction>
     </html>"#;
 
+    /// A package (not a bare instance): a bare, non-package iXBRL instance has
+    /// no presentation linkbase to read, so its facts get no role rows and
+    /// never survive Layer 2 projection's role filter (ADR 0100 decision 3) —
+    /// which every real GPW filing sidesteps by shipping as a package anyway.
     fn seed_esef() -> (AppState, String, String) {
         let dir = unique_temp_dir("esef");
         std::fs::create_dir_all(&dir).expect("temp dir");
@@ -1556,14 +1885,68 @@ mod tests {
                 attribution: None,
             })
             .expect("document");
-        std::fs::write(dir.join("report.xhtml"), ESEF.as_bytes()).expect("write esef");
+        let pre_xml = presentation_linkbase_xml(BALANCE_SHEET_ROLES);
+        let bytes = minimal_zip(&[
+            ("reports/annual-2026.xhtml", ESEF.as_bytes()),
+            ("www/annual-2026_pre.xml", pre_xml.as_bytes()),
+        ]);
+        std::fs::write(dir.join("report.xhtml"), &bytes).expect("write esef");
+        state
+            .mark_report_document_fetched(
+                &document.id,
+                Some("report.xhtml"),
+                // Extension lies on purpose (card eb71488): routing reads the
+                // ZIP magic bytes, never the content-type/filename.
+                Some("application/octet-stream"),
+                None,
+                Some(bytes.len() as i64),
+            )
+            .expect("mark fetched");
+        (state, company.id, document.id)
+    }
+
+    /// A GENUINELY bare, non-package iXBRL instance — the exact `ESEF` markup
+    /// above, stored on disk with no ZIP wrapper and no `*_pre.xml` (`seed_esef`
+    /// above is misleadingly named: it wraps the same markup in a ZIP alongside
+    /// a linkbase, so it is really a package). `route_document` reads magic
+    /// bytes, not the filename, so this routes `DocumentRoute::IxbrlInstance`
+    /// (regression fix, ADR 0100 decision 3, epic #398): no linkbase evidence
+    /// exists for this document at all.
+    fn seed_bare_esef() -> (AppState, String, String) {
+        let dir = unique_temp_dir("bare-esef");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "BAR".to_owned(),
+                display_name: "Bare Instance S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: "https://example.com/bare-2026.xhtml".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Bare Instance Annual 2026".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        let bytes = ESEF.as_bytes();
+        std::fs::write(dir.join("report.xhtml"), bytes).expect("write bare esef");
         state
             .mark_report_document_fetched(
                 &document.id,
                 Some("report.xhtml"),
                 Some("application/xhtml+xml"),
                 None,
-                Some(ESEF.len() as i64),
+                Some(bytes.len() as i64),
             )
             .expect("mark fetched");
         (state, company.id, document.id)
@@ -1574,8 +1957,8 @@ mod tests {
     /// annual filing, without shipping a real one. Includes a dimensional
     /// (`explicitMember`) Equity component that must be filtered out.
     fn esef_package_bytes() -> Vec<u8> {
-        use std::io::Write;
         let instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
@@ -1589,20 +1972,17 @@ mod tests {
       <ix:nonFraction name="ifrs-full:Equity" contextRef="i" unitRef="pln" scale="3">25 000</ix:nonFraction>
       <ix:nonFraction name="ifrs-full:Equity" contextRef="nci" unitRef="pln" scale="3">3 000</ix:nonFraction>
     </html>"#;
-        let mut buf = Vec::new();
-        {
-            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            let opts = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
-            zip.start_file(
+        let pre_xml = presentation_linkbase_xml(BALANCE_SHEET_ROLES);
+        minimal_zip(&[
+            (
                 "CBF-2025-12-31-1-pl/reports/CBF-2025-12-31-1-pl.xhtml",
-                opts,
-            )
-            .unwrap();
-            zip.write_all(instance.as_bytes()).unwrap();
-            zip.finish().unwrap();
-        }
-        buf
+                instance.as_bytes(),
+            ),
+            (
+                "CBF-2025-12-31-1-pl/www/CBF-2025-12-31-1-pl_pre.xml",
+                pre_xml.as_bytes(),
+            ),
+        ])
     }
 
     fn seed_esef_package() -> (AppState, String, String) {
@@ -2049,6 +2429,317 @@ mod tests {
         assert_eq!(result.produced_fact_ids.len(), 3);
     }
 
+    /// Epic #398 Item B blocker 1 regression: a re-extraction of an
+    /// ALREADY-LANDED period re-observes every fact (nothing new to create,
+    /// everything lands in `skipped_fact_ids`) — that is still a genuine
+    /// success, not a gap. Before this fix `emitted` was `!produced_fact_ids.
+    /// is_empty()` alone, so this exact shape (the one a version-aware
+    /// re-extraction produces) was misrecorded as `extractionAvailable:false`.
+    #[test]
+    fn a_rerun_that_only_reobserves_every_fact_is_still_emitted() {
+        let (state, company_id, document_id) = seed_esef_package();
+        let document = state.get_report_document(&document_id).expect("document");
+        let (fiscal_year, period_type, period_end) =
+            derive_report_period(&state, &document).expect("period derives");
+        let first = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            fiscal_year,
+            period_type,
+            &period_end,
+            MODE_AUTOPILOT,
+        )
+        .expect("first extraction runs");
+        assert_eq!(first.produced_fact_ids.len(), 3);
+
+        let second = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            fiscal_year,
+            period_type,
+            &period_end,
+            MODE_AUTOPILOT,
+        )
+        .expect("second extraction runs");
+
+        assert!(
+            second.produced_fact_ids.is_empty(),
+            "nothing new — every fact is already stored at this slot"
+        );
+        assert_eq!(
+            second.skipped_fact_ids.len(),
+            3,
+            "all 3 facts re-observed identically"
+        );
+        assert!(
+            second.emitted,
+            "an all-reobserved rerun is a success, not a gap"
+        );
+        assert_eq!(second.acceptance, Acceptance::Accepted);
+    }
+
+    /// ADR 0100 decisions 1/8/9 (epic #398 slice): Layer 1 raw tagged-fact
+    /// capture runs alongside Layer 2 without changing its outcome — the same
+    /// assertions as `esef_package_extraction_emits_dimensionless_totals`
+    /// above, PLUS every one of the 4 real occurrences (including the
+    /// dimensional NCI-component Equity Layer 2 filters out) lands in
+    /// `report_tagged_facts`.
+    #[test]
+    fn esef_package_extraction_also_captures_layer1_tagged_facts_without_changing_layer2() {
+        let (state, company_id, document_id) = seed_esef_package();
+        let document = state.get_report_document(&document_id).expect("document");
+        let (fiscal_year, period_type, period_end) =
+            derive_report_period(&state, &document).expect("period derives");
+        let result = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            fiscal_year,
+            period_type,
+            &period_end,
+            MODE_AUTOPILOT,
+        )
+        .expect("structured extraction runs");
+
+        // Layer 2: byte-identical to the sibling test above.
+        assert_eq!(result.tier, Some(SourceTier::Esef));
+        assert_eq!(result.acceptance, Acceptance::Accepted);
+        assert_eq!(result.produced_fact_ids.len(), 3);
+
+        // Layer 1: all 4 occurrences captured (3 default-member + 1
+        // dimensional) — never filtered down to only what Layer 2 keeps.
+        let facts = state
+            .report_tagged_facts()
+            .facts(&document_id)
+            .expect("layer1 facts");
+        assert_eq!(facts.len(), 4);
+        assert_eq!(facts.iter().filter(|f| f.is_dimensional).count(), 1);
+        let extraction = state
+            .report_tagged_facts()
+            .extraction(&document_id)
+            .expect("extraction")
+            .expect("extraction row exists");
+        assert_eq!(extraction.encountered_count, 4);
+        assert_eq!(
+            extraction.stored_count, 4,
+            "decision 9: encountered == stored"
+        );
+        assert_eq!(extraction.dimensional_count, 1);
+    }
+
+    /// ADR 0100 decision 8: freshness is `(source_content_hash,
+    /// extractor_version)`. Re-running Layer 1 capture with unchanged bytes
+    /// must be a no-op (same rows, same ids); different bytes must rebuild.
+    #[test]
+    fn layer1_capture_skips_unchanged_bytes_and_rebuilds_on_change() {
+        let (state, company_id, document_id) = seed_esef_package();
+        let bytes = esef_package_bytes();
+        capture_layer1_tagged_facts(
+            &state,
+            &company_id,
+            &document_id,
+            &bytes,
+            DocumentRoute::ZipPackage,
+        );
+        let first_ids: Vec<String> = state
+            .report_tagged_facts()
+            .facts(&document_id)
+            .expect("facts")
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
+        assert_eq!(first_ids.len(), 4);
+
+        // Same bytes again: must skip — same generation, same ids.
+        capture_layer1_tagged_facts(
+            &state,
+            &company_id,
+            &document_id,
+            &bytes,
+            DocumentRoute::ZipPackage,
+        );
+        let second_ids: Vec<String> = state
+            .report_tagged_facts()
+            .facts(&document_id)
+            .expect("facts")
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
+        assert_eq!(
+            first_ids, second_ids,
+            "unchanged bytes must skip, not mint a new generation"
+        );
+
+        // Different bytes (a genuinely different package): must rebuild.
+        use std::io::Write;
+        let changed_instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+      <xbrli:context id="i"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
+      <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+      <ix:nonFraction name="ifrs-full:Assets" contextRef="i" unitRef="pln" scale="3">46 000</ix:nonFraction>
+    </html>"#;
+        let mut changed_bytes = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut changed_bytes));
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file(
+                "CBF-2025-12-31-1-pl/reports/CBF-2025-12-31-1-pl.xhtml",
+                opts,
+            )
+            .unwrap();
+            zip.write_all(changed_instance.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        capture_layer1_tagged_facts(
+            &state,
+            &company_id,
+            &document_id,
+            &changed_bytes,
+            DocumentRoute::ZipPackage,
+        );
+        let third_facts = state
+            .report_tagged_facts()
+            .facts(&document_id)
+            .expect("facts");
+        assert_eq!(
+            third_facts.len(),
+            1,
+            "changed bytes must rebuild with the new generation's own fact set"
+        );
+    }
+
+    /// ADR 0100 decision 1's "the package reader loses whole filings" fix: a
+    /// package with two real instances (a standalone filing alongside a
+    /// consolidated one, the real GPW shape) yields Layer 1 rows for BOTH,
+    /// distinguished by `package_entry_path`.
+    #[test]
+    fn a_multi_instance_package_yields_rows_for_every_instance() {
+        let (state, company_id, document_id) = seed_esef_package();
+        use std::io::Write;
+        let instance_a = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full" xmlns:xbrli="http://www.xbrl.org/2003/instance">
+      <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
+      <ix:nonFraction name="ifrs-full:Assets" contextRef="c" id="a1">100</ix:nonFraction>
+    </html>"#;
+        let instance_b = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full" xmlns:xbrli="http://www.xbrl.org/2003/instance">
+      <xbrli:context id="c"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
+      <ix:nonFraction name="ifrs-full:Assets" contextRef="c" id="b1">200</ix:nonFraction>
+    </html>"#;
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file("pkg/reports/standalone.xhtml", opts)
+                .unwrap();
+            zip.write_all(instance_a.as_bytes()).unwrap();
+            zip.start_file("pkg/reports/consolidated.xhtml", opts)
+                .unwrap();
+            zip.write_all(instance_b.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+
+        capture_layer1_tagged_facts(
+            &state,
+            &company_id,
+            &document_id,
+            &buf,
+            DocumentRoute::ZipPackage,
+        );
+        let facts = state
+            .report_tagged_facts()
+            .facts(&document_id)
+            .expect("facts");
+        assert_eq!(facts.len(), 2);
+        let paths: std::collections::HashSet<&str> = facts
+            .iter()
+            .map(|f| f.package_entry_path.as_str())
+            .collect();
+        assert!(paths.contains("pkg/reports/standalone.xhtml"));
+        assert!(paths.contains("pkg/reports/consolidated.xhtml"));
+    }
+
+    /// Regression fix (ADR 0100 decision 3, epic #398): a bare (non-package)
+    /// iXBRL instance carries no `*_pre.xml`, so `compute_layer1_generation`
+    /// must report `has_presentation_linkbase = false` and count every
+    /// dimensionless/valued fact as a fallback candidate — "the fallback
+    /// explicitly recorded ... never silent", visible on the extraction
+    /// record itself once captured. A package that DOES ship a linkbase
+    /// (`esef_package_bytes`) must report the opposite: `true` and `0`.
+    #[test]
+    fn a_bare_instance_generation_reports_no_linkbase_and_the_fallback_counter() {
+        let generation = compute_layer1_generation(ESEF.as_bytes(), DocumentRoute::IxbrlInstance);
+        assert!(!generation.has_presentation_linkbase);
+        assert_eq!(
+            generation.no_linkbase_fallback_count, 3,
+            "all 3 dimensionless, valued facts (Assets/Liabilities/Equity) are \
+             fallback candidates"
+        );
+
+        let package_generation =
+            compute_layer1_generation(&esef_package_bytes(), DocumentRoute::ZipPackage);
+        assert!(package_generation.has_presentation_linkbase);
+        assert_eq!(
+            package_generation.no_linkbase_fallback_count, 0,
+            "a linkbase-bearing package never uses the fallback"
+        );
+    }
+
+    /// The same evidence, visible on the STORED extraction record — the
+    /// counter is not just an in-memory computation, `capture_layer1_tagged_
+    /// facts` must persist it.
+    #[test]
+    fn a_bare_instance_extraction_record_shows_the_fallback_count() {
+        let (state, company_id, document_id) = seed_esef_package();
+        capture_layer1_tagged_facts(
+            &state,
+            &company_id,
+            &document_id,
+            ESEF.as_bytes(),
+            DocumentRoute::IxbrlInstance,
+        );
+        let extraction = state
+            .report_tagged_facts()
+            .extraction(&document_id)
+            .expect("extraction")
+            .expect("extraction row exists");
+        assert_eq!(extraction.no_linkbase_fallback_count, 3);
+    }
+
+    /// End-to-end regression proof through the REAL job entry point (not just
+    /// the pure pipeline): before this fix, a bare instance's facts all failed
+    /// the strict role filter (no linkbase to attach roles from) and the
+    /// document silently projected zero facts — `Acceptance::Empty`, nothing
+    /// emitted. It must now emit its balance-sheet trio via the no-linkbase
+    /// fallback.
+    #[test]
+    fn a_bare_instance_document_emits_facts_through_run_structured_extraction() {
+        let (state, company_id, document_id) = seed_bare_esef();
+        let result = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2026,
+            "FY",
+            "2026-03-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("structured extraction runs");
+
+        assert_eq!(result.tier, Some(SourceTier::Esef));
+        assert!(
+            result.emitted,
+            "the no-linkbase fallback must still emit — a realistic count > 0"
+        );
+        assert_eq!(result.produced_fact_ids.len(), 3);
+    }
+
     /// A non-iXBRL pdf2htmlEX render (an XHTML with no `ix:` tags): the visual
     /// geometry with CSS coordinate maps and shredded numbers no ESEF/PDF tier can
     /// read. `derive_report_period` falls through to the title (T-A1).
@@ -2194,7 +2885,15 @@ mod tests {
             3,
             "all three facts already exist at their slot → skipped"
         );
-        assert!(!second.emitted, "no new facts emitted on re-extraction");
+        // Epic #398 Item B blocker 1: an all-reobserved rerun is a SUCCESS
+        // (produced_fact_ids OR skipped_fact_ids nonempty), never a gap — the
+        // exact shape a version-aware re-extraction produces. Before that fix
+        // `emitted` was `!produced_fact_ids.is_empty()` alone, so this legitimate
+        // re-observation was misrecorded as `extractionAvailable:false`.
+        assert!(
+            second.emitted,
+            "an all-reobserved rerun is a success, not a gap"
+        );
         assert!(
             second.divergences.is_empty(),
             "identical values → no divergence"
@@ -2611,6 +3310,7 @@ mod tests {
     // 25m at 2026-03-31) — ESEF tags comparatives natively, so this exercises
     // the comparative cross-check (ADR 0061 dec. 4b) through tier 1.
     const ESEF_WITH_PRIOR: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
       <xbrli:context id="c"><xbrli:period><xbrli:instant>2026-03-31</xbrli:instant></xbrli:period></xbrli:context>
@@ -2650,14 +3350,19 @@ mod tests {
                 attribution: None,
             })
             .expect("document");
-        std::fs::write(dir.join("report.xhtml"), ESEF_WITH_PRIOR.as_bytes()).expect("write esef");
+        let pre_xml = presentation_linkbase_xml(BALANCE_SHEET_ROLES);
+        let bytes = minimal_zip(&[
+            ("reports/annual-2026.xhtml", ESEF_WITH_PRIOR.as_bytes()),
+            ("www/annual-2026_pre.xml", pre_xml.as_bytes()),
+        ]);
+        std::fs::write(dir.join("report.xhtml"), &bytes).expect("write esef");
         state
             .mark_report_document_fetched(
                 &document.id,
                 Some("report.xhtml"),
-                Some("application/xhtml+xml"),
+                Some("application/octet-stream"),
                 None,
-                Some(ESEF_WITH_PRIOR.len() as i64),
+                Some(bytes.len() as i64),
             )
             .expect("mark fetched");
         (state, company.id, document.id)

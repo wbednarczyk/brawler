@@ -39,6 +39,10 @@ pub struct MetricDef {
     pub formula: Option<Expr>,
     pub value_kind: String,
     pub unit: Option<String>,
+    /// `instant | duration` (`kpi_definitions.period_nature`, migration
+    /// `0141`, ADR 0100 decision 6) — the axis [`measure_window_for`]/
+    /// [`is_ttm_eligible`] read.
+    pub period_nature: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,19 +56,27 @@ pub enum Computation {
 pub const ANNUAL_PERIOD_TYPE: &str = "FY";
 
 /// Metric keys measured **at a point in time** rather than accumulated over
-/// one — balance-sheet lines, share/asset counts and quote scalars. A TTM
-/// window is undefined over them (see [`MetricsContext::is_flow_key`]).
+/// one — balance-sheet lines, share/asset counts and quote scalars.
 ///
-/// **Interim home.** `kpi_definitions` carries no flow/stock axis: `value_kind`
-/// separates `monetary` from `ratio`, not a revenue from a cash balance. Until
-/// the catalog grows that column (at which point this list becomes a seeded
-/// migration and this const goes away), the classification lives here, covering
-/// every seeded key across `canonical` and `sector` scope. Keys genuinely
-/// ambiguous on the axis are deliberately **absent** — `_ttm` keeps working for
-/// them rather than being refused on a guess.
+/// **Retired from runtime use** (ADR 0100 decision 6, epic #398): the axis
+/// this list encoded now lives in `kpi_definitions.period_nature`
+/// (migration `0141`), read by [`measure_window_for`]/[`is_ttm_eligible`]
+/// instead of this const — its own doc comment anticipated exactly this.
+/// What remains: the authoring source for `0141`'s backfill `UPDATE`, and
+/// the reference list the backfill gate
+/// (`every_stock_metric_key_backfills_to_instant_period_nature`,
+/// `storage/tests/quality_frameworks.rs`) checks every seeded row against —
+/// a typo or a renamed seeded key would otherwise silently lose the
+/// `period_nature = 'instant'` backfill, with no other symptom.
 ///
-/// Ratios and percentages are *not* listed: they are refused by `value_kind`
-/// instead, which also covers user-defined ones.
+/// Ratios and percentages are *not* listed: [`is_ttm_eligible`] refuses them
+/// by `value_kind` regardless of `period_nature`, which also covers
+/// user-defined ones.
+///
+/// `#[allow(dead_code)]`: every reader is now test-only (test fixtures + the
+/// backfill gate) — the non-test build genuinely has no runtime caller left,
+/// by design.
+#[allow(dead_code)]
 pub(crate) const STOCK_METRIC_KEYS: &[&str] = &[
     // Balance sheet — canonical reported (migration 0034).
     "cash",
@@ -110,16 +122,44 @@ pub(crate) const STOCK_METRIC_KEYS: &[&str] = &[
     "total_loans",
 ];
 
-/// Whether `metric_key` names a flow (accumulates over a span) rather than a
-/// stock (a balance at a point in time) — the same TTM-eligibility axis
-/// [`MetricsContext::is_flow_key`] uses, pulled out pure so a caller with no
-/// [`MetricsContext`] (`fundamentals::kpi_manifest`'s `period.window_kind_mismatch`
-/// check, #361) can classify a metric it already has the `value_kind` for
-/// without building one. `value_kind` is `None` for a key with no resolved
-/// catalog definition — treated as a flow, the same default the method form
-/// uses for a key absent from both [`STOCK_METRIC_KEYS`] and the catalog.
-pub(crate) fn is_flow_key(metric_key: &str, value_kind: Option<&str>) -> bool {
-    if STOCK_METRIC_KEYS.contains(&metric_key) {
+/// The measure-window a fact of this `period_nature` should carry (ADR 0100
+/// decision 6): an **instant** fact is always `point_in_time`, independent of
+/// the acquisition profile. A **duration** fact is `cumulative` under an
+/// interim (`gpw_interim@`-prefixed) profile (ADR 0098 decision 3) or plain
+/// `flow` otherwise — TTM eligibility plays no role here, a distinct axis
+/// (see [`is_ttm_eligible`]): a ratio is duration-reported and still gets a
+/// flow/cumulative window even though it can never be summed into a TTM.
+///
+/// Pure — both parameters are optional because a caller without a resolved
+/// definition or without a profile exists: `fundamentals::kpi_manifest`'s
+/// `period.window_kind_mismatch` check (#361) has no acquisition profile to
+/// weigh in and passes `None`; `period_nature` absent (no catalog definition)
+/// defaults to `duration`, the pre-existing no-definition fallback.
+pub(crate) fn measure_window_for(
+    period_nature: Option<&str>,
+    profile_version: Option<&str>,
+) -> &'static str {
+    if period_nature == Some("instant") {
+        return "point_in_time";
+    }
+    match profile_version {
+        Some(v) if v.starts_with("gpw_interim@") => "cumulative",
+        _ => "flow",
+    }
+}
+
+/// Whether a TTM (trailing-twelve-months) window is defined over a metric
+/// with this `period_nature` and `value_kind` (ADR 0100 decision 6) — the
+/// axis [`MetricsContext::is_ttm_eligible`] uses, pulled out pure so a caller
+/// with no [`MetricsContext`] can classify a metric it already has the two
+/// axes for without building one. An **instant** fact is never TTM-eligible
+/// (span arithmetic over a balance produces a number that is neither a
+/// balance nor a flow); a **ratio**/**percentage** never is either, even when
+/// duration-reported (never additive across periods) — the exact conflation
+/// `is_flow_key` used to collapse into one predicate. Either axis absent (no
+/// resolved catalog definition) keeps the pre-existing default: eligible.
+pub(crate) fn is_ttm_eligible(period_nature: Option<&str>, value_kind: Option<&str>) -> bool {
+    if period_nature == Some("instant") {
         return false;
     }
     !matches!(value_kind, Some("ratio") | Some("percentage"))
@@ -501,7 +541,7 @@ impl MetricsContext {
         idx: usize,
         visiting: &RefCell<HashSet<(String, usize)>>,
     ) -> Option<Decimal> {
-        if !self.is_flow_key(key) {
+        if !self.is_ttm_eligible(key) {
             return None;
         }
         let period = self.periods.get(idx)?;
@@ -518,25 +558,28 @@ impl MetricsContext {
         Some(prior_fy + ytd - prior_ytd)
     }
 
-    /// Whether a TTM window is defined over this key at all. "Trailing twelve
-    /// months" only means something for a quantity that **accumulates over
-    /// time**; two classes never do, and for them the honest answer is no value
-    /// rather than a computed one:
+    /// Whether a TTM window is defined over this key at all (ADR 0100
+    /// decision 6). "Trailing twelve months" only means something for a
+    /// quantity that **accumulates over time**; two classes never do, and
+    /// for them the honest answer is no value rather than a computed one:
     ///
     /// * **point-in-time stocks** — balance-sheet lines, share counts, quotes
-    ///   ([`STOCK_METRIC_KEYS`]). Span arithmetic over a balance produces a
-    ///   number that is neither a balance nor a flow. Use the bare key, or
-    ///   `_avg` for the balance-sheet averaging that return ratios want.
+    ///   (`period_nature = 'instant'`). Span arithmetic over a balance
+    ///   produces a number that is neither a balance nor a flow. Use the bare
+    ///   key, or `_avg` for the balance-sheet averaging that return ratios
+    ///   want.
     /// * **ratios and percentages** — never additive across periods, whatever
-    ///   their inputs. Recognised from the catalog's `value_kind`, so a
-    ///   `user`/`sector`-scope ratio is covered without listing it.
+    ///   their inputs, even when duration-reported. Recognised from the
+    ///   catalog's `value_kind`, so a `user`/`sector`-scope ratio is covered
+    ///   without listing it.
     ///
-    /// A key absent from both the list and the catalog (an ad-hoc reported
-    /// fact) is treated as a flow — the pre-existing default.
-    fn is_flow_key(&self, key: &str) -> bool {
-        is_flow_key(
-            key,
-            self.definitions.get(key).map(|d| d.value_kind.as_str()),
+    /// A key absent from the catalog (an ad-hoc reported fact) is treated as
+    /// duration/eligible — the pre-existing default.
+    fn is_ttm_eligible(&self, key: &str) -> bool {
+        let def = self.definitions.get(key);
+        is_ttm_eligible(
+            def.map(|d| d.period_nature.as_str()),
+            def.map(|d| d.value_kind.as_str()),
         )
     }
 
@@ -648,6 +691,7 @@ mod tests {
             formula: None,
             value_kind: kind.to_owned(),
             unit: None,
+            period_nature: "duration".to_owned(),
         }
     }
 
@@ -657,7 +701,62 @@ mod tests {
             formula: parse_formula(formula),
             value_kind: kind.to_owned(),
             unit: None,
+            period_nature: "duration".to_owned(),
         }
+    }
+
+    /// Stamps `period_nature = "instant"` on every def in `defs` whose key is
+    /// in [`STOCK_METRIC_KEYS`] — reusing that list as the single source of
+    /// stock/flow truth in these hand-built test catalogs too, so a test
+    /// fixture never drifts from the real migration `0141` backfill it
+    /// stands in for.
+    fn mark_stock_period_nature(defs: &mut HashMap<String, MetricDef>) {
+        for key in STOCK_METRIC_KEYS {
+            if let Some(def) = defs.get_mut(*key) {
+                def.period_nature = "instant".to_owned();
+            }
+        }
+    }
+
+    #[test]
+    fn is_ttm_eligible_axis() {
+        // ADR 0100 decision 6: an instant fact is never TTM-eligible,
+        // regardless of value_kind.
+        assert!(!is_ttm_eligible(Some("instant"), Some("monetary")));
+        // A duration monetary flow is the ordinary eligible case.
+        assert!(is_ttm_eligible(Some("duration"), Some("monetary")));
+        // A ratio/percentage is duration-reported yet never TTM-eligible --
+        // the exact conflation this decision splits apart.
+        assert!(!is_ttm_eligible(Some("duration"), Some("ratio")));
+        assert!(!is_ttm_eligible(Some("duration"), Some("percentage")));
+        // A key absent from the catalog (both axes `None`) keeps the
+        // pre-existing `is_flow_key` fallback: eligible.
+        assert!(is_ttm_eligible(None, None));
+    }
+
+    #[test]
+    fn measure_window_for_axis() {
+        // Instant -> point_in_time, independent of the acquisition profile.
+        assert_eq!(measure_window_for(Some("instant"), None), "point_in_time");
+        assert_eq!(
+            measure_window_for(Some("instant"), Some("gpw_interim@v1")),
+            "point_in_time"
+        );
+        // Duration -> flow outside an interim profile...
+        assert_eq!(measure_window_for(Some("duration"), None), "flow");
+        assert_eq!(
+            measure_window_for(Some("duration"), Some("gpw_ifrs_annual@v1")),
+            "flow"
+        );
+        // ...cumulative under a `gpw_interim@`-prefixed profile (ADR 0098
+        // dec. 3), regardless of ratio TTM eligibility -- a ratio is still
+        // duration-reported.
+        assert_eq!(
+            measure_window_for(Some("duration"), Some("gpw_interim@v1")),
+            "cumulative"
+        );
+        // No-definition fallback stays the pre-existing duration/flow default.
+        assert_eq!(measure_window_for(None, None), "flow");
     }
 
     fn ctx_with(periods: Vec<PeriodFacts>) -> MetricsContext {
@@ -684,6 +783,7 @@ mod tests {
             "roe".to_owned(),
             def_derived("percentage", "net_profit_ttm / total_equity_avg"),
         );
+        mark_stock_period_nature(&mut defs);
         MetricsContext::new(defs, periods)
     }
 
@@ -1068,6 +1168,7 @@ mod tests {
                 "distance_from_52w_low".to_owned(),
                 def_derived("percentage", "(close - week52_low) / week52_low"),
             );
+            mark_stock_period_nature(&mut defs);
             defs
         }
 

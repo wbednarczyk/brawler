@@ -505,6 +505,7 @@ fn frameworks_round_trip_through_export_import_with_custom_metric() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("custom metric creates");
 
@@ -1484,6 +1485,7 @@ fn every_canonical_derived_metric_is_computable_from_a_representative_fact_set()
             formula,
             value_kind: def.value_kind.clone(),
             unit: def.unit.clone(),
+            period_nature: def.period_nature.clone(),
         });
         if def.computation == "reported" {
             next += 7;
@@ -1514,18 +1516,63 @@ fn every_canonical_derived_metric_is_computable_from_a_representative_fact_set()
     }
 }
 
+/// A derived formula must never reference a metric key declared dead
+/// (`fundamentals::kpi_aliases`) — ADR 0100 decision 12.
+///
+/// The computability gate above cannot catch this: it seeds a fact for EVERY
+/// reported definition, including the dead ones, so `quick_ratio` computed
+/// happily in the test while returning nothing for every real company —
+/// `inventory` holds zero facts, `inventories` holds them all. The metric was
+/// silently unavailable from the day it was seeded (repaired by migration
+/// `0147`). This gate reddens on the class, not the instance: declare a key an
+/// alias source and any formula still reading it fails here.
 #[test]
-fn every_stock_metric_key_names_a_seeded_definition() {
-    // `STOCK_METRIC_KEYS` (metrics.rs) is a hand-maintained flow/stock axis the
-    // catalog does not carry, and it is refusal-by-name: a typo or a renamed
-    // seeded key silently stops refusing `_ttm` over a balance sheet, with no
-    // other symptom. This gate catches that half of the drift. (The other half —
-    // a newly seeded balance-sheet key nobody classified — is not mechanically
-    // detectable until `kpi_definitions` grows the axis; the const's doc comment
-    // is the checklist.)
+fn no_derived_formula_references_an_alias_source() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
-    let seeded: std::collections::HashSet<String> = state
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions");
+
+    // Identifier-boundary match: `inventory` must not fire on `inventories`.
+    let references = |formula: &str, key: &str| {
+        formula.match_indices(key).any(|(at, _)| {
+            let before = formula[..at].chars().next_back();
+            let after = formula[at + key.len()..].chars().next();
+            let boundary =
+                |c: Option<char>| !matches!(c, Some(c) if c.is_alphanumeric() || c == '_');
+            boundary(before) && boundary(after)
+        })
+    };
+
+    for def in &definitions {
+        let Some(formula) = def.formula.as_ref().filter(|f| !f.trim().is_empty()) else {
+            continue;
+        };
+        for alias in crate::fundamentals::kpi_aliases::aliases() {
+            assert!(
+                !references(formula, alias.from),
+                "derived metric `{}` reads `{}`, which is a dead alias of `{}` and holds no facts — \
+                 the metric would never compute for a real company (formula {formula:?})",
+                def.metric_key,
+                alias.from,
+                alias.to
+            );
+        }
+    }
+}
+
+/// The other half of decision 12's one-sidedness: an alias source must name a
+/// real catalog row (so redirecting it is meaningful) and the target must too.
+#[test]
+fn every_alias_names_two_seeded_catalog_keys() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let keys: std::collections::HashSet<String> = state
         .list_kpi_definitions(ListKpiDefinitionsInput {
             scope: None,
             sector: None,
@@ -1536,12 +1583,55 @@ fn every_stock_metric_key_names_a_seeded_definition() {
         .map(|def| def.metric_key)
         .collect();
 
-    for key in crate::fundamentals::metrics::STOCK_METRIC_KEYS {
+    for alias in crate::fundamentals::kpi_aliases::aliases() {
         assert!(
-            seeded.contains(*key),
-            "STOCK_METRIC_KEYS names `{key}`, which no migration seeds — \
-             a rename or typo would silently re-enable `{key}_ttm`"
+            keys.contains(alias.from),
+            "alias source `{}` is not a seeded catalog key — nothing resolves it",
+            alias.from
         );
+        assert!(
+            keys.contains(alias.to),
+            "alias target `{}` is not a seeded catalog key — the redirect would drop the fact",
+            alias.to
+        );
+    }
+}
+
+#[test]
+fn every_stock_metric_key_backfills_to_instant_period_nature() {
+    // ADR 0100 decision 6, epic #398: `STOCK_METRIC_KEYS` (metrics.rs) is
+    // retired from runtime use into `kpi_definitions.period_nature`
+    // (migration `0141`) — this gate keeps the const's original job (a typo
+    // or a renamed seeded key silently loses its `_ttm` refusal, with no
+    // other symptom) by checking the BACKFILL instead of mere seeding: every
+    // key the const names must resolve to a seeded definition whose
+    // `period_nature` is `instant`. (The other half of the drift — a newly
+    // seeded balance-sheet key nobody classified — is not mechanically
+    // detectable until an evidence-driven crosswalk generates the axis; the
+    // const's doc comment is the checklist.)
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let period_nature_of: std::collections::HashMap<String, String> = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions")
+        .into_iter()
+        .map(|def| (def.metric_key, def.period_nature))
+        .collect();
+
+    for key in crate::fundamentals::metrics::STOCK_METRIC_KEYS {
+        match period_nature_of.get(*key) {
+            None => panic!("STOCK_METRIC_KEYS names `{key}`, which no migration seeds"),
+            Some(nature) => assert_eq!(
+                nature, "instant",
+                "STOCK_METRIC_KEYS names `{key}`, but its seeded definition's \
+                 period_nature is `{nature}`, not `instant` — `{key}_ttm` \
+                 would silently re-enable over it"
+            ),
+        }
     }
 }
 
@@ -1604,6 +1694,7 @@ fn health_score_liquidity_metrics_derive_from_current_items() {
             formula,
             value_kind: def.value_kind.clone(),
             unit: def.unit.clone(),
+            period_nature: def.period_nature.clone(),
         });
     }
     let mut reported: HashMap<String, Decimal> = HashMap::new();
@@ -1989,6 +2080,7 @@ fn research_import_bounds_user_metric_identities() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("custom metric creates");
     let export = source.export_research_data().expect("export");

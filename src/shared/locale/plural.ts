@@ -61,3 +61,12 @@ export const METRIC_FORMS: PluralForms = {
   en: ["metric", "metrics"],
   pl: ["metryka", "metryki", "metryk"],
 };
+
+// Statement-switcher completeness bar (epic #398): "N czeka na nazwanie" — the
+// verb, not just the noun, needs Polish agreement (singular "czeka" for
+// one/many-genitive, plural "czekają" for the few category), mirroring the
+// RECORDED_FORMS precedent in FundamentalsPanel.tsx.
+export const AWAITS_NAMING_FORMS: PluralForms = {
+  en: ["awaits", "await"],
+  pl: ["czeka", "czekają", "czeka"],
+};
