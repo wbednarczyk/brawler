@@ -646,10 +646,14 @@ fn coverage_counts(
                 |row| row.get(0),
             )
             .optional()?;
-        let own_period_end: Option<&str> = declared
-            .as_deref()
-            .filter(|d| period_ends.contains(d))
-            .or_else(|| period_ends.last().copied());
+        // A present derived period wins UNCONDITIONALLY (sol round 3): if
+        // the declared reporting date is not among the tagged dates, the
+        // honest outcome is zero projected and everything comparative —
+        // never a silent switch to the lexicographically latest date, which
+        // would let a subsequent-events note instant impersonate the
+        // reporting period.
+        let own_period_end: Option<&str> =
+            declared.as_deref().or_else(|| period_ends.last().copied());
         for period_end in period_ends.iter().copied() {
             let result = crate::fundamentals::extraction::esef::projection::project_period(
                 doc_facts,
@@ -740,15 +744,21 @@ fn harvest_uncrosswalked_concepts_for_company(
             .map(|entry| entry.concept)
             .collect();
 
-    // Keyed by (namespace, local name) — sol round 2: an issuer extension
-    // reusing a standard local name is a DIFFERENT concept and must neither
-    // inflate the standard concept's distinct-issuer count nor borrow it.
+    // Keyed by (normalized namespace, local name) — sol rounds 2/3: an
+    // issuer extension reusing a standard local name is a DIFFERENT concept
+    // and must neither inflate the standard concept's distinct-issuer count
+    // nor borrow it — while the annual IFRS taxonomy releases are VERSIONS
+    // of one standard vocabulary, so three issuers on three taxonomy years
+    // are three issuers of ONE concept, never three one-issuer concepts.
     let mut global_counts: HashMap<(String, String), i64> = HashMap::new();
     {
-        let mut statement = connection.prepare(
-            "SELECT concept_namespace_uri, concept_local_name, COUNT(DISTINCT company_id)
-             FROM report_tagged_facts GROUP BY concept_namespace_uri, concept_local_name",
-        )?;
+        let sql = format!(
+            "SELECT CASE WHEN {pred} THEN '' ELSE concept_namespace_uri END AS ns,
+                    concept_local_name, COUNT(DISTINCT company_id)
+             FROM report_tagged_facts GROUP BY ns, concept_local_name",
+            pred = crate::fundamentals::extraction::ifrs_crosswalk::STANDARD_IFRS_NAMESPACE_SQL_PREDICATE
+        );
+        let mut statement = connection.prepare(&sql)?;
         let rows = statement.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -798,8 +808,16 @@ fn harvest_uncrosswalked_concepts_for_company(
         {
             continue;
         }
+        let normalized_namespace =
+            if crate::fundamentals::extraction::ifrs_crosswalk::is_standard_ifrs_namespace(
+                &namespace,
+            ) {
+                String::new()
+            } else {
+                namespace.clone()
+            };
         let entry = by_concept
-            .entry((namespace.clone(), concept))
+            .entry((normalized_namespace, concept))
             .or_insert_with(|| Agg {
                 namespace: namespace.clone(),
                 occurrences: 0,
@@ -815,7 +833,7 @@ fn harvest_uncrosswalked_concepts_for_company(
 
     let mut out: Vec<CompanyHarvestedConcept> = by_concept
         .into_iter()
-        .map(|((namespace, concept), agg)| {
+        .map(|((normalized_namespace, concept), agg)| {
             let period_nature =
                 if agg.period_types.len() == 1 && agg.period_types.contains("instant") {
                     "instant"
@@ -831,7 +849,7 @@ fn harvest_uncrosswalked_concepts_for_company(
                 .unwrap_or_else(|| "other".to_owned());
             CompanyHarvestedConcept {
                 company_count: *global_counts
-                    .get(&(namespace, concept.clone()))
+                    .get(&(normalized_namespace, concept.clone()))
                     .unwrap_or(&0),
                 occurrence_count: agg.occurrences,
                 concept_namespace_uri: agg.namespace,

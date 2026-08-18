@@ -75,15 +75,22 @@ impl PipelineReextractionStore {
         self.get_batch(&id)
     }
 
-    /// Create a queued batch UNLESS the company's latest batch is still
-    /// `queued`/`running` — then return that one. Check and insert run in a
-    /// single IMMEDIATE transaction (sol round 2, finding 12): two
-    /// concurrent MCP calls must never both observe "no active batch" and
-    /// mint two. Returns `(batch, created)` so the caller knows whether a
-    /// job still needs enqueueing.
-    pub fn create_batch_if_none_active(
+    /// Create a queued batch AND its durable job row in one IMMEDIATE
+    /// transaction, unless the company's latest batch is still active — then
+    /// return that one. Atomicity closes both round-3 holes (sol finding
+    /// 12): two concurrent MCP calls can never both mint a batch, and a
+    /// crash can never commit a batch without its job — they land together
+    /// or not at all. Returning an existing `queued` batch additionally
+    /// verifies its job row still exists (any status); an orphaned batch —
+    /// possible only on a database written by the pre-fix code — is marked
+    /// `failed` in the same transaction and a fresh batch+job pair is
+    /// created, so an inert batch is never returned as if it were progress.
+    pub fn create_batch_with_job_if_none_active(
         &self,
         company_id: &str,
+        job_kind: &str,
+        job_max_attempts: i64,
+        job_payload: impl Fn(&str) -> String,
     ) -> StorageResult<(PipelineReextractionBatch, bool)> {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -100,13 +107,37 @@ impl PipelineReextractionStore {
             )
             .optional()?;
         if let Some(existing) = active {
-            tx.commit()?;
-            return Ok((existing, false));
+            let job_exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM job_queue WHERE id = ?1)",
+                params![existing.id],
+                |row| row.get(0),
+            )?;
+            // A `running` batch's job row can be legitimately terminal;
+            // only a `queued` batch with NO job row at all is inert.
+            if existing.status != "queued" || job_exists {
+                tx.commit()?;
+                return Ok((existing, false));
+            }
+            tx.execute(
+                "
+                UPDATE pipeline_reextraction_batches
+                SET status = 'failed',
+                    error = 'orphaned: no job row existed for this queued batch',
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                params![existing.id],
+            )?;
         }
         let id = next_batch_id(&tx, company_id)?;
         tx.execute(
             "INSERT INTO pipeline_reextraction_batches (id, company_id) VALUES (?1, ?2)",
             params![id, company_id],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO job_queue (id, kind, payload, max_attempts)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![id, job_kind, job_payload(&id), job_max_attempts.max(1)],
         )?;
         tx.commit()?;
         drop(connection);

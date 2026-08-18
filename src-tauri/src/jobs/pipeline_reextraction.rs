@@ -58,40 +58,31 @@ const REEXTRACTION_TRIGGER: &str = "manual";
 /// Start a version-aware re-extraction batch for a company: create a queued
 /// batch row + enqueue its durable job.
 ///
-/// **Idempotent while one is in flight, race-free** (sol review finding 12,
-/// both rounds): the check-and-create runs in ONE immediate transaction
-/// (`create_batch_if_none_active`), so two concurrent MCP calls can never
-/// both mint a batch. A failed job enqueue marks the fresh batch `failed`
-/// instead of stranding a permanently-`queued` batch that every later call
-/// would return as if it were making progress.
+/// **Idempotent while one is in flight, race- and crash-free** (sol review
+/// finding 12, rounds 2/3): batch row AND job row are inserted in ONE
+/// immediate transaction (`create_batch_with_job_if_none_active`), so two
+/// concurrent MCP calls can never both mint a batch and a crash can never
+/// commit a batch without its job. A pre-fix orphaned `queued` batch (no
+/// job row) is marked failed in the same transaction, never returned as if
+/// it were making progress.
 pub fn enqueue_pipeline_reextraction(
     state: &AppState,
     company_id: &str,
 ) -> Result<PipelineReextractionBatch, String> {
-    let (batch, created) = state
+    let (batch, _created) = state
         .pipeline_reextraction()
-        .create_batch_if_none_active(company_id)
+        .create_batch_with_job_if_none_active(
+            company_id,
+            PIPELINE_REEXTRACTION_KIND,
+            PIPELINE_REEXTRACTION_MAX_ATTEMPTS,
+            |batch_id| {
+                serde_json::to_string(&PipelineReextractionPayload {
+                    batch_id: batch_id.to_owned(),
+                })
+                .unwrap_or_else(|_| format!("{{\"batch_id\":\"{batch_id}\"}}"))
+            },
+        )
         .map_err(|error| error.to_string())?;
-    if !created {
-        return Ok(batch);
-    }
-    let payload = serde_json::to_string(&PipelineReextractionPayload {
-        batch_id: batch.id.clone(),
-    })
-    .map_err(|error| error.to_string())?;
-    if let Err(error) = state.jobs().enqueue(
-        &batch.id,
-        PIPELINE_REEXTRACTION_KIND,
-        &payload,
-        PIPELINE_REEXTRACTION_MAX_ATTEMPTS,
-    ) {
-        // Never strand an inert `queued` batch (sol round 2): mark it failed
-        // so the next call may start a real one.
-        let _ = state
-            .pipeline_reextraction()
-            .fail_batch(&batch.id, &format!("job enqueue failed: {error}"));
-        return Err(error.to_string());
-    }
     Ok(batch)
 }
 

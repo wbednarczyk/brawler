@@ -98,7 +98,10 @@ export function CoverageUncrosswalkedConcepts({ companyId, reloadKey = 0 }: Prop
       );
       setRows((current) =>
         current.map((existing) =>
-          existing.conceptLocalName === row.conceptLocalName
+          // Identity is (namespace, local name) — a same-named extension row
+          // must not light up when the standard concept is promoted.
+          existing.conceptLocalName === row.conceptLocalName &&
+          existing.conceptNamespaceUri === row.conceptNamespaceUri
             ? { ...existing, alreadyPromoted: true, promotedDefinitionId: promoted.definitionId }
             : existing,
         ),
@@ -144,7 +147,7 @@ export function CoverageUncrosswalkedConcepts({ companyId, reloadKey = 0 }: Prop
           const busy = promotingConcept === row.conceptLocalName;
           return (
             <ListRow
-              key={row.conceptLocalName}
+              key={`${row.conceptNamespaceUri}#${row.conceptLocalName}`}
               title={row.humanLabel}
               titleAttr={row.humanLabel}
               meta={

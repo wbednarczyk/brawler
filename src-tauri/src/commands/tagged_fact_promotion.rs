@@ -152,10 +152,44 @@ pub(crate) fn compute_tagged_fact_coverage(
 
 /// Standard IFRS taxonomy namespaces carry no company-specific label — the
 /// package's label linkbase only ever supplies labels for an issuer's OWN
-/// extension concepts (ADR 0100 decision 10). GPW ESEF filings are IFRS, so
-/// `xbrl.ifrs.org` is the one standard host observed in the corpus.
+/// extension concepts (ADR 0100 decision 10). One namespace rule for the
+/// whole epic: the crosswalk's own predicate (sol round 3).
 fn is_standard_taxonomy_concept(namespace_uri: &str) -> bool {
-    namespace_uri.contains("xbrl.ifrs.org")
+    crate::fundamentals::extraction::ifrs_crosswalk::is_standard_ifrs_namespace(namespace_uri)
+}
+
+/// Whether a stored fact belongs to the concept identified by
+/// `(namespace, local name)`. Standard concepts match ACROSS taxonomy-year
+/// namespace versions (the annual IFRS releases are one vocabulary — the
+/// same normalization the harvest counts use); an extension matches only
+/// its exact namespace (sol round 3, finding 1).
+fn concept_matches(fact_ns: &str, fact_local: &str, ns: &str, local: &str) -> bool {
+    if fact_local != local {
+        return false;
+    }
+    if is_standard_taxonomy_concept(ns) {
+        is_standard_taxonomy_concept(fact_ns)
+    } else {
+        fact_ns == ns
+    }
+}
+
+/// The company-scoped `metric_key` a promoted concept mints (sol round 3,
+/// finding 1): a standard concept keeps its local name; an extension carries
+/// a stable namespace discriminator (sha256 prefix of the namespace URI —
+/// ADR 0100 decision 2's "namespace-URI digest"), so `ifrs-full:Foo` and
+/// `issuer:Foo` promoted at one company can never share a definition.
+fn promoted_metric_key(namespace_uri: &str, local: &str) -> String {
+    if is_standard_taxonomy_concept(namespace_uri) {
+        return local.to_owned();
+    }
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(namespace_uri.as_bytes());
+    let mut hex = String::with_capacity(8);
+    for byte in &digest[..4] {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    format!("{local}__xns_{hex}")
 }
 
 /// Reads the ONE report document's stored bytes and parses its label
@@ -233,7 +267,14 @@ pub(crate) fn compute_uncrosswalked_concepts(
     for concept in harvested {
         let matching: Vec<StoredTaggedFact> = all_facts
             .iter()
-            .filter(|f| f.concept_local_name == concept.concept_local_name)
+            .filter(|f| {
+                concept_matches(
+                    &f.concept_namespace_uri,
+                    &f.concept_local_name,
+                    &concept.concept_namespace_uri,
+                    &concept.concept_local_name,
+                )
+            })
             .cloned()
             .collect();
         let (human_label, label_source) = if matching.is_empty() {
@@ -241,7 +282,11 @@ pub(crate) fn compute_uncrosswalked_concepts(
         } else {
             resolve_label(state, &matching)
         };
-        let existing = find_company_definition(state, company_id, &concept.concept_local_name)?;
+        let existing = find_company_definition(
+            state,
+            company_id,
+            &promoted_metric_key(&concept.concept_namespace_uri, &concept.concept_local_name),
+        )?;
         rows.push(UncrosswalkedConceptRow {
             concept_local_name: concept.concept_local_name,
             concept_namespace_uri: concept.concept_namespace_uri,
@@ -278,8 +323,12 @@ pub(crate) fn promote_uncrosswalked_concept_core(
         .map_err(|error| error.to_string())?
         .into_iter()
         .filter(|f| {
-            f.concept_local_name == concept_local_name
-                && f.concept_namespace_uri == concept_namespace_uri
+            concept_matches(
+                &f.concept_namespace_uri,
+                &f.concept_local_name,
+                concept_namespace_uri,
+                concept_local_name,
+            )
         })
         .collect();
     if rows.is_empty() {
@@ -304,7 +353,8 @@ pub(crate) fn promote_uncrosswalked_concept_core(
 
     let (label, label_source) = resolve_label(state, &rows);
 
-    let definition = match find_company_definition(state, company_id, concept_local_name)? {
+    let metric_key = promoted_metric_key(concept_namespace_uri, concept_local_name);
+    let definition = match find_company_definition(state, company_id, &metric_key)? {
         Some(existing) => existing,
         None => state
             .financials()
@@ -312,7 +362,7 @@ pub(crate) fn promote_uncrosswalked_concept_core(
                 scope: "company".to_owned(),
                 company_id: Some(company_id.to_owned()),
                 sector: None,
-                metric_key: concept_local_name.to_owned(),
+                metric_key: metric_key.clone(),
                 label: label.clone(),
                 value_kind: "monetary".to_owned(),
                 unit: None,
@@ -571,7 +621,10 @@ mod tests {
         )
         .expect("promote");
 
-        assert_eq!(promoted.metric_key, "PozostaleUslugiObce");
+        // An issuer extension's key carries the stable namespace digest
+        // (sol round 3, finding 1): `issuer:Foo` and `ifrs-full:Foo`
+        // promoted at one company can never share a definition.
+        assert_eq!(promoted.metric_key, "PozostaleUslugiObce__xns_141c451c");
         assert_eq!(
             promoted.label_source, "technical",
             "no stored document bytes to resolve a label from — must fall back honestly"
@@ -588,7 +641,7 @@ mod tests {
             .expect("list definitions");
         let definition = definitions
             .iter()
-            .find(|d| d.metric_key == "PozostaleUslugiObce")
+            .find(|d| d.metric_key == "PozostaleUslugiObce__xns_141c451c")
             .expect("company-scoped definition exists");
         assert_eq!(definition.scope, "company");
         assert_eq!(definition.company_id.as_deref(), Some(company_id.as_str()));

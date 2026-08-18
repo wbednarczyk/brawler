@@ -65,7 +65,26 @@ pub(crate) fn record_diagnostic_event(
     if !developer_mode_enabled(connection)? {
         return Ok(None);
     }
+    record_diagnostic_event_ungated(connection, input)
+}
 
+/// [`record_diagnostic_event`] WITHOUT the developer-mode gate — for
+/// integrity events that must reach the owner in ordinary operation (sol
+/// review round 3, finding 2): a swallowed best-effort failure recorded only
+/// behind a settings flag is a log line wearing a diagnostic's clothes. The
+/// gate exists to keep chatty dev-time telemetry out of a normal profile,
+/// never to hide data-loss evidence.
+pub(crate) fn record_integrity_event(
+    connection: &mut Connection,
+    input: NewDiagnosticEvent,
+) -> StorageResult<Option<DiagnosticEvent>> {
+    record_diagnostic_event_ungated(connection, input)
+}
+
+fn record_diagnostic_event_ungated(
+    connection: &mut Connection,
+    input: NewDiagnosticEvent,
+) -> StorageResult<Option<DiagnosticEvent>> {
     validate_identifier("module", &input.module)?;
     validate_identifier("stage", &input.stage)?;
     validate_allowed_severity(&input.severity)?;
@@ -301,6 +320,16 @@ impl DiagnosticsStore {
         let mut connection = self.db.checkout()?;
 
         record_diagnostic_event(&mut connection, input)
+    }
+
+    /// Ungated integrity event — see [`record_integrity_event`] (free fn).
+    pub fn record_integrity_event(
+        &self,
+        input: NewDiagnosticEvent,
+    ) -> StorageResult<Option<DiagnosticEvent>> {
+        let mut connection = self.db.checkout()?;
+
+        record_integrity_event(&mut connection, input)
     }
 
     pub fn list_diagnostic_events(&self, limit: i64) -> StorageResult<Vec<DiagnosticEvent>> {
