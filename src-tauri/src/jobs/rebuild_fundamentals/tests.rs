@@ -111,14 +111,28 @@ fn seed_state() -> (AppState, String) {
             attribution: None,
         })
         .expect("document");
-    std::fs::write(dir.join("report.xhtml"), ESEF).expect("write esef");
+    // A package, not a bare instance (ADR 0100 decision 3, epic #398): a bare
+    // iXBRL instance has no presentation linkbase to read, so its facts get
+    // no role rows and never survive Layer 2 projection.
+    let esef_package = crate::test_support::esef_package_zip(
+        ESEF,
+        &[
+            ("Assets", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+            (
+                "Liabilities",
+                crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+            ),
+            ("Equity", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+        ],
+    );
+    std::fs::write(dir.join("report.xhtml"), &esef_package).expect("write esef");
     state
         .mark_report_document_fetched(
             &document.id,
             Some("report.xhtml"),
-            Some("application/xhtml+xml"),
+            Some("application/octet-stream"),
             None,
-            Some(ESEF.len() as i64),
+            Some(esef_package.len() as i64),
         )
         .expect("mark fetched");
 

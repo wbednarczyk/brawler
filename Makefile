@@ -626,6 +626,15 @@ GT_DIR ?= private/realdata/spikes/esef-positional-gt
 realdata-gt-score:
 	$(NIX) bash -c 'cd src-tauri && BRAWLER_GT_DIR=$(abspath $(GT_DIR)) cargo test esef_positional_ground_truth_scores -- --ignored --nocapture'
 
+# ADR 0100 decision 2 / epic #398 concept-harvest command: prints every Layer
+# 1 (report_tagged_facts) concept with no ifrs_crosswalk entry, ranked by
+# distinct-company count with its observed period_type — the input for the
+# next crosswalk seed migration. Read-only diagnostic, no floor to assert
+# (storage::tests::real_data_extraction::concept_harvest_report).
+CONCEPT_HARVEST_DB ?= private/realdata/brawler.sqlite3
+realdata-concept-harvest:
+	$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(CONCEPT_HARVEST_DB)) cargo test concept_harvest_report -- --ignored --nocapture'
+
 # Real-data honesty ratchet (epic #40 S4, ADR 0091 dec. 4-5; docs/testing.md
 # § Real-data honesty harness): measures — through the real read models — how
 # honest the Today stream is on the maintainer's own database (specificity floor,

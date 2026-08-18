@@ -373,6 +373,13 @@ impl KpiUnavailableReason {
 /// merges any structure-changed flag; this only builds the counts (bug e77a1a2:
 /// normalized so every tier reports `factsProposed`/`factsAutoConfirmed`
 /// identically).
+///
+/// Stamps `pipelineVersion` (epic #398 Item B blocker 2): before this fix it was
+/// stamped ONLY on the `extractionAvailable:false` gap delta, so an emitted
+/// success left no record of which pipeline version produced it — the
+/// version-aware re-extraction (`jobs::structured_extraction::rearm_stale_
+/// pipeline_version_runs`) needs it on EVERY terminal delta, emitted or not, to
+/// tell an already-current run apart from a stale one.
 fn emitted_extract_delta(
     result: &crate::jobs::structured_extraction::StructuredExtractionResult,
     mode: &str,
@@ -388,6 +395,7 @@ fn emitted_extract_delta(
         "factsProposed": produced,
         "factsAutoConfirmed": auto_confirmed,
         "mode": mode,
+        "pipelineVersion": crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION,
     })
 }
 
@@ -785,12 +793,15 @@ fn extraction_unavailable_reason(kpi_delta_json: Option<&str>) -> Option<String>
         .map(str::to_owned)
 }
 
-/// The `EXTRACTION_PIPELINE_VERSION` a run stamped into its `kpi_delta_json` when
-/// it recorded a couldn't-extract verdict. A missing/garbled delta or an absent
-/// `pipelineVersion` field reads as `0` — the pre-versioning era — so a legacy
-/// run is eligible for exactly one re-arm under the current build (see the
-/// version gate in [`terminal_run_should_rearm`]).
-fn stored_pipeline_version(kpi_delta_json: Option<&str>) -> u32 {
+/// The `EXTRACTION_PIPELINE_VERSION` a run stamped into its `kpi_delta_json` —
+/// on EITHER a couldn't-extract verdict or an emitted-success delta (epic #398
+/// Item B blocker 2: before that fix only the gap delta stamped it). A
+/// missing/garbled delta or an absent `pipelineVersion` field reads as `0` —
+/// the pre-versioning era — so a legacy run is eligible for exactly one re-arm
+/// under the current build (see the version gate in
+/// [`terminal_run_should_rearm`], reused by
+/// [`crate::jobs::pipeline_reextraction`] for the emitted-success population).
+pub(crate) fn stored_pipeline_version(kpi_delta_json: Option<&str>) -> u32 {
     kpi_delta_json
         .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
         .and_then(|delta| delta.get("pipelineVersion").and_then(|v| v.as_u64()))
@@ -1219,14 +1230,47 @@ mod tests {
                 attribution: None,
             })
             .expect("document");
-        std::fs::write(dir.join("annual.xhtml"), ESEF.as_bytes()).expect("write esef");
+        // A package, not a bare instance: a bare iXBRL instance has no
+        // presentation linkbase to read, so its facts get no role rows and
+        // never survive Layer 2 projection's primary-statement role filter
+        // (ADR 0100 decision 3, epic #398) — every real GPW filing ships as a
+        // package anyway.
+        let pre_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<link:linkbase xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <link:presentationLink xlink:type="extended" xlink:role="http://x/role/ias_1_role-210000">
+    <link:loc xlink:type="locator" xlink:href="ifrs-full-2023.xsd#ifrs-full_Assets" xlink:label="loc_assets"/>
+  </link:presentationLink>
+  <link:presentationLink xlink:type="extended" xlink:role="http://x/role/ias_1_role-210000">
+    <link:loc xlink:type="locator" xlink:href="ifrs-full-2023.xsd#ifrs-full_Liabilities" xlink:label="loc_liabilities"/>
+  </link:presentationLink>
+  <link:presentationLink xlink:type="extended" xlink:role="http://x/role/ias_1_role-210000">
+    <link:loc xlink:type="locator" xlink:href="ifrs-full-2023.xsd#ifrs-full_Equity" xlink:label="loc_equity"/>
+  </link:presentationLink>
+</link:linkbase>"#;
+        let bytes = {
+            use std::io::Write;
+            let mut buf = Vec::new();
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default();
+            zip.start_file("reports/annual-2026.xhtml", opts)
+                .expect("start instance entry");
+            zip.write_all(ESEF.as_bytes()).expect("write instance");
+            zip.start_file("www/annual-2026_pre.xml", opts)
+                .expect("start pre.xml entry");
+            zip.write_all(pre_xml.as_bytes()).expect("write pre.xml");
+            zip.finish().expect("finish zip");
+            buf
+        };
+        std::fs::write(dir.join("annual.xhtml"), &bytes).expect("write esef");
         state
             .mark_report_document_fetched(
                 &document.id,
                 Some("annual.xhtml"),
-                Some("application/xhtml+xml"),
+                // Extension lies on purpose (card eb71488): routing reads the
+                // ZIP magic bytes, never the content-type/filename.
+                Some("application/octet-stream"),
                 None,
-                Some(ESEF.len() as i64),
+                Some(bytes.len() as i64),
             )
             .expect("mark fetched");
 

@@ -43,6 +43,7 @@ pub mod esef;
 pub mod esef_package;
 pub mod espi_cover_note;
 pub mod html;
+pub mod ifrs_crosswalk;
 pub mod pipeline;
 pub mod text_numbers;
 

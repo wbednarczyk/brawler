@@ -97,6 +97,14 @@ pub enum StorageError {
         "financial fact write refused: extraction_method='html_positional' is retired (ADR 0095) — no new fact row may carry the removed positional parser's method"
     )]
     RetiredExtractionMethod,
+    #[error(
+        "financial fact write refused: measure_window='{measure_window}' contradicts definition {definition_id}'s period_nature='{period_nature}' (ADR 0100 decision 6) — an instant metric only accepts 'point_in_time', a duration metric never accepts 'point_in_time'"
+    )]
+    MeasureWindowPeriodNatureMismatch {
+        definition_id: String,
+        measure_window: String,
+        period_nature: String,
+    },
     #[error("kpi ingest run not found: {id}")]
     KpiIngestRunNotFound { id: String },
     #[error("kpi ingest run reference not found: {table} {id}")]

@@ -18,7 +18,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::extraction::text_numbers::parse_amount;
-use super::metrics::is_flow_key;
+use super::metrics::measure_window_for;
 use super::validation::{
     identity_check_metric_keys, plausibility_verdict, validate_period, AbstentionReason, FactSet,
     Outcome as IdentityOutcome, PlausibilityVerdict, Tolerance,
@@ -300,6 +300,10 @@ pub struct ResolvedDefinitionInput {
     pub metric_key: String,
     /// `monetary | ratio | percentage | count | physical | duration`.
     pub value_kind: String,
+    /// `instant | duration` (`kpi_definitions.period_nature`, ADR 0100
+    /// decision 6) — the window axis `period.window_kind_mismatch` checks,
+    /// distinct from TTM eligibility.
+    pub period_nature: String,
     pub history: SlotHistoryInput,
 }
 
@@ -476,12 +480,15 @@ pub fn evaluate(run: &ManifestRunInput, observations: &[ManifestObservationInput
             }
         }
 
-        // period.window_kind_mismatch
+        // period.window_kind_mismatch — the window axis (ADR 0100 decision
+        // 6), not TTM eligibility: no acquisition profile in scope here, so
+        // `measure_window_for` collapses to `point_in_time` (instant) or
+        // `flow` (duration) only.
         if let Some(window) = &obs.measure_window {
-            let flow = is_flow_key(&def.metric_key, Some(def.value_kind.as_str()));
-            let stock_conflict =
-                !flow && matches!(window.as_str(), "flow" | "cumulative" | "trailing");
-            let flow_conflict = flow && window == "point_in_time";
+            let axis = measure_window_for(Some(def.period_nature.as_str()), None);
+            let stock_conflict = axis == "point_in_time"
+                && matches!(window.as_str(), "flow" | "cumulative" | "trailing");
+            let flow_conflict = axis == "flow" && window == "point_in_time";
             if stock_conflict || flow_conflict {
                 codes.push(Code::bare(DiagnosticCode::PeriodWindowKindMismatch));
             }

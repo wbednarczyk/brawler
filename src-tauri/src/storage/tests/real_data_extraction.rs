@@ -248,8 +248,14 @@ fn real_data_extraction_recall_precision() {
         };
 
         let format = SourceFormat::resolve(report_document.content_type.as_deref(), local_path);
-        let esef_bytes: Option<Vec<u8>> = match format {
-            SourceFormat::Xhtml => Some(bytes),
+        let layer1_facts: Option<Vec<crate::storage::NewTaggedFact>> = match format {
+            SourceFormat::Xhtml => Some(
+                crate::jobs::structured_extraction::compute_layer1_generation(
+                    &bytes,
+                    crate::jobs::structured_extraction::DocumentRoute::IxbrlInstance,
+                )
+                .facts,
+            ),
             SourceFormat::Pdf => {
                 // The PDF fact-extraction arm is retired (ADR 0086 dec. 1); a
                 // PDF-only document has no surviving tier to feed.
@@ -268,7 +274,11 @@ fn real_data_extraction_recall_precision() {
 
         let input = PipelineInput {
             period_end: &doc.period_end,
-            esef_bytes: esef_bytes.as_deref(),
+            layer1_facts: layer1_facts.as_deref(),
+            // This harness's `SourceFormat` has no ZIP-package concept (unlike
+            // `t7_cbf_corpus`'s `run_new`) — every xhtml document routes bare,
+            // so it never carries linkbase evidence.
+            has_presentation_linkbase: false,
             prior: prior.as_ref(),
             prior_period_end: prior_end.as_deref(),
             expected_keys: None,
@@ -2602,6 +2612,69 @@ fn esef_positional_ground_truth_scores() {
             "WARN esef_positional_ground_truth_scores: {} corpus-integrity violation(s) \
              (non-required run):\n  - {listing}",
             integrity_violations.len()
+        );
+    }
+}
+
+/// Concept-harvest command (ADR 0100 decision 2, epic #398): prints every
+/// Layer 1 (`report_tagged_facts`) concept with no crosswalk entry
+/// (`fundamentals::extraction::ifrs_crosswalk`), ranked by distinct-company
+/// count with its observed `period_type`(s) — the input for the next
+/// crosswalk seed migration. Read-only: no writes, so (unlike the sweep
+/// harnesses above) it is safe to point directly at a real database, though a
+/// throwaway copy is still recommended.
+///
+/// **Inert in CI** — skips with a printed message unless `BRAWLER_REAL_DB` is
+/// set. Prints no floor/assertion beyond harness sanity: this is a diagnostic
+/// report, not a gate (the `esef_positional_ground_truth_scores` pattern).
+///
+/// Run it manually from `src-tauri/`:
+///
+/// ```text
+/// BRAWLER_REAL_DB=../private/realdata/brawler.sqlite3 \
+///   cargo nextest run -p brawler concept_harvest_report \
+///     --run-ignored all --no-capture
+/// ```
+#[test]
+#[ignore = "developer diagnostic; needs BRAWLER_REAL_DB"]
+fn concept_harvest_report() {
+    let Ok(db_path) = std::env::var("BRAWLER_REAL_DB") else {
+        eprintln!(
+            "SKIP concept_harvest_report: set BRAWLER_REAL_DB to a copy of the owner's database \
+             (see private/realdata/README.md)"
+        );
+        return;
+    };
+    if !std::path::Path::new(&db_path).is_file() {
+        eprintln!("SKIP concept_harvest_report: no database at {db_path}");
+        return;
+    }
+
+    let connection = open_database(&db_path).expect("open real db");
+    let state = AppState::new(connection);
+    let harvested = state
+        .report_tagged_facts()
+        .harvest_uncrosswalked_concepts()
+        .expect("harvest query");
+
+    if harvested.is_empty() {
+        println!(
+            "concept_harvest_report: every observed Layer 1 concept already has a crosswalk entry"
+        );
+        return;
+    }
+
+    println!(
+        "concept_harvest_report: {} uncrosswalked concept(s), ranked by distinct-company count",
+        harvested.len()
+    );
+    println!("{:>6}  {:<12}  concept", "issuers", "period_type");
+    for row in &harvested {
+        println!(
+            "{:>6}  {:<12}  {}",
+            row.company_count,
+            row.period_types.join("|"),
+            row.concept_local_name
         );
     }
 }

@@ -488,6 +488,52 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Version-aware re-extraction (epic #398 Item B). Same gated core the
+        // command wrapper offloads, so the corpus can never diverge from real
+        // behavior.
+        "run_pipeline_reextraction" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::pipeline_reextraction::start_pipeline_reextraction(
+                    state, company_id,
+                )
+                .expect("run_pipeline_reextraction"),
+            )
+            .unwrap()
+        }
+        "get_pipeline_reextraction_progress" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::pipeline_reextraction::compute_pipeline_reextraction_progress(
+                    state, company_id,
+                )
+                .expect("get_pipeline_reextraction_progress"),
+            )
+            .unwrap()
+        }
+        // Layer 1 raw-tagged-fact read model (ADR 0100, epic #398 final
+        // slice). Same core the command wrapper offloads, so the corpus can
+        // never diverge from real assembly.
+        "get_report_tagged_fact_coverage" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::tagged_fact_promotion::compute_tagged_fact_coverage(
+                    state, company_id,
+                )
+                .expect("get_report_tagged_fact_coverage"),
+            )
+            .unwrap()
+        }
+        "list_uncrosswalked_concepts" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::tagged_fact_promotion::compute_uncrosswalked_concepts(
+                    state, company_id,
+                )
+                .expect("list_uncrosswalked_concepts"),
+            )
+            .unwrap()
+        }
         // Computed read model (ADR 0077 §1/§2, Panel B). Same helper the command
         // wrapper delegates to, so the corpus can never diverge from real assembly.
         "get_report_documents_view" => {

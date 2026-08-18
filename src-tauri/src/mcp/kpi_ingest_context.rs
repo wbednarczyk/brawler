@@ -34,7 +34,7 @@ use super::kpi_ingest::{
 use super::tools::{run, ToolCallError, ToolOutcome};
 use crate::commands::error::{CommandError, CommandErrorCode};
 use crate::fundamentals::kpi_manifest::{abstention_reason_str, decimal_str};
-use crate::fundamentals::metrics::is_flow_key;
+use crate::fundamentals::metrics::measure_window_for;
 use crate::fundamentals::validation::{
     history_median, is_split_sensitive_metric, AbstentionReason,
 };
@@ -441,20 +441,15 @@ fn build_catalog(
     entries
 }
 
-/// The candidate default slot's measure window: the VALIDATOR's flow/stock
-/// classifier decides the axis (`is_flow_key` — EPS/dividend-per-share are
-/// monetary flows; ratios/percentages and stock-like per-share metrics are
-/// stocks), and the PROFILE picks the flow window: interim publications are
-/// cumulative (ADR 0098 dec. 3), everything else stages plain `flow`.
-fn candidate_window(profile_version: &str, metric_key: &str, value_kind: &str) -> &'static str {
-    if !is_flow_key(metric_key, Some(value_kind)) {
-        return "point_in_time";
-    }
-    if profile_version.starts_with("gpw_interim@") {
-        "cumulative"
-    } else {
-        "flow"
-    }
+/// The candidate default slot's measure window (ADR 0100 decision 6): the
+/// definition's `period_nature` decides the axis -- `instant` is always
+/// `point_in_time`, regardless of `value_kind` -- and the PROFILE picks the
+/// duration window: interim publications are cumulative (ADR 0098 dec. 3),
+/// everything else stages plain `flow`. TTM eligibility (ratio/percentage)
+/// plays no role here, a distinct axis (`is_ttm_eligible`): a ratio is still
+/// duration-reported and gets a flow/cumulative candidate slot.
+fn candidate_window(profile_version: &str, period_nature: &str) -> &'static str {
+    measure_window_for(Some(period_nature), Some(profile_version))
 }
 
 fn abstention_for(metric_key: &str, median: Option<&Decimal>) -> Option<&'static str> {
@@ -593,8 +588,7 @@ fn build_plausibility(
                 statement_basis: (*scope).to_owned(),
                 attribution_eff: "total".to_owned(),
                 measure_window_eff: Some(
-                    candidate_window(&run.profile_version, metric_key, &definition.value_kind)
-                        .to_owned(),
+                    candidate_window(&run.profile_version, &definition.period_nature).to_owned(),
                 ),
             };
             if seen_slots.contains(&candidate) {
@@ -1812,35 +1806,31 @@ mod tests {
 
     #[test]
     fn candidate_window_is_profile_aware_and_classifier_driven() {
-        // The validator's classifier decides flow/stock; the profile decides
-        // the flow window (interim = cumulative, ADR 0098 dec. 3).
+        // `period_nature` decides instant/duration; the profile decides the
+        // duration window (interim = cumulative, ADR 0098 dec. 3). `instant`
+        // (e.g. `total_assets`, `wdf_book_value_per_share`,
+        // `shares_outstanding`) always short-circuits to `point_in_time`,
+        // whatever the profile.
+        assert_eq!(candidate_window("gpw_ifrs_annual@v1", "duration"), "flow");
+        assert_eq!(candidate_window("gpw_interim@v1", "duration"), "cumulative");
         assert_eq!(
-            candidate_window("gpw_ifrs_annual@v1", "revenue", "currency"),
-            "flow"
-        );
-        assert_eq!(
-            candidate_window("gpw_interim@v1", "revenue", "currency"),
-            "cumulative"
-        );
-        assert_eq!(
-            candidate_window("gpw_interim@v1", "total_assets", "currency"),
+            candidate_window("gpw_interim@v1", "instant"),
             "point_in_time"
         );
         assert_eq!(
-            candidate_window("gpw_ifrs_annual@v1", "eps_basic", "currency"),
-            "flow"
-        );
-        assert_eq!(
-            candidate_window("gpw_ifrs_annual@v1", "wdf_book_value_per_share", "currency"),
+            candidate_window("gpw_ifrs_annual@v1", "instant"),
             "point_in_time"
         );
+        // ADR 0100 decision 6 fix: `roe` is a ratio, never TTM-eligible, but
+        // it is duration-REPORTED (not in STOCK_METRIC_KEYS) -- so its
+        // candidate window is `flow`/`cumulative`, never `point_in_time` as
+        // the old `is_flow_key`-based classifier (which conflated the
+        // TTM-eligibility and window-kind axes) produced for it. TTM
+        // eligibility is the separate question `is_ttm_eligible` answers.
         assert_eq!(
-            candidate_window("gpw_ifrs_annual@v1", "roe", "percentage"),
-            "point_in_time"
-        );
-        assert_eq!(
-            candidate_window("company_characteristic@v1", "shares_outstanding", "count"),
-            "point_in_time"
+            candidate_window("gpw_ifrs_annual@v1", "duration"),
+            "flow",
+            "a duration ratio like roe gets a flow window, not point_in_time"
         );
     }
 

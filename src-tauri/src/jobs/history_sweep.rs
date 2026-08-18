@@ -1138,15 +1138,34 @@ mod tests {
         let s = state_with_dir();
         let c = company(&s);
         s.autopilot().set_mode(&c, "assist").expect("set mode");
-        // A valid iXBRL instance — extractable, and determinism emits from it.
+        // A valid iXBRL instance, packaged with a matching presentation
+        // linkbase — extractable, and determinism emits from it. A bare
+        // instance has no linkbase to read, so its facts get no role rows and
+        // never survive Layer 2 projection (ADR 0100 decision 3, epic #398).
+        let package = crate::test_support::esef_package_zip(
+            &String::from_utf8_lossy(IXBRL_XHTML),
+            &[
+                ("Assets", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+                (
+                    "Liabilities",
+                    crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+                ),
+                ("Equity", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+            ],
+        );
+        // `.xbri`, not `.xhtml`: `resolved_container`'s un-sniffed fallback
+        // (no `detected_container` row yet, same as any freshly-marked test
+        // document) reads the stored name/content-type, not the bytes — a
+        // `.xhtml` name would misclassify a packaged ZIP as markup and sniff
+        // its (compressed) prefix for `<ix:`, finding nothing.
         let doc = fetched_file_report(
             &s,
             &c,
             "Skonsolidowane sprawozdanie finansowe Q3 2024 SSF",
             "https://example.com/ssf_q3_2024.xhtml",
-            "canonical.xhtml",
-            IXBRL_XHTML,
-            "application/xhtml+xml",
+            "canonical.xbri",
+            &package,
+            "application/octet-stream",
         );
         seed_terminal_unavailable_run(&s, &c, &doc, "not_extractable");
 

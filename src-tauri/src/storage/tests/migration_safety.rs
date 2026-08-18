@@ -3283,14 +3283,13 @@ fn every_emittable_metric_key_has_a_canonical_definition() {
         "the cover-note body scan must find the mapper vocabulary; got only {wdf_key_count}"
     );
 
-    // 3. The ESEF concept map: `"Concept" => "metric_key"` match arms.
-    let esef_src = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/fundamentals/extraction/esef.rs"
-    ));
-    let arm_re = regex::Regex::new(r#"=>\s*"([a-z][a-z0-9_]{2,})""#).expect("arm regex");
-    for capture in arm_re.captures_iter(esef_src) {
-        keys.insert(capture[1].to_owned());
+    // 3. The ESEF path: iterate the curated crosswalk (ADR 0100 decision 2),
+    //    the naming authority `esef::concept_to_metric_key` is being
+    //    replaced by (epic #398) — not a source-text regex anymore. Every
+    //    concept's metric_key must resolve to a seeded definition exactly
+    //    like the dictionary/cover-note scans above.
+    for entry in crate::fundamentals::extraction::ifrs_crosswalk::entries() {
+        keys.insert(entry.metric_key.to_owned());
     }
 
     for literal in NON_METRIC_LITERALS {
@@ -4568,6 +4567,74 @@ fn migration_0130_backfills_statement_group_by_metric_key_bare_ids_only() {
     assert_eq!(group_of(&connection, "kpidef_revenue"), "income");
 }
 
+/// Migration `0141` (epic #398, ADR 0100 decision 6): `kpi_definitions`
+/// gains a `period_nature` column (`instant | duration`), backfilled by
+/// `metric_key` membership in `STOCK_METRIC_KEYS` (fundamentals/metrics.rs)
+/// -- unlike `origin`/`statement_group`, this backfill is NOT scope-guarded,
+/// because the runtime predicate it replaces (`is_flow_key`) never respected
+/// scope either: any row sharing one of these metric keys, canonical or not,
+/// was already treated as a point-in-time stock.
+#[test]
+fn migration_0141_backfills_period_nature_by_stock_metric_keys_any_scope() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 140).expect("apply schema through 0140");
+
+    let has_column: bool = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('kpi_definitions') WHERE name = 'period_nature'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("pragma_table_info")
+        > 0;
+    assert!(!has_column, "period_nature must not exist before 0141");
+
+    connection
+        .execute_batch(
+            "INSERT INTO kpi_definitions (id, scope, company_id, metric_key, label, value_kind, computation)
+                VALUES
+                    -- A runtime company-scoped custom KPI reusing a stock metric_key:
+                    -- the pre-existing runtime predicate classified this as a stock
+                    -- regardless of scope, so the backfill must match it too.
+                    ('kpidef_cash__c_xtb', 'company', NULL, 'cash', 'Cash (as XTB defines it)', 'monetary', 'reported'),
+                    ('kpidef_custom_metric__user_', 'user', NULL, 'custom_metric', 'Custom Metric', 'ratio', 'reported');",
+        )
+        .expect("seed kpi_definitions rows across the non-canonical id shapes");
+
+    apply_migrations(&mut connection).expect("apply migration 0141");
+
+    let nature_of = |conn: &rusqlite::Connection, id: &str| -> String {
+        conn.query_row(
+            "SELECT period_nature FROM kpi_definitions WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("row {id} should exist"))
+    };
+
+    // A known stock key (balance-sheet line) backfills to instant.
+    assert_eq!(nature_of(&connection, "kpidef_cash"), "instant");
+    assert_eq!(nature_of(&connection, "kpidef_total_assets"), "instant");
+    // A known flow key (income-statement line) backfills to duration.
+    assert_eq!(nature_of(&connection, "kpidef_revenue"), "duration");
+    // A canonical ratio (never in STOCK_METRIC_KEYS) stays duration.
+    assert_eq!(nature_of(&connection, "kpidef_roe"), "duration");
+
+    // Unlike statement_group, a company-scoped row sharing a stock metric_key
+    // DOES inherit the classification -- the runtime predicate it replaces
+    // never guarded by scope.
+    assert_eq!(nature_of(&connection, "kpidef_cash__c_xtb"), "instant");
+    assert_eq!(
+        nature_of(&connection, "kpidef_custom_metric__user_"),
+        "duration",
+        "a runtime user-scope custom metric outside STOCK_METRIC_KEYS is left at the DEFAULT"
+    );
+
+    // Idempotent re-run: no error, backfill is stable.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(nature_of(&connection, "kpidef_cash"), "instant");
+}
+
 #[test]
 fn migration_0132_prunes_the_dead_banking_core_expectations_only() {
     // Issue #284: the ADR 0092 layer-1 core floor expected `revenue` and
@@ -5208,4 +5275,599 @@ fn migration_0140_adds_derived_period_content_hash_tolerant_of_legacy_rows() {
         )
         .expect("the new column is present and readable on the legacy row");
     assert_eq!(hash, None, "a legacy row has no provenance — a cache miss");
+}
+
+/// Migration `0143` (ADR 0100 decision 2, epic #398): seeds a canonical
+/// `kpi_definitions` row for every `ifrs_crosswalk` metric_key that has none
+/// yet. Two things must hold: (1) a brand-new crosswalk key (e.g.
+/// `goodwill`) gets exactly the descriptive columns the crosswalk entry
+/// specifies, with `origin='seed'`; (2) a REUSED key that migration 0143
+/// postdates — `wdf_equity_parent`, seeded by migration 0111 — is left
+/// completely untouched: `INSERT OR IGNORE` never disturbs an existing
+/// definition's columns, which is the whole point of reuse-before-mint.
+#[test]
+fn migration_0143_seeds_new_crosswalk_keys_and_never_disturbs_a_reused_definition() {
+    let mut connection = open_in_memory_database().expect("db");
+
+    // A brand-new key minted by this crosswalk slice: seeded exactly as the
+    // crosswalk entry specifies.
+    let goodwill: (String, String, String, String, String, String) = connection
+        .query_row(
+            "SELECT scope, label, value_kind, origin, statement_group, period_nature
+             FROM kpi_definitions WHERE metric_key = 'goodwill' AND company_id IS NULL",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .expect("goodwill must be seeded by 0143");
+    assert_eq!(goodwill.0, "canonical");
+    assert_eq!(goodwill.1, "Goodwill");
+    assert_eq!(goodwill.2, "monetary");
+    assert_eq!(goodwill.3, "seed");
+    assert_eq!(goodwill.4, "balance");
+    assert_eq!(goodwill.5, "instant");
+
+    // A key REUSED from an earlier migration (0111, "however unattractive
+    // its name" — ADR 0100 dec. 2): its pre-existing label survives 0143
+    // untouched, and there is still exactly one canonical row for it.
+    let (label, count): (String, i64) = connection
+        .query_row(
+            "SELECT label, (SELECT COUNT(*) FROM kpi_definitions
+                             WHERE metric_key = 'wdf_equity_parent' AND scope = 'canonical')
+             FROM kpi_definitions WHERE metric_key = 'wdf_equity_parent' AND scope = 'canonical'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("wdf_equity_parent must still resolve");
+    assert_eq!(
+        label, "Equity attributable to parent",
+        "0143's INSERT OR IGNORE must never overwrite an existing definition's columns"
+    );
+    assert_eq!(count, 1, "reuse must never duplicate the row");
+
+    // Idempotent re-run: re-applying migrations must not touch either row.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    let (label_after, count_after): (String, i64) = connection
+        .query_row(
+            "SELECT label, (SELECT COUNT(*) FROM kpi_definitions
+                             WHERE metric_key = 'wdf_equity_parent' AND scope = 'canonical')
+             FROM kpi_definitions WHERE metric_key = 'wdf_equity_parent' AND scope = 'canonical'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("wdf_equity_parent must still resolve after re-run");
+    assert_eq!(label_after, label);
+    assert_eq!(count_after, count);
+}
+
+// ---------------------------------------------------------------------------
+// Migration 0144 (ADR 0100 decision 6, 2nd paragraph; epic #398): repairs
+// every existing `measure_window='flow'` fact whose definition is
+// `period_nature='instant'` to `'point_in_time'`.
+// ---------------------------------------------------------------------------
+
+mod migration_0144 {
+    use super::*;
+    use crate::storage::kpi_extraction::{
+        record_aggregator_fact, AggregatorFactCommit, StructuredFactInput,
+    };
+
+    const M0144_SQL: &str =
+        include_str!("../../../migrations/0144_repair_instant_measure_window.sql");
+
+    fn def_id(conn: &rusqlite::Connection, key: &str) -> String {
+        conn.query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'canonical'",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("seeded canonical definition for {key}"))
+    }
+
+    fn seed_company_and_period(conn: &rusqlite::Connection, company: &str, period: &str) {
+        conn.execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES (?1, 'GPW', ?1, 'GPW:' || ?1, ?1 || ' S.A.')",
+            [company],
+        )
+        .expect("seed company");
+        conn.execute(
+            "INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+             VALUES (?1, ?2, 2025, 'FY', '2025-12-31')",
+            rusqlite::params![period, company],
+        )
+        .expect("seed period");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn seed_fact(
+        conn: &rusqlite::Connection,
+        id: &str,
+        company: &str,
+        period: &str,
+        definition: &str,
+        measure_window: &str,
+        data_quality: &str,
+        value: &str,
+        supersedes_id: Option<&str>,
+    ) {
+        conn.execute(
+            "INSERT INTO financial_facts
+                (id, company_id, period_id, definition_id, value_numeric, extraction_method,
+                 statement_basis, measure_window, data_quality, supersedes_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'api', 'consolidated', ?6, ?7, ?8)",
+            rusqlite::params![
+                id,
+                company,
+                period,
+                definition,
+                value,
+                measure_window,
+                data_quality,
+                supersedes_id
+            ],
+        )
+        .expect("seed fact");
+    }
+
+    fn seed_provenance(
+        conn: &rusqlite::Connection,
+        fact_id: &str,
+        source_tier: &str,
+        citation: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO financial_fact_provenance (fact_id, source_tier, validation_status, citation)
+             VALUES (?1, ?2, 'unreviewed', ?3)",
+            rusqlite::params![fact_id, source_tier, citation],
+        )
+        .expect("seed provenance");
+    }
+
+    fn measure_window_of(conn: &rusqlite::Connection, fact_id: &str) -> String {
+        conn.query_row(
+            "SELECT measure_window FROM financial_facts WHERE id = ?1",
+            [fact_id],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|_| panic!("fact {fact_id} must still exist"))
+    }
+
+    fn fact_exists(conn: &rusqlite::Connection, id: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM financial_facts WHERE id = ?1",
+            [id],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("count")
+            > 0
+    }
+
+    #[test]
+    fn moves_instant_facts_to_point_in_time_preserving_ids_and_supersedes_chain() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("open db");
+        apply_migrations_up_to(&mut connection, 143).expect("apply schema through 0143");
+
+        seed_company_and_period(&connection, "c1", "per1");
+        let total_assets = def_id(&connection, "total_assets");
+
+        seed_fact(
+            &connection,
+            "f_prelim",
+            "c1",
+            "per1",
+            &total_assets,
+            "flow",
+            "preliminary",
+            "900",
+            None,
+        );
+        seed_fact(
+            &connection,
+            "f_final",
+            "c1",
+            "per1",
+            &total_assets,
+            "flow",
+            "final",
+            "1000",
+            Some("f_prelim"),
+        );
+        seed_provenance(&connection, "f_prelim", "html_aggregator", "BR | Assets");
+        seed_provenance(&connection, "f_final", "esef", "ESEF | Assets");
+
+        apply_migrations(&mut connection).expect("apply migration 0144");
+
+        assert_eq!(measure_window_of(&connection, "f_prelim"), "point_in_time");
+        assert_eq!(measure_window_of(&connection, "f_final"), "point_in_time");
+
+        let (supersedes, value): (Option<String>, String) = connection
+            .query_row(
+                "SELECT supersedes_id, value_numeric FROM financial_facts WHERE id = 'f_final'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("f_final should still exist under its own id");
+        assert_eq!(supersedes.as_deref(), Some("f_prelim"));
+        assert_eq!(value, "1000");
+
+        for id in ["f_prelim", "f_final"] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM financial_fact_provenance WHERE fact_id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .expect("count");
+            assert_eq!(count, 1, "{id}'s provenance row must still be attached");
+        }
+    }
+
+    #[test]
+    fn collision_equal_values_keeps_point_in_time_identity_and_upgrades_provenance() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("open db");
+        apply_migrations_up_to(&mut connection, 143).expect("apply schema through 0143");
+
+        seed_company_and_period(&connection, "c1", "per1");
+        let total_assets = def_id(&connection, "total_assets");
+
+        // A pre-existing (hypothetical) point_in_time row from the weaker
+        // aggregator tier, and a flow-tier row from the stronger esef tier
+        // agreeing on the SAME value.
+        seed_fact(
+            &connection,
+            "f_pit",
+            "c1",
+            "per1",
+            &total_assets,
+            "point_in_time",
+            "final",
+            "500",
+            None,
+        );
+        seed_fact(
+            &connection,
+            "f_flow",
+            "c1",
+            "per1",
+            &total_assets,
+            "flow",
+            "final",
+            "500",
+            None,
+        );
+        seed_provenance(&connection, "f_pit", "html_aggregator", "BR | Assets");
+        seed_provenance(&connection, "f_flow", "esef", "ESEF | Assets");
+
+        connection
+            .execute(
+                "INSERT INTO autopilot_run (id, company_id, report_document_id, mode, produced_fact_ids_json)
+                 VALUES ('run1', 'c1', 'doc_unused', 'assist', '[\"f_flow\"]')",
+                [],
+            )
+            .expect("seed autopilot run");
+
+        apply_migrations(&mut connection).expect("apply migration 0144");
+
+        assert!(
+            fact_exists(&connection, "f_pit"),
+            "the point_in_time identity survives"
+        );
+        assert!(
+            !fact_exists(&connection, "f_flow"),
+            "the flow-side loser is deleted"
+        );
+        assert_eq!(measure_window_of(&connection, "f_pit"), "point_in_time");
+
+        let value: String = connection
+            .query_row(
+                "SELECT value_numeric FROM financial_facts WHERE id = 'f_pit'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("f_pit value");
+        assert_eq!(value, "500");
+
+        // esef (rank 1) strictly outranks html_aggregator (rank 6) -- the
+        // surviving row's provenance is upgraded to the winning tier.
+        let (tier, citation): (String, Option<String>) = connection
+            .query_row(
+                "SELECT source_tier, citation FROM financial_fact_provenance WHERE fact_id = 'f_pit'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("f_pit provenance");
+        assert_eq!(tier, "esef");
+        assert_eq!(citation.as_deref(), Some("ESEF | Assets"));
+
+        let provenance_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM financial_fact_provenance WHERE fact_id = 'f_flow'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(
+            provenance_count, 0,
+            "the loser's orphaned provenance row is cleaned up"
+        );
+
+        let produced: String = connection
+            .query_row(
+                "SELECT produced_fact_ids_json FROM autopilot_run WHERE id = 'run1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("autopilot run");
+        assert_eq!(
+            produced, "[\"f_pit\"]",
+            "the autopilot run's produced-fact reference is repointed to the surviving id"
+        );
+    }
+
+    #[test]
+    fn collision_divergent_values_keeps_the_point_in_time_row_regardless_of_tier_and_records_a_diagnostic(
+    ) {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("open db");
+        apply_migrations_up_to(&mut connection, 143).expect("apply schema through 0143");
+
+        seed_company_and_period(&connection, "c1", "per1");
+        let total_assets = def_id(&connection, "total_assets");
+
+        // The point_in_time row is held by the WEAKER html_aggregator tier;
+        // the flow-side row is held by the STRONGER esef tier and disagrees
+        // on the value. Divergent collisions keep the already-correct
+        // point_in_time row regardless of tier (never pick by row order or
+        // by tier precedence) -- proving this is not merely a tier upgrade.
+        seed_fact(
+            &connection,
+            "f_pit2",
+            "c1",
+            "per1",
+            &total_assets,
+            "point_in_time",
+            "final",
+            "700",
+            None,
+        );
+        seed_fact(
+            &connection,
+            "f_flow2",
+            "c1",
+            "per1",
+            &total_assets,
+            "flow",
+            "final",
+            "999",
+            None,
+        );
+        seed_provenance(&connection, "f_pit2", "html_aggregator", "BR | Assets");
+        seed_provenance(&connection, "f_flow2", "esef", "ESEF | Assets");
+
+        connection
+            .execute(
+                "INSERT INTO management_claims (id, company_id, statement, verifying_fact_id)
+                 VALUES ('claim1', 'c1', 'Total assets grew', 'f_flow2')",
+                [],
+            )
+            .expect("seed management claim");
+
+        // An immutable ingest receipt embedding the loser's factId -- must
+        // NEVER be rewritten by this migration.
+        connection
+            .execute(
+                "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+                 VALUES ('doc1', 'c1', 'espi_attachment', 'https://x/doc1.pdf', 'fetched')",
+                [],
+            )
+            .expect("seed document");
+        connection
+            .execute(
+                "INSERT INTO kpi_ingest_runs (id, report_document_id, company_id, profile_version)
+                 VALUES ('run_ing1', 'doc1', 'c1', 'gpw_ifrs_annual@v1')",
+                [],
+            )
+            .expect("seed ingest run");
+        let receipt_outcomes =
+            "[{\"factId\":\"f_flow2\",\"metricKey\":\"total_assets\",\"outcome\":\"created\"}]";
+        connection
+            .execute(
+                "INSERT INTO kpi_ingest_commit_receipts
+                    (id, run_id, manifest_hash, manifest_revision, terminal_status, accepted_count, outcomes_json)
+                 VALUES ('kpircpt1', 'run_ing1', 'hash1', 1, 'complete', 1, ?1)",
+                [receipt_outcomes],
+            )
+            .expect("seed receipt");
+
+        apply_migrations(&mut connection).expect("apply migration 0144");
+
+        assert!(fact_exists(&connection, "f_pit2"));
+        assert!(!fact_exists(&connection, "f_flow2"));
+        let (value, tier): (String, String) = connection
+            .query_row(
+                "SELECT f.value_numeric, p.source_tier
+                 FROM financial_facts f JOIN financial_fact_provenance p ON p.fact_id = f.id
+                 WHERE f.id = 'f_pit2'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("f_pit2 row");
+        assert_eq!(
+            value, "700",
+            "the already-correct point_in_time value is kept"
+        );
+        assert_eq!(
+            tier, "html_aggregator",
+            "provenance is untouched on a divergent collision, even against a nominally stronger tier"
+        );
+
+        let claim_target: String = connection
+            .query_row(
+                "SELECT verifying_fact_id FROM management_claims WHERE id = 'claim1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("claim");
+        assert_eq!(
+            claim_target, "f_pit2",
+            "the claim's soft reference is repointed"
+        );
+
+        let (module, scope_id, metadata): (String, Option<String>, String) = connection
+            .query_row(
+                "SELECT module, scope_id, metadata_json FROM diagnostic_events
+                 WHERE module = 'financial_facts_measure_window_repair'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("a diagnostic row must be recorded for the divergent collision");
+        assert_eq!(module, "financial_facts_measure_window_repair");
+        assert_eq!(scope_id.as_deref(), Some("f_pit2"));
+        assert!(metadata.contains("f_flow2"));
+        assert!(metadata.contains("\"kept_value\":\"700\""));
+        assert!(metadata.contains("\"discarded_value\":\"999\""));
+
+        // The immutable receipt is untouched -- its factId no longer resolves.
+        let receipt_after: String = connection
+            .query_row(
+                "SELECT outcomes_json FROM kpi_ingest_commit_receipts WHERE id = 'kpircpt1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("receipt");
+        assert_eq!(
+            receipt_after, receipt_outcomes,
+            "an immutable ingest receipt is never rewritten by this migration"
+        );
+    }
+
+    #[test]
+    fn is_idempotent_and_self_heals_when_a_flow_row_reappears() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("open db");
+        apply_migrations(&mut connection).expect("apply the latest schema (144 included)");
+
+        seed_company_and_period(&connection, "c1", "per1");
+        let total_assets = def_id(&connection, "total_assets");
+
+        // Simulate a bug/restore reintroducing an instant fact at 'flow'
+        // AFTER migration 0144 already ran once (schema_migrations tracks
+        // it, so `apply_migrations` will not re-run the file).
+        seed_fact(
+            &connection,
+            "f_stale",
+            "c1",
+            "per1",
+            &total_assets,
+            "flow",
+            "final",
+            "1000",
+            None,
+        );
+        seed_provenance(&connection, "f_stale", "esef", "ESEF | Assets");
+
+        connection
+            .execute_batch(M0144_SQL)
+            .expect("re-executing the migration body must self-heal");
+        assert_eq!(measure_window_of(&connection, "f_stale"), "point_in_time");
+
+        // Running it again on an already-clean state is a pure no-op.
+        connection
+            .execute_batch(M0144_SQL)
+            .expect("re-running on a clean state must be a safe no-op");
+        assert_eq!(measure_window_of(&connection, "f_stale"), "point_in_time");
+        assert!(fact_exists(&connection, "f_stale"));
+    }
+
+    #[test]
+    fn a_repaired_balance_fact_is_reobserved_not_recreated_by_a_later_aggregator_pull() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("open db");
+        apply_migrations_up_to(&mut connection, 143).expect("apply schema through 0143");
+
+        seed_company_and_period(&connection, "c1", "per1");
+        let total_assets = def_id(&connection, "total_assets");
+        seed_fact(
+            &connection,
+            "f_agg",
+            "c1",
+            "per1",
+            &total_assets,
+            "flow",
+            "final",
+            "1000",
+            None,
+        );
+        seed_provenance(&connection, "f_agg", "html_aggregator", "BR | Assets");
+
+        apply_migrations(&mut connection).expect("apply migration 0144");
+        assert_eq!(measure_window_of(&connection, "f_agg"), "point_in_time");
+
+        connection
+            .execute(
+                "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+                 VALUES ('doc1', 'c1', 'espi_attachment', 'https://biznesradar.example/c1', 'fetched')",
+                [],
+            )
+            .expect("seed document");
+
+        // The real aggregator writer path (root-cause fix + the repair
+        // together): a later pull re-observing the SAME balance value must
+        // land back on the repaired point_in_time slot, never re-create a
+        // 'flow' duplicate.
+        let commit = record_aggregator_fact(
+            &connection,
+            StructuredFactInput {
+                company_id: "c1",
+                fiscal_year: 2025,
+                period_type: "FY",
+                period_end: Some("2025-12-31"),
+                report_document_id: "doc1",
+                metric_key: "total_assets",
+                value_numeric: "1000",
+                currency: Some("PLN"),
+                confirmation_state: "confirmed",
+                source_tier: "html_aggregator",
+                extraction_method: "api",
+                validation_status: "unreviewed",
+                drift_json: None,
+                citation: Some("https://biznesradar.example/c1 | Aktywa razem"),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            },
+        )
+        .expect("aggregator re-pull should succeed");
+
+        match commit {
+            AggregatorFactCommit::Reobserved { fact_id, .. } => {
+                assert_eq!(
+                    fact_id, "f_agg",
+                    "the pull must land on the repaired row's own id"
+                )
+            }
+            other => {
+                panic!("expected Reobserved (aggregator re-observing its own slot), got {other:?}")
+            }
+        }
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM financial_facts WHERE definition_id = ?1",
+                [&total_assets],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(
+            count, 1,
+            "no new 'flow' duplicate is created for the balance key"
+        );
+        assert_eq!(measure_window_of(&connection, "f_agg"), "point_in_time");
+    }
 }

@@ -235,6 +235,7 @@ fn claim_resurfaces_when_due_period_report_arrives_and_resolves_with_evidence() 
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("definition should create");
     let fact = state

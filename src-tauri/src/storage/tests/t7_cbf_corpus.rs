@@ -42,6 +42,7 @@ use super::*;
 use crate::fundamentals::extraction::esef::parse_esef;
 use crate::fundamentals::extraction::pipeline::{run_pipeline, PipelineInput};
 use crate::fundamentals::extraction::{esef_package, primary_period_end};
+use crate::jobs::structured_extraction::{compute_layer1_generation, DocumentRoute};
 use crate::report_diff::classify::period_sort_key;
 use crate::report_diff::extraction::SourceFormat;
 
@@ -111,18 +112,25 @@ fn run_new(state: &AppState, company_id: &str, document: &ReportDocument) -> Out
         };
     };
 
-    // Same source resolution as production `esef_instance_bytes`: a ZIP report
-    // package unpacks to its inner instance; a bare xhtml uses its own bytes;
-    // everything else has no surviving tier (the PDF fact-extraction arm is
-    // retired, ADR 0086 dec. 1).
+    // Same route resolution as production `route_document`/Layer 1 capture: a
+    // ZIP report package reads its presentation linkbase + every instance; a
+    // bare xhtml has no linkbase to read (so its facts get no role rows and
+    // never survive Layer 2 projection — ADR 0100 decision 3); everything
+    // else has no surviving tier (the PDF fact-extraction arm is retired,
+    // ADR 0086 dec. 1).
     let ct = document.content_type.as_deref();
-    let esef: Option<Vec<u8>> = if esef_package::is_report_package(local_path, &bytes) {
-        esef_package::extract_instance(&bytes)
+    let route = if esef_package::is_report_package(local_path, &bytes) {
+        Some(DocumentRoute::ZipPackage)
     } else if SourceFormat::resolve(ct, local_path) == SourceFormat::Xhtml {
-        Some(bytes.clone())
+        Some(DocumentRoute::IxbrlInstance)
     } else {
         None
     };
+    let generation = route.map(|r| compute_layer1_generation(&bytes, r));
+    let has_presentation_linkbase = generation
+        .as_ref()
+        .is_some_and(|g| g.has_presentation_linkbase);
+    let layer1_facts = generation.map(|g| g.facts);
 
     let outcome = run_pipeline_for(
         state,
@@ -130,7 +138,8 @@ fn run_new(state: &AppState, company_id: &str, document: &ReportDocument) -> Out
         fiscal_year,
         period_type,
         &period_end,
-        esef,
+        layer1_facts,
+        has_presentation_linkbase,
     );
     Outcome {
         period: period_label(&derived),
@@ -190,18 +199,25 @@ fn run_legacy(state: &AppState, company_id: &str, document: &ReportDocument) -> 
         };
     };
     // The PDF fact-extraction arm is retired (ADR 0086 dec. 1): a PDF-format
-    // document has no surviving tier to feed.
-    let esef: Option<Vec<u8>> = match format {
-        SourceFormat::Xhtml => Some(bytes.clone()),
+    // document has no surviving tier to feed. The legacy path never unpacked
+    // a ZIP package (that was the T7-C fix) — bare-instance route mirrors it.
+    let layer1_facts = match format {
+        SourceFormat::Xhtml => {
+            Some(compute_layer1_generation(&bytes, DocumentRoute::IxbrlInstance).facts)
+        }
         SourceFormat::Pdf => None,
     };
+    // `DocumentRoute::IxbrlInstance` never reads a linkbase (a bare instance
+    // has none to read) — this legacy shim always routes bare, so it is
+    // always `false`, matching the pre-epic selection this path models.
     let outcome = run_pipeline_for(
         state,
         company_id,
         fiscal_year,
         period_type,
         &period_end,
-        esef,
+        layer1_facts,
+        false,
     );
     Outcome {
         period: period_label(&derived),
@@ -215,7 +231,8 @@ fn run_pipeline_for(
     fiscal_year: i64,
     period_type: &str,
     period_end: &str,
-    esef: Option<Vec<u8>>,
+    layer1_facts: Option<Vec<crate::storage::NewTaggedFact>>,
+    has_presentation_linkbase: bool,
 ) -> Outcome {
     let prior_end = {
         let y: i64 = period_end
@@ -232,7 +249,8 @@ fn run_pipeline_for(
         .expect("stored fact set");
     let input = PipelineInput {
         period_end,
-        esef_bytes: esef.as_deref(),
+        layer1_facts: layer1_facts.as_deref(),
+        has_presentation_linkbase,
         prior: prior.as_ref(),
         prior_period_end: prior_end.as_deref(),
         expected_keys: None,

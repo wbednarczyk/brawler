@@ -182,6 +182,7 @@ fn pre_report_card_composes_owning_domains() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("kpi definition should be created");
 

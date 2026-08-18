@@ -260,6 +260,7 @@ fn creates_company_custom_kpi_definition() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("custom KPI definition should create");
 
@@ -296,6 +297,7 @@ fn new_kpi_definition_with_origin(
         display_format: None,
         origin: origin.map(str::to_owned),
         statement_group: None,
+        period_nature: None,
     }
 }
 
@@ -385,6 +387,7 @@ fn new_kpi_definition_with_statement_group(
         display_format: None,
         origin: None,
         statement_group: statement_group.map(str::to_owned),
+        period_nature: None,
     }
 }
 
@@ -448,6 +451,92 @@ fn create_kpi_definition_rejects_an_unknown_statement_group_token() {
 }
 
 // ---------------------------------------------------------------------------
+// `kpi_definitions.period_nature` vocabulary guard (ADR 0100 decision 6,
+// epic #398): `instant | duration` — validated the same way as
+// `statement_group`, absent/empty normalizing to the `duration` default (the
+// pre-existing `is_ttm_eligible`/`measure_window_for` no-definition
+// fallback, `fundamentals::metrics`).
+// ---------------------------------------------------------------------------
+
+fn new_kpi_definition_with_period_nature(
+    company_id: &str,
+    metric_key: &str,
+    period_nature: Option<&str>,
+) -> NewKpiDefinition {
+    NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: Some(company_id.to_owned()),
+        sector: None,
+        metric_key: metric_key.to_owned(),
+        label: metric_key.to_owned(),
+        value_kind: "count".to_owned(),
+        unit: None,
+        computation: "reported".to_owned(),
+        formula: None,
+        display_format: None,
+        origin: None,
+        statement_group: None,
+        period_nature: period_nature.map(str::to_owned),
+    }
+}
+
+#[test]
+fn create_kpi_definition_accepts_every_period_nature_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    for (index, token) in ["instant", "duration"].into_iter().enumerate() {
+        let definition = state
+            .create_kpi_definition(new_kpi_definition_with_period_nature(
+                &company.id,
+                &format!("period_nature_metric_{index}"),
+                Some(token),
+            ))
+            .expect("a vocabulary token is a valid period_nature");
+        assert_eq!(definition.period_nature, token);
+    }
+}
+
+#[test]
+fn create_kpi_definition_defaults_absent_period_nature_to_duration() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let definition = state
+        .create_kpi_definition(new_kpi_definition_with_period_nature(
+            &company.id,
+            "no_nature_metric",
+            None,
+        ))
+        .expect("absent period_nature defaults");
+    assert_eq!(definition.period_nature, "duration");
+}
+
+#[test]
+fn create_kpi_definition_rejects_an_unknown_period_nature_token() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .create_kpi_definition(new_kpi_definition_with_period_nature(
+            &company.id,
+            "garbage_nature_metric",
+            Some("garbage"),
+        ))
+        .expect_err("an unknown period_nature token must never be silently stored");
+    assert!(matches!(
+        error,
+        StorageError::InvalidFinancialsValue {
+            key: "period_nature",
+            ..
+        }
+    ));
+}
+
+// ---------------------------------------------------------------------------
 // kpi_definitions id scoping (issue #149, T7 slice 2). The unique INDEX is
 // (metric_key, scope, company_id, sector) — a metric key legitimately exists
 // once per scope bucket. The PRIMARY KEY must therefore carry the same
@@ -490,6 +579,7 @@ fn company_scoped_definition_coexists_with_canonical_same_metric_key() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("a company-scoped definition must not collide with the canonical row");
 
@@ -551,6 +641,7 @@ fn sector_scoped_definition_coexists_with_canonical_same_metric_key() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("a sector-scoped definition must not collide with the canonical row");
 
@@ -587,6 +678,7 @@ fn two_companies_may_each_scope_the_same_metric_key() {
         display_format: None,
         origin: None,
         statement_group: None,
+        period_nature: None,
     };
 
     let a = state
@@ -619,6 +711,7 @@ fn company_scoped_facts_do_not_leak_into_canonical_metric_history() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("company-scoped definition should create");
 
@@ -2115,6 +2208,7 @@ fn company_scoped_definition_list_includes_the_canonical_catalog() {
                 display_format: None,
                 origin: None,
                 statement_group: None,
+                period_nature: None,
             })
             .expect("custom definition");
     }
@@ -3109,6 +3203,7 @@ fn slot_metric_histories_company_scoped_definition_has_its_own_history() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
         .expect("company-scoped definition should create");
     let p2023 = seed_fy_period(&state, &company.id, 2023);
@@ -3403,10 +3498,12 @@ fn slot_history_points_scopes_to_requested_definitions_and_excludes_the_run_peri
     let p2023 = seed_fy_period(&state, &company.id, 2023);
     let p2024 = seed_fy_period(&state, &company.id, 2024);
 
-    for (definition, period, value) in [
-        (&revenue, &p2023, "100"),
-        (&revenue, &p2024, "150"),
-        (&equity, &p2023, "900"),
+    for (definition, period, value, measure_window) in [
+        (&revenue, &p2023, "100", "flow"),
+        (&revenue, &p2024, "150", "flow"),
+        // total_equity is `instant`-natured (ADR 0100 decision 6) — its own
+        // slot uses `point_in_time`, never `flow`.
+        (&equity, &p2023, "900", "point_in_time"),
     ] {
         seed_slot_fact(
             &state,
@@ -3415,7 +3512,7 @@ fn slot_history_points_scopes_to_requested_definitions_and_excludes_the_run_peri
             definition,
             "consolidated",
             "total",
-            "flow",
+            measure_window,
             "final",
             value,
         );
@@ -3461,6 +3558,7 @@ fn create_kpi_definition_bounds_the_metric_key() {
             display_format: None,
             origin: None,
             statement_group: None,
+            period_nature: None,
         })
     };
 

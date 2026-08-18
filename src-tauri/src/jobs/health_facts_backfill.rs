@@ -144,6 +144,34 @@ mod tests {
       <ix:nonFraction name="ifrs-full:LongtermBorrowings" contextRef="c" unitRef="pln" scale="3">6 000</ix:nonFraction>
     </html>"#;
 
+    /// Every concept either fixture tags — all balance-sheet instants (ADR
+    /// 0100 decision 3, epic #398). A role entry for a concept absent from a
+    /// given instance is simply unused.
+    const ROLES: &[(&str, &str)] = &[
+        ("Assets", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+        (
+            "Liabilities",
+            crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+        ),
+        ("Equity", crate::test_support::BALANCE_SHEET_ROLE_SUFFIX),
+        (
+            "CurrentAssets",
+            crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+        ),
+        (
+            "CurrentLiabilities",
+            crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+        ),
+        (
+            "RetainedEarnings",
+            crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+        ),
+        (
+            "LongtermBorrowings",
+            crate::test_support::BALANCE_SHEET_ROLE_SUFFIX,
+        ),
+    ];
+
     fn unique_dir() -> std::path::PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -180,14 +208,18 @@ mod tests {
                 attribution: None,
             })
             .expect("document");
-        std::fs::write(dir.join("report.xhtml"), content).expect("write esef");
+        // A package, not a bare instance (ADR 0100 decision 3, epic #398): a
+        // bare iXBRL instance has no presentation linkbase to read, so its
+        // facts get no role rows and never survive Layer 2 projection.
+        let bytes = crate::test_support::esef_package_zip(content, ROLES);
+        std::fs::write(dir.join("report.xhtml"), &bytes).expect("write esef");
         state
             .mark_report_document_fetched(
                 &document.id,
                 Some("report.xhtml"),
-                Some("application/xhtml+xml"),
+                Some("application/octet-stream"),
                 None,
-                Some(content.len() as i64),
+                Some(bytes.len() as i64),
             )
             .expect("mark fetched");
         (state, company.id, document.id, dir)
@@ -249,7 +281,8 @@ mod tests {
 
         // (2) The concept-map extension: the SAME package now yields the four
         // health concepts too. Overwrite the stored file in place.
-        std::fs::write(dir.join("report.xhtml"), FULL_ESEF).expect("rewrite esef");
+        let full_bytes = crate::test_support::esef_package_zip(FULL_ESEF, ROLES);
+        std::fs::write(dir.join("report.xhtml"), &full_bytes).expect("rewrite esef");
         let second = backfill_company_health_facts(&state, &company_id).expect("second backfill");
         assert_eq!(second.documents_processed, 1);
         assert_eq!(

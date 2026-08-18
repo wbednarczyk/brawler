@@ -158,6 +158,10 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // the plain create path (UI/MCP manual entry) — a request naming the
         // retired positional method is a shape problem with the input.
         StorageError::RetiredExtractionMethod => InvalidInput,
+        // A caller-supplied measure_window contradicting the definition's
+        // period_nature (ADR 0100 decision 6) is a shape problem with the
+        // request, not a conflict with stored state.
+        StorageError::MeasureWindowPeriodNatureMismatch { .. } => InvalidInput,
         // Acting on a lease the caller does not (or no longer) hold conflicts
         // with current state — another worker's claim, or the caller's own
         // lease having expired — not a shape problem with the request.

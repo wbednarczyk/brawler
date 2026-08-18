@@ -1469,6 +1469,7 @@ mod tests {
                     definition_id: format!("kpidef_test_metric_{}", row.ordinal),
                     metric_key: row.metric_key_candidate.clone().unwrap_or_default(),
                     value_kind: "monetary".to_owned(),
+                    period_nature: "duration".to_owned(),
                     history: SlotHistoryInput::default(),
                 }),
             })

@@ -1202,18 +1202,19 @@ fn classifications() -> Vec<RegistryEntry> {
         // skip is a defect (ADR 0088 dec. 2). Grouped by why.
         //
         // Infra / liveness / diagnostics — no investor-facing data:
-        read("health"),                     // process liveness probe
-        read("database_status"),            // DB engine/migration diagnostics
-        read("backup_status"),              // local-backup infra status
-        read("get_history_sweep_progress"), // quote-backfill job progress (UI)
-        read("get_backfill_progress"),      // backfill job progress (UI)
-        read("get_scheduler_status"),       // scheduler/ops status
-        read("list_diagnostic_events"),     // diagnostics/ops event log
-        read("get_diagnostic_summary"),     // diagnostics/ops rollup
-        read("list_source_reconciliation"), // source-reconciliation diagnostics
-        read("get_log_status"),             // log-file status (ops)
-        read("list_log_entries"),           // app log lines (ops)
-        read("get_local_metrics_snapshot"), // local perf metrics (ops)
+        read("health"),                             // process liveness probe
+        read("database_status"),                    // DB engine/migration diagnostics
+        read("backup_status"),                      // local-backup infra status
+        read("get_history_sweep_progress"),         // quote-backfill job progress (UI)
+        read("get_pipeline_reextraction_progress"), // re-extraction batch job progress (UI)
+        read("get_backfill_progress"),              // backfill job progress (UI)
+        read("get_scheduler_status"),               // scheduler/ops status
+        read("list_diagnostic_events"),             // diagnostics/ops event log
+        read("get_diagnostic_summary"),             // diagnostics/ops rollup
+        read("list_source_reconciliation"),         // source-reconciliation diagnostics
+        read("get_log_status"),                     // log-file status (ops)
+        read("list_log_entries"),                   // app log lines (ops)
+        read("get_local_metrics_snapshot"),         // local perf metrics (ops)
         // Settings / config / credentials — sensitive or UI-only config:
         read("get_settings"),       // app settings surface (UI/config)
         read("get_license_status"), // licensing state (config)
@@ -1257,6 +1258,18 @@ fn classifications() -> Vec<RegistryEntry> {
         // list_flagged_extraction_outcomes + list_unclassified_filings are now
         // EXPOSED reads — carried by read_wave_tools() (ADR 0088 dec. 4, M4).
         read("list_unmatched_source_items"), // unmatched-source triage (no MCP tool yet)
+        // Layer 1 raw-tagged-fact trust surface (ADR 0100, epic #398 final
+        // slice): an owner-facing Coverage/promotion view, not core
+        // investor-facing content an agent composes research from — the
+        // agent's own KPI-acquisition path (kpi_ingest_*) already covers
+        // writing named observations.
+        read("get_report_tagged_fact_coverage"), // Coverage panel's compact funnel line (UI)
+        read("list_uncrosswalked_concepts"), // "positions the program doesn't know yet" list (UI)
+        // promote_uncrosswalked_concept is the OWNER'S OWN authority (ADR
+        // 0100 decision 10): "the owner may promote a captured position into
+        // Fundamentals; a machine still may not" — permanently excluded, not
+        // merely unexposed.
+        excluded("promote_uncrosswalked_concept"),
         // ---- Act: exposed writes -------------------------------------------
         // Every provenance-carrying write, the broad no-provenance research
         // writes, workspace actions, and the light/fail-fast job triggers are
@@ -1296,6 +1309,12 @@ fn classifications() -> Vec<RegistryEntry> {
         act("backfill_company_health_facts", None),
         act("backfill_ownership_extraction", None),
         act("run_history_sweep", None),
+        // Re-arms already-landed runs for the pipeline's current capability
+        // version (epic #398 Item B) — a maintenance/UI action over EXISTING
+        // stored data, not a research write an agent would compose; the KPI
+        // acquisition surface (kpi_ingest_*) already covers the agent's own
+        // write path.
+        act("run_pipeline_reextraction", None),
         act("rebuild_fundamentals", None),
         act("refresh_gpw_company_registry", None),
         act("refresh_gpw_company_registry_if_stale", None),

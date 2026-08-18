@@ -69,6 +69,7 @@ mod migrations;
 mod morning_briefings;
 mod notebooks;
 mod ownership;
+mod pipeline_reextraction;
 mod pool;
 mod quality_frameworks;
 mod queue_config;
@@ -79,6 +80,7 @@ mod report_documents;
 mod report_expectations;
 mod report_season;
 mod report_sections;
+mod report_tagged_facts;
 mod research;
 mod research_reminders;
 mod search;
@@ -193,6 +195,9 @@ pub use ownership::{
     WitnessComparison, WitnessDivergence, WitnessHolder, OCR_STATE_NO_TABLE, OCR_STATE_PROPOSED,
     OCR_STATE_REJECTED,
 };
+pub use pipeline_reextraction::{
+    PipelineReextractionBatch, PipelineReextractionOutcome, PipelineReextractionStore,
+};
 pub use pool::open_pool;
 pub use quality_frameworks::QualityFrameworkStore;
 pub use quality_frameworks::{
@@ -223,6 +228,11 @@ pub use report_season::{
     ReportSeasonResult,
 };
 pub use report_sections::{ReportSectionStore, StoredExtraction, StoredSection};
+pub use report_tagged_facts::{
+    CompanyHarvestedConcept, HarvestedConcept, NewTaggedFact, NewTaggedFactRole,
+    ReportTaggedFactStore, StoredTaggedFact, StoredTaggedFactExtraction, StoredTaggedFactRole,
+    TaggedFactCoverageCounts, TaggedFactExtraction,
+};
 pub use research::ResearchStore;
 pub use research::{citation_resolves, supplied_evidence_refs};
 pub use research_reminders::ResearchReminderStore;
@@ -584,6 +594,13 @@ impl AppState {
         history_sweeps::HistorySweepStore::new(self.db.clone())
     }
 
+    /// Version-aware re-extraction batch records (epic #398 Item B): the
+    /// durable record behind a batch that re-arms successful ESEF-tier runs
+    /// whose stored pipeline version is stale.
+    pub fn pipeline_reextraction(&self) -> pipeline_reextraction::PipelineReextractionStore {
+        pipeline_reextraction::PipelineReextractionStore::new(self.db.clone())
+    }
+
     /// import_export domain store (Architecture v2 / ADR 0050).
     pub fn import_export(&self) -> import_export::ImportExportStore {
         import_export::ImportExportStore::new(self.db.clone())
@@ -626,6 +643,11 @@ impl AppState {
 
     pub fn report_sections(&self) -> report_sections::ReportSectionStore {
         report_sections::ReportSectionStore::new(self.db.clone())
+    }
+
+    /// Layer 1 raw tagged-fact capture (ADR 0100 decisions 1, 8, 9).
+    pub fn report_tagged_facts(&self) -> report_tagged_facts::ReportTaggedFactStore {
+        report_tagged_facts::ReportTaggedFactStore::new(self.db.clone())
     }
 
     /// Pre-report expectations domain store (ADR 0071): stance + per-metric

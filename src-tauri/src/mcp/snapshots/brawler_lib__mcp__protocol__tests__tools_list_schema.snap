@@ -1,5 +1,6 @@
 ---
 source: src/mcp/protocol.rs
+assertion_line: 333
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -1687,6 +1688,10 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
             },
             "origin": {
               "description": "`user` (default, absent/empty normalizes to it) | `agent` — the ONLY two tokens a live writer may set (`seed` is migration-backfill-only, ADR 0093 decision 4). The UI's create command never sets this (stays `user`); the MCP `create_kpi_definition` act handler forces `agent` regardless of caller input — same pattern as `NewFinancialFact. extraction_method`.",
+              "type": "string"
+            },
+            "periodNature": {
+              "description": "`instant | duration` (default `duration`, ADR 0100 decision 6, epic #398). Optional on every live writer, like `statement_group`; unlike `origin`, nothing forces this to a fixed value regardless of caller.",
               "type": "string"
             },
             "scope": {

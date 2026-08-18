@@ -18,11 +18,12 @@
 
 use std::collections::BTreeSet;
 
-use super::esef::parse_esef;
+use super::esef::projection::project_period;
 use super::{fact_set_for_period, ExtractedFact, SourceTier};
 use crate::fundamentals::validation::{
     completeness, validate, Completeness, FactSet, Status, Tolerance, ValidationReport,
 };
+use crate::storage::NewTaggedFact;
 
 /// The inputs available for one report's extraction. Any tier whose input is
 /// absent is skipped.
@@ -30,8 +31,23 @@ use crate::fundamentals::validation::{
 pub struct PipelineInput<'a> {
     /// ISO `YYYY-MM-DD` period end the facts belong to.
     pub period_end: &'a str,
-    /// Raw inline-XBRL instance bytes (tier 1), if a structured filing exists.
-    pub esef_bytes: Option<&'a [u8]>,
+    /// Layer 1 raw tagged-fact rows (tier 1), if a structured filing exists —
+    /// every period the document carries, not just `period_end` (ADR 0100
+    /// decisions 1/4/7, epic #398). `run_pipeline` projects only `period_end`
+    /// for the candidate set it validates/emits, and separately (read-only)
+    /// projects `prior_period_end` to build the comparative cross-check —
+    /// comparative periods are never written. Replaces the pre-epic
+    /// `esef_bytes: Option<&[u8]>` field: the ESEF tier's fact production is
+    /// now a projection over these rows, not a fresh `parse_esef` per call.
+    pub layer1_facts: Option<&'a [NewTaggedFact]>,
+    /// Whether `layer1_facts`' document carried any presentation-linkbase
+    /// evidence (ADR 0100 decision 3 regression fix, epic #398): a bare
+    /// iXBRL instance has none, so its facts would fail the strict role
+    /// filter unconditionally and the document would silently project zero
+    /// facts. `false` routes the ESEF projection through its no-linkbase
+    /// fallback (dimensionless + crosswalk-resolved, no role filter)
+    /// instead. Irrelevant when `layer1_facts` is `None`.
+    pub has_presentation_linkbase: bool,
     /// Previously-stored facts for the immediately prior period. Doubles as
     /// **both** inputs `validate` takes for cross-period checks: the
     /// cash-flow tie's opening balance, and the comparative cross-check's
@@ -154,11 +170,35 @@ fn acceptance_for(status: Status, completeness: Option<&Completeness>) -> Accept
     }
 }
 
+/// Runs `validate` plus the completeness gate against an already-resolved
+/// comparatives set. The shared core both [`validate_tier`] (metric-key-only
+/// comparatives, the other tiers) and `run_pipeline`'s ESEF branch
+/// (projection-resolved comparatives, ADR 0100 decision 4) route through, so
+/// the acceptance policy itself can never drift between the two.
+fn validate_tier_with_comparatives(
+    set: &FactSet,
+    comparatives: Option<&FactSet>,
+    input: &PipelineInput<'_>,
+    tol: &Tolerance,
+) -> crate::fundamentals::validation::ValidationReport {
+    let mut report = validate(set, input.prior, comparatives, input.prior, tol);
+    if let Some(expected) = input.expected_keys.filter(|e| !e.is_empty()) {
+        report.completeness = Some(completeness(set, expected));
+    }
+    report
+}
+
 /// Runs `validate` for one tier's candidate set, wiring in the comparative
 /// cross-check (`prior_period_end`, read from the tier's own freshly-extracted
 /// `facts`) and the completeness gate. `prior` doubles as both `validate`
 /// inputs that need a "previously known" period: the cash-flow tie's opening
 /// balance and the cross-check's `stored_prior`.
+///
+/// Used by [`validate_parsed_set_report`] — the OTHER tiers (ESPI cover note,
+/// legacy positional) whose facts arrive as a flat `ExtractedFact` list with
+/// no Layer 1 backing. Comparatives there still derive via the metric-key-only
+/// collapse (`fact_set_for_period`), UNCHANGED: ADR 0100's projection replaces
+/// the ESEF tier's fact production only (epic #398).
 fn validate_tier(
     set: &FactSet,
     facts: &[ExtractedFact],
@@ -169,11 +209,17 @@ fn validate_tier(
         .prior_period_end
         .map(|pe| fact_set_for_period(facts, pe))
         .filter(|s| !s.is_empty());
-    let mut report = validate(set, input.prior, comparatives.as_ref(), input.prior, tol);
-    if let Some(expected) = input.expected_keys.filter(|e| !e.is_empty()) {
-        report.completeness = Some(completeness(set, expected));
-    }
-    report
+    validate_tier_with_comparatives(set, comparatives.as_ref(), input, tol)
+}
+
+/// A projected period's candidates as a `FactSet`, discarding the per-fact
+/// Layer-1 provenance (`ProjectedFact::contributing_fact_identities`) — the
+/// shape `validate`/`record_structured_fact` need.
+fn fact_set_from_projection(facts: &[super::esef::projection::ProjectedFact]) -> FactSet {
+    facts
+        .iter()
+        .map(|pf| (pf.fact.metric_key.clone(), pf.fact.value))
+        .collect()
 }
 
 /// Runs the tiered pipeline over the available inputs. See the module docs for
@@ -182,29 +228,47 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
     let tol = Tolerance::default();
 
     // ---- Tier 1: ESEF/iXBRL (source of truth) --------------------------
-    if let Some(bytes) = input.esef_bytes {
-        if let Ok(facts) = parse_esef(bytes) {
-            let set = fact_set_for_period(&facts, input.period_end);
-            if !set.is_empty() {
-                let report = validate_tier(&set, &facts, input, &tol);
-                // Tagged data is authoritative unless it self-contradicts — the
-                // shared acceptance table decides (a `Failed` set is `Flagged` and
-                // emits no facts; ADR 0061 dec. 2: what objected stays reviewable,
-                // never a silent empty).
-                let acceptance = acceptance_for(report.status, report.completeness.as_ref());
-                let facts = if acceptance.emits() {
-                    facts_for_period(facts, input.period_end)
-                } else {
-                    Vec::new()
-                };
-                return PipelineOutcome {
-                    acceptance,
-                    tier: Some(SourceTier::Esef),
-                    facts,
-                    status: report.status,
-                    validation: Some(report.clone()),
-                };
-            }
+    // ADR 0100 decisions 1/4/7 (epic #398): the candidate set is a Layer 1
+    // projection, not a fresh `parse_esef` pass — see `esef::projection`.
+    if let Some(layer1_facts) = input.layer1_facts {
+        let projected = project_period(
+            layer1_facts,
+            input.period_end,
+            input.has_presentation_linkbase,
+        );
+        if !projected.facts.is_empty() {
+            let set = fact_set_from_projection(&projected.facts);
+            // The comparative column is ALSO projected (never written — decision
+            // 7 restricts WRITES to the declared period only) so the cross-check
+            // is resolved by the same order-independent rule, not document order.
+            let comparatives = input
+                .prior_period_end
+                .map(|pe| {
+                    fact_set_from_projection(
+                        &project_period(layer1_facts, pe, input.has_presentation_linkbase).facts,
+                    )
+                })
+                .filter(|s| !s.is_empty());
+            let report = validate_tier_with_comparatives(&set, comparatives.as_ref(), input, &tol);
+            // Tagged data is authoritative unless it self-contradicts — the
+            // shared acceptance table decides (a `Failed` set is `Flagged` and
+            // emits no facts; ADR 0061 dec. 2: what objected stays reviewable,
+            // never a silent empty). ADR 0100 decision 5: the projected
+            // candidates pass this SAME gate as the pre-epic ESEF facts did —
+            // widening capture must not widen trust.
+            let acceptance = acceptance_for(report.status, report.completeness.as_ref());
+            let facts = if acceptance.emits() {
+                projected.facts.into_iter().map(|pf| pf.fact).collect()
+            } else {
+                Vec::new()
+            };
+            return PipelineOutcome {
+                acceptance,
+                tier: Some(SourceTier::Esef),
+                facts,
+                status: report.status,
+                validation: Some(report.clone()),
+            };
         }
     }
 
@@ -262,15 +326,6 @@ pub fn validate_parsed_set_report(
     let report = validate_tier(&set, facts, &input, &Tolerance::default());
     let acceptance = acceptance_for(report.status, report.completeness.as_ref());
     (acceptance, Some(report))
-}
-
-/// Keeps only the facts whose period end matches (the accepted set drops
-/// comparative-period rows an ESEF/witness parse also carries).
-fn facts_for_period(facts: Vec<ExtractedFact>, period_end: &str) -> Vec<ExtractedFact> {
-    facts
-        .into_iter()
-        .filter(|f| f.period.end_date() == period_end)
-        .collect()
 }
 
 #[cfg(test)]
