@@ -561,6 +561,41 @@ mod tests {
         assert_eq!(error, "company_not_found");
     }
 
+    /// The digest must bind BOTH identity halves (sol round 5 guardrail):
+    /// a hash that quietly dropped either the namespace or the local name
+    /// would stay green in the wiring tests while re-enabling the very
+    /// merge it exists to prevent. Standard taxonomy-year namespaces are
+    /// one vocabulary and share the local-name key.
+    #[test]
+    fn promoted_metric_key_binds_namespace_and_local_name() {
+        let a = promoted_metric_key("http://issuer-a.example.com/2025", "Foo");
+        let b = promoted_metric_key("http://issuer-b.example.com/2025", "Foo");
+        assert_ne!(
+            a, b,
+            "same local name, different namespaces — different keys"
+        );
+
+        let c = promoted_metric_key("http://issuer-a.example.com/2025", "Bar");
+        assert_ne!(
+            a, c,
+            "same namespace, different local names — different keys"
+        );
+
+        let std_2023 = promoted_metric_key(
+            "http://xbrl.ifrs.org/taxonomy/2023-03-23/ifrs-full",
+            "Assets",
+        );
+        let std_2024 = promoted_metric_key(
+            "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full",
+            "Assets",
+        );
+        assert_eq!(std_2023, "Assets");
+        assert_eq!(
+            std_2023, std_2024,
+            "standard taxonomy-year namespaces are one vocabulary"
+        );
+    }
+
     #[test]
     fn list_uncrosswalked_concepts_marks_an_already_promoted_row() {
         let s = state();
