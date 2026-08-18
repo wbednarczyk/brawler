@@ -247,6 +247,15 @@ you find.
 in the document's text layer — read the page visually before citing it, and
 cite the page number. Never estimate a chart value from its axis.
 
+**Image-only scans.** Some filings are page scans with no text layer at all.
+`get_kpi_ingest_document` serves the pinned bytes exactly as filed — there is
+no server-side OCR, deliberately (ADR 0084: the LLM is the reader). When the
+document yields no extractable text, read it with your own vision: render the
+pages to images (e.g. `pdftoppm -png -r 150`), read the figures from the
+renders, and cite page/table/row as usual. A scanned filing is NOT an unusable
+document — the scan→vision path is the normal path for it; cancel the run
+only when the pages are genuinely illegible.
+
 ### Direct fact writes are repair-only
 
 Normal ingestion always goes through the workflow above. The direct fact tools —
