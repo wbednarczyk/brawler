@@ -1546,14 +1546,18 @@ export const plText: Record<string, string> = {
   "Missing": "Brak",
   "Row click → documents": "Wiersz → dokumenty",
   // T3.2 — history actions footer (ADR 0077 §3): backfill + history sweep
-  "Backfill history": "Uzupełnij historię",
-  "Extract missing periods": "Wydobądź brakujące okresy",
-  "Backfilling…": "Uzupełnianie…",
-  "Extracting…": "Wydobywanie…",
+  "Fetch older reports": "Pobierz starsze raporty",
+  "Read the ones not read yet": "Przeczytaj niewczytane",
+  "Fetching brings in reports Brawler doesn't have yet; reading turns stored reports into numbers.":
+    "Pobieranie przynosi raporty, których Brawler jeszcze nie ma; czytanie zamienia zapisane raporty w liczby.",
+  "Show the unnamed positions": "Pokaż nienazwane pozycje",
+  "Hide the unnamed positions": "Ukryj nienazwane pozycje",
+  "Backfilling…": "Pobieranie…",
+  "Extracting…": "Czytanie…",
   "Queued": "W kolejce",
   "Automation off": "Automatyzacja wyłączona",
-  "Enable automation to extract history.": "Włącz automatyzację, aby wydobyć historię.",
-  "Extracted {n} · skipped {m}": "Wydobyto {n} · pominięto {m}",
+  "Enable automation to extract history.": "Włącz automatyzację, aby czytać starsze raporty.",
+  "Extracted {n} · skipped {m}": "Przeczytano {n} · pominięto {m}",
   "History sweep failed": "Przemiatanie historii nie powiodło się",
   "Backfill failed": "Uzupełnianie nie powiodło się",
   // Card bfc4c98: NewConnect / unsupported-market backfill failure.
@@ -1566,12 +1570,12 @@ export const plText: Record<string, string> = {
   "History sweep is taking longer than expected — reopen this company to check its status.":
     "Przemiatanie historii trwa dłużej niż zwykle — otwórz spółkę ponownie, aby sprawdzić jej stan.",
   // Epic #398 Item B — version-aware re-extraction footer action.
-  "Re-extract with latest pipeline": "Wydobądź ponownie najnowszym pipeline'em",
-  "Re-extracting…": "Ponowne wydobywanie…",
-  "Re-extraction failed": "Ponowne wydobycie nie powiodło się",
-  "Re-extracted {n}": "Wydobyto ponownie {n}",
+  "Read everything again": "Przeczytaj wszystko od nowa",
+  "Re-extracting…": "Czytanie od nowa…",
+  "Re-extraction failed": "Ponowne czytanie nie powiodło się",
+  "Re-extracted {n}": "Przeczytano ponownie {n}",
   "Re-extraction is taking longer than expected — reopen this company to check its status.":
-    "Ponowne wydobywanie trwa dłużej niż zwykle — otwórz spółkę ponownie, aby sprawdzić jej stan.",
+    "Ponowne czytanie trwa dłużej niż zwykle — otwórz spółkę ponownie, aby sprawdzić jej stan.",
   // T3.3 (ADR 0077 §3): sweep drain counter, truncation honesty, metadata-only
   // Data cell, and the configurable backfill-depth control.
   "Extracting… {done}/{total}": "Wydobywanie… {done}/{total}",

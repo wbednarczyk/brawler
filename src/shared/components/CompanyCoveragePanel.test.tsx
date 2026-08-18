@@ -389,8 +389,8 @@ describe("CompanyCoveragePanel", () => {
 
   it("enables both history actions for an opted-in company (idle state)", async () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
-    const backfill = await screen.findByRole("button", { name: /Backfill history/ });
-    const extract = screen.getByRole("button", { name: /Extract missing periods/ });
+    const backfill = await screen.findByRole("button", { name: /Fetch older reports/ });
+    const extract = screen.getByRole("button", { name: /Read the ones not read yet/ });
     expect(backfill).toBeEnabled();
     expect(extract).toBeEnabled();
   });
@@ -400,8 +400,8 @@ describe("CompanyCoveragePanel", () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
     expect(await screen.findByText("Enable automation to extract history.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Backfill history/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Extract missing periods/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Fetch older reports/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Read the ones not read yet/ })).toBeDisabled();
     // The status line names the off state explicitly.
     expect(screen.getByRole("status")).toHaveTextContent("Automation off");
   });
@@ -418,7 +418,7 @@ describe("CompanyCoveragePanel", () => {
 
     await screen.findByText("Enable automation to extract history.");
     expect(
-      screen.getByRole("button", { name: /Re-extract with latest pipeline/ }),
+      screen.getByRole("button", { name: /Read everything again/ }),
     ).toBeEnabled();
   });
 
@@ -432,7 +432,7 @@ describe("CompanyCoveragePanel", () => {
     );
 
     const reextract = await screen.findByRole("button", {
-      name: /Re-extract with latest pipeline/,
+      name: /Read everything again/,
     });
     await userEvent.click(reextract);
 
@@ -453,13 +453,13 @@ describe("CompanyCoveragePanel", () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
     const reextract = await screen.findByRole("button", {
-      name: /Re-extract with latest pipeline/,
+      name: /Read everything again/,
     });
     await userEvent.click(reextract);
 
     expect(await screen.findByRole("button", { name: /Re-extracting…/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Backfill history/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Extract missing periods/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Fetch older reports/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Read the ones not read yet/ })).toBeDisabled();
 
     resolveBatch(batch({ status: "completed" }));
   });
@@ -476,7 +476,7 @@ describe("CompanyCoveragePanel", () => {
       <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
     );
 
-    const backfill = await screen.findByRole("button", { name: /Backfill history/ });
+    const backfill = await screen.findByRole("button", { name: /Fetch older reports/ });
     await userEvent.click(backfill);
     // While in flight the button shows the running label and both actions disable.
     expect(await screen.findByRole("button", { name: /Backfilling…/ })).toBeDisabled();
@@ -506,7 +506,7 @@ describe("CompanyCoveragePanel", () => {
       <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
     );
 
-    const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+    const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
     await userEvent.click(extract);
 
     await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
@@ -547,7 +547,7 @@ describe("CompanyCoveragePanel", () => {
         />,
       );
 
-      const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+      const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
       await user.click(extract);
       await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
 
@@ -604,7 +604,7 @@ describe("CompanyCoveragePanel", () => {
         <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
       );
 
-      const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+      const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
       await user.click(extract);
       await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
 
@@ -656,7 +656,7 @@ describe("CompanyCoveragePanel", () => {
         <CompanyCoveragePanel companyId="company_gpw_cdr" onHistoryRefreshed={onHistoryRefreshed} />,
       );
 
-      const extract = await screen.findByRole("button", { name: /Extract missing periods/ });
+      const extract = await screen.findByRole("button", { name: /Read the ones not read yet/ });
       await user.click(extract);
       await waitFor(() => expect(runHistorySweepMock).toHaveBeenCalledWith("company_gpw_cdr"));
 
@@ -802,7 +802,7 @@ describe("CompanyCoveragePanel", () => {
     );
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
-    await screen.findByRole("button", { name: /Backfill history/ });
+    await screen.findByRole("button", { name: /Fetch older reports/ });
     expect(screen.queryByText(/^AI:/)).not.toBeInTheDocument();
   });
 });

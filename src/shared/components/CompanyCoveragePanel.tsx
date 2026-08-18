@@ -66,8 +66,8 @@ function isFullYear(periodType: string): boolean {
 /// queue. Every gap (a period with no report, a report never processed, an
 /// AI-budget skip) stays visible instead of silently missing. Clicking a row opens
 /// the company's report documents. The footer (ADR 0077 §3, T3.2) drives the two
-/// history actions — "Backfill history" (fetch + auto-chained sweep) and "Extract
-/// missing periods" (sweep only, documents already fetched) — with a lean status
+/// history actions — "Fetch older reports" (fetch + auto-chained sweep) and "Read
+/// the ones not read yet" (sweep only, documents already fetched) — with a lean status
 /// line, a live drain counter while a sweep runs (T3.3), and the latest sweep's
 /// AI-call spend alongside it whenever a sweep row exists (T5.3).
 export function CompanyCoveragePanel({
@@ -242,7 +242,7 @@ export function CompanyCoveragePanel({
     pollRef.current = setInterval(() => void tick(), SWEEP_POLL_INTERVAL_MS);
   };
 
-  // "Backfill history": fetch the last few years of reports; the backend auto-chains
+  // "Fetch older reports": fetch the last few years of reports; the backend auto-chains
   // a history sweep at the end (ADR 0077 §3), so we hand off to the sweep poll —
   // and reload siblings once — when the backfill resolves.
   const runBackfill = async () => {
@@ -273,7 +273,7 @@ export function CompanyCoveragePanel({
     }
   };
 
-  // "Extract missing periods": run a sweep only (the CBF case where documents are
+  // "Read the ones not read yet": run a sweep only (the CBF case where documents are
   // already fetched and only extraction is missing — no re-download).
   const runSweep = async () => {
     if (busy) return;
@@ -325,7 +325,7 @@ export function CompanyCoveragePanel({
     pollRef.current = setInterval(() => void tick(), SWEEP_POLL_INTERVAL_MS);
   };
 
-  // "Re-extract with latest pipeline" (epic #398 Item B): re-arm the company's
+  // "Read everything again" (epic #398 Item B): re-arm the company's
   // successful ESEF-tier runs whose stored pipeline version is stale, so a
   // widened crosswalk/projection reaches already-landed filings. NOT gated on
   // automation mode — the "Try again" posture (explicit, per-document
@@ -409,7 +409,7 @@ export function CompanyCoveragePanel({
       }
     }
     // No sweep yet — fall back to the re-extraction batch's own summary, so
-    // a company that only ever used "Re-extract with latest pipeline" still
+    // a company that only ever used "Read everything again" still
     // gets a status line instead of a permanently blank one.
     const batch = reextractProgress?.batch;
     if (!batch) return null;
@@ -657,7 +657,7 @@ export function CompanyCoveragePanel({
             onClick={runBackfill}
           >
             <History size={15} aria-hidden="true" />
-            {backfilling ? text("Backfilling…") : text("Backfill history")}
+            {backfilling ? text("Backfilling…") : text("Fetch older reports")}
           </Button>
           <Button
             variant="secondary"
@@ -666,7 +666,7 @@ export function CompanyCoveragePanel({
             onClick={runSweep}
           >
             <Sparkles size={15} aria-hidden="true" />
-            {sweeping ? text("Extracting…") : text("Extract missing periods")}
+            {sweeping ? text("Extracting…") : text("Read the ones not read yet")}
           </Button>
           <Button
             variant="secondary"
@@ -675,9 +675,18 @@ export function CompanyCoveragePanel({
             onClick={runReextraction}
           >
             <RefreshCw size={15} aria-hidden="true" />
-            {reextracting ? text("Re-extracting…") : text("Re-extract with latest pipeline")}
+            {reextracting ? text("Re-extracting…") : text("Read everything again")}
           </Button>
         </div>
+        {/* The three actions read as near-duplicates without this line: two of
+            them start with the same verb in the user's head. One sentence draws
+            the only distinction that matters — fetching adds documents, reading
+            turns documents into numbers. */}
+        <Hint>
+          {text(
+            "Fetching brings in reports Brawler doesn't have yet; reading turns stored reports into numbers.",
+          )}
+        </Hint>
         <div className="coverage-action-status" role="status">
           {statusLabel() ?? ""}
                   </div>
