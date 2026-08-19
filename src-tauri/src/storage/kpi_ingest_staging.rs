@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use crate::fundamentals::kpi_manifest::{Outcome as ManifestOutcome, SealedManifest};
 
@@ -44,7 +45,7 @@ const MAPPING_STATUS_VALUES: &[&str] = &["unmapped", "mapped", "no_definition", 
 /// restage. Every other state — including `staged`/`ready_to_commit`/
 /// `committing` — refuses, so staging can never invalidate a manifest a
 /// commit is already holding, nor leave `ready_to_commit` without one.
-const STAGEABLE_STATUSES: &[KpiIngestRunState] = &[
+pub(super) const STAGEABLE_STATUSES: &[KpiIngestRunState] = &[
     KpiIngestRunState::Extracting,
     KpiIngestRunState::ValidationFailed,
 ];
@@ -53,7 +54,11 @@ const STAGEABLE_STATUSES: &[KpiIngestRunState] = &[
 /// `ordinal` — never caller-supplied. `validation_state`/
 /// `validation_codes_json` are ALWAYS `none`/`NULL` at staging time; only
 /// [`KpiIngestStagingStore::apply_validation_outcome`] ever sets them.
-#[derive(Debug, Clone, Default)]
+/// `Serialize`/`Deserialize` (epic #399 S6) are for the INTERNAL
+/// `kpi_ingest_draft_chunks.payload_json` round-trip only — plain
+/// `snake_case`, never a wire contract (the MCP boundary has its own
+/// `ObservationInput` with camelCase/`deny_unknown_fields`/byte caps).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NewStagedObservation {
     /// Exactly as the document states it — never normalized.
     pub raw_label: String,
@@ -365,236 +370,40 @@ impl KpiIngestStagingStore {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
-        type RunPeriodRow = (
-            String,
-            Option<String>,
-            Option<i64>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-        );
-        let run: Option<RunPeriodRow> = tx
+        // A single-call snapshot while a draft is open is a typed refusal
+        // (ADR 0102 dec. 11) — an explicit abort is required, never a silent
+        // orphan. A STALE draft (lease epoch behind the run's current
+        // `attempt_count` — a takeover happened) is lazily superseded here
+        // instead of blocking, the same lazy-invalidation this check shares
+        // with `KpiIngestDraftsStore::open_draft`.
+        let attempt_count: Option<i64> = tx
             .query_row(
-                "SELECT status, period_id, period_fiscal_year, period_type, \
-                        lease_holder, lease_expires_at
-                 FROM kpi_ingest_runs WHERE id = ?1",
+                "SELECT attempt_count FROM kpi_ingest_runs WHERE id = ?1",
                 [run_id],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                    ))
-                },
-            )
-            .optional()?;
-        let Some((
-            status,
-            period_id,
-            period_fiscal_year,
-            period_type,
-            lease_holder,
-            lease_expires_at,
-        )) = run
-        else {
-            return Err(StorageError::KpiIngestRunNotFound {
-                id: run_id.to_owned(),
-            });
-        };
-        let status = KpiIngestRunState::parse(&status)?;
-        if !STAGEABLE_STATUSES.contains(&status) {
-            return Err(StorageError::InvalidRunStateForStaging {
-                id: run_id.to_owned(),
-                status: status.as_str().to_owned(),
-            });
-        }
-        let now: String =
-            tx.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
-                row.get(0)
-            })?;
-        let lease_live = lease_holder.as_deref() == Some(holder)
-            && lease_expires_at
-                .as_deref()
-                .is_some_and(|expires| expires > now.as_str());
-        if !lease_live {
-            // Three-way classification (#386, promised at #384): own-expired →
-            // RunLeaseExpired, live-foreign → RunTakenOver, residual →
-            // RunLeaseNotHeld.
-            return Err(super::kpi_ingest_runs::lease_refusal_on_connection(
-                &tx, run_id, holder,
-            )?);
-        }
-        if period_id.is_none() && (period_fiscal_year.is_none() || period_type.is_none()) {
-            return Err(StorageError::InvalidKpiIngestRunValue {
-                key: "period",
-                value: "run has neither period_id nor a complete period descriptor".to_owned(),
-            });
-        }
-
-        // Validate + normalize every observation BEFORE touching the run row
-        // or inserting anything (typed refusal ahead of any raw CHECK).
-        let mut normalized = Vec::with_capacity(observations.len());
-        for observation in observations {
-            if observation.raw_label.trim().is_empty() {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "raw_label",
-                    value: "empty".to_owned(),
-                });
-            }
-            if observation.raw_value.trim().is_empty() {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "raw_value",
-                    value: "empty".to_owned(),
-                });
-            }
-            let currency = normalize_currency(observation.currency.clone())?;
-            validate_vocab("unit_scale", &observation.unit_scale, UNIT_SCALE_VALUES)?;
-            validate_vocab(
-                "measure_window",
-                &observation.measure_window,
-                MEASURE_WINDOW_VALUES,
-            )?;
-            validate_vocab("attribution", &observation.attribution, ATTRIBUTION_VALUES)?;
-            validate_vocab("scope", &observation.scope, SCOPE_VALUES)?;
-            let mapping_status = observation
-                .mapping_status
-                .clone()
-                .unwrap_or_else(|| "unmapped".to_owned());
-            if !MAPPING_STATUS_VALUES.contains(&mapping_status.as_str()) {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "mapping_status",
-                    value: mapping_status,
-                });
-            }
-            // Excluded is a sealed disposition (ADR 0102 dec. 1): it needs a
-            // non-blank reason to seal, and a reason on any other
-            // disposition is nonsense the caller must have mis-threaded —
-            // both are typed refusals, not silently corrected.
-            let exclusion_reason = empty_string_to_none(observation.exclusion_reason.clone());
-            if mapping_status == "excluded" {
-                if exclusion_reason
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or("")
-                    .is_empty()
-                {
-                    return Err(StorageError::InvalidKpiIngestRunValue {
-                        key: "exclusion_reason",
-                        value: "required when mapping_status is excluded".to_owned(),
-                    });
-                }
-            } else if exclusion_reason.is_some() {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "exclusion_reason",
-                    value: "must be absent unless mapping_status is excluded".to_owned(),
-                });
-            }
-            if let Some(page) = observation.citation_page {
-                if page < 1 {
-                    return Err(StorageError::InvalidKpiIngestRunValue {
-                        key: "citation_page",
-                        value: page.to_string(),
-                    });
-                }
-            }
-            normalized.push((observation, currency, mapping_status, exclusion_reason));
-        }
-
-        // The final flip re-guards status AND the live lease (luna review B1):
-        // the batch above can be long, and the lease is WALL-CLOCK state — it
-        // can expire mid-transaction even though no other writer can touch the
-        // row under this Immediate tx. An expired holder must not stage.
-        #[cfg(test)]
-        tests::mid_batch_test_delay();
-        let new_revision: Option<i64> = tx
-            .query_row(
-                "UPDATE kpi_ingest_runs
-                 SET manifest_revision = manifest_revision + 1,
-                     manifest_hash = NULL,
-                     status = 'staged',
-                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE id = ?1
-                   AND status IN ('extracting', 'validation_failed')
-                   AND lease_holder = ?2
-                   AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 RETURNING manifest_revision",
-                params![run_id, holder],
                 |row| row.get(0),
             )
             .optional()?;
-        let Some(new_revision) = new_revision else {
-            // Mid-batch expiry or takeover: classify three-way too (#386).
-            return Err(super::kpi_ingest_runs::lease_refusal_on_connection(
-                &tx, run_id, holder,
-            )?);
-        };
-
-        // missingReasons travel in the SAME staging transaction (contracts.md
-        // tool 5): the map is REQUIRED and `{}` is the explicit clear — every
-        // revision replaces the whole declaration, never a destructive default.
-        let missing_reasons_json = serde_json::to_string(missing_reasons)?;
-        tx.execute(
-            "UPDATE kpi_ingest_runs SET missing_reasons_json = ?1 WHERE id = ?2",
-            params![missing_reasons_json, run_id],
-        )?;
-        if let Some(execution) = execution {
-            super::kpi_ingest_runs::merge_cost_json_on_connection(&tx, run_id, execution)?;
-        }
-
-        for (ordinal, (observation, currency, mapping_status, exclusion_reason)) in
-            normalized.into_iter().enumerate()
-        {
-            let ordinal = ordinal as i64;
-            let id = generate_observation_id(run_id, new_revision, ordinal);
-            tx.execute(
-                &format!(
-                    "INSERT INTO kpi_staged_observations
-                        ({OBSERVATION_COLUMNS})
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-                        ?17, ?18, ?19, ?20, 'none', NULL, \
-                        strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), \
-                        ?21)"
-                ),
-                params![
-                    id,
-                    run_id,
-                    new_revision,
-                    ordinal,
-                    observation.raw_label,
-                    observation.raw_value,
-                    observation.raw_currency,
-                    observation.raw_unit_scale,
-                    observation.normalized_value,
-                    currency,
-                    observation.unit_scale,
-                    observation.measure_window,
-                    observation.attribution,
-                    observation.scope,
-                    observation.metric_key_candidate,
-                    mapping_status,
-                    observation.citation_page,
-                    observation.citation_table,
-                    observation.citation_row,
-                    observation.citation_quote,
-                    exclusion_reason,
-                ],
+        // An unknown run falls through to `install_observations_on_connection`'s
+        // own (unchanged) `KpiIngestRunNotFound` — this pre-check only needs to
+        // run the draft-conflict guard for a run that actually exists.
+        if let Some(attempt_count) = attempt_count {
+            super::kpi_ingest_drafts::resolve_active_draft_conflict_on_connection(
+                &tx,
+                run_id,
+                attempt_count,
             )?;
         }
 
-        let mut statement = tx.prepare(&format!(
-            "SELECT {OBSERVATION_COLUMNS} FROM kpi_staged_observations
-             WHERE run_id = ?1 AND revision = ?2 ORDER BY ordinal"
-        ))?;
-        let inserted: Vec<StagedObservation> = statement
-            .query_map(params![run_id, new_revision], map_observation_row)?
-            .collect::<Result<_, _>>()?;
-        drop(statement);
-
+        let result = install_observations_on_connection(
+            &tx,
+            run_id,
+            holder,
+            observations,
+            missing_reasons,
+            execution,
+        )?;
         tx.commit()?;
-        Ok((new_revision, inserted))
+        Ok(result)
     }
 
     /// `revision = None` resolves to the highest stored revision for the run;
@@ -988,6 +797,255 @@ impl KpiIngestStagingStore {
         let connection = self.db.checkout()?;
         get_commit_receipt_on_connection(&connection, run_id)
     }
+}
+
+/// The shared connection-level install primitive (ADR 0102 dec. 9, epic #399
+/// S6): bump-revision + install-observations + flip-state + delete-drafts, in
+/// ONE transaction owned by the CALLER. Extracted verbatim from
+/// [`KpiIngestStagingStore::stage_observations`]'s body (only the connection
+/// checkout/commit moved to the caller) so both routes — the single-call
+/// path above and `KpiIngestDraftsStore::finalize_draft`'s assembled,
+/// chunk-flattened observation list — share EXACTLY the same
+/// validate/normalize/guarded-UPDATE/insert logic; finalize does not call the
+/// public `stage_observations` as a black box (that path opens its own
+/// transaction, ADR 0102 dec. 9). Draft cleanup at the end is UNCONDITIONAL:
+/// `stage_observations` already refuses upfront when a live-epoch draft is
+/// open (dec. 11), so the `DELETE` is a guaranteed no-op on that path and a
+/// real cleanup on the draft-finalize path — one line, no extra parameter.
+pub(super) fn install_observations_on_connection(
+    tx: &Connection,
+    run_id: &str,
+    holder: &str,
+    observations: Vec<NewStagedObservation>,
+    missing_reasons: &std::collections::BTreeMap<String, String>,
+    execution: Option<&serde_json::Value>,
+) -> StorageResult<(i64, Vec<StagedObservation>)> {
+    type RunPeriodRow = (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
+    let run: Option<RunPeriodRow> = tx
+        .query_row(
+            "SELECT status, period_id, period_fiscal_year, period_type, \
+                    lease_holder, lease_expires_at
+             FROM kpi_ingest_runs WHERE id = ?1",
+            [run_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((status, period_id, period_fiscal_year, period_type, lease_holder, lease_expires_at)) =
+        run
+    else {
+        return Err(StorageError::KpiIngestRunNotFound {
+            id: run_id.to_owned(),
+        });
+    };
+    let status = KpiIngestRunState::parse(&status)?;
+    if !STAGEABLE_STATUSES.contains(&status) {
+        return Err(StorageError::InvalidRunStateForStaging {
+            id: run_id.to_owned(),
+            status: status.as_str().to_owned(),
+        });
+    }
+    let now: String = tx.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
+        row.get(0)
+    })?;
+    let lease_live = lease_holder.as_deref() == Some(holder)
+        && lease_expires_at
+            .as_deref()
+            .is_some_and(|expires| expires > now.as_str());
+    if !lease_live {
+        // Three-way classification (#386, promised at #384): own-expired →
+        // RunLeaseExpired, live-foreign → RunTakenOver, residual →
+        // RunLeaseNotHeld.
+        return Err(super::kpi_ingest_runs::lease_refusal_on_connection(
+            tx, run_id, holder,
+        )?);
+    }
+    if period_id.is_none() && (period_fiscal_year.is_none() || period_type.is_none()) {
+        return Err(StorageError::InvalidKpiIngestRunValue {
+            key: "period",
+            value: "run has neither period_id nor a complete period descriptor".to_owned(),
+        });
+    }
+
+    // Validate + normalize every observation BEFORE touching the run row or
+    // inserting anything (typed refusal ahead of any raw CHECK).
+    let mut normalized = Vec::with_capacity(observations.len());
+    for observation in observations {
+        if observation.raw_label.trim().is_empty() {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "raw_label",
+                value: "empty".to_owned(),
+            });
+        }
+        if observation.raw_value.trim().is_empty() {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "raw_value",
+                value: "empty".to_owned(),
+            });
+        }
+        let currency = normalize_currency(observation.currency.clone())?;
+        validate_vocab("unit_scale", &observation.unit_scale, UNIT_SCALE_VALUES)?;
+        validate_vocab(
+            "measure_window",
+            &observation.measure_window,
+            MEASURE_WINDOW_VALUES,
+        )?;
+        validate_vocab("attribution", &observation.attribution, ATTRIBUTION_VALUES)?;
+        validate_vocab("scope", &observation.scope, SCOPE_VALUES)?;
+        let mapping_status = observation
+            .mapping_status
+            .clone()
+            .unwrap_or_else(|| "unmapped".to_owned());
+        if !MAPPING_STATUS_VALUES.contains(&mapping_status.as_str()) {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "mapping_status",
+                value: mapping_status,
+            });
+        }
+        // Excluded is a sealed disposition (ADR 0102 dec. 1): it needs a
+        // non-blank reason to seal, and a reason on any other disposition is
+        // nonsense the caller must have mis-threaded — both are typed
+        // refusals, not silently corrected.
+        let exclusion_reason = empty_string_to_none(observation.exclusion_reason.clone());
+        if mapping_status == "excluded" {
+            if exclusion_reason
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or("")
+                .is_empty()
+            {
+                return Err(StorageError::InvalidKpiIngestRunValue {
+                    key: "exclusion_reason",
+                    value: "required when mapping_status is excluded".to_owned(),
+                });
+            }
+        } else if exclusion_reason.is_some() {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "exclusion_reason",
+                value: "must be absent unless mapping_status is excluded".to_owned(),
+            });
+        }
+        if let Some(page) = observation.citation_page {
+            if page < 1 {
+                return Err(StorageError::InvalidKpiIngestRunValue {
+                    key: "citation_page",
+                    value: page.to_string(),
+                });
+            }
+        }
+        normalized.push((observation, currency, mapping_status, exclusion_reason));
+    }
+
+    // The final flip re-guards status AND the live lease (luna review B1):
+    // the batch above can be long, and the lease is WALL-CLOCK state — it can
+    // expire mid-transaction even though no other writer can touch the row
+    // under this Immediate tx. An expired holder must not stage.
+    #[cfg(test)]
+    tests::mid_batch_test_delay();
+    let new_revision: Option<i64> = tx
+        .query_row(
+            "UPDATE kpi_ingest_runs
+             SET manifest_revision = manifest_revision + 1,
+                 manifest_hash = NULL,
+                 status = 'staged',
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?1
+               AND status IN ('extracting', 'validation_failed')
+               AND lease_holder = ?2
+               AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             RETURNING manifest_revision",
+            params![run_id, holder],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(new_revision) = new_revision else {
+        // Mid-batch expiry or takeover: classify three-way too (#386).
+        return Err(super::kpi_ingest_runs::lease_refusal_on_connection(
+            tx, run_id, holder,
+        )?);
+    };
+
+    // missingReasons travel in the SAME staging transaction (contracts.md
+    // tool 5): the map is REQUIRED and `{}` is the explicit clear — every
+    // revision replaces the whole declaration, never a destructive default.
+    let missing_reasons_json = serde_json::to_string(missing_reasons)?;
+    tx.execute(
+        "UPDATE kpi_ingest_runs SET missing_reasons_json = ?1 WHERE id = ?2",
+        params![missing_reasons_json, run_id],
+    )?;
+    if let Some(execution) = execution {
+        super::kpi_ingest_runs::merge_cost_json_on_connection(tx, run_id, execution)?;
+    }
+
+    for (ordinal, (observation, currency, mapping_status, exclusion_reason)) in
+        normalized.into_iter().enumerate()
+    {
+        let ordinal = ordinal as i64;
+        let id = generate_observation_id(run_id, new_revision, ordinal);
+        tx.execute(
+            &format!(
+                "INSERT INTO kpi_staged_observations
+                    ({OBSERVATION_COLUMNS})
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
+                    ?17, ?18, ?19, ?20, 'none', NULL, \
+                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), \
+                    ?21)"
+            ),
+            params![
+                id,
+                run_id,
+                new_revision,
+                ordinal,
+                observation.raw_label,
+                observation.raw_value,
+                observation.raw_currency,
+                observation.raw_unit_scale,
+                observation.normalized_value,
+                currency,
+                observation.unit_scale,
+                observation.measure_window,
+                observation.attribution,
+                observation.scope,
+                observation.metric_key_candidate,
+                mapping_status,
+                observation.citation_page,
+                observation.citation_table,
+                observation.citation_row,
+                observation.citation_quote,
+                exclusion_reason,
+            ],
+        )?;
+    }
+
+    let mut statement = tx.prepare(&format!(
+        "SELECT {OBSERVATION_COLUMNS} FROM kpi_staged_observations
+         WHERE run_id = ?1 AND revision = ?2 ORDER BY ordinal"
+    ))?;
+    let inserted: Vec<StagedObservation> = statement
+        .query_map(params![run_id, new_revision], map_observation_row)?
+        .collect::<Result<_, _>>()?;
+    drop(statement);
+
+    // Unconditional (see doc comment above): a real cleanup on the
+    // draft-finalize route, a guaranteed no-op on the single-call route.
+    tx.execute("DELETE FROM kpi_ingest_drafts WHERE run_id = ?1", [run_id])?;
+
+    Ok((new_revision, inserted))
 }
 
 /// Connection-level variant of [`KpiIngestStagingStore::get_commit_receipt`]

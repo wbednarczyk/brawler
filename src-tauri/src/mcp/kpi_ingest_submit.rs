@@ -219,14 +219,65 @@ pub struct ObservationInput {
     pub citation: Option<CitationInput>,
 }
 
+/// The explicit chunked-draft wire union (ADR 0102 dec. 14): `draft` ABSENT
+/// selects [`SingleCallStageInput`] — today's shape, preserved byte-for-byte
+/// (`observations` + `missingReasons` both required). `draft` PRESENT selects
+/// [`DraftStageInput`], whose THREE legal sub-forms (open/append/finalize)
+/// [`classify_draft`] validates — that finer split stays a typed runtime
+/// refusal rather than three more `oneOf` schema branches (the same
+/// mode-dependent-required-fields shape most single-endpoint APIs use).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum StageKpiObservationsInput {
+    SingleCall(SingleCallStageInput),
+    Draft(DraftStageInput),
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct StageKpiObservationsInput {
+pub struct SingleCallStageInput {
     pub run_id: String,
     pub observations: Vec<ObservationInput>,
     /// REQUIRED: `{}` is the explicit "no declared omissions"/clear — there is
     /// no destructive default (contracts.md tool 5).
     pub missing_reasons: BTreeMap<String, String>,
+    #[serde(default)]
+    pub execution: Option<ExecutionMetaInput>,
+}
+
+/// One of three legal shapes (ADR 0102 dec. 6-9), disambiguated by
+/// [`classify_draft`]: `{open:true, expectedObservations}` mints a
+/// server-issued draft; `{draftId, chunkIndex}` appends a chunk (its content
+/// travels in the OUTER `observations` field); `{draftId, final:true}`
+/// finalizes (its `missingReasons` travels in the OUTER field too).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DraftInput {
+    #[serde(default)]
+    pub open: Option<bool>,
+    #[serde(default)]
+    pub expected_observations: Option<i64>,
+    #[serde(default)]
+    pub draft_id: Option<String>,
+    #[serde(default)]
+    pub chunk_index: Option<i64>,
+    #[serde(default, rename = "final")]
+    pub is_final: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DraftStageInput {
+    pub run_id: String,
+    pub draft: DraftInput,
+    /// A chunk append's content; empty/absent on an open or finalize call.
+    #[serde(default)]
+    pub observations: Vec<ObservationInput>,
+    /// Required exactly on a finalizing call (ADR 0102 dec. 14) — absent on
+    /// open/append, where a value is a typed refusal (reasons belong to a
+    /// complete revision).
+    #[serde(default)]
+    pub missing_reasons: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub execution: Option<ExecutionMetaInput>,
 }
@@ -277,13 +328,28 @@ pub struct ProposeKpiDefinitionInput {
 // Wire DTOs (MCP-only — no TS consumer, no ts_rs)
 // ============================================================================
 
+/// `status` ∈ `staged` (single-call or a draft finalize) | `draft_open` |
+/// `draft_appended` (ADR 0102 dec. 6-9). Every field beyond `runId`/`status`
+/// is populated only for the branches it applies to — the single-call/
+/// finalize JSON stays byte-for-byte `{runId, revision, observationCount,
+/// status}` (dec. 14: `#[serde(skip_serializing_if)]` omits every absent key).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StageResultDto {
     pub run_id: String,
-    pub revision: i64,
-    pub observation_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation_count: Option<usize>,
     pub status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_observations: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_index: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunks_received: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -294,13 +360,28 @@ pub struct CurrentTupleDto {
     pub manifest_hash: Option<String>,
 }
 
+/// Observation counts by `validationState` (ADR 0102 dec. 12): the bounded
+/// substitute for the removed inline `manifest` — the full manifest is read
+/// via `get_kpi_ingest_context section:"manifest"`.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeverityCountsDto {
+    pub passed: usize,
+    pub unreviewed: usize,
+    pub flagged: usize,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidateResultDto {
     pub outcome: &'static str,
     pub revision: i64,
     pub manifest_hash: Option<String>,
-    pub manifest: Option<Value>,
+    /// `None` only on `superseded` (no manifest was ever produced by this
+    /// call). `manifest` itself no longer rides this response (ADR 0102 dec.
+    /// 12, amends ADR 0099 dec. 1) — read it via
+    /// `get_kpi_ingest_context section:"manifest"`.
+    pub severity_counts: Option<SeverityCountsDto>,
     pub current: Option<CurrentTupleDto>,
 }
 
@@ -375,24 +456,28 @@ pub struct ProposeKpiDefinitionResultDto {
     pub created: bool,
 }
 
+/// Bounded (ADR 0102 dec. 12, amends ADR 0099 dec. 1): `acceptedCount` is the
+/// installed-fact count, `excludedCount` is ALWAYS ledgered regardless of
+/// terminal status (dec. 4; `0` under `outcomesSchemaVersion` 1).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitCountsDto {
+    pub accepted_count: i64,
+    pub excluded_count: usize,
+}
+
+/// The commit response is a BOUNDED summary (ADR 0102 dec. 12): the full
+/// outcomes ledger — up to `AGGREGATE_OBSERVATIONS_MAX` (1000) rows, one
+/// `{label, reason}` per `excluded` outcome — cannot ride an unpaged
+/// response. Read it via `get_kpi_ingest_context section:"receipt"`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitReceiptDto {
     pub run_id: String,
     pub terminal_status: String,
-    pub period_id: Option<String>,
-    pub accepted_count: i64,
-    pub outcomes_schema_version: i64,
-    pub outcomes: Vec<CommitOutcomeDto>,
-    /// Count of `excluded` outcomes — ALWAYS ledgered regardless of terminal
-    /// status (ADR 0102 dec. 4); `0` under `outcomesSchemaVersion` 1.
-    pub excluded_count: usize,
-    /// The `{label, reason}` ledger for every `excluded` outcome (ADR 0102
-    /// dec. 3/4) — headless-only visibility (dec. 5).
-    pub excluded: Vec<ExcludedObservationDetailDto>,
+    pub counts: CommitCountsDto,
     pub manifest_hash: String,
     pub manifest_revision: i64,
-    pub committed_at: String,
 }
 
 // ============================================================================
@@ -570,10 +655,82 @@ fn to_staged(observation: ObservationInput) -> NewStagedObservation {
 // stage_kpi_observations
 // ============================================================================
 
+/// The three legal `draft` sub-forms (ADR 0102 dec. 6-9) — the runtime
+/// classification [`classify_draft`] enforces since the top-level wire union
+/// only splits on `draft` present/absent, not on which sub-form it is.
+enum DraftForm {
+    Open { expected_observations: i64 },
+    Append { draft_id: String, chunk_index: i64 },
+    Finalize { draft_id: String },
+}
+
+fn classify_draft(draft: &DraftInput) -> Result<DraftForm, CommandError> {
+    match (
+        draft.open,
+        draft.expected_observations,
+        draft.draft_id.as_deref(),
+        draft.chunk_index,
+        draft.is_final,
+    ) {
+        (Some(true), Some(expected), None, None, None | Some(false)) => {
+            if expected < 1 {
+                return Err(invalid("draft.expectedObservations must be >= 1"));
+            }
+            Ok(DraftForm::Open {
+                expected_observations: expected,
+            })
+        }
+        (None | Some(false), None, Some(draft_id), Some(chunk_index), None | Some(false)) => {
+            if chunk_index < 0 {
+                return Err(invalid("draft.chunkIndex must be >= 0"));
+            }
+            Ok(DraftForm::Append {
+                draft_id: draft_id.to_owned(),
+                chunk_index,
+            })
+        }
+        (None | Some(false), None, Some(draft_id), None, Some(true)) => Ok(DraftForm::Finalize {
+            draft_id: draft_id.to_owned(),
+        }),
+        _ => Err(invalid(
+            "draft must be exactly one of {open:true, expectedObservations}, \
+             {draftId, chunkIndex}, or {draftId, final:true}",
+        )),
+    }
+}
+
+fn validate_observations_batch(observations: &[ObservationInput]) -> Result<(), CommandError> {
+    if observations.len() > OBSERVATIONS_MAX {
+        return Err(CommandError::new(
+            CommandErrorCode::ResponseBudgetExceeded,
+            format!(
+                "observations carries {} entries — the per-call budget is {OBSERVATIONS_MAX}",
+                observations.len()
+            ),
+        ));
+    }
+    for observation in observations {
+        validate_observation(observation)?;
+    }
+    Ok(())
+}
+
 fn stage_kpi_observations(
     state: &AppState,
     scope: McpScope,
     input: StageKpiObservationsInput,
+) -> Result<StageResultDto, CommandError> {
+    match input {
+        StageKpiObservationsInput::SingleCall(input) => stage_single_call(state, scope, input),
+        StageKpiObservationsInput::Draft(input) => stage_draft(state, scope, input),
+    }
+}
+
+/// `draft` absent — today's shape, byte-for-byte (ADR 0102 dec. 14).
+fn stage_single_call(
+    state: &AppState,
+    scope: McpScope,
+    input: SingleCallStageInput,
 ) -> Result<StageResultDto, CommandError> {
     reject_control_chars("runId", &input.run_id)?;
     if input.observations.is_empty() {
@@ -581,18 +738,7 @@ fn stage_kpi_observations(
             "observations is the complete revision snapshot and must carry at least one entry",
         ));
     }
-    if input.observations.len() > OBSERVATIONS_MAX {
-        return Err(CommandError::new(
-            CommandErrorCode::ResponseBudgetExceeded,
-            format!(
-                "observations carries {} entries — the budget is {OBSERVATIONS_MAX}",
-                input.observations.len()
-            ),
-        ));
-    }
-    for observation in &input.observations {
-        validate_observation(observation)?;
-    }
+    validate_observations_batch(&input.observations)?;
     validate_missing_reasons(&input.missing_reasons)?;
     let execution = input
         .execution
@@ -614,10 +760,127 @@ fn stage_kpi_observations(
         .map_err(CommandError::from)?;
     Ok(StageResultDto {
         run_id: input.run_id,
-        revision,
-        observation_count: inserted.len(),
+        revision: Some(revision),
+        observation_count: Some(inserted.len()),
         status: "staged",
+        draft_id: None,
+        expected_observations: None,
+        chunk_index: None,
+        chunks_received: None,
     })
+}
+
+/// `draft` present — open/append/finalize (ADR 0102 dec. 6-9).
+fn stage_draft(
+    state: &AppState,
+    scope: McpScope,
+    input: DraftStageInput,
+) -> Result<StageResultDto, CommandError> {
+    reject_control_chars("runId", &input.run_id)?;
+    match classify_draft(&input.draft)? {
+        DraftForm::Open {
+            expected_observations,
+        } => {
+            if !input.observations.is_empty() {
+                return Err(invalid(
+                    "draft.open must not carry observations in the same call — append a chunk separately",
+                ));
+            }
+            if input.missing_reasons.is_some() {
+                return Err(invalid(
+                    "missingReasons is only accepted on a finalizing call",
+                ));
+            }
+            let summary = state
+                .kpi_ingest_drafts()
+                .open_draft(&input.run_id, holder(scope), expected_observations)
+                .map_err(CommandError::from)?;
+            Ok(StageResultDto {
+                run_id: input.run_id,
+                revision: None,
+                observation_count: None,
+                status: "draft_open",
+                draft_id: Some(summary.draft_id),
+                expected_observations: Some(summary.expected_observations),
+                chunk_index: None,
+                chunks_received: Some(summary.chunks_received),
+            })
+        }
+        DraftForm::Append {
+            draft_id,
+            chunk_index,
+        } => {
+            if input.observations.is_empty() {
+                return Err(invalid(
+                    "a chunk append must carry at least one observation",
+                ));
+            }
+            if input.missing_reasons.is_some() {
+                return Err(invalid(
+                    "missingReasons is only accepted on a finalizing call, not a chunk append",
+                ));
+            }
+            validate_observations_batch(&input.observations)?;
+            let observations: Vec<NewStagedObservation> =
+                input.observations.into_iter().map(to_staged).collect();
+            let result = state
+                .kpi_ingest_drafts()
+                .append_chunk(
+                    &input.run_id,
+                    holder(scope),
+                    &draft_id,
+                    chunk_index,
+                    observations,
+                )
+                .map_err(CommandError::from)?;
+            Ok(StageResultDto {
+                run_id: input.run_id,
+                revision: None,
+                observation_count: None,
+                status: "draft_appended",
+                draft_id: Some(result.draft_id),
+                expected_observations: None,
+                chunk_index: Some(result.chunk_index),
+                chunks_received: Some(result.chunks_received),
+            })
+        }
+        DraftForm::Finalize { draft_id } => {
+            if !input.observations.is_empty() {
+                return Err(invalid(
+                    "a finalizing call must not carry observations — append every chunk first",
+                ));
+            }
+            let Some(missing_reasons) = input.missing_reasons else {
+                return Err(invalid("missingReasons is required to finalize a draft"));
+            };
+            validate_missing_reasons(&missing_reasons)?;
+            let execution = input
+                .execution
+                .as_ref()
+                .map(validate_execution)
+                .transpose()?;
+            let (revision, inserted) = state
+                .kpi_ingest_drafts()
+                .finalize_draft(
+                    &input.run_id,
+                    holder(scope),
+                    &draft_id,
+                    &missing_reasons,
+                    execution.as_ref(),
+                )
+                .map_err(CommandError::from)?;
+            Ok(StageResultDto {
+                run_id: input.run_id,
+                revision: Some(revision),
+                observation_count: Some(inserted.len()),
+                status: "staged",
+                draft_id: None,
+                expected_observations: None,
+                chunk_index: None,
+                chunks_received: None,
+            })
+        }
+    }
 }
 
 // ============================================================================
@@ -691,7 +954,7 @@ fn superseded_result(requested_revision: i64, run: &KpiIngestRun) -> ValidateRes
         outcome: "superseded",
         revision: requested_revision,
         manifest_hash: None,
-        manifest: None,
+        severity_counts: None,
         current: Some(CurrentTupleDto {
             status: run.status.as_str().to_owned(),
             revision: run.manifest_revision,
@@ -738,8 +1001,20 @@ fn validate_kpi_ingest(
     }
     match validate_kpi_ingest_run(state, &input.run_id) {
         Ok(outcome) => {
-            let manifest = serde_json::to_value(&outcome.manifest)
-                .map_err(|error| internal(format!("manifest serialization failed: {error}")))?;
+            let mut counts = SeverityCountsDto::default();
+            for observation in &outcome.manifest.observations {
+                match observation.validation_state {
+                    crate::fundamentals::kpi_manifest::ValidationState::Passed => {
+                        counts.passed += 1
+                    }
+                    crate::fundamentals::kpi_manifest::ValidationState::Unreviewed => {
+                        counts.unreviewed += 1
+                    }
+                    crate::fundamentals::kpi_manifest::ValidationState::Flagged => {
+                        counts.flagged += 1
+                    }
+                }
+            }
             Ok(ValidateResultDto {
                 outcome: if outcome.outcome == "ready" {
                     "ready"
@@ -748,7 +1023,7 @@ fn validate_kpi_ingest(
                 },
                 revision: input.revision,
                 manifest_hash: Some(outcome.manifest_hash),
-                manifest: Some(manifest),
+                severity_counts: Some(counts),
                 current: None,
             })
         }
@@ -816,26 +1091,19 @@ fn receipt_dto(receipt: CommitReceipt) -> Result<CommitReceiptDto, CommandError>
             )));
         }
     }
-    let excluded: Vec<ExcludedObservationDetailDto> = outcomes
+    let excluded_count = outcomes
         .iter()
-        .filter_map(|outcome| match &outcome.detail {
-            Some(CommitOutcomeDetailDto::Excluded(detail)) => Some(detail.clone()),
-            _ => None,
-        })
-        .collect();
-    let excluded_count = excluded.len();
+        .filter(|outcome| matches!(outcome.outcome, CommitOutcomeKind::Excluded))
+        .count();
     Ok(CommitReceiptDto {
         run_id: receipt.run_id,
         terminal_status: receipt.terminal_status,
-        period_id: receipt.period_id,
-        accepted_count: receipt.accepted_count,
-        outcomes_schema_version: receipt.outcomes_schema_version,
-        outcomes,
-        excluded_count,
-        excluded,
+        counts: CommitCountsDto {
+            accepted_count: receipt.accepted_count,
+            excluded_count,
+        },
         manifest_hash: receipt.manifest_hash,
         manifest_revision: receipt.manifest_revision,
-        committed_at: receipt.committed_at,
     })
 }
 
@@ -1004,6 +1272,57 @@ mod tests {
             serde_json::from_str(run.cost_json.as_deref().expect("cost")).expect("json");
         assert_eq!(cost["client"], "a");
         assert_eq!(cost["tokensIn"], 5);
+    }
+
+    /// ADR 0102 dec. 14: the single-call wire contract is byte-for-byte
+    /// unchanged when `draft` is absent. The response carries EXACTLY the
+    /// four keys it always has (no `draftId`/`chunkIndex`/`chunksReceived`/
+    /// `expectedObservations` leaking in via the new `Option` fields'
+    /// `skip_serializing_if`), and `deny_unknown_fields` still rejects an
+    /// unrecognized top-level key exactly as before the wire union existed.
+    #[test]
+    fn single_call_path_unchanged() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let payload = success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &stage_args(&run_id, vec![mapped_observation(true)]),
+        ));
+        let mut keys: Vec<&str> = payload
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["observationCount", "revision", "runId", "status"],
+            "the single-call response carries exactly today's four keys"
+        );
+        assert_eq!(payload["status"], "staged");
+
+        // `deny_unknown_fields` still rejects an unrecognized top-level field
+        // at the protocol layer exactly as it did before the wire union
+        // existed — a malformed request never silently matches the OTHER
+        // union variant instead.
+        let unknown_field = call(
+            &state,
+            McpScope::KpiAcquisition,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "observations": [mapped_observation(true)],
+                "missingReasons": {},
+                "notAWireField": true
+            }),
+        );
+        match unknown_field {
+            Err(ToolCallError::InvalidArguments(_)) => {}
+            other => panic!("expected InvalidArguments, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1415,10 +1734,22 @@ mod tests {
         ));
         assert_eq!(failed["outcome"], "failed");
         assert!(failed["manifestHash"].is_string());
-        let manifest_text = failed["manifest"].to_string();
+        // ADR 0102 dec. 12: the full manifest no longer rides this response —
+        // `severityCounts` is the bounded substitute (`citation.missing` is
+        // `Flagged`); the repair report itself is read via
+        // `get_kpi_ingest_context section:"manifest"`
+        // (`validate_returns_summary_not_manifest` covers both halves).
+        assert!(failed["manifest"].is_null());
+        assert_eq!(failed["severityCounts"]["flagged"], 1);
+        let manifest_page = success(acquisition_call(
+            &state,
+            "get_kpi_ingest_context",
+            &json!({ "runId": run_id, "section": "manifest" }),
+        ));
+        let manifest_text = manifest_page["manifest"].to_string();
         assert!(
             manifest_text.contains("citation.missing"),
-            "the repair report names the diagnostic: {manifest_text}"
+            "the paged manifest names the diagnostic: {manifest_text}"
         );
 
         // Repair: revision 2 is the COMPLETE snapshot with the citation fixed.
@@ -1433,7 +1764,16 @@ mod tests {
             &json!({ "runId": run_id, "revision": 2 }),
         ));
         assert_eq!(ready["outcome"], "ready");
-        assert!(ready["manifest"]["observations"].is_array());
+        assert!(ready["manifest"].is_null());
+        let counts = &ready["severityCounts"];
+        let total = counts["passed"].as_i64().expect("passed")
+            + counts["unreviewed"].as_i64().expect("unreviewed")
+            + counts["flagged"].as_i64().expect("flagged");
+        assert_eq!(total, 1, "one observation total: {counts}");
+        assert_eq!(
+            counts["flagged"], 0,
+            "a ready outcome carries no flagged rows"
+        );
         assert_eq!(ready["current"], Value::Null);
 
         // The old generation is now superseded — pre-check path.
@@ -1443,10 +1783,49 @@ mod tests {
             &json!({ "runId": run_id, "revision": 1 }),
         ));
         assert_eq!(superseded["outcome"], "superseded");
-        assert_eq!(superseded["manifest"], Value::Null);
+        assert_eq!(superseded["severityCounts"], Value::Null);
         assert_eq!(superseded["current"]["status"], "ready_to_commit");
         assert_eq!(superseded["current"]["revision"], 2);
         assert!(superseded["current"]["manifestHash"].is_string());
+    }
+
+    /// ADR 0102 dec. 12: `validate_kpi_ingest` returns a BOUNDED summary — no
+    /// inline `manifest` key at all (not even `null` under a different name);
+    /// the full manifest is read via `get_kpi_ingest_context
+    /// section:"manifest"` (`validate_ready_failed_repair_and_superseded`
+    /// exercises that paged read end to end).
+    #[test]
+    fn validate_returns_summary_not_manifest() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &stage_args(&run_id, vec![mapped_observation(true)]),
+        ));
+        let payload = success(acquisition_call(
+            &state,
+            "validate_kpi_ingest",
+            &json!({ "runId": run_id, "revision": 1 }),
+        ));
+        let mut keys: Vec<&str> = payload
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "current",
+                "manifestHash",
+                "outcome",
+                "revision",
+                "severityCounts"
+            ],
+            "no inline manifest key at all — the bounded summary shape"
+        );
     }
 
     #[test]
@@ -1589,7 +1968,7 @@ mod tests {
             }),
         ));
         assert_eq!(receipt["terminalStatus"], "complete");
-        assert!(receipt["acceptedCount"].as_i64().expect("count") > 0);
+        assert!(receipt["counts"]["acceptedCount"].as_i64().expect("count") > 0);
 
         let pretty = serde_json::to_string_pretty(&receipt).expect("serializable");
         let redacted = regex::Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z")
@@ -1633,6 +2012,48 @@ mod tests {
         assert_eq!(status["execution"]["client"], "a");
         assert_eq!(status["execution"]["tokensIn"], 5);
         assert_eq!(status["execution"]["costUsd"], 0.5);
+    }
+
+    /// ADR 0102 dec. 12: `commit_kpi_ingest` returns a BOUNDED summary — no
+    /// inline `outcomes` array (a 1000-row ledger, `AGGREGATE_OBSERVATIONS_MAX`,
+    /// cannot ride this response), `excludedCount` moves under `counts`. The
+    /// full receipt is read via `get_kpi_ingest_context section:"receipt"`
+    /// (`receipt_section_serves_the_full_excluded_ledger`, kpi_ingest_context.rs).
+    #[test]
+    fn commit_returns_bounded_summary() {
+        let state = test_state();
+        let (run_id, hash, revision) = drive_to_ready_over_mcp(&state);
+        let receipt = success(acquisition_call(
+            &state,
+            "commit_kpi_ingest",
+            &json!({ "runId": run_id, "manifestHash": hash, "revision": revision }),
+        ));
+        let mut keys: Vec<&str> = receipt
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "counts",
+                "manifestHash",
+                "manifestRevision",
+                "runId",
+                "terminalStatus"
+            ],
+            "no inline outcomes ledger at all — the bounded summary shape"
+        );
+        let mut count_keys: Vec<&str> = receipt["counts"]
+            .as_object()
+            .expect("counts object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        count_keys.sort_unstable();
+        assert_eq!(count_keys, vec!["acceptedCount", "excludedCount"]);
     }
 
     #[test]
@@ -1680,6 +2101,127 @@ mod tests {
             )),
             CommandErrorCode::NotFound,
             "unknown run"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // stage_kpi_observations — chunked drafts (epic #399 S6)
+    // ------------------------------------------------------------------
+
+    /// One clean company-scoped `origin=agent` definition, mirroring
+    /// `propose_args`'s proven shape — only the key/label vary per index.
+    fn propose_test_definition(state: &AppState, run_id: &str, i: usize) {
+        let payload = success(acquisition_call(
+            state,
+            "propose_kpi_definition",
+            &json!({
+                "runId": run_id,
+                "metricKey": format!("acq_test_metric_{i:03}"),
+                "label": format!("Acquisition Test Metric {i:03}"),
+                "statementGroup": "other"
+            }),
+        ));
+        assert_eq!(
+            payload["created"], true,
+            "definition {i} must be freshly minted"
+        );
+    }
+
+    /// One observation targeting `acq_test_metric_{i:03}`, mirroring
+    /// `mapped_observation`'s currency/unitScale/measureWindow/attribution
+    /// verbatim — only rawLabel/rawValue/metricKeyCandidate/citation.page
+    /// vary per index, so no coherence diagnostic beyond the proven single-
+    /// observation baseline can trip.
+    fn observation_for(i: usize) -> Value {
+        json!({
+            "rawLabel": format!("acquisition test metric {i:03}"),
+            "rawValue": (1000 + i).to_string(),
+            "normalizedValue": (1000 + i).to_string(),
+            "currency": "PLN",
+            "unitScale": "ones",
+            "measureWindow": "flow",
+            "attribution": "total",
+            "metricKeyCandidate": format!("acq_test_metric_{i:03}"),
+            "mappingStatus": "mapped",
+            "citation": { "page": 1 + (i % 50), "quote": format!("metric {i:03} quote") }
+        })
+    }
+
+    /// The epic's frozen CI acceptance proof: a run with 170 disclosed
+    /// numbers — beyond the single-call 100-observation cap — driven
+    /// draft-open → append×4 → finalize → validate → commit against real
+    /// (in-memory) storage, proving the chunked->100 flow end to end.
+    #[test]
+    fn finalize_170_observations_stage_validate_commit() {
+        const TOTAL: usize = 170;
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        for i in 0..TOTAL {
+            propose_test_definition(&state, &run_id, i);
+        }
+
+        let open = success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "open": true, "expectedObservations": TOTAL }
+            }),
+        ));
+        assert_eq!(open["status"], "draft_open");
+        let draft_id = open["draftId"].as_str().expect("draftId").to_owned();
+
+        let observations: Vec<Value> = (0..TOTAL).map(observation_for).collect();
+        for (chunk_index, chunk) in observations.chunks(50).enumerate() {
+            let appended = success(acquisition_call(
+                &state,
+                "stage_kpi_observations",
+                &json!({
+                    "runId": run_id,
+                    "draft": { "draftId": draft_id, "chunkIndex": chunk_index as i64 },
+                    "observations": chunk
+                }),
+            ));
+            assert_eq!(appended["status"], "draft_appended");
+            assert_eq!(appended["chunkIndex"], chunk_index as i64);
+        }
+
+        let finalized = success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "draftId": draft_id, "final": true },
+                "missingReasons": {}
+            }),
+        ));
+        assert_eq!(finalized["status"], "staged");
+        assert_eq!(finalized["observationCount"], TOTAL);
+        let revision = finalized["revision"].as_i64().expect("revision");
+
+        let ready = success(acquisition_call(
+            &state,
+            "validate_kpi_ingest",
+            &json!({ "runId": run_id, "revision": revision }),
+        ));
+        assert_eq!(ready["outcome"], "ready", "validation manifest: {ready:#}");
+        let hash = ready["manifestHash"].as_str().expect("hash").to_owned();
+
+        let receipt = success(acquisition_call(
+            &state,
+            "commit_kpi_ingest",
+            &json!({
+                "runId": run_id,
+                "manifestHash": hash,
+                "revision": revision,
+                "execution": { "client": "acquisition-agent" }
+            }),
+        ));
+        assert_eq!(receipt["terminalStatus"], "complete");
+        assert!(
+            receipt["counts"]["acceptedCount"].as_i64().expect("count") >= TOTAL as i64,
+            "receipt: {receipt:#}"
         );
     }
 
@@ -1802,13 +2344,15 @@ mod tests {
         }])
         .to_string();
 
+        // The bounded wire DTO (ADR 0102 dec. 12) carries only the count — the
+        // per-outcome `{label, reason}` ledger is internal-only here, exposed
+        // over the wire via `get_kpi_ingest_context section:"receipt"`
+        // (`receipt_section_serves_the_full_excluded_ledger`,
+        // kpi_ingest_context.rs), which reads the SAME stored `outcomes_json`
+        // this function validates.
         let dto =
             receipt_dto(receipt_with(&excluded_row, 2)).expect("v2 excluded outcome is legal");
-        assert_eq!(dto.excluded_count, 1);
-        assert_eq!(dto.excluded.len(), 1);
-        assert_eq!(dto.excluded[0].label, "Liczba pracowników");
-        assert_eq!(dto.excluded[0].reason, "not a KPI");
-        assert!(dto.outcomes[0].fact_id.is_none());
+        assert_eq!(dto.counts.excluded_count, 1);
 
         // The same shape under v1 is illegal — that outcome member did not
         // exist under v1 (the invariant is extended, never loosened).
@@ -1843,9 +2387,8 @@ mod tests {
                 committed_at: "2026-01-01T00:00:00Z".to_owned(),
             };
             let dto = receipt_dto(receipt).unwrap_or_else(|e| panic!("v{version}: {e:?}"));
-            assert_eq!(dto.outcomes_schema_version, version);
-            assert_eq!(dto.excluded_count, 0);
-            assert!(dto.excluded.is_empty());
+            assert_eq!(dto.counts.accepted_count, 1);
+            assert_eq!(dto.counts.excluded_count, 0);
         }
     }
 }

@@ -60,6 +60,18 @@ pub enum CommandErrorCode {
     /// `kpi_aliases` synonym of an already-populated key (ADR 0101 dec. 4).
     /// Not retryable with the same key; reuse the named `definitionId`.
     SynonymRedirect,
+    /// A chunked-draft `(draftId, chunkIndex)` replay's server-computed
+    /// content hash disagrees with the stored chunk (ADR 0102 dec. 8). Not
+    /// retryable with the same index; append at a fresh index or abort.
+    DraftChunkConflict,
+    /// A chunked-draft finalize was refused: zero/gapped chunks, or the
+    /// assembled aggregate disagrees with the draft's declared count (ADR
+    /// 0102 dec. 8/9). Retryable after appending the missing chunk(s).
+    DraftIncomplete,
+    /// A chunked draft's lease epoch is stale — a takeover happened since it
+    /// opened (ADR 0102 dec. 6), or it was already finalized/aborted. Not
+    /// retryable; open a fresh draft.
+    DraftSuperseded,
     /// An unexpected internal failure with no more specific code.
     Internal,
 }
@@ -268,6 +280,19 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // BEGIN IMMEDIATE lost the busy_timeout race — explicitly retryable;
         // the retry lands on the receipt fast path (#363).
         StorageError::CommitContention { .. } => Conflict,
+        // A referenced draft id is gone — the same lookup-miss shape as any
+        // other soft reference.
+        StorageError::KpiIngestDraftNotFound { .. } => NotFound,
+        // Exactly one active draft per run (ADR 0102 dec. 6/11) — a second
+        // open or a single-call attempt while one is open conflicts with
+        // that invariant, not a shape problem with the request.
+        StorageError::KpiIngestActiveDraftExists { .. } => Conflict,
+        StorageError::KpiIngestDraftSuperseded { .. } => DraftSuperseded,
+        StorageError::KpiIngestDraftChunkConflict { .. } => DraftChunkConflict,
+        StorageError::KpiIngestDraftIncomplete { .. } => DraftIncomplete,
+        // The aggregate cap is a response/request-size budget (ADR 0102 dec.
+        // 10), the same class as the single-call `OBSERVATIONS_MAX` refusal.
+        StorageError::KpiIngestDraftAggregateBudgetExceeded { .. } => ResponseBudgetExceeded,
     }
 }
 

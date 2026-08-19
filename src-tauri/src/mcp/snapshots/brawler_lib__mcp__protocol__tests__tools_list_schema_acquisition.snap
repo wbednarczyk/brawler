@@ -128,12 +128,21 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
           "additionalProperties": false,
           "definitions": {
             "ContextSection": {
-              "enum": [
-                "catalog",
-                "plausibility",
-                "manifest"
-              ],
-              "type": "string"
+              "oneOf": [
+                {
+                  "enum": [
+                    "catalog",
+                    "plausibility",
+                    "manifest"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "receipt",
+                  "description": "The full commit receipt (ADR 0102 dec. 12) — like `manifest`, NEVER in the default call; a `commit_kpi_ingest` v1000-row outcomes ledger cannot ride the tool's own bounded summary response.",
+                  "type": "string"
+                }
+              ]
             }
           },
           "properties": {
@@ -200,7 +209,14 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
       {
         "description": "Stage the COMPLETE revision snapshot of extracted observations (1..100, with citations) plus the REQUIRED missingReasons declaration ({} = explicitly none), written in the same transaction. A repair resends every retained observation. Requires the caller's live lease. Provenance is the run pipeline itself.",
         "inputSchema": {
-          "additionalProperties": false,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SingleCallStageInput"
+            },
+            {
+              "$ref": "#/definitions/DraftStageInput"
+            }
+          ],
           "definitions": {
             "AttributionInput": {
               "enum": [
@@ -228,6 +244,70 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
                   "type": "string"
                 }
               },
+              "type": "object"
+            },
+            "DraftInput": {
+              "additionalProperties": false,
+              "description": "One of three legal shapes (ADR 0102 dec. 6-9), disambiguated by [`classify_draft`]: `{open:true, expectedObservations}` mints a server-issued draft; `{draftId, chunkIndex}` appends a chunk (its content travels in the OUTER `observations` field); `{draftId, final:true}` finalizes (its `missingReasons` travels in the OUTER field too).",
+              "properties": {
+                "chunkIndex": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "draftId": {
+                  "type": "string"
+                },
+                "expectedObservations": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "final": {
+                  "type": "boolean"
+                },
+                "open": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "DraftStageInput": {
+              "additionalProperties": false,
+              "properties": {
+                "draft": {
+                  "$ref": "#/definitions/DraftInput"
+                },
+                "execution": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/ExecutionMetaInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missingReasons": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Required exactly on a finalizing call (ADR 0102 dec. 14) — absent on open/append, where a value is a typed refusal (reasons belong to a complete revision).",
+                  "type": "object"
+                },
+                "observations": {
+                  "description": "A chunk append's content; empty/absent on an open or finalize call.",
+                  "items": {
+                    "$ref": "#/definitions/ObservationInput"
+                  },
+                  "type": "array"
+                },
+                "runId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "draft",
+                "runId"
+              ],
               "type": "object"
             },
             "ExecutionMetaInput": {
@@ -399,6 +479,43 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
               ],
               "type": "string"
             },
+            "SingleCallStageInput": {
+              "additionalProperties": false,
+              "properties": {
+                "execution": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/ExecutionMetaInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missingReasons": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "REQUIRED: `{}` is the explicit \"no declared omissions\"/clear — there is no destructive default (contracts.md tool 5).",
+                  "type": "object"
+                },
+                "observations": {
+                  "items": {
+                    "$ref": "#/definitions/ObservationInput"
+                  },
+                  "type": "array"
+                },
+                "runId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "missingReasons",
+                "observations",
+                "runId"
+              ],
+              "type": "object"
+            },
             "UnitScaleInput": {
               "enum": [
                 "ones",
@@ -407,41 +524,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
               ],
               "type": "string"
             }
-          },
-          "properties": {
-            "execution": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ExecutionMetaInput"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "missingReasons": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "description": "REQUIRED: `{}` is the explicit \"no declared omissions\"/clear — there is no destructive default (contracts.md tool 5).",
-              "type": "object"
-            },
-            "observations": {
-              "items": {
-                "$ref": "#/definitions/ObservationInput"
-              },
-              "type": "array"
-            },
-            "runId": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "missingReasons",
-            "observations",
-            "runId"
-          ],
-          "type": "object"
+          }
         },
         "name": "stage_kpi_observations"
       },

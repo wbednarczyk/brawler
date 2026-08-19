@@ -3,24 +3,12 @@ source: src/mcp/kpi_ingest_submit.rs
 expression: redacted
 ---
 {
-  "acceptedCount": 1,
-  "committedAt": "[timestamp]",
-  "excluded": [],
-  "excludedCount": 0,
+  "counts": {
+    "acceptedCount": 1,
+    "excludedCount": 0
+  },
   "manifestHash": "[hash]",
   "manifestRevision": 1,
-  "outcomes": [
-    {
-      "factId": "fact_finper_c1_2025_fy_kpidef_revenue_standalone_total_reported_flow_final_[uid]",
-      "metricKey": "revenue",
-      "observationId": "[id]",
-      "ordinal": 0,
-      "outcome": "created",
-      "revision": 1
-    }
-  ],
-  "outcomesSchemaVersion": 2,
-  "periodId": "finper_c1_2025_fy",
   "runId": "[id]",
   "terminalStatus": "complete"
 }

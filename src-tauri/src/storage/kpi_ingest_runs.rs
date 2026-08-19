@@ -1417,6 +1417,9 @@ impl KpiIngestRunsStore {
             &[],
         )?;
         if changed == 1 {
+            // ADR 0102 dec. 11: cancellation clears any open draft — a
+            // cancelled run never leaves an orphan behind.
+            super::kpi_ingest_drafts::clear_drafts_on_connection(&tx, id)?;
             tx.commit()?;
             return Ok(());
         }
@@ -1453,6 +1456,8 @@ impl KpiIngestRunsStore {
             &[],
         )?;
         if changed == 1 {
+            // ADR 0102 dec. 11: failure clears any open draft too.
+            super::kpi_ingest_drafts::clear_drafts_on_connection(&tx, id)?;
             tx.commit()?;
             return Ok(());
         }
@@ -1950,6 +1955,11 @@ impl KpiIngestRunsStore {
         }
 
         summary.lease_cleared = clear_expired_leases_on_connection(&tx)?;
+        // ADR 0102 dec. 11: startup reclaim clears drafts too — a draft
+        // requires a live lease to be usable, so any draft left on a
+        // currently leaseless run is orphaned regardless of whether ITS
+        // lease expired before or during this reclaim pass.
+        super::kpi_ingest_drafts::clear_orphaned_drafts_on_connection(&tx)?;
         tx.commit()?;
         Ok(summary)
     }

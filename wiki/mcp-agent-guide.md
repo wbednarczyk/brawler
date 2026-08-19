@@ -157,19 +157,30 @@ set of observations → validate → repair if needed → commit → confirm.**
 - **Stage** with `stage_kpi_observations{ runId, observations, missingReasons }`.
   Each stage is the **complete** snapshot of a revision — a repair resends every
   observation, not just the fixed one. `missingReasons` is required (`{}` = you
-  omitted nothing on purpose). Cite every observation (see below).
+  omitted nothing on purpose). Cite every observation (see below). **Over 100
+  observations**: use a chunked draft instead — `{ draft: { open: true,
+  expectedObservations } }` mints a server-issued `draftId`; append ≤100-
+  observation chunks with `{ draft: { draftId, chunkIndex }, observations }`
+  (no `missingReasons` on these calls); finalize with `{ draft: { draftId,
+  final: true }, missingReasons }` — its response matches the single-call shape.
+  A dropped session resumes via `get_kpi_ingest_status`'s `openDraft` field
+  (draft id + chunks already received) instead of restarting.
 - **Validate** with `validate_kpi_ingest{ runId, revision }`, passing the
-  `revision` the stage returned. `ready` → commit; `failed` → the returned
-  manifest **is** the repair report, flagging exactly what to fix; `superseded` →
-  something else moved the run, so re-read it and start over.
+  `revision` the stage returned. `ready` → commit; `failed` → `severityCounts`
+  gives the flagged count, and the full repair report (each flagged observation
+  naming what to fix) is a separate read, `get_kpi_ingest_context{ runId,
+  section: "manifest" }`; `superseded` → something else moved the run, so
+  re-read it and start over.
 - **Repair, but bounded.** On `failed`, fix the flagged observations, re-stage
   the complete snapshot, and re-validate — **at most twice**. If the same
   problems repeat or you have nothing new to add, stop and hand the manifest
   diagnostics back to the user. (This cap is the agent's own discipline, not a
   server limit.)
 - **Commit** with `commit_kpi_ingest{ runId, manifestHash, revision }` → a
-  receipt listing the accepted facts and each observation's outcome. Commit is
-  idempotent: replaying it returns the identical receipt.
+  bounded summary (`terminalStatus`, accepted/excluded counts). The full
+  per-observation outcomes ledger is a separate read, `get_kpi_ingest_context{
+  runId, section: "receipt" }`. Commit is idempotent: replaying it returns the
+  identical summary.
 - **Confirm** with `get_kpi_ingest_status{ runId }` — a terminal `complete` (or
   `partial`, when a `missingReasons` gap was declared).
 

@@ -233,6 +233,34 @@ pub enum StorageError {
     PinnedDefinitionMissing { run: String, definition: String },
     #[error("kpi ingest run {run} commit refused: period conflict — {reason}")]
     CommitPeriodConflict { run: String, reason: &'static str },
+    #[error("kpi ingest draft not found: {draft_id}")]
+    KpiIngestDraftNotFound { draft_id: String },
+    /// Second `draft:{open:true}` on a run that already has a LIVE-epoch
+    /// active draft, or a single-call `stage_kpi_observations` while one is
+    /// open (ADR 0102 dec. 11) — the same conflict either way: exactly one
+    /// active draft, explicit abort required, never a silent orphan.
+    #[error("kpi ingest run {run_id} already has an active draft: {draft_id}")]
+    KpiIngestActiveDraftExists { run_id: String, draft_id: String },
+    /// A lease takeover bumped the run's epoch since this draft was opened
+    /// (ADR 0102 dec. 6), or the caller named a draft this build has already
+    /// lazily marked `superseded` — never resumable.
+    #[error("kpi ingest draft {draft_id} is superseded (its lease epoch is stale)")]
+    KpiIngestDraftSuperseded { draft_id: String },
+    /// Replaying `(draftId, chunkIndex)` with content whose server-computed
+    /// hash disagrees with the stored chunk (ADR 0102 dec. 8) — a same-index
+    /// replay with MATCHING content is an idempotent no-op, never this error.
+    #[error("kpi ingest draft {draft_id} chunk {chunk_index} conflicts with a previously stored chunk of the same index")]
+    KpiIngestDraftChunkConflict { draft_id: String, chunk_index: i64 },
+    /// Finalize refused: zero chunks, a gap in the 0-based contiguous chunk
+    /// index sequence, or the assembled total disagreeing with the draft's
+    /// declared `expectedObservations` (ADR 0102 dec. 8/9).
+    #[error("kpi ingest draft {draft_id} cannot finalize: {reason}")]
+    KpiIngestDraftIncomplete { draft_id: String, reason: String },
+    /// Finalize refused: the assembled aggregate (across every chunk) exceeds
+    /// `AGGREGATE_OBSERVATIONS_MAX` or the frozen aggregate byte cap (ADR
+    /// 0102 dec. 10, contracts.md tool 5).
+    #[error("kpi ingest draft {draft_id} finalize refused: {reason}")]
+    KpiIngestDraftAggregateBudgetExceeded { draft_id: String, reason: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

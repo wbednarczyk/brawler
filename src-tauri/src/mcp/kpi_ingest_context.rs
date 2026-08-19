@@ -51,6 +51,11 @@ use crate::storage::{
 const CATALOG_PAGE_MAX: usize = 64;
 const PLAUSIBILITY_PAGE_MAX: usize = 64;
 const MANIFEST_PAGE_MAX: usize = 50;
+/// The paged commit receipt (ADR 0102 dec. 12, epic #399 S6) — mirrors
+/// `MANIFEST_PAGE_MAX`; `commit_kpi_ingest`'s own response stays a bounded
+/// summary, the full outcomes ledger (up to `AGGREGATE_OBSERVATIONS_MAX`
+/// 1000 rows) is read here, paginated.
+const RECEIPT_PAGE_MAX: usize = 50;
 const RECENT_POINTS_MAX: usize = 8;
 /// Every context response is ≤256 KiB; a document chunk is ≤256 KiB of RAW
 /// bytes (its base64 envelope may exceed this — the chunk cap is the budget).
@@ -78,6 +83,10 @@ pub enum ContextSection {
     Catalog,
     Plausibility,
     Manifest,
+    /// The full commit receipt (ADR 0102 dec. 12) — like `manifest`, NEVER in
+    /// the default call; a `commit_kpi_ingest` v1000-row outcomes ledger
+    /// cannot ride the tool's own bounded summary response.
+    Receipt,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -260,6 +269,8 @@ pub struct SectionDto {
     pub plausibility: Option<Vec<PlausibilityEntryDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manifest: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<Value>,
     pub next_cursor: Option<String>,
 }
 
@@ -303,6 +314,14 @@ struct PlausibilityCursor {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ManifestCursor {
     attempt_id: String,
+    offset: usize,
+}
+
+/// No attempt-pinning needed (unlike [`ManifestCursor`]) — a run has at most
+/// one commit receipt ever (ADR 0098 dec. 5, `UNIQUE(run_id)`).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ReceiptCursor {
     offset: usize,
 }
 
@@ -1051,6 +1070,7 @@ fn section_context(
                         catalog: Some(entries.to_vec()),
                         plausibility: None,
                         manifest: None,
+                        receipt: None,
                         next_cursor,
                     })
                 },
@@ -1062,6 +1082,7 @@ fn section_context(
                 catalog: Some(page),
                 plausibility: None,
                 manifest: None,
+                receipt: None,
                 next_cursor,
             })
         }
@@ -1089,6 +1110,7 @@ fn section_context(
                         catalog: None,
                         plausibility: Some(entries.to_vec()),
                         manifest: None,
+                        receipt: None,
                         next_cursor,
                     })
                 },
@@ -1105,10 +1127,12 @@ fn section_context(
                 catalog: None,
                 plausibility: Some(page),
                 manifest: None,
+                receipt: None,
                 next_cursor,
             })
         }
         ContextSection::Manifest => manifest_section(state, run, cursor, limit),
+        ContextSection::Receipt => receipt_section(state, run, cursor, limit),
     }
 }
 
@@ -1192,6 +1216,7 @@ fn manifest_section(
             catalog: None,
             plausibility: None,
             manifest: Some(manifest_value),
+            receipt: None,
             next_cursor: next_cursor.clone(),
         };
         if serialized_len(&dto)? <= RESPONSE_BUDGET_BYTES {
@@ -1201,6 +1226,90 @@ fn manifest_section(
             return Err(budget_refusal(
                 "the manifest header alone exceeds the 256 KiB response budget — pre-bound \
                  legacy data; invalidate and re-validate the run",
+            ));
+        }
+        page.pop();
+        has_more = true;
+    }
+}
+
+/// The paged commit receipt (ADR 0102 dec. 12): unlike the manifest section,
+/// no attempt pinning is needed — a run has AT MOST one commit receipt EVER
+/// (ADR 0098 dec. 5, immutable, `UNIQUE(run_id)`), so the cursor is a bare
+/// offset into the stored `outcomes` array. No receipt yet → `conflict`
+/// (mirrors `manifestAvailable`'s "no attempt yet" gate).
+fn receipt_section(
+    state: &AppState,
+    run: &KpiIngestRun,
+    cursor: Option<String>,
+    limit: Option<i64>,
+) -> Result<SectionDto, CommandError> {
+    let limit = validate_section_limit(limit, RECEIPT_PAGE_MAX, "receipt")?;
+    let offset = match cursor.as_deref() {
+        None => 0usize,
+        Some(cursor) => {
+            let decoded: ReceiptCursor = match decode_section_cursor(cursor)? {
+                SectionCursor::Start => return Err(invalid_cursor()),
+                SectionCursor::After(decoded) => decoded,
+            };
+            decoded.offset
+        }
+    };
+
+    let receipt = state
+        .kpi_ingest_staging()
+        .get_commit_receipt(&run.id)
+        .map_err(CommandError::from)?
+        .ok_or_else(|| {
+            CommandError::new(
+                CommandErrorCode::Conflict,
+                "no commit receipt exists for this run yet",
+            )
+        })?;
+    let outcomes: Vec<Value> = serde_json::from_str(&receipt.outcomes_json)
+        .map_err(|_| internal("stored receipt outcomes are not valid JSON"))?;
+
+    let start = offset.min(outcomes.len());
+    let end = (start + limit).min(outcomes.len());
+    let mut page: Vec<Value> = outcomes[start..end].to_vec();
+    let mut has_more = end < outcomes.len();
+
+    loop {
+        let next_cursor = has_more.then(|| {
+            encode_cursor(&ReceiptCursor {
+                offset: start + page.len(),
+            })
+        });
+        let receipt_value = if start == 0 {
+            serde_json::json!({
+                "runId": receipt.run_id,
+                "terminalStatus": receipt.terminal_status,
+                "periodId": receipt.period_id,
+                "acceptedCount": receipt.accepted_count,
+                "outcomesSchemaVersion": receipt.outcomes_schema_version,
+                "manifestHash": receipt.manifest_hash,
+                "manifestRevision": receipt.manifest_revision,
+                "committedAt": receipt.committed_at,
+                "outcomes": page,
+            })
+        } else {
+            serde_json::json!({ "outcomes": page })
+        };
+        let dto = SectionDto {
+            run_id: run.id.clone(),
+            section: "receipt",
+            catalog: None,
+            plausibility: None,
+            manifest: None,
+            receipt: Some(receipt_value),
+            next_cursor: next_cursor.clone(),
+        };
+        if serialized_len(&dto)? <= RESPONSE_BUDGET_BYTES {
+            return Ok(dto);
+        }
+        if page.is_empty() {
+            return Err(budget_refusal(
+                "the receipt header alone exceeds the 256 KiB response budget",
             ));
         }
         page.pop();
@@ -2257,6 +2366,125 @@ mod tests {
             json!({ "runId": run_id, "section": "manifest" }),
         ));
         assert_eq!(fresh["manifest"]["outcome"], "ready");
+    }
+
+    // ------------------------------------------------------------------
+    // Receipt section (ADR 0102 dec. 12, epic #399 S6)
+    // ------------------------------------------------------------------
+
+    fn seed_receipt_raw(state: &AppState, run_id: &str, outcomes_json: &str) {
+        let connection = state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "INSERT INTO kpi_ingest_commit_receipts
+                    (id, run_id, manifest_hash, manifest_revision, terminal_status,
+                     period_id, accepted_count, outcomes_schema_version, outcomes_json)
+                 VALUES (?1, ?2, ?3, 1, 'complete', NULL, 1, 2, ?4)",
+                rusqlite::params![
+                    format!("rcpt-{run_id}"),
+                    run_id,
+                    "0".repeat(64),
+                    outcomes_json,
+                ],
+            )
+            .expect("receipt row");
+    }
+
+    /// No receipt yet → `conflict` (mirrors `manifestAvailable`'s "no attempt
+    /// yet" gate); `commit_kpi_ingest`'s response stopped carrying the full
+    /// outcomes ledger (ADR 0102 dec. 12) — this section is the paged
+    /// substitute, reading the SAME stored `outcomes_json` the bounded
+    /// `CommitReceiptDto` only counts (`receipt_v2_outcome_excluded_and_ledger`,
+    /// `kpi_ingest_submit.rs`, covers the internal parse/validate step this
+    /// section's OWN read shares).
+    #[test]
+    fn receipt_section_serves_the_full_excluded_ledger() {
+        let state = test_state();
+        let run_id = started_run(&state);
+
+        assert_eq!(
+            failure_code(context(
+                &state,
+                json!({ "runId": run_id, "section": "receipt" })
+            )),
+            CommandErrorCode::Conflict,
+            "no receipt yet → conflict"
+        );
+
+        let outcomes = json!([
+            {
+                "observationId": "kpiobs_1", "revision": 1, "ordinal": 0,
+                "metricKey": "revenue", "factId": "fact_1", "outcome": "created"
+            },
+            {
+                "observationId": "kpiobs_2", "revision": 1, "ordinal": 1,
+                "metricKey": "", "factId": Value::Null, "outcome": "excluded",
+                "detail": { "label": "Liczba pracowników", "reason": "not a KPI" }
+            }
+        ])
+        .to_string();
+        seed_receipt_raw(&state, &run_id, &outcomes);
+
+        let page = success(context(
+            &state,
+            json!({ "runId": run_id, "section": "receipt" }),
+        ));
+        assert_eq!(page["receipt"]["terminalStatus"], "complete");
+        assert_eq!(page["receipt"]["outcomesSchemaVersion"], 2);
+        let served: Vec<Value> = page["receipt"]["outcomes"]
+            .as_array()
+            .expect("outcomes")
+            .clone();
+        assert_eq!(served.len(), 2);
+        assert_eq!(served[1]["outcome"], "excluded");
+        assert_eq!(served[1]["detail"]["label"], "Liczba pracowników");
+        assert_eq!(served[1]["detail"]["reason"], "not a KPI");
+        assert_eq!(page["nextCursor"], Value::Null);
+    }
+
+    /// A draft never validates or commits (ADR 0102 dec. 11): while a draft
+    /// is open and has an appended chunk on a run that has never been staged,
+    /// `validate_kpi_ingest`/`commit_kpi_ingest` see EXACTLY the run's real
+    /// state (never `staged`) — the draft is structurally invisible to both,
+    /// same as it is to `list_staged_observations`
+    /// (`append_never_bumps_revision_invisible_to_validation`,
+    /// `kpi_ingest_drafts.rs`).
+    #[test]
+    fn draft_cannot_validate_or_commit() {
+        let state = test_state();
+        let run_id = started_run(&state);
+        success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "open": true, "expectedObservations": 1 },
+            }),
+        ));
+
+        let validated = success(acquisition_call(
+            &state,
+            "validate_kpi_ingest",
+            &json!({ "runId": run_id, "revision": 1 }),
+        ));
+        assert_eq!(
+            validated["outcome"], "superseded",
+            "the run was never staged — an open draft is not a staged revision"
+        );
+
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "commit_kpi_ingest",
+                &json!({
+                    "runId": run_id,
+                    "manifestHash": "0".repeat(64),
+                    "revision": 1,
+                })
+            )),
+            CommandErrorCode::Conflict,
+            "no ready_to_commit generation exists — a draft never produces one"
+        );
     }
 
     // ------------------------------------------------------------------

@@ -28,6 +28,7 @@ expression: redacted
   },
   "manifestHash": null,
   "missingReasons": {},
+  "openDraft": null,
   "period": {
     "fiscalYear": 2025,
     "periodId": null,

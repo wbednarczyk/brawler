@@ -174,6 +174,20 @@ pub struct LeaseDto {
     pub expires_at: String,
 }
 
+/// A resumable chunked draft (ADR 0102 dec. 11): a restarted agent session
+/// checks `status` and finds this instead of guessing whether an in-flight
+/// `stage_kpi_observations` draft survived. Absent when no draft is open, or
+/// when the last-known one is stale (a lease takeover invalidated it —
+/// `KpiIngestDraftsStore::get_open_draft` never reports a stale draft as
+/// resumable).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenDraftDto {
+    pub draft_id: String,
+    pub chunks_received: i64,
+    pub expected_observations: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunStatusDto {
@@ -197,6 +211,7 @@ pub struct RunStatusDto {
     pub last_error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub open_draft: Option<OpenDraftDto>,
 }
 
 #[derive(Debug, Serialize)]
@@ -346,6 +361,15 @@ pub(super) fn run_status_dto(
         last_error: run.last_error.clone(),
         created_at: run.created_at.clone(),
         updated_at: run.updated_at.clone(),
+        open_draft: state
+            .kpi_ingest_drafts()
+            .get_open_draft(&run.id)
+            .map_err(CommandError::from)?
+            .map(|draft| OpenDraftDto {
+                draft_id: draft.draft_id,
+                chunks_received: draft.chunks_received,
+                expected_observations: draft.expected_observations,
+            }),
     })
 }
 
@@ -1295,6 +1319,64 @@ mod tests {
             .replace_all(&redacted, "kpiing_[uid]")
             .into_owned();
         insta::assert_snapshot!("run_status_wire_shape", redacted);
+    }
+
+    /// `get_kpi_ingest_status`'s `openDraft` (ADR 0102 dec. 11): a restarted
+    /// agent session has no server-side state of its own to lose — every
+    /// call here is a fresh, independent read against the SAME durable rows,
+    /// so "after restart" is exercised trivially (there is no session to
+    /// simulate); what this test actually proves is that the read reflects
+    /// exactly what `KpiIngestDraftsStore` holds, letting a resuming agent
+    /// pick the chunking back up instead of guessing.
+    #[test]
+    fn status_reports_open_draft_after_restart() {
+        let state = test_state();
+        let payload = success(acquisition_call(
+            &state,
+            "start_kpi_ingest",
+            &full_start_args(),
+        ));
+        let run_id = payload["runId"].as_str().expect("runId").to_owned();
+
+        let before = success(acquisition_call(
+            &state,
+            "get_kpi_ingest_status",
+            &json!({ "runId": run_id }),
+        ));
+        assert_eq!(before["openDraft"], Value::Null, "no draft open yet");
+
+        let opened = success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "open": true, "expectedObservations": 3 },
+            }),
+        ));
+        let draft_id = opened["draftId"].as_str().expect("draftId").to_owned();
+        success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "draftId": draft_id, "chunkIndex": 0 },
+                "observations": [{
+                    "rawLabel": "a", "rawValue": "1", "mappingStatus": "unmapped"
+                }],
+            }),
+        ));
+
+        let after = success(acquisition_call(
+            &state,
+            "get_kpi_ingest_status",
+            &json!({ "runId": run_id }),
+        ));
+        assert!(after["openDraft"]["draftId"]
+            .as_str()
+            .expect("draftId")
+            .starts_with("kpidft_"));
+        assert_eq!(after["openDraft"]["expectedObservations"], 3);
+        assert_eq!(after["openDraft"]["chunksReceived"], 1);
     }
 
     #[test]

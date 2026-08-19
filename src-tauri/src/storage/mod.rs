@@ -57,6 +57,7 @@ mod insider;
 mod jobs;
 mod kpi_extraction;
 mod kpi_ingest_commit;
+mod kpi_ingest_drafts;
 mod kpi_ingest_profiles;
 mod kpi_ingest_runs;
 mod kpi_ingest_staging;
@@ -130,6 +131,7 @@ pub use fundamentals_provenance::{
 };
 pub use fx_rates::FxRatesStore;
 pub use kpi_ingest_commit::KpiIngestCommitStore;
+pub use kpi_ingest_drafts::{AppendChunkResult, KpiIngestDraftsStore, OpenDraftSummary};
 pub use kpi_ingest_profiles::{
     expected_pack, is_registered_profile_version, profile_rules as kpi_ingest_profile_rules,
     resolve_profile_version, PROFILE_VERSIONS,
@@ -831,6 +833,13 @@ impl AppState {
     /// receipt, and the run's terminal state in ONE transaction.
     pub fn kpi_ingest_commit(&self) -> kpi_ingest_commit::KpiIngestCommitStore {
         kpi_ingest_commit::KpiIngestCommitStore::new(self.db.clone())
+    }
+
+    /// Chunked staging drafts (`kpi_ingest_drafts` + `kpi_ingest_draft_chunks`)
+    /// — a sub-resource of a run, transport for a >100-observation revision
+    /// (ADR 0102 decisions 6-11, epic #399 S6).
+    pub fn kpi_ingest_drafts(&self) -> kpi_ingest_drafts::KpiIngestDraftsStore {
+        kpi_ingest_drafts::KpiIngestDraftsStore::new(self.db.clone())
     }
 
     pub fn list_companies(&self) -> StorageResult<Vec<Company>> {

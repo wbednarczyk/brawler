@@ -156,21 +156,39 @@ For each pending run:
    execution? }`. `observations` is the **complete revision snapshot** — storage
    replaces the whole set each revision, so a repair must resend every retained
    observation, not just the fixed one. `missingReasons` is required; `{}` means
-   "nothing deliberately omitted". Cite every observation (below).
+   "nothing deliberately omitted". Cite every observation (below). **Over 100
+   observations** (a real preliminary/interim report routinely discloses more
+   once "capture everything" is the doctrine): use a **chunked draft** instead of
+   one call — `stage_kpi_observations{ runId, draft: { open: true,
+   expectedObservations } }` mints a server-issued `draftId`; append chunks of
+   ≤100 observations each with `{ runId, draft: { draftId, chunkIndex },
+   observations }` (`chunkIndex` starts at 0, contiguous, no `missingReasons` on
+   these calls); finalize with `{ runId, draft: { draftId, final: true },
+   missingReasons }` — its response matches the single-call shape exactly
+   (`status: "staged"`). A draft never validates or commits by itself; only the
+   finalized revision does. If your session drops mid-chunking, `start_kpi_ingest`
+   (keepalive) then `get_kpi_ingest_status` — its `openDraft` field tells you the
+   draft id and how many chunks already landed, so you resume instead of
+   restarting.
 4. **Validate.** `validate_kpi_ingest{ runId, revision }` — pass the `revision`
    from the stage response (it pins the exact generation). Outcomes: `ready` →
-   commit; `failed` → the returned `manifest` **is** the typed repair report
-   (each flagged observation says what to fix); `superseded` → someone else moved
-   the run, re-read its status and restart from step 1.
+   commit; `failed` → `severityCounts` tells you how many observations are
+   flagged, and the FULL typed repair report — the manifest itself, with each
+   flagged observation naming what to fix — is a separate read:
+   `get_kpi_ingest_context{ runId, section: "manifest" }`; `superseded` → someone
+   else moved the run, re-read its status and restart from step 1.
 5. **Repair (bounded).** On `failed`, fix the flagged observations, re-stage the
    **complete** snapshot, and re-validate. Cap this at **two repair rounds**; if
    the same diagnostics repeat or you have no new evidence to add, stop and hand
    the manifest diagnostics to the user. This bound is **agent policy**, not a
    server limit — the server will keep accepting re-stages.
 6. **Commit.** `commit_kpi_ingest{ runId, manifestHash, revision, execution? }` →
-   the receipt: `acceptedCount`, and a per-observation `outcomes` array
-   (`created` / `reobserved` / `upgraded` / `divergent`, each with its `factId`).
-   Commit is idempotent — a replay returns the same receipt byte-for-byte.
+   a bounded summary: `terminalStatus`, `counts: { acceptedCount, excludedCount }`.
+   The full per-observation `outcomes` ledger (`created` / `reobserved` /
+   `upgraded` / `divergent` / `excluded`, each with its `factId` where one was
+   written) is a separate read: `get_kpi_ingest_context{ runId, section:
+   "receipt" }`. Commit is idempotent — a replay returns the same summary
+   byte-for-byte.
 7. **Confirm.** `get_kpi_ingest_status{ runId }` → the terminal status
    (`complete`, or `partial` when `missingReasons` covered a gap).
 
