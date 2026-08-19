@@ -3124,7 +3124,10 @@ impl FinancialsStore {
     /// row, and neither ever deletes. Returns the rows added.
     pub fn refresh_kpi_relevance_layers(&self, company_id: &str) -> StorageResult<usize> {
         let connection = self.db.checkout()?;
-        let transaction = connection.unchecked_transaction()?;
+        let transaction = rusqlite::Transaction::new_unchecked(
+            &connection,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
         let seeded = seed_statement_pack_kpi_relevance(&transaction, company_id)?
             + refresh_derived_kpi_relevance(&transaction, company_id)?;
         transaction.commit()?;

@@ -329,7 +329,8 @@ pub(crate) fn update_settings(
     // an earlier field's write committed (Radicle ef7ad69). Wrapping the
     // whole update in a transaction makes any early return roll back on
     // `Drop`, and it only persists once every field has validated and written.
-    let transaction = connection.unchecked_transaction()?;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
     let connection = &transaction;
 
     if let Some(theme) = input.theme {

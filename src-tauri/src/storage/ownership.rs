@@ -595,7 +595,8 @@ pub(super) fn replace_aggregator_basis(
     as_of: &str,
     holders: &[WitnessHolder],
 ) -> StorageResult<usize> {
-    let transaction = connection.unchecked_transaction()?;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
 
     let mut written_normalized: Vec<String> = Vec::with_capacity(holders.len());
     for holder in holders {
