@@ -17,7 +17,6 @@
     "src-tauri/src/jobs/structured_extraction.rs": 3893,
     "src-tauri/src/mcp/acts.rs": 1046,
     "src-tauri/src/mcp/kpi_ingest.rs": 1574,
-    "src-tauri/src/mcp/kpi_ingest_context.rs": 2943,
     "src-tauri/src/mcp/kpi_ingest_submit.rs": 2467,
     "src-tauri/src/mcp/reads.rs": 1017,
     "src-tauri/src/mcp/registry.rs": 3558,
