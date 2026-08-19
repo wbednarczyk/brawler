@@ -3046,7 +3046,7 @@ mod tests {
         for bad in [
             "p1",
             "gpw_ifrs_annual@v0",
-            "gpw_ifrs_annual@v2",
+            "gpw_ifrs_annual@v3",
             "gpw_ifrs_annual",
         ] {
             assert!(

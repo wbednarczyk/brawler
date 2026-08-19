@@ -1610,11 +1610,13 @@ Const in-code registry (`storage/kpi_ingest_profiles.rs`): `profile_version` = `
 
 | | industrial / brokerage / unknown | banking | insurance | specialty_finance | reit |
 |---|---|---|---|---|---|
-| `gpw_ifrs_annual@v1`, `gpw_interim@v1`, `nc_uor@v1` | revenue, operating_profit, net_profit, total_assets, total_equity | net_profit, total_assets, total_equity, net_interest_income, net_fee_commission_income, total_loans, total_deposits | industrial + gross_insurance_revenue | industrial + recoveries, erc, cash_ebitda, portfolio_purchases | industrial + ffo |
-| `gpw_preliminary@v1` | revenue, net_profit | net_profit | revenue, net_profit | revenue, net_profit | revenue, net_profit |
+| `gpw_ifrs_annual@v2`, `gpw_ifrs_annual@v1`, `gpw_interim@v1`, `nc_uor@v1` | revenue, operating_profit, net_profit, total_assets, total_equity | net_profit, total_assets, total_equity, net_interest_income, net_fee_commission_income, total_loans, total_deposits | industrial + gross_insurance_revenue | industrial + recoveries, erc, cash_ebitda, portfolio_purchases | industrial + ffo |
+| `gpw_preliminary@v2`, `gpw_preliminary@v1` | revenue, net_profit | net_profit | revenue, net_profit | revenue, net_profit | revenue, net_profit |
 | `company_characteristic@v1` | ∅ | ∅ | ∅ | ∅ | ∅ |
 
 Rationale: the full floor is the per-type core (banking loses `revenue`/`operating_profit` per the measured #284 evidence) plus the type's layer-2 statement-pack keys (§ Company Fundamentals :above) — identical to what relevance seeding gives a fresh company, so for a well-seeded company the union is a no-op; the pack holds the floor when relevance rows are absent. `gpw_preliminary` is the honest minimum a GPW estimate report carries (a bank's preliminary has no revenue line). `company_characteristic` has an empty pack but the union with live relevance still applies (owner decision 2026-08-14 — no special cases).
+
+**`@v2` cutover** (ADR 0102 dec. 13, epic #399 S7): `gpw_ifrs_annual` and `gpw_preliminary` gained an `@v2` profile version — positional cutover (`PROFILE_VERSIONS` array order, no `@vN` parser), so `resolve_profile_version` hands a fresh run `@v2` while `@v1` stays registered and resolvable for runs already on it. Packs stay minimal and IDENTICAL to `@v1` (table above) — the denominator is not the capture-doctrine axis. Only `profile_rules` changes: `@v2` doctrine is "map to a catalog key, propose one with `propose_kpi_definition`, or stage `mappingStatus=excluded` with a reason — never invent a key, never leave a disclosed number silently absent," replacing `@v1`'s narrower mapping instruction (annual's "stage unmapped rows" / preliminary's "revenue and net_profit only" restriction). `gpw_interim`, `nc_uor`, `company_characteristic` have no `@v2` yet.
 
 Id policy: `kpiing_{32 hex}` — sha256 over the identity triple plus a nanosecond time component, deliberately **not deterministic** on the triple alone, since a document can legitimately get a new run after its content changes under the same URL (content identity lives in `source_content_hash`, not the id).
 

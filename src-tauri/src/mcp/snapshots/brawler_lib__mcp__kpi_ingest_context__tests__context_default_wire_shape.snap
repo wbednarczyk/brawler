@@ -1,5 +1,6 @@
 ---
 source: src/mcp/kpi_ingest_context.rs
+assertion_line: 1568
 expression: redacted
 ---
 {
@@ -430,7 +431,7 @@ expression: redacted
   ],
   "profileRules": [
     "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
-    "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
+    "Map every disclosed line to a catalog metric key, propose one with propose_kpi_definition, or stage it excluded with a non-blank exclusionReason — never invent a metric key and never leave a disclosed number silently absent.",
     "net_profit and per-share figures are owners-of-parent when the report splits non-controlling interests; otherwise total.",
     "Annual income and cash-flow lines are full-year flows; balance-sheet lines are point_in_time at period end.",
     "Preserve rawValue exactly as printed and set unitScale from the statement header; normalizedValue is the value in base units (rawValue scaled by unitScale).",
@@ -451,7 +452,7 @@ expression: redacted
         "total_assets",
         "total_equity"
       ],
-      "packVersion": "gpw_ifrs_annual@v1",
+      "packVersion": "gpw_ifrs_annual@v2",
       "schemaVersion": 1,
       "source": "kpi_relevance+profile_pack"
     },
@@ -468,7 +469,7 @@ expression: redacted
       "periodId": null,
       "periodType": "FY"
     },
-    "profileVersion": "gpw_ifrs_annual@v1",
+    "profileVersion": "gpw_ifrs_annual@v2",
     "progress": null,
     "revision": 0,
     "runId": "kpiing_[uid]",

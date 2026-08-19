@@ -1,5 +1,6 @@
 ---
 source: src/mcp/kpi_ingest.rs
+assertion_line: 1321
 expression: redacted
 ---
 {
@@ -17,7 +18,7 @@ expression: redacted
       "total_assets",
       "total_equity"
     ],
-    "packVersion": "gpw_ifrs_annual@v1",
+    "packVersion": "gpw_ifrs_annual@v2",
     "schemaVersion": 1,
     "source": "kpi_relevance+profile_pack"
   },
@@ -34,7 +35,7 @@ expression: redacted
     "periodId": null,
     "periodType": "FY"
   },
-  "profileVersion": "gpw_ifrs_annual@v1",
+  "profileVersion": "gpw_ifrs_annual@v2",
   "progress": null,
   "revision": 0,
   "runId": "kpiing_[uid]",

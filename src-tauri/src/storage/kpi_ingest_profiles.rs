@@ -5,10 +5,15 @@
 
 use super::{StorageError, StorageResult};
 
-/// Every registered profile version — all profiles are at `@v1`. Membership in
-/// this set IS the whole validation (no `@vN` parser until a second version of
-/// any profile exists and something must compare N's).
-pub const PROFILE_VERSIONS: [&str; 5] = [
+/// Every registered profile version. Position IS the whole cutover (no `@vN`
+/// parser — ADR 0102 dec. 13): `@v2` literals are listed BEFORE their `@v1`
+/// sibling so `resolve_profile_version` (first-match) hands a fresh run the
+/// newer version while the `@v1` string stays registered and resolvable for
+/// runs that already carry it. `gpw_interim`, `nc_uor`, and
+/// `company_characteristic` have no `@v2` yet and stay at `@v1`.
+pub const PROFILE_VERSIONS: [&str; 7] = [
+    "gpw_ifrs_annual@v2",
+    "gpw_preliminary@v2",
     "gpw_ifrs_annual@v1",
     "gpw_interim@v1",
     "gpw_preliminary@v1",
@@ -100,20 +105,24 @@ pub fn expected_pack(
 ) -> StorageResult<&'static [&'static str]> {
     let pack = match profile_version {
         "company_characteristic@v1" => &[],
-        "gpw_preliminary@v1" => {
+        // Pack stays minimal at v2 (ADR 0102 dec. 13): the denominator is not
+        // the capture-doctrine axis — reuse v1's pack unchanged.
+        "gpw_preliminary@v2" | "gpw_preliminary@v1" => {
             if statement_type == "banking" {
                 PRELIMINARY_BANKING
             } else {
                 PRELIMINARY
             }
         }
-        "gpw_ifrs_annual@v1" | "gpw_interim@v1" | "nc_uor@v1" => match statement_type {
-            "banking" => FLOOR_BANKING,
-            "insurance" => FLOOR_INSURANCE,
-            "specialty_finance" => FLOOR_SPECIALTY_FINANCE,
-            "reit" => FLOOR_REIT,
-            _ => FLOOR_INDUSTRIAL, // industrial | brokerage | unknown
-        },
+        "gpw_ifrs_annual@v2" | "gpw_ifrs_annual@v1" | "gpw_interim@v1" | "nc_uor@v1" => {
+            match statement_type {
+                "banking" => FLOOR_BANKING,
+                "insurance" => FLOOR_INSURANCE,
+                "specialty_finance" => FLOOR_SPECIALTY_FINANCE,
+                "reit" => FLOOR_REIT,
+                _ => FLOOR_INDUSTRIAL, // industrial | brokerage | unknown
+            }
+        }
         other => {
             return Err(StorageError::InvalidKpiIngestRunValue {
                 key: "profile_version",
@@ -138,6 +147,19 @@ pub fn expected_pack(
 /// doctrine (no `_` catch-all).
 pub fn profile_rules(profile_version: &str) -> StorageResult<&'static [&'static str]> {
     let rules: &'static [&'static str] = match profile_version {
+        "gpw_ifrs_annual@v2" => &[
+            "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
+            "Map every disclosed line to a catalog metric key, propose one with propose_kpi_definition, or stage it excluded with a non-blank exclusionReason — never invent a metric key and never leave a disclosed number silently absent.",
+            "net_profit and per-share figures are owners-of-parent when the report splits non-controlling interests; otherwise total.",
+            "Annual income and cash-flow lines are full-year flows; balance-sheet lines are point_in_time at period end.",
+            "Preserve rawValue exactly as printed and set unitScale from the statement header; normalizedValue is the value in base units (rawValue scaled by unitScale).",
+            "Cite every value: page plus table or row, with a short quote.",
+        ],
+        "gpw_preliminary@v2" => &[
+            "Capture every disclosed number: map it to a catalog metric key, propose one with propose_kpi_definition, or stage it excluded with a non-blank exclusionReason — never invent a metric key and never leave a disclosed number silently absent.",
+            "Start or resume the run with dataQuality=preliminary before staging; the final report supersedes these values.",
+            "Confirm scope from the report wording and cite the exact sentence.",
+        ],
         "gpw_ifrs_annual@v1" => &[
             "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
             "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
@@ -319,11 +341,14 @@ mod tests {
         }
     }
 
+    /// `resolve_profile_version("gpw_ifrs_annual")` now yields `@v2` — the
+    /// ADR 0102 dec. 13 positional cutover, not a leftover `@v1` id (that
+    /// exact fact is `fresh_run_resolves_v2_v1_still_resolvable` above).
     #[test]
     fn resolve_profile_version_maps_ids_and_rejects_unknown_and_partial() {
         assert_eq!(
             resolve_profile_version("gpw_ifrs_annual"),
-            Some("gpw_ifrs_annual@v1")
+            Some("gpw_ifrs_annual@v2")
         );
         assert_eq!(
             resolve_profile_version("company_characteristic"),
@@ -334,11 +359,15 @@ mod tests {
         assert_eq!(resolve_profile_version(""), None);
     }
 
+    /// `@v2` is registered membership now (ADR 0102 dec. 13 cutover); the
+    /// stale/future/bare checks move to `@v0`/`@v3` so they keep exercising
+    /// "not every version string is a member" without contradicting cutover.
     #[test]
     fn membership_rejects_stale_future_and_bare_versions() {
         assert!(is_registered_profile_version("gpw_ifrs_annual@v1"));
+        assert!(is_registered_profile_version("gpw_ifrs_annual@v2"));
         assert!(!is_registered_profile_version("gpw_ifrs_annual@v0"));
-        assert!(!is_registered_profile_version("gpw_ifrs_annual@v2"));
+        assert!(!is_registered_profile_version("gpw_ifrs_annual@v3"));
         assert!(!is_registered_profile_version("gpw_ifrs_annual"));
         assert!(!is_registered_profile_version("p1"));
     }
@@ -368,6 +397,66 @@ mod tests {
             }
             other => panic!("expected UnknownKpiIngestProfileVersion, got {other:?}"),
         }
+    }
+
+    /// Doctrine repair is versioned (ADR 0102 dec. 13): `gpw_preliminary@v2`
+    /// and `gpw_ifrs_annual@v2` carry the map/propose/exclude full-capture
+    /// rule; full-equality goldens per version, same discipline as the `@v1`
+    /// goldens below.
+    #[test]
+    fn profile_rules_v2_are_frozen_verbatim() {
+        assert_eq!(
+            profile_rules("gpw_preliminary@v2").expect("registered profile"),
+            &[
+                "Capture every disclosed number: map it to a catalog metric key, propose one with propose_kpi_definition, or stage it excluded with a non-blank exclusionReason — never invent a metric key and never leave a disclosed number silently absent.",
+                "Start or resume the run with dataQuality=preliminary before staging; the final report supersedes these values.",
+                "Confirm scope from the report wording and cite the exact sentence.",
+            ]
+        );
+        assert_eq!(
+            profile_rules("gpw_ifrs_annual@v2").expect("registered profile"),
+            &[
+                "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
+                "Map every disclosed line to a catalog metric key, propose one with propose_kpi_definition, or stage it excluded with a non-blank exclusionReason — never invent a metric key and never leave a disclosed number silently absent.",
+                "net_profit and per-share figures are owners-of-parent when the report splits non-controlling interests; otherwise total.",
+                "Annual income and cash-flow lines are full-year flows; balance-sheet lines are point_in_time at period end.",
+                "Preserve rawValue exactly as printed and set unitScale from the statement header; normalizedValue is the value in base units (rawValue scaled by unitScale).",
+                "Cite every value: page plus table or row, with a short quote.",
+            ]
+        );
+    }
+
+    /// Positional cutover (ADR 0102 dec. 13): a fresh run resolving the base
+    /// `profile_id` gets `@v2` for the two profiles this slice versions; an
+    /// explicit `@v1` id stays resolvable/registered exactly. Profiles this
+    /// slice does not touch (`gpw_interim`, `nc_uor`, `company_characteristic`)
+    /// still resolve to `@v1` — no accidental cutover beyond the two named.
+    #[test]
+    fn fresh_run_resolves_v2_v1_still_resolvable() {
+        assert_eq!(
+            resolve_profile_version("gpw_preliminary"),
+            Some("gpw_preliminary@v2")
+        );
+        assert_eq!(
+            resolve_profile_version("gpw_ifrs_annual"),
+            Some("gpw_ifrs_annual@v2")
+        );
+        assert!(is_registered_profile_version("gpw_preliminary@v1"));
+        assert!(is_registered_profile_version("gpw_ifrs_annual@v1"));
+        assert!(is_registered_profile_version("gpw_preliminary@v2"));
+        assert!(is_registered_profile_version("gpw_ifrs_annual@v2"));
+        assert!(profile_rules("gpw_preliminary@v1").is_ok());
+        assert!(profile_rules("gpw_ifrs_annual@v1").is_ok());
+
+        assert_eq!(
+            resolve_profile_version("gpw_interim"),
+            Some("gpw_interim@v1")
+        );
+        assert_eq!(resolve_profile_version("nc_uor"), Some("nc_uor@v1"));
+        assert_eq!(
+            resolve_profile_version("company_characteristic"),
+            Some("company_characteristic@v1")
+        );
     }
 
     /// The doctrine is versioned behavior (#385): full-equality goldens per

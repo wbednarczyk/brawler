@@ -853,7 +853,7 @@ mod tests {
         ));
 
         assert_eq!(payload["status"], "extracting");
-        assert_eq!(payload["profileVersion"], "gpw_ifrs_annual@v1");
+        assert_eq!(payload["profileVersion"], "gpw_ifrs_annual@v2");
         assert_eq!(payload["scope"], "standalone");
         assert_eq!(payload["dataQuality"], "final");
         assert_eq!(payload["period"]["fiscalYear"], 2025);
