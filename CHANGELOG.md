@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.71.1 - 2026-08-19
+
+
+### Bug Fixes
+
+- **mcp**: propose_kpi_definition accepts valueKind monetary|count — counts no longer mistyped at birth (#403) (#407)
+
+- acquisition-path fairness — bounded start, batched persists, MCP pool, DEFERRED-tx ban (#404) (#408)
+
+
+### Features
+
+- agent-path full capture — propose, excluded observations, chunked drafts, @v2 doctrine (#399) (#405)
+
 ## v0.71.0 - 2026-08-18
 
 
