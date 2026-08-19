@@ -39,9 +39,45 @@ const ALIASES: &[KpiAlias] = &[
     // Polish-label and aggregator paths — and unbreaks `quick_ratio`, whose
     // seeded formula referenced the dead key and therefore never computed for
     // any company (repaired forward by migration 0147).
+    // The six non-`inventory` entries are harvested from the epic #399 §G
+    // live runs (ADR 0101 dec. 5): each is a key the driving agent actually
+    // guessed for a mapped observation and lost a `mapping.unresolved` flag
+    // to, or the propose guard should redirect. None is a seeded definition —
+    // a never-seeded guessable synonym is one-sided by construction (zero
+    // facts, no row).
+    KpiAlias {
+        from: "financial_costs",
+        to: "finance_costs",
+    },
+    KpiAlias {
+        from: "financial_income",
+        to: "finance_income",
+    },
+    KpiAlias {
+        from: "income_tax",
+        to: "income_tax_expense",
+    },
+    // `inventory` (0 facts, migration 0048) → `inventories` (771 facts / 44
+    // companies, migration 0084). The ESEF crosswalk already refuses to name
+    // `Inventories` as `inventory`; this closes the other direction — the
+    // Polish-label and aggregator paths — and unbreaks `quick_ratio`, whose
+    // seeded formula referenced the dead key and therefore never computed for
+    // any company (repaired forward by migration 0147).
     KpiAlias {
         from: "inventory",
         to: "inventories",
+    },
+    KpiAlias {
+        from: "liabilities_total",
+        to: "total_liabilities",
+    },
+    KpiAlias {
+        from: "operating_costs",
+        to: "operating_expense",
+    },
+    KpiAlias {
+        from: "pretax_profit",
+        to: "wdf_pretax_profit",
     },
 ];
 

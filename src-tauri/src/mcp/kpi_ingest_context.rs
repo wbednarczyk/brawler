@@ -500,6 +500,7 @@ fn build_catalog(
     resolved_expected: &[(String, KpiDefinition)],
     definitions: &[KpiDefinition],
     company_id: &str,
+    statement_type: &str,
 ) -> Vec<CatalogEntryDto> {
     let mut by_id: HashMap<String, CatalogEntryDto> = HashMap::new();
     for (_, definition) in resolved_expected {
@@ -515,7 +516,14 @@ fn build_catalog(
         }
     }
     for definition in definitions {
-        if definition.company_id.is_none() {
+        // §G harvest (epic #399 S8): a sector-scoped row is offered ONLY to
+        // companies of that statement type — anything else would never
+        // resolve at staging and just baits a `mapping.unresolved` flag.
+        let sector_visible = match definition.sector.as_deref() {
+            None => true,
+            Some(sector) => sector == statement_type,
+        };
+        if definition.company_id.is_none() && sector_visible {
             by_id
                 .entry(definition.id.clone())
                 .or_insert_with(|| catalog_entry_compact(definition));
@@ -953,7 +961,13 @@ fn default_context(state: &AppState, run: &KpiIngestRun) -> Result<ContextDto, C
     let document = document_meta(state, run)?;
     let derived_period = derived_period_hint(state, run)?;
     let (resolved_expected, definitions) = resolved_catalog_inputs(state, run)?;
-    let catalog_all = build_catalog(&resolved_expected, &definitions, &run.company_id);
+    let statement_type = state.companies().get_statement_type(&run.company_id)?;
+    let catalog_all = build_catalog(
+        &resolved_expected,
+        &definitions,
+        &run.company_id,
+        &statement_type,
+    );
     let plausibility_all = build_plausibility(state, run, &resolved_expected)?;
     let expected_metric_keys: BTreeSet<&str> = resolved_expected
         .iter()
@@ -1053,7 +1067,8 @@ fn section_context(
                 None => SectionCursor::Start,
             };
             let (resolved, definitions) = resolved_catalog_inputs(state, run)?;
-            let all = build_catalog(&resolved, &definitions, &run.company_id);
+            let statement_type = state.companies().get_statement_type(&run.company_id)?;
+            let all = build_catalog(&resolved, &definitions, &run.company_id, &statement_type);
             let start = catalog_start_index(&all, &decoded);
             let end = (start + limit).min(all.len());
             let page: Vec<CatalogEntryDto> = all[start..end].to_vec();
@@ -1667,11 +1682,49 @@ mod tests {
         );
     }
 
-    /// ADR 0101 dec. 7/9: `build_catalog` now widens to every canonical
-    /// definition (`company_id IS NULL`), not just what this run expected —
-    /// crossing the `CATALOG_PAGE_MAX` boundary, so the default call's
-    /// `catalog` is always a truncated prefix; walking the `catalog` section
-    /// cursor to exhaustion must reach the full canon exactly once each.
+    /// §G harvest (epic #399 S8): the compact tier served SECTOR-scoped rows
+    /// to companies of OTHER sectors — the entry hides its scope, the agent
+    /// maps to the key, and resolution then refuses it (`mapping.unresolved`).
+    /// A sector row is visible only to companies of that statement type.
+    #[test]
+    fn catalog_compact_tier_excludes_foreign_sector_keys() {
+        let state = test_state();
+        let run_id = started_run(&state);
+
+        let mut keys: Vec<String> = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut args = json!({ "runId": run_id, "section": "catalog", "limit": 64 });
+            if let Some(cursor) = &cursor {
+                args["cursor"] = json!(cursor);
+            }
+            let page = success(context(&state, args));
+            for entry in page["catalog"].as_array().expect("page") {
+                keys.push(entry["metricKey"].as_str().expect("key").to_owned());
+            }
+            match page["nextCursor"].as_str() {
+                Some(next) => cursor = Some(next.to_owned()),
+                None => break,
+            }
+        }
+
+        // `operating_expenses` is seeded sector='banking'; the test company is
+        // not a bank, so the key must NOT be offered (it would never resolve).
+        // Its canonical sibling `operating_expense` stays visible.
+        assert!(
+            !keys.iter().any(|k| k == "operating_expenses"),
+            "foreign-sector key offered to a non-banking company"
+        );
+        assert!(
+            keys.iter().any(|k| k == "operating_expense"),
+            "canonical sibling must stay visible"
+        );
+    }
+
+    /// ADR 0101 dec. 7/9: `build_catalog` widens to the full canon visible to
+    /// this company — crossing the `CATALOG_PAGE_MAX` boundary, so the default
+    /// call's `catalog` is always a truncated prefix; walking the `catalog`
+    /// section cursor to exhaustion must reach every visible row exactly once.
     #[test]
     fn catalog_section_pagination_reaches_full_canon_without_duplicates() {
         let state = test_state();
@@ -1681,8 +1734,15 @@ mod tests {
             let connection = state.checkout_for_tests().expect("raw");
             connection
                 .query_row(
-                    "SELECT COUNT(*) FROM kpi_definitions WHERE company_id IS NULL",
-                    [],
+                    // Mirrors build_catalog's compact-tier predicate: a
+                    // sector row counts only for its own statement type
+                    // (§G harvest, epic #399 S8).
+                    "SELECT COUNT(*) FROM kpi_definitions
+                     WHERE company_id IS NULL
+                       AND (sector IS NULL OR sector = (
+                            SELECT statement_type FROM companies
+                            WHERE id = (SELECT company_id FROM kpi_ingest_runs WHERE id = ?1)))",
+                    [&run_id],
                     |row| row.get(0),
                 )
                 .expect("count")

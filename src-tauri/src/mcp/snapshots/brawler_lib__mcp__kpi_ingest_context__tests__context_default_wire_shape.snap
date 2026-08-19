@@ -1,6 +1,5 @@
 ---
 source: src/mcp/kpi_ingest_context.rs
-assertion_line: 1568
 expression: redacted
 ---
 {
@@ -211,14 +210,6 @@ expression: redacted
       "metricKey": "administrative_expense"
     },
     {
-      "label": "Adjusted funds from operations",
-      "metricKey": "affo"
-    },
-    {
-      "label": "AFFO payout ratio",
-      "metricKey": "affo_payout_ratio"
-    },
-    {
       "label": "Asset turnover",
       "metricKey": "asset_turnover"
     },
@@ -255,10 +246,6 @@ expression: redacted
       "metricKey": "cash_advances_and_loans_made_to_related_parties"
     },
     {
-      "label": "Cash EBITDA",
-      "metricKey": "cash_ebitda"
-    },
-    {
       "label": "Cash flows from losing control of subsidiaries or other businesses (investing)",
       "metricKey": "cash_flows_from_losing_control_of_subsidiaries_investing"
     },
@@ -279,12 +266,24 @@ expression: redacted
       "metricKey": "cash_used_in_business_acquisitions"
     },
     {
-      "label": "CET1 ratio",
-      "metricKey": "cet1"
-    },
-    {
       "label": "Cash flows from decrease increase in shortterm deposits and investments",
       "metricKey": "change_in_short_term_deposits_and_investments_cash_flows"
+    },
+    {
+      "label": "Increase decrease in working capital",
+      "metricKey": "change_in_working_capital"
+    },
+    {
+      "label": "Equity change — acquisition of subsidiary",
+      "metricKey": "change_through_acquisition_of_subsidiary"
+    },
+    {
+      "label": "Equity change — change in equity of subsidiaries",
+      "metricKey": "change_through_change_in_equity_of_subsidiaries"
+    },
+    {
+      "label": "Equity change — disposal of subsidiary",
+      "metricKey": "change_through_disposal_of_subsidiary"
     }
   ],
   "derivedPeriod": null,
@@ -337,8 +336,6 @@ expression: redacted
     "adjusted_weighted_average_shares",
     "adjustments_to_reconcile_profit_loss",
     "administrative_expense",
-    "affo",
-    "affo_payout_ratio",
     "asset_turnover",
     "basic_earnings_loss_per_share_from_discontinued_operations",
     "capex",
@@ -348,14 +345,16 @@ expression: redacted
     "cash",
     "cash_advances_and_loans_made_to_other_parties_investing",
     "cash_advances_and_loans_made_to_related_parties",
-    "cash_ebitda",
     "cash_flows_from_losing_control_of_subsidiaries_investing",
     "cash_flows_from_operations",
     "cash_flows_from_operations_before_working_capital_changes",
     "cash_per_cash_flow_statement",
     "cash_used_in_business_acquisitions",
-    "cet1",
-    "change_in_short_term_deposits_and_investments_cash_flows"
+    "change_in_short_term_deposits_and_investments_cash_flows",
+    "change_in_working_capital",
+    "change_through_acquisition_of_subsidiary",
+    "change_through_change_in_equity_of_subsidiaries",
+    "change_through_disposal_of_subsidiary"
   ],
   "plausibility": [
     {
@@ -479,6 +478,6 @@ expression: redacted
     "updatedAt": "[timestamp]"
   },
   "truncated": {
-    "catalog": "eyJ0IjoxLCJtIjoiY2hhbmdlX2luX3Nob3J0X3Rlcm1fZGVwb3NpdHNfYW5kX2ludmVzdG1lbnRzX2Nhc2hfZmxvd3MiLCJkIjoia3BpZGVmX2NoYW5nZV9pbl9zaG9ydF90ZXJtX2RlcG9zaXRzX2FuZF9pbnZlc3RtZW50c19jYXNoX2Zsb3dzIn0"
+    "catalog": "eyJ0IjoxLCJtIjoiY2hhbmdlX3Rocm91Z2hfZGlzcG9zYWxfb2Zfc3Vic2lkaWFyeSIsImQiOiJrcGlkZWZfY2hhbmdlX3Rocm91Z2hfZGlzcG9zYWxfb2Zfc3Vic2lkaWFyeSJ9"
   }
 }

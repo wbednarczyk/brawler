@@ -41,7 +41,7 @@ Three checks, in order (pinned during S4 implementation — the real corpus forc
 
 ### 5. Synonym curation stays owner-reviewed; harvested in the same PR
 
-Near-misses surfaced by real proposal traffic (sandbox dogfooding, §G) are curated into `kpi_aliases.rs` by the owner, harvested in the same PR that surfaces them (guardrail-harvest loop) — never auto-added. The one-sidedness rule (an alias source must hold zero facts) stays enforced by ADR 0100's existing gates; this ADR adds no new gate, it adds entries to the table those gates already police.
+Near-misses surfaced by real proposal traffic (sandbox dogfooding, §G) are curated into `kpi_aliases.rs` by the owner, harvested in the same PR that surfaces them (guardrail-harvest loop) — never auto-added. The one-sidedness rule (an alias source must hold zero facts) stays enforced by ADR 0100's existing gates. **Refined during S8**: an alias source may be a never-seeded guessable synonym (zero facts by construction), widening ADR 0100 dec. 12's original dead-seeded-key class; the target must always be a seeded key, and a seeded source carrying facts stays a merge, never an alias.
 
 ### 6. Proposed definitions are company-scoped, `origin=agent`, and never enter the denominator
 
@@ -49,7 +49,7 @@ Reaffirms ADR 0093 decision 4 and ADR 0098 decision 4: a proposed definition is 
 
 ### 7. The catalog widens to the full canon plus agent-company rows; user-origin stays excluded
 
-`build_catalog` returns every canonical definition, not only `resolved_expected` — the ~373 canonical rows currently invisible to the acquisition scope become visible, so an agent can check "does this already exist" before proposing. User-origin rows stay excluded exactly as today (the existing test at `:1455` holds): the acquisition scope reads the shared vocabulary and its own company's agent-minted extras, never another scope's user-entered rows. Doctrine: **page the catalog to the end of its cursor before proposing anything** — a proposal made without having seen the full canon risks exactly the duplication this ADR exists to prevent.
+`build_catalog` returns every canonical definition, not only `resolved_expected` — the ~373 canonical rows currently invisible to the acquisition scope become visible, so an agent can check "does this already exist" before proposing. **Refined during S8 (§G harvest):** a SECTOR-scoped shared row is offered only to companies of that statement type — the compact entry hides its scope, so offering a foreign-sector key baited agents into mappings that resolution then refused (`mapping.unresolved`). User-origin rows stay excluded exactly as today (the existing test at `:1455` holds): the acquisition scope reads the shared vocabulary and its own company's agent-minted extras, never another scope's user-entered rows. Doctrine: **page the catalog to the end of its cursor before proposing anything** — a proposal made without having seen the full canon risks exactly the duplication this ADR exists to prevent.
 
 ### 8. Plausibility gets an explicit `notRequested` state
 
