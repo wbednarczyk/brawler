@@ -550,6 +550,9 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
             },
             "unit": {
               "type": "string"
+            },
+            "valueKind": {
+              "type": "string"
             }
           },
           "required": [
