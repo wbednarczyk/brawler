@@ -66,6 +66,10 @@ Suites run in parallel within and across frameworks to keep the loop fast, with 
 
 `make coverage-frontend` (Vitest's v8 provider) and `make coverage-rust` (`cargo-llvm-cov`) measure line coverage per layer, then each runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if its layer drops below the committed floor in `coverage-baseline.json` — frontend 80.0%, Rust 86.5%. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. Both are **PR required checks** (`Frontend coverage ratchet` / `Rust coverage ratchet`), not periodic — the PR is the only gate under continuous release ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md), amending [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)). The instrumented Rust build's cache uses its own key, distinct from the plain test-build cache (ADR 0096 dec. 4).
 
+## File-size ratchet
+
+`scripts/check/file-size-ratchet.mjs` (in `make check-docs-gates` + `check-local` Stage 1) is the fitness function for the CLAUDE.md oversized-file rule ([ADR 0103](adr/0103-file-size-ratchet-fitness-function.md)): production source files ≥1000 lines are pinned **exactly** in `file-size-baseline.json` — growth fails (extract as part of the change, or hand-raise the pin in the reviewed diff), shrinking fails until `--write` ratchets the pin down. `--write` never raises or adds entries. Dedicated test files, `src/api/generated/` and locale resource tables are out of scope; colocated `#[cfg(test)]` counts.
+
 ## Real-data validation precedes implementation for matching/ranking features
 
 Any feature whose value rests on a **similarity / dedup / clustering / matching /

@@ -90,6 +90,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] Implemented to spec: read the canonical doc(s) for the area (the [Required Reading](../CLAUDE.md) map) — don't infer architecture/field/command names from code alone. ADR added/confirmed if durable architecture or policy changed.
 - [ ] **`make check-local` passes under Nix** (not host) before handover — a host pass is a hint, not a verdict — and the **full `make check` gate is green as the PR's required checks for the exact head SHA** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)/[ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)); the full gate never runs locally. **Re-run `check-local` after the last fix; never hand over on a stale or partial run.**
 - [ ] Canonical doc(s) whose behavior changed are updated **in this change** (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
+- [ ] **Touched a file pinned in `file-size-baseline.json`?** Grew → extract in this change (or hand-raise the pin as a reviewed decision); shrank → `node scripts/check/file-size-ratchet.mjs --write` in the same change ([ADR 0103](adr/0103-file-size-ratchet-fitness-function.md)).
 - [ ] Nothing committed or pushed unless the user asked, or via the release workflow.
 
 ### §B — If frontend/UI changed

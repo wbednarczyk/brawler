@@ -36,6 +36,7 @@ const stages = [
       { name: "lint", cmd: "npm", args: ["run", "lint"] },
       { name: "stylelint", cmd: "npm", args: ["run", "stylelint"] },
       { name: "rust-fmt", cmd: "cargo", args: ["fmt", "--check"], cwd: "src-tauri" },
+      { name: "file-size-ratchet", cmd: "node", args: ["scripts/check/file-size-ratchet.mjs"] },
       { name: "script-tests", cmd: "node", args: ["--test", "scripts/check/*.test.mjs"] },
     ],
   },
