@@ -102,4 +102,4 @@
 - [0100](0100-two-layer-tagged-fact-capture-and-ifrs-vocabulary.md) — Two-layer tagged-fact capture and the IFRS-anchored metric vocabulary — Accepted (2026-08-19, housekeeping at epic #399 closure
 - [0101](0101-agent-proposed-kpi-definitions-and-full-catalog-visibility.md) — Agent-proposed KPI definitions and full-catalog visibility — Accepted (2026-08-19, epic #399 delivered
 - [0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) — Full-capture staging contract — excluded observations and chunked drafts — Accepted (2026-08-19, epic #399 delivered
-- [0103](0103-file-size-ratchet-fitness-function.md) — File-Size Ratchet — Architectural Fitness Function For Oversized Modules — Proposed (2026-08-19, epic #402)
+- [0103](0103-file-size-ratchet-fitness-function.md) — File-Size Ratchet — Architectural Fitness Function For Oversized Modules — Accepted (2026-08-19, owner plan approval, epic #402)

@@ -1,6 +1,6 @@
 # ADR 0103: File-Size Ratchet — Architectural Fitness Function For Oversized Modules
 
-Status: Proposed (2026-08-19, epic #402)
+Status: Accepted (2026-08-19, owner plan approval, epic #402)
 
 Deciders: maintainer. Area: tooling, architecture, agent process.
 
