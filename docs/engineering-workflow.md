@@ -114,6 +114,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **No timer/background path deletes or overwrites user data** — destructive actions are user-triggered or owner-approved (product-spec § feed retention).
 - [ ] **A new data transform** (dedup / normalization / matching / merge) ships with the `proptest` **invariants** it must satisfy (the committed list, and which one is still open: [Testing](testing.md#data-transform-correctness-property-golden-scale-fuzz-fidelity-pipeline)) plus a **golden `insta` snapshot** of its output. A new **hot path** adds a **behavioral scale gate** (offloaded + algorithmically bounded over a volume dataset, not wall-clock). [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md).
 - [ ] **A new IPC command** adds a step to the **dual-execution mock-fidelity corpus** (replayed against both the TS mock runtime and the real Rust `AppState`/storage layer) so the mock cannot silently drift from backend behavior.
+- [ ] **Any `#[ts(export)]` type change — including an additive `CommandErrorCode` variant — regenerates the TS bindings in the same change** (`make types`): `check-local` deliberately excludes the ts-rs drift guard, so only CI reddens on it (harvest 2026-08-19, #399 — four MCP error codes shipped without the regen).
 
 ### §D — If feature-gated code
 - [ ] Built **and tested with the feature on** — `cargo check/test --features <feature>` — the default gate does not compile it. Compile-green is not "works".
