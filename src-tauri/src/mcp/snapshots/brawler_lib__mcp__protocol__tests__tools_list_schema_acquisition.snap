@@ -270,12 +270,21 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
               "type": "object"
             },
             "MappingStatusInput": {
-              "enum": [
-                "unmapped",
-                "mapped",
-                "no_definition"
-              ],
-              "type": "string"
+              "oneOf": [
+                {
+                  "enum": [
+                    "unmapped",
+                    "mapped",
+                    "no_definition"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "excluded",
+                  "description": "A deliberate, reasoned exclusion (ADR 0102 dec. 1) — legal only alongside a non-blank `exclusionReason`.",
+                  "type": "string"
+                }
+              ]
             },
             "MeasureWindowInput": {
               "enum": [
@@ -312,6 +321,10 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
                   ]
                 },
                 "currency": {
+                  "type": "string"
+                },
+                "exclusionReason": {
+                  "description": "Required exactly when `mappingStatus == \"excluded\"` (ADR 0102 dec. 1); a reason on any other disposition is a typed refusal.",
                   "type": "string"
                 },
                 "mappingStatus": {

@@ -38,7 +38,7 @@ const MEASURE_WINDOW_VALUES: &[&str] = &[
 ];
 const ATTRIBUTION_VALUES: &[&str] = &["total", "owners_of_parent", "nci"];
 const SCOPE_VALUES: &[&str] = &["standalone", "consolidated"];
-const MAPPING_STATUS_VALUES: &[&str] = &["unmapped", "mapped", "no_definition"];
+const MAPPING_STATUS_VALUES: &[&str] = &["unmapped", "mapped", "no_definition", "excluded"];
 /// Which run states `stage_observations` may act on (B1 sol review round 2):
 /// `extracting` is the first snapshot, `validation_failed` is a repair
 /// restage. Every other state — including `staged`/`ready_to_commit`/
@@ -70,6 +70,9 @@ pub struct NewStagedObservation {
     pub metric_key_candidate: Option<String>,
     /// `None` normalizes to `unmapped` at the write boundary.
     pub mapping_status: Option<String>,
+    /// Required exactly when `mapping_status == Some("excluded")` (ADR 0102
+    /// dec. 1); refused otherwise. `None`/blank normalizes to `NULL`.
+    pub exclusion_reason: Option<String>,
     pub citation_page: Option<i64>,
     pub citation_table: Option<String>,
     pub citation_row: Option<String>,
@@ -95,6 +98,7 @@ pub struct StagedObservation {
     pub scope: Option<String>,
     pub metric_key_candidate: Option<String>,
     pub mapping_status: String,
+    pub exclusion_reason: Option<String>,
     pub citation_page: Option<i64>,
     pub citation_table: Option<String>,
     pub citation_row: Option<String>,
@@ -108,7 +112,8 @@ pub struct StagedObservation {
 const OBSERVATION_COLUMNS: &str = "id, run_id, revision, ordinal, raw_label, raw_value, \
      raw_currency, raw_unit_scale, normalized_value, currency, unit_scale, measure_window, \
      attribution, scope, metric_key_candidate, mapping_status, citation_page, citation_table, \
-     citation_row, citation_quote, validation_state, validation_codes_json, created_at, updated_at";
+     citation_row, citation_quote, validation_state, validation_codes_json, created_at, \
+     updated_at, exclusion_reason";
 
 fn map_observation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StagedObservation> {
     Ok(StagedObservation {
@@ -136,6 +141,7 @@ fn map_observation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StagedObserv
         validation_codes_json: row.get(21)?,
         created_at: row.get(22)?,
         updated_at: row.get(23)?,
+        exclusion_reason: row.get(24)?,
     })
 }
 
@@ -289,6 +295,9 @@ fn content_matches_projection(
     projection: &crate::fundamentals::kpi_manifest::ObservationContentProjection,
 ) -> bool {
     row.ordinal == projection.ordinal
+        && row.raw_label == projection.raw_label
+        && (row.mapping_status == "excluded") == projection.excluded
+        && row.exclusion_reason == projection.exclusion_reason
         && row.metric_key_candidate == projection.metric_key_candidate
         && normalized_values_match(&row.normalized_value, &projection.normalized_value)
         && row.currency == projection.currency
@@ -460,6 +469,29 @@ impl KpiIngestStagingStore {
                     value: mapping_status,
                 });
             }
+            // Excluded is a sealed disposition (ADR 0102 dec. 1): it needs a
+            // non-blank reason to seal, and a reason on any other
+            // disposition is nonsense the caller must have mis-threaded —
+            // both are typed refusals, not silently corrected.
+            let exclusion_reason = empty_string_to_none(observation.exclusion_reason.clone());
+            if mapping_status == "excluded" {
+                if exclusion_reason
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or("")
+                    .is_empty()
+                {
+                    return Err(StorageError::InvalidKpiIngestRunValue {
+                        key: "exclusion_reason",
+                        value: "required when mapping_status is excluded".to_owned(),
+                    });
+                }
+            } else if exclusion_reason.is_some() {
+                return Err(StorageError::InvalidKpiIngestRunValue {
+                    key: "exclusion_reason",
+                    value: "must be absent unless mapping_status is excluded".to_owned(),
+                });
+            }
             if let Some(page) = observation.citation_page {
                 if page < 1 {
                     return Err(StorageError::InvalidKpiIngestRunValue {
@@ -468,7 +500,7 @@ impl KpiIngestStagingStore {
                     });
                 }
             }
-            normalized.push((observation, currency, mapping_status));
+            normalized.push((observation, currency, mapping_status, exclusion_reason));
         }
 
         // The final flip re-guards status AND the live lease (luna review B1):
@@ -512,7 +544,8 @@ impl KpiIngestStagingStore {
             super::kpi_ingest_runs::merge_cost_json_on_connection(&tx, run_id, execution)?;
         }
 
-        for (ordinal, (observation, currency, mapping_status)) in normalized.into_iter().enumerate()
+        for (ordinal, (observation, currency, mapping_status, exclusion_reason)) in
+            normalized.into_iter().enumerate()
         {
             let ordinal = ordinal as i64;
             let id = generate_observation_id(run_id, new_revision, ordinal);
@@ -522,7 +555,8 @@ impl KpiIngestStagingStore {
                         ({OBSERVATION_COLUMNS})
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
                         ?17, ?18, ?19, ?20, 'none', NULL, \
-                        strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+                        strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), \
+                        ?21)"
                 ),
                 params![
                     id,
@@ -545,6 +579,7 @@ impl KpiIngestStagingStore {
                     observation.citation_table,
                     observation.citation_row,
                     observation.citation_quote,
+                    exclusion_reason,
                 ],
             )?;
         }
@@ -1307,6 +1342,98 @@ mod tests {
     }
 
     #[test]
+    fn excluded_requires_reason() {
+        // ADR 0102 dec. 1: mappingStatus="excluded" is legal ONLY with a
+        // non-blank exclusionReason; a reason on any other disposition is a
+        // typed refusal too (never silently dropped).
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+
+        let mut missing_reason = one_observation();
+        missing_reason.mapping_status = Some("excluded".to_owned());
+        let error = store
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![missing_reason],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .expect_err("excluded without a reason must refuse");
+        assert!(matches!(
+            error,
+            StorageError::InvalidKpiIngestRunValue {
+                key: "exclusion_reason",
+                ..
+            }
+        ));
+
+        let mut blank_reason = one_observation();
+        blank_reason.mapping_status = Some("excluded".to_owned());
+        blank_reason.exclusion_reason = Some("   ".to_owned());
+        let error = store
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![blank_reason],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .expect_err("blank exclusion reason must refuse");
+        assert!(matches!(
+            error,
+            StorageError::InvalidKpiIngestRunValue {
+                key: "exclusion_reason",
+                ..
+            }
+        ));
+
+        let mut reason_on_mapped = one_observation();
+        reason_on_mapped.mapping_status = Some("mapped".to_owned());
+        reason_on_mapped.exclusion_reason = Some("not applicable".to_owned());
+        let error = store
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![reason_on_mapped],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .expect_err("a reason on a non-excluded observation must refuse");
+        assert!(matches!(
+            error,
+            StorageError::InvalidKpiIngestRunValue {
+                key: "exclusion_reason",
+                ..
+            }
+        ));
+
+        assert!(store
+            .list_staged_observations(run_id, None)
+            .expect("list")
+            .is_empty());
+
+        // The legal shape: excluded with a real reason stages cleanly.
+        let mut excluded = one_observation();
+        excluded.mapping_status = Some("excluded".to_owned());
+        excluded.exclusion_reason = Some("footnote disclosure, not a KPI".to_owned());
+        let (_, rows) = store
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![excluded],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .expect("excluded with a reason stages");
+        assert_eq!(rows[0].mapping_status, "excluded");
+        assert_eq!(
+            rows[0].exclusion_reason.as_deref(),
+            Some("footnote disclosure, not a KPI")
+        );
+    }
+
+    #[test]
     fn stage_observations_numbers_ordinals_zero_based_and_contiguous() {
         let (state, run_id) = setup();
         let store = state.kpi_ingest_staging();
@@ -1441,9 +1568,11 @@ mod tests {
             .map(|row| ManifestObservationInput {
                 observation_id: row.id.clone(),
                 ordinal: row.ordinal,
+                raw_label: row.raw_label.clone(),
                 raw_value: row.raw_value.clone(),
                 metric_key_candidate: row.metric_key_candidate.clone(),
                 mapping_status: "mapped".to_owned(),
+                exclusion_reason: None,
                 normalized_value: row.normalized_value.clone(),
                 currency: row.currency.clone(),
                 unit_scale: row.unit_scale.clone(),
@@ -1508,9 +1637,65 @@ mod tests {
             .map(|row| ManifestObservationInput {
                 observation_id: row.id.clone(),
                 ordinal: row.ordinal,
+                raw_label: row.raw_label.clone(),
                 raw_value: row.raw_value.clone(),
                 metric_key_candidate: row.metric_key_candidate.clone(),
                 mapping_status: "unmapped".to_owned(),
+                exclusion_reason: None,
+                normalized_value: row.normalized_value.clone(),
+                currency: row.currency.clone(),
+                unit_scale: row.unit_scale.clone(),
+                measure_window: row.measure_window.clone(),
+                attribution: row.attribution.clone(),
+                scope: row.scope.clone(),
+                citation_page: row.citation_page,
+                citation_table: row.citation_table.clone(),
+                citation_row: row.citation_row.clone(),
+                citation_quote: row.citation_quote.clone(),
+                definition: None,
+            })
+            .collect();
+        SealedManifest::seal(build_manifest(&run, &observations))
+            .expect("consistent manifest seals")
+    }
+
+    /// [`sealed_manifest_for`], but every row is sealed `excluded` with
+    /// `reason` — used by the ADR 0102 tamper tests, which build a manifest
+    /// claiming a disposition/reason the LIVE staged row does not actually
+    /// carry.
+    fn excluded_sealed_manifest_for(
+        run_id: &str,
+        revision: i64,
+        rows: &[StagedObservation],
+        reason: &str,
+    ) -> SealedManifest {
+        use crate::fundamentals::kpi_manifest::{
+            build_manifest, ManifestObservationInput, ManifestRunInput, MissingReasons,
+        };
+        let run = ManifestRunInput {
+            run_id: run_id.to_owned(),
+            revision,
+            company_id: "c1".to_owned(),
+            report_document_id: "doc1".to_owned(),
+            source_content_hash: None,
+            scope: "consolidated".to_owned(),
+            data_quality: "final".to_owned(),
+            period_id: None,
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            missing_reasons: MissingReasons::None,
+            expected: None,
+        };
+        let observations: Vec<ManifestObservationInput> = rows
+            .iter()
+            .map(|row| ManifestObservationInput {
+                observation_id: row.id.clone(),
+                ordinal: row.ordinal,
+                raw_label: row.raw_label.clone(),
+                raw_value: row.raw_value.clone(),
+                metric_key_candidate: row.metric_key_candidate.clone(),
+                mapping_status: "excluded".to_owned(),
+                exclusion_reason: Some(reason.to_owned()),
                 normalized_value: row.normalized_value.clone(),
                 currency: row.currency.clone(),
                 unit_scale: row.unit_scale.clone(),
@@ -1896,6 +2081,87 @@ mod tests {
             after[0].normalized_value.as_deref(),
             Some("1234.5"),
             "the LIVE row's value must be untouched"
+        );
+        assert!(state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts")
+            .is_empty());
+    }
+
+    #[test]
+    fn status_flipped_to_excluded_after_validation_is_refused() {
+        // ADR 0102 dec. 1/3: a manifest claiming a row is `excluded` when the
+        // LIVE staged row was never actually staged that way must be refused
+        // by the content-projection compare — zero writes, exactly like any
+        // other content tamper.
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let (revision, rows) = store
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![clean_observation()],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .expect("stage");
+        // The live row's mapping_status stays whatever `clean_observation()`
+        // defaults to (never "excluded") -- the manifest claims otherwise.
+        let sealed = excluded_sealed_manifest_for(run_id, revision, &rows, "not applicable");
+
+        let error = store
+            .apply_validation_outcome(run_id, revision, sealed)
+            .expect_err("a manifest claiming excluded over a non-excluded live row must refuse");
+        assert!(matches!(error, StorageError::SealedManifestRejected { .. }));
+
+        let after = store
+            .list_staged_observations(run_id, Some(revision))
+            .expect("list");
+        assert_eq!(after[0].validation_state, "none", "tamper writes nothing");
+        assert_ne!(after[0].mapping_status, "excluded");
+        assert!(state
+            .kpi_ingest_runs()
+            .list_validation_attempts(run_id)
+            .expect("attempts")
+            .is_empty());
+    }
+
+    #[test]
+    fn reason_changed_after_validation_is_refused() {
+        // ADR 0102 dec. 1/3: the live row IS excluded, but with a DIFFERENT
+        // reason than the manifest claims -- content-projection still
+        // refuses (the reason is part of the sealed disposition, dec. 1).
+        let (state, run_id) = setup();
+        let store = state.kpi_ingest_staging();
+        let mut excluded_obs = clean_observation();
+        excluded_obs.mapping_status = Some("excluded".to_owned());
+        excluded_obs.exclusion_reason = Some("original reason".to_owned());
+        let (revision, rows) = store
+            .stage_observations(
+                run_id,
+                TEST_HOLDER,
+                vec![excluded_obs],
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .expect("stage");
+        assert_eq!(rows[0].exclusion_reason.as_deref(), Some("original reason"));
+        let sealed = excluded_sealed_manifest_for(run_id, revision, &rows, "a different reason");
+
+        let error = store
+            .apply_validation_outcome(run_id, revision, sealed)
+            .expect_err("a manifest with a changed exclusion reason must refuse");
+        assert!(matches!(error, StorageError::SealedManifestRejected { .. }));
+
+        let after = store
+            .list_staged_observations(run_id, Some(revision))
+            .expect("list");
+        assert_eq!(after[0].validation_state, "none", "tamper writes nothing");
+        assert_eq!(
+            after[0].exclusion_reason.as_deref(),
+            Some("original reason"),
+            "the LIVE row's reason must be untouched"
         );
         assert!(state
             .kpi_ingest_runs()

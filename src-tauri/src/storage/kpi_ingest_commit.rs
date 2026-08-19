@@ -37,10 +37,12 @@ use super::kpi_ingest_runs::{self, KpiIngestRunsStore};
 use super::kpi_ingest_staging::{self, NewCommitReceipt};
 use super::{CommitReceipt, StorageError, StorageResult, StructuredFactCommit};
 
-/// One entry in `kpi_ingest_commit_receipts.outcomes_json` (migration 0138
-/// schema v1): `{observationId, revision, ordinal, metricKey, factId, outcome,
-/// detail?}`. `factId` is `null` only for `divergent` (no write); `detail` is
-/// present only for `divergent` (`{existingFactId}`).
+/// One entry in `kpi_ingest_commit_receipts.outcomes_json` (schema v2, ADR
+/// 0102 dec. 3 — v1's shape is a strict subset): `{observationId, revision,
+/// ordinal, metricKey, factId, outcome, detail?}`. `factId` is `null` for
+/// `divergent` (no write) and `excluded` (no write, by design) — every other
+/// outcome always carries one. `detail` is present for `divergent`
+/// (`{existingFactId}`) and `excluded` (`{reason, label}`), absent otherwise.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FactOutcomeEntry {
@@ -237,10 +239,16 @@ impl KpiIngestCommitStore {
         // `no_definition` stays in the outcomes vocabulary purely as 0138
         // schema documentation; no branch below ever produces it.
         for obs in &manifest.observations {
-            if matches!(
-                obs.validation_state,
-                ValidationState::Passed | ValidationState::Unreviewed
-            ) && obs.definition_id.is_none()
+            // Excluded is a sealed disposition that never carries a
+            // definition (ADR 0102 dec. 3) — the guard below exists to catch
+            // a definitionless observation commit would otherwise try to
+            // record as a fact; an excluded one is never recorded at all.
+            if !obs.excluded
+                && matches!(
+                    obs.validation_state,
+                    ValidationState::Passed | ValidationState::Unreviewed
+                )
+                && obs.definition_id.is_none()
             {
                 return Err(StorageError::CorruptStoredManifest {
                     run: run_id.to_owned(),
@@ -423,6 +431,25 @@ impl KpiIngestCommitStore {
                 ),
                 "a ready manifest never carries a flagged observation (SealedManifest::seal already verified this)"
             );
+                // ADR 0102 dec. 3: commit writes no fact for an observation
+                // sealed excluded in the VALIDATED manifest — never a live
+                // row (commit only ever sees the frozen manifest, so a
+                // post-validation tamper to the staged row cannot reach this
+                // branch at all). No definitionId, no normalizedValue check —
+                // an excluded observation carries neither, by design.
+                if obs.excluded {
+                    let reason = obs.exclusion_reason.clone().unwrap_or_default();
+                    outcome_entries.push(FactOutcomeEntry {
+                        observation_id: obs.observation_id.clone(),
+                        revision,
+                        ordinal: obs.ordinal,
+                        metric_key: obs.metric_key.clone(),
+                        fact_id: None,
+                        outcome: "excluded",
+                        detail: Some(json!({ "reason": reason, "label": obs.raw_label })),
+                    });
+                    continue;
+                }
                 let definition_id = obs
                     .definition_id
                     .as_deref()
@@ -523,7 +550,10 @@ impl KpiIngestCommitStore {
                     terminal_status: terminal_status.to_owned(),
                     period_id: Some(period_id),
                     accepted_count,
-                    outcomes_schema_version: 1,
+                    // ADR 0102 dec. 3: every new commit writes schema v2 (the
+                    // `excluded` outcome only exists under v2); OLD stored
+                    // receipts stay v1 forever — the reader accepts both.
+                    outcomes_schema_version: 2,
                     outcomes_json,
                 },
             )?;
@@ -549,6 +579,7 @@ impl KpiIngestCommitStore {
                     "reobserved": count_of("reobserved"),
                     "upgraded": count_of("upgraded"),
                     "divergent": count_of("divergent"),
+                    "excluded": count_of("excluded"),
                 }),
             )?;
 

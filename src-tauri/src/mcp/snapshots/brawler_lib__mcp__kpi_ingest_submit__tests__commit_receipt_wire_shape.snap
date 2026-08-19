@@ -5,6 +5,8 @@ expression: redacted
 {
   "acceptedCount": 1,
   "committedAt": "[timestamp]",
+  "excluded": [],
+  "excludedCount": 0,
   "manifestHash": "[hash]",
   "manifestRevision": 1,
   "outcomes": [
@@ -17,7 +19,7 @@ expression: redacted
       "revision": 1
     }
   ],
-  "outcomesSchemaVersion": 1,
+  "outcomesSchemaVersion": 2,
   "periodId": "finper_c1_2025_fy",
   "runId": "[id]",
   "terminalStatus": "complete"

@@ -220,9 +220,11 @@ pub fn validate_kpi_ingest_run(
             ManifestObservationInput {
                 observation_id: observation.id.clone(),
                 ordinal: observation.ordinal,
+                raw_label: observation.raw_label.clone(),
                 raw_value: observation.raw_value.clone(),
                 metric_key_candidate: observation.metric_key_candidate.clone(),
                 mapping_status: observation.mapping_status.clone(),
+                exclusion_reason: observation.exclusion_reason.clone(),
                 normalized_value: observation.normalized_value.clone(),
                 currency: observation.currency.clone(),
                 unit_scale: observation.unit_scale.clone(),

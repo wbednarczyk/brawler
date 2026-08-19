@@ -153,6 +153,9 @@ pub enum MappingStatusInput {
     Unmapped,
     Mapped,
     NoDefinition,
+    /// A deliberate, reasoned exclusion (ADR 0102 dec. 1) — legal only
+    /// alongside a non-blank `exclusionReason`.
+    Excluded,
 }
 
 impl MappingStatusInput {
@@ -161,6 +164,7 @@ impl MappingStatusInput {
             MappingStatusInput::Unmapped => "unmapped",
             MappingStatusInput::Mapped => "mapped",
             MappingStatusInput::NoDefinition => "no_definition",
+            MappingStatusInput::Excluded => "excluded",
         }
     }
 }
@@ -207,6 +211,10 @@ pub struct ObservationInput {
     pub metric_key_candidate: Option<String>,
     #[serde(default)]
     pub mapping_status: Option<MappingStatusInput>,
+    /// Required exactly when `mappingStatus == "excluded"` (ADR 0102 dec.
+    /// 1); a reason on any other disposition is a typed refusal.
+    #[serde(default)]
+    pub exclusion_reason: Option<String>,
     #[serde(default)]
     pub citation: Option<CitationInput>,
 }
@@ -297,10 +305,14 @@ pub struct ValidateResultDto {
 }
 
 /// One commit outcome, deserialized TYPED from the stored receipt — a closed
-/// vocabulary plus the frozen conditional shape: `divergent` ⟺ (`detail`
-/// present ∧ `factId` null); every other outcome ⟺ (`detail` absent ∧
-/// `factId` non-null). Violations are `internal` — the stored receipt is the
-/// durable contract and a drifted shape must not silently reach the wire.
+/// vocabulary plus the frozen conditional shape. **v1** (`outcomesSchemaVersion
+/// 1`): `divergent` ⟺ (`detail` present ∧ `factId` null); every other outcome
+/// ⟺ (`detail` absent ∧ `factId` non-null). **v2** (ADR 0102 dec. 3) adds a
+/// THIRD legal case: `excluded` ⟺ (`detail` present, an
+/// [`ExcludedObservationDetailDto`] ∧ `factId` null) — v1's own invariant is
+/// never loosened, only extended. Violations are `internal` — the stored
+/// receipt is the durable contract and a drifted shape must not silently
+/// reach the wire.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct CommitOutcomeDto {
@@ -312,7 +324,7 @@ pub struct CommitOutcomeDto {
     pub fact_id: Option<String>,
     pub outcome: CommitOutcomeKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detail: Option<DivergentDetailDto>,
+    pub detail: Option<CommitOutcomeDetailDto>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -322,12 +334,33 @@ pub enum CommitOutcomeKind {
     Reobserved,
     Upgraded,
     Divergent,
+    /// v2 only (ADR 0102 dec. 3) — never a written fact.
+    Excluded,
+}
+
+/// Structurally disjoint field sets (mirrors [`crate::fundamentals::kpi_manifest::DiagnosticDetail`]'s
+/// own untagged-enum idiom) — deserialization is unambiguous.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum CommitOutcomeDetailDto {
+    Divergent(DivergentDetailDto),
+    Excluded(ExcludedObservationDetailDto),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DivergentDetailDto {
     pub existing_fact_id: String,
+}
+
+/// The excluded ledger entry (ADR 0102 dec. 3/4): one per observation sealed
+/// `excluded` — carried both on its own [`CommitOutcomeDto`] and rolled up
+/// into [`CommitReceiptDto::excluded`].
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ExcludedObservationDetailDto {
+    pub label: String,
+    pub reason: String,
 }
 
 /// `propose_kpi_definition` success shape (ADR 0101 dec. 3): `created: false`
@@ -351,6 +384,12 @@ pub struct CommitReceiptDto {
     pub accepted_count: i64,
     pub outcomes_schema_version: i64,
     pub outcomes: Vec<CommitOutcomeDto>,
+    /// Count of `excluded` outcomes — ALWAYS ledgered regardless of terminal
+    /// status (ADR 0102 dec. 4); `0` under `outcomesSchemaVersion` 1.
+    pub excluded_count: usize,
+    /// The `{label, reason}` ledger for every `excluded` outcome (ADR 0102
+    /// dec. 3/4) — headless-only visibility (dec. 5).
+    pub excluded: Vec<ExcludedObservationDetailDto>,
     pub manifest_hash: String,
     pub manifest_revision: i64,
     pub committed_at: String,
@@ -435,6 +474,11 @@ fn validate_observation(observation: &ObservationInput) -> Result<(), CommandErr
         observation.raw_unit_scale.as_deref(),
         RAW_UNIT_SCALE_MAX,
     )?;
+    bounded_opt(
+        "exclusionReason",
+        observation.exclusion_reason.as_deref(),
+        REASON_MAX,
+    )?;
     if let Some(currency) = observation.currency.as_deref() {
         // The frozen INPUT contract is stricter than storage (which upcases):
         // exactly three UPPERCASE ASCII letters at the tool boundary.
@@ -505,6 +549,7 @@ fn to_staged(observation: ObservationInput) -> NewStagedObservation {
         mapping_status: observation
             .mapping_status
             .map(|value| value.as_str().to_owned()),
+        exclusion_reason: observation.exclusion_reason,
         citation_page: observation
             .citation
             .as_ref()
@@ -715,15 +760,23 @@ fn validate_kpi_ingest(
 // commit_kpi_ingest
 // ============================================================================
 
+/// The stored-receipt reader (ADR 0102 dec. 3): accepts BOTH
+/// `outcomesSchemaVersion` 1 and 2 — v1's shape invariant (every
+/// non-divergent outcome carries a `factId`, divergent never does) is never
+/// loosened, only extended with a third legal case that v2 alone admits:
+/// `excluded`, no `factId`, carrying its `{label, reason}` detail. Any other
+/// version is `internal` — an old build reading a future schema, or a
+/// corrupt column.
 fn receipt_dto(receipt: CommitReceipt) -> Result<CommitReceiptDto, CommandError> {
-    if receipt.outcomes_schema_version != 1 {
+    if receipt.outcomes_schema_version != 1 && receipt.outcomes_schema_version != 2 {
         return Err(internal(format!(
             "stored receipt outcomesSchemaVersion {} is unsupported by this build",
             receipt.outcomes_schema_version
         )));
     }
     // The durable writer serializes `factId` explicitly (`null` for
-    // divergent) — a MISSING key is shape drift, not a legal null (luna P1).
+    // divergent/excluded) — a MISSING key is shape drift, not a legal null
+    // (luna P1).
     let raw_outcomes: Vec<Value> = serde_json::from_str(&receipt.outcomes_json)
         .map_err(|error| internal(format!("stored receipt outcomes are malformed: {error}")))?;
     for raw in &raw_outcomes {
@@ -739,19 +792,38 @@ fn receipt_dto(receipt: CommitReceipt) -> Result<CommitReceiptDto, CommandError>
     let outcomes: Vec<CommitOutcomeDto> = serde_json::from_value(Value::Array(raw_outcomes))
         .map_err(|error| internal(format!("stored receipt outcomes are malformed: {error}")))?;
     for outcome in &outcomes {
-        let divergent = outcome.outcome == CommitOutcomeKind::Divergent;
-        let legal = if divergent {
-            outcome.detail.is_some() && outcome.fact_id.is_none()
-        } else {
-            outcome.detail.is_none() && outcome.fact_id.is_some()
+        let legal = match outcome.outcome {
+            CommitOutcomeKind::Divergent => {
+                matches!(outcome.detail, Some(CommitOutcomeDetailDto::Divergent(_)))
+                    && outcome.fact_id.is_none()
+            }
+            // v2-only: `excluded` never legal under a v1 stored receipt —
+            // that outcome member did not exist under v1 (v1 invariant is
+            // extended, never loosened).
+            CommitOutcomeKind::Excluded => {
+                receipt.outcomes_schema_version == 2
+                    && matches!(outcome.detail, Some(CommitOutcomeDetailDto::Excluded(_)))
+                    && outcome.fact_id.is_none()
+            }
+            CommitOutcomeKind::Created
+            | CommitOutcomeKind::Reobserved
+            | CommitOutcomeKind::Upgraded => outcome.detail.is_none() && outcome.fact_id.is_some(),
         };
         if !legal {
             return Err(internal(format!(
-                "stored receipt outcome for {} violates the divergent/factId/detail invariant",
+                "stored receipt outcome for {} violates the outcome/factId/detail invariant",
                 outcome.observation_id
             )));
         }
     }
+    let excluded: Vec<ExcludedObservationDetailDto> = outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.detail {
+            Some(CommitOutcomeDetailDto::Excluded(detail)) => Some(detail.clone()),
+            _ => None,
+        })
+        .collect();
+    let excluded_count = excluded.len();
     Ok(CommitReceiptDto {
         run_id: receipt.run_id,
         terminal_status: receipt.terminal_status,
@@ -759,6 +831,8 @@ fn receipt_dto(receipt: CommitReceipt) -> Result<CommitReceiptDto, CommandError>
         accepted_count: receipt.accepted_count,
         outcomes_schema_version: receipt.outcomes_schema_version,
         outcomes,
+        excluded_count,
+        excluded,
         manifest_hash: receipt.manifest_hash,
         manifest_revision: receipt.manifest_revision,
         committed_at: receipt.committed_at,
@@ -1685,13 +1759,93 @@ mod tests {
             let error = receipt_dto(receipt_with(json_text, 1)).expect_err(name);
             assert_eq!(error.code, CommandErrorCode::Internal, "{name}");
         }
-        let error = receipt_dto(receipt_with(&outcome_row("created", true, false), 2))
-            .expect_err("schema version 2");
+        // v2 is a legal schema version now (ADR 0102 dec. 3) — a plain
+        // `created` row still round-trips under it unchanged.
+        assert!(receipt_dto(receipt_with(&outcome_row("created", true, false), 2)).is_ok());
+        let error = receipt_dto(receipt_with(&outcome_row("created", true, false), 3))
+            .expect_err("schema version 3 is unsupported");
         assert_eq!(error.code, CommandErrorCode::Internal);
 
         // A MISSING factId key (vs the writer's explicit null) is shape drift.
         let missing_key = r#"[{"observationId":"o","revision":1,"ordinal":0,"metricKey":"m","outcome":"divergent","detail":{"existingFactId":"f"}}]"#;
         let error = receipt_dto(receipt_with(missing_key, 1)).expect_err("missing factId key");
         assert_eq!(error.code, CommandErrorCode::Internal);
+    }
+
+    /// ADR 0102 dec. 3: `excluded` is legal ONLY under v2, no `factId`,
+    /// carrying `{label, reason}` — and rolls up into
+    /// [`CommitReceiptDto::excludedCount`]/`excluded`.
+    #[test]
+    fn receipt_v2_outcome_excluded_and_ledger() {
+        fn receipt_with(outcomes_json: &str, schema_version: i64) -> CommitReceipt {
+            CommitReceipt {
+                id: "receipt1".to_owned(),
+                run_id: "kpiing_00000000000000000000000000000001".to_owned(),
+                manifest_hash: "0".repeat(64),
+                manifest_revision: 1,
+                terminal_status: "complete".to_owned(),
+                period_id: None,
+                accepted_count: 0,
+                outcomes_schema_version: schema_version,
+                outcomes_json: outcomes_json.to_owned(),
+                committed_at: "2026-01-01T00:00:00Z".to_owned(),
+            }
+        }
+        let excluded_row = json!([{
+            "observationId": "kpiobs_1",
+            "revision": 1,
+            "ordinal": 0,
+            "metricKey": "",
+            "factId": Value::Null,
+            "outcome": "excluded",
+            "detail": { "label": "Liczba pracowników", "reason": "not a KPI" },
+        }])
+        .to_string();
+
+        let dto =
+            receipt_dto(receipt_with(&excluded_row, 2)).expect("v2 excluded outcome is legal");
+        assert_eq!(dto.excluded_count, 1);
+        assert_eq!(dto.excluded.len(), 1);
+        assert_eq!(dto.excluded[0].label, "Liczba pracowników");
+        assert_eq!(dto.excluded[0].reason, "not a KPI");
+        assert!(dto.outcomes[0].fact_id.is_none());
+
+        // The same shape under v1 is illegal — that outcome member did not
+        // exist under v1 (the invariant is extended, never loosened).
+        let error = receipt_dto(receipt_with(&excluded_row, 1)).expect_err("excluded is v2-only");
+        assert_eq!(error.code, CommandErrorCode::Internal);
+    }
+
+    /// ADR 0102 dec. 3: the reader accepts both v1 and v2 stored receipts —
+    /// old rows never get rewritten, new commits always write v2.
+    #[test]
+    fn receipt_reader_accepts_v1_and_v2() {
+        let created_row = json!([{
+            "observationId": "kpiobs_1",
+            "revision": 1,
+            "ordinal": 0,
+            "metricKey": "revenue",
+            "factId": "fact_1",
+            "outcome": "created",
+        }])
+        .to_string();
+        for version in [1, 2] {
+            let receipt = CommitReceipt {
+                id: "receipt1".to_owned(),
+                run_id: "kpiing_00000000000000000000000000000001".to_owned(),
+                manifest_hash: "0".repeat(64),
+                manifest_revision: 1,
+                terminal_status: "complete".to_owned(),
+                period_id: None,
+                accepted_count: 1,
+                outcomes_schema_version: version,
+                outcomes_json: created_row.clone(),
+                committed_at: "2026-01-01T00:00:00Z".to_owned(),
+            };
+            let dto = receipt_dto(receipt).unwrap_or_else(|e| panic!("v{version}: {e:?}"));
+            assert_eq!(dto.outcomes_schema_version, version);
+            assert_eq!(dto.excluded_count, 0);
+            assert!(dto.excluded.is_empty());
+        }
     }
 }
