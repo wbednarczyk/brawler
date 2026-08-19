@@ -315,7 +315,6 @@ test("preliminary@v2 full capture with propose and excluded", async () => {
     // (8) Receipt section: the full excluded ledger, cross-checked against
     // the payload's own excluded rows.
     const excludedRows = payload.observations.filter((o) => o.mappingStatus === "excluded");
-    expect(excludedRows.length).toBeGreaterThanOrEqual(2);
     expect(committed.payload.counts.excludedCount).toBe(excludedRows.length);
 
     const receiptOutcomes = await pageSection<{

@@ -145,9 +145,16 @@ pub(super) fn resolve_active_draft_conflict_on_connection(
             draft_id,
         });
     }
+    supersede(tx, &draft_id)?;
+    Ok(())
+}
+
+/// Lazy takeover detection writes this from two branches — one statement,
+/// one place.
+fn supersede(tx: &Connection, draft_id: &str) -> StorageResult<()> {
     tx.execute(
         "UPDATE kpi_ingest_drafts SET status = 'superseded' WHERE draft_id = ?1",
-        [&draft_id],
+        [draft_id],
     )?;
     Ok(())
 }
@@ -187,10 +194,7 @@ fn load_live_draft_or_supersede(
         });
     }
     if lease_epoch != current_epoch {
-        tx.execute(
-            "UPDATE kpi_ingest_drafts SET status = 'superseded' WHERE draft_id = ?1",
-            [draft_id],
-        )?;
+        supersede(tx, draft_id)?;
         return Err(StorageError::KpiIngestDraftSuperseded {
             draft_id: draft_id.to_owned(),
         });
