@@ -284,23 +284,28 @@ fn persist_outcome(
         return Ok(());
     };
 
-    for row in &outcome.rows {
-        state
-            .ownership()
-            .append_snapshot(NewOwnershipStake {
-                company_id: document.company_id.clone(),
-                holder_name_raw: row.holder_raw.clone(),
-                // Classification is T5 (dictionary/AI-with-confirm); leave NULL.
-                holder_type: None,
-                capital_pct: row.capital_pct.clone(),
-                votes_pct: row.votes_pct.clone(),
-                as_of: as_of.clone(),
-                source: SOURCE_REPORT_DOCUMENT.to_owned(),
-                report_document_id: Some(document.id.clone()),
-                feed_item_id: None,
-            })
-            .map_err(|error| error.to_string())?;
-    }
+    // Batched (#404 H2): one checkout + one IMMEDIATE tx for the whole document
+    // instead of one autocommit fsync per row (see `OwnershipStore::append_snapshots`).
+    let stakes: Vec<NewOwnershipStake> = outcome
+        .rows
+        .iter()
+        .map(|row| NewOwnershipStake {
+            company_id: document.company_id.clone(),
+            holder_name_raw: row.holder_raw.clone(),
+            // Classification is T5 (dictionary/AI-with-confirm); leave NULL.
+            holder_type: None,
+            capital_pct: row.capital_pct.clone(),
+            votes_pct: row.votes_pct.clone(),
+            as_of: as_of.clone(),
+            source: SOURCE_REPORT_DOCUMENT.to_owned(),
+            report_document_id: Some(document.id.clone()),
+            feed_item_id: None,
+        })
+        .collect();
+    state
+        .ownership()
+        .append_snapshots(&stakes)
+        .map_err(|error| error.to_string())?;
 
     // Deterministic classification pass (T5): stamp holder types from the
     // dictionary/heuristics on the rows just written — only NULL types are
@@ -438,6 +443,7 @@ fn dmy_date_regex() -> &'static Regex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fundamentals::ownership::OwnershipRow;
     use crate::jobs::handlers::build_worker;
     use crate::storage::{
         open_in_memory_database, AppState, CaptureReportDocumentInput, NewCompany,
@@ -552,6 +558,55 @@ mod tests {
         })
         .expect("payload");
         run_ownership_extraction_job(state, &payload).expect("run job");
+    }
+
+    /// #404 H2: a per-row `append_snapshot` loop (plus the per-holder classify
+    /// UPDATE loop) issues one pool checkout per row, each an autocommit fsync
+    /// under `synchronous=FULL` — a single large filing amplifies into thousands
+    /// of fsyncs. Drives a synthetic 500-holder outcome through the real persist
+    /// path and asserts the pool-checkout delta stays small regardless of row
+    /// count (batched: one checkout for the snapshots, one for classify).
+    #[test]
+    fn ownership_extraction_persists_a_document_under_a_bounded_checkout_count() {
+        let s = state_with_dir();
+        let c = company(&s);
+        let doc_id = fetched_periodic_report(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "https://example.com/ssf-2025-bulk.pdf",
+            "own-bulk.pdf",
+            &sample_shareholders_xhtml(),
+            "application/pdf",
+        );
+        let document = s.get_report_document(&doc_id).expect("document");
+        let sections = vec![Section {
+            ordinal: 0,
+            heading: "Akcjonariusze".to_owned(),
+            body: "na dzień 2026-01-01".to_owned(),
+        }];
+        let rows: Vec<OwnershipRow> = (0..500)
+            .map(|i| OwnershipRow {
+                holder_raw: format!("Holder {i}"),
+                capital_pct: Some("0.10".to_owned()),
+                votes_pct: Some("0.10".to_owned()),
+            })
+            .collect();
+        let outcome = OwnershipParseOutcome {
+            state: OwnershipParseState::Found,
+            matched_heading: Some("Akcjonariusze".to_owned()),
+            rows,
+            aggregates: Vec::new(),
+        };
+
+        let before = s.checkout_count();
+        persist_outcome(&s, &document, &sections, &outcome).expect("persist");
+        let delta = s.checkout_count() - before;
+
+        assert!(
+            delta <= 8,
+            "persisting 500 ownership rows for one document took {delta} pool checkouts (budget: 8)"
+        );
     }
 
     /// Epic #229 T2: the shareholders table arrives as markup under a `.pdf` name,

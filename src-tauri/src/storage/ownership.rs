@@ -762,21 +762,30 @@ pub(super) fn companies_with_unclassified_holders(
 /// markers. Only NULL rows are touched (manual/confirmed labels are preserved) and
 /// no snapshot is created — a classification label, never a financial fact.
 /// Returns the number of stake rows stamped.
+/// Stamp every still-unclassified holder of `company_id` in ONE `IMMEDIATE`
+/// transaction (#404 H2): a per-holder autocommit UPDATE is its own fsync under
+/// `synchronous=FULL`, so a company with hundreds of holders amplified into
+/// hundreds of fsyncs for one classification pass. One tx per company means a
+/// constraint failure rolls back the whole pass (deliberate — atomic persist,
+/// consistent with the argument at `companies.rs:200`).
 pub(super) fn classify_unclassified_for_company(
     connection: &Connection,
     company_id: &str,
 ) -> StorageResult<usize> {
-    let dictionary = holder_dictionary(connection)?;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
+    let dictionary = holder_dictionary(&transaction)?;
     let mut stamped = 0usize;
-    for holder in unclassified_holders(connection, company_id)? {
+    for holder in unclassified_holders(&transaction, company_id)? {
         if let Some(holder_type) = classify_holder(&dictionary, &holder) {
-            stamped += connection.execute(
+            stamped += transaction.execute(
                 "UPDATE ownership_stakes SET holder_type = ?3
                  WHERE company_id = ?1 AND holder_name_normalized = ?2 AND holder_type IS NULL",
                 params![company_id, holder, holder_type],
             )?;
         }
     }
+    transaction.commit()?;
     Ok(stamped)
 }
 
@@ -1068,6 +1077,30 @@ impl OwnershipStore {
     pub fn append_snapshot(&self, stake: NewOwnershipStake) -> StorageResult<OwnershipStakeRow> {
         let connection = self.db.checkout()?;
         append_snapshot(&connection, &stake)
+    }
+
+    /// Append a whole document's stake snapshots in ONE `IMMEDIATE` transaction
+    /// (#404 H2): a per-row `append_snapshot` loop is one pool checkout — and one
+    /// fsync under `synchronous=FULL` — per row, so a document with hundreds of
+    /// disclosed holders amplified into hundreds of fsyncs. One tx per document
+    /// means a constraint failure rolls back the whole document's rows
+    /// (deliberate — atomic persist, consistent with the argument at
+    /// `companies.rs:200`).
+    pub fn append_snapshots(
+        &self,
+        stakes: &[NewOwnershipStake],
+    ) -> StorageResult<Vec<OwnershipStakeRow>> {
+        if stakes.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut rows = Vec::with_capacity(stakes.len());
+        for stake in stakes {
+            rows.push(append_snapshot(&tx, stake)?);
+        }
+        tx.commit()?;
+        Ok(rows)
     }
 
     /// Latest stake per holder at/after the newest full-picture basis, by `as_of`.
