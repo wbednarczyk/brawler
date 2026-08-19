@@ -30,8 +30,17 @@ use crate::mcp::registry::McpScope;
 /// Request bodies larger than this are rejected with `413` (ADR 0078 decision 2).
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-/// How long shutdown waits for the processor to finish its in-flight request
-/// before parking it in [`STALLED_PROCESSORS`].
+/// Size of the processor thread pool (ADR 0099 dec. 2 amendment, owner
+/// decision, issue #404 H3): a single processor thread let one stalled body
+/// read (or one synchronous heavy act) block every other `tools/call` behind
+/// it — head-of-line blocking. Three gives headroom for two concurrent heavy
+/// acts plus one live call; concurrency safety across threads is delegated
+/// to storage-level guards (leases, revision pins, IMMEDIATE transactions),
+/// not to anything in this module.
+const PROCESSOR_POOL_SIZE: usize = 3;
+
+/// How long shutdown waits for every processor thread to finish its in-flight
+/// request before parking the stragglers in [`STALLED_PROCESSORS`].
 const PROCESSOR_JOIN_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Stalled-processor cap (ADR 0099 dec. 2 shutdown posture): at this many
@@ -40,7 +49,12 @@ const PROCESSOR_JOIN_TIMEOUT: Duration = Duration::from_millis(250);
 /// valid bearer that deliberately withholds request bodies across repeated
 /// owner-triggered rotations — the listener itself is always released, so
 /// token revocation stays effective; only thread leakage is being bounded.
-pub const STALLED_PROCESSOR_CAP: usize = 4;
+/// Recalculated for the pool (ADR 0099 dec. 2 amendment, #404): the original
+/// cap of 4 tolerated 4 rotations at 1 stalled thread/rotation; a single
+/// rotation can now park up to [`PROCESSOR_POOL_SIZE`] threads (one per
+/// stalled connection held open across the pool), so the cap scales by the
+/// same factor to keep the 4-rotation tolerance: 4 × 3 = 12.
+pub const STALLED_PROCESSOR_CAP: usize = 4 * PROCESSOR_POOL_SIZE;
 
 /// Processors that outlived their server's shutdown (blocked in a body read
 /// tiny_http cannot cancel). Parked, not dropped, so the count stays exact:
@@ -80,13 +94,14 @@ struct ExpectedDigests {
 
 /// A running MCP HTTP listener. The ACCEPTOR thread is the sole owner of the
 /// `tiny_http::Server` and only ever sits in interruptible `recv()`; requests
-/// travel over a channel to the PROCESSOR thread. This split is what makes
-/// shutdown correct: `Server::drop` (the only thing that closes the accept
-/// loop) never waits on a request body tiny_http cannot cancel.
+/// travel over a channel drained by a pool of [`PROCESSOR_POOL_SIZE`]
+/// PROCESSOR threads. This split is what makes shutdown correct: `Server::drop`
+/// (the only thing that closes the accept loop) never waits on a request body
+/// tiny_http cannot cancel.
 pub struct McpServerHandle {
     server: Option<Arc<tiny_http::Server>>,
     acceptor: Option<JoinHandle<()>>,
-    processor: Option<JoinHandle<()>>,
+    processors: Vec<JoinHandle<()>>,
     processor_done: mpsc::Receiver<()>,
     stop: Arc<AtomicBool>,
     kpi_acquisition_active: bool,
@@ -180,15 +195,41 @@ impl McpServerHandle {
                 .map_err(|error| format!("failed to spawn MCP accept thread: {error}"))?
         };
 
-        let processor = {
+        // Pool of PROCESSOR_POOL_SIZE threads sharing one receiver (ADR 0099
+        // dec. 2 amendment, #404 H3): each thread locks the receiver only
+        // across `recv()` — the lock is released while `handle_request` runs,
+        // so a slow or stalled request occupies at most one thread, never the
+        // whole pool. `expected`/`request_rx` are shared via `Arc`; `state`
+        // (already `#[derive(Clone)]`) and `done_tx` are cloned per thread.
+        //
+        // ponytail: if request volume ever outgrows a lock-per-recv, swap
+        // this `Arc<Mutex<Receiver>>` for a crossbeam-channel MPMC receiver
+        // (native multi-consumer, no lock) — YAGNI at today's local,
+        // single-client request rate.
+        let request_rx = Arc::new(Mutex::new(request_rx));
+        let expected = Arc::new(expected);
+        let mut processors = Vec::with_capacity(PROCESSOR_POOL_SIZE);
+        for index in 0..PROCESSOR_POOL_SIZE {
             let stop = Arc::clone(&stop);
-            std::thread::Builder::new()
-                .name("brawler-mcp".to_owned())
+            let request_rx = Arc::clone(&request_rx);
+            let expected = Arc::clone(&expected);
+            let state = state.clone();
+            let done_tx = done_tx.clone();
+            let handle = std::thread::Builder::new()
+                .name(format!("brawler-mcp-{index}"))
                 .spawn(move || {
                     // Keep the done sender alive for the whole loop; its drop
-                    // at thread end is the shutdown's join signal.
+                    // at thread end (all clones dropped ⇒ the LAST one fires
+                    // the shutdown's join signal) is what shutdown waits on.
                     let _done_tx = done_tx;
-                    while let Ok(request) = request_rx.recv() {
+                    loop {
+                        let request = {
+                            let receiver = request_rx.lock().expect("mcp request queue poisoned");
+                            receiver.recv()
+                        };
+                        let Ok(request) = request else {
+                            break;
+                        };
                         // A request queued before shutdown must not run on
                         // revoked digests: dropping the receiver (thread
                         // exit) is what discards the buffered queue.
@@ -198,13 +239,15 @@ impl McpServerHandle {
                         handle_request(&state, &expected, request);
                     }
                 })
-                .map_err(|error| format!("failed to spawn MCP server thread: {error}"))?
-        };
+                .map_err(|error| format!("failed to spawn MCP server thread {index}: {error}"))?;
+            processors.push(handle);
+        }
+        drop(done_tx);
 
         Ok(Self {
             server: Some(server),
             acceptor: Some(acceptor),
-            processor: Some(processor),
+            processors,
             processor_done,
             stop,
             kpi_acquisition_active,
@@ -223,7 +266,8 @@ impl McpServerHandle {
         self.kpi_acquisition_active
     }
 
-    /// Gracefully stop: release the listener, then bounded-join the processor.
+    /// Gracefully stop: release the listener, then bounded-join the processor
+    /// pool.
     pub fn stop(mut self) {
         self.shutdown();
     }
@@ -233,8 +277,8 @@ impl McpServerHandle {
         // unblock so neither thread acts on late traffic; join the acceptor
         // (fast — recv is interruptible) and drop the control Arc so the
         // final `Server::drop` closes the listener BEFORE any restart tries
-        // to rebind; only then bounded-join the processor, which may sit in a
-        // body read tiny_http cannot cancel.
+        // to rebind; only then bounded-join the processor pool, any member of
+        // which may sit in a body read tiny_http cannot cancel.
         self.stop.store(true, Ordering::SeqCst);
         if let Some(server) = &self.server {
             server.unblock();
@@ -243,19 +287,36 @@ impl McpServerHandle {
             let _ = acceptor.join();
         }
         self.server = None;
-        if let Some(processor) = self.processor.take() {
+        if !self.processors.is_empty() {
+            // One join-timeout window covers the WHOLE pool: `processor_done`
+            // fires (disconnects) only once the LAST `done_tx` clone drops,
+            // i.e. once every processor thread has exited.
             match self.processor_done.recv_timeout(PROCESSOR_JOIN_TIMEOUT) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let _ = processor.join();
+                    // Every thread exited inside the window — each join is
+                    // instant.
+                    for processor in self.processors.drain(..) {
+                        let _ = processor.join();
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Stalled in a body read: park it (it holds only its
-                    // accepted socket, never the listener) so the count stays
-                    // exact for the lifecycle's start refusal at the cap.
-                    STALLED_PROCESSORS
+                    // At least one thread is still stalled in a body read
+                    // tiny_http cannot cancel. Reap whichever finished inside
+                    // the window (`is_finished` makes their join instant) and
+                    // park the rest — each parked thread holds only its
+                    // accepted socket, never the listener — so the count
+                    // stays exact for the lifecycle's start refusal at
+                    // STALLED_PROCESSOR_CAP.
+                    let mut parked = STALLED_PROCESSORS
                         .lock()
-                        .expect("stalled-processor registry poisoned")
-                        .push(processor);
+                        .expect("stalled-processor registry poisoned");
+                    for processor in self.processors.drain(..) {
+                        if processor.is_finished() {
+                            let _ = processor.join();
+                        } else {
+                            parked.push(processor);
+                        }
+                    }
                 }
             }
         }
@@ -905,11 +966,19 @@ mod tests {
         // Cancellation covers BOTH channel sides (ADR 0099): a request queued
         // while the processor was stalled must not run on revoked digests
         // after stop — its connection is dropped without a response.
+        //
+        // With a pool (#404), a single stall no longer occupies every
+        // thread — that head-of-line fix is the point of S4 — so this test
+        // must stall the WHOLE pool (one connection per PROCESSOR_POOL_SIZE
+        // thread) before the queued request is sent, or a free thread would
+        // simply dispatch it immediately instead of leaving it queued.
         let server = start_server();
         let addr = server.local_addr();
-        let stalled = stalled_connection(addr);
+        let stalled: Vec<_> = (0..PROCESSOR_POOL_SIZE)
+            .map(|_| stalled_connection(addr))
+            .collect();
 
-        // A fully valid request that queues behind the stalled one.
+        // A fully valid request that queues behind the stalled pool.
         let mut queued = TcpStream::connect(addr).expect("connect queued");
         let head = format!(
             "POST /mcp HTTP/1.1\r\nHost: {}\r\nAuthorization: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -926,9 +995,11 @@ mod tests {
         // Proof the stall was real (same rationale as the sibling test).
         assert!(
             stalled_processor_count() >= 1,
-            "the withheld body must actually stall the processor"
+            "the withheld bodies must actually stall the pool"
         );
-        drop(stalled);
+        for connection in stalled {
+            drop(connection);
+        }
 
         // The queued request must never DISPATCH: tiny_http auto-answers a
         // dropped, unanswered request with an empty 500 — acceptable; a 200
@@ -957,5 +1028,56 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(25));
         }
+    }
+
+    /// Run `tools/list` on its own thread and report whether it completed
+    /// within `timeout` — the timeout is a failure DETECTOR (a generous
+    /// bound), never a scheduling assertion. A single processor thread stuck
+    /// reading a stalled body (H3, issue #404) leaves nothing to drain the
+    /// queue, so a well-formed concurrent call never completes.
+    fn assert_tools_list_completes_within(addr: SocketAddr, timeout: Duration) {
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let auth = bearer(TOKEN);
+            let result = raw_request(
+                addr,
+                "POST",
+                "/mcp",
+                &[("Host", &host_of(addr)), ("Authorization", &auth)],
+                None,
+                TOOLS_LIST.as_bytes(),
+            );
+            let _ = tx.send(result);
+        });
+        match rx.recv_timeout(timeout) {
+            Ok((status, _body)) => assert_eq!(status, 200, "tools/list must succeed"),
+            Err(_) => panic!(
+                "tools/list did not complete within {timeout:?} — a stalled request body \
+                 blocked the whole processor pool (H3, issue #404)"
+            ),
+        }
+    }
+
+    #[test]
+    fn a_stalled_slow_request_does_not_block_a_concurrent_tool_call() {
+        // H3 (issue #404): the MCP server used to drain its queue on a SINGLE
+        // processor thread; a client that declares a Content-Length and then
+        // withholds the body occupies that thread indefinitely, so every
+        // other tools/call queued behind it starves silently. A fixed pool
+        // must absorb stalls up to (pool size - 1) without starving a live
+        // call — with pool size 3, even two concurrent stalls leave a third
+        // thread free.
+        let server = start_server();
+        let addr = server.local_addr();
+
+        let stall_one = stalled_connection(addr);
+        assert_tools_list_completes_within(addr, Duration::from_secs(10));
+        drop(stall_one);
+
+        let stall_a = stalled_connection(addr);
+        let stall_b = stalled_connection(addr);
+        assert_tools_list_completes_within(addr, Duration::from_secs(10));
+        drop(stall_a);
+        drop(stall_b);
     }
 }
