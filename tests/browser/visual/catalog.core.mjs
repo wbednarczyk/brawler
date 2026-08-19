@@ -16,6 +16,7 @@ const FULL_TIERS = ["S", "M", "L"];
 const M_ONLY = ["M"];
 
 const RAW_CATALOG = [
+  { screen: "basic-info", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "fundamentals", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "company-feed", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "inbox", spec: "visual-inbox-sources.spec.ts", states: ["default"], tiers: FULL_TIERS },

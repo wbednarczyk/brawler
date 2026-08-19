@@ -95,7 +95,7 @@ Canonical strategy/layers: [docs/testing.md](docs/testing.md). Which-test-where 
 
 ## Claude-Native Ecosystem
 
-- Repository-owned workflows are skills under `.claude/skills/` (`repoctx`, `guardrail-harvest`, `packaging`, `brawler-mcp`, `ship-pr`) — loaded on demand, not re-derived.
+- Repository-owned workflows are skills under `.claude/skills/` (`repoctx`, `guardrail-harvest`, `packaging`, `brawler-mcp`, `ship-pr`, `brawler-design`) — loaded on demand, not re-derived.
 - The session hook (`.claude/hooks/session-context.sh`, all four SessionStart matchers) re-grounds the always-on rules after start/resume/clear/compact. Gate-integrity enforces this file's and the hook's byte budgets and parity markers ([ADR 0063](docs/adr/0063-claude-native-context-architecture.md)).
 - Durable rules/decisions live in this repo (this file, ADRs, canonical docs) — not agent-private memory. No AI/agent attribution anywhere on the forge — commits, co-authors, trailers, PR descriptions, issues, comments; history stays authored by the human maintainer.
 
