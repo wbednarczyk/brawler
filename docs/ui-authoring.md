@@ -10,6 +10,10 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Modularization
 
 **See the primitives rendered:** `src/ui/PrimitiveGallery.tsx` is a live catalog of every common primitive and its variants. View it with `npm run dev:vite` then open `/gallery.html` (a dev-only entry — it is never shipped). The gallery is also the surface the `jest-axe` accessibility test and the Playwright overflow check run against, so adding a primitive there gives it coverage for free. Keep it in sync when you add or change a primitive.
 
+## Frontend v2 design language ([ADR 0104](adr/0104-frontend-v2-design-language.md) — normative)
+
+Every screen touched from v0.72 on follows ADR 0104; approved visual reference: `docs/mockups/frontend-v2-styleguide/`. The daily checklist: **color is meaning** (cyan = the one interface accent — filled form = interaction, quiet chip/thread form = official provenance; magenta only `--tone-media`, violet only `--tone-agent`, both always quiet; at most one FILLED element per screen at rest); **verb dictionary** — labels start with one of: Otwórz · Zastosuj · Zapisz · Pobierz · Przeczytaj · Odśwież · Oznacz jako… · Dodaj/Usuń, never a full sentence, never two verbs for one action, never an unlabeled icon; **empty state = three beats** (what → where from → one action button); **detail shrinks to its content** and never repeats the list row; **human title first**, filename as mono metadata; figures/periods/eyebrows in the mono face. The signature **provenance thread** goes only under thesis figures/claims and must navigate to its source.
+
 ## Mockup-first and no-spec-no-design (v0.50 U12, ADR 0045 harvest)
 
 Two process rules for anything beyond a mechanical change:
