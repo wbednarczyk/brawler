@@ -115,7 +115,7 @@ test("full loop over live MCP: start → stage(broken) → failed → repair →
   };
 
   try {
-    // (1) The scoped surface is COMPLETE: nine tools, contract order, and the
+    // (1) The scoped surface is COMPLETE: ten tools, contract order, and the
     // raw response honours the 16 KiB compact-surface gate.
     const rawList = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",
@@ -177,7 +177,14 @@ test("full loop over live MCP: start → stage(broken) → failed → repair →
     const failed = await callTool("validate_kpi_ingest", { runId, revision: 1 });
     expect(failed.isError, JSON.stringify(failed.payload)).toBe(false);
     expect(failed.payload.outcome, "revision 1 must FAIL — the forced repair").toBe("failed");
-    expect(JSON.stringify(failed.payload.manifest)).toContain("citation.missing");
+    expect((failed.payload.severityCounts as { flagged: number }).flagged).toBeGreaterThan(0);
+    // ADR 0102 dec. 12: `validate_kpi_ingest` no longer inlines the manifest —
+    // the typed repair report is a paged read.
+    const manifestPage = await callTool("get_kpi_ingest_context", {
+      runId,
+      section: "manifest",
+    });
+    expect(JSON.stringify(manifestPage.payload.manifest)).toContain("citation.missing");
     console.log("validate(1) → failed with citation.missing — the typed repair report");
 
     // (5) Repair: revision 2 is the COMPLETE snapshot with citations intact.
@@ -192,11 +199,12 @@ test("full loop over live MCP: start → stage(broken) → failed → repair →
 
     const ready = await callTool("validate_kpi_ingest", { runId, revision: 2 });
     expect(ready.isError, JSON.stringify(ready.payload)).toBe(false);
-    expect(ready.payload.outcome, JSON.stringify(ready.payload.manifest)).toBe("ready");
+    expect(ready.payload.outcome, JSON.stringify(ready.payload.severityCounts)).toBe("ready");
     const manifestHash = ready.payload.manifestHash as string;
     console.log("re-stage complete snapshot → validate(2) → ready");
 
-    // (6) Commit → receipt with real accepted facts.
+    // (6) Commit → a bounded summary (ADR 0102 dec. 12); the full receipt
+    // reads via context paging.
     const receipt = await callTool("commit_kpi_ingest", {
       runId,
       manifestHash,
@@ -204,12 +212,13 @@ test("full loop over live MCP: start → stage(broken) → failed → repair →
       execution: { client: "live-spec", costUsd: 0.01 },
     });
     expect(receipt.isError, JSON.stringify(receipt.payload)).toBe(false);
-    expect(receipt.payload.acceptedCount as number).toBeGreaterThan(0);
-    const factIds = (receipt.payload.outcomes as { factId?: string }[])
-      .map((outcome) => outcome.factId)
-      .filter(Boolean);
+    const counts = receipt.payload.counts as { acceptedCount: number; excludedCount: number };
+    expect(counts.acceptedCount).toBeGreaterThan(0);
+    const receiptPage = await callTool("get_kpi_ingest_context", { runId, section: "receipt" });
+    const outcomes = (receiptPage.payload.receipt as { outcomes: { factId?: string }[] }).outcomes;
+    const factIds = outcomes.map((outcome) => outcome.factId).filter(Boolean);
     console.log(
-      `commit → ${receipt.payload.terminalStatus}, accepted=${receipt.payload.acceptedCount}, ` +
+      `commit → ${receipt.payload.terminalStatus}, accepted=${counts.acceptedCount}, ` +
         `factIds=${JSON.stringify(factIds)}`,
     );
 

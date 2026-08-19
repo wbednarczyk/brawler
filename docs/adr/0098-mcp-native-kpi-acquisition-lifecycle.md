@@ -51,6 +51,8 @@ The validator's output is a **versioned manifest**: content hash, revision, vali
 
 **Completeness denominator.** A run's expected-KPI snapshot is a **versioned union** of the curated primary `kpi_relevance` set and the extraction profile's pack for the issuer type, stamped on the run at start. Agent-minted definitions remain extras, never denominator entries (ADR 0093 dec. 4). Coverage reporting splits into **deterministic coverage** (ESEF+WDF+BR, today's recall harness) and **acquisition coverage** (runs) — two metrics, never one blended number.
 
+**Amended (2026-08-18, [ADR 0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) dec. 1):** `excluded` becomes a sealed manifest disposition — reason and raw label sealed alongside it, with content-projection comparing all three. This missing-reasons ledger itself is untouched; `excluded` is a new, independent disposition.
+
 ### 5. Atomic, idempotent commit
 
 `commit(runId, manifestHash, revision)`: re-verify manifest freshness → open **one transaction on one connection handle** → create the period, write all accepted facts + provenance + supersession + the commit receipt + the terminal run state → commit only on full success. Any failure rolls back everything, including the period row (closing the empty-period hole).
@@ -64,6 +66,8 @@ Idempotency: retrying a committed manifest **returns the stored commit receipt**
 Lifecycle: `discovered → source_captured → extracting → staged → validation_failed | ready_to_commit → committing → complete | partial | failed | cancelled`.
 
 The implementing epic ships an **exhaustive transition table** (state × allowed caller × lease requirement × revision effect × terminality) covering at minimum: repair `validation_failed → staged` (re-staging bumps the revision), manifest invalidation `ready_to_commit → staged`, source-failure retry `source_captured → extracting`, cancellation from every pre-commit state, and crash recovery. **Cancellation during `committing` does not exist**: the transaction either rolls back (run returns to a retryable state) or completes (`complete`/`partial`). A crash in `committing` is resolved at startup reclaim by receipt presence: receipt exists → the commit landed, finalize the run; no receipt → the transaction rolled back, the run is retryable. Illegal transitions are typed refusals.
+
+**Amended (2026-08-18, [ADR 0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) dec. 6):** this state machine is unchanged by chunked drafts — a draft is a sub-resource of the run, never a new state, and the run stays in `extracting`/`validation_failed` while a draft is open.
 
 ### 7. The trust ladder, resolved
 

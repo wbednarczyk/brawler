@@ -1,10 +1,10 @@
 ---
 source: src/fundamentals/kpi_manifest/tests.rs
-assertion_line: 652
 expression: literals
 ---
 [
     "mapping.unresolved",
+    "mapping.excluded",
     "value.unparseable",
     "unit.currency_missing",
     "unit.currency_unexpected",

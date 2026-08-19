@@ -755,6 +755,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "repair_crosswalk_seed_semantics",
         sql: include_str!("../../migrations/0149_repair_crosswalk_seed_semantics.sql"),
     },
+    Migration {
+        version: 150,
+        name: "kpi_staged_observations_excluded_disposition",
+        sql: include_str!("../../migrations/0150_kpi_staged_observations_excluded_disposition.sql"),
+    },
+    Migration {
+        version: 151,
+        name: "kpi_ingest_drafts",
+        sql: include_str!("../../migrations/0151_kpi_ingest_drafts.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

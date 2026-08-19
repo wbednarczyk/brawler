@@ -48,6 +48,242 @@ expression: redacted
       "statementGroup": "balance",
       "unit": null,
       "valueKind": "monetary"
+    },
+    {
+      "label": "Accruals classified as current",
+      "metricKey": "accruals_classified_as_current"
+    },
+    {
+      "label": "Adjustment — amortisation expense",
+      "metricKey": "adj_amortisation_expense"
+    },
+    {
+      "label": "Adjustment — change in accrued income excluding contract assets",
+      "metricKey": "adj_change_in_accrued_income_excl_contract_assets"
+    },
+    {
+      "label": "Adjustment — change in contract assets",
+      "metricKey": "adj_change_in_contract_assets"
+    },
+    {
+      "label": "Adjustment — change in contract liabilities",
+      "metricKey": "adj_change_in_contract_liabilities"
+    },
+    {
+      "label": "Adjustment — change in deferred income excluding contract liabilities",
+      "metricKey": "adj_change_in_deferred_income_excl_contract_liabilities"
+    },
+    {
+      "label": "Adjustment — change in deferred income including contract liabilities",
+      "metricKey": "adj_change_in_deferred_income_including_contract_liabilities"
+    },
+    {
+      "label": "Adjustment — change in deposits from customers",
+      "metricKey": "adj_change_in_deposits_from_customers"
+    },
+    {
+      "label": "Adjustment — change in employee benefit liabilities",
+      "metricKey": "adj_change_in_employee_benefit_liabilities"
+    },
+    {
+      "label": "Adjustment — change in inventories",
+      "metricKey": "adj_change_in_inventories"
+    },
+    {
+      "label": "Adjustment — change in other assets",
+      "metricKey": "adj_change_in_other_assets"
+    },
+    {
+      "label": "Adjustment — change in other liabilities",
+      "metricKey": "adj_change_in_other_liabilities"
+    },
+    {
+      "label": "Adjustment — change in prepaid expenses",
+      "metricKey": "adj_change_in_prepaid_expenses"
+    },
+    {
+      "label": "Adjustment — change in trade account payable",
+      "metricKey": "adj_change_in_trade_account_payable"
+    },
+    {
+      "label": "Adjustment — change in trade account receivable",
+      "metricKey": "adj_change_in_trade_account_receivable"
+    },
+    {
+      "label": "Adjustment — change in trade and other payables",
+      "metricKey": "adj_change_in_trade_payables"
+    },
+    {
+      "label": "Adjustment — change in trade and other receivables",
+      "metricKey": "adj_change_in_trade_receivables"
+    },
+    {
+      "label": "Adjustment — depreciation and amortisation",
+      "metricKey": "adj_depreciation_and_amortisation"
+    },
+    {
+      "label": "Adjustment — depreciation expense",
+      "metricKey": "adj_depreciation_expense"
+    },
+    {
+      "label": "Adjustment — gain loss on disposal of investments in subsidiaries joint ventures and associates",
+      "metricKey": "adj_disposal_gains_subsidiaries_joint_ventures_associates"
+    },
+    {
+      "label": "Adjustment — dividend income",
+      "metricKey": "adj_dividend_income"
+    },
+    {
+      "label": "Adjustment — fair value gains losses",
+      "metricKey": "adj_fair_value_gains_losses"
+    },
+    {
+      "label": "Adjustment — finance costs",
+      "metricKey": "adj_finance_costs"
+    },
+    {
+      "label": "Adjustment — finance income cost",
+      "metricKey": "adj_finance_income_cost"
+    },
+    {
+      "label": "Adjustment — gains losses on change in fair value of derivatives",
+      "metricKey": "adj_gains_losses_on_change_in_fair_value_of_derivatives"
+    },
+    {
+      "label": "Adjustment — impairment loss recognised in profit or loss goodwill",
+      "metricKey": "adj_goodwill_impairment_in_profit_or_loss"
+    },
+    {
+      "label": "Adjustment — impairment loss reversal of impairment loss recognised in profit or loss",
+      "metricKey": "adj_impairment_loss_reversal_in_profit_or_loss"
+    },
+    {
+      "label": "Adjustment — income tax expense",
+      "metricKey": "adj_income_tax_expense"
+    },
+    {
+      "label": "Adjustment — interest expense",
+      "metricKey": "adj_interest_expense"
+    },
+    {
+      "label": "Adjustment — interest income",
+      "metricKey": "adj_interest_income"
+    },
+    {
+      "label": "Adjustment — losses/gains on disposal of non-current assets",
+      "metricKey": "adj_losses_gains_on_disposal_of_noncurrent_assets"
+    },
+    {
+      "label": "Adjustment — provisions",
+      "metricKey": "adj_provisions"
+    },
+    {
+      "label": "Adjustment — sharebased payments",
+      "metricKey": "adj_sharebased_payments"
+    },
+    {
+      "label": "Adjustments to reconcile profit loss excluding changes in working capital",
+      "metricKey": "adj_to_reconcile_profit_loss_excl_working_capital"
+    },
+    {
+      "label": "Adjustment — undistributed profits of associates",
+      "metricKey": "adj_undistributed_profits_of_associates"
+    },
+    {
+      "label": "Adjustment — undistributed profits of investments (equity method)",
+      "metricKey": "adj_undistributed_profits_of_equity_method_investments"
+    },
+    {
+      "label": "Adjustment — unrealised FX losses/gains",
+      "metricKey": "adj_unrealised_fx_losses_gains"
+    },
+    {
+      "label": "Adjusted weighted average shares",
+      "metricKey": "adjusted_weighted_average_shares"
+    },
+    {
+      "label": "Adjustments to reconcile profit/loss",
+      "metricKey": "adjustments_to_reconcile_profit_loss"
+    },
+    {
+      "label": "Administrative expense",
+      "metricKey": "administrative_expense"
+    },
+    {
+      "label": "Asset turnover",
+      "metricKey": "asset_turnover"
+    },
+    {
+      "label": "Basic earnings loss per share from discontinued operations",
+      "metricKey": "basic_earnings_loss_per_share_from_discontinued_operations"
+    },
+    {
+      "label": "Capital expenditure",
+      "metricKey": "capex"
+    },
+    {
+      "label": "Capital employed",
+      "metricKey": "capital_employed"
+    },
+    {
+      "label": "Capital redemption reserve",
+      "metricKey": "capital_redemption_reserve"
+    },
+    {
+      "label": "Capital reserve",
+      "metricKey": "capital_reserve"
+    },
+    {
+      "label": "Cash and equivalents",
+      "metricKey": "cash"
+    },
+    {
+      "label": "Cash advances and loans made to other parties (investing)",
+      "metricKey": "cash_advances_and_loans_made_to_other_parties_investing"
+    },
+    {
+      "label": "Cash advances and loans made to related parties",
+      "metricKey": "cash_advances_and_loans_made_to_related_parties"
+    },
+    {
+      "label": "Cash flows from losing control of subsidiaries or other businesses (investing)",
+      "metricKey": "cash_flows_from_losing_control_of_subsidiaries_investing"
+    },
+    {
+      "label": "Cash flows from operations",
+      "metricKey": "cash_flows_from_operations"
+    },
+    {
+      "label": "Cash flows from operations before changes in working capital",
+      "metricKey": "cash_flows_from_operations_before_working_capital_changes"
+    },
+    {
+      "label": "Cash and equivalents (cash flow statement)",
+      "metricKey": "cash_per_cash_flow_statement"
+    },
+    {
+      "label": "Cash used in business acquisitions",
+      "metricKey": "cash_used_in_business_acquisitions"
+    },
+    {
+      "label": "Cash flows from decrease increase in shortterm deposits and investments",
+      "metricKey": "change_in_short_term_deposits_and_investments_cash_flows"
+    },
+    {
+      "label": "Increase decrease in working capital",
+      "metricKey": "change_in_working_capital"
+    },
+    {
+      "label": "Equity change — acquisition of subsidiary",
+      "metricKey": "change_through_acquisition_of_subsidiary"
+    },
+    {
+      "label": "Equity change — change in equity of subsidiaries",
+      "metricKey": "change_through_change_in_equity_of_subsidiaries"
+    },
+    {
+      "label": "Equity change — disposal of subsidiary",
+      "metricKey": "change_through_disposal_of_subsidiary"
     }
   ],
   "derivedPeriod": null,
@@ -59,6 +295,67 @@ expression: redacted
     "url": "https://x/doc1.pdf"
   },
   "manifestAvailable": false,
+  "notRequested": [
+    "accruals_classified_as_current",
+    "adj_amortisation_expense",
+    "adj_change_in_accrued_income_excl_contract_assets",
+    "adj_change_in_contract_assets",
+    "adj_change_in_contract_liabilities",
+    "adj_change_in_deferred_income_excl_contract_liabilities",
+    "adj_change_in_deferred_income_including_contract_liabilities",
+    "adj_change_in_deposits_from_customers",
+    "adj_change_in_employee_benefit_liabilities",
+    "adj_change_in_inventories",
+    "adj_change_in_other_assets",
+    "adj_change_in_other_liabilities",
+    "adj_change_in_prepaid_expenses",
+    "adj_change_in_trade_account_payable",
+    "adj_change_in_trade_account_receivable",
+    "adj_change_in_trade_payables",
+    "adj_change_in_trade_receivables",
+    "adj_depreciation_and_amortisation",
+    "adj_depreciation_expense",
+    "adj_disposal_gains_subsidiaries_joint_ventures_associates",
+    "adj_dividend_income",
+    "adj_fair_value_gains_losses",
+    "adj_finance_costs",
+    "adj_finance_income_cost",
+    "adj_gains_losses_on_change_in_fair_value_of_derivatives",
+    "adj_goodwill_impairment_in_profit_or_loss",
+    "adj_impairment_loss_reversal_in_profit_or_loss",
+    "adj_income_tax_expense",
+    "adj_interest_expense",
+    "adj_interest_income",
+    "adj_losses_gains_on_disposal_of_noncurrent_assets",
+    "adj_provisions",
+    "adj_sharebased_payments",
+    "adj_to_reconcile_profit_loss_excl_working_capital",
+    "adj_undistributed_profits_of_associates",
+    "adj_undistributed_profits_of_equity_method_investments",
+    "adj_unrealised_fx_losses_gains",
+    "adjusted_weighted_average_shares",
+    "adjustments_to_reconcile_profit_loss",
+    "administrative_expense",
+    "asset_turnover",
+    "basic_earnings_loss_per_share_from_discontinued_operations",
+    "capex",
+    "capital_employed",
+    "capital_redemption_reserve",
+    "capital_reserve",
+    "cash",
+    "cash_advances_and_loans_made_to_other_parties_investing",
+    "cash_advances_and_loans_made_to_related_parties",
+    "cash_flows_from_losing_control_of_subsidiaries_investing",
+    "cash_flows_from_operations",
+    "cash_flows_from_operations_before_working_capital_changes",
+    "cash_per_cash_flow_statement",
+    "cash_used_in_business_acquisitions",
+    "change_in_short_term_deposits_and_investments_cash_flows",
+    "change_in_working_capital",
+    "change_through_acquisition_of_subsidiary",
+    "change_through_change_in_equity_of_subsidiaries",
+    "change_through_disposal_of_subsidiary"
+  ],
   "plausibility": [
     {
       "abstentionReason": "thin_history",
@@ -133,7 +430,7 @@ expression: redacted
   ],
   "profileRules": [
     "Prefer the consolidated statements; use standalone only when the report has no consolidated section, and set scope accordingly.",
-    "Map statement lines to catalog metric keys; stage rows you cannot map with mappingStatus=unmapped — never invent a metric key.",
+    "Map every disclosed line to a catalog metric key, propose one with propose_kpi_definition, or stage it excluded with a non-blank exclusionReason — never invent a metric key and never leave a disclosed number silently absent.",
     "net_profit and per-share figures are owners-of-parent when the report splits non-controlling interests; otherwise total.",
     "Annual income and cash-flow lines are full-year flows; balance-sheet lines are point_in_time at period end.",
     "Preserve rawValue exactly as printed and set unitScale from the statement header; normalizedValue is the value in base units (rawValue scaled by unitScale).",
@@ -154,7 +451,7 @@ expression: redacted
         "total_assets",
         "total_equity"
       ],
-      "packVersion": "gpw_ifrs_annual@v1",
+      "packVersion": "gpw_ifrs_annual@v2",
       "schemaVersion": 1,
       "source": "kpi_relevance+profile_pack"
     },
@@ -165,12 +462,13 @@ expression: redacted
     },
     "manifestHash": null,
     "missingReasons": {},
+    "openDraft": null,
     "period": {
       "fiscalYear": 2025,
       "periodId": null,
       "periodType": "FY"
     },
-    "profileVersion": "gpw_ifrs_annual@v1",
+    "profileVersion": "gpw_ifrs_annual@v2",
     "progress": null,
     "revision": 0,
     "runId": "kpiing_[uid]",
@@ -179,5 +477,7 @@ expression: redacted
     "status": "extracting",
     "updatedAt": "[timestamp]"
   },
-  "truncated": {}
+  "truncated": {
+    "catalog": "eyJ0IjoxLCJtIjoiY2hhbmdlX3Rocm91Z2hfZGlzcG9zYWxfb2Zfc3Vic2lkaWFyeSIsImQiOiJrcGlkZWZfY2hhbmdlX3Rocm91Z2hfZGlzcG9zYWxfb2Zfc3Vic2lkaWFyeSJ9"
+  }
 }

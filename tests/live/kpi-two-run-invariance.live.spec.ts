@@ -10,7 +10,7 @@ import { canonicalizeManifest } from "./helpers/manifestCanonical";
 // Claude+Codex dogfood is Noga F (owner/agent-driven, separate). Here two
 // drivers share one acquisition token (so the SAME lease holder — cooperative,
 // never adversarial) over the same raw fetch(/mcp, Bearer) channel and prove:
-//   1. the scoped surface is exactly the nine acquisition tools, ≤16 KiB;
+//   1. the scoped surface is exactly the ten acquisition tools, ≤16 KiB;
 //   2. no write capability leaks onto the scoped token (raw JSON-RPC -32602);
 //   3. SERVER INVARIANCE: two SEQUENTIAL runs of the same document, staged with
 //      the SAME observations against the SAME (empty) fact store, produce a
@@ -145,15 +145,60 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
     expect(staged.isError, JSON.stringify(staged.payload)).toBe(false);
     return staged.payload.revision as number;
   };
+  // ADR 0102 dec. 12: `validate_kpi_ingest` no longer inlines the manifest —
+  // page `get_kpi_ingest_context section:"manifest"` to reassemble the full
+  // object `canonicalizeManifest` needs (header fields from page 1, every
+  // page's `observations` concatenated in order).
+  const fetchFullManifest = async (runId: string): Promise<Record<string, unknown>> => {
+    let cursor: string | undefined;
+    let manifest: Record<string, unknown> | undefined;
+    const observations: unknown[] = [];
+    do {
+      const page = await callTool("get_kpi_ingest_context", {
+        runId,
+        section: "manifest",
+        ...(cursor ? { cursor } : {}),
+      });
+      expect(page.isError, JSON.stringify(page.payload)).toBe(false);
+      const pageManifest = page.payload.manifest as Record<string, unknown>;
+      if (manifest === undefined) manifest = pageManifest;
+      observations.push(...((pageManifest.observations as unknown[]) ?? []));
+      cursor = page.payload.nextCursor as string | undefined;
+    } while (cursor);
+    return { ...manifest, observations };
+  };
+  // ADR 0102 dec. 12: `commit_kpi_ingest` no longer inlines `outcomes` — page
+  // `get_kpi_ingest_context section:"receipt"` for the full ledger.
+  const fetchReceiptOutcomes = async (
+    runId: string,
+  ): Promise<{ metricKey: string; factId?: string; outcome: string }[]> => {
+    let cursor: string | undefined;
+    const outcomes: { metricKey: string; factId?: string; outcome: string }[] = [];
+    do {
+      const page = await callTool("get_kpi_ingest_context", {
+        runId,
+        section: "receipt",
+        ...(cursor ? { cursor } : {}),
+      });
+      expect(page.isError, JSON.stringify(page.payload)).toBe(false);
+      const receipt = page.payload.receipt as { outcomes: typeof outcomes };
+      outcomes.push(...receipt.outcomes);
+      cursor = page.payload.nextCursor as string | undefined;
+    } while (cursor);
+    return outcomes;
+  };
   const validateReady = async (runId: string, revision: number) => {
     const validated = await callTool("validate_kpi_ingest", { runId, revision });
     expect(validated.isError, JSON.stringify(validated.payload)).toBe(false);
-    expect(validated.payload.outcome, JSON.stringify(validated.payload.manifest)).toBe("ready");
-    return validated.payload as { manifest: unknown; manifestHash: string };
+    expect(validated.payload.outcome, JSON.stringify(validated.payload.severityCounts)).toBe(
+      "ready",
+    );
+    const manifest = await fetchFullManifest(runId);
+    return { manifest, manifestHash: validated.payload.manifestHash as string };
   };
 
   try {
-    // (1) Scoped surface: exactly the nine tools, ≤16 KiB.
+    // (1) Scoped surface: exactly the ten tools, ≤16 KiB.
     const rawList = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -163,7 +208,7 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
     expect(Buffer.byteLength(rawBody)).toBeLessThanOrEqual(16 * 1024);
     const names = (JSON.parse(rawBody).result?.tools ?? []).map((t: { name: string }) => t.name);
     expect(names).toEqual([...ACQUISITION_TOOLS]);
-    console.log("scoped tools/list: nine tools, contract order, ≤16 KiB");
+    console.log("scoped tools/list: ten tools, contract order, ≤16 KiB");
 
     // (2) No write capability leaks onto the scoped token: a non-allowlisted
     //     tool is UNKNOWN — a top-level JSON-RPC -32602, never a result.
@@ -228,12 +273,10 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
       execution: { client: "alpha" },
     });
     expect(receiptC.isError).toBe(false);
-    expect(receiptC.payload.acceptedCount as number).toBeGreaterThan(0);
+    const countsC = receiptC.payload.counts as { acceptedCount: number };
+    expect(countsC.acceptedCount).toBeGreaterThan(0);
     const factIdByKey = new Map<string, string>();
-    for (const outcome of receiptC.payload.outcomes as {
-      metricKey: string;
-      factId?: string;
-    }[]) {
+    for (const outcome of await fetchReceiptOutcomes(runC)) {
       if (outcome.factId) factIdByKey.set(outcome.metricKey, outcome.factId);
     }
 
@@ -247,12 +290,9 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
       execution: { client: "beta" },
     });
     expect(receiptD.isError).toBe(false);
-    expect(receiptD.payload.acceptedCount as number).toBeGreaterThan(0);
-    for (const outcome of receiptD.payload.outcomes as {
-      metricKey: string;
-      factId?: string;
-      outcome: string;
-    }[]) {
+    const countsD = receiptD.payload.counts as { acceptedCount: number };
+    expect(countsD.acceptedCount).toBeGreaterThan(0);
+    for (const outcome of await fetchReceiptOutcomes(runD)) {
       expect(
         ["created", "upgraded"].includes(outcome.outcome),
         `run D must not create/upgrade canonical facts, got ${outcome.outcome} for ${outcome.metricKey}`,

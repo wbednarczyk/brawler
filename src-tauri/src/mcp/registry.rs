@@ -44,16 +44,18 @@ pub enum McpScope {
     KpiAcquisition,
 }
 
-/// The acquisition scope's tool allowlist — exactly the nine workflow tools,
+/// The acquisition scope's tool allowlist — exactly the ten workflow tools,
 /// nothing else (ADR 0099 dec. 3; widening it is a deliberate ADR change).
-/// Complete since #386. Declared in `entries()` order (the ordered wire
-/// contract, contract positions 1-9).
+/// Complete at nine since #386; `propose_kpi_definition` joined as the tenth
+/// (ADR 0101, epic #399 S4). Declared in `entries()` order (the ordered wire
+/// contract, contract positions 1-10).
 pub const KPI_ACQUISITION_TOOLS: &[&str] = &[
     "start_kpi_ingest",
     "list_pending_kpi_ingests",
     "get_kpi_ingest_context",
     "get_kpi_ingest_document",
     "stage_kpi_observations",
+    "propose_kpi_definition",
     "validate_kpi_ingest",
     "commit_kpi_ingest",
     "get_kpi_ingest_status",
@@ -260,8 +262,9 @@ fn exposed_act(
 }
 
 /// [`exposed_act`], but the handler receives the authenticated scope
-/// (`ToolHandler::Scoped`) — consumers: `start_kpi_ingest` (#384) and
-/// `stage_kpi_observations` (#386), the two lease-holding tools.
+/// (`ToolHandler::Scoped`) — consumers: `start_kpi_ingest` (#384),
+/// `stage_kpi_observations` (#386) and `propose_kpi_definition` (ADR 0101,
+/// epic #399 S4), the three lease-holding tools.
 fn exposed_act_scoped(
     command_name: &'static str,
     provenance: Option<ProvenanceRequirement>,
@@ -354,6 +357,21 @@ fn kpi_acquisition_tools() -> Vec<RegistryEntry> {
              Requires the caller's live lease. Provenance is the run pipeline itself.",
             tools::tool_schema::<kpi_ingest_submit::StageKpiObservationsInput>,
             kpi_ingest_submit::stage_kpi_observations_handler,
+        ),
+        exposed_act_scoped(
+            "propose_kpi_definition",
+            None,
+            "Mint (or reuse) a company-scoped, origin=agent KPI catalog entry for a \
+             disclosed number the canon has no key for (ADR 0101). Guard order: this \
+             company's own minted entry is returned as-is (created: false); a curated \
+             kpi_aliases synonym refuses with a typed synonym_redirect naming the \
+             canonical key and definitionId; an exact shared-canon key returns the \
+             canonical definition (created: false, never a company shadow); only a \
+             genuinely new key mints — never fuzzy matching. Page the full catalog \
+             (get_kpi_ingest_context) before proposing. Requires the caller's live \
+             lease.",
+            tools::tool_schema::<kpi_ingest_submit::ProposeKpiDefinitionInput>,
+            kpi_ingest_submit::propose_kpi_definition_handler,
         ),
         exposed_act(
             "validate_kpi_ingest",
@@ -1616,8 +1634,11 @@ fn act_gate(
 /// 64 act, adding `run_pipeline_reextraction`.
 /// `promote_uncrosswalked_concept` stays permanently `Excluded` — an agent may
 /// re-read and measure, only the owner may name (decision 10).
+///
+/// #399 S4 (ADR 0101, +1, MCP-only): 65 act, adding `propose_kpi_definition`
+/// — the ten-tool acquisition surface.
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 114;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 115;
 
 #[cfg(test)]
 mod tests {
@@ -3065,6 +3086,15 @@ mod tests {
                 }),
             ),
             (
+                "propose_kpi_definition",
+                json!({
+                    "runId": "kpiing_missing",
+                    "metricKey": "broker_client_count",
+                    "label": "Broker client count",
+                    "statementGroup": "other"
+                }),
+            ),
+            (
                 "validate_kpi_ingest",
                 json!({ "runId": "kpiing_missing", "revision": 1 }),
             ),
@@ -3478,8 +3508,15 @@ mod tests {
     #[test]
     fn the_acquisition_scope_lists_exactly_its_allowlist() {
         // ADR 0099 dec. 3 — both directions: the scoped surface IS the
-        // allowlist (complete at nine since #386), and every allowlisted name
-        // must be an exposed tool (a typo'd entry would silently vanish).
+        // allowlist (complete at nine since #386, ten since #399 S4 / ADR
+        // 0101), and every allowlisted name must be an exposed tool (a
+        // typo'd entry would silently vanish).
+        assert_eq!(
+            KPI_ACQUISITION_TOOLS.len(),
+            10,
+            "the acquisition allowlist grew to ten with propose_kpi_definition (ADR 0101)"
+        );
+        assert!(KPI_ACQUISITION_TOOLS.contains(&"propose_kpi_definition"));
         let scoped = descriptors(McpScope::KpiAcquisition);
         let names: Vec<&str> = scoped
             .as_array()

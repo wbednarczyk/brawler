@@ -3020,7 +3020,7 @@ mod tests {
                 )
                 .expect("classify");
             for profile in PROFILE_VERSIONS {
-                for key in expected_pack(profile, statement_type) {
+                for key in expected_pack(profile, statement_type).expect("registered profile") {
                     let resolved = resolve_definition_by_metric_key(&connection, &company_id, key)
                         .expect("resolve");
                     assert!(

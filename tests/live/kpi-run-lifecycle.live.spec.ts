@@ -108,7 +108,7 @@ test("run lifecycle over live MCP: start → status → keepalive → cancel + b
   };
 
   try {
-    // (1) The scoped surface is exactly the nine acquisition workflow tools.
+    // (1) The scoped surface is exactly the ten acquisition workflow tools.
     const listed = await rpc("tools/list");
     const names = (listed.result?.tools ?? []).map((tool) => tool.name);
     expect(names).toEqual([...ACQUISITION_TOOLS]);

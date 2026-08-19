@@ -57,9 +57,11 @@ fn base_obs(id: &str, ordinal: i64) -> ManifestObservationInput {
     ManifestObservationInput {
         observation_id: id.to_owned(),
         ordinal,
+        raw_label: "Przychody ze sprzedaży".to_owned(),
         raw_value: "1 234,5".to_owned(),
         metric_key_candidate: Some("revenue".to_owned()),
         mapping_status: "mapped".to_owned(),
+        exclusion_reason: None,
         normalized_value: Some("1234.5".to_owned()),
         currency: Some("PLN".to_owned()),
         unit_scale: Some("ones".to_owned()),
@@ -119,6 +121,155 @@ fn unmapped_observation_gets_mapping_unresolved_and_skips_dependent_checks() {
         manifest.observations[0].validation_state,
         ValidationState::Flagged
     );
+}
+
+#[test]
+fn unmapped_without_exclusion_still_flagged() {
+    // ADR 0102 dec. 2: an accidental `unmapped` (no exclusion recorded) is
+    // exactly as flagged as it was before excluded existed.
+    let mut obs = base_obs("o1", 0);
+    obs.mapping_status = "unmapped".to_owned();
+    obs.definition = None;
+    let manifest = build_manifest(&base_run(), &[obs]);
+    let codes = codes_for(&manifest, "o1");
+    assert!(has_code(codes, DiagnosticCode::MappingUnresolved));
+    assert!(!has_code(codes, DiagnosticCode::MappingExcluded));
+    assert_eq!(
+        manifest.observations[0].validation_state,
+        ValidationState::Flagged
+    );
+    assert_eq!(manifest.outcome, Outcome::Failed);
+    assert!(!manifest.observations[0].excluded);
+    assert!(manifest.observations[0].exclusion_reason.is_none());
+}
+
+#[test]
+fn excluded_observation_yields_ok_manifest() {
+    // ADR 0102 dec. 1/2: a deliberately excluded observation carries ONLY
+    // `mapping.excluded` (Info), passes both Failed gates (no flagged
+    // observation, no run-level diagnostic) and seals cleanly.
+    let mut obs = base_obs("o1", 0);
+    obs.mapping_status = "excluded".to_owned();
+    obs.exclusion_reason = Some("footnote disclosure, not a KPI".to_owned());
+    obs.metric_key_candidate = None;
+    obs.definition = None;
+    // Deliberately incomplete metadata (no citation/measure_window) — an
+    // excluded observation is held to none of the fact-quality checks.
+    obs.citation_page = None;
+    obs.citation_quote = None;
+    obs.measure_window = None;
+    let manifest = build_manifest(&base_run(), &[obs]);
+    let codes = codes_for(&manifest, "o1");
+    assert_eq!(codes.len(), 1, "codes={codes:?}");
+    assert_eq!(codes[0].code, DiagnosticCode::MappingExcluded);
+    assert_eq!(codes[0].code.severity(), Severity::Info);
+    assert_eq!(
+        codes[0].detail,
+        Some(DiagnosticDetail::Reason {
+            reason: "footnote disclosure, not a KPI".to_owned()
+        })
+    );
+    assert_ne!(
+        manifest.observations[0].validation_state,
+        ValidationState::Flagged
+    );
+    assert!(manifest.run_diagnostics.is_empty());
+    assert_eq!(manifest.outcome, Outcome::Ready, "both Failed gates pass");
+    assert!(manifest.observations[0].excluded);
+    assert_eq!(
+        manifest.observations[0].exclusion_reason.as_deref(),
+        Some("footnote disclosure, not a KPI")
+    );
+    assert_eq!(manifest.observations[0].raw_label, "Przychody ze sprzedaży");
+
+    let sealed = SealedManifest::seal(manifest).expect("an excluded manifest seals cleanly");
+    assert_eq!(sealed.outcome(), Outcome::Ready);
+    let content = &sealed.observation_content()[0];
+    assert!(content.excluded);
+    assert_eq!(
+        content.exclusion_reason.as_deref(),
+        Some("footnote disclosure, not a KPI")
+    );
+    assert_eq!(content.raw_label, "Przychody ze sprzedaży");
+}
+
+#[test]
+fn excluded_disposition_hand_built_inconsistency_is_refused() {
+    // seal()'s explicit invariant (ADR 0102 dec. 1): `excluded` cannot be
+    // hand-set independent of `exclusionReason`/`codes`.
+    let mut obs = base_obs("o1", 0);
+    obs.mapping_status = "excluded".to_owned();
+    obs.exclusion_reason = Some("reason".to_owned());
+    obs.definition = None;
+    let mut manifest = build_manifest(&base_run(), &[obs]);
+    // Sabotage: claim NOT excluded even though the codes/reason say otherwise.
+    manifest.observations[0].excluded = false;
+    let error = SealedManifest::seal(manifest).expect_err("inconsistent excluded must refuse");
+    assert!(matches!(
+        error,
+        ManifestSealError::ExcludedDispositionInconsistent { .. }
+    ));
+}
+
+#[test]
+fn excluded_extra_keeps_run_complete() {
+    // ADR 0102 dec. 4: an excluded observation that is NOT an expected
+    // member never touches completeness.
+    let mut run = base_run();
+    run.expected = Some(expected(&["revenue"]));
+    let mapped = base_obs("mapped1", 0);
+    let mut excluded = base_obs("excluded1", 1);
+    excluded.mapping_status = "excluded".to_owned();
+    excluded.metric_key_candidate = Some("footnote_headcount".to_owned());
+    excluded.exclusion_reason = Some("not a KPI".to_owned());
+    excluded.definition = None;
+    let manifest = build_manifest(&run, &[mapped, excluded]);
+    let completeness = manifest
+        .completeness
+        .as_ref()
+        .expect("completeness present");
+    assert!(completeness.missing.is_empty(), "{completeness:?}");
+    assert_eq!(completeness.present, BTreeSet::from(["revenue".to_owned()]));
+    assert!(manifest.run_diagnostics.is_empty());
+    assert_eq!(manifest.outcome, Outcome::Ready);
+}
+
+#[test]
+fn excluded_expected_key_needs_missing_reason_stays_partial() {
+    // ADR 0102 dec. 4: excluding an EXPECTED key still leaves it missing —
+    // the run's denominator (partiality) is untouched by exclusion — and
+    // still requires a missingReasons entry to avoid
+    // completeness.missing_without_reason.
+    let mut run = base_run();
+    run.expected = Some(expected(&["revenue"]));
+    run.missing_reasons = MissingReasons::Valid(std::collections::BTreeMap::from([(
+        "revenue".to_owned(),
+        "excluded: footnote only, not comparable".to_owned(),
+    )]));
+    let mut excluded = base_obs("excluded1", 0);
+    excluded.mapping_status = "excluded".to_owned();
+    excluded.metric_key_candidate = Some("revenue".to_owned());
+    excluded.exclusion_reason = Some("footnote only".to_owned());
+    excluded.definition = None;
+    let manifest = build_manifest(&run, &[excluded]);
+    let completeness = manifest
+        .completeness
+        .as_ref()
+        .expect("completeness present");
+    assert_eq!(completeness.missing.len(), 1, "{completeness:?}");
+    assert_eq!(completeness.missing[0].metric_key, "revenue");
+    assert_eq!(
+        completeness.missing[0].reason.as_deref(),
+        Some("excluded: footnote only, not comparable")
+    );
+    assert!(
+        manifest.run_diagnostics.is_empty(),
+        "reasoned, so completeness.missing_without_reason must not fire"
+    );
+    // The manifest ITSELF stays Ready (excluded never forces Failed); the
+    // resulting commit's terminal `partial` status is a downstream, denominator-
+    // driven concept the commit layer derives from `completeness.missing`.
+    assert_eq!(manifest.outcome, Outcome::Ready);
 }
 
 #[test]
@@ -902,7 +1053,7 @@ proptest::proptest! {
 fn registry_is_exhaustive_and_every_literal_is_unique() {
     assert_eq!(
         REGISTRY.len(),
-        18,
+        19,
         "update this count deliberately with the registry"
     );
     let mut seen = std::collections::HashSet::new();

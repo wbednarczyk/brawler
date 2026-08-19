@@ -413,8 +413,10 @@ act_handler!(
 /// `^[a-z][a-z0-9_]*$` — the snake_case ASCII shape `metric_key` must take
 /// (ADR 0093 decision 4, epic #285 T9): a catalog key an agent mints must
 /// read like every seeded one (`net_interest_income`, `broker_client_count`),
-/// never prose or mixed case.
-fn is_snake_case_ascii_metric_key(value: &str) -> bool {
+/// never prose or mixed case. `pub(super)`: `propose_kpi_definition`
+/// (`kpi_ingest_submit.rs`, ADR 0101, epic #399 S4) reuses the same shape
+/// check rather than duplicating it.
+pub(super) fn is_snake_case_ascii_metric_key(value: &str) -> bool {
     let mut chars = value.chars();
     match chars.next() {
         Some(first) if first.is_ascii_lowercase() => {}

@@ -108,24 +108,25 @@ Turning an issuer's report into stored financial figures is a **run-based
 workflow** (ADR 0098 / ADR 0099), and it is the **only** supported path — an
 agent never writes canonical facts directly for a normal report. This runs
 behind its own **acquisition credential** (Settings → MCP server → the
-acquisition token): a scoped token whose entire surface is the nine workflow
+acquisition token): a scoped token whose entire surface is the ten workflow
 tools, and whose act tools are **not** gated by the write toggle above (that
 scope is enabled once, at authentication). Handing an agent an acquisition token
 and *"process all pending KPI ingests"* is a complete instruction — here is what
 that means.
 
 <!-- BEGIN ACQUISITION WORKFLOW TOOLS -->
-The nine workflow tools, in contract order:
+The ten workflow tools, in contract order:
 
 1. `start_kpi_ingest` — claim or resume a run; an idempotent keepalive.
 2. `list_pending_kpi_ingests` — the pending-run work queue (paginated).
 3. `get_kpi_ingest_context` — catalog, plausibility evidence, profile doctrine.
 4. `get_kpi_ingest_document` — the pinned source bytes, in chunks.
 5. `stage_kpi_observations` — write the complete revision snapshot.
-6. `validate_kpi_ingest` — the typed manifest / repair report.
-7. `commit_kpi_ingest` — atomic, idempotent commit of the validated manifest.
-8. `get_kpi_ingest_status` — a pure status read.
-9. `cancel_kpi_ingest` — abandon a pre-commit run.
+6. `propose_kpi_definition` — mint (or reuse) a company-scoped catalog entry for a disclosed number the canon has no key for.
+7. `validate_kpi_ingest` — the typed manifest / repair report.
+8. `commit_kpi_ingest` — atomic, idempotent commit of the validated manifest.
+9. `get_kpi_ingest_status` — a pure status read.
+10. `cancel_kpi_ingest` — abandon a pre-commit run.
 <!-- END ACQUISITION WORKFLOW TOOLS -->
 
 ### The loop: process all pending ingests
@@ -145,25 +146,41 @@ set of observations → validate → repair if needed → commit → confirm.**
 - **Read the context** with `get_kpi_ingest_context{ runId }`: the catalog of
   metric definitions (so you can map a Polish line to a metric), the plausibility
   evidence (per-slot medians and recent history — the validator's own yardstick),
-  and the profile rules. When the reporting period, scope, or data quality is
-  still unknown, read the source bytes with `get_kpi_ingest_document{ runId,
-  offset, length }` (up to 262144 bytes per chunk) until `eof`.
+  and the profile rules. The catalog carries the full canon, not just this run's
+  expected keys — full metadata for the expected keys and your own company's
+  minted extras, `{metricKey, label}` only for the rest; **page the catalog to
+  the end of its cursor before proposing anything** (ADR 0101 dec. 7) — a key
+  with no `plausibility` entry and outside `run.expectedKpis.keys` is
+  `notRequested`, not "no history". When the reporting period, scope, or data
+  quality is still unknown, read the source bytes with `get_kpi_ingest_document{
+  runId, offset, length }` (up to 262144 bytes per chunk) until `eof`.
 - **Stage** with `stage_kpi_observations{ runId, observations, missingReasons }`.
   Each stage is the **complete** snapshot of a revision — a repair resends every
   observation, not just the fixed one. `missingReasons` is required (`{}` = you
-  omitted nothing on purpose). Cite every observation (see below).
+  omitted nothing on purpose). Cite every observation (see below). **Over 100
+  observations**: use a chunked draft instead — `{ draft: { open: true,
+  expectedObservations } }` mints a server-issued `draftId`; append ≤100-
+  observation chunks with `{ draft: { draftId, chunkIndex }, observations }`
+  (no `missingReasons` on these calls); finalize with `{ draft: { draftId,
+  final: true }, missingReasons }` — its response matches the single-call shape.
+  A dropped session resumes via `get_kpi_ingest_status`'s `openDraft` field
+  (draft id + chunks already received) instead of restarting.
 - **Validate** with `validate_kpi_ingest{ runId, revision }`, passing the
-  `revision` the stage returned. `ready` → commit; `failed` → the returned
-  manifest **is** the repair report, flagging exactly what to fix; `superseded` →
-  something else moved the run, so re-read it and start over.
+  `revision` the stage returned. `ready` → commit; `failed` → `severityCounts`
+  gives the flagged count, and the full repair report (each flagged observation
+  naming what to fix) is a separate read, `get_kpi_ingest_context{ runId,
+  section: "manifest" }`; `superseded` → something else moved the run, so
+  re-read it and start over.
 - **Repair, but bounded.** On `failed`, fix the flagged observations, re-stage
   the complete snapshot, and re-validate — **at most twice**. If the same
   problems repeat or you have nothing new to add, stop and hand the manifest
   diagnostics back to the user. (This cap is the agent's own discipline, not a
   server limit.)
 - **Commit** with `commit_kpi_ingest{ runId, manifestHash, revision }` → a
-  receipt listing the accepted facts and each observation's outcome. Commit is
-  idempotent: replaying it returns the identical receipt.
+  bounded summary (`terminalStatus`, accepted/excluded counts). The full
+  per-observation outcomes ledger is a separate read, `get_kpi_ingest_context{
+  runId, section: "receipt" }`. Commit is idempotent: replaying it returns the
+  identical summary.
 - **Confirm** with `get_kpi_ingest_status{ runId }` — a terminal `complete` (or
   `partial`, when a `missingReasons` gap was declared).
 
@@ -350,7 +367,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `get_kpi_ingest_document` | Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed source blob, verified against the frozen sourceContentHash — the portable document delivery channel. Available once the source is captured. Pure read. |
 | `get_kpi_ingest_status` | Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (64):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (65):
 
 | Tool | What it does |
 | --- | --- |
@@ -415,6 +432,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `run_pipeline_reextraction` | Re-arm one company's landed ESEF runs whose stored pipeline version is stale, so the current extractor reads their filings again. Queues a durable batch; poll `get_pipeline_reextraction_progress`. |
 | `start_kpi_ingest` | Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId (+ optional scope/dataQuality/period) creates the run, claims the lease, pins the source bytes, and enters extraction once context is complete. Resume: runId re-claims idempotently (the explicit keepalive) and attaches missing context set-once. Provenance is the run pipeline itself; no citation carrier here. |
 | `stage_kpi_observations` | Stage the COMPLETE revision snapshot of extracted observations (1..100, with citations) plus the REQUIRED missingReasons declaration ({} = explicitly none), written in the same transaction. A repair resends every retained observation. Requires the caller's live lease. Provenance is the run pipeline itself. |
+| `propose_kpi_definition` | Mint (or reuse) a company-scoped, origin=agent KPI catalog entry for a disclosed number the canon has no key for (ADR 0101). Guard order: this company's own minted entry is returned as-is (created: false); a curated kpi_aliases synonym refuses with a typed synonym_redirect naming the canonical key and definitionId; an exact shared-canon key returns the canonical definition (created: false, never a company shadow); only a genuinely new key mints — never fuzzy matching. Page the full catalog (get_kpi_ingest_context) before proposing. Requires the caller's live lease. |
 | `validate_kpi_ingest` | Validate one staged revision synchronously (generation-pinned). Returns the FULL manifest — a failed manifest is the typed repair report; a raced loser gets outcome=superseded with the current run tuple. |
 | `commit_kpi_ingest` | Atomically commit a ready manifest (runId + manifestHash + revision) and return the immutable receipt. Idempotent: replaying a committed tuple returns the stored receipt verbatim; a stale tuple is a typed conflict. |
 | `cancel_kpi_ingest` | Cancel a KPI ingest run in any pre-commit state (releases its lease). Refuses `committing` and terminal states. |

@@ -3718,6 +3718,137 @@ fn migration_0123_admits_value_divergence_and_loses_no_outcome_row() {
 }
 
 #[test]
+fn rebuild_preserves_rows_constraints_indexes() {
+    // ADR 0102 dec. 1, epic #399 S5: 0138's `mapping_status` CHECK is baked
+    // at CREATE TABLE time, so widening it with `excluded` requires the
+    // standard table rebuild (the 0119/0123 shape). This proves the rebuild
+    // loses no row, the pre-0150 CHECK genuinely rejects `excluded`
+    // (otherwise this test passes vacuously), and every constraint/index
+    // survives: the run FK CASCADE, the `UNIQUE(run_id, revision, ordinal)`
+    // slot, and the `idx_kpi_staged_observations_run_revision` index.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 149).expect("apply schema through 0149");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'XYZ', 'GPW:XYZ', 'XYZ S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+             VALUES ('doc1', 'c1', 'espi_attachment', 'https://x/doc1.pdf', 'fetched')",
+            [],
+        )
+        .expect("seed a document");
+    connection
+        .execute(
+            "INSERT INTO kpi_ingest_runs
+                (id, report_document_id, company_id, profile_version, status,
+                 period_fiscal_year, period_type, scope, data_quality)
+             VALUES ('run1', 'doc1', 'c1', 'p1', 'staged', 2025, 'FY', 'consolidated', 'final')",
+            [],
+        )
+        .expect("seed a run");
+    connection
+        .execute(
+            "INSERT INTO kpi_staged_observations
+                (id, run_id, revision, ordinal, raw_label, raw_value, mapping_status)
+             VALUES ('kpiobs_keep', 'run1', 1, 0, 'Przychody', '1000', 'mapped')",
+            [],
+        )
+        .expect("seed a pre-0150 observation");
+
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO kpi_staged_observations
+                    (id, run_id, revision, ordinal, raw_label, raw_value, mapping_status)
+                 VALUES ('kpiobs_pre', 'run1', 1, 1, 'Footnote', 'n/a', 'excluded')",
+                [],
+            )
+            .is_err(),
+        "the pre-0150 CHECK should not admit excluded"
+    );
+
+    apply_migrations(&mut connection).expect("apply migration 0150");
+
+    let (raw_label, raw_value, mapping_status): (String, String, String) = connection
+        .query_row(
+            "SELECT raw_label, raw_value, mapping_status FROM kpi_staged_observations
+             WHERE id = 'kpiobs_keep'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the pre-0150 observation survives the rebuild");
+    assert_eq!(raw_label, "Przychody");
+    assert_eq!(raw_value, "1000");
+    assert_eq!(mapping_status, "mapped");
+
+    let exclusion_reason: Option<String> = connection
+        .query_row(
+            "SELECT exclusion_reason FROM kpi_staged_observations WHERE id = 'kpiobs_keep'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the new column exists and defaults to NULL");
+    assert!(exclusion_reason.is_none());
+
+    connection
+        .execute(
+            "INSERT INTO kpi_staged_observations
+                (id, run_id, revision, ordinal, raw_label, raw_value, mapping_status, exclusion_reason)
+             VALUES ('kpiobs_post', 'run1', 1, 1, 'Footnote', 'n/a', 'excluded', 'not a KPI')",
+            [],
+        )
+        .expect("excluded with a reason must be admitted after 0150");
+
+    // The `UNIQUE(run_id, revision, ordinal)` slot survives the rebuild.
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO kpi_staged_observations
+                    (id, run_id, revision, ordinal, raw_label, raw_value, mapping_status)
+                 VALUES ('kpiobs_dupe', 'run1', 1, 1, 'Dupe', 'n/a', 'unmapped')",
+                [],
+            )
+            .is_err(),
+        "the (run_id, revision, ordinal) unique slot must survive the rebuild"
+    );
+
+    // The index survives the rebuild (queryable via the query planner without
+    // erroring; existence is also asserted directly below).
+    let index_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+             WHERE type = 'index' AND name = 'idx_kpi_staged_observations_run_revision')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("pragma");
+    assert!(
+        index_exists,
+        "the run/revision index must survive the rebuild"
+    );
+
+    // The run FK `ON DELETE CASCADE` survives the rebuild.
+    connection
+        .execute("DELETE FROM kpi_ingest_runs WHERE id = 'run1'", [])
+        .expect("delete the run");
+    let remaining: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM kpi_staged_observations WHERE run_id = 'run1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(remaining, 0, "ON DELETE CASCADE must survive the rebuild");
+
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+}
+
+#[test]
 fn migration_0124_heals_companies_missing_core_kpi_relevance() {
     // #203 residual (epic #229 T7): migration 0106 seeded the IFRS core set for
     // the companies that existed WHEN IT APPLIED. Two companies on the owner's

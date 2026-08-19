@@ -56,6 +56,22 @@ pub enum CommandErrorCode {
     /// The request cannot be satisfied within the response budget (ADR 0099
     /// dec. 7). Retryable after narrowing/paginating the request.
     ResponseBudgetExceeded,
+    /// `propose_kpi_definition`'s requested `metricKey` is a curated
+    /// `kpi_aliases` synonym of an already-populated key (ADR 0101 dec. 4).
+    /// Not retryable with the same key; reuse the named `definitionId`.
+    SynonymRedirect,
+    /// A chunked-draft `(draftId, chunkIndex)` replay's server-computed
+    /// content hash disagrees with the stored chunk (ADR 0102 dec. 8). Not
+    /// retryable with the same index; append at a fresh index or abort.
+    DraftChunkConflict,
+    /// A chunked-draft finalize was refused: zero/gapped chunks, or the
+    /// assembled aggregate disagrees with the draft's declared count (ADR
+    /// 0102 dec. 8/9). Retryable after appending the missing chunk(s).
+    DraftIncomplete,
+    /// A chunked draft's lease epoch is stale — a takeover happened since it
+    /// opened (ADR 0102 dec. 6), or it was already finalized/aborted. Not
+    /// retryable; open a fresh draft.
+    DraftSuperseded,
     /// An unexpected internal failure with no more specific code.
     Internal,
 }
@@ -133,6 +149,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // Soft-reference misses and lookup failures: the referenced row is gone.
         StorageError::MissingResearchReference { .. } => NotFound,
         StorageError::MissingFinancialsReference { .. } => NotFound,
+        // The typed alias-redirect refusal (ADR 0101 dec. 4) — retrying the
+        // same key is never right, so this is its own code, not InvalidInput.
+        StorageError::KpiDefinitionSynonymRedirect { .. } => SynonymRedirect,
         StorageError::MissingClaimReference { .. } => NotFound,
         StorageError::MissingReportSeasonReference { .. } => NotFound,
         // Editing a frozen report expectation conflicts with recorded state
@@ -192,6 +211,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::RunLeaseInvariantViolation { .. } => Internal,
         // A stored `status` token no caller ever supplies as raw input.
         StorageError::UnknownKpiIngestRunState { .. } => Internal,
+        // A stored `profile_version` no caller ever supplies as raw input —
+        // it was validated once at run creation (ADR 0102 dec. 13).
+        StorageError::UnknownKpiIngestProfileVersion { .. } => Internal,
         // A second `create_run_if_absent` naming a different period for the
         // same active triple conflicts with the already-running triple.
         StorageError::RunPeriodConflict { .. } => Conflict,
@@ -258,6 +280,19 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // BEGIN IMMEDIATE lost the busy_timeout race — explicitly retryable;
         // the retry lands on the receipt fast path (#363).
         StorageError::CommitContention { .. } => Conflict,
+        // A referenced draft id is gone — the same lookup-miss shape as any
+        // other soft reference.
+        StorageError::KpiIngestDraftNotFound { .. } => NotFound,
+        // Exactly one active draft per run (ADR 0102 dec. 6/11) — a second
+        // open or a single-call attempt while one is open conflicts with
+        // that invariant, not a shape problem with the request.
+        StorageError::KpiIngestActiveDraftExists { .. } => Conflict,
+        StorageError::KpiIngestDraftSuperseded { .. } => DraftSuperseded,
+        StorageError::KpiIngestDraftChunkConflict { .. } => DraftChunkConflict,
+        StorageError::KpiIngestDraftIncomplete { .. } => DraftIncomplete,
+        // The aggregate cap is a response/request-size budget (ADR 0102 dec.
+        // 10), the same class as the single-call `OBSERVATIONS_MAX` refusal.
+        StorageError::KpiIngestDraftAggregateBudgetExceeded { .. } => ResponseBudgetExceeded,
     }
 }
 

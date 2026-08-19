@@ -122,6 +122,8 @@ reviewable and the #272 characteristic-KPI UI can surface them honestly. Minted
 definitions are extras, never completeness-denominator entries (kpi_relevance stays
 governed by ADR 0092's layers).
 
+**Amended (2026-08-18, [ADR 0101](0101-agent-proposed-kpi-definitions-and-full-catalog-visibility.md) dec. 2):** agent minting happens exclusively through the acquisition-scoped `propose_kpi_definition` tool; `create_kpi_definition` stays a Full-scope tool, unreachable from the acquisition scope.
+
 ### 5. Capture security posture
 
 `capture_report_document` becomes an exposed MCP act so the agent can register the

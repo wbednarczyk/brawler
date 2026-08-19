@@ -1,5 +1,6 @@
 //! Acquisition-workflow context read model (#385, ADR 0099): the two pure
-//! reads of the nine-tool surface — `get_kpi_ingest_context` (everything one
+//! reads of the ten-tool surface (ADR 0101, epic #399 S4) —
+//! `get_kpi_ingest_context` (everything one
 //! report's extraction needs, within hard response budgets: run state,
 //! document metadata, the hash-guarded derived-period hint, the expected+
 //! minted definition catalog, validator-equivalent plausibility evidence,
@@ -50,6 +51,11 @@ use crate::storage::{
 const CATALOG_PAGE_MAX: usize = 64;
 const PLAUSIBILITY_PAGE_MAX: usize = 64;
 const MANIFEST_PAGE_MAX: usize = 50;
+/// The paged commit receipt (ADR 0102 dec. 12, epic #399 S6) — mirrors
+/// `MANIFEST_PAGE_MAX`; `commit_kpi_ingest`'s own response stays a bounded
+/// summary, the full outcomes ledger (up to `AGGREGATE_OBSERVATIONS_MAX`
+/// 1000 rows) is read here, paginated.
+const RECEIPT_PAGE_MAX: usize = 50;
 const RECENT_POINTS_MAX: usize = 8;
 /// Every context response is ≤256 KiB; a document chunk is ≤256 KiB of RAW
 /// bytes (its base64 envelope may exceed this — the chunk cap is the budget).
@@ -77,6 +83,10 @@ pub enum ContextSection {
     Catalog,
     Plausibility,
     Manifest,
+    /// The full commit receipt (ADR 0102 dec. 12) — like `manifest`, NEVER in
+    /// the default call; a `commit_kpi_ingest` v1000-row outcomes ledger
+    /// cannot ride the tool's own bounded summary response.
+    Receipt,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -129,16 +139,58 @@ pub struct DerivedPeriodDto {
     pub period_end: String,
 }
 
+/// Two-tier wire shape (ADR 0101 dec. 7/9): `Full` is today's shape verbatim
+/// (byte-identical) for resolved-expected and company-agent rows; `Compact`
+/// carries only `{metricKey, label}` for the remaining ~373 canonical rows —
+/// enough for an agent's reuse-or-propose decision without the ≈85 KiB a full
+/// catalog would cost (server-side propose validation is the real guard, not
+/// what the agent can see). `#[serde(untagged)]` keeps `Full` wire-identical
+/// to the pre-widening struct; `definitionId` is kept internally on `Compact`
+/// (never serialized) for stable keyset pagination.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CatalogEntryDto {
-    pub definition_id: String,
-    pub metric_key: String,
-    pub label: String,
-    pub unit: Option<String>,
-    pub statement_group: String,
-    pub value_kind: String,
-    pub origin: String,
+#[serde(untagged)]
+pub enum CatalogEntryDto {
+    #[serde(rename_all = "camelCase")]
+    Full {
+        definition_id: String,
+        metric_key: String,
+        label: String,
+        unit: Option<String>,
+        statement_group: String,
+        value_kind: String,
+        origin: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Compact {
+        #[serde(skip)]
+        definition_id: String,
+        metric_key: String,
+        label: String,
+    },
+}
+
+impl CatalogEntryDto {
+    fn metric_key(&self) -> &str {
+        match self {
+            Self::Full { metric_key, .. } | Self::Compact { metric_key, .. } => metric_key,
+        }
+    }
+
+    fn definition_id(&self) -> &str {
+        match self {
+            Self::Full { definition_id, .. } | Self::Compact { definition_id, .. } => definition_id,
+        }
+    }
+
+    /// Sort/pagination tier: `Full` (0) always precedes `Compact` (1) so the
+    /// default call's truncated first page is dominated by the entries an
+    /// agent needs immediately (ADR 0101 dec. 7).
+    fn tier(&self) -> u8 {
+        match self {
+            Self::Full { .. } => 0,
+            Self::Compact { .. } => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,6 +246,12 @@ pub struct ContextDto {
     pub document: DocumentMetaDto,
     pub derived_period: Option<DerivedPeriodDto>,
     pub catalog: Vec<CatalogEntryDto>,
+    /// Metric keys present in `catalog` (this page) that are not members of
+    /// the run's expected set — ADR 0101 dec. 8: explicit, so their absence
+    /// from `plausibility` is never misread as "no history exists" for a
+    /// metric nobody asked this run to observe. Cheap: a set-difference
+    /// against `run.expectedKpis.keys`, zero additional queries.
+    pub not_requested: Vec<String>,
     pub plausibility: Vec<PlausibilityEntryDto>,
     pub profile_rules: Vec<String>,
     pub manifest_available: bool,
@@ -211,6 +269,8 @@ pub struct SectionDto {
     pub plausibility: Option<Vec<PlausibilityEntryDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manifest: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<Value>,
     pub next_cursor: Option<String>,
 }
 
@@ -235,6 +295,7 @@ pub struct DocumentChunkDto {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CatalogCursor {
+    t: u8,
     m: String,
     d: String,
 }
@@ -253,6 +314,14 @@ struct PlausibilityCursor {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ManifestCursor {
     attempt_id: String,
+    offset: usize,
+}
+
+/// No attempt-pinning needed (unlike [`ManifestCursor`]) — a run has at most
+/// one commit receipt ever (ADR 0098 dec. 5, `UNIQUE(run_id)`).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ReceiptCursor {
     offset: usize,
 }
 
@@ -396,8 +465,8 @@ fn resolved_expected_definitions(
     Ok(resolved)
 }
 
-fn catalog_entry(definition: &KpiDefinition) -> CatalogEntryDto {
-    CatalogEntryDto {
+fn catalog_entry_full(definition: &KpiDefinition) -> CatalogEntryDto {
+    CatalogEntryDto::Full {
         definition_id: definition.id.clone(),
         metric_key: definition.metric_key.clone(),
         label: truncate_bytes(&definition.label, LABEL_MAX),
@@ -411,32 +480,62 @@ fn catalog_entry(definition: &KpiDefinition) -> CatalogEntryDto {
     }
 }
 
-/// The full sorted catalog: definitions for the expected keys plus the
-/// company's minted extras (`origin == "agent"` — ADR 0093 dec. 4 vocabulary),
-/// deduped by definition id, sorted by `(metricKey, definitionId)` for stable
-/// keyset pagination.
+fn catalog_entry_compact(definition: &KpiDefinition) -> CatalogEntryDto {
+    CatalogEntryDto::Compact {
+        definition_id: definition.id.clone(),
+        metric_key: definition.metric_key.clone(),
+        label: truncate_bytes(&definition.label, LABEL_MAX),
+    }
+}
+
+/// The full sorted catalog (ADR 0101 dec. 7): FULL metadata for the expected
+/// keys plus the company's minted extras (`origin == "agent"` — ADR 0093
+/// dec. 4 vocabulary), COMPACT `{metricKey, label}` for every other canonical
+/// (shared, `company_id IS NULL`) definition — the full canon, not just what
+/// this run happened to ask for. Deduped by definition id, sorted by
+/// `(tier, metricKey, definitionId)`: tier keeps every Full entry ahead of
+/// every Compact entry so the default call's truncated first page is never
+/// dominated by canon the agent didn't ask about.
 fn build_catalog(
     resolved_expected: &[(String, KpiDefinition)],
     definitions: &[KpiDefinition],
     company_id: &str,
+    statement_type: &str,
 ) -> Vec<CatalogEntryDto> {
     let mut by_id: HashMap<String, CatalogEntryDto> = HashMap::new();
     for (_, definition) in resolved_expected {
         by_id
             .entry(definition.id.clone())
-            .or_insert_with(|| catalog_entry(definition));
+            .or_insert_with(|| catalog_entry_full(definition));
     }
     for definition in definitions {
         if definition.origin == "agent" && definition.company_id.as_deref() == Some(company_id) {
             by_id
                 .entry(definition.id.clone())
-                .or_insert_with(|| catalog_entry(definition));
+                .or_insert_with(|| catalog_entry_full(definition));
+        }
+    }
+    for definition in definitions {
+        // §G harvest (epic #399 S8): a sector-scoped row is offered ONLY to
+        // companies of that statement type — anything else would never
+        // resolve at staging and just baits a `mapping.unresolved` flag.
+        let sector_visible = match definition.sector.as_deref() {
+            None => true,
+            Some(sector) => sector == statement_type,
+        };
+        if definition.company_id.is_none() && sector_visible {
+            by_id
+                .entry(definition.id.clone())
+                .or_insert_with(|| catalog_entry_compact(definition));
         }
     }
     let mut entries: Vec<CatalogEntryDto> = by_id.into_values().collect();
     entries.sort_by(|a, b| {
-        (a.metric_key.as_str(), a.definition_id.as_str())
-            .cmp(&(b.metric_key.as_str(), b.definition_id.as_str()))
+        (a.tier(), a.metric_key(), a.definition_id()).cmp(&(
+            b.tier(),
+            b.metric_key(),
+            b.definition_id(),
+        ))
     });
     entries
 }
@@ -687,11 +786,13 @@ fn document_meta(state: &AppState, run: &KpiIngestRun) -> Result<DocumentMetaDto
     })
 }
 
-fn profile_rules(run: &KpiIngestRun) -> Vec<String> {
-    crate::storage::kpi_ingest_profile_rules(&run.profile_version)
-        .iter()
-        .map(|rule| truncate_bytes(rule, PROFILE_RULE_MAX))
-        .collect()
+fn profile_rules(run: &KpiIngestRun) -> Result<Vec<String>, CommandError> {
+    Ok(
+        crate::storage::kpi_ingest_profile_rules(&run.profile_version)?
+            .iter()
+            .map(|rule| truncate_bytes(rule, PROFILE_RULE_MAX))
+            .collect(),
+    )
 }
 
 // ============================================================================
@@ -700,8 +801,9 @@ fn profile_rules(run: &KpiIngestRun) -> Vec<String> {
 
 fn catalog_cursor_for(entry: &CatalogEntryDto) -> String {
     encode_cursor(&CatalogCursor {
-        m: entry.metric_key.clone(),
-        d: entry.definition_id.clone(),
+        t: entry.tier(),
+        m: entry.metric_key().to_owned(),
+        d: entry.definition_id().to_owned(),
     })
 }
 
@@ -722,8 +824,8 @@ fn catalog_start_index(
     match cursor {
         SectionCursor::Start => 0,
         SectionCursor::After(after) => entries.partition_point(|entry| {
-            (entry.metric_key.as_str(), entry.definition_id.as_str())
-                <= (after.m.as_str(), after.d.as_str())
+            (entry.tier(), entry.metric_key(), entry.definition_id())
+                <= (after.t, after.m.as_str(), after.d.as_str())
         }),
     }
 }
@@ -859,9 +961,19 @@ fn default_context(state: &AppState, run: &KpiIngestRun) -> Result<ContextDto, C
     let document = document_meta(state, run)?;
     let derived_period = derived_period_hint(state, run)?;
     let (resolved_expected, definitions) = resolved_catalog_inputs(state, run)?;
-    let catalog_all = build_catalog(&resolved_expected, &definitions, &run.company_id);
+    let statement_type = state.companies().get_statement_type(&run.company_id)?;
+    let catalog_all = build_catalog(
+        &resolved_expected,
+        &definitions,
+        &run.company_id,
+        &statement_type,
+    );
     let plausibility_all = build_plausibility(state, run, &resolved_expected)?;
-    let rules = profile_rules(run);
+    let expected_metric_keys: BTreeSet<&str> = resolved_expected
+        .iter()
+        .map(|(key, _)| key.as_str())
+        .collect();
+    let rules = profile_rules(run)?;
     let manifest_available = state
         .kpi_ingest_runs()
         .latest_validation_attempt(&run.id)
@@ -885,11 +997,18 @@ fn default_context(state: &AppState, run: &KpiIngestRun) -> Result<ContextDto, C
             ),
             manifest: manifest_available.then_some(true),
         };
+        let catalog_page = &catalog_all[..catalog_kept];
+        let not_requested: Vec<String> = catalog_page
+            .iter()
+            .filter(|entry| !expected_metric_keys.contains(entry.metric_key()))
+            .map(|entry| entry.metric_key().to_owned())
+            .collect();
         let dto = ContextDto {
             run: run_dto.clone(),
             document: document.clone(),
             derived_period: derived_period.clone(),
-            catalog: catalog_all[..catalog_kept].to_vec(),
+            catalog: catalog_page.to_vec(),
+            not_requested,
             plausibility: plausibility_all[..plausibility_kept].to_vec(),
             profile_rules: rules.clone(),
             manifest_available,
@@ -948,7 +1067,8 @@ fn section_context(
                 None => SectionCursor::Start,
             };
             let (resolved, definitions) = resolved_catalog_inputs(state, run)?;
-            let all = build_catalog(&resolved, &definitions, &run.company_id);
+            let statement_type = state.companies().get_statement_type(&run.company_id)?;
+            let all = build_catalog(&resolved, &definitions, &run.company_id, &statement_type);
             let start = catalog_start_index(&all, &decoded);
             let end = (start + limit).min(all.len());
             let page: Vec<CatalogEntryDto> = all[start..end].to_vec();
@@ -965,10 +1085,11 @@ fn section_context(
                         catalog: Some(entries.to_vec()),
                         plausibility: None,
                         manifest: None,
+                        receipt: None,
                         next_cursor,
                     })
                 },
-                |entry| format!("catalog entry {}", entry.definition_id),
+                |entry| format!("catalog entry {}", entry.definition_id()),
             )?;
             Ok(SectionDto {
                 run_id: run.id.clone(),
@@ -976,6 +1097,7 @@ fn section_context(
                 catalog: Some(page),
                 plausibility: None,
                 manifest: None,
+                receipt: None,
                 next_cursor,
             })
         }
@@ -1003,6 +1125,7 @@ fn section_context(
                         catalog: None,
                         plausibility: Some(entries.to_vec()),
                         manifest: None,
+                        receipt: None,
                         next_cursor,
                     })
                 },
@@ -1019,10 +1142,12 @@ fn section_context(
                 catalog: None,
                 plausibility: Some(page),
                 manifest: None,
+                receipt: None,
                 next_cursor,
             })
         }
         ContextSection::Manifest => manifest_section(state, run, cursor, limit),
+        ContextSection::Receipt => receipt_section(state, run, cursor, limit),
     }
 }
 
@@ -1106,6 +1231,7 @@ fn manifest_section(
             catalog: None,
             plausibility: None,
             manifest: Some(manifest_value),
+            receipt: None,
             next_cursor: next_cursor.clone(),
         };
         if serialized_len(&dto)? <= RESPONSE_BUDGET_BYTES {
@@ -1115,6 +1241,90 @@ fn manifest_section(
             return Err(budget_refusal(
                 "the manifest header alone exceeds the 256 KiB response budget — pre-bound \
                  legacy data; invalidate and re-validate the run",
+            ));
+        }
+        page.pop();
+        has_more = true;
+    }
+}
+
+/// The paged commit receipt (ADR 0102 dec. 12): unlike the manifest section,
+/// no attempt pinning is needed — a run has AT MOST one commit receipt EVER
+/// (ADR 0098 dec. 5, immutable, `UNIQUE(run_id)`), so the cursor is a bare
+/// offset into the stored `outcomes` array. No receipt yet → `conflict`
+/// (mirrors `manifestAvailable`'s "no attempt yet" gate).
+fn receipt_section(
+    state: &AppState,
+    run: &KpiIngestRun,
+    cursor: Option<String>,
+    limit: Option<i64>,
+) -> Result<SectionDto, CommandError> {
+    let limit = validate_section_limit(limit, RECEIPT_PAGE_MAX, "receipt")?;
+    let offset = match cursor.as_deref() {
+        None => 0usize,
+        Some(cursor) => {
+            let decoded: ReceiptCursor = match decode_section_cursor(cursor)? {
+                SectionCursor::Start => return Err(invalid_cursor()),
+                SectionCursor::After(decoded) => decoded,
+            };
+            decoded.offset
+        }
+    };
+
+    let receipt = state
+        .kpi_ingest_staging()
+        .get_commit_receipt(&run.id)
+        .map_err(CommandError::from)?
+        .ok_or_else(|| {
+            CommandError::new(
+                CommandErrorCode::Conflict,
+                "no commit receipt exists for this run yet",
+            )
+        })?;
+    let outcomes: Vec<Value> = serde_json::from_str(&receipt.outcomes_json)
+        .map_err(|_| internal("stored receipt outcomes are not valid JSON"))?;
+
+    let start = offset.min(outcomes.len());
+    let end = (start + limit).min(outcomes.len());
+    let mut page: Vec<Value> = outcomes[start..end].to_vec();
+    let mut has_more = end < outcomes.len();
+
+    loop {
+        let next_cursor = has_more.then(|| {
+            encode_cursor(&ReceiptCursor {
+                offset: start + page.len(),
+            })
+        });
+        let receipt_value = if start == 0 {
+            serde_json::json!({
+                "runId": receipt.run_id,
+                "terminalStatus": receipt.terminal_status,
+                "periodId": receipt.period_id,
+                "acceptedCount": receipt.accepted_count,
+                "outcomesSchemaVersion": receipt.outcomes_schema_version,
+                "manifestHash": receipt.manifest_hash,
+                "manifestRevision": receipt.manifest_revision,
+                "committedAt": receipt.committed_at,
+                "outcomes": page,
+            })
+        } else {
+            serde_json::json!({ "outcomes": page })
+        };
+        let dto = SectionDto {
+            run_id: run.id.clone(),
+            section: "receipt",
+            catalog: None,
+            plausibility: None,
+            manifest: None,
+            receipt: Some(receipt_value),
+            next_cursor: next_cursor.clone(),
+        };
+        if serialized_len(&dto)? <= RESPONSE_BUDGET_BYTES {
+            return Ok(dto);
+        }
+        if page.is_empty() {
+            return Err(budget_refusal(
+                "the receipt header alone exceeds the 256 KiB response budget",
             ));
         }
         page.pop();
@@ -1456,45 +1666,236 @@ mod tests {
             !keys.contains(&"user_only_metric"),
             "a user-origin company definition is not a minted extra"
         );
-        let sorted: Vec<&str> = {
-            let mut sorted = keys.clone();
-            sorted.sort_unstable();
-            sorted
-        };
-        assert_eq!(keys, sorted, "catalog is sorted by metric key");
+        // Full entries (expected + agent-minted) sort ahead of every compact
+        // canonical entry (ADR 0101 dec. 7/9 tier order), not plain alphabetical
+        // — the two Full keys here stay internally sorted.
+        let full_keys: Vec<&str> = keys
+            .iter()
+            .copied()
+            .filter(|key| *key == "net_profit" || *key == "custom_pipeline_yield")
+            .collect();
+        let mut sorted_full = full_keys.clone();
+        sorted_full.sort_unstable();
+        assert_eq!(
+            full_keys, sorted_full,
+            "full-tier entries sort by metric key"
+        );
     }
 
+    /// §G harvest (epic #399 S8): the compact tier served SECTOR-scoped rows
+    /// to companies of OTHER sectors — the entry hides its scope, the agent
+    /// maps to the key, and resolution then refuses it (`mapping.unresolved`).
+    /// A sector row is visible only to companies of that statement type.
     #[test]
-    fn catalog_section_pagination_yields_every_row_exactly_once() {
+    fn catalog_compact_tier_excludes_foreign_sector_keys() {
         let state = test_state();
         let run_id = started_run(&state);
-        let full = success(context(&state, json!({ "runId": run_id })));
-        let all: Vec<String> = full["catalog"]
-            .as_array()
-            .expect("catalog")
-            .iter()
-            .map(|entry| entry["definitionId"].as_str().expect("id").to_owned())
-            .collect();
-        assert!(all.len() >= 5, "the industrial floor seeds ≥5 entries");
 
-        let mut walked: Vec<String> = Vec::new();
+        let mut keys: Vec<String> = Vec::new();
         let mut cursor: Option<String> = None;
         loop {
-            let mut args = json!({ "runId": run_id, "section": "catalog", "limit": 2 });
+            let mut args = json!({ "runId": run_id, "section": "catalog", "limit": 64 });
             if let Some(cursor) = &cursor {
                 args["cursor"] = json!(cursor);
             }
             let page = success(context(&state, args));
-            assert_eq!(page["section"], "catalog");
             for entry in page["catalog"].as_array().expect("page") {
-                walked.push(entry["definitionId"].as_str().expect("id").to_owned());
+                keys.push(entry["metricKey"].as_str().expect("key").to_owned());
             }
             match page["nextCursor"].as_str() {
                 Some(next) => cursor = Some(next.to_owned()),
                 None => break,
             }
         }
-        assert_eq!(walked, all, "pagination is lossless and duplicate-free");
+
+        // `operating_expenses` is seeded sector='banking'; the test company is
+        // not a bank, so the key must NOT be offered (it would never resolve).
+        // Its canonical sibling `operating_expense` stays visible.
+        assert!(
+            !keys.iter().any(|k| k == "operating_expenses"),
+            "foreign-sector key offered to a non-banking company"
+        );
+        assert!(
+            keys.iter().any(|k| k == "operating_expense"),
+            "canonical sibling must stay visible"
+        );
+    }
+
+    /// ADR 0101 dec. 7/9: `build_catalog` widens to the full canon visible to
+    /// this company — crossing the `CATALOG_PAGE_MAX` boundary, so the default
+    /// call's `catalog` is always a truncated prefix; walking the `catalog`
+    /// section cursor to exhaustion must reach every visible row exactly once.
+    #[test]
+    fn catalog_section_pagination_reaches_full_canon_without_duplicates() {
+        let state = test_state();
+        let run_id = started_run(&state);
+
+        let canonical_count: i64 = {
+            let connection = state.checkout_for_tests().expect("raw");
+            connection
+                .query_row(
+                    // Mirrors build_catalog's compact-tier predicate: a
+                    // sector row counts only for its own statement type
+                    // (§G harvest, epic #399 S8).
+                    "SELECT COUNT(*) FROM kpi_definitions
+                     WHERE company_id IS NULL
+                       AND (sector IS NULL OR sector = (
+                            SELECT statement_type FROM companies
+                            WHERE id = (SELECT company_id FROM kpi_ingest_runs WHERE id = ?1)))",
+                    [&run_id],
+                    |row| row.get(0),
+                )
+                .expect("count")
+        };
+        assert!(
+            canonical_count as usize > CATALOG_PAGE_MAX,
+            "the widened canon crosses the {CATALOG_PAGE_MAX}-entry page boundary: \
+             {canonical_count}"
+        );
+
+        let mut walked: Vec<String> = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut args = json!({ "runId": run_id, "section": "catalog", "limit": 64 });
+            if let Some(cursor) = &cursor {
+                args["cursor"] = json!(cursor);
+            }
+            let page = success(context(&state, args));
+            assert_eq!(page["section"], "catalog");
+            for entry in page["catalog"].as_array().expect("page") {
+                walked.push(entry["metricKey"].as_str().expect("key").to_owned());
+            }
+            match page["nextCursor"].as_str() {
+                Some(next) => cursor = Some(next.to_owned()),
+                None => break,
+            }
+        }
+        assert_eq!(
+            walked.len(),
+            canonical_count as usize,
+            "every canonical row reached exactly once"
+        );
+        let mut deduped = walked.clone();
+        deduped.sort_unstable();
+        deduped.dedup();
+        assert_eq!(deduped.len(), walked.len(), "no duplicates across pages");
+
+        // The default call's own catalog is a prefix of the full walk, with a
+        // cursor signalling truncation (the canon now always exceeds one page).
+        let full = success(context(&state, json!({ "runId": run_id })));
+        let default_page: Vec<String> = full["catalog"]
+            .as_array()
+            .expect("catalog")
+            .iter()
+            .map(|entry| entry["metricKey"].as_str().expect("key").to_owned())
+            .collect();
+        assert_eq!(
+            &walked[..default_page.len()],
+            default_page.as_slice(),
+            "the default call's catalog page is a prefix of the full walk"
+        );
+        assert!(
+            full["truncated"]["catalog"].is_string(),
+            "the default call's catalog is always truncated once the canon exceeds one page"
+        );
+    }
+
+    /// ADR 0101 dec. 7: the catalog now carries every canonical definition,
+    /// not only what this run expected — an agent can check "does this
+    /// already exist" before proposing.
+    #[test]
+    fn catalog_includes_compact_canonical_beyond_expected() {
+        let state = test_state();
+        let run_id = started_run(&state);
+        let payload = success(context(&state, json!({ "runId": run_id })));
+        let expected: BTreeSet<String> = payload["run"]["expectedKpis"]["keys"]
+            .as_array()
+            .expect("expected keys")
+            .iter()
+            .map(|key| key.as_str().expect("key").to_owned())
+            .collect();
+        let catalog = payload["catalog"].as_array().expect("catalog");
+        assert!(
+            catalog.len() > expected.len(),
+            "the widened catalog carries canon beyond the expected floor: {} vs {}",
+            catalog.len(),
+            expected.len()
+        );
+        let compact = catalog
+            .iter()
+            .find(|entry| !expected.contains(entry["metricKey"].as_str().expect("key")))
+            .expect("a canonical entry beyond expected");
+        let mut keys: Vec<&str> = compact
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["label", "metricKey"],
+            "a canon entry beyond expected is the compact shape: {compact}"
+        );
+    }
+
+    /// ADR 0101 dec. 7/9: full metadata is reserved for the run's expected
+    /// keys and the company's agent-minted extras; every other canonical row
+    /// is the compact `{metricKey, label}` projection.
+    #[test]
+    fn expected_and_agent_entries_carry_full_metadata_compact_rest() {
+        let state = test_state();
+        seed_definition_raw(
+            &state,
+            "kdmint2",
+            "company",
+            Some("c1"),
+            "custom_pipeline_yield_2",
+            "Custom pipeline yield 2",
+            "currency",
+            "agent",
+        );
+        let run_id = started_run(&state);
+        let payload = success(context(&state, json!({ "runId": run_id })));
+        let catalog = payload["catalog"].as_array().expect("catalog");
+
+        for key in ["net_profit", "custom_pipeline_yield_2"] {
+            let entry = catalog
+                .iter()
+                .find(|entry| entry["metricKey"] == key)
+                .unwrap_or_else(|| panic!("{key} present in catalog"));
+            assert!(
+                entry["definitionId"].is_string(),
+                "{key} carries definitionId: {entry}"
+            );
+            assert!(
+                entry["statementGroup"].is_string(),
+                "{key} carries statementGroup: {entry}"
+            );
+            assert!(
+                entry["valueKind"].is_string(),
+                "{key} carries valueKind: {entry}"
+            );
+            assert!(entry["origin"].is_string(), "{key} carries origin: {entry}");
+        }
+
+        let expected: BTreeSet<String> = payload["run"]["expectedKpis"]["keys"]
+            .as_array()
+            .expect("expected keys")
+            .iter()
+            .map(|key| key.as_str().expect("key").to_owned())
+            .collect();
+        let compact = catalog
+            .iter()
+            .find(|entry| {
+                let key = entry["metricKey"].as_str().expect("key");
+                key != "custom_pipeline_yield_2" && !expected.contains(key)
+            })
+            .expect("a compact canonical entry");
+        assert!(
+            compact["definitionId"].is_null(),
+            "compact entry omits definitionId: {compact}"
+        );
     }
 
     #[test]
@@ -1804,6 +2205,50 @@ mod tests {
         );
     }
 
+    /// ADR 0101 dec. 8: plausibility stays computed only from `expected`
+    /// (cost unchanged — `build_plausibility` is untouched by this slice);
+    /// a catalog key outside `expected` is `notRequested`, an explicit signal
+    /// on the response rather than a silent absence a caller could misread
+    /// as "no history exists".
+    #[test]
+    fn plausibility_not_requested_for_unexpected_key() {
+        let state = test_state();
+        let run_id = started_run(&state);
+        let payload = success(context(&state, json!({ "runId": run_id })));
+        let expected: BTreeSet<String> = payload["run"]["expectedKpis"]["keys"]
+            .as_array()
+            .expect("expected keys")
+            .iter()
+            .map(|key| key.as_str().expect("key").to_owned())
+            .collect();
+        let unexpected_key = payload["catalog"]
+            .as_array()
+            .expect("catalog")
+            .iter()
+            .map(|entry| entry["metricKey"].as_str().expect("key").to_owned())
+            .find(|key| !expected.contains(key))
+            .expect("a catalog key outside expected");
+
+        assert!(
+            payload["notRequested"]
+                .as_array()
+                .expect("notRequested")
+                .iter()
+                .any(|key| key.as_str() == Some(unexpected_key.as_str())),
+            "the unexpected key reads as notRequested: {:?}",
+            payload["notRequested"]
+        );
+        assert!(
+            !payload["plausibility"]
+                .as_array()
+                .expect("plausibility")
+                .iter()
+                .any(|entry| entry["metricKey"] == unexpected_key),
+            "an unrequested key never gets plausibility evidence — absence, not a computed \
+             abstention"
+        );
+    }
+
     #[test]
     fn candidate_window_is_profile_aware_and_classifier_driven() {
         // `period_nature` decides instant/duration; the profile decides the
@@ -1981,6 +2426,125 @@ mod tests {
             json!({ "runId": run_id, "section": "manifest" }),
         ));
         assert_eq!(fresh["manifest"]["outcome"], "ready");
+    }
+
+    // ------------------------------------------------------------------
+    // Receipt section (ADR 0102 dec. 12, epic #399 S6)
+    // ------------------------------------------------------------------
+
+    fn seed_receipt_raw(state: &AppState, run_id: &str, outcomes_json: &str) {
+        let connection = state.checkout_for_tests().expect("raw");
+        connection
+            .execute(
+                "INSERT INTO kpi_ingest_commit_receipts
+                    (id, run_id, manifest_hash, manifest_revision, terminal_status,
+                     period_id, accepted_count, outcomes_schema_version, outcomes_json)
+                 VALUES (?1, ?2, ?3, 1, 'complete', NULL, 1, 2, ?4)",
+                rusqlite::params![
+                    format!("rcpt-{run_id}"),
+                    run_id,
+                    "0".repeat(64),
+                    outcomes_json,
+                ],
+            )
+            .expect("receipt row");
+    }
+
+    /// No receipt yet → `conflict` (mirrors `manifestAvailable`'s "no attempt
+    /// yet" gate); `commit_kpi_ingest`'s response stopped carrying the full
+    /// outcomes ledger (ADR 0102 dec. 12) — this section is the paged
+    /// substitute, reading the SAME stored `outcomes_json` the bounded
+    /// `CommitReceiptDto` only counts (`receipt_v2_outcome_excluded_and_ledger`,
+    /// `kpi_ingest_submit.rs`, covers the internal parse/validate step this
+    /// section's OWN read shares).
+    #[test]
+    fn receipt_section_serves_the_full_excluded_ledger() {
+        let state = test_state();
+        let run_id = started_run(&state);
+
+        assert_eq!(
+            failure_code(context(
+                &state,
+                json!({ "runId": run_id, "section": "receipt" })
+            )),
+            CommandErrorCode::Conflict,
+            "no receipt yet → conflict"
+        );
+
+        let outcomes = json!([
+            {
+                "observationId": "kpiobs_1", "revision": 1, "ordinal": 0,
+                "metricKey": "revenue", "factId": "fact_1", "outcome": "created"
+            },
+            {
+                "observationId": "kpiobs_2", "revision": 1, "ordinal": 1,
+                "metricKey": "", "factId": Value::Null, "outcome": "excluded",
+                "detail": { "label": "Liczba pracowników", "reason": "not a KPI" }
+            }
+        ])
+        .to_string();
+        seed_receipt_raw(&state, &run_id, &outcomes);
+
+        let page = success(context(
+            &state,
+            json!({ "runId": run_id, "section": "receipt" }),
+        ));
+        assert_eq!(page["receipt"]["terminalStatus"], "complete");
+        assert_eq!(page["receipt"]["outcomesSchemaVersion"], 2);
+        let served: Vec<Value> = page["receipt"]["outcomes"]
+            .as_array()
+            .expect("outcomes")
+            .clone();
+        assert_eq!(served.len(), 2);
+        assert_eq!(served[1]["outcome"], "excluded");
+        assert_eq!(served[1]["detail"]["label"], "Liczba pracowników");
+        assert_eq!(served[1]["detail"]["reason"], "not a KPI");
+        assert_eq!(page["nextCursor"], Value::Null);
+    }
+
+    /// A draft never validates or commits (ADR 0102 dec. 11): while a draft
+    /// is open and has an appended chunk on a run that has never been staged,
+    /// `validate_kpi_ingest`/`commit_kpi_ingest` see EXACTLY the run's real
+    /// state (never `staged`) — the draft is structurally invisible to both,
+    /// same as it is to `list_staged_observations`
+    /// (`append_never_bumps_revision_invisible_to_validation`,
+    /// `kpi_ingest_drafts.rs`).
+    #[test]
+    fn draft_cannot_validate_or_commit() {
+        let state = test_state();
+        let run_id = started_run(&state);
+        success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "open": true, "expectedObservations": 1 },
+            }),
+        ));
+
+        let validated = success(acquisition_call(
+            &state,
+            "validate_kpi_ingest",
+            &json!({ "runId": run_id, "revision": 1 }),
+        ));
+        assert_eq!(
+            validated["outcome"], "superseded",
+            "the run was never staged — an open draft is not a staged revision"
+        );
+
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "commit_kpi_ingest",
+                &json!({
+                    "runId": run_id,
+                    "manifestHash": "0".repeat(64),
+                    "revision": 1,
+                })
+            )),
+            CommandErrorCode::Conflict,
+            "no ready_to_commit generation exists — a draft never produces one"
+        );
     }
 
     // ------------------------------------------------------------------

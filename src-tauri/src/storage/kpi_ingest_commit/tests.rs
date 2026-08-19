@@ -324,6 +324,113 @@ fn commit_writes_period_facts_provenance_and_finalizes_the_run() {
 }
 
 // ---------------------------------------------------------------------
+// Group 1b: excluded observations (ADR 0102 dec. 1-4).
+// ---------------------------------------------------------------------
+
+/// An observation that stages `excluded` with a reason — never a fact.
+fn excluded_observation(
+    label: &str,
+    candidate: Option<&str>,
+    reason: &str,
+) -> NewStagedObservation {
+    NewStagedObservation {
+        raw_label: label.to_owned(),
+        raw_value: "n/a".to_owned(),
+        metric_key_candidate: candidate.map(|s| s.to_owned()),
+        mapping_status: Some("excluded".to_owned()),
+        exclusion_reason: Some(reason.to_owned()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn commit_skips_validated_excluded_writes_no_fact() {
+    let fixture = ready_fixture(
+        "standalone",
+        vec![excluded_observation(
+            "Liczba pracowników",
+            None,
+            "not a KPI, headcount footnote",
+        )],
+    );
+    let receipt = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
+        .expect("commit");
+
+    assert_eq!(
+        receipt.accepted_count, 0,
+        "excluded never counts as accepted"
+    );
+    assert_eq!(
+        receipt.terminal_status, "complete",
+        "no expected snapshot on this profile -- exclusion never manufactures partial"
+    );
+
+    let connection = fixture.state.checkout_for_tests().expect("raw");
+    let facts: i64 = connection
+        .query_row("SELECT COUNT(*) FROM financial_facts", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(
+        facts, 0,
+        "commit writes no fact for a sealed-excluded observation"
+    );
+
+    let outcomes: serde_json::Value = serde_json::from_str(&receipt.outcomes_json).expect("json");
+    let entries = outcomes.as_array().expect("array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["outcome"], "excluded");
+    assert!(entries[0]["factId"].is_null());
+    assert_eq!(entries[0]["detail"]["label"], "Liczba pracowników");
+    assert_eq!(
+        entries[0]["detail"]["reason"],
+        "not a KPI, headcount footnote"
+    );
+}
+
+#[test]
+fn excluded_replay_returns_stored_receipt() {
+    let fixture = ready_fixture(
+        "standalone",
+        vec![excluded_observation(
+            "Liczba pracowników",
+            None,
+            "not a KPI",
+        )],
+    );
+    let first = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
+        .expect("first commit");
+    let replay = fixture
+        .state
+        .kpi_ingest_commit()
+        .commit_manifest(
+            &fixture.run_id,
+            &fixture.manifest_hash,
+            fixture.revision,
+            None,
+        )
+        .expect("replay");
+    assert_eq!(
+        first, replay,
+        "idempotent replay returns the stored receipt verbatim"
+    );
+}
+
+// ---------------------------------------------------------------------
 // Group 2: empty-period-hole rollback (seeded receipt -> step-7 UNIQUE
 // failure -> zero facts/provenance/period, run untouched).
 // ---------------------------------------------------------------------

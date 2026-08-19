@@ -1566,8 +1566,14 @@ fn no_derived_formula_references_an_alias_source() {
     }
 }
 
-/// The other half of decision 12's one-sidedness: an alias source must name a
-/// real catalog row (so redirecting it is meaningful) and the target must too.
+/// The other half of ADR 0100 decision 12's one-sidedness, widened by ADR
+/// 0101 dec. 5 (epic #399 S8): the TARGET must always be a seeded catalog
+/// key (the redirect would otherwise drop the fact); the SOURCE is either a
+/// dead seeded key (the original class — `inventory`) or a never-seeded
+/// synonym harvested from real agent traffic (zero facts by construction).
+/// What stays forbidden: a source that is seeded AND carries facts — that is
+/// a merge, never an alias (asserted by the fact-holding gate next to this
+/// one).
 #[test]
 fn every_alias_names_two_seeded_catalog_keys() {
     let connection = open_in_memory_database().expect("database should initialize");
@@ -1585,15 +1591,13 @@ fn every_alias_names_two_seeded_catalog_keys() {
 
     for alias in crate::fundamentals::kpi_aliases::aliases() {
         assert!(
-            keys.contains(alias.from),
-            "alias source `{}` is not a seeded catalog key — nothing resolves it",
-            alias.from
-        );
-        assert!(
             keys.contains(alias.to),
             "alias target `{}` is not a seeded catalog key — the redirect would drop the fact",
             alias.to
         );
+        // A seeded source is legal only as a DEAD key — the per-write
+        // zero-facts guard in `resolve_kpi_definition` enforces that; a
+        // never-seeded source needs no further check (nothing to merge).
     }
 }
 

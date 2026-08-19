@@ -44,6 +44,17 @@ pub enum StorageError {
     },
     #[error("missing financials reference for {table}: {id}")]
     MissingFinancialsReference { table: String, id: String },
+    /// `propose_kpi_definition`'s alias guard (ADR 0101 dec. 4, epic #399 S4):
+    /// `requested_key` is a curated `kpi_aliases` source — redirect to the
+    /// existing `canonical_key` definition instead of minting a near-duplicate.
+    #[error(
+        "metricKey \"{requested_key}\" is a curated synonym of \"{canonical_key}\" (kpi_aliases.rs) — reuse definition {definition_id} instead of proposing a duplicate"
+    )]
+    KpiDefinitionSynonymRedirect {
+        requested_key: String,
+        canonical_key: String,
+        definition_id: String,
+    },
     #[error("invalid claim value for {key}: {value}")]
     InvalidClaimValue { key: &'static str, value: String },
     #[error("missing claim reference for {table}: {id}")]
@@ -111,6 +122,10 @@ pub enum StorageError {
     MissingIngestReference { table: String, id: String },
     #[error("invalid kpi ingest run value for {key}: {value}")]
     InvalidKpiIngestRunValue { key: &'static str, value: String },
+    #[error(
+        "kpi ingest run profile_version '{value}' read from a stored run is not a registered profile version — invariant corruption, not caller input (ADR 0102 dec. 13)"
+    )]
+    UnknownKpiIngestProfileVersion { value: String },
     #[error("kpi ingest run period {period} does not belong to company {company}")]
     RunPeriodCompanyMismatch { period: String, company: String },
     #[error("kpi ingest run {id} lease not held by {holder}")]
@@ -218,6 +233,34 @@ pub enum StorageError {
     PinnedDefinitionMissing { run: String, definition: String },
     #[error("kpi ingest run {run} commit refused: period conflict — {reason}")]
     CommitPeriodConflict { run: String, reason: &'static str },
+    #[error("kpi ingest draft not found: {draft_id}")]
+    KpiIngestDraftNotFound { draft_id: String },
+    /// Second `draft:{open:true}` on a run that already has a LIVE-epoch
+    /// active draft, or a single-call `stage_kpi_observations` while one is
+    /// open (ADR 0102 dec. 11) — the same conflict either way: exactly one
+    /// active draft, explicit abort required, never a silent orphan.
+    #[error("kpi ingest run {run_id} already has an active draft: {draft_id}")]
+    KpiIngestActiveDraftExists { run_id: String, draft_id: String },
+    /// A lease takeover bumped the run's epoch since this draft was opened
+    /// (ADR 0102 dec. 6), or the caller named a draft this build has already
+    /// lazily marked `superseded` — never resumable.
+    #[error("kpi ingest draft {draft_id} is superseded (its lease epoch is stale)")]
+    KpiIngestDraftSuperseded { draft_id: String },
+    /// Replaying `(draftId, chunkIndex)` with content whose server-computed
+    /// hash disagrees with the stored chunk (ADR 0102 dec. 8) — a same-index
+    /// replay with MATCHING content is an idempotent no-op, never this error.
+    #[error("kpi ingest draft {draft_id} chunk {chunk_index} conflicts with a previously stored chunk of the same index")]
+    KpiIngestDraftChunkConflict { draft_id: String, chunk_index: i64 },
+    /// Finalize refused: zero chunks, a gap in the 0-based contiguous chunk
+    /// index sequence, or the assembled total disagreeing with the draft's
+    /// declared `expectedObservations` (ADR 0102 dec. 8/9).
+    #[error("kpi ingest draft {draft_id} cannot finalize: {reason}")]
+    KpiIngestDraftIncomplete { draft_id: String, reason: String },
+    /// Finalize refused: the assembled aggregate (across every chunk) exceeds
+    /// `AGGREGATE_OBSERVATIONS_MAX` or the frozen aggregate byte cap (ADR
+    /// 0102 dec. 10, contracts.md tool 5).
+    #[error("kpi ingest draft {draft_id} finalize refused: {reason}")]
+    KpiIngestDraftAggregateBudgetExceeded { draft_id: String, reason: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

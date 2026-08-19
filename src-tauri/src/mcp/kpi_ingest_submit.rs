@@ -1,11 +1,14 @@
-//! Acquisition-workflow submission tools (#386, ADR 0099 dec. 1): the last
-//! three of the nine — `stage_kpi_observations` (complete revision snapshot +
+//! Acquisition-workflow submission tools (#386, ADR 0099 dec. 1): three of
+//! the original nine — `stage_kpi_observations` (complete revision snapshot +
 //! required `missingReasons` written in the SAME staging transaction),
 //! `validate_kpi_ingest` (synchronous; the full manifest returns in the
 //! response — a `failed` manifest IS the typed repair report; a raced loser
 //! gets a typed `superseded` result carrying the current tuple) and
 //! `commit_kpi_ingest` (synchronous atomic commit; idempotent replay returns
-//! the stored receipt verbatim).
+//! the stored receipt verbatim) — plus the tenth tool, `propose_kpi_definition`
+//! (ADR 0101, epic #399 S4): lease-bound like stage, mints a company-scoped
+//! `origin=agent` catalog entry through the narrow `get_or_create_kpi_definition`
+//! helper, guarded by an exact-key check then a curated `kpi_aliases` redirect.
 //!
 //! Input byte caps live HERE, at the tool boundary (contracts.md tool 5) —
 //! storage keeps its domain constraints (vocabularies, lease, state machine)
@@ -27,7 +30,8 @@ use super::tools::{run, ToolCallError, ToolOutcome};
 use crate::commands::error::{CommandError, CommandErrorCode};
 use crate::jobs::kpi_ingest_validation::validate_kpi_ingest_run;
 use crate::storage::{
-    AppState, CommitReceipt, KpiIngestRun, KpiIngestRunState, NewStagedObservation,
+    AppState, CommitReceipt, KpiDefinition, KpiIngestRun, KpiIngestRunState, NewKpiDefinition,
+    NewStagedObservation,
 };
 
 /// Contract budget (contracts.md tool 5): the complete revision snapshot is
@@ -49,6 +53,14 @@ const CITATION_QUOTE_MAX: usize = 1024;
 const REASON_KEY_MAX: usize = 128;
 const REASON_MAX: usize = 512;
 const EXECUTION_STRING_MAX: usize = 128;
+
+// `propose_kpi_definition` byte caps (ADR 0101, epic #399 S4) — label/unit
+// mirror the context catalog's own output bounds (contracts.md § Budgets:
+// "label ≤256 B, unit/statementGroup ≤64 B").
+const DEFINITION_LABEL_MAX: usize = 256;
+const DEFINITION_UNIT_MAX: usize = 64;
+const DEFINITION_STATEMENT_GROUP_MAX: usize = 64;
+const DEFINITION_DESCRIPTION_MAX: usize = 512;
 
 // ============================================================================
 // Inputs
@@ -141,6 +153,9 @@ pub enum MappingStatusInput {
     Unmapped,
     Mapped,
     NoDefinition,
+    /// A deliberate, reasoned exclusion (ADR 0102 dec. 1) — legal only
+    /// alongside a non-blank `exclusionReason`.
+    Excluded,
 }
 
 impl MappingStatusInput {
@@ -149,6 +164,7 @@ impl MappingStatusInput {
             MappingStatusInput::Unmapped => "unmapped",
             MappingStatusInput::Mapped => "mapped",
             MappingStatusInput::NoDefinition => "no_definition",
+            MappingStatusInput::Excluded => "excluded",
         }
     }
 }
@@ -195,18 +211,73 @@ pub struct ObservationInput {
     pub metric_key_candidate: Option<String>,
     #[serde(default)]
     pub mapping_status: Option<MappingStatusInput>,
+    /// Required exactly when `mappingStatus == "excluded"` (ADR 0102 dec.
+    /// 1); a reason on any other disposition is a typed refusal.
+    #[serde(default)]
+    pub exclusion_reason: Option<String>,
     #[serde(default)]
     pub citation: Option<CitationInput>,
 }
 
+/// The explicit chunked-draft wire union (ADR 0102 dec. 14): `draft` ABSENT
+/// selects [`SingleCallStageInput`] — today's shape, preserved byte-for-byte
+/// (`observations` + `missingReasons` both required). `draft` PRESENT selects
+/// [`DraftStageInput`], whose THREE legal sub-forms (open/append/finalize)
+/// [`classify_draft`] validates — that finer split stays a typed runtime
+/// refusal rather than three more `oneOf` schema branches (the same
+/// mode-dependent-required-fields shape most single-endpoint APIs use).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum StageKpiObservationsInput {
+    SingleCall(SingleCallStageInput),
+    Draft(DraftStageInput),
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct StageKpiObservationsInput {
+pub struct SingleCallStageInput {
     pub run_id: String,
     pub observations: Vec<ObservationInput>,
     /// REQUIRED: `{}` is the explicit "no declared omissions"/clear — there is
     /// no destructive default (contracts.md tool 5).
     pub missing_reasons: BTreeMap<String, String>,
+    #[serde(default)]
+    pub execution: Option<ExecutionMetaInput>,
+}
+
+/// One of three legal shapes (ADR 0102 dec. 6-9), disambiguated by
+/// [`classify_draft`]: `{open:true, expectedObservations}` mints a
+/// server-issued draft; `{draftId, chunkIndex}` appends a chunk (its content
+/// travels in the OUTER `observations` field); `{draftId, final:true}`
+/// finalizes (its `missingReasons` travels in the OUTER field too).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DraftInput {
+    #[serde(default)]
+    pub open: Option<bool>,
+    #[serde(default)]
+    pub expected_observations: Option<i64>,
+    #[serde(default)]
+    pub draft_id: Option<String>,
+    #[serde(default)]
+    pub chunk_index: Option<i64>,
+    #[serde(default, rename = "final")]
+    pub is_final: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DraftStageInput {
+    pub run_id: String,
+    pub draft: DraftInput,
+    /// A chunk append's content; empty/absent on an open or finalize call.
+    #[serde(default)]
+    pub observations: Vec<ObservationInput>,
+    /// Required exactly on a finalizing call (ADR 0102 dec. 14) — absent on
+    /// open/append, where a value is a typed refusal (reasons belong to a
+    /// complete revision).
+    #[serde(default)]
+    pub missing_reasons: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub execution: Option<ExecutionMetaInput>,
 }
@@ -230,17 +301,55 @@ pub struct CommitKpiIngestInput {
     pub execution: Option<ExecutionMetaInput>,
 }
 
+/// `propose_kpi_definition` (ADR 0101, epic #399 S4). Deliberately narrower
+/// than `create_kpi_definition`'s full `NewKpiDefinition`: `scope`/
+/// `company_id`/`sector`/`origin`/`value_kind`/`computation` are never
+/// caller-suppliable — they are forced to `company`/the run's own company/
+/// `agent`/`monetary`/`reported` inside the storage layer, matching a
+/// full-capture agent's use case (a disclosed number, not a derived ratio).
+/// `description`, when supplied, is stored in the otherwise-unused `formula`
+/// column of a `computation="reported"` row — free-text rationale, never
+/// evaluated as an expression (the derivation engine only reads `formula` for
+/// `computation="derived"` rows).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ProposeKpiDefinitionInput {
+    pub run_id: String,
+    pub metric_key: String,
+    pub label: String,
+    #[serde(default)]
+    pub unit: Option<String>,
+    pub statement_group: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
 // ============================================================================
 // Wire DTOs (MCP-only — no TS consumer, no ts_rs)
 // ============================================================================
 
+/// `status` ∈ `staged` (single-call or a draft finalize) | `draft_open` |
+/// `draft_appended` (ADR 0102 dec. 6-9). Every field beyond `runId`/`status`
+/// is populated only for the branches it applies to — the single-call/
+/// finalize JSON stays byte-for-byte `{runId, revision, observationCount,
+/// status}` (dec. 14: `#[serde(skip_serializing_if)]` omits every absent key).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StageResultDto {
     pub run_id: String,
-    pub revision: i64,
-    pub observation_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation_count: Option<usize>,
     pub status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_observations: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_index: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunks_received: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -251,21 +360,40 @@ pub struct CurrentTupleDto {
     pub manifest_hash: Option<String>,
 }
 
+/// Observation counts by `validationState` (ADR 0102 dec. 12): the bounded
+/// substitute for the removed inline `manifest` — the full manifest is read
+/// via `get_kpi_ingest_context section:"manifest"`.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeverityCountsDto {
+    pub passed: usize,
+    pub unreviewed: usize,
+    pub flagged: usize,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidateResultDto {
     pub outcome: &'static str,
     pub revision: i64,
     pub manifest_hash: Option<String>,
-    pub manifest: Option<Value>,
+    /// `None` only on `superseded` (no manifest was ever produced by this
+    /// call). `manifest` itself no longer rides this response (ADR 0102 dec.
+    /// 12, amends ADR 0099 dec. 1) — read it via
+    /// `get_kpi_ingest_context section:"manifest"`.
+    pub severity_counts: Option<SeverityCountsDto>,
     pub current: Option<CurrentTupleDto>,
 }
 
 /// One commit outcome, deserialized TYPED from the stored receipt — a closed
-/// vocabulary plus the frozen conditional shape: `divergent` ⟺ (`detail`
-/// present ∧ `factId` null); every other outcome ⟺ (`detail` absent ∧
-/// `factId` non-null). Violations are `internal` — the stored receipt is the
-/// durable contract and a drifted shape must not silently reach the wire.
+/// vocabulary plus the frozen conditional shape. **v1** (`outcomesSchemaVersion
+/// 1`): `divergent` ⟺ (`detail` present ∧ `factId` null); every other outcome
+/// ⟺ (`detail` absent ∧ `factId` non-null). **v2** (ADR 0102 dec. 3) adds a
+/// THIRD legal case: `excluded` ⟺ (`detail` present, an
+/// [`ExcludedObservationDetailDto`] ∧ `factId` null) — v1's own invariant is
+/// never loosened, only extended. Violations are `internal` — the stored
+/// receipt is the durable contract and a drifted shape must not silently
+/// reach the wire.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct CommitOutcomeDto {
@@ -277,7 +405,7 @@ pub struct CommitOutcomeDto {
     pub fact_id: Option<String>,
     pub outcome: CommitOutcomeKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detail: Option<DivergentDetailDto>,
+    pub detail: Option<CommitOutcomeDetailDto>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -287,6 +415,17 @@ pub enum CommitOutcomeKind {
     Reobserved,
     Upgraded,
     Divergent,
+    /// v2 only (ADR 0102 dec. 3) — never a written fact.
+    Excluded,
+}
+
+/// Structurally disjoint field sets (mirrors [`crate::fundamentals::kpi_manifest::DiagnosticDetail`]'s
+/// own untagged-enum idiom) — deserialization is unambiguous.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum CommitOutcomeDetailDto {
+    Divergent(DivergentDetailDto),
+    Excluded(ExcludedObservationDetailDto),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -295,18 +434,50 @@ pub struct DivergentDetailDto {
     pub existing_fact_id: String,
 }
 
+/// The excluded ledger entry (ADR 0102 dec. 3/4): one per observation sealed
+/// `excluded` — carried both on its own [`CommitOutcomeDto`] and rolled up
+/// into [`CommitReceiptDto::excluded`].
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ExcludedObservationDetailDto {
+    pub label: String,
+    pub reason: String,
+}
+
+/// `propose_kpi_definition` success shape (ADR 0101 dec. 3): `created: false`
+/// on an exact-key reuse, `true` on a fresh mint — never an error either way.
+/// The `synonym_redirect` guard IS an error (`CommandErrorCode::SynonymRedirect`,
+/// [`crate::storage::StorageError::KpiDefinitionSynonymRedirect`]), not a
+/// variant of this shape.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposeKpiDefinitionResultDto {
+    pub definition: KpiDefinition,
+    pub created: bool,
+}
+
+/// Bounded (ADR 0102 dec. 12, amends ADR 0099 dec. 1): `acceptedCount` is the
+/// installed-fact count, `excludedCount` is ALWAYS ledgered regardless of
+/// terminal status (dec. 4; `0` under `outcomesSchemaVersion` 1).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitCountsDto {
+    pub accepted_count: i64,
+    pub excluded_count: usize,
+}
+
+/// The commit response is a BOUNDED summary (ADR 0102 dec. 12): the full
+/// outcomes ledger — up to `AGGREGATE_OBSERVATIONS_MAX` (1000) rows, one
+/// `{label, reason}` per `excluded` outcome — cannot ride an unpaged
+/// response. Read it via `get_kpi_ingest_context section:"receipt"`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitReceiptDto {
     pub run_id: String,
     pub terminal_status: String,
-    pub period_id: Option<String>,
-    pub accepted_count: i64,
-    pub outcomes_schema_version: i64,
-    pub outcomes: Vec<CommitOutcomeDto>,
+    pub counts: CommitCountsDto,
     pub manifest_hash: String,
     pub manifest_revision: i64,
-    pub committed_at: String,
 }
 
 // ============================================================================
@@ -388,6 +559,11 @@ fn validate_observation(observation: &ObservationInput) -> Result<(), CommandErr
         observation.raw_unit_scale.as_deref(),
         RAW_UNIT_SCALE_MAX,
     )?;
+    bounded_opt(
+        "exclusionReason",
+        observation.exclusion_reason.as_deref(),
+        REASON_MAX,
+    )?;
     if let Some(currency) = observation.currency.as_deref() {
         // The frozen INPUT contract is stricter than storage (which upcases):
         // exactly three UPPERCASE ASCII letters at the tool boundary.
@@ -458,6 +634,7 @@ fn to_staged(observation: ObservationInput) -> NewStagedObservation {
         mapping_status: observation
             .mapping_status
             .map(|value| value.as_str().to_owned()),
+        exclusion_reason: observation.exclusion_reason,
         citation_page: observation
             .citation
             .as_ref()
@@ -478,10 +655,82 @@ fn to_staged(observation: ObservationInput) -> NewStagedObservation {
 // stage_kpi_observations
 // ============================================================================
 
+/// The three legal `draft` sub-forms (ADR 0102 dec. 6-9) — the runtime
+/// classification [`classify_draft`] enforces since the top-level wire union
+/// only splits on `draft` present/absent, not on which sub-form it is.
+enum DraftForm {
+    Open { expected_observations: i64 },
+    Append { draft_id: String, chunk_index: i64 },
+    Finalize { draft_id: String },
+}
+
+fn classify_draft(draft: &DraftInput) -> Result<DraftForm, CommandError> {
+    match (
+        draft.open,
+        draft.expected_observations,
+        draft.draft_id.as_deref(),
+        draft.chunk_index,
+        draft.is_final,
+    ) {
+        (Some(true), Some(expected), None, None, None | Some(false)) => {
+            if expected < 1 {
+                return Err(invalid("draft.expectedObservations must be >= 1"));
+            }
+            Ok(DraftForm::Open {
+                expected_observations: expected,
+            })
+        }
+        (None | Some(false), None, Some(draft_id), Some(chunk_index), None | Some(false)) => {
+            if chunk_index < 0 {
+                return Err(invalid("draft.chunkIndex must be >= 0"));
+            }
+            Ok(DraftForm::Append {
+                draft_id: draft_id.to_owned(),
+                chunk_index,
+            })
+        }
+        (None | Some(false), None, Some(draft_id), None, Some(true)) => Ok(DraftForm::Finalize {
+            draft_id: draft_id.to_owned(),
+        }),
+        _ => Err(invalid(
+            "draft must be exactly one of {open:true, expectedObservations}, \
+             {draftId, chunkIndex}, or {draftId, final:true}",
+        )),
+    }
+}
+
+fn validate_observations_batch(observations: &[ObservationInput]) -> Result<(), CommandError> {
+    if observations.len() > OBSERVATIONS_MAX {
+        return Err(CommandError::new(
+            CommandErrorCode::ResponseBudgetExceeded,
+            format!(
+                "observations carries {} entries — the per-call budget is {OBSERVATIONS_MAX}",
+                observations.len()
+            ),
+        ));
+    }
+    for observation in observations {
+        validate_observation(observation)?;
+    }
+    Ok(())
+}
+
 fn stage_kpi_observations(
     state: &AppState,
     scope: McpScope,
     input: StageKpiObservationsInput,
+) -> Result<StageResultDto, CommandError> {
+    match input {
+        StageKpiObservationsInput::SingleCall(input) => stage_single_call(state, scope, input),
+        StageKpiObservationsInput::Draft(input) => stage_draft(state, scope, input),
+    }
+}
+
+/// `draft` absent — today's shape, byte-for-byte (ADR 0102 dec. 14).
+fn stage_single_call(
+    state: &AppState,
+    scope: McpScope,
+    input: SingleCallStageInput,
 ) -> Result<StageResultDto, CommandError> {
     reject_control_chars("runId", &input.run_id)?;
     if input.observations.is_empty() {
@@ -489,18 +738,7 @@ fn stage_kpi_observations(
             "observations is the complete revision snapshot and must carry at least one entry",
         ));
     }
-    if input.observations.len() > OBSERVATIONS_MAX {
-        return Err(CommandError::new(
-            CommandErrorCode::ResponseBudgetExceeded,
-            format!(
-                "observations carries {} entries — the budget is {OBSERVATIONS_MAX}",
-                input.observations.len()
-            ),
-        ));
-    }
-    for observation in &input.observations {
-        validate_observation(observation)?;
-    }
+    validate_observations_batch(&input.observations)?;
     validate_missing_reasons(&input.missing_reasons)?;
     let execution = input
         .execution
@@ -522,9 +760,188 @@ fn stage_kpi_observations(
         .map_err(CommandError::from)?;
     Ok(StageResultDto {
         run_id: input.run_id,
-        revision,
-        observation_count: inserted.len(),
+        revision: Some(revision),
+        observation_count: Some(inserted.len()),
         status: "staged",
+        draft_id: None,
+        expected_observations: None,
+        chunk_index: None,
+        chunks_received: None,
+    })
+}
+
+/// `draft` present — open/append/finalize (ADR 0102 dec. 6-9).
+fn stage_draft(
+    state: &AppState,
+    scope: McpScope,
+    input: DraftStageInput,
+) -> Result<StageResultDto, CommandError> {
+    reject_control_chars("runId", &input.run_id)?;
+    match classify_draft(&input.draft)? {
+        DraftForm::Open {
+            expected_observations,
+        } => {
+            if !input.observations.is_empty() {
+                return Err(invalid(
+                    "draft.open must not carry observations in the same call — append a chunk separately",
+                ));
+            }
+            if input.missing_reasons.is_some() {
+                return Err(invalid(
+                    "missingReasons is only accepted on a finalizing call",
+                ));
+            }
+            let summary = state
+                .kpi_ingest_drafts()
+                .open_draft(&input.run_id, holder(scope), expected_observations)
+                .map_err(CommandError::from)?;
+            Ok(StageResultDto {
+                run_id: input.run_id,
+                revision: None,
+                observation_count: None,
+                status: "draft_open",
+                draft_id: Some(summary.draft_id),
+                expected_observations: Some(summary.expected_observations),
+                chunk_index: None,
+                chunks_received: Some(summary.chunks_received),
+            })
+        }
+        DraftForm::Append {
+            draft_id,
+            chunk_index,
+        } => {
+            if input.observations.is_empty() {
+                return Err(invalid(
+                    "a chunk append must carry at least one observation",
+                ));
+            }
+            if input.missing_reasons.is_some() {
+                return Err(invalid(
+                    "missingReasons is only accepted on a finalizing call, not a chunk append",
+                ));
+            }
+            validate_observations_batch(&input.observations)?;
+            let observations: Vec<NewStagedObservation> =
+                input.observations.into_iter().map(to_staged).collect();
+            let result = state
+                .kpi_ingest_drafts()
+                .append_chunk(
+                    &input.run_id,
+                    holder(scope),
+                    &draft_id,
+                    chunk_index,
+                    observations,
+                )
+                .map_err(CommandError::from)?;
+            Ok(StageResultDto {
+                run_id: input.run_id,
+                revision: None,
+                observation_count: None,
+                status: "draft_appended",
+                draft_id: Some(result.draft_id),
+                expected_observations: None,
+                chunk_index: Some(result.chunk_index),
+                chunks_received: Some(result.chunks_received),
+            })
+        }
+        DraftForm::Finalize { draft_id } => {
+            if !input.observations.is_empty() {
+                return Err(invalid(
+                    "a finalizing call must not carry observations — append every chunk first",
+                ));
+            }
+            let Some(missing_reasons) = input.missing_reasons else {
+                return Err(invalid("missingReasons is required to finalize a draft"));
+            };
+            validate_missing_reasons(&missing_reasons)?;
+            let execution = input
+                .execution
+                .as_ref()
+                .map(validate_execution)
+                .transpose()?;
+            let (revision, inserted) = state
+                .kpi_ingest_drafts()
+                .finalize_draft(
+                    &input.run_id,
+                    holder(scope),
+                    &draft_id,
+                    &missing_reasons,
+                    execution.as_ref(),
+                )
+                .map_err(CommandError::from)?;
+            Ok(StageResultDto {
+                run_id: input.run_id,
+                revision: Some(revision),
+                observation_count: Some(inserted.len()),
+                status: "staged",
+                draft_id: None,
+                expected_observations: None,
+                chunk_index: None,
+                chunks_received: None,
+            })
+        }
+    }
+}
+
+// ============================================================================
+// propose_kpi_definition
+// ============================================================================
+
+fn propose_kpi_definition(
+    state: &AppState,
+    scope: McpScope,
+    input: ProposeKpiDefinitionInput,
+) -> Result<ProposeKpiDefinitionResultDto, CommandError> {
+    reject_control_chars("runId", &input.run_id)?;
+    bounded("metricKey", &input.metric_key, METRIC_KEY_CANDIDATE_MAX)?;
+    let metric_key = input.metric_key.trim().to_owned();
+    if !super::acts::is_snake_case_ascii_metric_key(&metric_key) {
+        return Err(invalid(format!(
+            "metricKey must be snake_case ASCII matching ^[a-z][a-z0-9_]*$, got {metric_key:?}"
+        )));
+    }
+    bounded("label", &input.label, DEFINITION_LABEL_MAX)?;
+    if input.label.trim().is_empty() {
+        return Err(invalid("label must be non-blank"));
+    }
+    bounded_opt("unit", input.unit.as_deref(), DEFINITION_UNIT_MAX)?;
+    bounded(
+        "statementGroup",
+        &input.statement_group,
+        DEFINITION_STATEMENT_GROUP_MAX,
+    )?;
+    bounded_opt(
+        "description",
+        input.description.as_deref(),
+        DEFINITION_DESCRIPTION_MAX,
+    )?;
+
+    // scope/company_id/sector/origin are forced from the run inside the
+    // storage layer (ADR 0101 dec. 6) — every value set here is a caller-
+    // meaningful placeholder, overwritten before the INSERT.
+    let new_definition = NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: None,
+        sector: None,
+        metric_key,
+        label: input.label.trim().to_owned(),
+        value_kind: "monetary".to_owned(),
+        unit: input.unit,
+        computation: "reported".to_owned(),
+        formula: input.description,
+        display_format: None,
+        origin: None,
+        statement_group: Some(input.statement_group),
+        period_nature: None,
+    };
+
+    let (definition, created) = state
+        .kpi_ingest_runs()
+        .propose_kpi_definition(&input.run_id, holder(scope), new_definition)
+        .map_err(CommandError::from)?;
+    Ok(ProposeKpiDefinitionResultDto {
+        definition,
+        created,
     })
 }
 
@@ -537,7 +954,7 @@ fn superseded_result(requested_revision: i64, run: &KpiIngestRun) -> ValidateRes
         outcome: "superseded",
         revision: requested_revision,
         manifest_hash: None,
-        manifest: None,
+        severity_counts: None,
         current: Some(CurrentTupleDto {
             status: run.status.as_str().to_owned(),
             revision: run.manifest_revision,
@@ -584,8 +1001,20 @@ fn validate_kpi_ingest(
     }
     match validate_kpi_ingest_run(state, &input.run_id) {
         Ok(outcome) => {
-            let manifest = serde_json::to_value(&outcome.manifest)
-                .map_err(|error| internal(format!("manifest serialization failed: {error}")))?;
+            let mut counts = SeverityCountsDto::default();
+            for observation in &outcome.manifest.observations {
+                match observation.validation_state {
+                    crate::fundamentals::kpi_manifest::ValidationState::Passed => {
+                        counts.passed += 1
+                    }
+                    crate::fundamentals::kpi_manifest::ValidationState::Unreviewed => {
+                        counts.unreviewed += 1
+                    }
+                    crate::fundamentals::kpi_manifest::ValidationState::Flagged => {
+                        counts.flagged += 1
+                    }
+                }
+            }
             Ok(ValidateResultDto {
                 outcome: if outcome.outcome == "ready" {
                     "ready"
@@ -594,7 +1023,7 @@ fn validate_kpi_ingest(
                 },
                 revision: input.revision,
                 manifest_hash: Some(outcome.manifest_hash),
-                manifest: Some(manifest),
+                severity_counts: Some(counts),
                 current: None,
             })
         }
@@ -606,15 +1035,23 @@ fn validate_kpi_ingest(
 // commit_kpi_ingest
 // ============================================================================
 
+/// The stored-receipt reader (ADR 0102 dec. 3): accepts BOTH
+/// `outcomesSchemaVersion` 1 and 2 — v1's shape invariant (every
+/// non-divergent outcome carries a `factId`, divergent never does) is never
+/// loosened, only extended with a third legal case that v2 alone admits:
+/// `excluded`, no `factId`, carrying its `{label, reason}` detail. Any other
+/// version is `internal` — an old build reading a future schema, or a
+/// corrupt column.
 fn receipt_dto(receipt: CommitReceipt) -> Result<CommitReceiptDto, CommandError> {
-    if receipt.outcomes_schema_version != 1 {
+    if receipt.outcomes_schema_version != 1 && receipt.outcomes_schema_version != 2 {
         return Err(internal(format!(
             "stored receipt outcomesSchemaVersion {} is unsupported by this build",
             receipt.outcomes_schema_version
         )));
     }
     // The durable writer serializes `factId` explicitly (`null` for
-    // divergent) — a MISSING key is shape drift, not a legal null (luna P1).
+    // divergent/excluded) — a MISSING key is shape drift, not a legal null
+    // (luna P1).
     let raw_outcomes: Vec<Value> = serde_json::from_str(&receipt.outcomes_json)
         .map_err(|error| internal(format!("stored receipt outcomes are malformed: {error}")))?;
     for raw in &raw_outcomes {
@@ -630,29 +1067,43 @@ fn receipt_dto(receipt: CommitReceipt) -> Result<CommitReceiptDto, CommandError>
     let outcomes: Vec<CommitOutcomeDto> = serde_json::from_value(Value::Array(raw_outcomes))
         .map_err(|error| internal(format!("stored receipt outcomes are malformed: {error}")))?;
     for outcome in &outcomes {
-        let divergent = outcome.outcome == CommitOutcomeKind::Divergent;
-        let legal = if divergent {
-            outcome.detail.is_some() && outcome.fact_id.is_none()
-        } else {
-            outcome.detail.is_none() && outcome.fact_id.is_some()
+        let legal = match outcome.outcome {
+            CommitOutcomeKind::Divergent => {
+                matches!(outcome.detail, Some(CommitOutcomeDetailDto::Divergent(_)))
+                    && outcome.fact_id.is_none()
+            }
+            // v2-only: `excluded` never legal under a v1 stored receipt —
+            // that outcome member did not exist under v1 (v1 invariant is
+            // extended, never loosened).
+            CommitOutcomeKind::Excluded => {
+                receipt.outcomes_schema_version == 2
+                    && matches!(outcome.detail, Some(CommitOutcomeDetailDto::Excluded(_)))
+                    && outcome.fact_id.is_none()
+            }
+            CommitOutcomeKind::Created
+            | CommitOutcomeKind::Reobserved
+            | CommitOutcomeKind::Upgraded => outcome.detail.is_none() && outcome.fact_id.is_some(),
         };
         if !legal {
             return Err(internal(format!(
-                "stored receipt outcome for {} violates the divergent/factId/detail invariant",
+                "stored receipt outcome for {} violates the outcome/factId/detail invariant",
                 outcome.observation_id
             )));
         }
     }
+    let excluded_count = outcomes
+        .iter()
+        .filter(|outcome| matches!(outcome.outcome, CommitOutcomeKind::Excluded))
+        .count();
     Ok(CommitReceiptDto {
         run_id: receipt.run_id,
         terminal_status: receipt.terminal_status,
-        period_id: receipt.period_id,
-        accepted_count: receipt.accepted_count,
-        outcomes_schema_version: receipt.outcomes_schema_version,
-        outcomes,
+        counts: CommitCountsDto {
+            accepted_count: receipt.accepted_count,
+            excluded_count,
+        },
         manifest_hash: receipt.manifest_hash,
         manifest_revision: receipt.manifest_revision,
-        committed_at: receipt.committed_at,
     })
 }
 
@@ -698,6 +1149,16 @@ pub fn stage_kpi_observations_handler(
 ) -> Result<ToolOutcome, ToolCallError> {
     run(arguments, |input| {
         stage_kpi_observations(state, scope, input)
+    })
+}
+
+pub fn propose_kpi_definition_handler(
+    state: &AppState,
+    scope: McpScope,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input| {
+        propose_kpi_definition(state, scope, input)
     })
 }
 
@@ -811,6 +1272,57 @@ mod tests {
             serde_json::from_str(run.cost_json.as_deref().expect("cost")).expect("json");
         assert_eq!(cost["client"], "a");
         assert_eq!(cost["tokensIn"], 5);
+    }
+
+    /// ADR 0102 dec. 14: the single-call wire contract is byte-for-byte
+    /// unchanged when `draft` is absent. The response carries EXACTLY the
+    /// four keys it always has (no `draftId`/`chunkIndex`/`chunksReceived`/
+    /// `expectedObservations` leaking in via the new `Option` fields'
+    /// `skip_serializing_if`), and `deny_unknown_fields` still rejects an
+    /// unrecognized top-level key exactly as before the wire union existed.
+    #[test]
+    fn single_call_path_unchanged() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let payload = success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &stage_args(&run_id, vec![mapped_observation(true)]),
+        ));
+        let mut keys: Vec<&str> = payload
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["observationCount", "revision", "runId", "status"],
+            "the single-call response carries exactly today's four keys"
+        );
+        assert_eq!(payload["status"], "staged");
+
+        // `deny_unknown_fields` still rejects an unrecognized top-level field
+        // at the protocol layer exactly as it did before the wire union
+        // existed — a malformed request never silently matches the OTHER
+        // union variant instead.
+        let unknown_field = call(
+            &state,
+            McpScope::KpiAcquisition,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "observations": [mapped_observation(true)],
+                "missingReasons": {},
+                "notAWireField": true
+            }),
+        );
+        match unknown_field {
+            Err(ToolCallError::InvalidArguments(_)) => {}
+            other => panic!("expected InvalidArguments, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1004,6 +1516,201 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // propose_kpi_definition
+    // ------------------------------------------------------------------
+
+    fn propose_args(run_id: &str, metric_key: &str) -> Value {
+        json!({
+            "runId": run_id,
+            "metricKey": metric_key,
+            "label": "Broker client count",
+            "statementGroup": "other"
+        })
+    }
+
+    #[test]
+    fn propose_mints_a_company_scoped_agent_definition() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(&run_id)
+            .expect("get")
+            .expect("run");
+
+        let payload = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "broker_client_count"),
+        ));
+        assert_eq!(payload["created"], true);
+        assert_eq!(payload["definition"]["metricKey"], "broker_client_count");
+        assert_eq!(payload["definition"]["scope"], "company");
+        assert_eq!(payload["definition"]["companyId"], run.company_id);
+        assert_eq!(payload["definition"]["origin"], "agent");
+        assert_eq!(payload["definition"]["valueKind"], "monetary");
+    }
+
+    #[test]
+    fn propose_duplicate_exact_key_returns_existing() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let first = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "broker_client_count"),
+        ));
+        assert_eq!(first["created"], true);
+        let first_id = first["definition"]["id"].as_str().expect("id").to_owned();
+
+        let second = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "broker_client_count"),
+        ));
+        assert_eq!(second["created"], false);
+        assert_eq!(second["definition"]["id"], first_id);
+    }
+
+    #[test]
+    fn propose_synonym_returns_typed_redirect() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "propose_kpi_definition",
+                &propose_args(&run_id, "inventory"),
+            )),
+            CommandErrorCode::SynonymRedirect
+        );
+
+        // The canonical target ("inventories") is untouched by the refusal —
+        // no shadow definition was minted under either key.
+        assert!(state
+            .financials()
+            .list_kpi_definitions(crate::storage::ListKpiDefinitionsInput {
+                scope: Some("company".to_owned()),
+                sector: None,
+                company_id: None,
+            })
+            .expect("list")
+            .into_iter()
+            .all(|d| d.metric_key != "inventory"));
+    }
+
+    /// ADR 0101 dec. 3/4: the exact-key reuse is against the WHOLE catalog,
+    /// not just this company's own minted rows — proposing a key the shared
+    /// canon already carries returns the canonical definition (`created:
+    /// false`), never mints a company-scoped shadow whose duplicate
+    /// `metricKey` would fragment the catalog (the wdf_equity_parent /
+    /// inventories disease this ADR exists to prevent).
+    #[test]
+    fn propose_canonical_key_reuses_canon_never_mints_a_shadow() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let payload = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "total_assets"),
+        ));
+        assert_eq!(payload["created"], false);
+        assert_eq!(payload["definition"]["metricKey"], "total_assets");
+        assert!(
+            payload["definition"]["companyId"].is_null(),
+            "the canonical row is returned, not a company shadow: {:?}",
+            payload["definition"]
+        );
+
+        assert!(
+            state
+                .financials()
+                .list_kpi_definitions(crate::storage::ListKpiDefinitionsInput {
+                    scope: Some("company".to_owned()),
+                    sector: None,
+                    company_id: None,
+                })
+                .expect("list")
+                .into_iter()
+                .all(|d| d.metric_key != "total_assets"),
+            "no company-scoped shadow of a canonical key was minted"
+        );
+    }
+
+    #[test]
+    fn propose_forces_company_scope_and_agent_origin() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(&run_id)
+            .expect("get")
+            .expect("run");
+
+        let payload = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "custom_broker_metric"),
+        ));
+        assert_eq!(payload["definition"]["scope"], "company");
+        assert_eq!(payload["definition"]["companyId"], run.company_id);
+        assert_eq!(payload["definition"]["origin"], "agent");
+    }
+
+    #[test]
+    fn propose_requires_live_lease() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        {
+            let connection = state.checkout_for_tests().expect("raw");
+            connection
+                .execute(
+                    "UPDATE kpi_ingest_runs SET lease_expires_at = '2000-01-01T00:00:00Z' \
+                     WHERE id = ?1",
+                    [&run_id],
+                )
+                .expect("expire");
+        }
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "propose_kpi_definition",
+                &propose_args(&run_id, "broker_client_count"),
+            )),
+            CommandErrorCode::RunLeaseExpired
+        );
+    }
+
+    #[test]
+    fn propose_rejects_malformed_metric_key_and_blank_label() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let mut bad_key = propose_args(&run_id, "BadKey");
+        bad_key["metricKey"] = json!("BadKey");
+        assert_eq!(
+            failure_code(acquisition_call(&state, "propose_kpi_definition", &bad_key)),
+            CommandErrorCode::InvalidInput,
+            "PascalCase key"
+        );
+
+        let mut blank_label = propose_args(&run_id, "broker_client_count");
+        blank_label["label"] = json!("   ");
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "propose_kpi_definition",
+                &blank_label
+            )),
+            CommandErrorCode::InvalidInput,
+            "blank label"
+        );
+    }
+
+    // ------------------------------------------------------------------
     // validate_kpi_ingest — the typed repair loop
     // ------------------------------------------------------------------
 
@@ -1027,10 +1734,22 @@ mod tests {
         ));
         assert_eq!(failed["outcome"], "failed");
         assert!(failed["manifestHash"].is_string());
-        let manifest_text = failed["manifest"].to_string();
+        // ADR 0102 dec. 12: the full manifest no longer rides this response —
+        // `severityCounts` is the bounded substitute (`citation.missing` is
+        // `Flagged`); the repair report itself is read via
+        // `get_kpi_ingest_context section:"manifest"`
+        // (`validate_returns_summary_not_manifest` covers both halves).
+        assert!(failed["manifest"].is_null());
+        assert_eq!(failed["severityCounts"]["flagged"], 1);
+        let manifest_page = success(acquisition_call(
+            &state,
+            "get_kpi_ingest_context",
+            &json!({ "runId": run_id, "section": "manifest" }),
+        ));
+        let manifest_text = manifest_page["manifest"].to_string();
         assert!(
             manifest_text.contains("citation.missing"),
-            "the repair report names the diagnostic: {manifest_text}"
+            "the paged manifest names the diagnostic: {manifest_text}"
         );
 
         // Repair: revision 2 is the COMPLETE snapshot with the citation fixed.
@@ -1045,7 +1764,16 @@ mod tests {
             &json!({ "runId": run_id, "revision": 2 }),
         ));
         assert_eq!(ready["outcome"], "ready");
-        assert!(ready["manifest"]["observations"].is_array());
+        assert!(ready["manifest"].is_null());
+        let counts = &ready["severityCounts"];
+        let total = counts["passed"].as_i64().expect("passed")
+            + counts["unreviewed"].as_i64().expect("unreviewed")
+            + counts["flagged"].as_i64().expect("flagged");
+        assert_eq!(total, 1, "one observation total: {counts}");
+        assert_eq!(
+            counts["flagged"], 0,
+            "a ready outcome carries no flagged rows"
+        );
         assert_eq!(ready["current"], Value::Null);
 
         // The old generation is now superseded — pre-check path.
@@ -1055,10 +1783,49 @@ mod tests {
             &json!({ "runId": run_id, "revision": 1 }),
         ));
         assert_eq!(superseded["outcome"], "superseded");
-        assert_eq!(superseded["manifest"], Value::Null);
+        assert_eq!(superseded["severityCounts"], Value::Null);
         assert_eq!(superseded["current"]["status"], "ready_to_commit");
         assert_eq!(superseded["current"]["revision"], 2);
         assert!(superseded["current"]["manifestHash"].is_string());
+    }
+
+    /// ADR 0102 dec. 12: `validate_kpi_ingest` returns a BOUNDED summary — no
+    /// inline `manifest` key at all (not even `null` under a different name);
+    /// the full manifest is read via `get_kpi_ingest_context
+    /// section:"manifest"` (`validate_ready_failed_repair_and_superseded`
+    /// exercises that paged read end to end).
+    #[test]
+    fn validate_returns_summary_not_manifest() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &stage_args(&run_id, vec![mapped_observation(true)]),
+        ));
+        let payload = success(acquisition_call(
+            &state,
+            "validate_kpi_ingest",
+            &json!({ "runId": run_id, "revision": 1 }),
+        ));
+        let mut keys: Vec<&str> = payload
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "current",
+                "manifestHash",
+                "outcome",
+                "revision",
+                "severityCounts"
+            ],
+            "no inline manifest key at all — the bounded summary shape"
+        );
     }
 
     #[test]
@@ -1201,7 +1968,7 @@ mod tests {
             }),
         ));
         assert_eq!(receipt["terminalStatus"], "complete");
-        assert!(receipt["acceptedCount"].as_i64().expect("count") > 0);
+        assert!(receipt["counts"]["acceptedCount"].as_i64().expect("count") > 0);
 
         let pretty = serde_json::to_string_pretty(&receipt).expect("serializable");
         let redacted = regex::Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z")
@@ -1245,6 +2012,48 @@ mod tests {
         assert_eq!(status["execution"]["client"], "a");
         assert_eq!(status["execution"]["tokensIn"], 5);
         assert_eq!(status["execution"]["costUsd"], 0.5);
+    }
+
+    /// ADR 0102 dec. 12: `commit_kpi_ingest` returns a BOUNDED summary — no
+    /// inline `outcomes` array (a 1000-row ledger, `AGGREGATE_OBSERVATIONS_MAX`,
+    /// cannot ride this response), `excludedCount` moves under `counts`. The
+    /// full receipt is read via `get_kpi_ingest_context section:"receipt"`
+    /// (`receipt_section_serves_the_full_excluded_ledger`, kpi_ingest_context.rs).
+    #[test]
+    fn commit_returns_bounded_summary() {
+        let state = test_state();
+        let (run_id, hash, revision) = drive_to_ready_over_mcp(&state);
+        let receipt = success(acquisition_call(
+            &state,
+            "commit_kpi_ingest",
+            &json!({ "runId": run_id, "manifestHash": hash, "revision": revision }),
+        ));
+        let mut keys: Vec<&str> = receipt
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "counts",
+                "manifestHash",
+                "manifestRevision",
+                "runId",
+                "terminalStatus"
+            ],
+            "no inline outcomes ledger at all — the bounded summary shape"
+        );
+        let mut count_keys: Vec<&str> = receipt["counts"]
+            .as_object()
+            .expect("counts object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        count_keys.sort_unstable();
+        assert_eq!(count_keys, vec!["acceptedCount", "excludedCount"]);
     }
 
     #[test]
@@ -1292,6 +2101,127 @@ mod tests {
             )),
             CommandErrorCode::NotFound,
             "unknown run"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // stage_kpi_observations — chunked drafts (epic #399 S6)
+    // ------------------------------------------------------------------
+
+    /// One clean company-scoped `origin=agent` definition, mirroring
+    /// `propose_args`'s proven shape — only the key/label vary per index.
+    fn propose_test_definition(state: &AppState, run_id: &str, i: usize) {
+        let payload = success(acquisition_call(
+            state,
+            "propose_kpi_definition",
+            &json!({
+                "runId": run_id,
+                "metricKey": format!("acq_test_metric_{i:03}"),
+                "label": format!("Acquisition Test Metric {i:03}"),
+                "statementGroup": "other"
+            }),
+        ));
+        assert_eq!(
+            payload["created"], true,
+            "definition {i} must be freshly minted"
+        );
+    }
+
+    /// One observation targeting `acq_test_metric_{i:03}`, mirroring
+    /// `mapped_observation`'s currency/unitScale/measureWindow/attribution
+    /// verbatim — only rawLabel/rawValue/metricKeyCandidate/citation.page
+    /// vary per index, so no coherence diagnostic beyond the proven single-
+    /// observation baseline can trip.
+    fn observation_for(i: usize) -> Value {
+        json!({
+            "rawLabel": format!("acquisition test metric {i:03}"),
+            "rawValue": (1000 + i).to_string(),
+            "normalizedValue": (1000 + i).to_string(),
+            "currency": "PLN",
+            "unitScale": "ones",
+            "measureWindow": "flow",
+            "attribution": "total",
+            "metricKeyCandidate": format!("acq_test_metric_{i:03}"),
+            "mappingStatus": "mapped",
+            "citation": { "page": 1 + (i % 50), "quote": format!("metric {i:03} quote") }
+        })
+    }
+
+    /// The epic's frozen CI acceptance proof: a run with 170 disclosed
+    /// numbers — beyond the single-call 100-observation cap — driven
+    /// draft-open → append×4 → finalize → validate → commit against real
+    /// (in-memory) storage, proving the chunked->100 flow end to end.
+    #[test]
+    fn finalize_170_observations_stage_validate_commit() {
+        const TOTAL: usize = 170;
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        for i in 0..TOTAL {
+            propose_test_definition(&state, &run_id, i);
+        }
+
+        let open = success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "open": true, "expectedObservations": TOTAL }
+            }),
+        ));
+        assert_eq!(open["status"], "draft_open");
+        let draft_id = open["draftId"].as_str().expect("draftId").to_owned();
+
+        let observations: Vec<Value> = (0..TOTAL).map(observation_for).collect();
+        for (chunk_index, chunk) in observations.chunks(50).enumerate() {
+            let appended = success(acquisition_call(
+                &state,
+                "stage_kpi_observations",
+                &json!({
+                    "runId": run_id,
+                    "draft": { "draftId": draft_id, "chunkIndex": chunk_index as i64 },
+                    "observations": chunk
+                }),
+            ));
+            assert_eq!(appended["status"], "draft_appended");
+            assert_eq!(appended["chunkIndex"], chunk_index as i64);
+        }
+
+        let finalized = success(acquisition_call(
+            &state,
+            "stage_kpi_observations",
+            &json!({
+                "runId": run_id,
+                "draft": { "draftId": draft_id, "final": true },
+                "missingReasons": {}
+            }),
+        ));
+        assert_eq!(finalized["status"], "staged");
+        assert_eq!(finalized["observationCount"], TOTAL);
+        let revision = finalized["revision"].as_i64().expect("revision");
+
+        let ready = success(acquisition_call(
+            &state,
+            "validate_kpi_ingest",
+            &json!({ "runId": run_id, "revision": revision }),
+        ));
+        assert_eq!(ready["outcome"], "ready", "validation manifest: {ready:#}");
+        let hash = ready["manifestHash"].as_str().expect("hash").to_owned();
+
+        let receipt = success(acquisition_call(
+            &state,
+            "commit_kpi_ingest",
+            &json!({
+                "runId": run_id,
+                "manifestHash": hash,
+                "revision": revision,
+                "execution": { "client": "acquisition-agent" }
+            }),
+        ));
+        assert_eq!(receipt["terminalStatus"], "complete");
+        assert!(
+            receipt["counts"]["acceptedCount"].as_i64().expect("count") >= TOTAL as i64,
+            "receipt: {receipt:#}"
         );
     }
 
@@ -1371,13 +2301,94 @@ mod tests {
             let error = receipt_dto(receipt_with(json_text, 1)).expect_err(name);
             assert_eq!(error.code, CommandErrorCode::Internal, "{name}");
         }
-        let error = receipt_dto(receipt_with(&outcome_row("created", true, false), 2))
-            .expect_err("schema version 2");
+        // v2 is a legal schema version now (ADR 0102 dec. 3) — a plain
+        // `created` row still round-trips under it unchanged.
+        assert!(receipt_dto(receipt_with(&outcome_row("created", true, false), 2)).is_ok());
+        let error = receipt_dto(receipt_with(&outcome_row("created", true, false), 3))
+            .expect_err("schema version 3 is unsupported");
         assert_eq!(error.code, CommandErrorCode::Internal);
 
         // A MISSING factId key (vs the writer's explicit null) is shape drift.
         let missing_key = r#"[{"observationId":"o","revision":1,"ordinal":0,"metricKey":"m","outcome":"divergent","detail":{"existingFactId":"f"}}]"#;
         let error = receipt_dto(receipt_with(missing_key, 1)).expect_err("missing factId key");
         assert_eq!(error.code, CommandErrorCode::Internal);
+    }
+
+    /// ADR 0102 dec. 3: `excluded` is legal ONLY under v2, no `factId`,
+    /// carrying `{label, reason}` — and rolls up into
+    /// [`CommitReceiptDto::excludedCount`]/`excluded`.
+    #[test]
+    fn receipt_v2_outcome_excluded_and_ledger() {
+        fn receipt_with(outcomes_json: &str, schema_version: i64) -> CommitReceipt {
+            CommitReceipt {
+                id: "receipt1".to_owned(),
+                run_id: "kpiing_00000000000000000000000000000001".to_owned(),
+                manifest_hash: "0".repeat(64),
+                manifest_revision: 1,
+                terminal_status: "complete".to_owned(),
+                period_id: None,
+                accepted_count: 0,
+                outcomes_schema_version: schema_version,
+                outcomes_json: outcomes_json.to_owned(),
+                committed_at: "2026-01-01T00:00:00Z".to_owned(),
+            }
+        }
+        let excluded_row = json!([{
+            "observationId": "kpiobs_1",
+            "revision": 1,
+            "ordinal": 0,
+            "metricKey": "",
+            "factId": Value::Null,
+            "outcome": "excluded",
+            "detail": { "label": "Liczba pracowników", "reason": "not a KPI" },
+        }])
+        .to_string();
+
+        // The bounded wire DTO (ADR 0102 dec. 12) carries only the count — the
+        // per-outcome `{label, reason}` ledger is internal-only here, exposed
+        // over the wire via `get_kpi_ingest_context section:"receipt"`
+        // (`receipt_section_serves_the_full_excluded_ledger`,
+        // kpi_ingest_context.rs), which reads the SAME stored `outcomes_json`
+        // this function validates.
+        let dto =
+            receipt_dto(receipt_with(&excluded_row, 2)).expect("v2 excluded outcome is legal");
+        assert_eq!(dto.counts.excluded_count, 1);
+
+        // The same shape under v1 is illegal — that outcome member did not
+        // exist under v1 (the invariant is extended, never loosened).
+        let error = receipt_dto(receipt_with(&excluded_row, 1)).expect_err("excluded is v2-only");
+        assert_eq!(error.code, CommandErrorCode::Internal);
+    }
+
+    /// ADR 0102 dec. 3: the reader accepts both v1 and v2 stored receipts —
+    /// old rows never get rewritten, new commits always write v2.
+    #[test]
+    fn receipt_reader_accepts_v1_and_v2() {
+        let created_row = json!([{
+            "observationId": "kpiobs_1",
+            "revision": 1,
+            "ordinal": 0,
+            "metricKey": "revenue",
+            "factId": "fact_1",
+            "outcome": "created",
+        }])
+        .to_string();
+        for version in [1, 2] {
+            let receipt = CommitReceipt {
+                id: "receipt1".to_owned(),
+                run_id: "kpiing_00000000000000000000000000000001".to_owned(),
+                manifest_hash: "0".repeat(64),
+                manifest_revision: 1,
+                terminal_status: "complete".to_owned(),
+                period_id: None,
+                accepted_count: 1,
+                outcomes_schema_version: version,
+                outcomes_json: created_row.clone(),
+                committed_at: "2026-01-01T00:00:00Z".to_owned(),
+            };
+            let dto = receipt_dto(receipt).unwrap_or_else(|e| panic!("v{version}: {e:?}"));
+            assert_eq!(dto.counts.accepted_count, 1);
+            assert_eq!(dto.counts.excluded_count, 0);
+        }
     }
 }

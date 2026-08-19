@@ -46,6 +46,10 @@ pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub enum Severity {
     Flagged,
     Unreviewed,
+    /// A deliberate, reasoned exclusion (ADR 0102 dec. 2) — never `Flagged`,
+    /// never a run-level diagnostic; distinct from `Unreviewed`'s "the check
+    /// could not run" (this check never ran BY DESIGN).
+    Info,
 }
 
 /// The closed diagnostic code registry (data-model.md § KPI ingest —
@@ -56,6 +60,10 @@ pub enum Severity {
 pub enum DiagnosticCode {
     #[serde(rename = "mapping.unresolved")]
     MappingUnresolved,
+    /// A deliberate, reasoned exclusion (ADR 0102 dec. 1/2) — sealed
+    /// disposition, `Info` severity, never `Flagged`.
+    #[serde(rename = "mapping.excluded")]
+    MappingExcluded,
     #[serde(rename = "value.unparseable")]
     ValueUnparseable,
     #[serde(rename = "unit.currency_missing")]
@@ -96,6 +104,7 @@ pub enum DiagnosticCode {
 /// registry guard test pins (data-model.md § KPI ingest / Rejestr kodów).
 pub const REGISTRY: &[DiagnosticCode] = &[
     DiagnosticCode::MappingUnresolved,
+    DiagnosticCode::MappingExcluded,
     DiagnosticCode::ValueUnparseable,
     DiagnosticCode::UnitCurrencyMissing,
     DiagnosticCode::UnitCurrencyUnexpected,
@@ -126,6 +135,7 @@ impl DiagnosticCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MappingUnresolved => "mapping.unresolved",
+            Self::MappingExcluded => "mapping.excluded",
             Self::ValueUnparseable => "value.unparseable",
             Self::UnitCurrencyMissing => "unit.currency_missing",
             Self::UnitCurrencyUnexpected => "unit.currency_unexpected",
@@ -166,6 +176,7 @@ impl DiagnosticCode {
         use Severity::*;
         match self {
             Self::MappingUnresolved => Flagged,
+            Self::MappingExcluded => Info,
             Self::ValueUnparseable => Flagged,
             Self::UnitCurrencyMissing => Flagged,
             Self::UnitCurrencyUnexpected => Flagged,
@@ -314,10 +325,18 @@ pub struct ResolvedDefinitionInput {
 pub struct ManifestObservationInput {
     pub observation_id: String,
     pub ordinal: i64,
+    /// Exactly as the document states it — never normalized. Sealed into the
+    /// manifest (ADR 0102 dec. 1): without it, the commit receipt's excluded
+    /// ledger `{label, reason}` is impossible to produce (commit only ever
+    /// sees the sealed manifest, never the live staged row).
+    pub raw_label: String,
     pub raw_value: String,
     pub metric_key_candidate: Option<String>,
-    /// `unmapped | mapped | no_definition`.
+    /// `unmapped | mapped | no_definition | excluded`.
     pub mapping_status: String,
+    /// Required exactly when `mapping_status == "excluded"` (ADR 0102 dec.
+    /// 1); `None` otherwise.
+    pub exclusion_reason: Option<String>,
     pub normalized_value: Option<String>,
     pub currency: Option<String>,
     pub unit_scale: Option<String>,
@@ -428,6 +447,20 @@ pub fn evaluate(run: &ManifestRunInput, observations: &[ManifestObservationInput
         let codes = observation_codes
             .get_mut(&obs.observation_id)
             .expect("seeded above");
+        // Excluded (ADR 0102 dec. 2): a deliberate, reasoned exclusion
+        // branches BEFORE every other check — including the ones that don't
+        // dereference a definition — since an excluded observation is never
+        // held to fact-quality standards (it will never become a fact). The
+        // ONE code it carries is Info severity, never Flagged.
+        if obs.mapping_status == "excluded" {
+            codes.push(Code {
+                code: DiagnosticCode::MappingExcluded,
+                detail: Some(DiagnosticDetail::Reason {
+                    reason: obs.exclusion_reason.clone().unwrap_or_default(),
+                }),
+            });
+            continue;
+        }
         let mapping_unresolved = obs.mapping_status != "mapped" || obs.definition.is_none();
         if mapping_unresolved {
             codes.push(Code::bare(DiagnosticCode::MappingUnresolved));
@@ -829,6 +862,9 @@ pub struct Citation {
 pub struct ManifestObservation {
     pub observation_id: String,
     pub ordinal: i64,
+    /// Sealed for the receipt's excluded ledger (ADR 0102 dec. 1) — see
+    /// [`ManifestObservationInput::raw_label`].
+    pub raw_label: String,
     pub metric_key: String,
     pub definition_id: Option<String>,
     pub normalized_value: Option<String>,
@@ -840,6 +876,14 @@ pub struct ManifestObservation {
     pub citation: Citation,
     pub validation_state: ValidationState,
     pub codes: Vec<Code>,
+    /// Sealed disposition (ADR 0102 dec. 1): `true` iff this observation's
+    /// `mappingStatus` was `excluded`. Commit skips writing a fact for any
+    /// observation with `excluded: true` — never derived from `codes`, so a
+    /// hand-built manifest cannot fake it without `seal()` catching the
+    /// mismatch (see [`ManifestSealError::ExcludedDispositionInconsistent`]).
+    pub excluded: bool,
+    /// `Some` iff `excluded` is `true`.
+    pub exclusion_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -908,9 +952,11 @@ pub fn build_manifest(
                 .cloned()
                 .unwrap_or_default();
             let validation_state = derive_validation_state(&codes);
+            let excluded = obs.mapping_status == "excluded";
             ManifestObservation {
                 observation_id: obs.observation_id.clone(),
                 ordinal: obs.ordinal,
+                raw_label: obs.raw_label.clone(),
                 metric_key: obs.metric_key_candidate.clone().unwrap_or_default(),
                 // Only a MAPPED observation carries a definition identity in the
                 // manifest — mirrors `evaluate`'s completeness/present rule, so
@@ -935,6 +981,8 @@ pub fn build_manifest(
                 },
                 validation_state,
                 codes,
+                excluded,
+                exclusion_reason: excluded.then(|| obs.exclusion_reason.clone()).flatten(),
             }
         })
         .collect();
@@ -1015,6 +1063,11 @@ pub enum ManifestSealError {
     },
     #[error("manifest completeness is inconsistent with its observations: {reason}")]
     CompletenessInconsistent { reason: &'static str },
+    #[error("observation {observation_id} excluded disposition is inconsistent: {reason}")]
+    ExcludedDispositionInconsistent {
+        observation_id: String,
+        reason: &'static str,
+    },
     #[error(
         "manifest carries schema/validator versions {stated_schema}/{stated_validator} but this validator produces {expected_schema}/{expected_validator}"
     )]
@@ -1044,8 +1097,14 @@ pub struct ObservationVerdict {
 pub struct ObservationContentProjection {
     pub observation_id: String,
     pub ordinal: i64,
+    /// Sealed for the tamper guard too (ADR 0102 dec. 1): a manifest naming
+    /// the right observation id but a different `rawLabel` is refused.
+    pub raw_label: String,
     pub metric_key_candidate: Option<String>,
     pub normalized_value: Option<String>,
+    /// `true` iff this observation was sealed `excluded`.
+    pub excluded: bool,
+    pub exclusion_reason: Option<String>,
     pub currency: Option<String>,
     pub unit_scale_eff: String,
     pub attribution_eff: String,
@@ -1097,7 +1156,7 @@ fn detail_matches_code(code: DiagnosticCode, detail: &Option<DiagnosticDetail>) 
         PlausibilityImplausible => matches!(detail, Some(HistoryMedian { .. })),
         IdentityViolation => matches!(detail, Some(CheckResidual { .. })),
         DuplicateConflict | DuplicateRepeat => matches!(detail, Some(ObservationIds { .. })),
-        PlausibilityAbstained => matches!(detail, Some(Reason { .. })),
+        PlausibilityAbstained | MappingExcluded => matches!(detail, Some(Reason { .. })),
         CompletenessMissingWithoutReason => matches!(detail, Some(MetricKeys { .. })),
         _ => detail.is_none(),
     }
@@ -1207,6 +1266,27 @@ impl SealedManifest {
                     });
                 }
             }
+            // Excluded disposition invariants (ADR 0102 dec. 1): `excluded`
+            // is never hand-settable independent of the rest — it must agree
+            // with `exclusionReason`'s presence AND with whether `codes`
+            // actually carries `mapping.excluded`, so a hand-built manifest
+            // cannot claim the disposition without the evaluator's own code.
+            let carries_excluded_code = obs
+                .codes
+                .iter()
+                .any(|c| c.code == DiagnosticCode::MappingExcluded);
+            if obs.excluded != obs.exclusion_reason.is_some() {
+                return Err(ManifestSealError::ExcludedDispositionInconsistent {
+                    observation_id: obs.observation_id.clone(),
+                    reason: "excluded does not agree with exclusionReason's presence",
+                });
+            }
+            if obs.excluded != carries_excluded_code {
+                return Err(ManifestSealError::ExcludedDispositionInconsistent {
+                    observation_id: obs.observation_id.clone(),
+                    reason: "excluded does not agree with whether codes carry mapping.excluded",
+                });
+            }
         }
         for c in &manifest.run_diagnostics {
             if !detail_matches_code(c.code, &c.detail) {
@@ -1267,8 +1347,11 @@ impl SealedManifest {
             .map(|obs| ObservationContentProjection {
                 observation_id: obs.observation_id.clone(),
                 ordinal: obs.ordinal,
+                raw_label: obs.raw_label.clone(),
                 metric_key_candidate: Some(obs.metric_key.clone()).filter(|s| !s.is_empty()),
                 normalized_value: obs.normalized_value.clone(),
+                excluded: obs.excluded,
+                exclusion_reason: obs.exclusion_reason.clone(),
                 currency: obs.currency.clone(),
                 unit_scale_eff: obs.unit_scale.clone().unwrap_or_else(|| "ones".to_owned()),
                 attribution_eff: obs.attribution.clone(),
