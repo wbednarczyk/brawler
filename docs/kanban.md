@@ -36,7 +36,7 @@ Create a GitHub issue for every reported or discovered bug that will not be fixe
 
 ## Epic closure
 
-Closing an epic is a **post-delivery audit**, never a gate a merge waits on ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)): all delivery already shipped via normal PRs with green required checks. Before `gh issue close <epic> --reason completed`:
+Closing an epic is a **post-delivery audit**, never a gate a merge waits on ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)): all delivery already shipped via normal PRs with green required checks. **Everything the epic needs ships inside its implementing PR(s)** — ADRs already `Accepted` (dated to the owner's plan approval), docs, wiki; closure itself produces zero commits and zero PRs (owner rule 2026-08-19), only the inline audit + `gh issue close`. Before `gh issue close <epic> --reason completed`:
 
 - **Closure artifacts presented inline in chat** before sign-off — the retrospective (both domains — app + dev loop — × went-well / went-wrong / stop / improve, each item marked closed or still-open honestly), the guardrail-harvest list, the ADR-audit verdicts, and any decisions the owner must make. A committed file the owner never saw does not count.
 - **ADR spec-conformance audit**: for every decision in the epic's ADR(s), verify a live-path invocation exists (`repoctx callers` from the real job/command/UI entry, not only unit tests); verdict per decision (conforms / partial / deviates / not built).

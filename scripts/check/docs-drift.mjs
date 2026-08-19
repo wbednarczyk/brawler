@@ -456,7 +456,7 @@ const MCP_SNAPSHOT_REL =
 const MCP_ACQ_SNAPSHOT_REL =
   "src-tauri/src/mcp/snapshots/brawler_lib__mcp__protocol__tests__tools_list_schema_acquisition.snap";
 const MCP_MANIFEST_REL =
-  "src-tauri/src/mcp/snapshots/brawler_lib__mcp__registry__tests__mcp_registry_manifest.snap";
+  "src-tauri/src/mcp/registry/snapshots/brawler_lib__mcp__registry__tests__mcp_registry_manifest.snap";
 const MCP_CATALOG_BEGIN = "<!-- BEGIN GENERATED MCP CATALOG";
 const MCP_CATALOG_END = "<!-- END GENERATED MCP CATALOG -->";
 // The hand-authored acquisition-workflow tool inventory (#387): the rewritten
