@@ -21,8 +21,9 @@ use super::registry::McpScope;
 use super::tools::{run, ToolCallError, ToolOutcome};
 use crate::commands::error::{CommandError, CommandErrorCode};
 use crate::storage::{
-    is_registered_profile_version, resolve_profile_version, AppState, KpiIngestRun,
-    KpiIngestRunState, NewKpiIngestRun, ReportDocument,
+    is_registered_profile_version, resolve_profile_version, AppState, BeginStartIngestRequest,
+    KpiIngestRun, NewRunSeed, OpenDraftSummary, ReportDocument, RunContextAttach,
+    RunPeriodIdentity,
 };
 
 /// The credential-scoped lease TTL (ADR 0099 dec. 4): generous for an agent
@@ -313,6 +314,36 @@ pub(super) fn run_status_dto(
     state: &AppState,
     run: &KpiIngestRun,
 ) -> Result<RunStatusDto, CommandError> {
+    let period = period_dto(state, run)?;
+    let open_draft = state
+        .kpi_ingest_drafts()
+        .get_open_draft(&run.id)
+        .map_err(CommandError::from)?;
+    build_run_status_dto(run, period, open_draft)
+}
+
+/// The natural-key mapping [`RunPeriodIdentity`] (storage) → [`PeriodDto`]
+/// (wire): a plain field-for-field copy, no fallible lookup — the storage
+/// side already resolved the `financial_periods` join, S2, #404 H1.
+fn period_dto_from_identity(period: Option<RunPeriodIdentity>) -> Option<PeriodDto> {
+    period.map(|identity| PeriodDto {
+        fiscal_year: identity.fiscal_year,
+        period_type: identity.period_type,
+        period_id: identity.period_id,
+    })
+}
+
+/// [`run_status_dto`]'s body, taking its two checkout-requiring reads
+/// (`period`, `open_draft`) as ALREADY-RESOLVED arguments (S2, #404 H1):
+/// `start_kpi_ingest` calls this with data
+/// `KpiIngestRunsStore::finish_start_ingest` precomputed on its own
+/// connection, needing zero further checkouts; every other caller keeps
+/// going through [`run_status_dto`], which still resolves them itself.
+fn build_run_status_dto(
+    run: &KpiIngestRun,
+    period: Option<PeriodDto>,
+    open_draft: Option<OpenDraftSummary>,
+) -> Result<RunStatusDto, CommandError> {
     // `missingReasons` normalizes stored NULL to {}; a stored non-object is
     // corrupt (the schema is an object ledger).
     let missing_reasons =
@@ -347,7 +378,7 @@ pub(super) fn run_status_dto(
         profile_version: run.profile_version.clone(),
         scope: run.scope.clone(),
         data_quality: run.data_quality.clone(),
-        period: period_dto(state, run)?,
+        period,
         source_content_hash: run.source_content_hash.clone(),
         attempt_count: run.attempt_count,
         expected_kpis,
@@ -361,15 +392,11 @@ pub(super) fn run_status_dto(
         last_error: run.last_error.clone(),
         created_at: run.created_at.clone(),
         updated_at: run.updated_at.clone(),
-        open_draft: state
-            .kpi_ingest_drafts()
-            .get_open_draft(&run.id)
-            .map_err(CommandError::from)?
-            .map(|draft| OpenDraftDto {
-                draft_id: draft.draft_id,
-                chunks_received: draft.chunks_received,
-                expected_observations: draft.expected_observations,
-            }),
+        open_draft: open_draft.map(|draft| OpenDraftDto {
+            draft_id: draft.draft_id,
+            chunks_received: draft.chunks_received,
+            expected_observations: draft.expected_observations,
+        }),
     })
 }
 
@@ -506,8 +533,13 @@ fn start_kpi_ingest(
     let holder = holder(scope);
     let store = state.kpi_ingest_runs();
 
-    // Variant exclusivity: runId XOR (documentId + profileId).
-    let run = match (&input.run_id, &input.document_id, &input.profile_id) {
+    // Variant exclusivity: runId XOR (documentId + profileId). S2 (#404 H1):
+    // resolving/creating the run itself now happens INSIDE
+    // `begin_start_ingest`'s own transaction — this match only decides WHICH
+    // request shape to send it, keeping the registry-membership checks
+    // (which must refuse BEFORE any claim/attach mutation, unchanged from
+    // pre-S2) here at the caller.
+    let request = match (&input.run_id, &input.document_id, &input.profile_id) {
         (Some(run_id), None, None) => {
             let run = get_existing_run(state, run_id)?;
             if !is_registered_profile_version(&run.profile_version) {
@@ -520,7 +552,7 @@ fn start_kpi_ingest(
                     ),
                 ));
             }
-            run
+            BeginStartIngestRequest::Resume { run_id: run.id }
         }
         (None, Some(document_id), Some(profile_id)) => {
             let Some(profile_version) = resolve_profile_version(profile_id) else {
@@ -529,28 +561,10 @@ fn start_kpi_ingest(
                     format!("profileId '{profile_id}' is outside the extraction-profile registry"),
                 ));
             };
-            let document = match state.get_report_document(document_id) {
-                Ok(document) => document,
-                // The raw store read has no Option seam — a no-rows miss is
-                // this tool's typed not_found, never an internal error.
-                Err(crate::storage::StorageError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => {
-                    return Err(CommandError::new(
-                        CommandErrorCode::NotFound,
-                        format!("report document not found: {document_id}"),
-                    ))
-                }
-                Err(error) => return Err(error.into()),
-            };
-            store.create_run_if_absent(&NewKpiIngestRun {
-                report_document_id: document.id.clone(),
-                company_id: document.company_id.clone(),
-                period_id: None,
+            BeginStartIngestRequest::Fresh(NewRunSeed {
+                document_id: document_id.clone(),
                 profile_version: profile_version.to_owned(),
-                scope: input.scope.map(|s| s.as_str().to_owned()),
-                data_quality: input.data_quality.map(|q| q.as_str().to_owned()),
-                period_fiscal_year: input.period.map(|p| p.fiscal_year),
-                period_type: input.period.map(|p| p.period_type.as_str().to_owned()),
-            })?
+            })
         }
         _ => {
             return Err(CommandError::new(
@@ -560,43 +574,58 @@ fn start_kpi_ingest(
             ));
         }
     };
+    let ctx = RunContextAttach {
+        scope: input.scope.map(RunScopeInput::as_str),
+        data_quality: input.data_quality.map(RunDataQualityInput::as_str),
+        period: input
+            .period
+            .map(|p| (p.fiscal_year, p.period_type.as_str())),
+    };
 
-    // Claim (takeover/keepalive semantics live in the store primitive).
-    let run = store.claim_run(&run.id, holder, RUN_LEASE_SECONDS)?;
+    // Transaction 1: resolve-or-create + claim + attach context + read-back
+    // (`KpiIngestRunsStore::begin_start_ingest`, S2 #404 H1) — ONE checkout.
+    // The FRESH branch's document lookup has no Option seam either (same as
+    // the pre-S2 separate `get_report_document` call it replaces) — a 0-rows
+    // miss is this tool's typed not_found, never an internal error; guarded
+    // on `input.document_id.is_some()` so it fires ONLY for that lookup, not
+    // any other 0-rows read the composed transaction might hit.
+    let began = match store.begin_start_ingest(request, holder, RUN_LEASE_SECONDS, &ctx) {
+        Ok(began) => began,
+        Err(crate::storage::StorageError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+            if input.document_id.is_some() =>
+        {
+            return Err(CommandError::new(
+                CommandErrorCode::NotFound,
+                format!(
+                    "report document not found: {}",
+                    input.document_id.as_deref().expect("guarded Some")
+                ),
+            ));
+        }
+        Err(error) => return Err(error.into()),
+    };
 
-    // Set-once context attach — all-None is a no-op.
-    store.attach_run_context(
-        &run.id,
+    // Pin the source bytes exactly once, at `discovered` — filesystem only,
+    // NO connection held (`began.document` is `Some` iff that's the case).
+    let source_hash = match &began.document {
+        Some(document) => Some(pin_source_blob(state, document)?),
+        None => None,
+    };
+
+    // Transaction 2: optional mark_source_captured + begin_extracting
+    // (eligibility decided inside) + final read-back + DTO auxiliary reads
+    // (`KpiIngestRunsStore::finish_start_ingest`, S2 #404 H1) — ONE checkout.
+    let finished = store.finish_start_ingest(
+        &began.run.id,
         holder,
-        &crate::storage::RunContextAttach {
-            scope: input.scope.map(RunScopeInput::as_str),
-            data_quality: input.data_quality.map(RunDataQualityInput::as_str),
-            period: input
-                .period
-                .map(|p| (p.fiscal_year, p.period_type.as_str())),
-        },
+        source_hash.as_deref(),
+        ACQUISITION_CONTRACT_VERSION,
     )?;
 
-    // Pin the source bytes exactly once, at `discovered`.
-    if run.status == KpiIngestRunState::Discovered {
-        let document = state.get_report_document(&run.report_document_id)?;
-        let hash = pin_source_blob(state, &document)?;
-        store.mark_source_captured(&run.id, holder, &hash)?;
-    }
-
-    // Enter extraction when the context is complete.
-    let run = get_existing_run(state, &run.id)?;
-    if run.status == KpiIngestRunState::SourceCaptured
-        && run.scope.is_some()
-        && run.data_quality.is_some()
-        && (run.period_id.is_some()
-            || (run.period_fiscal_year.is_some() && run.period_type.is_some()))
-    {
-        store.begin_extracting(&run.id, holder, ACQUISITION_CONTRACT_VERSION)?;
-    }
-
-    let run = get_existing_run(state, &run.id)?;
-    run_status_dto(state, &run)
+    // DTO assembly: ZERO further checkouts — every auxiliary read already
+    // happened on `finish_start_ingest`'s connection.
+    let period = period_dto_from_identity(finished.period);
+    build_run_status_dto(&finished.run, period, finished.open_draft)
 }
 
 const PENDING_LIMIT_DEFAULT: i64 = 20;
@@ -841,6 +870,34 @@ mod tests {
                 [run_id],
             )
             .expect("expire");
+    }
+
+    /// S2 (#404 H1) guard: a full fresh start against a seeded document with
+    /// complete context reaches `extracting` in ≤4 pool checkouts —
+    /// `begin_start_ingest` (1) + `finish_start_ingest` (1), never the
+    /// pre-S2 ~10-13 (`get_report_document`/`create_run_if_absent`,
+    /// `claim_run`, `attach_run_context`, the pin's `get_report_document`,
+    /// `mark_source_captured`, two `get_existing_run` re-reads,
+    /// `begin_extracting`, `period_dto`'s conditional lookup,
+    /// `get_open_draft`). Under load, each checkout carries a 10s pool
+    /// acquire budget and each `Immediate` transaction a 5s busy budget
+    /// (issue #404) — fewer checkouts is the fix.
+    #[test]
+    fn start_kpi_ingest_is_checkout_bounded() {
+        let state = test_state();
+        let before = state.checkout_count();
+
+        success(acquisition_call(
+            &state,
+            "start_kpi_ingest",
+            &full_start_args(),
+        ));
+
+        let delta = state.checkout_count() - before;
+        assert!(
+            delta <= 4,
+            "start_kpi_ingest took {delta} pool checkouts (budget: 4)"
+        );
     }
 
     #[test]

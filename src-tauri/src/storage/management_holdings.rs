@@ -582,6 +582,30 @@ impl ManagementHoldingsStore {
         upsert_holding(&connection, &holding)
     }
 
+    /// Upsert a whole document's by-person holding rows in ONE `IMMEDIATE`
+    /// transaction (#404 H2): a per-row `upsert_holding` loop is one pool
+    /// checkout — and one fsync under `synchronous=FULL` — per row, so a
+    /// document with hundreds of insiders amplified into hundreds of fsyncs.
+    /// One tx per document means a constraint failure rolls back the whole
+    /// document's rows (deliberate — atomic persist, consistent with the
+    /// argument at `companies.rs:200`).
+    pub fn upsert_holdings(
+        &self,
+        holdings: &[NewManagementHolding],
+    ) -> StorageResult<Vec<ManagementHoldingRow>> {
+        if holdings.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut rows = Vec::with_capacity(holdings.len());
+        for holding in holdings {
+            rows.push(upsert_holding(&tx, holding)?);
+        }
+        tx.commit()?;
+        Ok(rows)
+    }
+
     pub fn upsert_zero_aggregate(
         &self,
         company_id: &str,
@@ -591,6 +615,37 @@ impl ManagementHoldingsStore {
     ) -> StorageResult<ManagementHoldingRow> {
         let connection = self.db.checkout()?;
         upsert_zero_aggregate(&connection, company_id, report_document_id, role, as_of)
+    }
+
+    /// Upsert a document's zero-holding-aggregate sentinels (one per organ, at
+    /// most two: management + supervisory) in ONE `IMMEDIATE` transaction —
+    /// same rationale as [`Self::upsert_holdings`], sized for the (small,
+    /// bounded) `zero_organs` set rather than reusing `upsert_holdings`, whose
+    /// `NewManagementHolding` shape would re-derive `person_normalized` from a
+    /// raw string instead of the reserved `__ZERO_*__` sentinel key.
+    pub fn upsert_zero_aggregates(
+        &self,
+        company_id: &str,
+        report_document_id: &str,
+        entries: &[(Option<MgmtRole>, String)],
+    ) -> StorageResult<Vec<ManagementHoldingRow>> {
+        if entries.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut rows = Vec::with_capacity(entries.len());
+        for (role, as_of) in entries {
+            rows.push(upsert_zero_aggregate(
+                &tx,
+                company_id,
+                report_document_id,
+                *role,
+                as_of,
+            )?);
+        }
+        tx.commit()?;
+        Ok(rows)
     }
 
     pub fn list_by_company(&self, company_id: &str) -> StorageResult<Vec<ManagementHoldingRow>> {

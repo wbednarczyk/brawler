@@ -137,8 +137,9 @@ pub use kpi_ingest_profiles::{
     resolve_profile_version, PROFILE_VERSIONS,
 };
 pub use kpi_ingest_runs::{
-    IngestGeneration, KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun,
-    RunContextAttach, ValidationAttempt,
+    BeginStartIngestOutcome, BeginStartIngestRequest, FinishStartIngestOutcome, IngestGeneration,
+    KpiIngestRun, KpiIngestRunState, KpiIngestRunsStore, NewKpiIngestRun, NewRunSeed,
+    RunContextAttach, RunPeriodIdentity, ValidationAttempt,
 };
 pub use kpi_ingest_staging::{
     CommitReceipt, KpiIngestStagingStore, NewCommitReceipt, NewStagedObservation, StagedObservation,
@@ -509,6 +510,14 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn checkout_for_tests(&self) -> StorageResult<DbGuard<'_>> {
         self.checkout()
+    }
+
+    /// Test-only checkout-count read (S2, #404 H1 skeptic m5) — the
+    /// `start_kpi_ingest_is_checkout_bounded` guard asserts a before/after
+    /// delta stays within budget.
+    #[cfg(test)]
+    pub(crate) fn checkout_count(&self) -> u64 {
+        self.db.checkout_count()
     }
 
     /// Watchlist operations as a focused domain store (Architecture v2 / ADR 0050).

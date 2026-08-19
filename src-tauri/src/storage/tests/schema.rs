@@ -216,3 +216,49 @@ fn reports_database_status() {
     // history_sweep_ai_call_limit) plus the general-analysis model/timeout rows.
     assert_eq!(status.settings, 19);
 }
+
+/// Guard (issue #404 H6): every write transaction must open `IMMEDIATE` via
+/// `rusqlite::Transaction::new_unchecked(&conn, TransactionBehavior::Immediate)`.
+/// The `unchecked_transaction` connection method and the bare, argument-less
+/// `transaction` call (rusqlite's DEFERRED default) both open DEFERRED, so a
+/// read->write upgrade under WAL returns `SQLITE_BUSY_SNAPSHOT` immediately,
+/// bypassing `busy_timeout` entirely (harvest 2026-08-19). Empty allowlist by
+/// design. The banned needles are built via `format!` so this scan never
+/// flags its own source line.
+#[test]
+fn no_write_transaction_is_deferred() {
+    let unchecked_needle = format!("{}{}", "unchecked_transaction", "(");
+    let bare_needle = format!("{}{}", ".transaction", "()");
+
+    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut violations = Vec::new();
+    let mut stack = vec![src_dir];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("readable source dir") {
+            let path = entry.expect("readable dir entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let content = std::fs::read_to_string(&path).expect("readable source file");
+                for (line_no, line) in content.lines().enumerate() {
+                    if line.contains(&unchecked_needle) || line.contains(&bare_needle) {
+                        violations.push(format!(
+                            "{}:{}: {}",
+                            path.display(),
+                            line_no + 1,
+                            line.trim()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "DEFERRED write transaction(s) found (#404 H6); use \
+         rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate) \
+         instead:\n{}",
+        violations.join("\n")
+    );
+}

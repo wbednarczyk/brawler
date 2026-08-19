@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
 use crate::fundamentals::management_holdings::{
-    parse_management_holdings, MgmtHoldingsOutcome, MgmtHoldingsState,
+    parse_management_holdings, MgmtHoldingsOutcome, MgmtHoldingsState, MgmtRole,
 };
 use crate::jobs::structured_extraction::derive_report_period;
 use crate::report_diff::extraction::{extract_report, Section, SourceFormat};
@@ -213,12 +213,15 @@ fn persist_outcome(
         }
         MgmtHoldingsState::ZeroHoldingAggregate => {
             let as_of = detected_as_of.clone().unwrap_or_default();
-            for zero in &outcome.zero_organs {
-                state
-                    .management_holdings()
-                    .upsert_zero_aggregate(&document.company_id, &document.id, zero.role, &as_of)
-                    .map_err(|error| error.to_string())?;
-            }
+            let entries: Vec<(Option<MgmtRole>, String)> = outcome
+                .zero_organs
+                .iter()
+                .map(|zero| (zero.role, as_of.clone()))
+                .collect();
+            state
+                .management_holdings()
+                .upsert_zero_aggregates(&document.company_id, &document.id, &entries)
+                .map_err(|error| error.to_string())?;
             finalize(state, document)?;
         }
         MgmtHoldingsState::GlyphEncoded => {
@@ -248,22 +251,28 @@ fn write_rows(
     as_of: Option<&str>,
 ) -> Result<(), String> {
     let as_of = as_of.unwrap_or("").to_owned();
-    for row in &outcome.rows {
-        state
-            .management_holdings()
-            .upsert_holding(NewManagementHolding {
-                company_id: document.company_id.clone(),
-                report_document_id: document.id.clone(),
-                person_name_raw: row.person_raw.clone(),
-                role: row.role.map(|r| r.as_str().to_owned()),
-                shares: row.shares.clone(),
-                indirect_via_raw: row.indirect_via_raw.clone(),
-                prior_shares: row.prior_shares.clone(),
-                prior_as_of: row.prior_as_of.clone(),
-                as_of: as_of.clone(),
-            })
-            .map_err(|error| error.to_string())?;
-    }
+    // Batched (#404 H2): one checkout + one IMMEDIATE tx for the whole document
+    // instead of one autocommit fsync per row (see
+    // `ManagementHoldingsStore::upsert_holdings`).
+    let holdings: Vec<NewManagementHolding> = outcome
+        .rows
+        .iter()
+        .map(|row| NewManagementHolding {
+            company_id: document.company_id.clone(),
+            report_document_id: document.id.clone(),
+            person_name_raw: row.person_raw.clone(),
+            role: row.role.map(|r| r.as_str().to_owned()),
+            shares: row.shares.clone(),
+            indirect_via_raw: row.indirect_via_raw.clone(),
+            prior_shares: row.prior_shares.clone(),
+            prior_as_of: row.prior_as_of.clone(),
+            as_of: as_of.clone(),
+        })
+        .collect();
+    state
+        .management_holdings()
+        .upsert_holdings(&holdings)
+        .map_err(|error| error.to_string())?;
     finalize(state, document)
 }
 
@@ -452,6 +461,7 @@ fn polish_month(word: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fundamentals::management_holdings::MgmtHoldingRow;
     use crate::storage::{
         open_in_memory_database, AppState, CaptureReportDocumentInput, NewCompany,
         NewOwnershipStake,
@@ -573,6 +583,60 @@ mod tests {
         })
         .expect("payload");
         run_management_extraction_job(state, &payload).expect("run job");
+    }
+
+    /// #404 H2: a per-row `upsert_holding` loop issues one pool checkout per
+    /// row, each an autocommit fsync under `synchronous=FULL` — a large filing's
+    /// insider table amplifies into thousands of fsyncs. Drives a synthetic
+    /// 500-person outcome through the real persist path and asserts the
+    /// pool-checkout delta stays small regardless of row count (batched: one
+    /// checkout for the holdings, plus the fixed founder-stamp/residual-clear
+    /// calls `finalize` already makes).
+    #[test]
+    fn management_extraction_persists_a_document_under_a_bounded_checkout_count() {
+        let s = state_with_dir();
+        let c = company(&s);
+        let doc_id = fetched_periodic_report(
+            &s,
+            &c,
+            "Skonsolidowany raport roczny 2025 SSF",
+            "https://example.com/ssf-2025-bulk.pdf",
+            "mgmt-bulk.pdf",
+            &holdings_xhtml(),
+        );
+        let document = s.get_report_document(&doc_id).expect("document");
+        let sections = vec![Section {
+            ordinal: 0,
+            heading: "Akcje w posiadaniu osób zarządzających i nadzorujących".to_owned(),
+            body: "na dzień 2026-01-01".to_owned(),
+        }];
+        let rows: Vec<MgmtHoldingRow> = (0..500)
+            .map(|i| MgmtHoldingRow {
+                person_raw: format!("Person {i}"),
+                role: None,
+                shares: Some("100".to_owned()),
+                indirect_via_raw: None,
+                prior_shares: None,
+                prior_as_of: None,
+            })
+            .collect();
+        let outcome = MgmtHoldingsOutcome {
+            state: MgmtHoldingsState::Parsed,
+            matched_heading: Some(
+                "Akcje w posiadaniu osób zarządzających i nadzorujących".to_owned(),
+            ),
+            rows,
+            zero_organs: Vec::new(),
+        };
+
+        let before = s.checkout_count();
+        persist_outcome(&s, &document, &sections, &outcome).expect("persist");
+        let delta = s.checkout_count() - before;
+
+        assert!(
+            delta <= 8,
+            "persisting 500 management-holdings rows for one document took {delta} pool checkouts (budget: 8)"
+        );
     }
 
     #[test]

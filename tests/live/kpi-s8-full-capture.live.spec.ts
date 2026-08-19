@@ -101,12 +101,19 @@ async function openAcquisitionSession(page: Page) {
   const rpc = async (method: string, params?: unknown) => {
     const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      // Connection: close — undici pools keep-alive sockets per origin, and the
+      // session ritual RESTARTS the MCP server (toggle off→on); a pooled socket
+      // from the previous server instance is dead and a request written to it
+      // hangs silently forever (#404 root cause of the "2-minute stall": the
+      // request never reached the app — proven by attemptCount on the next
+      // manual start). No socket reuse across sessions = no dead-socket hang.
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        Connection: "close",
+      },
       body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-      // A silent hang here previously ate the whole test timeout — fail typed.
-      // 120s: the startup re-extraction sweep over a full real-data copy can
-      // hold the writer for minutes; the claim then queues behind it (§G
-      // finding, ADR 0059 fairness — logged in the S8 report).
+      // Typed failure beats a silent hang if anything else ever stalls.
       signal: AbortSignal.timeout(120_000),
     });
     expect(response.status).toBe(200);
@@ -121,7 +128,11 @@ async function openAcquisitionSession(page: Page) {
         try {
           const r = await fetch(`http://127.0.0.1:${port}/mcp`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+              Connection: "close",
+            },
             body: JSON.stringify({ jsonrpc: "2.0", id: 0, method: "tools/list" }),
             signal: AbortSignal.timeout(2_000),
           });

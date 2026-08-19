@@ -202,7 +202,8 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
     // The row, its registry-seeded sector and its core KPI denominator land
     // together or not at all — a company that exists without the core
     // `kpi_relevance` set is exactly the state issue #203 was about.
-    let transaction = connection.unchecked_transaction()?;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
 
     transaction.execute(
         "

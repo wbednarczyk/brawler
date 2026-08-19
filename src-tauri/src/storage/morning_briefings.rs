@@ -340,7 +340,8 @@ pub(super) fn insert_morning_briefing(
     composed: &ComposedBriefing,
 ) -> StorageResult<MorningBriefing> {
     let id = next_morning_briefing_id(connection)?;
-    let transaction = connection.unchecked_transaction()?;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
     transaction.execute(
         "INSERT INTO morning_briefings (id, since) VALUES (?1, ?2)",
         params![id, composed.since],
