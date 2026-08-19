@@ -19,7 +19,6 @@
     "src-tauri/src/mcp/kpi_ingest.rs": 1574,
     "src-tauri/src/mcp/kpi_ingest_submit.rs": 2467,
     "src-tauri/src/mcp/reads.rs": 1017,
-    "src-tauri/src/mcp/registry.rs": 3558,
     "src-tauri/src/mcp/server.rs": 1083,
     "src-tauri/src/report_diff/classify.rs": 1141,
     "src-tauri/src/source_adapters/bankier_company.rs": 1203,
