@@ -337,8 +337,8 @@ mod tests {
     }
 
     /// The SCOPED `tools/list` response — the acquisition credential's whole
-    /// frozen surface (ADR 0099 dec. 3/7, #386): exactly the nine workflow
-    /// tools, and the serialized response stays under the 16 KiB byte gate
+    /// frozen surface (ADR 0099 dec. 3/7, #386; widened to ten tools by ADR
+    /// 0101, epic #399 S4), and the serialized response stays under the 16 KiB byte gate
     /// (regression coverage for the compact-surface promise, contracts.md
     /// § Budgets — the gate is coverage, not the enforcement).
     #[test]

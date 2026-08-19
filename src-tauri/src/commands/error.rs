@@ -56,6 +56,10 @@ pub enum CommandErrorCode {
     /// The request cannot be satisfied within the response budget (ADR 0099
     /// dec. 7). Retryable after narrowing/paginating the request.
     ResponseBudgetExceeded,
+    /// `propose_kpi_definition`'s requested `metricKey` is a curated
+    /// `kpi_aliases` synonym of an already-populated key (ADR 0101 dec. 4).
+    /// Not retryable with the same key; reuse the named `definitionId`.
+    SynonymRedirect,
     /// An unexpected internal failure with no more specific code.
     Internal,
 }
@@ -133,6 +137,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // Soft-reference misses and lookup failures: the referenced row is gone.
         StorageError::MissingResearchReference { .. } => NotFound,
         StorageError::MissingFinancialsReference { .. } => NotFound,
+        // The typed alias-redirect refusal (ADR 0101 dec. 4) — retrying the
+        // same key is never right, so this is its own code, not InvalidInput.
+        StorageError::KpiDefinitionSynonymRedirect { .. } => SynonymRedirect,
         StorageError::MissingClaimReference { .. } => NotFound,
         StorageError::MissingReportSeasonReference { .. } => NotFound,
         // Editing a frozen report expectation conflicts with recorded state

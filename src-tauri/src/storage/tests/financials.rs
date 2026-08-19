@@ -274,6 +274,78 @@ fn creates_company_custom_kpi_definition() {
 }
 
 // ---------------------------------------------------------------------------
+// `get_or_create_kpi_definition` (ADR 0101 dec. 3, epic #399 S4): the narrow
+// helper `propose_kpi_definition` uses instead of `create_kpi_definition`'s
+// raw strict-INSERT.
+// ---------------------------------------------------------------------------
+
+fn company_definition_input(company_id: &str, metric_key: &str) -> NewKpiDefinition {
+    NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: Some(company_id.to_owned()),
+        sector: None,
+        metric_key: metric_key.to_owned(),
+        label: "Broker client count".to_owned(),
+        value_kind: "monetary".to_owned(),
+        unit: None,
+        computation: "reported".to_owned(),
+        formula: None,
+        display_format: None,
+        origin: Some("agent".to_owned()),
+        statement_group: None,
+        period_nature: None,
+    }
+}
+
+#[test]
+fn get_or_create_helper_never_raw_constraint() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let raw = state.checkout_for_tests().expect("raw connection");
+
+    let (first, first_created) = crate::storage::financials::get_or_create_kpi_definition(
+        &raw,
+        company_definition_input(&company.id, "broker_client_count"),
+    )
+    .expect("first call creates");
+    assert!(first_created);
+
+    // A second call with the exact same tuple must return the existing row
+    // typed (`created: false`) — never the raw SQLITE_CONSTRAINT
+    // `create_kpi_definition` would raise on the same duplicate.
+    let (second, second_created) = crate::storage::financials::get_or_create_kpi_definition(
+        &raw,
+        company_definition_input(&company.id, "broker_client_count"),
+    )
+    .expect("second call reuses, never a raw constraint error");
+    assert!(!second_created);
+    assert_eq!(second.id, first.id);
+}
+
+#[test]
+fn create_kpi_definition_stays_strict() {
+    // `create_kpi_definition` itself is untouched: a duplicate still raises
+    // the raw constraint error, exactly as every existing caller
+    // (commands/financials.rs, tagged_fact_promotion.rs, mcp::acts) expects.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .create_kpi_definition(company_definition_input(&company.id, "broker_client_count"))
+        .expect("first create succeeds");
+    let error = state
+        .create_kpi_definition(company_definition_input(&company.id, "broker_client_count"))
+        .expect_err("duplicate must still raise a raw constraint error");
+    assert!(matches!(
+        error,
+        StorageError::Sqlite(rusqlite::Error::SqliteFailure(sqlite_error, _))
+            if sqlite_error.code == rusqlite::ErrorCode::ConstraintViolation
+    ));
+}
+
+// ---------------------------------------------------------------------------
 // `kpi_definitions.origin` enum guard (ADR 0093 decision 4, epic #285 T9):
 // `seed | user | agent` — `seed` is migration-backfill-only, never settable
 // by a live `create_kpi_definition` writer.

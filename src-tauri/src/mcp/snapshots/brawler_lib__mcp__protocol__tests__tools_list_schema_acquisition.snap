@@ -433,6 +433,40 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "stage_kpi_observations"
       },
       {
+        "description": "Mint (or reuse) a company-scoped, origin=agent KPI catalog entry for a disclosed number the canon has no key for (ADR 0101). Guard order: this company's own minted entry is returned as-is (created: false); a curated kpi_aliases synonym refuses with a typed synonym_redirect naming the canonical key and definitionId; an exact shared-canon key returns the canonical definition (created: false, never a company shadow); only a genuinely new key mints — never fuzzy matching. Page the full catalog (get_kpi_ingest_context) before proposing. Requires the caller's live lease.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "metricKey": {
+              "type": "string"
+            },
+            "runId": {
+              "type": "string"
+            },
+            "statementGroup": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "label",
+            "metricKey",
+            "runId",
+            "statementGroup"
+          ],
+          "type": "object"
+        },
+        "name": "propose_kpi_definition"
+      },
+      {
         "description": "Validate one staged revision synchronously (generation-pinned). Returns the FULL manifest — a failed manifest is the typed repair report; a raced loser gets outcome=superseded with the current run tuple.",
         "inputSchema": {
           "additionalProperties": false,

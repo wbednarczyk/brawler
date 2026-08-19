@@ -10,6 +10,7 @@
 //! `AppState::kpi_ingest_runs()`.
 
 use super::database::Database;
+use super::financials;
 use super::kpi_ingest_staging::get_commit_receipt_on_connection;
 use super::*;
 
@@ -1951,6 +1952,92 @@ impl KpiIngestRunsStore {
         summary.lease_cleared = clear_expired_leases_on_connection(&tx)?;
         tx.commit()?;
         Ok(summary)
+    }
+
+    /// Lease-gated create-or-reuse for `propose_kpi_definition` (ADR 0101 dec.
+    /// 3/4/6/11, epic #399 S4). Re-checks the caller's live lease on `run_id`
+    /// (the same three-way classification `stage_observations` uses), then
+    /// forces `scope`/`company_id`/`sector`/`origin` from the run regardless
+    /// of `input`'s values — a proposal is always company-scoped, `origin =
+    /// agent`, never the caller's to set (dec. 6). Guard order (dec. 4): an
+    /// exact `(metric_key, company)` duplicate is checked FIRST and returns
+    /// typed (`created: false`, no alias lookup at all — a repeat proposal of
+    /// an already-minted key must not suddenly redirect); then a curated
+    /// `kpi_aliases` hit refuses with
+    /// [`StorageError::KpiDefinitionSynonymRedirect`] (an alias source is
+    /// deprecated even when its zero-fact canonical row still exists); then an
+    /// exact match in the shared canon returns the CANONICAL row (`created:
+    /// false` — never a company-scoped shadow); only a genuinely new key is
+    /// created via [`financials::get_or_create_kpi_definition`] on the SAME
+    /// connection.
+    pub fn propose_kpi_definition(
+        &self,
+        run_id: &str,
+        holder: &str,
+        mut input: NewKpiDefinition,
+    ) -> StorageResult<(KpiDefinition, bool)> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let now: String =
+            tx.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
+                row.get(0)
+            })?;
+        let row: Option<(String, Option<String>, Option<String>)> = tx
+            .query_row(
+                "SELECT company_id, lease_holder, lease_expires_at FROM kpi_ingest_runs WHERE id = ?1",
+                [run_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((company_id, lease_holder, lease_expires_at)) = row else {
+            return Err(StorageError::KpiIngestRunNotFound {
+                id: run_id.to_owned(),
+            });
+        };
+        let lease_live = lease_holder.as_deref() == Some(holder)
+            && lease_expires_at
+                .as_deref()
+                .is_some_and(|expires| expires > now.as_str());
+        if !lease_live {
+            // Three-way classification shared with staging (#386/#399):
+            // own-expired -> RunLeaseExpired, live-foreign -> RunTakenOver,
+            // residual -> RunLeaseNotHeld.
+            return Err(lease_refusal_on_connection(&tx, run_id, holder)?);
+        }
+
+        input.scope = "company".to_owned();
+        input.company_id = Some(company_id.clone());
+        input.sector = None;
+        input.origin = Some("agent".to_owned());
+        let metric_key = input.metric_key.trim().to_owned();
+
+        if financials::find_company_kpi_definition(&tx, &company_id, &metric_key)?.is_none() {
+            // ADR 0101 dec. 4: the curated alias redirect is consulted BEFORE
+            // the shared-canon reuse — an alias source is a deprecated key
+            // whose zero-fact canonical row may still exist (inventory →
+            // inventories), and reusing it would resurrect the fragmentation
+            // the alias retires.
+            if let Some(canonical_key) = crate::fundamentals::kpi_aliases::resolve(&metric_key) {
+                return Err(StorageError::KpiDefinitionSynonymRedirect {
+                    requested_key: metric_key,
+                    canonical_key: canonical_key.to_owned(),
+                    definition_id: financials::canonical_kpi_definition_id(canonical_key),
+                });
+            }
+            // ADR 0101 dec. 3/4: exact-key reuse is against the WHOLE catalog
+            // — a key the shared canon already carries returns the canonical
+            // row (`created: false`), never a company-scoped shadow.
+            if let Some(canonical) =
+                financials::find_canonical_kpi_definition_by_key(&tx, &metric_key)?
+            {
+                return Ok((canonical, false));
+            }
+        }
+
+        let result = financials::get_or_create_kpi_definition(&tx, input)?;
+        tx.commit()?;
+        Ok(result)
     }
 }
 

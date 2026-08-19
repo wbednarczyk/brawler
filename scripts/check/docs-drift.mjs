@@ -36,8 +36,8 @@
 //   7. MCP manifest/snapshot coherence (#387): the capability manifest, the
 //      full tools/list snapshot, and the acquisition-scoped snapshot stay
 //      mutually consistent (order + deep-equal projection), and each doc's
-//      hand-authored acquisition-workflow inventory covers exactly the nine
-//      acquisition tools.
+//      hand-authored acquisition-workflow inventory covers exactly the ten
+//      acquisition tools (nine since #386, +propose_kpi_definition #399 S4).
 //
 // Extraction heuristics (contracts.md documents commands two ways — both are
 // captured):
@@ -460,7 +460,7 @@ const MCP_MANIFEST_REL =
 const MCP_CATALOG_BEGIN = "<!-- BEGIN GENERATED MCP CATALOG";
 const MCP_CATALOG_END = "<!-- END GENERATED MCP CATALOG -->";
 // The hand-authored acquisition-workflow tool inventory (#387): the rewritten
-// playbook lists the nine workflow tools between these markers; the gate parses
+// playbook lists the ten workflow tools between these markers; the gate parses
 // the span and asserts its unique name set equals the manifest's acquisition
 // set (operational sequencing in the surrounding prose is tested separately).
 const ACQ_WORKFLOW_BEGIN = "<!-- BEGIN ACQUISITION WORKFLOW TOOLS -->";
@@ -561,7 +561,7 @@ export function manifestCoherenceErrors(manifest, full, acquisition, inventories
     const extra = [...names].filter((n) => !acqSet.has(n)).sort();
     if (missing.length || extra.length) {
       out.push(
-        `docs-drift: ${rel} acquisition-workflow inventory != the nine acquisition tools.` +
+        `docs-drift: ${rel} acquisition-workflow inventory != the ten acquisition tools.` +
           (missing.length ? `\n    missing: ${missing.join(", ")}` : "") +
           (extra.length ? `\n    extra: ${extra.join(", ")}` : ""),
       );

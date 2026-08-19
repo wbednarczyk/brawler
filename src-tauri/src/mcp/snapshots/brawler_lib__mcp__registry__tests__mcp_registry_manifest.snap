@@ -557,6 +557,11 @@ expression: "serde_json::to_string_pretty(&manifest).expect(\"serializable\")"
     },
     {
       "acquisition": true,
+      "name": "propose_kpi_definition",
+      "tier": "act"
+    },
+    {
+      "acquisition": true,
       "name": "validate_kpi_ingest",
       "tier": "act"
     },

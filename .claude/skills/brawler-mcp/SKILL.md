@@ -37,7 +37,7 @@ Allow write tools if you want me to record this,"* then continue read-only. You
 design.
 
 **The acquisition scope is different.** If you authenticated with the
-**acquisition token**, your surface is exactly the nine KPI-ingest workflow
+**acquisition token**, your surface is exactly the ten KPI-ingest workflow
 tools (below), and their act tools are **not** gated by that toggle — the gate
 ran once at authentication (`kpiAcquisitionEnabled`; a disabled scope rejects
 the token outright). So "writing is off" never applies on the acquisition
@@ -106,22 +106,23 @@ tell the user they are theirs to do in the app:
 Ingesting an issuer's financial figures is a **run-based workflow** (ADR 0098 /
 ADR 0099), and it is the **only** supported path — never write canonical facts
 directly for a normal report (see *Direct fact writes are repair-only* below).
-The nine workflow tools are the whole surface the acquisition credential sees;
+The ten workflow tools are the whole surface the acquisition credential sees;
 the Full-scope token sees them too, as a superset. `"process all pending KPI
 ingests"` is a sufficient instruction — the loop below is what it means.
 
 <!-- BEGIN ACQUISITION WORKFLOW TOOLS -->
-The nine workflow tools, in contract order:
+The ten workflow tools, in contract order:
 
 1. `start_kpi_ingest` — claim or resume a run; an idempotent keepalive.
 2. `list_pending_kpi_ingests` — the pending-run work queue (paginated).
 3. `get_kpi_ingest_context` — catalog, plausibility evidence, profile doctrine.
 4. `get_kpi_ingest_document` — the pinned source bytes, in chunks.
 5. `stage_kpi_observations` — write the complete revision snapshot.
-6. `validate_kpi_ingest` — the typed manifest / repair report.
-7. `commit_kpi_ingest` — atomic, idempotent commit of the validated manifest.
-8. `get_kpi_ingest_status` — a pure status read.
-9. `cancel_kpi_ingest` — abandon a pre-commit run.
+6. `propose_kpi_definition` — mint (or reuse) a company-scoped catalog entry for a disclosed number the canon has no key for.
+7. `validate_kpi_ingest` — the typed manifest / repair report.
+8. `commit_kpi_ingest` — atomic, idempotent commit of the validated manifest.
+9. `get_kpi_ingest_status` — a pure status read.
+10. `cancel_kpi_ingest` — abandon a pre-commit run.
 <!-- END ACQUISITION WORKFLOW TOOLS -->
 
 ### Process all pending KPI ingests
@@ -358,7 +359,7 @@ keeps it exact — do not hand-edit):
 | `get_kpi_ingest_document` | Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed source blob, verified against the frozen sourceContentHash — the portable document delivery channel. Available once the source is captured. Pure read. |
 | `get_kpi_ingest_status` | Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (64):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (65):
 
 | Tool | What it does |
 | --- | --- |
@@ -423,6 +424,7 @@ keeps it exact — do not hand-edit):
 | `run_pipeline_reextraction` | Re-arm one company's landed ESEF runs whose stored pipeline version is stale, so the current extractor reads their filings again. Queues a durable batch; poll `get_pipeline_reextraction_progress`. |
 | `start_kpi_ingest` | Start or resume a KPI ingest run (ADR 0099). Fresh: documentId + profileId (+ optional scope/dataQuality/period) creates the run, claims the lease, pins the source bytes, and enters extraction once context is complete. Resume: runId re-claims idempotently (the explicit keepalive) and attaches missing context set-once. Provenance is the run pipeline itself; no citation carrier here. |
 | `stage_kpi_observations` | Stage the COMPLETE revision snapshot of extracted observations (1..100, with citations) plus the REQUIRED missingReasons declaration ({} = explicitly none), written in the same transaction. A repair resends every retained observation. Requires the caller's live lease. Provenance is the run pipeline itself. |
+| `propose_kpi_definition` | Mint (or reuse) a company-scoped, origin=agent KPI catalog entry for a disclosed number the canon has no key for (ADR 0101). Guard order: this company's own minted entry is returned as-is (created: false); a curated kpi_aliases synonym refuses with a typed synonym_redirect naming the canonical key and definitionId; an exact shared-canon key returns the canonical definition (created: false, never a company shadow); only a genuinely new key mints — never fuzzy matching. Page the full catalog (get_kpi_ingest_context) before proposing. Requires the caller's live lease. |
 | `validate_kpi_ingest` | Validate one staged revision synchronously (generation-pinned). Returns the FULL manifest — a failed manifest is the typed repair report; a raced loser gets outcome=superseded with the current run tuple. |
 | `commit_kpi_ingest` | Atomically commit a ready manifest (runId + manifestHash + revision) and return the immutable receipt. Idempotent: replaying a committed tuple returns the stored receipt verbatim; a stale tuple is a typed conflict. |
 | `cancel_kpi_ingest` | Cancel a KPI ingest run in any pre-commit state (releases its lease). Refuses `committing` and terminal states. |

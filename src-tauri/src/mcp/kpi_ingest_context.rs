@@ -1,5 +1,6 @@
 //! Acquisition-workflow context read model (#385, ADR 0099): the two pure
-//! reads of the nine-tool surface — `get_kpi_ingest_context` (everything one
+//! reads of the ten-tool surface (ADR 0101, epic #399 S4) —
+//! `get_kpi_ingest_context` (everything one
 //! report's extraction needs, within hard response budgets: run state,
 //! document metadata, the hash-guarded derived-period hint, the expected+
 //! minted definition catalog, validator-equivalent plausibility evidence,

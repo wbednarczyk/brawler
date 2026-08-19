@@ -1,11 +1,14 @@
-//! Acquisition-workflow submission tools (#386, ADR 0099 dec. 1): the last
-//! three of the nine — `stage_kpi_observations` (complete revision snapshot +
+//! Acquisition-workflow submission tools (#386, ADR 0099 dec. 1): three of
+//! the original nine — `stage_kpi_observations` (complete revision snapshot +
 //! required `missingReasons` written in the SAME staging transaction),
 //! `validate_kpi_ingest` (synchronous; the full manifest returns in the
 //! response — a `failed` manifest IS the typed repair report; a raced loser
 //! gets a typed `superseded` result carrying the current tuple) and
 //! `commit_kpi_ingest` (synchronous atomic commit; idempotent replay returns
-//! the stored receipt verbatim).
+//! the stored receipt verbatim) — plus the tenth tool, `propose_kpi_definition`
+//! (ADR 0101, epic #399 S4): lease-bound like stage, mints a company-scoped
+//! `origin=agent` catalog entry through the narrow `get_or_create_kpi_definition`
+//! helper, guarded by an exact-key check then a curated `kpi_aliases` redirect.
 //!
 //! Input byte caps live HERE, at the tool boundary (contracts.md tool 5) —
 //! storage keeps its domain constraints (vocabularies, lease, state machine)
@@ -27,7 +30,8 @@ use super::tools::{run, ToolCallError, ToolOutcome};
 use crate::commands::error::{CommandError, CommandErrorCode};
 use crate::jobs::kpi_ingest_validation::validate_kpi_ingest_run;
 use crate::storage::{
-    AppState, CommitReceipt, KpiIngestRun, KpiIngestRunState, NewStagedObservation,
+    AppState, CommitReceipt, KpiDefinition, KpiIngestRun, KpiIngestRunState, NewKpiDefinition,
+    NewStagedObservation,
 };
 
 /// Contract budget (contracts.md tool 5): the complete revision snapshot is
@@ -49,6 +53,14 @@ const CITATION_QUOTE_MAX: usize = 1024;
 const REASON_KEY_MAX: usize = 128;
 const REASON_MAX: usize = 512;
 const EXECUTION_STRING_MAX: usize = 128;
+
+// `propose_kpi_definition` byte caps (ADR 0101, epic #399 S4) — label/unit
+// mirror the context catalog's own output bounds (contracts.md § Budgets:
+// "label ≤256 B, unit/statementGroup ≤64 B").
+const DEFINITION_LABEL_MAX: usize = 256;
+const DEFINITION_UNIT_MAX: usize = 64;
+const DEFINITION_STATEMENT_GROUP_MAX: usize = 64;
+const DEFINITION_DESCRIPTION_MAX: usize = 512;
 
 // ============================================================================
 // Inputs
@@ -230,6 +242,29 @@ pub struct CommitKpiIngestInput {
     pub execution: Option<ExecutionMetaInput>,
 }
 
+/// `propose_kpi_definition` (ADR 0101, epic #399 S4). Deliberately narrower
+/// than `create_kpi_definition`'s full `NewKpiDefinition`: `scope`/
+/// `company_id`/`sector`/`origin`/`value_kind`/`computation` are never
+/// caller-suppliable — they are forced to `company`/the run's own company/
+/// `agent`/`monetary`/`reported` inside the storage layer, matching a
+/// full-capture agent's use case (a disclosed number, not a derived ratio).
+/// `description`, when supplied, is stored in the otherwise-unused `formula`
+/// column of a `computation="reported"` row — free-text rationale, never
+/// evaluated as an expression (the derivation engine only reads `formula` for
+/// `computation="derived"` rows).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ProposeKpiDefinitionInput {
+    pub run_id: String,
+    pub metric_key: String,
+    pub label: String,
+    #[serde(default)]
+    pub unit: Option<String>,
+    pub statement_group: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
 // ============================================================================
 // Wire DTOs (MCP-only — no TS consumer, no ts_rs)
 // ============================================================================
@@ -293,6 +328,18 @@ pub enum CommitOutcomeKind {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DivergentDetailDto {
     pub existing_fact_id: String,
+}
+
+/// `propose_kpi_definition` success shape (ADR 0101 dec. 3): `created: false`
+/// on an exact-key reuse, `true` on a fresh mint — never an error either way.
+/// The `synonym_redirect` guard IS an error (`CommandErrorCode::SynonymRedirect`,
+/// [`crate::storage::StorageError::KpiDefinitionSynonymRedirect`]), not a
+/// variant of this shape.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposeKpiDefinitionResultDto {
+    pub definition: KpiDefinition,
+    pub created: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -529,6 +576,68 @@ fn stage_kpi_observations(
 }
 
 // ============================================================================
+// propose_kpi_definition
+// ============================================================================
+
+fn propose_kpi_definition(
+    state: &AppState,
+    scope: McpScope,
+    input: ProposeKpiDefinitionInput,
+) -> Result<ProposeKpiDefinitionResultDto, CommandError> {
+    reject_control_chars("runId", &input.run_id)?;
+    bounded("metricKey", &input.metric_key, METRIC_KEY_CANDIDATE_MAX)?;
+    let metric_key = input.metric_key.trim().to_owned();
+    if !super::acts::is_snake_case_ascii_metric_key(&metric_key) {
+        return Err(invalid(format!(
+            "metricKey must be snake_case ASCII matching ^[a-z][a-z0-9_]*$, got {metric_key:?}"
+        )));
+    }
+    bounded("label", &input.label, DEFINITION_LABEL_MAX)?;
+    if input.label.trim().is_empty() {
+        return Err(invalid("label must be non-blank"));
+    }
+    bounded_opt("unit", input.unit.as_deref(), DEFINITION_UNIT_MAX)?;
+    bounded(
+        "statementGroup",
+        &input.statement_group,
+        DEFINITION_STATEMENT_GROUP_MAX,
+    )?;
+    bounded_opt(
+        "description",
+        input.description.as_deref(),
+        DEFINITION_DESCRIPTION_MAX,
+    )?;
+
+    // scope/company_id/sector/origin are forced from the run inside the
+    // storage layer (ADR 0101 dec. 6) — every value set here is a caller-
+    // meaningful placeholder, overwritten before the INSERT.
+    let new_definition = NewKpiDefinition {
+        scope: "company".to_owned(),
+        company_id: None,
+        sector: None,
+        metric_key,
+        label: input.label.trim().to_owned(),
+        value_kind: "monetary".to_owned(),
+        unit: input.unit,
+        computation: "reported".to_owned(),
+        formula: input.description,
+        display_format: None,
+        origin: None,
+        statement_group: Some(input.statement_group),
+        period_nature: None,
+    };
+
+    let (definition, created) = state
+        .kpi_ingest_runs()
+        .propose_kpi_definition(&input.run_id, holder(scope), new_definition)
+        .map_err(CommandError::from)?;
+    Ok(ProposeKpiDefinitionResultDto {
+        definition,
+        created,
+    })
+}
+
+// ============================================================================
 // validate_kpi_ingest
 // ============================================================================
 
@@ -698,6 +807,16 @@ pub fn stage_kpi_observations_handler(
 ) -> Result<ToolOutcome, ToolCallError> {
     run(arguments, |input| {
         stage_kpi_observations(state, scope, input)
+    })
+}
+
+pub fn propose_kpi_definition_handler(
+    state: &AppState,
+    scope: McpScope,
+    arguments: &Value,
+) -> Result<ToolOutcome, ToolCallError> {
+    run(arguments, |input| {
+        propose_kpi_definition(state, scope, input)
     })
 }
 
@@ -1000,6 +1119,201 @@ mod tests {
                 &stage_args(&run_id, vec![mapped_observation(true)])
             )),
             CommandErrorCode::RunLeaseExpired
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // propose_kpi_definition
+    // ------------------------------------------------------------------
+
+    fn propose_args(run_id: &str, metric_key: &str) -> Value {
+        json!({
+            "runId": run_id,
+            "metricKey": metric_key,
+            "label": "Broker client count",
+            "statementGroup": "other"
+        })
+    }
+
+    #[test]
+    fn propose_mints_a_company_scoped_agent_definition() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(&run_id)
+            .expect("get")
+            .expect("run");
+
+        let payload = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "broker_client_count"),
+        ));
+        assert_eq!(payload["created"], true);
+        assert_eq!(payload["definition"]["metricKey"], "broker_client_count");
+        assert_eq!(payload["definition"]["scope"], "company");
+        assert_eq!(payload["definition"]["companyId"], run.company_id);
+        assert_eq!(payload["definition"]["origin"], "agent");
+        assert_eq!(payload["definition"]["valueKind"], "monetary");
+    }
+
+    #[test]
+    fn propose_duplicate_exact_key_returns_existing() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let first = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "broker_client_count"),
+        ));
+        assert_eq!(first["created"], true);
+        let first_id = first["definition"]["id"].as_str().expect("id").to_owned();
+
+        let second = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "broker_client_count"),
+        ));
+        assert_eq!(second["created"], false);
+        assert_eq!(second["definition"]["id"], first_id);
+    }
+
+    #[test]
+    fn propose_synonym_returns_typed_redirect() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "propose_kpi_definition",
+                &propose_args(&run_id, "inventory"),
+            )),
+            CommandErrorCode::SynonymRedirect
+        );
+
+        // The canonical target ("inventories") is untouched by the refusal —
+        // no shadow definition was minted under either key.
+        assert!(state
+            .financials()
+            .list_kpi_definitions(crate::storage::ListKpiDefinitionsInput {
+                scope: Some("company".to_owned()),
+                sector: None,
+                company_id: None,
+            })
+            .expect("list")
+            .into_iter()
+            .all(|d| d.metric_key != "inventory"));
+    }
+
+    /// ADR 0101 dec. 3/4: the exact-key reuse is against the WHOLE catalog,
+    /// not just this company's own minted rows — proposing a key the shared
+    /// canon already carries returns the canonical definition (`created:
+    /// false`), never mints a company-scoped shadow whose duplicate
+    /// `metricKey` would fragment the catalog (the wdf_equity_parent /
+    /// inventories disease this ADR exists to prevent).
+    #[test]
+    fn propose_canonical_key_reuses_canon_never_mints_a_shadow() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let payload = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "total_assets"),
+        ));
+        assert_eq!(payload["created"], false);
+        assert_eq!(payload["definition"]["metricKey"], "total_assets");
+        assert!(
+            payload["definition"]["companyId"].is_null(),
+            "the canonical row is returned, not a company shadow: {:?}",
+            payload["definition"]
+        );
+
+        assert!(
+            state
+                .financials()
+                .list_kpi_definitions(crate::storage::ListKpiDefinitionsInput {
+                    scope: Some("company".to_owned()),
+                    sector: None,
+                    company_id: None,
+                })
+                .expect("list")
+                .into_iter()
+                .all(|d| d.metric_key != "total_assets"),
+            "no company-scoped shadow of a canonical key was minted"
+        );
+    }
+
+    #[test]
+    fn propose_forces_company_scope_and_agent_origin() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        let run = state
+            .kpi_ingest_runs()
+            .get_run(&run_id)
+            .expect("get")
+            .expect("run");
+
+        let payload = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "custom_broker_metric"),
+        ));
+        assert_eq!(payload["definition"]["scope"], "company");
+        assert_eq!(payload["definition"]["companyId"], run.company_id);
+        assert_eq!(payload["definition"]["origin"], "agent");
+    }
+
+    #[test]
+    fn propose_requires_live_lease() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+        {
+            let connection = state.checkout_for_tests().expect("raw");
+            connection
+                .execute(
+                    "UPDATE kpi_ingest_runs SET lease_expires_at = '2000-01-01T00:00:00Z' \
+                     WHERE id = ?1",
+                    [&run_id],
+                )
+                .expect("expire");
+        }
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "propose_kpi_definition",
+                &propose_args(&run_id, "broker_client_count"),
+            )),
+            CommandErrorCode::RunLeaseExpired
+        );
+    }
+
+    #[test]
+    fn propose_rejects_malformed_metric_key_and_blank_label() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let mut bad_key = propose_args(&run_id, "BadKey");
+        bad_key["metricKey"] = json!("BadKey");
+        assert_eq!(
+            failure_code(acquisition_call(&state, "propose_kpi_definition", &bad_key)),
+            CommandErrorCode::InvalidInput,
+            "PascalCase key"
+        );
+
+        let mut blank_label = propose_args(&run_id, "broker_client_count");
+        blank_label["label"] = json!("   ");
+        assert_eq!(
+            failure_code(acquisition_call(
+                &state,
+                "propose_kpi_definition",
+                &blank_label
+            )),
+            CommandErrorCode::InvalidInput,
+            "blank label"
         );
     }
 

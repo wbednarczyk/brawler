@@ -44,6 +44,17 @@ pub enum StorageError {
     },
     #[error("missing financials reference for {table}: {id}")]
     MissingFinancialsReference { table: String, id: String },
+    /// `propose_kpi_definition`'s alias guard (ADR 0101 dec. 4, epic #399 S4):
+    /// `requested_key` is a curated `kpi_aliases` source — redirect to the
+    /// existing `canonical_key` definition instead of minting a near-duplicate.
+    #[error(
+        "metricKey \"{requested_key}\" is a curated synonym of \"{canonical_key}\" (kpi_aliases.rs) — reuse definition {definition_id} instead of proposing a duplicate"
+    )]
+    KpiDefinitionSynonymRedirect {
+        requested_key: String,
+        canonical_key: String,
+        definition_id: String,
+    },
     #[error("invalid claim value for {key}: {value}")]
     InvalidClaimValue { key: &'static str, value: String },
     #[error("missing claim reference for {table}: {id}")]

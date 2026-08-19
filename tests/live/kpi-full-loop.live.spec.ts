@@ -115,7 +115,7 @@ test("full loop over live MCP: start → stage(broken) → failed → repair →
   };
 
   try {
-    // (1) The scoped surface is COMPLETE: nine tools, contract order, and the
+    // (1) The scoped surface is COMPLETE: ten tools, contract order, and the
     // raw response honours the 16 KiB compact-surface gate.
     const rawList = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",

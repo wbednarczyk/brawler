@@ -10,7 +10,7 @@ import { canonicalizeManifest } from "./helpers/manifestCanonical";
 // Claude+Codex dogfood is Noga F (owner/agent-driven, separate). Here two
 // drivers share one acquisition token (so the SAME lease holder — cooperative,
 // never adversarial) over the same raw fetch(/mcp, Bearer) channel and prove:
-//   1. the scoped surface is exactly the nine acquisition tools, ≤16 KiB;
+//   1. the scoped surface is exactly the ten acquisition tools, ≤16 KiB;
 //   2. no write capability leaks onto the scoped token (raw JSON-RPC -32602);
 //   3. SERVER INVARIANCE: two SEQUENTIAL runs of the same document, staged with
 //      the SAME observations against the SAME (empty) fact store, produce a
@@ -153,7 +153,7 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
   };
 
   try {
-    // (1) Scoped surface: exactly the nine tools, ≤16 KiB.
+    // (1) Scoped surface: exactly the ten tools, ≤16 KiB.
     const rawList = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -163,7 +163,7 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
     expect(Buffer.byteLength(rawBody)).toBeLessThanOrEqual(16 * 1024);
     const names = (JSON.parse(rawBody).result?.tools ?? []).map((t: { name: string }) => t.name);
     expect(names).toEqual([...ACQUISITION_TOOLS]);
-    console.log("scoped tools/list: nine tools, contract order, ≤16 KiB");
+    console.log("scoped tools/list: ten tools, contract order, ≤16 KiB");
 
     // (2) No write capability leaks onto the scoped token: a non-allowlisted
     //     tool is UNKNOWN — a top-level JSON-RPC -32602, never a result.

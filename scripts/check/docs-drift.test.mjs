@@ -11,13 +11,14 @@ import {
   buildMcpCatalogBlock,
 } from "./docs-drift.mjs";
 
-// The nine acquisition tools in KPI_ACQUISITION_TOOLS (contract) order.
-const ACQ9 = [
+// The ten acquisition tools in KPI_ACQUISITION_TOOLS (contract) order.
+const ACQ10 = [
   "start_kpi_ingest",
   "list_pending_kpi_ingests",
   "get_kpi_ingest_context",
   "get_kpi_ingest_document",
   "stage_kpi_observations",
+  "propose_kpi_definition",
   "validate_kpi_ingest",
   "commit_kpi_ingest",
   "get_kpi_ingest_status",
@@ -37,7 +38,7 @@ function fixtures() {
   const manifest = parseManifestTools([
     { name: "get_thing", tier: "read", acquisition: false },
     { name: "do_thing", tier: "act", acquisition: false },
-    ...ACQ9.map((name) => ({
+    ...ACQ10.map((name) => ({
       name,
       tier: ACQ_READ.has(name) ? "read" : "act",
       acquisition: true,
@@ -46,8 +47,8 @@ function fixtures() {
   const full = manifest.tools.map((t) => wire(t.name));
   const acquisition = full.filter((t) => manifest.byName.get(t.name).acquisition);
   const inventories = [
-    { rel: "wiki/mcp-agent-guide.md", names: new Set(ACQ9) },
-    { rel: ".claude/skills/brawler-mcp/SKILL.md", names: new Set(ACQ9) },
+    { rel: "wiki/mcp-agent-guide.md", names: new Set(ACQ10) },
+    { rel: ".claude/skills/brawler-mcp/SKILL.md", names: new Set(ACQ10) },
   ];
   return { manifest, full, acquisition, inventories };
 }
@@ -95,20 +96,20 @@ test("acquisition-snapshot projection drift is caught", () => {
 
 test("a workflow inventory missing a tool is caught", () => {
   const { manifest, full, acquisition } = fixtures();
-  const short = new Set(ACQ9.slice(1));
+  const short = new Set(ACQ10.slice(1));
   const errs = manifestCoherenceErrors(manifest, full, acquisition, [
     { rel: ".claude/skills/brawler-mcp/SKILL.md", names: short },
   ]);
-  assert.ok(errs.some((e) => /inventory != the nine/.test(e)));
+  assert.ok(errs.some((e) => /inventory != the ten/.test(e)));
 });
 
 test("an extra tool in the workflow inventory is caught", () => {
   const { manifest, full, acquisition } = fixtures();
-  const bloated = new Set([...ACQ9, "record_financial_facts"]);
+  const bloated = new Set([...ACQ10, "record_financial_facts"]);
   const errs = manifestCoherenceErrors(manifest, full, acquisition, [
     { rel: "wiki/mcp-agent-guide.md", names: bloated },
   ]);
-  assert.ok(errs.some((e) => /inventory != the nine/.test(e) && /record_financial_facts/.test(e)));
+  assert.ok(errs.some((e) => /inventory != the ten/.test(e) && /record_financial_facts/.test(e)));
 });
 
 test("absent workflow markers are caught", () => {

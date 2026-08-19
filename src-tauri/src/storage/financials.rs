@@ -516,6 +516,122 @@ pub(super) fn create_kpi_definition(
     get_kpi_definition(connection, &id)
 }
 
+/// [`get_kpi_definition`], but a missing row is `None` instead of a raw
+/// "no rows" storage error — the existence probe [`get_or_create_kpi_definition`]
+/// needs and never had before (epic #399 S4).
+fn find_kpi_definition(connection: &Connection, id: &str) -> StorageResult<Option<KpiDefinition>> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id, scope, company_id, sector, metric_key, label, value_kind, unit,
+                computation, formula, display_format, origin, statement_group,
+                period_nature, created_at, updated_at
+            FROM kpi_definitions
+            WHERE id = ?1
+            ",
+            [id],
+            kpi_definition_from_row,
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+/// Narrow get-or-create for `propose_kpi_definition` ONLY (ADR 0101 dec. 3,
+/// epic #399 S4): on an exact `(metric_key, scope, company_id, sector)`
+/// duplicate — the tuple `idx_kpi_definitions_key` and the deterministic id
+/// both key on — returns the EXISTING definition with `created: false`
+/// instead of the raw `SQLITE_CONSTRAINT` [`create_kpi_definition`] raises for
+/// its own callers. [`create_kpi_definition`] itself is untouched and stays
+/// strict-INSERT for `commands/financials.rs`,
+/// `commands/tagged_fact_promotion.rs` and the Full-scope `mcp::acts` handler.
+///
+/// Checks-then-inserts rather than insert-then-catch, which is safe because
+/// every caller (the propose storage path) already holds an `Immediate`
+/// transaction's write lock for the whole call — but the INSERT is still
+/// guarded by a constraint-violation fallback so a caller outside that
+/// discipline (a direct unit test, say) can never observe the raw
+/// `SQLITE_CONSTRAINT` either.
+pub(super) fn get_or_create_kpi_definition(
+    connection: &Connection,
+    input: NewKpiDefinition,
+) -> StorageResult<(KpiDefinition, bool)> {
+    let scope = input.scope.trim().to_owned();
+    let company_id = empty_string_to_none(input.company_id.clone().map(|s| s.trim().to_owned()));
+    let sector = empty_string_to_none(input.sector.clone().map(|s| s.trim().to_owned()));
+    let metric_key = input.metric_key.trim().to_owned();
+    let id = kpi_definition_id(
+        &scope,
+        company_id.as_deref(),
+        sector.as_deref(),
+        &metric_key,
+    );
+
+    if let Some(existing) = find_kpi_definition(connection, &id)? {
+        return Ok((existing, false));
+    }
+    match create_kpi_definition(connection, input) {
+        Ok(definition) => Ok((definition, true)),
+        // Lost a race between the SELECT above and this INSERT (or a caller
+        // invoked this outside an Immediate transaction) — the SAME
+        // exact-duplicate condition, resolved the same way instead of
+        // propagating the raw constraint.
+        Err(StorageError::Sqlite(rusqlite::Error::SqliteFailure(err, Some(message))))
+            if err.code == rusqlite::ErrorCode::ConstraintViolation
+                && message.contains("UNIQUE constraint failed") =>
+        {
+            find_kpi_definition(connection, &id)?
+                .map(|definition| (definition, false))
+                .ok_or_else(|| {
+                    StorageError::Sqlite(rusqlite::Error::SqliteFailure(err, Some(message)))
+                })
+        }
+        Err(other) => Err(other),
+    }
+}
+
+/// Existence-only probe for the `propose_kpi_definition` alias guard (ADR
+/// 0101 dec. 4, epic #399 S4): does THIS company already have a definition
+/// under this exact `metric_key`? Runs BEFORE the `kpi_aliases` lookup so a
+/// repeat proposal of an already-minted key returns the existing row (guard
+/// order 1) rather than redirecting even when the key happens to be aliased.
+pub(super) fn find_company_kpi_definition(
+    connection: &Connection,
+    company_id: &str,
+    metric_key: &str,
+) -> StorageResult<Option<KpiDefinition>> {
+    let id = kpi_definition_id("company", Some(company_id), None, metric_key.trim());
+    find_kpi_definition(connection, &id)
+}
+
+/// Shared-canon probe for the `propose_kpi_definition` guard (ADR 0101 dec.
+/// 3/4, epic #399 S4): the exact-key reuse is against the WHOLE catalog, so a
+/// key any shared (`company_id IS NULL`) definition already carries returns
+/// that canonical row instead of minting a company-scoped shadow whose
+/// duplicate `metric_key` would fragment the catalog.
+pub(super) fn find_canonical_kpi_definition_by_key(
+    connection: &Connection,
+    metric_key: &str,
+) -> StorageResult<Option<KpiDefinition>> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id, scope, company_id, sector, metric_key, label, value_kind, unit,
+                computation, formula, display_format, origin, statement_group,
+                period_nature, created_at, updated_at
+            FROM kpi_definitions
+            WHERE metric_key = ?1 AND company_id IS NULL
+            ORDER BY id
+            LIMIT 1
+            ",
+            [metric_key.trim()],
+            kpi_definition_from_row,
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
 pub(super) fn list_financial_periods(
     connection: &Connection,
     input: ListFinancialPeriodsInput,
@@ -2607,7 +2723,10 @@ fn financial_fact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Financia
 /// The CANONICAL catalog id for a metric key. Bare `kpidef_<key>`, and it stays
 /// that way forever: facts, relevance rows, quality-framework criteria and the
 /// metric-history reads all key on it, so re-shaping it would orphan them.
-fn canonical_kpi_definition_id(metric_key: &str) -> String {
+/// `pub(super)`: the `propose_kpi_definition` alias guard (ADR 0101 dec. 4,
+/// epic #399 S4) needs it to name the redirect target's `definitionId` — every
+/// `kpi_aliases` target is guaranteed canonical and already populated.
+pub(super) fn canonical_kpi_definition_id(metric_key: &str) -> String {
     format!("kpidef_{}", slug_part(metric_key))
 }
 
