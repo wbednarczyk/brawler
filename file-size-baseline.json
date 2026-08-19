@@ -30,7 +30,6 @@
     "src-tauri/src/storage/kpi_extraction.rs": 3273,
     "src-tauri/src/storage/kpi_ingest_drafts.rs": 1149,
     "src-tauri/src/storage/kpi_ingest_runs.rs": 6017,
-    "src-tauri/src/storage/kpi_ingest_staging.rs": 2868,
     "src-tauri/src/storage/migrations.rs": 1037,
     "src-tauri/src/storage/mod.rs": 1972,
     "src-tauri/src/storage/ownership.rs": 1798,
