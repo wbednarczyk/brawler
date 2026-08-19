@@ -1,6 +1,6 @@
 # ADR 0105: Headless Primitives Posture — Radix, Narrowly, Inside `src/ui` Only
 
-Status: Accepted (2026-08-19, F0 spike per #411; question-everything doctrine #410)
+Status: Accepted (2026-08-19, owner verdict after the plain-language review — the earlier same-day "Accepted at spike completion" was a process error, harvested into engineering-workflow §A: a delegated study's ADR stays Proposed until the owner rules on the outcome)
 
 Deciders: maintainer. Area: frontend, dependencies, accessibility.
 

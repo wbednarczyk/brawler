@@ -104,4 +104,4 @@
 - [0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) — Full-capture staging contract — excluded observations and chunked drafts — Accepted (2026-08-19, epic #399 delivered
 - [0103](0103-file-size-ratchet-fitness-function.md) — File-Size Ratchet — Architectural Fitness Function For Oversized Modules — Accepted (2026-08-19, owner plan approval, epic #402)
 - [0104](0104-frontend-v2-design-language.md) — Frontend V2 Design Language — Accepted (2026-08-19, owner approval of styleguide round 1; epic #410/F0 #411)
-- [0105](0105-headless-primitives-posture-radix.md) — Headless Primitives Posture — Radix, Narrowly, Inside `src/ui` Only — Accepted (2026-08-19, F0 spike per #411; question-everything doctrine #410)
+- [0105](0105-headless-primitives-posture-radix.md) — Headless Primitives Posture — Radix, Narrowly, Inside `src/ui` Only — Accepted (2026-08-19, owner verdict after the plain-language review
