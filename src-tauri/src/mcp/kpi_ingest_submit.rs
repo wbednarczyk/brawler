@@ -303,13 +303,19 @@ pub struct CommitKpiIngestInput {
 
 /// `propose_kpi_definition` (ADR 0101, epic #399 S4). Deliberately narrower
 /// than `create_kpi_definition`'s full `NewKpiDefinition`: `scope`/
-/// `company_id`/`sector`/`origin`/`value_kind`/`computation` are never
-/// caller-suppliable — they are forced to `company`/the run's own company/
-/// `agent`/`monetary`/`reported` inside the storage layer, matching a
-/// full-capture agent's use case (a disclosed number, not a derived ratio).
-/// `description`, when supplied, is stored in the otherwise-unused `formula`
-/// column of a `computation="reported"` row — free-text rationale, never
-/// evaluated as an expression (the derivation engine only reads `formula` for
+/// `company_id`/`sector`/`origin`/`computation` are never caller-suppliable
+/// — they are forced to `company`/the run's own company/`agent`/`reported`
+/// inside the storage layer, matching a full-capture agent's use case (a
+/// disclosed number, not a derived ratio). `value_kind` IS caller-suppliable
+/// but only from `{monetary, count}` (issue #403, amends ADR 0101 dec. 6):
+/// the wider `kpi_definitions.value_kind` vocabulary (contracts.md § KPI
+/// Definition) also allows `ratio`/`percentage`/`physical`/`duration`, but a
+/// full-capture agent stages disclosed numbers, never derived ratios, so this
+/// surface admits only the two disclosed-number kinds; absent defaults to
+/// `monetary` for backward compatibility. `description`, when supplied, is
+/// stored in the otherwise-unused `formula` column of a
+/// `computation="reported"` row — free-text rationale, never evaluated as an
+/// expression (the derivation engine only reads `formula` for
 /// `computation="derived"` rows).
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -322,6 +328,8 @@ pub struct ProposeKpiDefinitionInput {
     pub statement_group: String,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub value_kind: Option<String>,
 }
 
 // ============================================================================
@@ -915,6 +923,20 @@ fn propose_kpi_definition(
         input.description.as_deref(),
         DEFINITION_DESCRIPTION_MAX,
     )?;
+    // Issue #403: the propose surface admits only the two disclosed-number
+    // kinds — never the wider create_kpi_definition vocabulary's derived
+    // ratio/percentage/physical/duration (contracts.md § KPI Definition).
+    let value_kind = match input.value_kind.as_deref() {
+        None => "monetary",
+        Some("monetary") => "monetary",
+        Some("count") => "count",
+        Some(other) => {
+            return Err(invalid(format!(
+                "valueKind must be one of monetary, count, got {other:?}"
+            )))
+        }
+    }
+    .to_owned();
 
     // scope/company_id/sector/origin are forced from the run inside the
     // storage layer (ADR 0101 dec. 6) — every value set here is a caller-
@@ -925,7 +947,7 @@ fn propose_kpi_definition(
         sector: None,
         metric_key,
         label: input.label.trim().to_owned(),
-        value_kind: "monetary".to_owned(),
+        value_kind,
         unit: input.unit,
         computation: "reported".to_owned(),
         formula: input.description,
@@ -1707,6 +1729,57 @@ mod tests {
             )),
             CommandErrorCode::InvalidInput,
             "blank label"
+        );
+    }
+
+    /// Issue #403: a full-capture agent proposing a disclosed client COUNT
+    /// must be able to mint `value_kind:"count"` — the canon already carries
+    /// non-null `unit` on count rows (`shares`, `properties`), so `unit`
+    /// stays allowed alongside `valueKind:"count"`.
+    #[test]
+    fn propose_value_kind_count_mints_count_definition() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let mut args = propose_args(&run_id, "active_clients");
+        args["valueKind"] = json!("count");
+        args["unit"] = json!("clients");
+        let payload = success(acquisition_call(&state, "propose_kpi_definition", &args));
+        assert_eq!(payload["created"], true);
+        assert_eq!(payload["definition"]["valueKind"], "count");
+        assert_eq!(payload["definition"]["unit"], "clients");
+    }
+
+    /// Absent `valueKind` still defaults to `monetary` (backward compatibility
+    /// with every caller minted before issue #403).
+    #[test]
+    fn propose_value_kind_defaults_to_monetary() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let payload = success(acquisition_call(
+            &state,
+            "propose_kpi_definition",
+            &propose_args(&run_id, "broker_client_count"),
+        ));
+        assert_eq!(payload["definition"]["valueKind"], "monetary");
+    }
+
+    /// The propose surface admits only `monetary`/`count` (a full-capture
+    /// agent stages disclosed numbers, not derived ratios) even though the
+    /// wider `kpi_definitions.value_kind` vocabulary (contracts.md § KPI
+    /// Definition) allows `ratio`/`percentage`/`physical`/`duration`.
+    #[test]
+    fn propose_value_kind_outside_vocabulary_refused() {
+        let state = test_state();
+        let run_id = start_characteristic_run(&state);
+
+        let mut args = propose_args(&run_id, "broker_client_count");
+        args["valueKind"] = json!("ratio");
+        assert_eq!(
+            failure_code(acquisition_call(&state, "propose_kpi_definition", &args)),
+            CommandErrorCode::InvalidInput,
+            "valueKind outside {{monetary, count}}"
         );
     }
 
