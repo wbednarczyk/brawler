@@ -1,6 +1,6 @@
 # ADR 0100: Two-layer tagged-fact capture and the IFRS-anchored metric vocabulary
 
-Status: Proposed (2026-08-17, owner decision at epic #398 planning; 3 adversarial review rounds). Amends ADR 0086 (aggregator primacy for periods a tagged filing covers). Implementation: epic #398.
+Status: Accepted (2026-08-19, housekeeping at epic #399 closure — epic #398 was delivered and closed 2026-08-18 with the status flip missed; proposed 2026-08-17). Amends ADR 0086 (aggregator primacy for periods a tagged filing covers). Implementation: epic #398.
 
 Deciders: maintainer. Area: fundamentals, data model, extraction.
 

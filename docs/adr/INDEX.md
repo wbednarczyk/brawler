@@ -99,6 +99,6 @@
 - [0097](0097-toasts-are-action-feedback-only.md) — Toasts Are Action Feedback Only — Ambient Attention Lives in Today — Accepted (2026-08-06, owner sign-off on the #330 plan)
 - [0098](0098-mcp-native-kpi-acquisition-lifecycle.md) — MCP-native KPI acquisition lifecycle — Accepted (2026-08-10, owner decision after the 2026-08 vendor study)
 - [0099](0099-acquisition-mcp-surface-mechanics.md) — Acquisition MCP surface mechanics — Accepted (2026-08-13, owner decision at epic #353 planning; 4 adversarial review
-- [0100](0100-two-layer-tagged-fact-capture-and-ifrs-vocabulary.md) — Two-layer tagged-fact capture and the IFRS-anchored metric vocabulary — Proposed (2026-08-17, owner decision at epic #398 planning; 3 adversarial review
-- [0101](0101-agent-proposed-kpi-definitions-and-full-catalog-visibility.md) — Agent-proposed KPI definitions and full-catalog visibility — Proposed (2026-08-18, owner decision at epic #399 planning; sol r1 folded, local
-- [0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) — Full-capture staging contract — excluded observations and chunked drafts — Proposed (2026-08-18, owner decision at epic #399 planning; sol r1 folded, local
+- [0100](0100-two-layer-tagged-fact-capture-and-ifrs-vocabulary.md) — Two-layer tagged-fact capture and the IFRS-anchored metric vocabulary — Accepted (2026-08-19, housekeeping at epic #399 closure
+- [0101](0101-agent-proposed-kpi-definitions-and-full-catalog-visibility.md) — Agent-proposed KPI definitions and full-catalog visibility — Accepted (2026-08-19, epic #399 delivered
+- [0102](0102-full-capture-staging-contract-excluded-observations-and-chunked-drafts.md) — Full-capture staging contract — excluded observations and chunked drafts — Accepted (2026-08-19, epic #399 delivered
