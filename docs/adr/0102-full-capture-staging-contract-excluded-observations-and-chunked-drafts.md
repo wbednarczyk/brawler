@@ -1,6 +1,6 @@
 # ADR 0102: Full-capture staging contract — excluded observations and chunked drafts
 
-Status: Proposed (2026-08-18, owner decision at epic #399 planning; sol r1 folded, local skeptic re-verify SHIP-WITH-FIXES). Amends [ADR 0098](0098-mcp-native-kpi-acquisition-lifecycle.md) decisions 4 and 6, and [ADR 0099](0099-acquisition-mcp-surface-mechanics.md) decisions 1 and 7. Implementation: epic #399.
+Status: Accepted (2026-08-19, epic #399 delivered — PR #405 merged, §G live-verified; proposed 2026-08-18 at planning, sol r1 folded). Amends [ADR 0098](0098-mcp-native-kpi-acquisition-lifecycle.md) decisions 4 and 6, and [ADR 0099](0099-acquisition-mcp-surface-mechanics.md) decisions 1 and 7. Implementation: epic #399.
 
 Deciders: maintainer. Area: fundamentals, MCP port, data trust.
 

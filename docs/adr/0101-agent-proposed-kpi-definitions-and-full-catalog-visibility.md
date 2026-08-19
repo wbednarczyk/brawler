@@ -1,6 +1,6 @@
 # ADR 0101: Agent-proposed KPI definitions and full-catalog visibility
 
-Status: Proposed (2026-08-18, owner decision at epic #399 planning; sol r1 folded, local skeptic re-verify SHIP-WITH-FIXES). Amends [ADR 0099](0099-acquisition-mcp-surface-mechanics.md) decision 3 (allowlist widened 9→10) and resolves its tension with [ADR 0093](0093-agent-acquisition-tier-and-preliminary-lifecycle.md) decision 4. Implementation: epic #399.
+Status: Accepted (2026-08-19, epic #399 delivered — PR #405 merged, §G live-verified; proposed 2026-08-18 at planning, sol r1 folded). Amends [ADR 0099](0099-acquisition-mcp-surface-mechanics.md) decision 3 (allowlist widened 9→10) and resolves its tension with [ADR 0093](0093-agent-acquisition-tier-and-preliminary-lifecycle.md) decision 4. Implementation: epic #399.
 
 Deciders: maintainer. Area: fundamentals, MCP port, data trust.
 
