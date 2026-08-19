@@ -2559,7 +2559,13 @@ fn get_kpi_definition(connection: &Connection, id: &str) -> StorageResult<KpiDef
         .map_err(StorageError::from)
 }
 
-fn get_financial_period(connection: &Connection, id: &str) -> StorageResult<FinancialPeriod> {
+/// `pub(super)` so [`super::kpi_ingest_runs::KpiIngestRunsStore::finish_start_ingest`]
+/// (S2, #404 H1) can resolve a run's period-id-only pin on its OWN connection
+/// instead of a separate checkout — the same read `period_dto` uses.
+pub(super) fn get_financial_period(
+    connection: &Connection,
+    id: &str,
+) -> StorageResult<FinancialPeriod> {
     connection
         .query_row(
             "

@@ -430,41 +430,53 @@ impl KpiIngestDraftsStore {
     /// mutates the lazily-superseded row itself).
     pub fn get_open_draft(&self, run_id: &str) -> StorageResult<Option<OpenDraftSummary>> {
         let connection = self.db.checkout()?;
-        let attempt_count: Option<i64> = connection
-            .query_row(
-                "SELECT attempt_count FROM kpi_ingest_runs WHERE id = ?1",
-                [run_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        let Some(attempt_count) = attempt_count else {
-            return Ok(None);
-        };
-        let row: Option<(String, i64, i64)> = connection
-            .query_row(
-                "SELECT draft_id, expected_observations, lease_epoch \
-                 FROM kpi_ingest_drafts WHERE run_id = ?1 AND status = 'active'",
-                [run_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .optional()?;
-        let Some((draft_id, expected_observations, lease_epoch)) = row else {
-            return Ok(None);
-        };
-        if lease_epoch != attempt_count {
-            return Ok(None);
-        }
-        let chunks_received: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM kpi_ingest_draft_chunks WHERE draft_id = ?1",
-            [&draft_id],
-            |row| row.get(0),
-        )?;
-        Ok(Some(OpenDraftSummary {
-            draft_id,
-            expected_observations,
-            chunks_received,
-        }))
+        get_open_draft_on_connection(&connection, run_id)
     }
+}
+
+/// [`KpiIngestDraftsStore::get_open_draft`]'s body, connection-level (S2,
+/// #404 H1): [`super::kpi_ingest_runs::KpiIngestRunsStore::finish_start_ingest`]
+/// reads this on its OWN transaction — the DTO auxiliary read `run_status_dto`
+/// otherwise takes as a separate checkout — mirroring the cross-file
+/// `_on_connection` reuse precedent in `kpi_ingest_runs.rs`.
+pub(super) fn get_open_draft_on_connection(
+    connection: &Connection,
+    run_id: &str,
+) -> StorageResult<Option<OpenDraftSummary>> {
+    let attempt_count: Option<i64> = connection
+        .query_row(
+            "SELECT attempt_count FROM kpi_ingest_runs WHERE id = ?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(attempt_count) = attempt_count else {
+        return Ok(None);
+    };
+    let row: Option<(String, i64, i64)> = connection
+        .query_row(
+            "SELECT draft_id, expected_observations, lease_epoch \
+             FROM kpi_ingest_drafts WHERE run_id = ?1 AND status = 'active'",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((draft_id, expected_observations, lease_epoch)) = row else {
+        return Ok(None);
+    };
+    if lease_epoch != attempt_count {
+        return Ok(None);
+    }
+    let chunks_received: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM kpi_ingest_draft_chunks WHERE draft_id = ?1",
+        [&draft_id],
+        |row| row.get(0),
+    )?;
+    Ok(Some(OpenDraftSummary {
+        draft_id,
+        expected_observations,
+        chunks_received,
+    }))
 }
 
 /// Connection-level unconditional draft cleanup (the

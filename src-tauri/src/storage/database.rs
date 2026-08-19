@@ -9,6 +9,8 @@
 //! instead of the whole facade. This is the structural split of the *facade*, not
 //! a repository port — the stores stay concrete and SQLite-coupled (ADR 0039).
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use r2d2::PooledConnection;
@@ -61,6 +63,14 @@ impl std::ops::DerefMut for DbGuard<'_> {
 #[derive(Clone)]
 pub(crate) struct Database {
     db: Db,
+    /// Test-only checkout counter (S2, #404 H1 skeptic m5): `Arc` because
+    /// every domain store clones `self.db` (`AppState::kpi_ingest_runs()`
+    /// etc.) — a non-shared counter would undercount. `#[cfg(test)]`-gated so
+    /// it costs zero bytes in production; a call-count budget is a test-time
+    /// assertion (`start_kpi_ingest_is_checkout_bounded`), never a runtime
+    /// mechanism.
+    #[cfg(test)]
+    checkout_count: Arc<AtomicU64>,
 }
 
 impl Database {
@@ -68,21 +78,37 @@ impl Database {
     pub(crate) fn from_connection(connection: Connection) -> Self {
         Self {
             db: Db::Single(Arc::new(Mutex::new(connection))),
+            #[cfg(test)]
+            checkout_count: Arc::new(AtomicU64::new(0)),
         }
     }
 
     /// Wrap an r2d2 pool (production/concurrent path).
     pub(crate) fn from_pool(pool: SqlitePool) -> Self {
-        Self { db: Db::Pool(pool) }
+        Self {
+            db: Db::Pool(pool),
+            #[cfg(test)]
+            checkout_count: Arc::new(AtomicU64::new(0)),
+        }
     }
 
     /// Check out a connection for a single storage operation.
     pub(crate) fn checkout(&self) -> StorageResult<DbGuard<'_>> {
+        #[cfg(test)]
+        self.checkout_count.fetch_add(1, Ordering::Relaxed);
         match &self.db {
             Db::Pool(pool) => Ok(DbGuard::Pooled(pool.get()?)),
             Db::Single(connection) => Ok(DbGuard::Locked(
                 connection.lock().expect("database mutex poisoned"),
             )),
         }
+    }
+
+    /// Test-only read of the checkout counter (S2, #404 H1 skeptic m5) — the
+    /// `start_kpi_ingest_is_checkout_bounded` guard reads a before/after
+    /// delta through `AppState::checkout_count`.
+    #[cfg(test)]
+    pub(crate) fn checkout_count(&self) -> u64 {
+        self.checkout_count.load(Ordering::Relaxed)
     }
 }

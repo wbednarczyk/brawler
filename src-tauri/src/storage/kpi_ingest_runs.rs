@@ -329,6 +329,118 @@ fn classify_context_conflict(
     None
 }
 
+/// [`KpiIngestRunsStore::attach_run_context`]'s body, connection-level (S2,
+/// #404 H1): [`KpiIngestRunsStore::begin_start_ingest`] calls this under its
+/// OWN externally-owned transaction, right after
+/// [`claim_run_on_connection`] — [SKEPTIC M3, deliberate]: unlike the pre-S2
+/// two-transaction flow (claim commits, THEN attach runs in its own
+/// transaction, so an attach conflict never undoes an already-committed
+/// keepalive), a conflict here rolls back the WHOLE composed transaction,
+/// including the claim. Pinned by
+/// `attach_conflict_rolls_back_keepalive_lease_expiry_unchanged`. Every exit
+/// is a plain `Result` return; the caller commits unconditionally, mirroring
+/// [`mark_source_captured_on_connection`]'s note (nothing here writes before
+/// the one guarded UPDATE, so an early `Err` is always a no-op commit).
+fn attach_run_context_on_connection(
+    tx: &Connection,
+    id: &str,
+    holder: &str,
+    ctx: &RunContextAttach<'_>,
+) -> StorageResult<()> {
+    if ctx.scope.is_none() && ctx.data_quality.is_none() && ctx.period.is_none() {
+        return Ok(());
+    }
+    if let Some(scope) = ctx.scope {
+        validate_scope_value(scope)?;
+    }
+    if let Some(quality) = ctx.data_quality {
+        validate_data_quality_value(quality)?;
+    }
+    if let Some((_, period_type)) = ctx.period {
+        validate_period_type_value(period_type)?;
+    }
+    let (fiscal_year, period_type) = match ctx.period {
+        Some((fy, pt)) => (Some(fy), Some(pt)),
+        None => (None, None),
+    };
+
+    // Cross-check an attached descriptor against an existing period pin
+    // BEFORE the write (inside the same Immediate transaction): the
+    // descriptor must name the pinned period's natural key.
+    if let Some((fy, pt)) = ctx.period {
+        let pinned: Option<(i64, String)> = tx
+            .query_row(
+                "SELECT p.fiscal_year, p.period_type
+                 FROM kpi_ingest_runs r JOIN financial_periods p ON p.id = r.period_id
+                 WHERE r.id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((pinned_fy, pinned_pt)) = pinned {
+            if pinned_fy != fy || pinned_pt != pt {
+                return Err(StorageError::RunContextValueConflict {
+                    id: id.to_owned(),
+                    key: "period",
+                    existing: format!("{pinned_fy}/{pinned_pt}"),
+                    requested: format!("{fy}/{pt}"),
+                });
+            }
+        }
+    }
+
+    let sql = format!(
+        "UPDATE kpi_ingest_runs SET
+            scope = COALESCE(scope, ?2),
+            data_quality = COALESCE(data_quality, ?3),
+            period_fiscal_year = COALESCE(period_fiscal_year, ?4),
+            period_type = COALESCE(period_type, ?5),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = ?1 AND status IN {CLAIMABLE_STATUSES_SQL}
+           AND lease_holder = ?6
+           AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+           AND (?2 IS NULL OR scope IS NULL OR scope = ?2)
+           AND (?3 IS NULL OR data_quality IS NULL OR data_quality = ?3)
+           AND (?4 IS NULL OR (period_fiscal_year IS NULL AND period_type IS NULL)
+                OR (period_fiscal_year = ?4 AND period_type = ?5))"
+    );
+    let changed = tx.execute(
+        &sql,
+        params![
+            id,
+            ctx.scope,
+            ctx.data_quality,
+            fiscal_year,
+            period_type,
+            holder
+        ],
+    )?;
+    if changed == 1 {
+        return Ok(());
+    }
+
+    let Some(raw) = read_raw_run(tx, id)? else {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    };
+    let status = KpiIngestRunState::parse(&raw.status)?;
+    if !status.is_agent_claimable() {
+        Err(StorageError::RunNotClaimable {
+            id: id.to_owned(),
+            status: status.as_str().to_owned(),
+        })
+    } else if raw.lease_holder.as_deref() != Some(holder)
+        || !lease_is_live_on_connection(tx, id, holder)?
+    {
+        Err(lease_refusal(tx, &raw, id, holder)?)
+    } else if let Some(conflict) = classify_context_conflict(&raw, ctx, id) {
+        Err(conflict)
+    } else {
+        // Every guard re-reads as satisfied — a write raced the
+        // classification window; surface the residual lease refusal.
+        Err(lease_not_held(id, holder))
+    }
+}
+
 /// [`KpiIngestRunsStore::claim_run`]'s body, parameterized on the transaction
 /// clock — production passes a freshly-read `strftime` timestamp, tests a
 /// fixed one (the deterministic seam for the `lease_expires_at == now`
@@ -404,6 +516,129 @@ fn claim_run_on_connection(
             })
         }
         _ => Err(lease_not_held(id, holder)),
+    }
+}
+
+/// [`KpiIngestRunsStore::mark_source_captured`]'s body, connection-level (S2,
+/// #404 H1): [`KpiIngestRunsStore::finish_start_ingest`] calls this under its
+/// OWN externally-owned transaction. Unlike
+/// [`create_run_if_absent_on_connection`], every exit here is a plain
+/// `Result` return (no early `tx.commit()`/rollback split) — the caller
+/// commits unconditionally after this returns, on both `Ok` and `Err`,
+/// matching the public method's own always-commit behavior (the guarded
+/// UPDATE's possible 0-row outcome is never itself an error worth losing the
+/// transaction's other work over).
+fn mark_source_captured_on_connection(
+    tx: &Connection,
+    id: &str,
+    holder: &str,
+    source_content_hash: &str,
+) -> StorageResult<()> {
+    // Set-once also holds across the retired lease-free path (luna review
+    // B2): a legacy `discovered` row may already carry a hash — a different
+    // one must refuse, the same one is idempotent.
+    let changed = apply_transition(
+        tx,
+        id,
+        &[KpiIngestRunState::Discovered],
+        KpiIngestRunState::SourceCaptured,
+        "source_content_hash = ?, ",
+        &[&source_content_hash],
+        " AND lease_holder = ? AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         AND (source_content_hash IS NULL OR source_content_hash = ?)",
+        &[&holder, &source_content_hash],
+    )?;
+    if changed == 1 {
+        return Ok(());
+    }
+
+    let Some(raw) = read_raw_run(tx, id)? else {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    };
+    let status = KpiIngestRunState::parse(&raw.status)?;
+    if status != KpiIngestRunState::Discovered {
+        // Already past this edge — set-once idempotency, independent of
+        // lease/status from here on (mirrors #359's `record_source_capture`).
+        match raw.source_content_hash.as_deref() {
+            Some(existing) if existing == source_content_hash => Ok(()),
+            Some(_) => Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() }),
+            None => Err(wrong_state(id, status, KpiIngestRunState::SourceCaptured)),
+        }
+    } else {
+        // Still `discovered`: either the guard's hash predicate refused a
+        // DIFFERENT pre-existing hash (legacy lease-free capture — set-once
+        // wins over the transition), or the lease is not live.
+        match raw.source_content_hash.as_deref() {
+            Some(existing) if existing != source_content_hash => {
+                Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() })
+            }
+            _ => Err(lease_refusal(tx, &raw, id, holder)?),
+        }
+    }
+}
+
+/// [`KpiIngestRunsStore::begin_extracting`]'s body, connection-level (S2,
+/// #404 H1): [`KpiIngestRunsStore::finish_start_ingest`] calls this under its
+/// OWN externally-owned transaction, deciding first (on the SAME connection,
+/// no separate `get_existing_run` round-trip) whether the prerequisites are
+/// even worth attempting — see `finish_start_ingest`'s own doc. Every exit
+/// here is a plain `Result` return; the caller commits unconditionally,
+/// mirroring [`mark_source_captured_on_connection`]'s note.
+fn begin_extracting_on_connection(
+    tx: &Connection,
+    id: &str,
+    holder: &str,
+    instruction_version: &str,
+) -> StorageResult<()> {
+    let changed = apply_transition(
+        tx,
+        id,
+        &[KpiIngestRunState::SourceCaptured],
+        KpiIngestRunState::Extracting,
+        "instruction_version = ?, ",
+        &[&instruction_version],
+        " AND lease_holder = ? AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+          AND scope IS NOT NULL AND data_quality IS NOT NULL \
+          AND (period_id IS NOT NULL OR (period_fiscal_year IS NOT NULL AND period_type IS NOT NULL))",
+        &[&holder],
+    )?;
+    if changed == 1 {
+        return Ok(());
+    }
+
+    let Some(raw) = read_raw_run(tx, id)? else {
+        return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
+    };
+    let status = KpiIngestRunState::parse(&raw.status)?;
+    if status != KpiIngestRunState::SourceCaptured {
+        Err(wrong_state(id, status, KpiIngestRunState::Extracting))
+    } else if raw.lease_holder.as_deref() != Some(holder)
+        || !lease_is_live_on_connection(tx, id, holder)?
+    {
+        Err(lease_refusal(tx, &raw, id, holder)?)
+    } else if raw.scope.is_none() {
+        Err(StorageError::RunTransitionPrerequisiteMissing {
+            id: id.to_owned(),
+            requirement: "scope",
+        })
+    } else if raw.data_quality.is_none() {
+        Err(StorageError::RunTransitionPrerequisiteMissing {
+            id: id.to_owned(),
+            requirement: "data_quality",
+        })
+    } else if raw.period_id.is_none()
+        && (raw.period_fiscal_year.is_none() || raw.period_type.is_none())
+    {
+        Err(StorageError::RunTransitionPrerequisiteMissing {
+            id: id.to_owned(),
+            requirement: "period",
+        })
+    } else {
+        // Every guard condition re-reads as satisfied — a genuine
+        // concurrent modification raced the classification window itself
+        // (extremely unlikely under `Immediate`). Surface as a lease
+        // refusal rather than silently retrying.
+        Err(lease_not_held(id, holder))
     }
 }
 
@@ -674,6 +909,67 @@ pub struct RunContextAttach<'a> {
     pub period: Option<(i64, &'a str)>,
 }
 
+/// [`KpiIngestRunsStore::begin_start_ingest`]'s create-only seed — the FRESH
+/// variant's minimal caller input (S2, #404 H1). `scope`/`data_quality`/
+/// `period` are NOT duplicated here: `begin_start_ingest` derives them from
+/// the SAME [`RunContextAttach`] it passes to the composed attach step, so a
+/// caller states its context once rather than twice.
+#[derive(Debug, Clone)]
+pub struct NewRunSeed {
+    pub document_id: String,
+    pub profile_version: String,
+}
+
+/// `start_kpi_ingest`'s variant exclusivity (runId XOR documentId+profileId,
+/// mcp/kpi_ingest.rs), carried into [`KpiIngestRunsStore::begin_start_ingest`]
+/// (S2, #404 H1) instead of the caller resolving/creating the run itself
+/// across a separate checkout.
+#[derive(Debug, Clone)]
+pub enum BeginStartIngestRequest {
+    /// `runId`-only resume/keepalive — the caller has ALREADY resolved and
+    /// registry-validated this run (mcp's `get_existing_run` +
+    /// `is_registered_profile_version`, unchanged by S2) before calling.
+    Resume {
+        run_id: String,
+    },
+    Fresh(NewRunSeed),
+}
+
+/// [`KpiIngestRunsStore::begin_start_ingest`]'s result (S2, #404 H1):
+/// `document` is `Some` iff `run.status == Discovered` — the ONLY status
+/// `start_kpi_ingest` ever needs to pin the source blob for, folding in the
+/// separate `get_report_document` checkout the pre-S2 flow took either
+/// up front (FRESH path) or conditionally (`runId` path).
+#[derive(Debug, Clone)]
+pub struct BeginStartIngestOutcome {
+    pub run: KpiIngestRun,
+    pub document: Option<ReportDocument>,
+}
+
+/// A run's resolved period identity (S2, #404 H1) — the same shape
+/// `mcp::kpi_ingest::period_dto` computes from a `financial_periods` lookup,
+/// precomputed on [`KpiIngestRunsStore::finish_start_ingest`]'s own
+/// connection so the caller needs zero further checkouts to assemble its
+/// DTO. Deliberately NOT the MCP `PeriodDto` type — storage stays free of
+/// the MCP wire-shape dependency; the caller maps field-for-field.
+#[derive(Debug, Clone)]
+pub struct RunPeriodIdentity {
+    pub fiscal_year: i64,
+    pub period_type: String,
+    pub period_id: Option<String>,
+}
+
+/// [`KpiIngestRunsStore::finish_start_ingest`]'s result (S2, #404 H1): `run`
+/// plus every DTO auxiliary read `run_status_dto` otherwise takes as a
+/// separate checkout (`period_dto`'s financial-period lookup,
+/// `get_open_draft`'s summary) — precomputed on the SAME connection.
+#[derive(Debug, Clone)]
+pub struct FinishStartIngestOutcome {
+    pub run: KpiIngestRun,
+    pub period: Option<RunPeriodIdentity>,
+    pub open_draft: Option<OpenDraftSummary>,
+}
+
 /// A stored run (the full read model). No `ts_rs` — this is a headless
 /// domain-store card; MCP/UI surfaces are out of #358's scope.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -845,6 +1141,242 @@ fn generate_run_id(report_document_id: &str, company_id: &str, profile_version: 
     format!("kpiing_{hex}")
 }
 
+/// [`KpiIngestRunsStore::create_run_if_absent`]'s body, connection-level (S2,
+/// #404 H1): [`KpiIngestRunsStore::begin_start_ingest`]'s FRESH branch calls
+/// this under its OWN externally-owned transaction — the public method
+/// checks out its own connection and would deadlock under an outer
+/// `Immediate` write lock. Every early `return Err(..)` below deliberately
+/// skips a commit (the caller's transaction rolls back on drop), matching
+/// the public method's error paths exactly — only the two success exits
+/// commit, which the caller does after this returns `Ok`.
+fn create_run_if_absent_on_connection(
+    tx: &Connection,
+    new_run: &NewKpiIngestRun,
+) -> StorageResult<KpiIngestRun> {
+    if let Some(scope) = new_run.scope.as_deref() {
+        validate_scope_value(scope)?;
+    }
+    if let Some(quality) = new_run.data_quality.as_deref() {
+        validate_data_quality_value(quality)?;
+    }
+    if !super::kpi_ingest_profiles::is_registered_profile_version(&new_run.profile_version) {
+        return Err(StorageError::InvalidKpiIngestRunValue {
+            key: "profile_version",
+            value: new_run.profile_version.clone(),
+        });
+    }
+
+    // Period descriptor (ADR 0098 dec. 3, B2 sol review round 2):
+    // all-or-none, then vocabulary. Cross-checked against an explicit
+    // period_id below once that row is resolved.
+    match (new_run.period_fiscal_year, new_run.period_type.as_deref()) {
+        (None, None) => {}
+        (Some(_), Some(period_type)) => {
+            validate_period_type_value(period_type)?;
+        }
+        _ => {
+            return Err(StorageError::InvalidKpiIngestRunValue {
+                key: "period_descriptor",
+                value: format!(
+                    "partial descriptor: period_fiscal_year={:?} period_type={:?}",
+                    new_run.period_fiscal_year, new_run.period_type
+                ),
+            });
+        }
+    }
+
+    let doc_company: Option<String> = tx
+        .query_row(
+            "SELECT company_id FROM report_documents WHERE id = ?1",
+            [&new_run.report_document_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match doc_company {
+        None => {
+            return Err(StorageError::MissingIngestReference {
+                table: "report_documents".to_owned(),
+                id: new_run.report_document_id.clone(),
+            });
+        }
+        Some(owner) if owner != new_run.company_id => {
+            return Err(StorageError::RunDocumentCompanyMismatch {
+                run_document: new_run.report_document_id.clone(),
+                company: new_run.company_id.clone(),
+            });
+        }
+        Some(_) => {}
+    }
+    if let Some(period_id) = new_run.period_id.as_deref() {
+        let period_row: Option<(String, i64, String)> = tx
+            .query_row(
+                "SELECT company_id, fiscal_year, period_type FROM financial_periods WHERE id = ?1",
+                [period_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        match period_row {
+            None => {
+                return Err(StorageError::MissingIngestReference {
+                    table: "financial_periods".to_owned(),
+                    id: period_id.to_owned(),
+                });
+            }
+            Some((owner, ..)) if owner != new_run.company_id => {
+                return Err(StorageError::RunPeriodCompanyMismatch {
+                    period: period_id.to_owned(),
+                    company: new_run.company_id.clone(),
+                });
+            }
+            Some((_, period_fiscal_year, period_type)) => {
+                // Descriptor<->period_id consistency (B2 sol review round
+                // 2): when BOTH are supplied, they must name the same
+                // period — a caller-shaped mismatch, not a genuine
+                // cross-run conflict (that is RunPeriodConflict below).
+                if let (Some(descriptor_year), Some(descriptor_type)) =
+                    (new_run.period_fiscal_year, new_run.period_type.as_deref())
+                {
+                    if descriptor_year != period_fiscal_year || descriptor_type != period_type {
+                        return Err(StorageError::InvalidKpiIngestRunValue {
+                            key: "period_descriptor",
+                            value: format!(
+                                "descriptor ({descriptor_year}, {descriptor_type}) does not \
+                                 match period {period_id} ({period_fiscal_year}, {period_type})"
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let existing: Option<RawRun> = tx
+        .query_row(
+            &format!(
+                "SELECT {RUN_COLUMNS} FROM kpi_ingest_runs
+                 WHERE report_document_id = ?1 AND company_id = ?2 AND profile_version = ?3
+                   AND status NOT IN {TERMINAL_STATUSES_SQL}"
+            ),
+            params![
+                new_run.report_document_id,
+                new_run.company_id,
+                new_run.profile_version
+            ],
+            map_raw_row,
+        )
+        .optional()?;
+
+    if let Some(raw) = existing {
+        // An active run for the same triple with a DIFFERENT period is a
+        // genuine conflict (B2 sol round 3), never a silent idempotent
+        // return. Both representations — a period_id and a descriptor pair
+        // — resolve to the SAME natural key (fiscal_year, period_type)
+        // before comparing, so a mixed-representation mismatch (existing
+        // period_id vs requested descriptor, or the reverse) is caught too
+        // (luna review P1). A side that supplies neither stays None and
+        // never conflicts: filling in a previously-absent period is legal.
+        let resolve_natural_key = |period_id: Option<&str>,
+                                   year: Option<i64>,
+                                   period_type: Option<&str>|
+         -> StorageResult<Option<(i64, String)>> {
+            if let Some(pid) = period_id {
+                let row: Option<(i64, String)> = tx
+                    .query_row(
+                        "SELECT fiscal_year, period_type FROM financial_periods WHERE id = ?1",
+                        [pid],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?;
+                return Ok(row);
+            }
+            Ok(match (year, period_type) {
+                (Some(year), Some(kind)) => Some((year, kind.to_owned())),
+                _ => None,
+            })
+        };
+        let existing_key = resolve_natural_key(
+            raw.period_id.as_deref(),
+            raw.period_fiscal_year,
+            raw.period_type.as_deref(),
+        )?;
+        let requested_key = resolve_natural_key(
+            new_run.period_id.as_deref(),
+            new_run.period_fiscal_year,
+            new_run.period_type.as_deref(),
+        )?;
+        if let (Some(existing_key), Some(requested_key)) = (existing_key, requested_key) {
+            if existing_key != requested_key {
+                return Err(StorageError::RunPeriodConflict { id: raw.id });
+            }
+        }
+        return raw_to_domain(raw);
+    }
+
+    // Creation-time expected-KPI stamp (ADR 0099 dec. 6): relevance ∪
+    // profile pack, frozen for the run's whole life — definitions minted
+    // later can never widen the denominator (ADR 0093 dec. 4). Both reads
+    // stay on THIS transaction (a pooled store wrapper here would take a
+    // second checkout inside an Immediate tx).
+    let statement_type = super::companies::get_statement_type(tx, &new_run.company_id)?;
+    let mut keys = super::financials::expected_primary_metric_keys(tx, &new_run.company_id)?
+        .unwrap_or_default();
+    keys.extend(
+        super::kpi_ingest_profiles::expected_pack(&new_run.profile_version, &statement_type)?
+            .iter()
+            .map(|k| (*k).to_owned()),
+    );
+    // Stamp-size invariant (#385): the MCP context read model returns the
+    // stamp verbatim inside every RunStatus, so its response-budget
+    // arithmetic (contracts.md § Budgets) requires a hard bound here — a
+    // company with more than 256 primary expected KPIs is a data error,
+    // not a run to create.
+    if keys.len() > 256 {
+        return Err(StorageError::InvalidKpiIngestRunValue {
+            key: "expected_kpis",
+            value: format!("{} keys exceed the 256-key stamp bound", keys.len()),
+        });
+    }
+    let stamp = crate::fundamentals::kpi_manifest::ExpectedKpis {
+        schema_version: 1,
+        source: "kpi_relevance+profile_pack".to_owned(),
+        pack_version: Some(new_run.profile_version.clone()),
+        keys,
+    };
+    let expected_kpis_json =
+        serde_json::to_string(&stamp).expect("ExpectedKpis serialization is total");
+
+    let id = generate_run_id(
+        &new_run.report_document_id,
+        &new_run.company_id,
+        &new_run.profile_version,
+    );
+    tx.execute(
+        "INSERT INTO kpi_ingest_runs
+            (id, report_document_id, company_id, period_id, profile_version, scope, data_quality,
+             period_fiscal_year, period_type, expected_kpis_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            id,
+            new_run.report_document_id,
+            new_run.company_id,
+            new_run.period_id,
+            new_run.profile_version,
+            new_run.scope,
+            new_run.data_quality,
+            new_run.period_fiscal_year,
+            new_run.period_type,
+            expected_kpis_json,
+        ],
+    )?;
+
+    let raw: RawRun = tx.query_row(
+        &format!("SELECT {RUN_COLUMNS} FROM kpi_ingest_runs WHERE id = ?1"),
+        [&id],
+        map_raw_row,
+    )?;
+    raw_to_domain(raw)
+}
+
 #[derive(Clone)]
 pub struct KpiIngestRunsStore {
     db: Database,
@@ -866,231 +1398,9 @@ impl KpiIngestRunsStore {
     pub fn create_run_if_absent(&self, new_run: &NewKpiIngestRun) -> StorageResult<KpiIngestRun> {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-
-        if let Some(scope) = new_run.scope.as_deref() {
-            validate_scope_value(scope)?;
-        }
-        if let Some(quality) = new_run.data_quality.as_deref() {
-            validate_data_quality_value(quality)?;
-        }
-        if !super::kpi_ingest_profiles::is_registered_profile_version(&new_run.profile_version) {
-            return Err(StorageError::InvalidKpiIngestRunValue {
-                key: "profile_version",
-                value: new_run.profile_version.clone(),
-            });
-        }
-
-        // Period descriptor (ADR 0098 dec. 3, B2 sol review round 2):
-        // all-or-none, then vocabulary. Cross-checked against an explicit
-        // period_id below once that row is resolved.
-        match (new_run.period_fiscal_year, new_run.period_type.as_deref()) {
-            (None, None) => {}
-            (Some(_), Some(period_type)) => {
-                validate_period_type_value(period_type)?;
-            }
-            _ => {
-                return Err(StorageError::InvalidKpiIngestRunValue {
-                    key: "period_descriptor",
-                    value: format!(
-                        "partial descriptor: period_fiscal_year={:?} period_type={:?}",
-                        new_run.period_fiscal_year, new_run.period_type
-                    ),
-                });
-            }
-        }
-
-        let doc_company: Option<String> = tx
-            .query_row(
-                "SELECT company_id FROM report_documents WHERE id = ?1",
-                [&new_run.report_document_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        match doc_company {
-            None => {
-                return Err(StorageError::MissingIngestReference {
-                    table: "report_documents".to_owned(),
-                    id: new_run.report_document_id.clone(),
-                });
-            }
-            Some(owner) if owner != new_run.company_id => {
-                return Err(StorageError::RunDocumentCompanyMismatch {
-                    run_document: new_run.report_document_id.clone(),
-                    company: new_run.company_id.clone(),
-                });
-            }
-            Some(_) => {}
-        }
-        if let Some(period_id) = new_run.period_id.as_deref() {
-            let period_row: Option<(String, i64, String)> = tx
-                .query_row(
-                    "SELECT company_id, fiscal_year, period_type FROM financial_periods WHERE id = ?1",
-                    [period_id],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .optional()?;
-            match period_row {
-                None => {
-                    return Err(StorageError::MissingIngestReference {
-                        table: "financial_periods".to_owned(),
-                        id: period_id.to_owned(),
-                    });
-                }
-                Some((owner, ..)) if owner != new_run.company_id => {
-                    return Err(StorageError::RunPeriodCompanyMismatch {
-                        period: period_id.to_owned(),
-                        company: new_run.company_id.clone(),
-                    });
-                }
-                Some((_, period_fiscal_year, period_type)) => {
-                    // Descriptor<->period_id consistency (B2 sol review round
-                    // 2): when BOTH are supplied, they must name the same
-                    // period — a caller-shaped mismatch, not a genuine
-                    // cross-run conflict (that is RunPeriodConflict below).
-                    if let (Some(descriptor_year), Some(descriptor_type)) =
-                        (new_run.period_fiscal_year, new_run.period_type.as_deref())
-                    {
-                        if descriptor_year != period_fiscal_year || descriptor_type != period_type {
-                            return Err(StorageError::InvalidKpiIngestRunValue {
-                                key: "period_descriptor",
-                                value: format!(
-                                    "descriptor ({descriptor_year}, {descriptor_type}) does not \
-                                     match period {period_id} ({period_fiscal_year}, {period_type})"
-                                ),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        let existing: Option<RawRun> = tx
-            .query_row(
-                &format!(
-                    "SELECT {RUN_COLUMNS} FROM kpi_ingest_runs
-                     WHERE report_document_id = ?1 AND company_id = ?2 AND profile_version = ?3
-                       AND status NOT IN {TERMINAL_STATUSES_SQL}"
-                ),
-                params![
-                    new_run.report_document_id,
-                    new_run.company_id,
-                    new_run.profile_version
-                ],
-                map_raw_row,
-            )
-            .optional()?;
-
-        if let Some(raw) = existing {
-            // An active run for the same triple with a DIFFERENT period is a
-            // genuine conflict (B2 sol round 3), never a silent idempotent
-            // return. Both representations — a period_id and a descriptor pair
-            // — resolve to the SAME natural key (fiscal_year, period_type)
-            // before comparing, so a mixed-representation mismatch (existing
-            // period_id vs requested descriptor, or the reverse) is caught too
-            // (luna review P1). A side that supplies neither stays None and
-            // never conflicts: filling in a previously-absent period is legal.
-            let resolve_natural_key = |period_id: Option<&str>,
-                                       year: Option<i64>,
-                                       period_type: Option<&str>|
-             -> StorageResult<Option<(i64, String)>> {
-                if let Some(pid) = period_id {
-                    let row: Option<(i64, String)> = tx
-                        .query_row(
-                            "SELECT fiscal_year, period_type FROM financial_periods WHERE id = ?1",
-                            [pid],
-                            |row| Ok((row.get(0)?, row.get(1)?)),
-                        )
-                        .optional()?;
-                    return Ok(row);
-                }
-                Ok(match (year, period_type) {
-                    (Some(year), Some(kind)) => Some((year, kind.to_owned())),
-                    _ => None,
-                })
-            };
-            let existing_key = resolve_natural_key(
-                raw.period_id.as_deref(),
-                raw.period_fiscal_year,
-                raw.period_type.as_deref(),
-            )?;
-            let requested_key = resolve_natural_key(
-                new_run.period_id.as_deref(),
-                new_run.period_fiscal_year,
-                new_run.period_type.as_deref(),
-            )?;
-            if let (Some(existing_key), Some(requested_key)) = (existing_key, requested_key) {
-                if existing_key != requested_key {
-                    return Err(StorageError::RunPeriodConflict { id: raw.id });
-                }
-            }
-            tx.commit()?;
-            return raw_to_domain(raw);
-        }
-
-        // Creation-time expected-KPI stamp (ADR 0099 dec. 6): relevance ∪
-        // profile pack, frozen for the run's whole life — definitions minted
-        // later can never widen the denominator (ADR 0093 dec. 4). Both reads
-        // stay on THIS transaction (a pooled store wrapper here would take a
-        // second checkout inside an Immediate tx).
-        let statement_type = super::companies::get_statement_type(&tx, &new_run.company_id)?;
-        let mut keys = super::financials::expected_primary_metric_keys(&tx, &new_run.company_id)?
-            .unwrap_or_default();
-        keys.extend(
-            super::kpi_ingest_profiles::expected_pack(&new_run.profile_version, &statement_type)?
-                .iter()
-                .map(|k| (*k).to_owned()),
-        );
-        // Stamp-size invariant (#385): the MCP context read model returns the
-        // stamp verbatim inside every RunStatus, so its response-budget
-        // arithmetic (contracts.md § Budgets) requires a hard bound here — a
-        // company with more than 256 primary expected KPIs is a data error,
-        // not a run to create.
-        if keys.len() > 256 {
-            return Err(StorageError::InvalidKpiIngestRunValue {
-                key: "expected_kpis",
-                value: format!("{} keys exceed the 256-key stamp bound", keys.len()),
-            });
-        }
-        let stamp = crate::fundamentals::kpi_manifest::ExpectedKpis {
-            schema_version: 1,
-            source: "kpi_relevance+profile_pack".to_owned(),
-            pack_version: Some(new_run.profile_version.clone()),
-            keys,
-        };
-        let expected_kpis_json =
-            serde_json::to_string(&stamp).expect("ExpectedKpis serialization is total");
-
-        let id = generate_run_id(
-            &new_run.report_document_id,
-            &new_run.company_id,
-            &new_run.profile_version,
-        );
-        tx.execute(
-            "INSERT INTO kpi_ingest_runs
-                (id, report_document_id, company_id, period_id, profile_version, scope, data_quality,
-                 period_fiscal_year, period_type, expected_kpis_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                id,
-                new_run.report_document_id,
-                new_run.company_id,
-                new_run.period_id,
-                new_run.profile_version,
-                new_run.scope,
-                new_run.data_quality,
-                new_run.period_fiscal_year,
-                new_run.period_type,
-                expected_kpis_json,
-            ],
-        )?;
-
-        let raw: RawRun = tx.query_row(
-            &format!("SELECT {RUN_COLUMNS} FROM kpi_ingest_runs WHERE id = ?1"),
-            [&id],
-            map_raw_row,
-        )?;
+        let run = create_run_if_absent_on_connection(&tx, new_run)?;
         tx.commit()?;
-        raw_to_domain(raw)
+        Ok(run)
     }
 
     /// `discovered -> source_captured` (#360; replaces #359's lease-free
@@ -1107,49 +1417,7 @@ impl KpiIngestRunsStore {
     ) -> StorageResult<()> {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-
-        // Set-once also holds across the retired lease-free path (luna review
-        // B2): a legacy `discovered` row may already carry a hash — a different
-        // one must refuse, the same one is idempotent.
-        let changed = apply_transition(
-            &tx,
-            id,
-            &[KpiIngestRunState::Discovered],
-            KpiIngestRunState::SourceCaptured,
-            "source_content_hash = ?, ",
-            &[&source_content_hash],
-            " AND lease_holder = ? AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-             AND (source_content_hash IS NULL OR source_content_hash = ?)",
-            &[&holder, &source_content_hash],
-        )?;
-        if changed == 1 {
-            tx.commit()?;
-            return Ok(());
-        }
-
-        let Some(raw) = read_raw_run(&tx, id)? else {
-            return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
-        };
-        let status = KpiIngestRunState::parse(&raw.status)?;
-        let result = if status != KpiIngestRunState::Discovered {
-            // Already past this edge — set-once idempotency, independent of
-            // lease/status from here on (mirrors #359's `record_source_capture`).
-            match raw.source_content_hash.as_deref() {
-                Some(existing) if existing == source_content_hash => Ok(()),
-                Some(_) => Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() }),
-                None => Err(wrong_state(id, status, KpiIngestRunState::SourceCaptured)),
-            }
-        } else {
-            // Still `discovered`: either the guard's hash predicate refused a
-            // DIFFERENT pre-existing hash (legacy lease-free capture — set-once
-            // wins over the transition), or the lease is not live.
-            match raw.source_content_hash.as_deref() {
-                Some(existing) if existing != source_content_hash => {
-                    Err(StorageError::RunSourceHashAlreadyRecorded { id: id.to_owned() })
-                }
-                _ => Err(lease_refusal(&tx, &raw, id, holder)?),
-            }
-        };
+        let result = mark_source_captured_on_connection(&tx, id, holder, source_content_hash);
         tx.commit()?;
         result
     }
@@ -1169,58 +1437,7 @@ impl KpiIngestRunsStore {
     ) -> StorageResult<()> {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-
-        let changed = apply_transition(
-            &tx,
-            id,
-            &[KpiIngestRunState::SourceCaptured],
-            KpiIngestRunState::Extracting,
-            "instruction_version = ?, ",
-            &[&instruction_version],
-            " AND lease_holder = ? AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-              AND scope IS NOT NULL AND data_quality IS NOT NULL \
-              AND (period_id IS NOT NULL OR (period_fiscal_year IS NOT NULL AND period_type IS NOT NULL))",
-            &[&holder],
-        )?;
-        if changed == 1 {
-            tx.commit()?;
-            return Ok(());
-        }
-
-        let Some(raw) = read_raw_run(&tx, id)? else {
-            return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
-        };
-        let status = KpiIngestRunState::parse(&raw.status)?;
-        let result = if status != KpiIngestRunState::SourceCaptured {
-            Err(wrong_state(id, status, KpiIngestRunState::Extracting))
-        } else if raw.lease_holder.as_deref() != Some(holder)
-            || !lease_is_live_on_connection(&tx, id, holder)?
-        {
-            Err(lease_refusal(&tx, &raw, id, holder)?)
-        } else if raw.scope.is_none() {
-            Err(StorageError::RunTransitionPrerequisiteMissing {
-                id: id.to_owned(),
-                requirement: "scope",
-            })
-        } else if raw.data_quality.is_none() {
-            Err(StorageError::RunTransitionPrerequisiteMissing {
-                id: id.to_owned(),
-                requirement: "data_quality",
-            })
-        } else if raw.period_id.is_none()
-            && (raw.period_fiscal_year.is_none() || raw.period_type.is_none())
-        {
-            Err(StorageError::RunTransitionPrerequisiteMissing {
-                id: id.to_owned(),
-                requirement: "period",
-            })
-        } else {
-            // Every guard condition re-reads as satisfied — a genuine
-            // concurrent modification raced the classification window itself
-            // (extremely unlikely under `Immediate`). Surface as a lease
-            // refusal rather than silently retrying.
-            Err(lease_not_held(id, holder))
-        };
+        let result = begin_extracting_on_connection(&tx, id, holder, instruction_version);
         tx.commit()?;
         result
     }
@@ -1620,104 +1837,169 @@ impl KpiIngestRunsStore {
         holder: &str,
         ctx: &RunContextAttach<'_>,
     ) -> StorageResult<()> {
-        if ctx.scope.is_none() && ctx.data_quality.is_none() && ctx.period.is_none() {
-            return Ok(());
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let result = attach_run_context_on_connection(&tx, id, holder, ctx);
+        tx.commit()?;
+        result
+    }
+
+    /// `start_kpi_ingest`'s FIRST transaction (S2, #404 H1): resolve-or-create
+    /// the run + claim + attach context + read-back, on ONE checkout/ONE
+    /// `Immediate` transaction — replacing the pre-S2 flow's ~3 separate
+    /// checkouts (`get_report_document`/`create_run_if_absent`, `claim_run`,
+    /// `attach_run_context`) for the FRESH path (fewer still for `runId`
+    /// resume, which already had its run resolved by the caller). The
+    /// transaction reads `now` ONCE (mirroring [`Self::claim_run`]'s own
+    /// contract) and binds it into [`claim_run_on_connection`] — the ONE
+    /// place `now` is read in this whole composed call.
+    ///
+    /// [SKEPTIC M3 — deliberate]: pre-S2, `claim_run` committed in its own
+    /// transaction BEFORE `attach_run_context` ran in a separate one, so a
+    /// context conflict left the just-renewed lease intact. Here, claim and
+    /// attach share ONE transaction — a conflict rolls the claim back too.
+    /// Pinned by
+    /// `attach_conflict_rolls_back_keepalive_lease_expiry_unchanged`.
+    pub fn begin_start_ingest(
+        &self,
+        request: BeginStartIngestRequest,
+        holder: &str,
+        lease_seconds: i64,
+        ctx: &RunContextAttach<'_>,
+    ) -> StorageResult<BeginStartIngestOutcome> {
+        if lease_seconds <= 0 {
+            return Err(StorageError::InvalidRunLeaseDuration {
+                seconds: lease_seconds,
+            });
         }
-        if let Some(scope) = ctx.scope {
-            validate_scope_value(scope)?;
-        }
-        if let Some(quality) = ctx.data_quality {
-            validate_data_quality_value(quality)?;
-        }
-        if let Some((_, period_type)) = ctx.period {
-            validate_period_type_value(period_type)?;
-        }
-        let (fiscal_year, period_type) = match ctx.period {
-            Some((fy, pt)) => (Some(fy), Some(pt)),
-            None => (None, None),
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let now: String =
+            tx.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
+                row.get(0)
+            })?;
+
+        let (run, fetched_document) = match &request {
+            BeginStartIngestRequest::Resume { run_id } => {
+                let raw = read_raw_run(&tx, run_id)?
+                    .ok_or_else(|| StorageError::KpiIngestRunNotFound { id: run_id.clone() })?;
+                (raw_to_domain(raw)?, None)
+            }
+            BeginStartIngestRequest::Fresh(seed) => {
+                let document =
+                    super::report_documents::get_report_document(&tx, &seed.document_id)?;
+                let new_run = NewKpiIngestRun {
+                    report_document_id: document.id.clone(),
+                    company_id: document.company_id.clone(),
+                    period_id: None,
+                    profile_version: seed.profile_version.clone(),
+                    scope: ctx.scope.map(str::to_owned),
+                    data_quality: ctx.data_quality.map(str::to_owned),
+                    period_fiscal_year: ctx.period.map(|(fy, _)| fy),
+                    period_type: ctx.period.map(|(_, pt)| pt.to_owned()),
+                };
+                let run = create_run_if_absent_on_connection(&tx, &new_run)?;
+                (run, Some(document))
+            }
         };
 
+        let run = claim_run_on_connection(&tx, &run.id, holder, lease_seconds, &now)?;
+        attach_run_context_on_connection(&tx, &run.id, holder, ctx)?;
+
+        // Read-back: `status` is unaffected by attach (only claim/creation
+        // ever change it), so this reflects the same status a pre-S2 caller
+        // would have decided the pin from.
+        let raw = read_raw_run(&tx, &run.id)?
+            .ok_or_else(|| StorageError::KpiIngestRunNotFound { id: run.id.clone() })?;
+        let run = raw_to_domain(raw)?;
+
+        let document = if run.status == KpiIngestRunState::Discovered {
+            match fetched_document {
+                Some(document) => Some(document),
+                None => Some(super::report_documents::get_report_document(
+                    &tx,
+                    &run.report_document_id,
+                )?),
+            }
+        } else {
+            None
+        };
+
+        tx.commit()?;
+        Ok(BeginStartIngestOutcome { run, document })
+    }
+
+    /// `start_kpi_ingest`'s SECOND transaction (S2, #404 H1): optional
+    /// `mark_source_captured` (when the caller pinned a source blob between
+    /// the two transactions), `begin_extracting` (its eligibility decided
+    /// INSIDE this transaction, no separate `get_existing_run` round-trip),
+    /// the FINAL run read-back, and the DTO's auxiliary reads (`period_dto`'s
+    /// financial-period lookup, `get_open_draft`'s summary) — ALL on the SAME
+    /// connection. `start_kpi_ingest` needs ZERO further checkouts after
+    /// this returns.
+    pub fn finish_start_ingest(
+        &self,
+        run_id: &str,
+        holder: &str,
+        source_content_hash: Option<&str>,
+        instruction_version: &str,
+    ) -> StorageResult<FinishStartIngestOutcome> {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
-        // Cross-check an attached descriptor against an existing period pin
-        // BEFORE the write (inside the same Immediate transaction): the
-        // descriptor must name the pinned period's natural key.
-        if let Some((fy, pt)) = ctx.period {
-            let pinned: Option<(i64, String)> = tx
-                .query_row(
-                    "SELECT p.fiscal_year, p.period_type
-                     FROM kpi_ingest_runs r JOIN financial_periods p ON p.id = r.period_id
-                     WHERE r.id = ?1",
-                    [id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?;
-            if let Some((pinned_fy, pinned_pt)) = pinned {
-                if pinned_fy != fy || pinned_pt != pt {
-                    return Err(StorageError::RunContextValueConflict {
-                        id: id.to_owned(),
-                        key: "period",
-                        existing: format!("{pinned_fy}/{pinned_pt}"),
-                        requested: format!("{fy}/{pt}"),
-                    });
-                }
-            }
+        if let Some(hash) = source_content_hash {
+            mark_source_captured_on_connection(&tx, run_id, holder, hash)?;
         }
 
-        let sql = format!(
-            "UPDATE kpi_ingest_runs SET
-                scope = COALESCE(scope, ?2),
-                data_quality = COALESCE(data_quality, ?3),
-                period_fiscal_year = COALESCE(period_fiscal_year, ?4),
-                period_type = COALESCE(period_type, ?5),
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE id = ?1 AND status IN {CLAIMABLE_STATUSES_SQL}
-               AND lease_holder = ?6
-               AND lease_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-               AND (?2 IS NULL OR scope IS NULL OR scope = ?2)
-               AND (?3 IS NULL OR data_quality IS NULL OR data_quality = ?3)
-               AND (?4 IS NULL OR (period_fiscal_year IS NULL AND period_type IS NULL)
-                    OR (period_fiscal_year = ?4 AND period_type = ?5))"
-        );
-        let changed = tx.execute(
-            &sql,
-            params![
-                id,
-                ctx.scope,
-                ctx.data_quality,
-                fiscal_year,
-                period_type,
-                holder
-            ],
-        )?;
-        if changed == 1 {
-            tx.commit()?;
-            return Ok(());
-        }
-
-        let Some(raw) = read_raw_run(&tx, id)? else {
-            return Err(StorageError::KpiIngestRunNotFound { id: id.to_owned() });
-        };
+        // The same eligibility decision `start_kpi_ingest` pre-S2 made from a
+        // separate `get_existing_run` read (mcp/kpi_ingest.rs:588) — now on
+        // this transaction's own connection.
+        let raw = read_raw_run(&tx, run_id)?.ok_or_else(|| StorageError::KpiIngestRunNotFound {
+            id: run_id.to_owned(),
+        })?;
         let status = KpiIngestRunState::parse(&raw.status)?;
-        let result = if !status.is_agent_claimable() {
-            Err(StorageError::RunNotClaimable {
-                id: id.to_owned(),
-                status: status.as_str().to_owned(),
-            })
-        } else if raw.lease_holder.as_deref() != Some(holder)
-            || !lease_is_live_on_connection(&tx, id, holder)?
-        {
-            Err(lease_refusal(&tx, &raw, id, holder)?)
-        } else if let Some(conflict) = classify_context_conflict(&raw, ctx, id) {
-            Err(conflict)
-        } else {
-            // Every guard re-reads as satisfied — a write raced the
-            // classification window; surface the residual lease refusal.
-            Err(lease_not_held(id, holder))
+        let context_complete = raw.scope.is_some()
+            && raw.data_quality.is_some()
+            && (raw.period_id.is_some()
+                || (raw.period_fiscal_year.is_some() && raw.period_type.is_some()));
+        if status == KpiIngestRunState::SourceCaptured && context_complete {
+            begin_extracting_on_connection(&tx, run_id, holder, instruction_version)?;
+        }
+
+        // Final read-back [SKEPTIC M2]: on the SAME connection, not a
+        // separate checkout (mcp/kpi_ingest.rs:598 pre-S2).
+        let raw = read_raw_run(&tx, run_id)?.ok_or_else(|| StorageError::KpiIngestRunNotFound {
+            id: run_id.to_owned(),
+        })?;
+        let run = raw_to_domain(raw)?;
+
+        // DTO auxiliary reads [SKEPTIC M2], same connection.
+        let period = match (run.period_fiscal_year, run.period_type.as_deref()) {
+            (Some(fiscal_year), Some(period_type)) => Some(RunPeriodIdentity {
+                fiscal_year,
+                period_type: period_type.to_owned(),
+                period_id: run.period_id.clone(),
+            }),
+            _ => match run.period_id.as_deref() {
+                Some(period_id) => {
+                    let period = financials::get_financial_period(&tx, period_id)?;
+                    Some(RunPeriodIdentity {
+                        fiscal_year: period.fiscal_year,
+                        period_type: period.period_type,
+                        period_id: Some(period.id),
+                    })
+                }
+                None => None,
+            },
         };
+        let open_draft = super::kpi_ingest_drafts::get_open_draft_on_connection(&tx, &run.id)?;
+
         tx.commit()?;
-        result
+        Ok(FinishStartIngestOutcome {
+            run,
+            period,
+            open_draft,
+        })
     }
 
     /// Keyset-paginated pending list (#384): pending = the claimable states.
@@ -4971,6 +5253,315 @@ mod tests {
                 .expect_err("pin mismatch"),
             StorageError::RunContextValueConflict { key: "period", .. }
         ));
+    }
+
+    // ========================================================================
+    // Composed transactions: begin_start_ingest / finish_start_ingest (S2,
+    // #404 H1) — `start_kpi_ingest`'s checkout-bound path.
+    // ========================================================================
+
+    #[test]
+    fn begin_start_ingest_creates_claims_and_attaches_in_one_transaction() {
+        let (state, doc, _company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let ctx = RunContextAttach {
+            scope: Some("standalone"),
+            data_quality: Some("final"),
+            period: Some((2025, "FY")),
+        };
+
+        let began = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Fresh(NewRunSeed {
+                    document_id: doc.to_owned(),
+                    profile_version: "gpw_ifrs_annual@v1".to_owned(),
+                }),
+                "mcp:full",
+                3600,
+                &ctx,
+            )
+            .expect("begin");
+
+        assert_eq!(began.run.status, KpiIngestRunState::Discovered);
+        assert_eq!(began.run.scope.as_deref(), Some("standalone"));
+        assert_eq!(began.run.data_quality.as_deref(), Some("final"));
+        assert_eq!(began.run.period_fiscal_year, Some(2025));
+        assert_eq!(began.run.period_type.as_deref(), Some("FY"));
+        assert_eq!(began.run.lease_holder.as_deref(), Some("mcp:full"));
+        assert_eq!(began.run.attempt_count, 1, "fresh claim on an absent lease");
+        let document = began.document.expect("document present at discovered");
+        assert_eq!(document.id, doc);
+
+        // A same-holder resume through the SAME composed fn renews (never
+        // bumps attempt_count) and re-attaches the SAME values idempotently.
+        let began2 = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Resume {
+                    run_id: began.run.id.clone(),
+                },
+                "mcp:full",
+                3600,
+                &ctx,
+            )
+            .expect("resume begin");
+        assert_eq!(began2.run.id, began.run.id);
+        assert_eq!(
+            began2.run.attempt_count, 1,
+            "same-holder live renewal never bumps attempt_count"
+        );
+    }
+
+    #[test]
+    fn begin_start_ingest_surfaces_lease_refusal_vocabulary() {
+        let (state, doc, _company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let ctx = RunContextAttach::default();
+        let began = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Fresh(NewRunSeed {
+                    document_id: doc.to_owned(),
+                    profile_version: "gpw_ifrs_annual@v1".to_owned(),
+                }),
+                "mcp:full",
+                3600,
+                &ctx,
+            )
+            .expect("begin as mcp:full");
+
+        // A LIVE foreign lease refuses the composed claim with the SAME
+        // three-way vocabulary the pre-S2 separate `claim_run` used.
+        let err = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Resume {
+                    run_id: began.run.id.clone(),
+                },
+                "mcp:kpi_acquisition",
+                3600,
+                &ctx,
+            )
+            .expect_err("foreign live lease");
+        assert!(matches!(err, StorageError::RunTakenOver { .. }));
+    }
+
+    #[test]
+    fn finish_start_ingest_enters_extracting_when_context_complete() {
+        let (state, doc, _company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let ctx = RunContextAttach {
+            scope: Some("standalone"),
+            data_quality: Some("final"),
+            period: Some((2025, "FY")),
+        };
+        let began = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Fresh(NewRunSeed {
+                    document_id: doc.to_owned(),
+                    profile_version: "gpw_ifrs_annual@v1".to_owned(),
+                }),
+                "mcp:full",
+                3600,
+                &ctx,
+            )
+            .expect("begin");
+        assert_eq!(began.run.status, KpiIngestRunState::Discovered);
+
+        let finished = store
+            .finish_start_ingest(
+                &began.run.id,
+                "mcp:full",
+                Some("hash-1"),
+                "acquisition-mcp@v1",
+            )
+            .expect("finish");
+
+        assert_eq!(finished.run.status, KpiIngestRunState::Extracting);
+        assert_eq!(finished.run.source_content_hash.as_deref(), Some("hash-1"));
+        assert_eq!(
+            finished.run.instruction_version.as_deref(),
+            Some("acquisition-mcp@v1")
+        );
+        assert_eq!(
+            finished
+                .period
+                .as_ref()
+                .map(|p| (p.fiscal_year, p.period_type.as_str())),
+            Some((2025, "FY"))
+        );
+        assert!(finished.open_draft.is_none());
+    }
+
+    #[test]
+    fn finish_start_ingest_surfaces_lease_refusal_vocabulary() {
+        let (state, doc, _company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let began = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Fresh(NewRunSeed {
+                    document_id: doc.to_owned(),
+                    profile_version: "gpw_ifrs_annual@v1".to_owned(),
+                }),
+                "mcp:full",
+                3600,
+                &RunContextAttach {
+                    scope: Some("standalone"),
+                    data_quality: Some("final"),
+                    period: Some((2025, "FY")),
+                },
+            )
+            .expect("begin");
+
+        // The lease lapses between the two transactions (a real gap the
+        // pin's filesystem I/O opens in production).
+        expire_lease_raw(&state, &began.run.id);
+
+        let err = store
+            .finish_start_ingest(
+                &began.run.id,
+                "mcp:full",
+                Some("hash-1"),
+                "acquisition-mcp@v1",
+            )
+            .expect_err("own lease expired");
+        assert!(matches!(err, StorageError::RunLeaseExpired { .. }));
+    }
+
+    #[test]
+    fn finish_start_ingest_source_hash_is_set_once() {
+        let (state, doc, _company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let began = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Fresh(NewRunSeed {
+                    document_id: doc.to_owned(),
+                    profile_version: "gpw_ifrs_annual@v1".to_owned(),
+                }),
+                "mcp:full",
+                3600,
+                &RunContextAttach::default(),
+            )
+            .expect("begin");
+
+        let finished = store
+            .finish_start_ingest(
+                &began.run.id,
+                "mcp:full",
+                Some("hash-a"),
+                "acquisition-mcp@v1",
+            )
+            .expect("finish with hash");
+        assert_eq!(finished.run.source_content_hash.as_deref(), Some("hash-a"));
+        assert_eq!(
+            finished.run.status,
+            KpiIngestRunState::SourceCaptured,
+            "context incomplete, stays here"
+        );
+
+        // Same hash again through a keepalive resume — set-once idempotency.
+        store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Resume {
+                    run_id: began.run.id.clone(),
+                },
+                "mcp:full",
+                3600,
+                &RunContextAttach::default(),
+            )
+            .expect("keepalive");
+        let finished_again = store
+            .finish_start_ingest(
+                &began.run.id,
+                "mcp:full",
+                Some("hash-a"),
+                "acquisition-mcp@v1",
+            )
+            .expect("finish again, same hash is a no-op");
+        assert_eq!(
+            finished_again.run.source_content_hash.as_deref(),
+            Some("hash-a")
+        );
+
+        // A DIFFERENT hash refuses.
+        let err = store
+            .finish_start_ingest(
+                &began.run.id,
+                "mcp:full",
+                Some("hash-b"),
+                "acquisition-mcp@v1",
+            )
+            .expect_err("different hash refuses");
+        assert!(matches!(
+            err,
+            StorageError::RunSourceHashAlreadyRecorded { .. }
+        ));
+    }
+
+    /// [SKEPTIC M3 — deliberate]: pre-S2, `claim_run` committed in its own
+    /// transaction BEFORE `attach_run_context` ran in a separate one, so an
+    /// attach conflict left the just-renewed lease intact. In the composed
+    /// `begin_start_ingest`, claim and attach share ONE transaction — a
+    /// conflict rolls the whole thing back, including the claim. This test
+    /// pins the NEW semantics (no prior test pinned the old ordering — none
+    /// in this file or `mcp/kpi_ingest.rs` asserted `lease_expires_at` after
+    /// an attach conflict).
+    #[test]
+    fn attach_conflict_rolls_back_keepalive_lease_expiry_unchanged() {
+        let (state, doc, _company) = setup_one_company_doc();
+        let store = state.kpi_ingest_runs();
+        let began = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Fresh(NewRunSeed {
+                    document_id: doc.to_owned(),
+                    profile_version: "gpw_ifrs_annual@v1".to_owned(),
+                }),
+                "mcp:full",
+                3600,
+                &RunContextAttach {
+                    scope: Some("standalone"),
+                    ..RunContextAttach::default()
+                },
+            )
+            .expect("begin");
+        let lease_before = began
+            .run
+            .lease_expires_at
+            .clone()
+            .expect("claimed run is leased");
+        let attempt_count_before = began.run.attempt_count;
+
+        // A DIFFERENT lease duration than the first call's — if the
+        // keepalive renewal inside this call committed, `lease_expires_at`
+        // would provably move.
+        let err = store
+            .begin_start_ingest(
+                BeginStartIngestRequest::Resume {
+                    run_id: began.run.id.clone(),
+                },
+                "mcp:full",
+                7200,
+                &RunContextAttach {
+                    scope: Some("consolidated"),
+                    ..RunContextAttach::default()
+                },
+            )
+            .expect_err("scope conflict");
+        assert!(matches!(
+            err,
+            StorageError::RunContextValueConflict { key: "scope", .. }
+        ));
+
+        let after = store
+            .get_run(&began.run.id)
+            .expect("get")
+            .expect("run still exists");
+        assert_eq!(
+            after.lease_expires_at.as_deref(),
+            Some(lease_before.as_str()),
+            "the rolled-back keepalive claim must not have persisted a renewed expiry"
+        );
+        assert_eq!(
+            after.attempt_count, attempt_count_before,
+            "attempt_count rolls back too"
+        );
     }
 
     #[test]

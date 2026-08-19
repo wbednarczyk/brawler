@@ -565,7 +565,15 @@ pub(super) fn list_needing_container_sniff(
 // Private Helper Functions
 // ============================================================================
 
-fn get_report_document(connection: &Connection, id: &str) -> StorageResult<ReportDocument> {
+/// `pub(super)` (not private) so composed cross-domain transactions —
+/// [`super::kpi_ingest_runs::KpiIngestRunsStore::begin_start_ingest`] (S2,
+/// #404 H1) — can read the document row on THEIR OWN connection instead of
+/// taking a separate checkout, mirroring the
+/// `kpi_ingest_staging::get_commit_receipt_on_connection` precedent.
+pub(super) fn get_report_document(
+    connection: &Connection,
+    id: &str,
+) -> StorageResult<ReportDocument> {
     connection
         .query_row(
             "
