@@ -157,6 +157,8 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     const detail = page.locator(".detail-pane");
     await expect(detail.getByText("ESPI notice")).toBeVisible();
     await expect(page.getByText("Komunikat ESPI/EBI")).toHaveCount(0);
+    // Contract §6: exactly one marked primary action per rendered detail kind.
+    await expectPrimaryActionCount(detail, { max: 1 });
     await expectNoPageOverflow(page);
 
     // Act: mark it read (the ≤10s decision the experience contract names —

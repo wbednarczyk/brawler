@@ -13,8 +13,9 @@ export function isReportDocumentAttachment(attachment: FeedItemAttachment) {
     label === "polityka prywatnosci" ||
     label === "polityka cookies";
 
-  return (
-    !isSourcePageChrome &&
-    (/\.pdf(?:$|[?#])/i.test(attachment.url) || /\.pdf(?:$|[?#])/i.test(attachment.label))
-  );
+  // Every document format the adapters accept (bankier emits PDF, XHTML/ZIP
+  // ESEF packages, and occasional office formats) — a report whose only
+  // attachment is an XHTML must still show its document list.
+  const DOC_EXT = /\.(?:pdf|xhtml|html|zip|xml|docx?|xlsx?)(?:$|[?#])/i;
+  return !isSourcePageChrome && (DOC_EXT.test(attachment.url) || DOC_EXT.test(attachment.label));
 }

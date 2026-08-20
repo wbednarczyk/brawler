@@ -100,4 +100,27 @@ describe("useCommandQuery", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+
+  it("resolves an overlapping refetch race to the NEWER request's data", async () => {
+    const deferred: Array<(v: string) => void> = [];
+    const fetcher = vi.fn(
+      () => new Promise<string>((resolve) => deferred.push(resolve)),
+    );
+    const { result } = renderHook(() => useCommandQuery(["k"], fetcher));
+    act(() => {
+      result.current.refetch();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    // The NEWER request resolves first; the OLDER settles late and must be
+    // discarded by the per-run seq gate — this reddens if the gate is removed.
+    await act(async () => {
+      deferred[1]("newer");
+      await Promise.resolve();
+      deferred[0]("older-late");
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe("success");
+    expect(result.current.data).toBe("newer");
+  });
 });

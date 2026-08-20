@@ -1497,6 +1497,7 @@ export function AppStateRoot({
           return false;
         }
 
+        updateSelectedFeedItem((item) => ({ ...item, unread: false }));
         openExternalUrl(selectedFeedItem.sourceUrl);
         return true;
       },

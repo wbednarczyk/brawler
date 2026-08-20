@@ -189,6 +189,8 @@ function buildDetailActions({
       href={item.sourceUrl}
       rel="noreferrer"
       target="_blank"
+      // Contract §7: `Otwórz…` marks the item read on its way out.
+      onClick={() => updateSelectedFeedItem((current) => ({ ...current, unread: false }))}
     >
       <ExternalLink size={15} />
       {label}

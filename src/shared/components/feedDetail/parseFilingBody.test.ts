@@ -44,4 +44,24 @@ describe("parseFilingBody", () => {
     expect(parsed.content?.endsWith("…")).toBe(true);
     expect(parsed.content?.startsWith("x".repeat(600))).toBe(true);
   });
+
+  it("bounds the content at the trailing form sections (bilingual blob never leaks)", () => {
+    const body =
+      REAL_SHAPED_BODY +
+      "MESSAGE (ENGLISH VERSION)The Supervisory Board appointed…INFORMACJE O PODMIOCIE" +
+      "PZU SAPODPISY OSÓB REPREZENTUJĄCYCH SPÓŁKĘ";
+    const parsed = parseFilingBody(body);
+    expect(parsed.content).not.toContain("MESSAGE");
+    expect(parsed.content).not.toContain("Supervisory Board");
+    expect(parsed.content).toContain("Uchwała weszła w życie");
+  });
+
+  it("ignores a quoted marker outside the KNF form (prose before the header)", () => {
+    const body =
+      'W artykule cytowano frazę "Treść raportu:" bez znaczenia strukturalnego. ' +
+      REAL_SHAPED_BODY;
+    const parsed = parseFilingBody(body);
+    expect(parsed.content).toContain("Rada Nadzorcza powołała");
+    expect(parsed.content).not.toContain("bez znaczenia strukturalnego");
+  });
 });

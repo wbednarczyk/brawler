@@ -4,6 +4,21 @@ import userEvent from "@testing-library/user-event";
 import type { Company, FeedItem } from "../../api/types";
 import { CompanyFeedSection } from "./CompanyFeedSection";
 
+// The detail branch renders the company-context block (F1; sol round-1
+// blocker 1) — resolve its one composed call with an empty context so these
+// host tests stay focused on the feed surface.
+vi.mock("../../api/companyContext", () => ({
+  getCompanyContext: vi.fn(() =>
+    Promise.resolve({
+      companyId: "c1",
+      latestPeriodFacts: null,
+      upcomingEvents: [],
+      notebook: { count: 0, latestAt: null },
+      claimsDue: { due: 0, overdue: 0 },
+    }),
+  ),
+}));
+
 const company = { id: "c1", qualifiedTicker: "GPW:CDR", displayName: "CD PROJEKT S.A." } as Company;
 
 function makeItem(overrides: Partial<FeedItem>): FeedItem {

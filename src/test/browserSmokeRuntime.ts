@@ -178,6 +178,14 @@ feedItems.push({
       url: "https://example.test/H1_25_26_Sprawozdanie_finansowe.pdf",
     },
     {
+      // URL-shaped label (real bankier shape): the human title must come from
+      // the decoded basename, never the mangled full URL (sol F1 finding 7/9).
+      id: "att_results_url_label",
+      label:
+        "https://example.test/static/att/emitent/2026-08/20260820_054808_0123456789_PZU_SA_Raport_z_przegladu_srodrocznego_JSF_2026_sigAB.pdf",
+      url: "https://example.test/static/att/emitent/2026-08/20260820_054808_0123456789_PZU_SA_Raport_z_przegladu_srodrocznego_JSF_2026_sigAB.pdf",
+    },
+    {
       id: "att_results_3",
       label:
         "AB S.A._31.03.2026_Raport z przeglądu śródrocznego skróconego JSF_MSSF.pdf",

@@ -968,6 +968,13 @@ function buildHandlers(): Record<string, Handler> {
             periodLabel: `${latestPeriod.periodType} ${latestPeriod.fiscalYear}`,
             facts: d.financialFacts
               .filter((f) => f.periodId === latestPeriod.id)
+              // Mirrors the Rust read model's `created_at DESC, id` ordering
+              // (financials.rs) — the corpus only pins primitives, so keep
+              // this in sync by hand (sol F1 finding 4).
+              .sort(
+                (x, y) =>
+                  y.createdAt.localeCompare(x.createdAt) || x.id.localeCompare(y.id),
+              )
               .slice(0, 6)
               .map((f) => ({
                 metricKey: f.metricKey,
@@ -985,6 +992,7 @@ function buildHandlers(): Record<string, Handler> {
         .sort(
           (x, y) =>
             x.eventDate.localeCompare(y.eventDate) ||
+            (x.eventTime ?? "").localeCompare(y.eventTime ?? "") ||
             x.title.localeCompare(y.title),
         )
         .slice(0, 3)
@@ -1009,8 +1017,10 @@ function buildHandlers(): Record<string, Handler> {
           latestAt: latestNote?.updatedAt ?? null,
         },
         claimsDue: {
-          due: d.claimsToVerify.due.length,
-          overdue: d.claimsToVerify.overdue.length,
+          // Company-scoped like the Rust `list_claims_to_verify(company_id)`
+          // call — never the global bucket lengths (sol F1 finding 4).
+          due: d.claimsToVerify.due.filter((c) => c.claim.companyId === companyId).length,
+          overdue: d.claimsToVerify.overdue.filter((c) => c.claim.companyId === companyId).length,
         },
       };
     },

@@ -9,6 +9,7 @@ import {
 import type { Company, FeedItem } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { FeedDetailContent } from "../../shared/components/feedDetail/FeedDetailContent";
+import { CompanyContextSection } from "../../shared/components/feedDetail/CompanyContextSection";
 import { useLocale } from "../../shared/locale";
 import { formatListTimestamp } from "../../shared/format/datetime";
 import { ActionRow, Button, DenseRow, EmptyState, StatusChip } from "../../ui";
@@ -39,6 +40,9 @@ export type CompanyFeedSectionProps = {
   inspectFeedItem?: (item: FeedItem) => void;
   openFeedItemNoteDraft?: (item: FeedItem) => void;
   openInboxFilter?: (company: Company) => void;
+  // Provenance-thread landing for the context block (ADR 0104 dec. 7). Optional:
+  // a host with no documents navigation leaves the ticket non-interactive.
+  openCompanyReportDocuments?: () => void;
 };
 
 export function CompanyFeedSection({
@@ -51,6 +55,7 @@ export function CompanyFeedSection({
   inspectFeedItem,
   openFeedItemNoteDraft,
   openInboxFilter,
+  openCompanyReportDocuments,
   formatTimestamp,
   feedItemSummary,
 }: CompanyFeedSectionProps) {
@@ -152,10 +157,20 @@ export function CompanyFeedSection({
                       </Button>
                     ) : null}
                     <a
-                      className="secondary-button compact-button"
+                      // The one contracted primary action of this host's detail
+                      // (experience contract §6); opening the source also marks
+                      // the item read (§7 exit path).
+                      className="primary-button compact-button"
+                      data-ux-primary-action="true"
                       href={selectedFeedItem.sourceUrl}
                       rel="noreferrer"
                       target="_blank"
+                      onClick={() =>
+                        updateFeedItemState(selectedFeedItem, (feedItem) => ({
+                          ...feedItem,
+                          unread: false,
+                        }))
+                      }
                     >
                       <ExternalLink size={15} />
                       {text("Open source")}
@@ -163,6 +178,8 @@ export function CompanyFeedSection({
                   </ActionRow>
                 }
               />
+              <div className="detail-context-divider" />
+              <CompanyContextSection companyId={company.id} onOpenReportDocuments={openCompanyReportDocuments} />
             </aside>
           ) : null}
         </div>

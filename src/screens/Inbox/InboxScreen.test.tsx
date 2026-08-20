@@ -45,7 +45,7 @@ describe("Inbox screen workflows", () => {
     expect(detailPane.getByText("Yesterday")).toBeInTheDocument();
   });
 
-  it("shows only PDF attachments in feed item details", async () => {
+  it("lists document attachments and hides source-page chrome in feed item details", async () => {
     appTestState.feedItemsResponse = [
       {
         ...initialFeedItems[0],
@@ -83,11 +83,12 @@ describe("Inbox screen workflows", () => {
 
     const detailPane = within(await screen.findByLabelText("Feed item details"));
 
-    // Report kind (F1 S4): the document list keeps the same PDF-only,
-    // chrome-excluded filter, now rendered as FeedDetailReport rows.
+    // Report kind (F1): every document format the adapters accept is listed
+    // (a report whose only attachment is XHTML/XLSX must still show its list);
+    // source-page chrome links stay excluded.
     expect(detailPane.getByText("report")).toBeInTheDocument();
     expect(detailPane.getByText("report.pdf")).toBeInTheDocument();
-    expect(detailPane.queryByText("sheet.xlsx")).not.toBeInTheDocument();
+    expect(detailPane.getByText("sheet.xlsx")).toBeInTheDocument();
     expect(detailPane.queryByText("Regulamin")).not.toBeInTheDocument();
     expect(detailPane.queryByText("Polityka prywatności")).not.toBeInTheDocument();
     expect(detailPane.queryByText("Polityka Cookies")).not.toBeInTheDocument();

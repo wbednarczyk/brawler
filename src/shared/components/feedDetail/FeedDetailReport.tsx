@@ -12,9 +12,19 @@ export type FeedDetailReportProps = {
 // so the human eye scans a title, not a raw filename. The real filename stays
 // visible right below it (dec. 6 — human title first, filename in mono meta).
 function humanTitleFromLabel(label: string): string {
-  const withoutExt = label.replace(/\.[a-z0-9]{1,5}$/i, "");
+  // A URL-shaped label yields its decoded basename, not the mangled full URL.
+  let base = label;
+  if (/^https?:\/\//i.test(label)) {
+    try {
+      const path = new URL(label).pathname;
+      base = decodeURIComponent(path.split("/").filter(Boolean).pop() ?? label);
+    } catch {
+      base = label;
+    }
+  }
+  const withoutExt = base.replace(/\.[a-z0-9]{1,5}$/i, "");
   const spaced = withoutExt.replace(/[_-]+/g, " ").trim();
-  return spaced || label;
+  return spaced || base;
 }
 
 // Report kind (an official filing with attachments): a document list — human

@@ -32,14 +32,29 @@ function captureBetween(source: string, startMarker: string, endMarkers: readonl
   return captured.length > 0 ? captured : null;
 }
 
+// Section headers that follow the report content in the KNF form layout —
+// they bound the extraction so bilingual/entity/signature sections never leak
+// into the displayed excerpt.
+const CONTENT_END_MARKERS = [
+  "MESSAGE (ENGLISH VERSION)",
+  "INFORMACJE O PODMIOCIE",
+  "PODPISY OSÓB REPREZENTUJĄCYCH",
+] as const;
+
 export function parseFilingBody(bodyText: string): ParsedFilingBody {
-  const reportNumber = captureBetween(bodyText, "Raport bieżący nr", [
+  // Anchor at the KNF form header: the table of contents BEFORE it repeats the
+  // section names, and free prose may quote "Treść raportu:" — markers only
+  // count inside the actual form (fall back to the whole blob when the header
+  // is absent, e.g. EBI shapes).
+  const anchor = bodyText.indexOf("KOMISJA NADZORU FINANSOWEGO");
+  const form = anchor === -1 ? bodyText : bodyText.slice(anchor);
+  const reportNumber = captureBetween(form, "Raport bieżący nr", [
     "Data sporządzenia",
     "Podstawa prawna",
     "Treść raportu:",
   ]);
-  const legalBasis = captureBetween(bodyText, "Podstawa prawna", ["Treść raportu:"]);
-  const rawContent = captureBetween(bodyText, "Treść raportu:", []);
+  const legalBasis = captureBetween(form, "Podstawa prawna", ["Treść raportu:"]);
+  const rawContent = captureBetween(form, "Treść raportu:", CONTENT_END_MARKERS);
   const content =
     rawContent && rawContent.length > CONTENT_MAX_CHARS
       ? `${rawContent.slice(0, CONTENT_MAX_CHARS)}…`

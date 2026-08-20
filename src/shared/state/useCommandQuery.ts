@@ -55,6 +55,12 @@ export function useCommandQuery<T>(
 
   useEffect(() => {
     run();
+    // No cleanup on purpose: every `run()` bumps the seq, so any earlier
+    // in-flight response is already discarded observably, and React 18+
+    // silently no-ops a setState that lands after unmount — an unmount
+    // cleanup would guard nothing a behavioral test could redden on
+    // (sol F1 round-3 verdict; StrictMode's dev double-mount just costs one
+    // extra ~1 ms local IPC call).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on keyJson (the documented comparison), not `run`/`key` identity
   }, [keyJson]);
 

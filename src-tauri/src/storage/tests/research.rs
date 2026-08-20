@@ -771,3 +771,60 @@ fn every_allowed_evidence_type_has_a_reference_resolution_arm() {
         );
     }
 }
+
+#[test]
+fn timeline_evidence_never_carries_the_dead_filing_boilerplate_summary() {
+    // F1 #413: the retired "Komunikat ESPI/EBI" filing summary is dead data —
+    // research evidence built from feed items must surface it as no summary,
+    // exactly like the feed read models do (sol F1 round-1 finding 3).
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    {
+        let connection = state.checkout().expect("database connection");
+        let adapter_id: String = connection
+            .query_row("SELECT id FROM source_adapters LIMIT 1", [], |row| {
+                row.get(0)
+            })
+            .expect("a seeded source adapter should exist");
+        connection
+            .execute(
+                "INSERT INTO feed_items (
+                    id, type, source_adapter_id, source_name, source_url, title,
+                    summary, fetched_at, dedupe_key, attribution, display_company
+                ) VALUES ('feed_dead_filing', 'Official report', ?1, 'GPW',
+                    'https://example.com/filing', 'Powołanie Członka Zarządu',
+                    'Komunikat ESPI/EBI', '2026-05-01T10:00:00Z', 'dk-dead-filing',
+                    'GPW', 'GPW:CDR')",
+                [&adapter_id],
+            )
+            .expect("seed feed item should insert");
+        connection
+            .execute(
+                "INSERT INTO feed_item_companies (feed_item_id, company_id)
+                 VALUES ('feed_dead_filing', ?1)",
+                [&company.id],
+            )
+            .expect("seed company link should insert");
+    }
+
+    let timeline = state
+        .list_research_evidence(ResearchEvidenceInput {
+            company_id: Some(company.id.clone()),
+            watchlist_id: None,
+            evidence_types: None,
+            changed_since_review_only: None,
+            limit: None,
+        })
+        .expect("research evidence should list");
+    let filing = timeline
+        .items
+        .iter()
+        .find(|item| item.source_id == "feed_dead_filing")
+        .expect("the filing evidence item should be present");
+    assert_eq!(
+        filing.summary, None,
+        "the dead boilerplate must not surface"
+    );
+}
