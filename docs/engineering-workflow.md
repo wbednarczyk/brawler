@@ -176,6 +176,6 @@ Committed screenshot baselines under `tests/browser/visual/`: each panel × S/M/
 - **Deliberate update:** `make visual-update SCREEN=<name> REASON="…"`; commit the PNGs naming **which screens changed and why**. **`rm` the affected PNGs first**: a small intended change slips under `maxDiffPixelRatio`, so the compare passes, nothing is rewritten, and the stale baseline re-legitimizes the old UI (harvest 2026-07-16).
 - **CI:** `ignoreSnapshots: !!process.env.CI` — CI runs the specs (layout/console gates hold) but skips pixel compare (font rendering varies by machine). **So no gate catches a stale baseline: changing a paneled screen means running these projects locally in that change.** Two drifted unnoticed (harvest 2026-08-03, #314).
 
-### UX quality loop v2 (ADR 0081 — post-pilot only)
+### UX quality loop v2 (ADR 0081 — adopted)
 
-Pilot-gated ([ADR 0081](adr/0081-ux-quality-loop-v2.md)): a universal handover check lands here only after the J1/J2 pilot returns `adopt` with owner sign-off. Nothing added yet.
+Adopted ([ADR 0081](adr/0081-ux-quality-loop-v2.md): Q9 owner sign-off 2026-07-13; confirmed in redesign use by F1, owner 2026-08-20). By the Q9 decision there is deliberately **no separate handover line here**: enforcement lives in each practice's canonical home — the experience-contract rules in [ui-authoring.md](ui-authoring.md) (a DoD §B item), the journey/a11y/overlay specs in the gate, and the opt-in tools (contact sheets, live checkpoints, escaped-defect report).

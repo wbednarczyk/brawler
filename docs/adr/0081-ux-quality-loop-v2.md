@@ -128,6 +128,14 @@ journey/a11y/overlay specs, the DoD's `ui-authoring.md`/`dogfooding.md` links, a
 opt-in tools — **without** a new always-loaded Definition-of-Done line, so the
 mandatory-read context stays within its ADR 0063 budget.
 
+**Redesign confirmation (owner 2026-08-20).** The first full REDESIGN use (F1 Inbox v2,
+#413 — the Q9 pilot had exercised the current-state journeys) voluntarily ran the
+experience contract + storyboard end to end; the owner re-affirmed `adopt` on the F1
+retro's evidence (`docs/retros/inbox-v2-f1-v0.72.md`): contract §6/§7 directly produced
+two of the adversarial review's principal findings, and the state matrix drove the
+loading/error/empty states the visual mockups omitted. ui-authoring.md now states the
+practice as binding for non-mechanical UI work; the no-new-DoD-line decision stands.
+
 ## Consequences
 
 - UX decisions get specified and validated before code, the way code behavior already is —
