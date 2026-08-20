@@ -52,8 +52,8 @@ help:
 	@printf "                            Advisory escaped-defect taxonomy trend report (ADR 0081 Q7), never part of check\n"
 	@printf "  make ux-contact-sheet SCREENS=\"a,b\" (or CHANGED=1)\n"
 	@printf "                            Assemble a local HTML contact sheet from the existing visual scenarios (ADR 0081 Q5)\n"
-	@printf "  make visual-update SCREEN=<name> REASON=\"why\"\n"
-	@printf "                            Deliberate Playwright baseline update — refuses without both\n"
+	@printf "  make visual-update SCREEN=<catalog-id>|ALL=1 REASON=\"why\"\n"
+	@printf "                            Deliberate Playwright baseline update — refuses without REASON and exactly one of SCREEN/ALL\n"
 	@printf "  make test                Run frontend tests inside nix develop\n"
 	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
 	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
@@ -158,9 +158,11 @@ check-frontend-static:
 check-frontend-test:
 	$(NIX) npm run test
 
-# Frontend build gate: the production Vite build (tsc + vite build).
+# Frontend build gate: the production Vite build (tsc + vite build), then the
+# bundled-font asset check (F0.5/ADR 0104: exactly 4 committed woff2 subsets).
 check-frontend-build:
 	$(NIX) npm run build
+	$(NIX) node scripts/check/font-assets.mjs
 
 # Browser gate: install Chromium, then run Playwright. SHARD=i/N runs one shard
 # (CI matrix); unset runs the whole suite (local parity). Pixel snapshots
@@ -349,13 +351,16 @@ ux-contact-sheet:
 	$(NIX) node scripts/ux/contact-sheet.mjs $(if $(SCREENS),--screens=$(SCREENS)) $(if $(CHANGED),--changed) $(if $(STATE),--state=$(STATE)) $(if $(THEME),--theme=$(THEME))
 
 # Deliberate Playwright baseline update. STOP-AND-ASK elsewhere in this repo
-# guards against silent baseline drift, so this refuses to run without a named
-# SCREEN and a non-empty REASON, and prints both into the run log for the
-# change description to cite (docs/testing.md § UX contact sheet).
+# guards against silent baseline drift, so this refuses to run without a
+# non-empty REASON and exactly one of SCREEN (a tests/browser/visual/catalog
+# id, exact hash-compared update) or ALL=1 (full repaint sweep), and prints
+# both into the run log for the change description to cite
+# (docs/testing.md § Visual baseline).
 visual-update:
-	@test -n "$(SCREEN)" || { printf "Usage: make visual-update SCREEN=<name> REASON=\"why\"\n" >&2; exit 1; }
-	@test -n "$(REASON)" || { printf "Usage: make visual-update SCREEN=<name> REASON=\"why\"\n" >&2; exit 1; }
-	SCREEN="$(SCREEN)" REASON="$(REASON)" $(NIX) npm run visual-update
+	@test -n "$(REASON)" || { printf "Usage: make visual-update SCREEN=<catalog-id> REASON=\"why\" (or ALL=1 REASON=\"why\")\n" >&2; exit 1; }
+	@test -n "$(SCREEN)$(ALL)" || { printf "Usage: make visual-update SCREEN=<catalog-id> REASON=\"why\" (or ALL=1 REASON=\"why\")\n" >&2; exit 1; }
+	@test -z "$(SCREEN)" -o -z "$(ALL)" || { printf "Usage: pass SCREEN or ALL=1, not both\n" >&2; exit 1; }
+	SCREEN="$(SCREEN)" ALL="$(ALL)" REASON="$(REASON)" $(NIX) npm run visual-update
 
 # Mutation testing of the deterministic cores (ADR 0048, scope per ADR 0049):
 # verifies tests catch behavior changes, not just execute code — the strong

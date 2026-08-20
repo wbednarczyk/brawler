@@ -355,7 +355,7 @@
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   border-radius: 5px;
   background: color-mix(in srgb, var(--surface) 78%, transparent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono, monospace);
   font-size: var(--font-sm);
 }
 
