@@ -18,6 +18,13 @@ const LOADING = { status: "loading", data: null, error: null } as const;
  * `key` is compared by JSON.stringify — pass primitives/plain-serializable
  * values (e.g. `[companyId]`), not functions/class instances/undefined-y
  * shapes that don't round-trip through JSON.
+ *
+ * Lives under `src/shared/state` (moved from `src/app/state` in F1 S4): it
+ * has no AppStateRoot/composition-root coupling — a plain React hook over a
+ * fetcher callback — and `src/shared/components` consumers (this hook's
+ * whole reason to exist per its own docstring) cannot import `src/app`
+ * (the frontend layer contract, docs/modularization-design.md § Frontend
+ * layer contract, ESLint-enforced `no-restricted-imports`).
  */
 export function useCommandQuery<T>(
   key: readonly unknown[],

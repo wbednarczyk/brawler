@@ -28,20 +28,18 @@ describe("Sources screen workflows", () => {
       name: "Select feed item: Refreshed GPW report from sample source",
     });
     await user.click(refreshedFeedItem);
-    expect(screen.getByLabelText("Feed summary")).toHaveTextContent(
-      "Refreshed GPW report from sample source",
-    );
+    // F1 S4: report kind (this refreshed item carries an attachment) shows
+    // the document list instead of the raw body-text disclosure — the
+    // approved mockup's report detail is documents + facts, not scraped
+    // body text (plan §4).
+    expect(
+      within(screen.getByLabelText("Feed item details")).getByRole("heading", {
+        name: "Refreshed GPW report from sample source",
+      }),
+    ).toBeInTheDocument();
     // ADR 0076 D4: detail/audit timestamps render `YYYY-MM-DD HH:MM` — no seconds.
     expect(await screen.findAllByText("2026-05-30 17:13")).not.toHaveLength(0);
-    expect(screen.getByText("2026-05-30 17:30")).toBeInTheDocument();
-    const officialBody = screen.getByLabelText("Official report body");
-    expect(officialBody).toHaveTextContent("Stored");
-    expect(officialBody).not.toHaveAttribute("open");
-    await user.click(within(officialBody).getByText("Official report body"));
-    expect(officialBody).toHaveAttribute("open");
-    expect(officialBody).toHaveTextContent(
-      "Official GPW body text fetched from the detail page.",
-    );
+    expect(screen.getByText("report")).toBeInTheDocument();
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("refresh_sources", { input: { trigger: "manual" } }),

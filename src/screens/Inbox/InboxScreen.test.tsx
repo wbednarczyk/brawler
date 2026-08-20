@@ -31,19 +31,18 @@ describe("Inbox screen workflows", () => {
     expect(
       screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "https://example.test/sample/pkn" })).toHaveAttribute(
+    // F1 S4: media kind opens the source through a typed "Open source" primary
+    // action instead of a raw URL link (ADR 0104 dec. 3, verb dictionary).
+    expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute(
       "href",
       "https://example.test/sample/pkn",
     );
-    expect(screen.queryByRole("link", { name: "Open source" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "https://example.test/sample/pkn" })).not.toBeInTheDocument();
+    // F1 S4: the detail header now shows the item's source/date must-see tier
+    // (ADR 0104 §5 hierarchy) instead of hiding it.
     const detailPane = within(screen.getByLabelText("Feed item details"));
-    expect(detailPane.queryByText("Sample feed")).not.toBeInTheDocument();
-    expect(detailPane.queryByText("Sample")).not.toBeInTheDocument();
-
-    const timestampMeta = within(screen.getByLabelText("Feed item timestamps"));
-    expect(timestampMeta.getByText("Published")).toBeInTheDocument();
-    expect(timestampMeta.getByText("Fetched")).toBeInTheDocument();
-    expect(timestampMeta.getAllByText("Yesterday")).toHaveLength(2);
+    expect(detailPane.getByText("Sample feed")).toBeInTheDocument();
+    expect(detailPane.getByText("Yesterday")).toBeInTheDocument();
   });
 
   it("shows only PDF attachments in feed item details", async () => {
@@ -84,15 +83,14 @@ describe("Inbox screen workflows", () => {
 
     const detailPane = within(await screen.findByLabelText("Feed item details"));
 
-    expect(detailPane.getByText("Attachments")).toBeInTheDocument();
-    expect(detailPane.getByRole("link", { name: "report.pdf" })).toHaveAttribute(
-      "href",
-      "https://example.test/report.pdf",
-    );
-    expect(detailPane.queryByRole("link", { name: "sheet.xlsx" })).not.toBeInTheDocument();
-    expect(detailPane.queryByRole("link", { name: "Regulamin" })).not.toBeInTheDocument();
-    expect(detailPane.queryByRole("link", { name: "Polityka prywatności" })).not.toBeInTheDocument();
-    expect(detailPane.queryByRole("link", { name: "Polityka Cookies" })).not.toBeInTheDocument();
+    // Report kind (F1 S4): the document list keeps the same PDF-only,
+    // chrome-excluded filter, now rendered as FeedDetailReport rows.
+    expect(detailPane.getByText("report")).toBeInTheDocument();
+    expect(detailPane.getByText("report.pdf")).toBeInTheDocument();
+    expect(detailPane.queryByText("sheet.xlsx")).not.toBeInTheDocument();
+    expect(detailPane.queryByText("Regulamin")).not.toBeInTheDocument();
+    expect(detailPane.queryByText("Polityka prywatności")).not.toBeInTheDocument();
+    expect(detailPane.queryByText("Polityka Cookies")).not.toBeInTheDocument();
   });
 
   // ADR 0084 decision 5: the detail rail must render no AI-analysis surface at
@@ -130,9 +128,13 @@ describe("Inbox screen workflows", () => {
     renderApp();
 
     await screen.findByLabelText("Feed item details");
-    await user.click(screen.getByRole("button", { name: "Open company" }));
+    // F1 S4: the default selection is report-kind, whose primary action
+    // ("Read the report") reuses the same company-workspace navigation the
+    // old generic "Open company" button drove (no per-item reportDocumentId
+    // reaches Inbox yet, so this is where the real KPI-reading flow lives).
+    await user.click(screen.getByRole("button", { name: "Read the report" }));
 
-    // "Open company" lands the curated cockpit dashboard scoped to the company.
+    // Lands the curated cockpit dashboard scoped to the company.
     expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
   });
 
@@ -218,7 +220,10 @@ describe("Inbox screen workflows", () => {
     expect(
       screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "https://example.test/sample/pkn" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute(
+      "href",
+      "https://example.test/sample/pkn",
+    );
   });
 
   it("moves through inbox feed items with arrow keys", async () => {

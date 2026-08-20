@@ -708,6 +708,179 @@ summary.feed-body-heading::before {
   }
 }
 
+/* --------------------------------------------------------------------------- */
+/* F1 S4 — per-kind detail body + company-context block (ADR 0104/0106)         */
+/* --------------------------------------------------------------------------- */
+
+.feed-detail-kind-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.feed-detail-kind-source {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-detail-kind-time {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.feed-detail-excerpt {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-base);
+  line-height: 1.5;
+}
+
+.feed-filing-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.feed-report-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.feed-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed-doc-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-raised) 68%, transparent);
+}
+
+.feed-doc-row-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-doc-row-file {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-doc-preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  text-align: center;
+}
+
+.detail-context-divider {
+  height: 1px;
+  margin: var(--space-2) 0;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.feed-context-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.feed-context-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.feed-context-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.feed-context-block-label {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.feed-context-facts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.feed-context-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.feed-context-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed-context-event-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-sm);
+}
+
+.feed-context-event-date {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.feed-context-notebook-latest,
+.feed-context-claims-counts {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
 /* short (<480h): reduce the visible filters — reuse the FilterToolbar S-tier
    disclosure hook (ui.css) so the secondary selects fold behind "Filters" while
    the search field and status control stay visible. Scoped to the Inbox toolbar

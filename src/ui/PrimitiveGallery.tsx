@@ -18,6 +18,7 @@ import { Hint } from "./Hint";
 import { InfoGrid } from "./InfoGrid";
 import { InlineConfirm } from "./InlineConfirm";
 import { ListRow } from "./ListRow";
+import { ProvenanceFigure } from "./ProvenanceFigure";
 import { Panel, PanelHeader } from "./Panel";
 import { SearchField } from "./SearchField";
 import { SectionHeader } from "./SectionHeader";
@@ -203,6 +204,11 @@ export function PrimitiveGallery() {
         <DenseRow interactive selected>
           <span>Selectable dense row</span>
         </DenseRow>
+        <ProvenanceFigure
+          label="Zysk na akcję"
+          value="3,49 zł"
+          sourceTicket="ESPI · PSr 2026 · dziś"
+        />
       </section>
 
       <section aria-labelledby="g-charts">
