@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.72.1 - 2026-08-20
+
+
+### Features
+
+- **ui**: F0.5 token repaint — bundled fonts, flat bg, full visual-baseline sweep (#412) (#425)
+
 ## v0.72.0 - 2026-08-20
 
 
