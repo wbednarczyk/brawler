@@ -22,12 +22,15 @@ try {
 }
 
 const woff2 = files.filter((f) => f.endsWith(".woff2"));
-const missing = EXPECTED.filter((prefix) => !woff2.some((f) => f.startsWith(prefix)));
-const unexpected = woff2.filter((f) => !EXPECTED.some((prefix) => f.startsWith(prefix)));
+// "latin" is a prefix of "latin-ext" — anchor each prefix to its hash suffix
+// so a subset matches exactly one expected name, one-to-one.
+const matchesPrefix = (file, prefix) => new RegExp(`^${prefix}-[^.]*\\.woff2$`).test(file);
+const missing = EXPECTED.filter((prefix) => woff2.filter((f) => matchesPrefix(f, prefix)).length !== 1);
+const unexpected = woff2.filter((f) => !EXPECTED.some((prefix) => matchesPrefix(f, prefix)));
 
-if (missing.length > 0 || unexpected.length > 0) {
+if (missing.length > 0 || unexpected.length > 0 || woff2.length !== EXPECTED.length) {
   console.error(
-    `font-assets: FAIL — missing subsets: [${missing.join(", ")}]; unexpected font files: [${unexpected.join(", ")}]; present: [${woff2.join(", ")}]`,
+    `font-assets: FAIL — subsets without exactly one match: [${missing.join(", ")}]; unexpected font files: [${unexpected.join(", ")}]; present ${woff2.length}/${EXPECTED.length}: [${woff2.join(", ")}]`,
   );
   process.exit(1);
 }

@@ -43,6 +43,26 @@ test("bundled variable fonts load Polish glyphs at authored weights", async ({ p
     return out;
   }, MATRIX);
 
+  // Pure latin-ext probe (sol diff finding 4): every glyph here is U+0100–017F,
+  // so the load can ONLY be satisfied by the latin-ext face — a bundle that
+  // drops it cannot pass via the latin subset.
+  const latinExt = await page.evaluate(async (families) => {
+    const out: { family: string; usedFaces: number; allLoaded: boolean }[] = [];
+    for (const family of families) {
+      const used = await document.fonts.load(`400 13px "${family}"`, "żźćęąśłń");
+      out.push({
+        family,
+        usedFaces: used.length,
+        allLoaded: used.length > 0 && used.every((f) => f.status === "loaded"),
+      });
+    }
+    return out;
+  }, MATRIX.map((m) => m.family));
+  for (const r of latinExt) {
+    expect.soft(r.usedFaces, `${r.family}: latin-ext glyphs map to a face`).toBeGreaterThan(0);
+    expect.soft(r.allLoaded, `${r.family}: the latin-ext face loads`).toBe(true);
+  }
+
   for (const r of results) {
     const label = `${r.family} @ ${r.weight}`;
     expect.soft(r.usedFaces, `${label}: PL text maps to at least one @font-face`).toBeGreaterThan(0);

@@ -24,8 +24,16 @@ import { join } from "node:path";
 import { allExpectedCells, cellFileName, diffSnapshots, resolveScreen, specSnapshotDir } from "./visual-update-core.mjs";
 
 const screen = process.env.SCREEN?.trim();
-const all = !!process.env.ALL?.trim();
+const allRaw = process.env.ALL?.trim();
 const reason = process.env.REASON?.trim();
+
+// ALL must be literally "1" — any other non-empty value (a typo like ALL=0)
+// must not trigger a full baseline rewrite.
+if (allRaw && allRaw !== "1") {
+  console.error(`visual-update: ALL must be exactly "1" (got ALL=${allRaw})`);
+  process.exit(1);
+}
+const all = allRaw === "1";
 
 if (!!screen === all || !reason) {
   console.error(

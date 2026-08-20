@@ -33,7 +33,7 @@ declare module "*/catalog.core.mjs" {
   }
   export const CATALOG: VisualCatalogEntry[];
   export function expectedCells(
-    screens?: string[],
+    screens: string[],
     state?: string,
     theme?: "dark" | "light",
   ): VisualExpectedCell[];

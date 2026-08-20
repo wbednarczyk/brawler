@@ -68,4 +68,11 @@ describe("visual-update-core", () => {
     expect(cleanDiff.changedSiblings).toEqual([]);
     expect(cleanDiff.missingTarget).toEqual([]);
   });
+
+  it("diffSnapshots reports a target cell the run failed to regenerate", () => {
+    const pre = { "/a.png": "hash-a" };
+    const post = { "/a.png": "hash-a" };
+    const diff = diffSnapshots(pre, post, ["/a.png", "/target-missing.png"]);
+    expect(diff.missingTarget).toEqual(["/target-missing.png"]);
+  });
 });

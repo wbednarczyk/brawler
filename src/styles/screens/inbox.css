@@ -30,10 +30,6 @@
   font-weight: 700;
 }
 
-.company-feed-row:not(.unread) .feed-meta {
-  color: color-mix(in srgb, var(--muted) 58%, var(--surface-raised));
-}
-
 .company-feed-row .feed-meta {
   display: flex;
   flex-wrap: wrap;
