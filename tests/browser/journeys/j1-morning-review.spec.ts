@@ -133,6 +133,46 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await j.assertBudget();
   });
 
+  // J1b (F1 S5, contract §1 FIRST RED): the Inbox leg of the morning review as
+  // its OWN budgeted journey — J1's floors (7/6/1/1) were already saturated by
+  // the Today↔workspace loop, so the new leg gets a new gate instead of a
+  // loosened old one (sol round-1 finding 3, variant B). A bare ESPI/EBI filing
+  // must get the typed per-kind detail (ADR 0104/0106), never the dead
+  // "Komunikat ESPI/EBI" summary literal a bare notice used to render (F1 S1).
+  test("J1b — inbox filing review fits its own budget", async ({ page }) => {
+    await primeMockScenario(page, { base: "rich", overlays: ["morning-review"] });
+
+    const j = journey(page, "J1b");
+    await openApp(page);
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await j.markScreen("Today");
+
+    await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Inbox" }));
+    await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
+    await j.markScreen("Inbox");
+
+    const filingRow = page.locator('[data-feed-item-id="feed_overlay_mr_filing"]');
+    await expect(filingRow).toBeVisible();
+    await j.click(filingRow);
+    const detail = page.locator(".detail-pane");
+    await expect(detail.getByText("ESPI notice")).toBeVisible();
+    await expect(page.getByText("Komunikat ESPI/EBI")).toHaveCount(0);
+    await expectNoPageOverflow(page);
+
+    // Act: mark it read (the ≤10s decision the experience contract names —
+    // "deal with it now or mark read and move on").
+    await j.click(detail.getByRole("button", { name: "Mark read" }));
+    await expect(detail.getByRole("button", { name: "Mark unread" })).toBeVisible();
+
+    // Return to Today, closing the loop.
+    await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await j.markScreen("Today");
+    await expectNoPageOverflow(page);
+
+    await j.assertBudget();
+  });
+
   // ADR 0081 Q9: hostile/adversarial content must render legibly and stay
   // navigable — a long mixed-script title/attachment URL is real content
   // shape (GPW ESPI communiqués are not English-only, ASCII-only, or short).

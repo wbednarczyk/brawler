@@ -83,6 +83,30 @@ describe("CompanyFeedSection (ADR 0057 dashboard panel)", () => {
     expect(within(detail).getByRole("link", { name: "Open source" })).toBeInTheDocument();
   });
 
+  it("shows the typed filing chip and parsed content, never the dead 'Komunikat ESPI/EBI' summary literal", () => {
+    const item = makeItem({
+      presentationKind: "filing",
+      summary: "Komunikat ESPI/EBI",
+      bodyText:
+        "Raport bieżący nr22/2026Data sporządzenia:2026-08-19Podstawa prawnaArt. 56 ust. 1 pkt 2" +
+        "Treść raportu:Rada Nadzorcza powołała nowego Członka Zarządu.",
+    });
+    render(
+      <CompanyFeedSection
+        {...baseProps}
+        feedItems={[item]}
+        selectedFeedItem={item}
+        toggleFeedItem={noop}
+        updateFeedItemState={noop}
+      />,
+    );
+
+    const detail = screen.getByLabelText("Company feed item details");
+    expect(within(detail).getByText("ESPI notice")).toBeInTheDocument();
+    expect(within(detail).getByText(/Rada Nadzorcza powołała/)).toBeInTheDocument();
+    expect(within(detail).queryByText("Komunikat ESPI/EBI")).not.toBeInTheDocument();
+  });
+
   it("shows the tracked-but-empty state when the company has no feed items", () => {
     render(
       <CompanyFeedSection

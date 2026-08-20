@@ -96,6 +96,28 @@ describe("ProvenanceFigure", () => {
     expect(screen.getByText("39,89 zł")).toBeInTheDocument();
     expect(document.querySelector(".ui-provenance-figure-ticket")).toBeNull();
   });
+
+  it("renders the ticket as plain text when no click handler is given — never a dead button", () => {
+    render(<ProvenanceFigure label="Zysk na akcję" value="3,49 zł" sourceTicket="ESPI · PSr 2026" />);
+    const ticket = screen.getByText("ESPI · PSr 2026");
+    expect(ticket.tagName).toBe("SPAN");
+  });
+
+  it("renders the ticket as a clickable action and fires the handler (ADR 0104 dec. 7)", () => {
+    const onSourceTicketClick = vi.fn();
+    render(
+      <ProvenanceFigure
+        label="Zysk na akcję"
+        value="3,49 zł"
+        sourceTicket="ESPI · PSr 2026"
+        onSourceTicketClick={onSourceTicketClick}
+      />,
+    );
+    const ticket = screen.getByRole("button", { name: "ESPI · PSr 2026" });
+    expect(ticket).toHaveClass("ui-provenance-figure-ticket");
+    fireEvent.click(ticket);
+    expect(onSourceTicketClick).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("DateField", () => {

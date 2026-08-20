@@ -8,6 +8,13 @@ import { localizedKpiLabelForKey } from "../../locale/kpiLabels";
 
 export type CompanyContextSectionProps = {
   companyId: string;
+  /**
+   * Navigates to the company's report-documents view — the provenance
+   * thread's landing point (ADR 0104 dec. 7). The host owns navigation
+   * (shared components don't); omit it where the host has none, and the
+   * ticket stays non-interactive rather than a dead button.
+   */
+  onOpenReportDocuments?: () => void;
 };
 
 // `CompanyContextFact` (ADR 0106 dec. 3) carries no `value_kind`/`unit` — the
@@ -37,7 +44,7 @@ function formatContextFactValue(fact: CompanyContextFact, locale: LocaleCode): s
 // `get_company_context` read). Loads on `companyId` change; degrades
 // gracefully on error (storyboard frames 3/5 — the base item detail above
 // always stays visible even when this block fails).
-export function CompanyContextSection({ companyId }: CompanyContextSectionProps) {
+export function CompanyContextSection({ companyId, onOpenReportDocuments }: CompanyContextSectionProps) {
   const { text } = useLocale();
   const { status, data, refetch } = useCommandQuery(
     ["companyContext", companyId],
@@ -60,17 +67,25 @@ export function CompanyContextSection({ companyId }: CompanyContextSectionProps)
           </Button>
         </div>
       ) : null}
-      {status === "success" ? <CompanyContextBody context={data} /> : null}
+      {status === "success" ? (
+        <CompanyContextBody context={data} onOpenReportDocuments={onOpenReportDocuments} />
+      ) : null}
     </section>
   );
 }
 
-function CompanyContextBody({ context }: { context: CompanyContext }) {
+function CompanyContextBody({
+  context,
+  onOpenReportDocuments,
+}: {
+  context: CompanyContext;
+  onOpenReportDocuments: (() => void) | undefined;
+}) {
   const { text, locale } = useLocale();
 
   return (
     <div className="feed-context-body">
-      <FactsBlock context={context} locale={locale} text={text} />
+      <FactsBlock context={context} locale={locale} text={text} onOpenReportDocuments={onOpenReportDocuments} />
       <EventsBlock context={context} locale={locale} text={text} />
       <NotebookBlock context={context} locale={locale} text={text} />
       <ClaimsBlock context={context} text={text} />
@@ -84,7 +99,12 @@ type BlockProps = {
   text: (value: string) => string;
 };
 
-function FactsBlock({ context, locale, text }: BlockProps) {
+function FactsBlock({
+  context,
+  locale,
+  text,
+  onOpenReportDocuments,
+}: BlockProps & { onOpenReportDocuments: (() => void) | undefined }) {
   const period = context.latestPeriodFacts;
   if (!period || period.facts.length === 0) {
     return (
@@ -109,6 +129,7 @@ function FactsBlock({ context, locale, text }: BlockProps) {
             label={localizedKpiLabelForKey(fact.metricKey, locale)}
             value={formatContextFactValue(fact, locale)}
             sourceTicket={`${period.periodLabel} · ${formatListTimestamp(fact.createdAt, locale)}`}
+            onSourceTicketClick={onOpenReportDocuments}
           />
         ))}
       </div>

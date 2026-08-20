@@ -68,7 +68,7 @@
   background: color-mix(in srgb, var(--surface) 84%, transparent);
 }
 
-.company-feed-detail h3 {
+.company-feed-detail h2 {
   margin: var(--space-1) 0 0;
   color: var(--text);
   font-size: var(--font-lg);

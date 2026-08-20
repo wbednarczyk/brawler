@@ -10,6 +10,13 @@ export type ProvenanceFigureProps = {
    * yet (the underline still marks provenance intent, just without a ticket).
    */
   sourceTicket?: ReactNode;
+  /**
+   * When provided, the ticket becomes the thread's landing action (ADR 0104
+   * dec. 7 — "a thread without navigation is a defect") and renders as a
+   * button instead of static text. Omit when the host has nowhere to send the
+   * click — the ticket then stays plain text, never a dead button.
+   */
+  onSourceTicketClick?: () => void;
   className?: string;
 };
 
@@ -17,12 +24,24 @@ export type ProvenanceFigureProps = {
 // a dotted underline in the official-provenance tone, ending in a small source
 // ticket. Only for figures the reader treats as a claim (facts with a document
 // behind them) — never decorate an auxiliary number with this.
-export function ProvenanceFigure({ label, value, sourceTicket, className }: ProvenanceFigureProps) {
+export function ProvenanceFigure({
+  label,
+  value,
+  sourceTicket,
+  onSourceTicketClick,
+  className,
+}: ProvenanceFigureProps) {
   return (
     <div className={["ui-provenance-figure", className].filter(Boolean).join(" ")}>
       <span className="ui-provenance-figure-label">{label}</span>
       <span className="ui-provenance-figure-value num-tabular">{value}</span>
-      {sourceTicket ? <span className="ui-provenance-figure-ticket">{sourceTicket}</span> : null}
+      {sourceTicket && onSourceTicketClick ? (
+        <button className="ui-provenance-figure-ticket" onClick={onSourceTicketClick} type="button">
+          {sourceTicket}
+        </button>
+      ) : sourceTicket ? (
+        <span className="ui-provenance-figure-ticket">{sourceTicket}</span>
+      ) : null}
     </div>
   );
 }

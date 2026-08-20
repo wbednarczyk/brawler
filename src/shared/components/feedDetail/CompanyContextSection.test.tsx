@@ -69,6 +69,26 @@ describe("CompanyContextSection", () => {
     expect(screen.getByText("No notebook entries for this company yet.")).toBeInTheDocument();
   });
 
+  it("navigates to the report-documents view when a fact's provenance ticket is clicked", async () => {
+    const user = userEvent.setup();
+    const onOpenReportDocuments = vi.fn();
+    getCompanyContextMock.mockResolvedValue(context());
+    render(<CompanyContextSection companyId="company_gpw_pzu" onOpenReportDocuments={onOpenReportDocuments} />);
+
+    const ticket = await screen.findByRole("button", { name: /H1 2026/ });
+    await user.click(ticket);
+
+    expect(onOpenReportDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the ticket as non-interactive text when the host has no navigation to give it", async () => {
+    getCompanyContextMock.mockResolvedValue(context());
+    render(<CompanyContextSection companyId="company_gpw_pzu" />);
+
+    await screen.findByText(/H1 2026 · /);
+    expect(screen.queryByRole("button", { name: /H1 2026/ })).not.toBeInTheDocument();
+  });
+
   it("shows an inline error with a Refresh action that retries", async () => {
     const user = userEvent.setup();
     getCompanyContextMock.mockRejectedValueOnce(new Error("boom"));

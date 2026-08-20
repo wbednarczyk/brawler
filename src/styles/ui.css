@@ -614,6 +614,23 @@
   color: var(--primary-strong);
 }
 
+/* The ticket doubles as the thread's landing action when the host has
+   somewhere to send it (ADR 0104 dec. 7) — a plain button reset, underline
+   affordance on hover/focus so it reads as a link, not chrome. */
+button.ui-provenance-figure-ticket {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.ui-provenance-figure-ticket:hover,
+button.ui-provenance-figure-ticket:focus-visible {
+  text-decoration: underline;
+}
+
 .ui-status-pill {
   display: inline-flex;
   align-items: center;

@@ -94,7 +94,13 @@ export function InboxDetailPane({
           {selectedFeedCompany ? (
             <>
               <div className="detail-context-divider" />
-              <CompanyContextSection companyId={selectedFeedCompany.id} />
+              <CompanyContextSection
+                companyId={selectedFeedCompany.id}
+                // Same navigation the report primary action already uses (S4)
+                // — the provenance thread lands on the company's dashboard,
+                // where the report-documents panel is part of the default set.
+                onOpenReportDocuments={() => openCompanyWorkspaceFromFeedItem(selectedFeedItem)}
+              />
             </>
           ) : null}
         </>
