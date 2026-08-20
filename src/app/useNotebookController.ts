@@ -91,7 +91,14 @@ function updateNotebookFormState(
   }));
 }
 
-function feedItemSummary(item: FeedItem) {
+// Shared root for every render site (Inbox, Cockpit, Company feed): a
+// "filing" is a bare official-report notice with no attachments, so its
+// stored summary is the dead "Komunikat ESPI/EBI" literal — suppress it here
+// once rather than forking a guard into each caller.
+export function feedItemSummary(item: FeedItem) {
+  if (item.presentationKind === "filing") {
+    return "";
+  }
   return item.summary.trim() || item.title;
 }
 

@@ -18,6 +18,7 @@ import type {
   DiagnosticEvent,
   DiagnosticSummary,
   FeedItem,
+  PresentationKind,
   LicenseStatus,
   LicenseStatusKind,
   LocalMetricsSnapshot,
@@ -194,6 +195,22 @@ export function makeRegistryEntry(
   };
 }
 
+// Mirrors the backend derivation (`PresentationKind::derive`, F1 S1): real
+// data only ever carries the three production `type` strings, so an unmapped
+// mock-only pseudo-type (e.g. legacy "News"/"Transcript" fixtures) falls back
+// to "media" rather than the backend's "filing" default — that keeps their
+// summaries visible instead of wrongly suppressed by the dead-literal guard.
+export function presentationKindFor(itemType: string, hasAttachments: boolean): PresentationKind {
+  switch (itemType) {
+    case "Red flag":
+      return "redFlag";
+    case "Official report":
+      return hasAttachments ? "report" : "filing";
+    default:
+      return "media";
+  }
+}
+
 export function makeFeedItem(spec: CompanySpec, index: number): FeedItem {
   const kinds = [
     {
@@ -216,10 +233,12 @@ export function makeFeedItem(spec: CompanySpec, index: number): FeedItem {
     },
   ];
   const kind = kinds[index % kinds.length];
+  const hasAttachments = index % 3 === 0;
   return {
     id: `feed_sample_${spec.key}_${index}`,
     company: qualifiedTicker(spec),
     type: kind.type,
+    presentationKind: presentationKindFor(kind.type, hasAttachments),
     source: kind.source,
     time: "Today 09:12",
     title: `${spec.name} sample ${kind.type.toLowerCase()} #${index}`,
@@ -232,16 +251,15 @@ export function makeFeedItem(spec: CompanySpec, index: number): FeedItem {
     attribution: kind.attribution,
     summary: `Sample ${kind.type.toLowerCase()} item validating feed filtering and detail rendering.`,
     bodyText: `Body text for ${spec.name} sample item ${index}.`,
-    attachments:
-      index % 3 === 0
-        ? [
-            {
-              id: `attach_${spec.key}_${index}`,
-              label: "Attachment",
-              url: `https://example.test/doc/${spec.key}.pdf`,
-            },
-          ]
-        : [],
+    attachments: hasAttachments
+      ? [
+          {
+            id: `attach_${spec.key}_${index}`,
+            label: "Attachment",
+            url: `https://example.test/doc/${spec.key}.pdf`,
+          },
+        ]
+      : [],
   };
 }
 

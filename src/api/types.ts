@@ -70,6 +70,7 @@ export type { DatabaseStatus } from "./generated/DatabaseStatus";
 
 export type { FeedItem } from "./generated/FeedItem";
 export type { FeedItemAttachment } from "./generated/FeedItemAttachment";
+export type { PresentationKind } from "./generated/PresentationKind";
 
 
 export type { DiagnosticScope } from "./generated/DiagnosticScope";

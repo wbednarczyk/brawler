@@ -1411,3 +1411,69 @@ fn misassociation_repair_deletes_only_foreign_rows_and_is_idempotent() {
         .expect("repair should re-run");
     assert_eq!(removed_again, 0, "a second run must be a no-op");
 }
+
+#[test]
+fn derives_presentation_kind_from_item_type_and_attachments() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: Some("PLOPTTC00011".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("tracked company should create");
+
+    {
+        let connection = state.checkout().expect("database connection");
+        connection
+            .execute(
+                "INSERT INTO feed_items (
+                    id, type, source_adapter_id, source_name, source_url, title,
+                    summary, fetched_at, dedupe_key, attribution, display_company
+                ) VALUES
+                    ('feed_media', 'Public media', ?1, 'Bankier', 'https://example.com/media',
+                        'Media title', 'Media summary', '2026-05-01T10:00:00Z', 'dk-media',
+                        'Bankier', 'GPW:CDR'),
+                    ('feed_red_flag', 'Red flag', ?1, 'Brawler', 'https://example.com/red-flag',
+                        'Red flag title', 'Red flag summary', '2026-05-01T10:00:00Z', 'dk-red-flag',
+                        'Brawler', 'GPW:CDR'),
+                    ('feed_report', 'Official report', ?1, 'GPW', 'https://example.com/report',
+                        'Report title', 'Report summary', '2026-05-01T10:00:00Z', 'dk-report',
+                        'GPW', 'GPW:CDR'),
+                    ('feed_filing', 'Official report', ?1, 'GPW', 'https://example.com/filing',
+                        'Filing title', 'Komunikat ESPI/EBI', '2026-05-01T10:00:00Z', 'dk-filing',
+                        'GPW', 'GPW:CDR')
+                ",
+                [ADAPTER_ID],
+            )
+            .expect("seed feed items should insert");
+        connection
+            .execute(
+                "INSERT INTO feed_item_attachments (id, feed_item_id, label, url, position)
+                 VALUES ('att_report', 'feed_report', 'Attachment', 'https://example.com/att.pdf', 0)",
+                [],
+            )
+            .expect("seed attachment should insert");
+    }
+
+    let items = state.list_feed_items().expect("feed items should list");
+    let kind_of = |id: &str| {
+        items
+            .iter()
+            .find(|item| item.id == id)
+            .unwrap_or_else(|| panic!("seeded item {id} should be listed"))
+            .presentation_kind
+    };
+
+    assert_eq!(kind_of("feed_media"), PresentationKind::Media);
+    assert_eq!(kind_of("feed_red_flag"), PresentationKind::RedFlag);
+    assert_eq!(kind_of("feed_report"), PresentationKind::Report);
+    // No attachments — even though the summary carries the dead literal
+    // verbatim, presentation_kind is derived purely from type + attachment
+    // presence, so this is still a Filing.
+    assert_eq!(kind_of("feed_filing"), PresentationKind::Filing);
+}

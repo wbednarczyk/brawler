@@ -19,12 +19,11 @@ import { CompanyCoveragePanel } from "../../shared/components/CompanyCoveragePan
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
 import { FundamentalsPanel } from "../Companies/FundamentalsPanel";
-import { CompanyFeedSection } from "../Companies/CompanyFeedSection";
+import { CockpitCompanyFeedPanel } from "./CockpitCompanyFeedPanel";
 import { CompanyNotebookSection } from "../Companies/CompanyNotebookSection";
 import { NotebookDateField } from "../../shared/components/NotebookDateField";
 import { NotebookQuarterField } from "../../shared/components/NotebookQuarterField";
 import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
-import { formatDetailTimestamp as formatTimestamp } from "../../shared/format/datetime";
 import { WatchlistsScreen } from "../Watchlists/WatchlistsScreen";
 import { ResearchScreen } from "../Research/ResearchScreen";
 import { useResearchViewModel } from "../../app/state/screenViewModels";
@@ -39,7 +38,6 @@ import {
   type DockPanelSpec,
 } from "./DockLayout";
 import { useCockpitFundamentals } from "./useCockpitFundamentals";
-import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
 import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
 import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
 import { useCockpitShortPositions } from "./useCockpitShortPositions";
@@ -1335,31 +1333,6 @@ function CockpitFundamentalsPanel({
       {...props}
       qualifiedTicker={qualifiedTicker}
       onOpenRecommendations={onOpenRecommendations}
-    />
-  );
-}
-
-// Company-scoped feed panel for the curated dashboard (ADR 0057). It reuses the
-// real `CompanyFeedSection` with cockpit-owned state (`useCockpitCompanyFeed`);
-// the cross-screen actions (Open in Inbox / Note) are intentionally omitted — the
-// dashboard panel is self-contained and those stay reachable from the Inbox.
-function CockpitCompanyFeedPanel({ company, feedItems }: { company: Company; feedItems: FeedItem[] }) {
-  const feed = useCockpitCompanyFeed(company, feedItems);
-  return (
-    <CompanyFeedSection
-      company={company}
-      feedItems={feed.items}
-      selectedFeedItem={feed.selectedFeedItem}
-      toggleFeedItem={feed.toggleFeedItem}
-      selectFeedItemFromKeyboard={(event, item) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          feed.toggleFeedItem(item);
-        }
-      }}
-      updateFeedItemState={feed.updateFeedItemState}
-      formatTimestamp={formatTimestamp}
-      feedItemSummary={(item) => item.summary.trim() || item.title}
     />
   );
 }

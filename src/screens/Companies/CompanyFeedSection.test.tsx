@@ -11,6 +11,7 @@ function makeItem(overrides: Partial<FeedItem>): FeedItem {
     id: "f1",
     company: "GPW:CDR",
     type: "report",
+    presentationKind: "report",
     source: "GPW ESPI",
     time: "2026-06-01T00:00:00Z",
     title: "Quarterly report",
