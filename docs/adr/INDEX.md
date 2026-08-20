@@ -105,3 +105,4 @@
 - [0103](0103-file-size-ratchet-fitness-function.md) — File-Size Ratchet — Architectural Fitness Function For Oversized Modules — Accepted (2026-08-19, owner plan approval, epic #402)
 - [0104](0104-frontend-v2-design-language.md) — Frontend V2 Design Language — Accepted (2026-08-19, owner approval of styleguide round 1; epic #410/F0 #411)
 - [0105](0105-headless-primitives-posture-radix.md) — Headless Primitives Posture — Radix, Narrowly, Inside `src/ui` Only — Accepted (2026-08-19, owner verdict after the plain-language review
+- [0106](0106-screen-data-layer-posture.md) — Screen Data Layer — Thin Self-Fetch Hooks + Composed Read Models, No Query-Cache Library — Accepted (2026-08-20, owner verdict on the F1-pre study #415; gates F1 implement
