@@ -35,6 +35,12 @@ pub(crate) fn clamp_mcp_port(value: i64) -> i64 {
     value.clamp(MCP_PORT_MIN, MCP_PORT_MAX)
 }
 
+/// The Dziś v2 visit anchor (F2 plan decision 4): `get_today_view` reads it
+/// (this slice), `mark_today_visited` (S2) writes it with the backend's own
+/// clock. No seed-row migration — an absent row means "never visited",
+/// distinct from any real timestamp.
+pub(crate) const TODAY_LAST_VISIT_AT_KEY: &str = "todayLastVisitAt";
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -638,6 +644,20 @@ fn setting_string_or(
     }
 }
 
+/// Read a string setting, `None` when the row is absent — for keys with no
+/// meaningful default (unlike [`setting_string_or`]'s fallback value). Used by
+/// [`SettingsStore::today_last_visit_at`] (F2 S1/S2: a first-ever visit has no
+/// anchor at all, not an empty-string one).
+fn setting_string_opt(connection: &Connection, key: &'static str) -> StorageResult<Option<String>> {
+    match connection.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        row.get::<_, String>(0)
+    }) {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(StorageError::from(error)),
+    }
+}
+
 /// The persisted app locale, normalized to a supported code (`pl` | `en`), for
 /// resolving bilingual template seeds (ADR 0076 Decision 8). An absent or
 /// unrecognized row falls back to the default `pl`.
@@ -820,6 +840,14 @@ impl SettingsStore {
         let connection = self.db.checkout()?;
 
         setting_bool_or(&connection, "kpi_acquisition_enabled", false)
+    }
+
+    /// The Dziś v2 visit anchor (F2 plan decision 4). `None` on a first-ever
+    /// visit (tolerant default — no seed-row migration).
+    pub fn today_last_visit_at(&self) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+
+        setting_string_opt(&connection, TODAY_LAST_VISIT_AT_KEY)
     }
 
     pub fn set_developer_mode_enabled(&self, enabled: bool) -> StorageResult<UserSettings> {

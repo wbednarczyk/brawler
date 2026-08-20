@@ -1,6 +1,6 @@
 # ADR 0068: Attention Routing — Toasts, Alert Rules, Morning Briefing
 
-Status: Accepted — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the briefing's optional AI narrative is removed (`v0.59.0`); the deterministic composed list (`gather_sources` + `compose_briefing`) becomes the only briefing. **Amended 2026-08-06 by [ADR 0097](0097-toasts-are-action-feedback-only.md)**: attention events no longer raise toasts (persistent or transient) — toasts are action feedback only; ambient awareness moved to the Today sidebar badge. Alert rules and attention events are unchanged.
+Status: Accepted — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the briefing's optional AI narrative is removed (`v0.59.0`); the deterministic composed list (`gather_sources` + `compose_briefing`) becomes the only briefing. **Amended 2026-08-06 by [ADR 0097](0097-toasts-are-action-feedback-only.md)**: attention events no longer raise toasts (persistent or transient) — toasts are action feedback only; ambient awareness moved to the Today sidebar badge. Alert rules and attention events are unchanged. **Amended 2026-08-20 (F2 Dziś v2, epic #410, owner-approved)**: the briefing is no longer surfaced on the Today screen — see the 2026-08-20 amendment below.
 
 The app produces high-signal events (typed disclosure signals, autopilot runs, upcoming due dates) but has no attention layer: no toast/snackbar system exists at all, async feedback surfaces inconsistently, and nothing tells the user "this deserves a look" without them scanning feeds. This ADR adds the in-app attention boundary and its first synthesis consumer, the morning briefing.
 
@@ -34,3 +34,19 @@ Owner-reported live defect: a report-history backfill re-ingesting years of fili
 3. **`trigger_type` is now stamped on every event** (W4), not left NULL for rule-backed rows and derived only via `COALESCE` at read — so a direct read / grouping that does not join `alert_rules` sees the real trigger. The read model keeps the `COALESCE` for defense in depth.
 
 Repairs (forward, idempotent, self-healing migrations): `0096_dismiss_stale_attention_events.sql` dismisses the pre-existing unseen backlog (`fired_at` > 30 days old) so the toast wall clears on update without touching fresh events; `0097_backfill_attention_trigger_type.sql` backfills legacy NULL `trigger_type` from the owning rule. The persistent-toast surface is also capped (3 visible + a "+N więcej" summary) and repositioned clear of the left sidebar nav (W3).
+
+## Amendment 2026-08-20 (F2 Dziś v2 — the delta header replaces the Today briefing surface)
+
+Owner-approved with the F2 experience contract (epic #410, issue #422). Dziś v2 rebuilds
+Today as a per-day decision queue anchored to the user's last visit; its delta header ("what
+arrived since your last visit") takes over the job decision 4 gave the Today briefing card.
+
+1. **The briefing is no longer surfaced on Today** — `MorningBriefingStrip` and its Today
+   card are removed. Decision 4's composition pipeline (`gather_sources` +
+   `compose_briefing`), the backend commands, and the MCP surface
+   (`generate_morning_briefing` / `get_latest_morning_briefing`) are unchanged — BYOA agents
+   remain the briefing's consumers (ADR 0084 posture).
+2. **J1's entry point is the Dziś v2 delta header** (supersedes the "the briefing is its
+   entry point" journey note in Consequences); the J1 journey spec asserts the delta header
+   instead of the strip.
+

@@ -39,6 +39,9 @@ import type { RedFlagsView } from "../../api/redFlags";
 import type { AnalystRecommendationsView } from "../../api/analystRecommendations";
 import type { CommandError } from "../../api/generated/CommandError";
 import type { UncrosswalkedConceptRow } from "../../api/generated/UncrosswalkedConceptRow";
+import type { TodayView } from "../../api/generated/TodayView";
+import type { TodayItem } from "../../api/generated/TodayItem";
+import type { TodayClaim } from "../../api/generated/TodayClaim";
 
 export type {
   MockRuntimeControls,
@@ -1022,6 +1025,204 @@ function buildHandlers(): Record<string, Handler> {
           due: d.claimsToVerify.due.filter((c) => c.claim.companyId === companyId).length,
           overdue: d.claimsToVerify.overdue.filter((c) => c.claim.companyId === companyId).length,
         },
+      };
+    },
+
+    // --- Dziś v2 composed read model (F2 S1, ADR 0106 dec. 3) ---
+    // Flat items[] from four independent sections + a bulk claims-to-verify
+    // scan. Mirrors `commands::today::compute_today_view`. Mock feed items
+    // carry only a ticker string (no `feed_item_companies` join table), so
+    // multi-company media-cluster membership is NOT replicated here — that
+    // behavior is pinned by the Rust unit tests in `commands/today.rs`; the
+    // mock stays faithful for the single-company case the corpus exercises.
+    get_today_view: (d, a): TodayView => {
+      const dayLimitRaw = unwrap(a).dayLimit;
+      const dayLimit = Math.min(
+        7,
+        Math.max(1, typeof dayLimitRaw === "number" ? dayLimitRaw : 1),
+      );
+      const today = SAMPLE_NOW.slice(0, 10);
+      const since = dateMinusDays(today, dayLimit);
+      const horizon = (() => {
+        const date = new Date(`${today}T00:00:00Z`);
+        date.setUTCDate(date.getUTCDate() + dayLimit);
+        return date.toISOString().slice(0, 10);
+      })();
+
+      const tickerToCompanyId = new Map(d.companies.map((c) => [c.qualifiedTicker, c.id]));
+      const sinceStamp = `${since}T00:00:00Z`;
+      const inWindow = d.feedItems.filter(
+        (fi) => fi.publishedAt >= sinceStamp && tickerToCompanyId.has(fi.company),
+      );
+
+      const items: TodayItem[] = [];
+
+      for (const fi of inWindow) {
+        if (fi.type !== "Official report") continue;
+        items.push({
+          kind: "filing",
+          feedItemId: fi.id,
+          companyId: tickerToCompanyId.get(fi.company) ?? "",
+          qualifiedTicker: fi.company,
+          title: fi.title,
+          publishedAt: fi.publishedAt,
+          read: !fi.unread,
+          presentationKind: fi.presentationKind,
+        });
+      }
+
+      // Media clusters per (company, UTC day) — rows arrive in `feedItems`
+      // insertion order, so no extra sort is needed for "most recent 3".
+      const clusters = new Map<
+        string,
+        {
+          companyId: string;
+          qualifiedTicker: string;
+          day: string;
+          earliest: string;
+          latest: string;
+          topTitles: string[];
+          feedItemIds: string[];
+        }
+      >();
+      for (const fi of inWindow) {
+        if (fi.type !== "Public media") continue;
+        const companyId = tickerToCompanyId.get(fi.company) ?? "";
+        const day = fi.publishedAt.slice(0, 10);
+        const key = `${companyId}|${day}`;
+        const acc = clusters.get(key) ?? {
+          companyId,
+          qualifiedTicker: fi.company,
+          day,
+          earliest: fi.publishedAt,
+          latest: fi.publishedAt,
+          topTitles: [],
+          feedItemIds: [],
+        };
+        if (fi.publishedAt < acc.earliest) acc.earliest = fi.publishedAt;
+        if (fi.publishedAt > acc.latest) acc.latest = fi.publishedAt;
+        if (acc.topTitles.length < 3) acc.topTitles.push(fi.title);
+        acc.feedItemIds.push(fi.id);
+        clusters.set(key, acc);
+      }
+      for (const acc of clusters.values()) {
+        items.push({
+          kind: "mediaCluster",
+          companyId: acc.companyId,
+          qualifiedTicker: acc.qualifiedTicker,
+          day: acc.day,
+          count: acc.feedItemIds.length,
+          earliestPublishedAt: acc.earliest,
+          latestPublishedAt: acc.latest,
+          topTitles: acc.topTitles,
+          feedItemIds: acc.feedItemIds,
+        });
+      }
+
+      // Non-arrival: `periodic_report` events past their date with no
+      // witnessing report and no `report_delay` flag yet (shares the
+      // deterministic flag-id shape `raise_flag`/`red_flags.rs` writes).
+      for (const event of d.events) {
+        if (event.eventType !== "periodic_report" || event.eventDate > today) continue;
+        const witnessed = d.feedItems.some(
+          (fi) =>
+            fi.type === "Official report" &&
+            fi.company === event.company &&
+            fi.publishedAt >= event.eventDate,
+        );
+        if (witnessed) continue;
+        const flagId = `rf:report_delay:${event.companyId}:${event.id}`;
+        const flagged = d.redFlagsByCompany?.[event.companyId]?.active.some(
+          (flag) => flag.flagId === flagId,
+        );
+        if (flagged) continue;
+        items.push({
+          kind: "nonArrival",
+          eventKey: event.id,
+          companyId: event.companyId,
+          qualifiedTicker: event.company,
+          eventDate: event.eventDate,
+          title: event.title,
+        });
+      }
+
+      // Calendar: company_events within [today, today + dayLimit].
+      for (const event of d.events) {
+        if (event.eventDate < today || event.eventDate > horizon) continue;
+        items.push({
+          kind: "calendar",
+          eventKey: event.id,
+          eventDate: event.eventDate,
+          eventType: event.eventType,
+          title: event.title,
+          companyId: event.companyId,
+          qualifiedTicker: event.company,
+        });
+      }
+
+      // Autopilot: unread runs within the window.
+      for (const run of d.autopilotRuns) {
+        if (run.notificationState !== "unread" || run.createdAt < since) continue;
+        items.push({ kind: "autopilotRun", run });
+      }
+
+      const todaySortKey = (item: TodayItem): string => {
+        switch (item.kind) {
+          case "filing":
+            return item.publishedAt;
+          case "mediaCluster":
+            return item.latestPublishedAt;
+          case "nonArrival":
+          case "calendar":
+            return item.eventDate;
+          case "autopilotRun":
+            return item.run.createdAt;
+        }
+      };
+      items.sort((a, b) => todaySortKey(b).localeCompare(todaySortKey(a)));
+
+      // Claims: the mock already stores the bulk bucket flat (no per-company
+      // fan-out needed, unlike the Rust store's per-company loop).
+      const tickerOf = (companyId: string) =>
+        d.companies.find((company) => company.id === companyId)?.qualifiedTicker ?? "";
+      const toVerify: TodayClaim[] = [
+        ...d.claimsToVerify.overdue.map(
+          (c): TodayClaim => ({
+            claim: c.claim,
+            qualifiedTicker: tickerOf(c.claim.companyId),
+            bucket: "overdue",
+          }),
+        ),
+        ...d.claimsToVerify.due.map(
+          (c): TodayClaim => ({
+            claim: c.claim,
+            qualifiedTicker: tickerOf(c.claim.companyId),
+            bucket: "due",
+          }),
+        ),
+      ];
+
+      // No mock KV representation for `todayLastVisitAt` yet (S2 adds the
+      // writer) — an absent anchor is the tolerant default both sides share,
+      // so every in-window item counts toward the delta (matches Rust).
+      let reportCount = 0;
+      let filingCount = 0;
+      let mediaCount = 0;
+      for (const fi of inWindow) {
+        if (fi.type === "Official report") {
+          if (fi.presentationKind === "report") reportCount += 1;
+          else filingCount += 1;
+        } else if (fi.type === "Public media") {
+          mediaCount += 1;
+        }
+      }
+
+      return {
+        items,
+        toVerify,
+        deltaSummary: { reportCount, filingCount, mediaCount },
+        previousVisitAt: null,
+        sectionErrors: {},
       };
     },
 

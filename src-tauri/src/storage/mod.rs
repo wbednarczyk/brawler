@@ -89,6 +89,7 @@ mod settings;
 mod short_positions;
 mod signals;
 mod sources;
+mod today;
 mod transcripts;
 mod types;
 mod valuation_runs;
@@ -256,6 +257,7 @@ pub use signals::ClassifyFilingOutcome;
 pub use signals::SignalNeedingDate;
 pub use signals::SignalStore;
 pub use sources::{BackfillMarketStatus, SourcesStore, TrackedIssuerIndex};
+pub use today::{NonArrivalCandidate, TodayFeedRow, TodayStore};
 pub use transcripts::TranscriptStore;
 pub use transcripts::{
     CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
@@ -536,6 +538,12 @@ impl AppState {
     /// Feed operations as a focused domain store (Architecture v2 / ADR 0050).
     pub fn feed(&self) -> feed::FeedStore {
         feed::FeedStore::new(self.db.clone())
+    }
+
+    /// Dziś v2 composed-read-model storage (F2 S1, ADR 0106 dec. 3): the new
+    /// queries `get_today_view` needs that no other domain store exposes.
+    pub fn today(&self) -> today::TodayStore {
+        today::TodayStore::new(self.db.clone())
     }
 
     /// Durable job-queue operations as a focused domain store (Architecture v2 /
