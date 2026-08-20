@@ -69,20 +69,29 @@ test("bundled variable fonts load Polish glyphs at authored weights", async ({ p
   // canvas raster of PL text in our face must DIFFER from the unknown-family
   // raster, else the glyphs did not come from our font.
   const rasters = await page.evaluate((families) => {
-    const raster = (family: string) => {
+    const glyphs = [..."żźćęąśłń"];
+    const raster = (family: string, glyph: string) => {
       const canvas = document.createElement("canvas");
-      canvas.width = 96;
+      canvas.width = 28;
       canvas.height = 28;
       const ctx = canvas.getContext("2d")!;
       ctx.font = `13px ${family}`;
-      ctx.fillText("żźćęąśłń", 2, 20);
+      ctx.fillText(glyph, 2, 20);
       return canvas.toDataURL();
     };
-    const fallback = raster('"__brawler-no-such-font__"');
-    return families.map((family) => ({ family, differs: raster(`"${family}"`) !== fallback }));
+    return families.map((family) => ({
+      family,
+      // Per-glyph, not one combined string: a combined raster differs when a
+      // single glyph is present while the other seven silently fall back.
+      missingGlyphs: glyphs.filter(
+        (g) => raster(`"${family}"`, g) === raster('"__brawler-no-such-font__"', g),
+      ),
+    }));
   }, MATRIX.map((m) => m.family));
   for (const r of rasters) {
-    expect.soft(r.differs, `${r.family}: PL glyphs render from the bundled face, not fallback`).toBe(true);
+    expect
+      .soft(r.missingGlyphs, `${r.family}: every PL glyph renders from the bundled face`)
+      .toEqual([]);
   }
 
   for (const r of results) {
