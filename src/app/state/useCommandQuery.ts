@@ -1,0 +1,55 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+export type CommandQueryState<T> =
+  | { status: "loading"; data: null; error: null }
+  | { status: "success"; data: T; error: null }
+  | { status: "error"; data: null; error: unknown };
+
+const LOADING = { status: "loading", data: null, error: null } as const;
+
+/**
+ * Thin shared self-fetch hook (ADR 0106 dec. 2) formalizing the pattern
+ * already hand-rolled by `FundamentalsPanel`/`ReportDiffPanel`/etc: fetch on
+ * mount and on `key` change, discard any response that resolves after a
+ * newer request started (the `useAttentionController` requestSeqRef idiom),
+ * expose `refetch()`. No cache between mounts, no timers, no listeners
+ * (ADR 0106 dec. 4 — invalidation is key-change + explicit refetch only).
+ *
+ * `key` is compared by JSON.stringify — pass primitives/plain-serializable
+ * values (e.g. `[companyId]`), not functions/class instances/undefined-y
+ * shapes that don't round-trip through JSON.
+ */
+export function useCommandQuery<T>(
+  key: readonly unknown[],
+  fetcher: () => Promise<T>,
+): CommandQueryState<T> & { refetch: () => void } {
+  const [state, setState] = useState<CommandQueryState<T>>(LOADING);
+  const requestSeqRef = useRef(0);
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+  const keyJson = JSON.stringify(key);
+
+  const run = useCallback(() => {
+    const requestSeq = (requestSeqRef.current += 1);
+    setState(LOADING);
+    fetcherRef
+      .current()
+      .then((data) => {
+        if (requestSeqRef.current === requestSeq) {
+          setState({ status: "success", data, error: null });
+        }
+      })
+      .catch((error: unknown) => {
+        if (requestSeqRef.current === requestSeq) {
+          setState({ status: "error", data: null, error });
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on keyJson (the documented comparison), not `run`/`key` identity
+  }, [keyJson]);
+
+  return { ...state, refetch: run };
+}
