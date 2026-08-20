@@ -186,6 +186,7 @@ Rules:
 - `display_company` is a UI read-model helper for early feed rows and unmatched/source-derived ticker labels. Canonical company relationships still live in `feed_item_companies`.
 - Read and saved state are stored in SQLite and must survive app restart.
 - Attachments are stored as ordered source links with `label` and `url`, scoped to a feed item.
+- The `FeedItem` read model additionally carries `presentation_kind` (`media` | `filing` | `report` | `redFlag`), derived at read time from `type` + attachment presence — not a stored column, no migration. `Official report` with attachments → `report`; without → `filing` (an unattached filing notice, so its summary is suppressed at every render site rather than showing the dead "Komunikat ESPI/EBI" placeholder). `Public media` → `media`, `Red flag` → `redFlag`.
 - Retention policy must be designed before broad ingestion. Feed item storage should support cleanup without deleting saved items, items linked to notes, items with AI analysis, or items otherwise explicitly preserved by the user.
 
 ### Notebook Entries

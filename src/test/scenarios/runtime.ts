@@ -32,6 +32,7 @@ import {
 } from "./controlledAsync";
 import type { ResearchEvidenceInput } from "../../api/researchTypes";
 import type { OwnershipOverview } from "../../api/ownership";
+import type { CompanyContext } from "../../api/generated/CompanyContext";
 import type { CompanyHealth } from "../../api/generated/CompanyHealth";
 import type { InsiderOverview } from "../../api/insider";
 import type { RedFlagsView } from "../../api/redFlags";
@@ -941,6 +942,87 @@ function buildHandlers(): Record<string, Handler> {
         d.companyHealthReports?.find((h) => h.companyId === companyId) ??
         emptyCompanyHealth(companyId)
       );
+    },
+
+    // --- Company context (F1, ADR 0106 dec. 3) ---
+    // The Inbox detail pane's composed company-context block: latest-period
+    // facts (domain-date order, never created_at) + upcoming events + notebook
+    // coverage + claims-due counts. Mirrors compute_company_context.
+    get_company_context: (d, a): CompanyContext => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+
+      const periods = d.financialPeriods.filter((p) => p.companyId === companyId);
+      const domainKey = (p: (typeof periods)[number]) =>
+        p.periodEndDate ?? `${p.fiscalYear}-12-31`;
+      const latestPeriod = periods.reduce<(typeof periods)[number] | null>(
+        (best, p) =>
+          !best ||
+          domainKey(p) > domainKey(best) ||
+          (domainKey(p) === domainKey(best) && p.fiscalYear > best.fiscalYear)
+            ? p
+            : best,
+        null,
+      );
+      const latestPeriodFacts = latestPeriod
+        ? {
+            periodLabel: `${latestPeriod.periodType} ${latestPeriod.fiscalYear}`,
+            facts: d.financialFacts
+              .filter((f) => f.periodId === latestPeriod.id)
+              // Mirrors the Rust read model's `created_at DESC, id` ordering
+              // (financials.rs) — the corpus only pins primitives, so keep
+              // this in sync by hand (sol F1 finding 4).
+              .sort(
+                (x, y) =>
+                  y.createdAt.localeCompare(x.createdAt) || x.id.localeCompare(y.id),
+              )
+              .slice(0, 6)
+              .map((f) => ({
+                metricKey: f.metricKey,
+                valueNumeric: f.valueNumeric,
+                currency: f.currency,
+                sourceDocumentRef: f.sourceDocumentRef,
+                createdAt: f.createdAt,
+              })),
+          }
+        : null;
+
+      const today = SAMPLE_NOW.slice(0, 10);
+      const upcomingEvents = d.events
+        .filter((e) => e.companyId === companyId && e.eventDate >= today)
+        .sort(
+          (x, y) =>
+            x.eventDate.localeCompare(y.eventDate) ||
+            (x.eventTime ?? "").localeCompare(y.eventTime ?? "") ||
+            x.title.localeCompare(y.title),
+        )
+        .slice(0, 3)
+        .map((e) => ({
+          title: e.title,
+          eventDate: e.eventDate,
+          eventType: e.eventType,
+        }));
+
+      const notes = d.notebookEntries.filter((n) => n.companyId === companyId);
+      const latestNote = notes.reduce<(typeof notes)[number] | null>(
+        (best, n) => (!best || n.updatedAt > best.updatedAt ? n : best),
+        null,
+      );
+
+      return {
+        companyId,
+        latestPeriodFacts,
+        upcomingEvents,
+        notebook: {
+          count: notes.length,
+          latestAt: latestNote?.updatedAt ?? null,
+        },
+        claimsDue: {
+          // Company-scoped like the Rust `list_claims_to_verify(company_id)`
+          // call — never the global bucket lengths (sol F1 finding 4).
+          due: d.claimsToVerify.due.filter((c) => c.claim.companyId === companyId).length,
+          overdue: d.claimsToVerify.overdue.filter((c) => c.claim.companyId === companyId).length,
+        },
+      };
     },
 
     // --- Red flags (v0.57 T7, ADR 0083 D8) ---

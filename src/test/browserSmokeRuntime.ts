@@ -37,7 +37,7 @@ import {
   applyScenarioOverlays,
   type ScenarioOverlayName,
 } from "./scenarios/overlays";
-import { makeCompanyPeriodsComparison, makeKpiComparison, makeProfileComparison, makeReconciliationResult } from "./scenarios/entities";
+import { makeCompanyPeriodsComparison, makeKpiComparison, makeProfileComparison, makeReconciliationResult, presentationKindFor } from "./scenarios/entities";
 import type { CommandError } from "../api/generated/CommandError";
 
 type InvokeArgs = Record<string, unknown> | undefined;
@@ -124,6 +124,7 @@ const feedItems: FeedItem[] = companies.slice(0, 7).map((entry, index) => ({
   id: `feed_${entry.id}`,
   company: entry.qualifiedTicker,
   type: index % 2 === 0 ? "Official report" : "News",
+  presentationKind: presentationKindFor(index % 2 === 0 ? "Official report" : "News", true),
   source: index % 2 === 0 ? "Bankier Company Komunikaty" : "Bankier Gielda RSS",
   time: index === 0 ? "Today 09:12" : "Yesterday",
   title: `${entry.displayName} source item for browser layout smoke`,
@@ -152,6 +153,7 @@ feedItems.push({
   id: "feed_results_report",
   company: "GPW:CDR",
   type: "Official report",
+  presentationKind: presentationKindFor("Official report", true),
   source: "Bankier Company Komunikaty",
   time: "Today 08:20",
   title: "CD PROJEKT S.A. — wyniki za I półrocze 2026",
@@ -174,6 +176,14 @@ feedItems.push({
       id: "att_results_2",
       label: "H1_25_26_Sprawozdanie_finansowe.pdf",
       url: "https://example.test/H1_25_26_Sprawozdanie_finansowe.pdf",
+    },
+    {
+      // URL-shaped label (real bankier shape): the human title must come from
+      // the decoded basename, never the mangled full URL (sol F1 finding 7/9).
+      id: "att_results_url_label",
+      label:
+        "https://example.test/static/att/emitent/2026-08/20260820_054808_0123456789_PZU_SA_Raport_z_przegladu_srodrocznego_JSF_2026_sigAB.pdf",
+      url: "https://example.test/static/att/emitent/2026-08/20260820_054808_0123456789_PZU_SA_Raport_z_przegladu_srodrocznego_JSF_2026_sigAB.pdf",
     },
     {
       id: "att_results_3",

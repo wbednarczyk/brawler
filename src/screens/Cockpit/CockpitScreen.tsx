@@ -19,12 +19,12 @@ import { CompanyCoveragePanel } from "../../shared/components/CompanyCoveragePan
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
 import { FundamentalsPanel } from "../Companies/FundamentalsPanel";
-import { CompanyFeedSection } from "../Companies/CompanyFeedSection";
+import { CockpitCompanyFeedPanel } from "./CockpitCompanyFeedPanel";
+import { InspectorPanel } from "./InspectorPanel";
 import { CompanyNotebookSection } from "../Companies/CompanyNotebookSection";
 import { NotebookDateField } from "../../shared/components/NotebookDateField";
 import { NotebookQuarterField } from "../../shared/components/NotebookQuarterField";
 import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
-import { formatDetailTimestamp as formatTimestamp } from "../../shared/format/datetime";
 import { WatchlistsScreen } from "../Watchlists/WatchlistsScreen";
 import { ResearchScreen } from "../Research/ResearchScreen";
 import { useResearchViewModel } from "../../app/state/screenViewModels";
@@ -39,7 +39,6 @@ import {
   type DockPanelSpec,
 } from "./DockLayout";
 import { useCockpitFundamentals } from "./useCockpitFundamentals";
-import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
 import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
 import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
 import { useCockpitShortPositions } from "./useCockpitShortPositions";
@@ -1255,61 +1254,6 @@ function FeedPanel({
   );
 }
 
-function InspectorPanel({
-  item,
-  text,
-}: {
-  item: FeedItem | null;
-  text: (s: string) => string;
-}) {
-  const { locale } = useLocale();
-  if (!item) {
-    return <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>;
-  }
-  // Cockpit-native, read-rich inspector: company/source context, summary, body,
-  // and source attachments — no controller-bound actions (AI analysis, mark-read,
-  // notes) here; those arrive when the cockpit becomes the host (phase 6).
-  const pdfAttachments = item.attachments.filter((attachment) =>
-    /\.pdf(?:$|[?#])/i.test(attachment.url),
-  );
-  return (
-    <div role="group" className="cockpit-inspector" aria-label={text("Feed item inspector")}>
-      <header className="cockpit-inspector-head">
-        <TickerLabel value={item.company} />
-        <h3 className="cockpit-inspector-title">{item.title}</h3>
-        <div className="cockpit-inspector-tags">
-          <StatusChip>{item.source}</StatusChip>
-          <StatusChip>{item.type}</StatusChip>
-          {item.language ? <StatusChip>{item.language.toUpperCase()}</StatusChip> : null}
-          <span className="cockpit-inspector-time num-tabular">{formatListTimestamp(item.time, locale)}</span>
-        </div>
-        {item.attribution ? (
-          <p className="cockpit-inspector-attribution">{item.attribution}</p>
-        ) : null}
-      </header>
-      {item.summary ? <p className="cockpit-inspector-summary">{item.summary}</p> : null}
-      {item.bodyText ? <p className="cockpit-inspector-body">{item.bodyText}</p> : null}
-      {pdfAttachments.length > 0 ? (
-        <div role="group" className="cockpit-inspector-attachments" aria-label={text("Attachments")}>
-          <SectionHeader level="h4" title={text("Attachments")} />
-          <ul>
-            {pdfAttachments.map((attachment) => (
-              <li key={attachment.url}>
-                <a href={attachment.url} target="_blank" rel="noreferrer">
-                  {attachment.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <a className="secondary-button compact-button cockpit-inspector-open" href={item.sourceUrl} target="_blank" rel="noreferrer">
-        {text("Open source")}
-      </a>
-    </div>
-  );
-}
-
 // The full, editable Fundamentals panel (ADR 0053 phase 4b). It reuses the real
 // `FundamentalsPanel` from the Companies screen — the cockpit owns the state via
 // `useCockpitFundamentals` (which calls api/financials directly), so editing
@@ -1335,31 +1279,6 @@ function CockpitFundamentalsPanel({
       {...props}
       qualifiedTicker={qualifiedTicker}
       onOpenRecommendations={onOpenRecommendations}
-    />
-  );
-}
-
-// Company-scoped feed panel for the curated dashboard (ADR 0057). It reuses the
-// real `CompanyFeedSection` with cockpit-owned state (`useCockpitCompanyFeed`);
-// the cross-screen actions (Open in Inbox / Note) are intentionally omitted — the
-// dashboard panel is self-contained and those stay reachable from the Inbox.
-function CockpitCompanyFeedPanel({ company, feedItems }: { company: Company; feedItems: FeedItem[] }) {
-  const feed = useCockpitCompanyFeed(company, feedItems);
-  return (
-    <CompanyFeedSection
-      company={company}
-      feedItems={feed.items}
-      selectedFeedItem={feed.selectedFeedItem}
-      toggleFeedItem={feed.toggleFeedItem}
-      selectFeedItemFromKeyboard={(event, item) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          feed.toggleFeedItem(item);
-        }
-      }}
-      updateFeedItemState={feed.updateFeedItemState}
-      formatTimestamp={formatTimestamp}
-      feedItemSummary={(item) => item.summary.trim() || item.title}
     />
   );
 }

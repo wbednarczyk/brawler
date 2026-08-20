@@ -94,7 +94,7 @@ pub(super) fn list_research_evidence(
                 feed_item_companies.company_id AS company_id,
                 COALESCE(feed_items.published_at, feed_items.fetched_at) AS occurred_at,
                 feed_items.title AS title,
-                NULLIF(feed_items.summary, '') AS summary,
+                NULLIF(NULLIF(feed_items.summary, 'Komunikat ESPI/EBI'), '') AS summary,
                 feed_items.source_url AS source_url,
                 COALESCE(feed_items.attribution, feed_items.source_name) AS attribution,
                 CASE

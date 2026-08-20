@@ -50,12 +50,12 @@ Study evidence (2026-08-20):
    the ~10 KB floor plus cache-key/staleTime discipline is cost without benefit (conservative-deps
    rule). Re-entry trigger, recorded now: if devtools-grade cache introspection or
    optimistic-update ergonomics become a recurring pain across ≥2 screens, revisit with a new ADR.
-2. **Formalize the existing self-fetch pattern as one thin shared hook** in `src/app/state/`:
-   `useCommandQuery(key, fetcher)` — in-flight sequencing (stale-response discard),
-   loading/error state, `refetch()`, and re-run on key change. It standardizes what
-   `FundamentalsPanel`/`ReportDiffPanel`/`useCockpitRedFlags` each hand-roll today (they retrofit
-   opportunistically, when a slice touches them — no big-bang rewrite). ~50 lines + tests, no
-   dependency.
+2. **Formalize the existing self-fetch pattern as one thin shared hook** in `src/shared/state/`
+   (moved from `src/app/state/` — F1 S4 amendment below): `useCommandQuery(key, fetcher)` —
+   in-flight sequencing (stale-response discard), loading/error state, `refetch()`, and re-run on
+   key change. It standardizes what `FundamentalsPanel`/`ReportDiffPanel`/`useCockpitRedFlags`
+   each hand-roll today (they retrofit opportunistically, when a slice touches them — no big-bang
+   rewrite). ~50 lines + tests, no dependency.
 3. **F1's company-context block is a composed Rust read model** (one command, one DTO,
    server-side assembly), following `get_company_health`/`list_company_timeline` — not a 5-command
    frontend fan-out per selection. Consumed via the decision-2 hook keyed on `companyId`.
@@ -67,6 +67,17 @@ Study evidence (2026-08-20):
    must NOT be added to `useAppDataController`'s app-wide fetch set or `AppStateRoot`'s state.
    Existing root-fed state migrates out only opportunistically (ADR 0050 dec. 4 decomposition),
    never as a prerequisite for feature work.
+
+## Amendment (F1 S4, 2026-08-20)
+
+Decision 2 placed the hook in `src/app/state/`. Building the S4 consumer (`CompanyContextSection`,
+`src/shared/components/feedDetail/` — the whole reason the hook exists per decision 2's own
+rationale) hit the frontend layer contract (`docs/modularization-design.md` § Frontend layer
+contract, ESLint `no-restricted-imports`): `src/shared` may import `api/`/`ui/`/other `shared/`
+modules, never `src/app` (the composition root). The hook has zero `AppStateRoot` coupling — a
+plain React hook over a fetcher callback — so it moved to `src/shared/state/useCommandQuery.ts`
+(no other consumers existed yet; a clean move, not a shim). Future ADRs/plans should cite the new
+path.
 
 ## Rejected
 

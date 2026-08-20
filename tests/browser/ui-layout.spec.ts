@@ -90,7 +90,9 @@ test.describe("browser UI regression smoke", () => {
       .getByLabel(/Select feed item: CD PROJEKT/)
       .first()
       .click();
-    await expect(detailPane.getByLabel("Feed attachments")).toBeVisible();
+    // F1 (#413): the report-kind detail's widest content is the document list
+    // (human title + mono filename), which replaced the raw attachment links.
+    await expect(detailPane.getByLabel("Report documents")).toBeVisible();
 
     // The top navigation bar wraps to a second line at this width (ADR 0047)
     // rather than scrolling sideways — it must not introduce horizontal overflow.

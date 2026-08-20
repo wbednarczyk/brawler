@@ -62,6 +62,13 @@ export const METRIC_FORMS: PluralForms = {
   pl: ["metryka", "metryki", "metryk"],
 };
 
+// Inbox v2 report-kind detail (F1 S4): "N dokumenty" count line above the
+// document list.
+export const DOCUMENT_FORMS: PluralForms = {
+  en: ["document", "documents"],
+  pl: ["dokument", "dokumenty", "dokumentów"],
+};
+
 // Statement-switcher completeness bar (epic #398): "N czeka na nazwanie" — the
 // verb, not just the noun, needs Polish agreement (singular "czeka" for
 // one/many-genitive, plural "czekają" for the few category), mirroring the

@@ -2,18 +2,17 @@ import {
   ArrowLeft,
   BookOpenText,
   Building2,
-  Check,
   ExternalLink,
   FileText,
   Mail,
   MailOpen,
   Save,
-  X,
 } from "lucide-react";
-import { ActionRow, Button, ErrorText, InfoGrid, StatusChip } from "../../ui";
-import { TickerLabel } from "../../shared/components/TickerLabel";
+import { ActionRow, Button, ErrorText } from "../../ui";
+import { CompanyContextSection } from "../../shared/components/feedDetail/CompanyContextSection";
+import { FeedDetailContent } from "../../shared/components/feedDetail/FeedDetailContent";
 import { useLocale } from "../../shared/locale";
-import type { CompanySignal } from "../../api/types";
+import type { CompanySignal, FeedItem } from "../../api/types";
 import type { InboxScreenProps } from "./inboxTypes";
 
 type InboxDetailPaneProps = Pick<
@@ -38,20 +37,6 @@ type InboxDetailPaneProps = Pick<
   onBack: () => void;
 };
 
-function isPdfAttachment(attachment: { label: string; url: string }) {
-  const label = attachment.label.trim().toLowerCase();
-  const isSourcePageChrome =
-    label === "regulamin" ||
-    label === "polityka prywatności" ||
-    label === "polityka prywatnosci" ||
-    label === "polityka cookies";
-
-  return (
-    !isSourcePageChrome &&
-    (/\.pdf(?:$|[?#])/i.test(attachment.url) || /\.pdf(?:$|[?#])/i.test(attachment.label))
-  );
-}
-
 export function InboxDetailPane({
   selectedFeedItem,
   selectedFeedCompany,
@@ -69,7 +54,6 @@ export function InboxDetailPane({
   onBack,
 }: InboxDetailPaneProps) {
   const { text } = useLocale();
-  const pdfAttachments = selectedFeedItem?.attachments.filter(isPdfAttachment) ?? [];
   const signals = selectedFeedSignals ?? [];
 
   return (
@@ -89,174 +73,180 @@ export function InboxDetailPane({
           {text("Back to list")}
         </Button>
       ) : null}
-      <div className="detail-icon">
-        <FileText size={24} />
-      </div>
       {selectedFeedItem ? (
         <>
-          <h2>{selectedFeedItem.title}</h2>
-          <InfoGrid
-            ariaLabel={text("Feed item context")}
-            className="detail-context"
-            items={[
-              { label: text("Company"), value: <TickerLabel value={selectedFeedItem.company} /> },
-              {
-                label: text("Source URL"),
-                value: (
-                  <a href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
-                    {selectedFeedItem.sourceUrl}
-                  </a>
-                ),
-              },
-            ]}
+          <FeedDetailContent
+            item={selectedFeedItem}
+            signals={signals}
+            actions={buildDetailActions({
+              item: selectedFeedItem,
+              company: selectedFeedCompany,
+              text,
+              updateSelectedFeedItem,
+              openCompanyWorkspaceFromFeedItem,
+              openFeedItemNoteDraft,
+            })}
+            feedItemSummary={feedItemSummary}
+            formatTimestamp={formatTimestamp}
+            onConfirmSignal={confirmCompanySignal}
+            onRejectSignal={rejectCompanySignal}
           />
-          <section className="feed-body-section" aria-label={text("Feed summary")}>
-            <div className="feed-body-heading">
-              <span>{text("Summary")}</span>
-            </div>
-            <p className="feed-detail-body">{feedItemSummary(selectedFeedItem)}</p>
-          </section>
-          {signals.length > 0 ? (
-            <section
-              className="feed-body-section feed-signals-section"
-              aria-label={text("Typed filing signals")}
-            >
-              <div className="feed-body-heading">
-                <span>{text("Typed signals")}</span>
-              </div>
-              <ul className="feed-signals-list">
-                {signals.map((signal) => (
-                  <li className="feed-signal-row" key={signal.id}>
-                    <div className="feed-signal-meta">
-                      <StatusChip tone={signal.status === "proposed" ? "warn" : "accent"}>
-                        {text(signal.categoryDisplayName)}
-                      </StatusChip>
-                      <span className="feed-signal-source">
-                        {signal.classifiedBy === "ai"
-                          ? text("AI proposal — confirm to apply")
-                          : signal.classifiedBy === "agent"
-                            ? text("Agent-classified")
-                            : text("Rule-classified")}
-                      </span>
-                    </div>
-                    {signal.status === "proposed" ? (
-                      <ActionRow className="feed-signal-actions" ariaLabel={text("Signal proposal actions")}>
-                        <Button
-                          className="compact-button"
-                          onClick={() => {
-                            void confirmCompanySignal(signal.id);
-                          }}
-                        >
-                          <Check size={15} />
-                          {text("Confirm")}
-                        </Button>
-                        <Button
-                          className="compact-button danger-subtle-button"
-                          onClick={() => {
-                            void rejectCompanySignal(signal.id);
-                          }}
-                        >
-                          <X size={15} />
-                          {text("Reject")}
-                        </Button>
-                      </ActionRow>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </section>
+          {selectedFeedCompany ? (
+            <>
+              <div className="detail-context-divider" />
+              <CompanyContextSection
+                companyId={selectedFeedCompany.id}
+                // Same navigation the report primary action already uses (S4)
+                // — the provenance thread lands on the company's dashboard,
+                // where the report-documents panel is part of the default set.
+                onOpenReportDocuments={() => openCompanyWorkspaceFromFeedItem(selectedFeedItem)}
+              />
+            </>
           ) : null}
-          <details className="feed-body-section feed-body-disclosure" aria-label={text("Official report body")}>
-            <summary className="feed-body-heading">
-              <span>{text("Official report body")}</span>
-              <strong>{selectedFeedItem.bodyText ? text("Stored") : text("Not stored")}</strong>
-            </summary>
-            {selectedFeedItem.bodyText ? (
-              <p className="feed-detail-body">{selectedFeedItem.bodyText}</p>
-            ) : (
-              <p className="feed-detail-empty">
-                {text("No official report body is stored for this item yet. Refresh sources and check Sources for detail warnings if this remains empty.")}
-              </p>
-            )}
-          </details>
-          <ActionRow className="detail-actions" ariaLabel={text("Feed item actions")}>
-            <Button
-              className="compact-button"
-              onClick={() =>
-                updateSelectedFeedItem((item) => ({
-                  ...item,
-                  unread: !item.unread,
-                }))
-              }
-            >
-              {selectedFeedItem.unread ? <MailOpen size={15} /> : <Mail size={15} />}
-              {selectedFeedItem.unread ? text("Mark read") : text("Mark unread")}
-            </Button>
-            <Button
-              className="compact-button"
-              onClick={() =>
-                updateSelectedFeedItem((item) => ({
-                  ...item,
-                  saved: !item.saved,
-                }))
-              }
-            >
-              <Save size={15} />
-              {selectedFeedItem.saved ? text("Unsave") : text("Save")}
-            </Button>
-            {selectedFeedCompany ? (
-              <Button
-                className="compact-button"
-                onClick={() => openCompanyWorkspaceFromFeedItem(selectedFeedItem)}
-              >
-                <Building2 size={15} />
-                {text("Open company")}
-              </Button>
-            ) : null}
-            {selectedFeedCompany ? (
-              <Button
-                className="compact-button"
-                onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
-              >
-                <BookOpenText size={15} />
-                {text("Note")}
-              </Button>
-            ) : null}
-          </ActionRow>
-          {pdfAttachments.length > 0 ? (
-            <div className="feed-attachment-list" aria-label={text("Feed attachments")}>
-              <span className="feed-attachment-heading">{text("Attachments")}</span>
-              {pdfAttachments.map((attachment) => (
-                <a
-                  className="feed-attachment-link"
-                  href={attachment.url}
-                  key={attachment.id}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <ExternalLink size={14} />
-                  {attachment.label}
-                </a>
-              ))}
-            </div>
-          ) : null}
-          <InfoGrid
-            ariaLabel={text("Feed item timestamps")}
-            className="detail-pane-footer-meta"
-            items={[
-              { label: text("Published"), value: formatTimestamp(selectedFeedItem.publishedAt, text("Unknown")) },
-              { label: text("Fetched"), value: formatTimestamp(selectedFeedItem.fetchedAt, text("Unknown")) },
-            ]}
-          />
         </>
       ) : (
         <>
+          <div className="detail-icon">
+            <FileText size={24} />
+          </div>
           <h2>{text("No item selected")}</h2>
           <p>{text("Select a feed item to inspect source details and origin links.")}</p>
         </>
       )}
       {healthError ? <ErrorText>{text("Health command failed")}: {healthError}</ErrorText> : null}
-          {databaseError ? <ErrorText>{text("Workspace refresh failed")}: {databaseError}</ErrorText> : null}
+      {databaseError ? <ErrorText>{text("Workspace refresh failed")}: {databaseError}</ErrorText> : null}
     </aside>
+  );
+}
+
+type BuildDetailActionsArgs = {
+  item: FeedItem;
+  company: InboxDetailPaneProps["selectedFeedCompany"];
+  text: (value: string) => string;
+  updateSelectedFeedItem: InboxDetailPaneProps["updateSelectedFeedItem"];
+  openCompanyWorkspaceFromFeedItem: InboxDetailPaneProps["openCompanyWorkspaceFromFeedItem"];
+  openFeedItemNoteDraft: InboxDetailPaneProps["openFeedItemNoteDraft"];
+};
+
+// The primary/secondary action buttons for the detail's actions slot.
+//
+// The per-kind primary/secondary pair follows the experience contract (§6)
+// and the approved mockups exactly: media/filing → open the source, marked
+// primary; report → read the report (no reportDocumentId reaches Inbox yet,
+// so this opens the company workspace where the real KPI-reading flow —
+// Extract data on a stored document — lives), open source stays secondary.
+//
+// Deviation from the mockups (documented, not silent): the mockups show only
+// that primary/secondary pair, but the pre-redesign detail also let a user
+// save/bookmark an item and draft a notebook note from it — real, reachable
+// capabilities the mockups didn't re-litigate. Dropping them for media/
+// filing/report would be a silent regression ("a capability is not done
+// until a user can reach it" — CLAUDE.md), so Save/Note (+ Open company for
+// media/filing, where it's not already the primary action) stay available
+// after the mockup's pair on every kind, never marked primary. redFlag/
+// unknown keeps the exact pre-redesign action row.
+function buildDetailActions({
+  item,
+  company,
+  text,
+  updateSelectedFeedItem,
+  openCompanyWorkspaceFromFeedItem,
+  openFeedItemNoteDraft,
+}: BuildDetailActionsArgs) {
+  const toggleRead = () =>
+    updateSelectedFeedItem((current) => ({ ...current, unread: !current.unread }));
+  const markReadButton = (
+    <Button className="compact-button" onClick={toggleRead}>
+      {item.unread ? <MailOpen size={15} /> : <Mail size={15} />}
+      {item.unread ? text("Mark read") : text("Mark unread")}
+    </Button>
+  );
+  const saveButton = (
+    <Button
+      className="compact-button"
+      onClick={() => updateSelectedFeedItem((current) => ({ ...current, saved: !current.saved }))}
+    >
+      <Save size={15} />
+      {item.saved ? text("Unsave") : text("Save")}
+    </Button>
+  );
+  const openCompanyButton = company ? (
+    <Button className="compact-button" onClick={() => openCompanyWorkspaceFromFeedItem(item)}>
+      <Building2 size={15} />
+      {text("Open company")}
+    </Button>
+  ) : null;
+  const noteButton = company ? (
+    <Button className="compact-button" onClick={() => openFeedItemNoteDraft(item)}>
+      <BookOpenText size={15} />
+      {text("Note")}
+    </Button>
+  ) : null;
+  const openSourceLink = (primary: boolean, label: string) => (
+    <a
+      className={primary ? "primary-button compact-button" : "secondary-button compact-button"}
+      data-ux-primary-action={primary ? "true" : undefined}
+      href={item.sourceUrl}
+      rel="noreferrer"
+      target="_blank"
+      // Contract §7: `Otwórz…` marks the item read on its way out.
+      onClick={() => updateSelectedFeedItem((current) => ({ ...current, unread: false }))}
+    >
+      <ExternalLink size={15} />
+      {label}
+    </a>
+  );
+
+  if (item.presentationKind === "media") {
+    return (
+      <ActionRow className="detail-actions" ariaLabel={text("Feed item actions")}>
+        {openSourceLink(true, text("Open source"))}
+        {markReadButton}
+        {saveButton}
+        {openCompanyButton}
+        {noteButton}
+      </ActionRow>
+    );
+  }
+
+  if (item.presentationKind === "filing") {
+    return (
+      <ActionRow className="detail-actions" ariaLabel={text("Feed item actions")}>
+        {openSourceLink(true, text("Open notice"))}
+        {markReadButton}
+        {saveButton}
+        {openCompanyButton}
+        {noteButton}
+      </ActionRow>
+    );
+  }
+
+  if (item.presentationKind === "report") {
+    return (
+      <ActionRow className="detail-actions" ariaLabel={text("Feed item actions")}>
+        <Button
+          className="compact-button"
+          data-ux-primary-action="true"
+          onClick={() => openCompanyWorkspaceFromFeedItem(item)}
+          variant="primary"
+        >
+          {text("Read the report")}
+        </Button>
+        {openSourceLink(false, text("Open source"))}
+        {markReadButton}
+        {saveButton}
+        {noteButton}
+      </ActionRow>
+    );
+  }
+
+  // redFlag / unknown: the pre-redesign action row, unchanged.
+  return (
+    <ActionRow className="detail-actions" ariaLabel={text("Feed item actions")}>
+      {markReadButton}
+      {saveButton}
+      {openCompanyButton}
+      {noteButton}
+    </ActionRow>
   );
 }

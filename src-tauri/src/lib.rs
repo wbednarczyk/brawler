@@ -425,6 +425,7 @@ pub fn run() {
             commands::fundamentals_extraction::list_flagged_extraction_outcomes,
             commands::fundamentals_extraction::rerun_extraction_outcome,
             commands::fundamentals_coverage::get_fundamentals_coverage,
+            commands::company_context::get_company_context,
             commands::company_health::get_company_health,
             commands::company_health::backfill_company_health_facts,
             commands::company_health::get_red_flags,

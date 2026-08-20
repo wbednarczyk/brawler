@@ -1661,6 +1661,17 @@
           }
         },
         {
+          "_comment": "Company context (F1, ADR 0106 dec. 3): a fresh company has no periods/events/notebook/claims, so both sides return the empty composite (null latestPeriodFacts; the nested notebook/claimsDue/upcomingEvents shapes aren't asserted here — expectField is a shallow `===` superset check on the TS side, so only primitive top-level leaves are pinned, matching every other corpus entry). Populated-DTO and empty-DTO correctness are both pinned by the Rust unit tests in commands/company_context.rs.",
+          "command": "get_company_context",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "companyId": "company_gpw_hlth",
+            "latestPeriodFacts": null
+          }
+        },
+        {
           "_comment": "Insider overview (v0.57 T6, ADR 0083 D7): a fresh company has no parsed insider substrate, so both sides return the empty overview (empty transactions/holdings; both windows belowMinimum count 0). The transactions/holdings arrays are empty, so structural equality is asserted by parity-of-execution; expectField pins only the scalar companyId. No wall-clock field is serialized, so the dual execution stays deterministic.",
           "command": "get_insider_overview",
           "input": {

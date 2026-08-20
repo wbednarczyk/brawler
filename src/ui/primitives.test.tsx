@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { Button, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { Button, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
@@ -78,6 +78,45 @@ describe("ListRow", () => {
     );
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.getByText("plain row")).toHaveClass("ui-list-row-title");
+  });
+});
+
+describe("ProvenanceFigure", () => {
+  it("renders the label, figure value, and source ticket", () => {
+    render(
+      <ProvenanceFigure label="Zysk na akcję" value="3,49 zł" sourceTicket="ESPI · PSr 2026 · dziś" />,
+    );
+    expect(screen.getByText("Zysk na akcję")).toBeInTheDocument();
+    expect(screen.getByText("3,49 zł")).toHaveClass("ui-provenance-figure-value");
+    expect(screen.getByText("ESPI · PSr 2026 · dziś")).toHaveClass("ui-provenance-figure-ticket");
+  });
+
+  it("omits the ticket when no source is known yet", () => {
+    render(<ProvenanceFigure label="Wartość księgowa" value="39,89 zł" />);
+    expect(screen.getByText("39,89 zł")).toBeInTheDocument();
+    expect(document.querySelector(".ui-provenance-figure-ticket")).toBeNull();
+  });
+
+  it("renders the ticket as plain text when no click handler is given — never a dead button", () => {
+    render(<ProvenanceFigure label="Zysk na akcję" value="3,49 zł" sourceTicket="ESPI · PSr 2026" />);
+    const ticket = screen.getByText("ESPI · PSr 2026");
+    expect(ticket.tagName).toBe("SPAN");
+  });
+
+  it("renders the ticket as a clickable action and fires the handler (ADR 0104 dec. 7)", () => {
+    const onSourceTicketClick = vi.fn();
+    render(
+      <ProvenanceFigure
+        label="Zysk na akcję"
+        value="3,49 zł"
+        sourceTicket="ESPI · PSr 2026"
+        onSourceTicketClick={onSourceTicketClick}
+      />,
+    );
+    const ticket = screen.getByRole("button", { name: "ESPI · PSr 2026" });
+    expect(ticket).toHaveClass("ui-provenance-figure-ticket");
+    fireEvent.click(ticket);
+    expect(onSourceTicketClick).toHaveBeenCalledTimes(1);
   });
 });
 

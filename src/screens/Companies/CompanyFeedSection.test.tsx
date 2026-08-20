@@ -4,6 +4,21 @@ import userEvent from "@testing-library/user-event";
 import type { Company, FeedItem } from "../../api/types";
 import { CompanyFeedSection } from "./CompanyFeedSection";
 
+// The detail branch renders the company-context block (F1; sol round-1
+// blocker 1) — resolve its one composed call with an empty context so these
+// host tests stay focused on the feed surface.
+vi.mock("../../api/companyContext", () => ({
+  getCompanyContext: vi.fn(() =>
+    Promise.resolve({
+      companyId: "c1",
+      latestPeriodFacts: null,
+      upcomingEvents: [],
+      notebook: { count: 0, latestAt: null },
+      claimsDue: { due: 0, overdue: 0 },
+    }),
+  ),
+}));
+
 const company = { id: "c1", qualifiedTicker: "GPW:CDR", displayName: "CD PROJEKT S.A." } as Company;
 
 function makeItem(overrides: Partial<FeedItem>): FeedItem {
@@ -11,6 +26,7 @@ function makeItem(overrides: Partial<FeedItem>): FeedItem {
     id: "f1",
     company: "GPW:CDR",
     type: "report",
+    presentationKind: "report",
     source: "GPW ESPI",
     time: "2026-06-01T00:00:00Z",
     title: "Quarterly report",
@@ -80,6 +96,30 @@ describe("CompanyFeedSection (ADR 0057 dashboard panel)", () => {
     expect(within(detail).queryByRole("button", { name: "Note" })).not.toBeInTheDocument();
     // The external source link is always available (self-contained).
     expect(within(detail).getByRole("link", { name: "Open source" })).toBeInTheDocument();
+  });
+
+  it("shows the typed filing chip and parsed content, never the dead 'Komunikat ESPI/EBI' summary literal", () => {
+    const item = makeItem({
+      presentationKind: "filing",
+      summary: "Komunikat ESPI/EBI",
+      bodyText:
+        "Raport bieżący nr22/2026Data sporządzenia:2026-08-19Podstawa prawnaArt. 56 ust. 1 pkt 2" +
+        "Treść raportu:Rada Nadzorcza powołała nowego Członka Zarządu.",
+    });
+    render(
+      <CompanyFeedSection
+        {...baseProps}
+        feedItems={[item]}
+        selectedFeedItem={item}
+        toggleFeedItem={noop}
+        updateFeedItemState={noop}
+      />,
+    );
+
+    const detail = screen.getByLabelText("Company feed item details");
+    expect(within(detail).getByText("ESPI notice")).toBeInTheDocument();
+    expect(within(detail).getByText(/Rada Nadzorcza powołała/)).toBeInTheDocument();
+    expect(within(detail).queryByText("Komunikat ESPI/EBI")).not.toBeInTheDocument();
   });
 
   it("shows the tracked-but-empty state when the company has no feed items", () => {

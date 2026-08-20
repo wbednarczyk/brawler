@@ -1118,6 +1118,18 @@ Three flag types are **detected + raised** at the producing seams (ownership ing
 
 **Window inclusivity rule**: a transaction is in a window when its `effectiveDate` is on or after the window's lower bound **and** on or before the read date — **both boundaries inclusive**. So a transaction dated exactly 90 days (resp. 12 months) before the read date is IN the window; 91 days is out. A transaction with no effective date is listed in the timeline but excluded from every window.
 
+## Company Context (Inbox detail pane)
+
+`get_company_context(companyId)` returns `CompanyContext` — the Inbox detail pane's company-context block, composed in ONE read instead of the frontend fanning out 5 commands ([ADR 0106](adr/0106-screen-data-layer-posture.md) decision 3). Computed (no stored projection); async / `spawn_blocking`, mirroring `get_company_health`.
+
+- `companyId`, `latestPeriodFacts` (`{ periodLabel, facts[] } | null`, `null` when the company has no financial period), `upcomingEvents`, `notebook`, `claimsDue`.
+- `latestPeriodFacts` is keyed off the company's **domain-latest** financial period (`period_end_date`, falling back to the fiscal year's calendar end — never `created_at`, data-model.md § Model principles) — `periodLabel` is `"{periodType} {fiscalYear}"` (e.g. `"H1 2026"`); `facts` is up to 6 `{ metricKey, valueNumeric, currency, sourceDocumentRef, createdAt }` rows on that period.
+- `upcomingEvents` is up to 3 company events with `eventDate >= today`, soonest first: `{ title, eventDate, eventType }`.
+- `notebook` is `{ count, latestAt }` — the company's total notebook-entry count and the most recent entry's `updatedAt` (`null` when there are none).
+- `claimsDue` is `{ due, overdue }` — the bucket sizes of the existing `list_claims_to_verify` read model (ADR 0040), reused rather than reimplemented.
+
+Classified `read`-tier in the MCP registry but deliberately **not exposed** as an agent tool: it is a UI round-trip optimization, not a new capability — an agent already has full parity via `list_financial_facts`/`list_financial_periods`, `list_company_events`, `list_notebook_entries`, and `list_claims_due`.
+
 ## Company Signal
 
 Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).

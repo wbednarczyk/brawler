@@ -2015,4 +2015,28 @@ export const plText: Record<string, string> = {
   "Show evidence": "Pokaż dowód",
   "Show all periods": "Pokaż wszystkie okresy",
   "Show fewer periods": "Pokaż mniej okresów",
+
+  // Inbox v2 per-kind detail + company-context block (F1 S4, ADR 0104/0106).
+  "Media": "Media",
+  "ESPI notice": "Komunikat ESPI",
+  "Open notice": "Otwórz komunikat",
+  "Read the report": "Przeczytaj raport",
+  "Content": "Treść",
+  "Filing content": "Treść komunikatu",
+  "RB {n}": "RB {n}",
+  "Report documents": "Dokumenty raportu",
+  "Document preview lands here — in progress.": "Tu zamieszka podgląd dokumentu — w przygotowaniu.",
+  "not read yet": "żaden jeszcze nie przeczytany",
+  "read": "przeczytany",
+  "Company context": "Kontekst spółki",
+  "Loading company context…": "Wczytywanie kontekstu spółki…",
+  "Could not load company context.": "Nie udało się pobrać kontekstu spółki.",
+  "Latest facts": "Świeże fakty",
+  "No recorded financial facts yet.": "Brak jeszcze zarejestrowanych faktów finansowych.",
+  "No upcoming events tracked.": "Brak śledzonych nadchodzących wydarzeń.",
+  "No notebook entries for this company yet.": "Brak jeszcze notatek o tej spółce.",
+  "Latest": "Ostatnia",
+  "No management promises awaiting verification.": "Brak obietnic zarządu do weryfikacji.",
+  "Promises are logged from reports and management statements.":
+    "Obietnice spisujesz z raportów i wystąpień zarządu.",
 };

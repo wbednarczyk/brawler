@@ -227,12 +227,15 @@ pub(super) fn feed_item_from_row(
 ) -> rusqlite::Result<FeedItem> {
     let read: bool = row.get(6)?;
     let id: String = row.get(0)?;
+    let item_type: String = row.get(2)?;
+    let attachments = feed_item_attachments(connection, &id)?;
 
     Ok(FeedItem {
-        attachments: feed_item_attachments(connection, &id)?,
+        presentation_kind: PresentationKind::derive(&item_type, !attachments.is_empty()),
+        attachments,
         id,
         company: row.get(1)?,
-        item_type: row.get(2)?,
+        item_type,
         source: row.get(3)?,
         time: row.get(4)?,
         title: row.get(5)?,

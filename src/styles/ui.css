@@ -579,6 +579,58 @@
   color: color-mix(in srgb, var(--tone-user) 70%, var(--text));
 }
 
+/* ProvenanceFigure (ADR 0104 dec. 7 — the signature provenance thread): a
+   thesis figure on a dotted underline in the official-provenance tone, ending
+   in a small source ticket. Only for figures the reader treats as a claim. */
+.ui-provenance-figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.ui-provenance-figure-label {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.ui-provenance-figure-value {
+  align-self: flex-start;
+  padding-bottom: var(--space-0);
+  border-bottom: 1px dotted var(--tone-official);
+  color: var(--text);
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+
+.ui-provenance-figure-ticket {
+  color: var(--tone-official);
+  font-size: var(--font-xs);
+}
+
+/* Same light-theme contrast fix as .ui-toast-action (feedback.css): small text
+   in --tone-official (= --primary) fails WCAG AA on a light surface. */
+:root[data-theme="light"] .ui-provenance-figure-ticket {
+  color: var(--primary-strong);
+}
+
+/* The ticket doubles as the thread's landing action when the host has
+   somewhere to send it (ADR 0104 dec. 7) — a plain button reset, underline
+   affordance on hover/focus so it reads as a link, not chrome. */
+button.ui-provenance-figure-ticket {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.ui-provenance-figure-ticket:hover,
+button.ui-provenance-figure-ticket:focus-visible {
+  text-decoration: underline;
+}
+
 .ui-status-pill {
   display: inline-flex;
   align-items: center;

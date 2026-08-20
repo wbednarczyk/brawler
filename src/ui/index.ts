@@ -30,6 +30,8 @@ export { InlineConfirm } from "./InlineConfirm";
 export type { InlineConfirmProps } from "./InlineConfirm";
 export { InfoGrid } from "./InfoGrid";
 export type { InfoGridItem, InfoGridProps } from "./InfoGrid";
+export { ProvenanceFigure } from "./ProvenanceFigure";
+export type { ProvenanceFigureProps } from "./ProvenanceFigure";
 export { Modal } from "./Modal";
 export type { ModalProps } from "./Modal";
 export { FocusOverlay } from "./FocusOverlay";

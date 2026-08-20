@@ -153,6 +153,41 @@ pub struct FeedItem {
     pub summary: String,
     pub body_text: String,
     pub attachments: Vec<FeedItemAttachment>,
+    /// Derived at read time from `item_type` + attachment presence (no stored
+    /// column, no migration) so every row — old and new — gets a uniform
+    /// render-site kind. See `PresentationKind::derive`.
+    pub presentation_kind: PresentationKind,
+}
+
+/// Render-site kind derived from `FeedItem::item_type` and whether the item has
+/// attachments. Distinguishes an unattached "Official report" (a bare filing
+/// notice, no dead "Komunikat ESPI/EBI" summary literal at render time) from one
+/// with attachments (an actual report).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub enum PresentationKind {
+    Media,
+    Filing,
+    Report,
+    RedFlag,
+}
+
+impl PresentationKind {
+    pub fn derive(item_type: &str, has_attachments: bool) -> Self {
+        match item_type {
+            "Red flag" => Self::RedFlag,
+            "Official report" if has_attachments => Self::Report,
+            "Official report" => Self::Filing,
+            // Unknown types render as media (summary stays visible) — must match
+            // the TS mock's fallback in src/test/scenarios/entities.ts.
+            _ => Self::Media,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

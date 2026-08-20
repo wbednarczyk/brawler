@@ -8,9 +8,17 @@ import {
 } from "lucide-react";
 import type { Company, FeedItem } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
+import { FeedDetailContent } from "../../shared/components/feedDetail/FeedDetailContent";
+import { CompanyContextSection } from "../../shared/components/feedDetail/CompanyContextSection";
 import { useLocale } from "../../shared/locale";
 import { formatListTimestamp } from "../../shared/format/datetime";
-import { ActionRow, Button, DenseRow, EmptyState, InfoGrid, StatusChip } from "../../ui";
+import { ActionRow, Button, DenseRow, EmptyState, StatusChip } from "../../ui";
+
+// No confirm/reject workflow here (typed ESPI signals stay Inbox-only for now)
+// — FeedDetailContent's signals slot always gets an empty list + no-ops so
+// FeedSignalsSection quietly renders nothing (F1 S5).
+const NO_SIGNALS: never[] = [];
+const noopSignalHandler = () => {};
 
 // The company-scoped feed list + selected-item detail (read/save, inspect,
 // note draft, AI analysis). Extracted from the tabbed CompanyWorkspace so both
@@ -32,6 +40,9 @@ export type CompanyFeedSectionProps = {
   inspectFeedItem?: (item: FeedItem) => void;
   openFeedItemNoteDraft?: (item: FeedItem) => void;
   openInboxFilter?: (company: Company) => void;
+  // Provenance-thread landing for the context block (ADR 0104 dec. 7). Optional:
+  // a host with no documents navigation leaves the ticket non-interactive.
+  openCompanyReportDocuments?: () => void;
 };
 
 export function CompanyFeedSection({
@@ -44,6 +55,7 @@ export function CompanyFeedSection({
   inspectFeedItem,
   openFeedItemNoteDraft,
   openInboxFilter,
+  openCompanyReportDocuments,
   formatTimestamp,
   feedItemSummary,
 }: CompanyFeedSectionProps) {
@@ -93,115 +105,81 @@ export function CompanyFeedSection({
 
           {selectedFeedItem?.id === item.id ? (
             <aside className="company-feed-detail" aria-label={text("Company feed item details")}>
-              <div>
-                <span className="eyebrow">{text("Selected item")}</span>
-                <h3>{selectedFeedItem.title}</h3>
-                <div role="group" className="feed-body-section" aria-label={text("Feed summary")}>
-                  <div className="feed-body-heading">
-                    <span>{text("Summary")}</span>
-                  </div>
-                  <p className="feed-detail-body">{feedItemSummary(selectedFeedItem)}</p>
-                </div>
-                <details className="feed-body-section feed-body-disclosure" aria-label={text("Official report body")}>
-                  <summary className="feed-body-heading">
-                    <span>{text("Official report body")}</span>
-                    <strong>{selectedFeedItem.bodyText ? text("Stored") : text("Not stored")}</strong>
-                  </summary>
-                  {selectedFeedItem.bodyText ? (
-                    <p className="feed-detail-body">{selectedFeedItem.bodyText}</p>
-                  ) : (
-                    <p className="feed-detail-empty">
-                      {text("No official report body is stored for this item yet. Refresh sources and check Sources for detail warnings if this remains empty.")}
-                    </p>
-                  )}
-                </details>
-              </div>
-              <ActionRow className="detail-actions" ariaLabel={text("Company feed item actions")}>
-                <Button
-                  className="compact-button"
-                  onClick={() =>
-                    updateFeedItemState(selectedFeedItem, (feedItem) => ({
-                      ...feedItem,
-                      unread: !feedItem.unread,
-                    }))
-                  }
-                >
-                  {selectedFeedItem.unread ? <MailOpen size={15} /> : <Mail size={15} />}
-                  {selectedFeedItem.unread ? text("Mark read") : text("Mark unread")}
-                </Button>
-                <Button
-                  className="compact-button"
-                  onClick={() =>
-                    updateFeedItemState(selectedFeedItem, (feedItem) => ({
-                      ...feedItem,
-                      saved: !feedItem.saved,
-                    }))
-                  }
-                >
-                  <Save size={15} />
-                  {selectedFeedItem.saved ? text("Unsave") : text("Save")}
-                </Button>
-                {inspectFeedItem ? (
-                  <Button
-                    className="compact-button"
-                    onClick={() => inspectFeedItem(selectedFeedItem)}
-                  >
-                    <Inbox size={15} />
-                    {text("Open in Inbox")}
-                  </Button>
-                ) : null}
-                {openFeedItemNoteDraft ? (
-                  <Button
-                    className="compact-button"
-                    onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
-                  >
-                    <BookOpenText size={15} />
-                    {text("Note")}
-                  </Button>
-                ) : null}
-                <a
-                  className="secondary-button compact-button"
-                  href={selectedFeedItem.sourceUrl}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <ExternalLink size={15} />
-                  {text("Open source")}
-                </a>
-              </ActionRow>
-              <InfoGrid
-                className="metadata-grid"
-                items={[
-                  { label: text("Source"), value: selectedFeedItem.source },
-                  { label: text("Type"), value: selectedFeedItem.type },
-                  {
-                    label: text("Published"),
-                    value: formatTimestamp(selectedFeedItem.publishedAt, text("Unknown")),
-                  },
-                  {
-                    label: text("Fetched"),
-                    value: formatTimestamp(selectedFeedItem.fetchedAt, text("Unknown")),
-                  },
-                  { label: text("Attribution"), value: selectedFeedItem.attribution },
-                  { label: text("Language"), value: selectedFeedItem.language },
-                ]}
-              />
-              {selectedFeedItem.attachments.length > 0 ? (
-                <div className="feed-attachment-list" aria-label={text("Company feed attachments")}>
-                  {selectedFeedItem.attachments.map((attachment) => (
+              <FeedDetailContent
+                item={selectedFeedItem}
+                signals={NO_SIGNALS}
+                feedItemSummary={feedItemSummary}
+                formatTimestamp={formatTimestamp}
+                onConfirmSignal={noopSignalHandler}
+                onRejectSignal={noopSignalHandler}
+                actions={
+                  <ActionRow className="detail-actions" ariaLabel={text("Company feed item actions")}>
+                    <Button
+                      className="compact-button"
+                      onClick={() =>
+                        updateFeedItemState(selectedFeedItem, (feedItem) => ({
+                          ...feedItem,
+                          unread: !feedItem.unread,
+                        }))
+                      }
+                    >
+                      {selectedFeedItem.unread ? <MailOpen size={15} /> : <Mail size={15} />}
+                      {selectedFeedItem.unread ? text("Mark read") : text("Mark unread")}
+                    </Button>
+                    <Button
+                      className="compact-button"
+                      onClick={() =>
+                        updateFeedItemState(selectedFeedItem, (feedItem) => ({
+                          ...feedItem,
+                          saved: !feedItem.saved,
+                        }))
+                      }
+                    >
+                      <Save size={15} />
+                      {selectedFeedItem.saved ? text("Unsave") : text("Save")}
+                    </Button>
+                    {inspectFeedItem ? (
+                      <Button
+                        className="compact-button"
+                        onClick={() => inspectFeedItem(selectedFeedItem)}
+                      >
+                        <Inbox size={15} />
+                        {text("Open in Inbox")}
+                      </Button>
+                    ) : null}
+                    {openFeedItemNoteDraft ? (
+                      <Button
+                        className="compact-button"
+                        onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
+                      >
+                        <BookOpenText size={15} />
+                        {text("Note")}
+                      </Button>
+                    ) : null}
                     <a
-                      className="feed-attachment-link"
-                      href={attachment.url}
-                      key={attachment.id}
+                      // The one contracted primary action of this host's detail
+                      // (experience contract §6); opening the source also marks
+                      // the item read (§7 exit path).
+                      className="primary-button compact-button"
+                      data-ux-primary-action="true"
+                      href={selectedFeedItem.sourceUrl}
                       rel="noreferrer"
                       target="_blank"
+                      onClick={() =>
+                        updateFeedItemState(selectedFeedItem, (feedItem) => ({
+                          ...feedItem,
+                          unread: false,
+                        }))
+                      }
                     >
-                      <ExternalLink size={14} />
-                      {attachment.label}
+                      <ExternalLink size={15} />
+                      {text("Open source")}
                     </a>
-                  ))}
-                </div>
-              ) : null}
+                  </ActionRow>
+                }
+              />
+              <div className="detail-context-divider" />
+              <CompanyContextSection companyId={company.id} onOpenReportDocuments={openCompanyReportDocuments} />
             </aside>
           ) : null}
         </div>

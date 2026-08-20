@@ -15,6 +15,7 @@
 // a repeated overlay name (a `Set` collapses duplicates before iterating).
 
 import {
+  COMPANY_SPECS,
   SAMPLE_NOW,
   makeAlertRule,
   makeAttentionEvent,
@@ -437,11 +438,36 @@ function applyMorningReview(data: ScenarioData): ScenarioData {
 
   const runs = MR_AGGREGATE_COMPANIES.map((companyId, i) => makeRoutineRun(`run_mr_${i}`, companyId));
 
+  // A bare ESPI/EBI filing (no attachments → presentationKind "filing") for the
+  // PZU group company, so the extended J1 leg (F1 S5) can select a real filing
+  // item from the Inbox. `makeFeedItem`'s generic 3-kind cycle never yields
+  // "filing" (its "Official report" items always carry an attachment, F1 S5
+  // finding) — this is a fixed, targeted override, not a generator change, to
+  // keep every other scenario/overlay's feed shape untouched. `summary` is the
+  // real dead literal (F1 S1) and `bodyText` the real-shaped ESPI blob
+  // (parseFilingBody.test.ts) so the leg proves the typed chip AND parsed
+  // content replace it, not just an empty compact fallback.
+  const filingFeedItem = {
+    ...makeFeedItem(COMPANY_SPECS.find((spec) => spec.key === "pzu")!, 0),
+    id: "feed_overlay_mr_filing",
+    presentationKind: "filing" as const,
+    title: "Powołanie Członka Zarządu PZU SA",
+    summary: "Komunikat ESPI/EBI",
+    bodyText:
+      "Spis treści:1. RAPORT BIEŻĄCY2. MESSAGE (ENGLISH VERSION)KOMISJA NADZORU FINANSOWEGO" +
+      "Raport bieżący nr22/2026Data sporządzenia:2026-08-19Skrócona nazwa emitentaPZU" +
+      "Podstawa prawnaArt. 56 ust. 1 pkt 2 Ustawy o ofercie – informacje bieżące i okresowe" +
+      "Treść raportu:Rada Nadzorcza powołała w skład Zarządu PZU SA Pana Piotra Matczuka, " +
+      "powierzając mu funkcję Członka Zarządu Spółki. Uchwała weszła w życie z chwilą podjęcia.",
+    attachments: [],
+  };
+
   return {
     ...data,
     alertRules: [insiderRule, ...data.alertRules],
     attentionEvents: [insider, reconciliation, ...group, ...data.attentionEvents],
     autopilotRuns: [...runs, ...data.autopilotRuns],
+    feedItems: [filingFeedItem, ...data.feedItems],
   };
 }
 

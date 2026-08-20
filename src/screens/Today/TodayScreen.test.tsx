@@ -141,6 +141,7 @@ function reportFeedItem(id: string, index: number): FeedItem {
     company: "GPW:ZZZ", // not in the registry → its Review falls back to the Inbox
     title: `Quarterly report ${index}`,
     type: "Official report",
+    presentationKind: "filing", // Official report, no attachments (F1 S1 derivation)
     source: "GPW ESPI/EBI",
     sourceUrl: "https://example.test/report",
     attribution: "GPW",

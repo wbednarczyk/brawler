@@ -29,6 +29,7 @@ import type {
   ResearchQuestion,
   ResearchReminder,
 } from "../../api/researchTypes";
+import { presentationKindFor } from "./entities";
 
 function formatTestDate(date: Date) {
   const year = date.getFullYear();
@@ -54,6 +55,9 @@ export const legacyFeedItems: FeedItem[] = [
     id: "feed_sample_cdr_report",
     company: "GPW:CDR",
     type: "Official report",
+    // Carries a real summary, so it's shaped as an attached report (not a
+    // bare filing notice) — matches "Report" derivation (F1 S1).
+    presentationKind: presentationKindFor("Official report", true),
     source: "GPW ESPI/EBI",
     time: "Today 09:12",
     title: "Current report placeholder for watchlist company",
@@ -67,12 +71,19 @@ export const legacyFeedItems: FeedItem[] = [
     summary:
       "Sample official report used to validate feed filtering and detail rendering.",
     bodyText: "",
-    attachments: noFeedAttachments,
+    attachments: [
+      {
+        id: "attach_feed_sample_cdr_report",
+        label: "Report attachment",
+        url: "https://www.gpw.pl/komunikaty/attachment.pdf",
+      },
+    ],
   },
   {
     id: "feed_sample_pkn_news",
     company: "GPW:PKN",
     type: "News",
+    presentationKind: presentationKindFor("News", false),
     source: "Sample feed",
     time: "Yesterday",
     title: "Sample item proving the inbox layout can scan dense rows",
@@ -92,6 +103,7 @@ export const legacyFeedItems: FeedItem[] = [
     id: "feed_sample_kgh_transcript",
     company: "GPW:KGH",
     type: "Transcript",
+    presentationKind: presentationKindFor("Transcript", false),
     source: "Sample transcript",
     time: "Mon",
     title: "Transcript-derived note candidate waits for future provider work",
@@ -110,6 +122,7 @@ export const legacyFeedItems: FeedItem[] = [
     id: "feed_sample_pzu_report",
     company: "GPW:PZU",
     type: "Official report",
+    presentationKind: presentationKindFor("Official report", false),
     source: "GPW ESPI/EBI",
     time: "Fri",
     title: "PZU governance report placeholder",

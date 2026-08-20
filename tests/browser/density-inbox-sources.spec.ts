@@ -1,4 +1,13 @@
-import { test, expect, openApp, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import {
+  test,
+  expect,
+  openApp,
+  setPaneSize,
+  resetPaneSize,
+  expectNoPageOverflow,
+  expectNoHorizontalOverflow,
+  expectNoOverlap,
+} from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
 // Panel density matrix — U7 cluster E1 (ADR 0076 D6): Inbox + Sources. These are
@@ -103,6 +112,64 @@ test.describe("Inbox density contract", { tag: "@clickable" }, () => {
     await back.click();
     await expect(detail).toBeHidden();
     await expect(list).toBeVisible();
+    await expectNoPageOverflow(page);
+
+    await resetPaneSize(page, pane);
+  });
+
+  // #417 class: a REPORT-kind item's attachment filenames are real-world
+  // hostile — long, mixed underscores/spaces, Polish diacritics, no natural
+  // break points (`feed_results_report` in browserSmokeRuntime.ts, already
+  // shaped for this). At M/L the detail pane's own scroll container
+  // (`.detail-pane`, F1 S4/S5) and the document-list container it hosts
+  // (`.feed-doc-list`, FeedDetailReport) must contain it — never a horizontal
+  // scrollbar/blowout — and the report body must not paint over the company-
+  // context block stacked below it (#416 class).
+  test("contains a hostile report attachment filename at M/L, S overlay unaffected", async ({ page }) => {
+    await openApp(page);
+    const pane = await openInboxScreen(page);
+    const hostileRow = page.locator('[data-feed-item-id="feed_results_report"]');
+    const detail = page.locator(".detail-pane");
+    const docList = page.locator(".feed-doc-list");
+    const contextSection = page.locator(".feed-context-section");
+
+    // The row sits past the visible fold of a long list — search narrows the
+    // list to just this item so it's the (stable, unscrolled) only row,
+    // rather than fighting the sticky filter-toolbar's scroll-position dance.
+    // The row's own click handler TOGGLES selection (`toggleFeedItem`) — never
+    // click it a second time while already selected, or it deselects.
+    await page.getByRole("textbox", { name: /Search|Szukaj/ }).first().fill("wyniki za I półrocze");
+    await expect(hostileRow).toBeVisible();
+
+    // Click at the default pane size: Inbox auto-selects the first item, and at
+    // a forced M size that open detail overlays the list and intercepts the
+    // pointer. Selection survives the tier changes below.
+    await hostileRow.click();
+
+    for (const tier of ["M", "L"] as const) {
+      await setPaneSize(page, { ...TIER_SIZE[tier], pane });
+      await expect(detail).toBeVisible();
+      await expect(docList).toBeVisible();
+      await expectNoHorizontalOverflow(detail);
+      await expectNoHorizontalOverflow(docList);
+      await expectNoOverlap(docList, contextSection, `report body vs. company context at ${tier}`);
+      await expectNoPageOverflow(page);
+    }
+
+    // S: the pre-existing full-pane overlay contract (this slice touched no
+    // overlay CSS) — verified here rather than assumed. Selection survives a
+    // tier change (list-only state), so close the still-open overlay from the
+    // L-tier selection above before asserting the "no selection ⇒ hidden"
+    // baseline the S contract test also relies on.
+    await setPaneSize(page, { ...TIER_SIZE.S, pane });
+    await page.getByRole("button", { name: "Back to list" }).click();
+    await expect(detail).toBeHidden();
+    await expect(page.locator(".feed-panel")).toBeVisible();
+    await hostileRow.click();
+    await expect(detail).toBeVisible();
+    await expect(docList).toBeVisible();
+    await expectNoHorizontalOverflow(detail);
+    await expectNoHorizontalOverflow(docList);
     await expectNoPageOverflow(page);
 
     await resetPaneSize(page, pane);

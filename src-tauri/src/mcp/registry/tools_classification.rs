@@ -62,6 +62,12 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // Research-workspace internals / aggregates already covered elsewhere:
         read("list_research_evidence"), // research timeline aggregates already-exposed per-domain reads
         read("list_company_timeline"),  // company-scoped alias of list_research_evidence
+        // Inbox detail-pane composite (ADR 0106 dec. 3): latest-period facts +
+        // upcoming events + notebook coverage + claims-due counts in one call.
+        // A UI round-trip optimization, not a new capability — an agent already
+        // has full parity via list_financial_facts/list_financial_periods,
+        // list_company_events, list_notebook_entries, list_claims_due.
+        read("get_company_context"),
         read("list_watchlist_timeline"), // watchlist-scoped alias of list_research_evidence
         read("list_research_review_state"), // per-scope "reviewed" checkpoints (UI markers)
         read("list_evidence_links"), // internal evidence-graph edges (UI); agent reads the items directly
