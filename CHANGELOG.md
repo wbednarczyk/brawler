@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.72.0 - 2026-08-20
+
+
+### Bug Fixes
+
+- **research**: revealed fold no longer paints over the next section (#420)
+
+
+### Features
+
+- file-size ratchet fitness function + oversized-module extraction (#402) (#409)
+
+- Frontend v2 F0 — design language ADRs, brawler-design skill, visual-catalog guard (#411) (#418)
+
+- Inbox v2 — per-kind detail, in-app filing content, company-context block (F1 #413) (#423)
+
 ## v0.71.1 - 2026-08-19
 
 
