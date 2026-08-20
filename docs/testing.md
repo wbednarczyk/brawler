@@ -1053,10 +1053,13 @@ rtk make ux-contact-sheet SCREENS="today,fundamentals"
 rtk make ux-contact-sheet CHANGED=1
 ```
 
-- **Baseline updates** (`make visual-update SCREEN=<name> REASON="why"`, wrapping
-  `npm run visual-update` → `scripts/ux/visual-update-guard.mjs`): refuses to run unless both
-  `SCREEN` and a non-empty `REASON` are given, and prints both into the run log. Never run this
-  during ordinary implementation — only for a deliberate, reviewed visual change.
+- **Baseline updates** (`make visual-update SCREEN=<catalog-id>|ALL=1 REASON="why"`, wrapping
+  `npm run visual-update` → `scripts/ux/visual-update-guard.mjs` + `visual-update-core.mjs`):
+  refuses without a `REASON` and exactly one of `SCREEN` (a `catalog.core.mjs` screen id) or
+  `ALL=1` (full repaint). `SCREEN` mode runs `--update-snapshots=all` and hard-fails on any
+  non-target baseline hash change ("sibling drift") or filename-set change; `ALL` mode skips the
+  sibling check and asserts every expected cell exists afterward. Never run outside a deliberate,
+  reviewed visual change.
 
 ### Escaped-defect interpretation (plan Q7)
 

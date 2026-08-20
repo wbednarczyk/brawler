@@ -7,6 +7,11 @@ single screen of everything. The app shell has three parts:
 - a **top bar** — global search/ask, source health, refresh, and theme,
 - the **main area** — whichever mode you're in.
 
+The app uses its own bundled typefaces — Schibsted Grotesk for the
+interface and JetBrains Mono for figures and identifiers — on a flat dark (or
+light) background. Nothing is fetched from the internet for this; the fonts
+ship inside the app.
+
 ## The sidebar: modes, pinned companies, library
 
 The sidebar is grouped so you always know where you are:
