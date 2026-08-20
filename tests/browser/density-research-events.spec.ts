@@ -1,4 +1,4 @@
-import { test, expect, openApp, openCockpitPanel, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openCockpitPanel, setPaneSize, resetPaneSize, expectNoPageOverflow, expectNoOverlap } from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
 // U7-D panel density contracts (ADR 0076 D6): Research, Events, Report Season.
@@ -88,6 +88,13 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.getByRole("button", { name: /Research questions/ })).toBeVisible();
         await expect(pane.locator(".research-questions")).toBeHidden();
         await expect(pane.locator(".research-timeline")).toBeVisible();
+        // #416: the revealed reminders body must not paint over the questions
+        // fold below it — visibility alone cannot see this.
+        await expectNoOverlap(
+          pane.locator('.research-fold[data-fold="m"]'),
+          pane.locator('.research-fold[data-fold="l"]'),
+          "Research review-queue fold vs questions fold (M)",
+        );
       },
       // L: + questions/reminders columns; both fold chips gone.
       L: async (page, pane) => {
@@ -95,6 +102,11 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.locator(".research-questions")).toBeVisible();
         await expect(pane.getByRole("button", { name: /Review queue/ })).toBeHidden();
         await expect(pane.getByRole("button", { name: /Research questions/ })).toBeHidden();
+        await expectNoOverlap(
+          pane.locator('.research-fold[data-fold="m"]'),
+          pane.locator('.research-fold[data-fold="l"]'),
+          "Research review-queue fold vs questions fold (L)",
+        );
       },
       // short: summary counts + timeline; everything else re-folds behind chips.
       short: async (page, pane) => {

@@ -433,10 +433,11 @@
    body hidden; the container queries in research-responsive.css reveal the body at
    the section's tier. The body stays in the DOM at every tier so its content is
    always reachable (the expansion just flips CSS visibility). */
-.research-fold,
-.research-fold-body {
-  min-height: 0;
-}
+/* .research-fold deliberately has NO min-height:0: that zeroed its minimum track
+   contribution, so a sibling with a fixed minimum (the evidence panel) won the
+   height fight and the revealed fold's content painted over the next section
+   (#416). Folded bodies are display:none and space pressure re-folds via the
+   short tier — the fold never needs to shrink below its content. */
 
 .research-fold-chip {
   display: inline-flex;
