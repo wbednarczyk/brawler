@@ -155,6 +155,17 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Company-context composite (F1, ADR 0106 dec. 3). Same computed
+        // helper the command wrapper offloads, so the corpus can never
+        // diverge from real assembly.
+        "get_company_context" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::company_context::compute_company_context(state, company_id)
+                    .expect("get_company_context"),
+            )
+            .unwrap()
+        }
         // Flagged/failed extraction outcomes (v0.59 A2, ADR 0061 dec. 2). Same
         // store method the command wrapper delegates to, so the mock can never
         // claim a review surface the real pipeline would not produce. A company

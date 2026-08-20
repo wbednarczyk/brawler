@@ -5,6 +5,7 @@ pub mod autopilot;
 pub mod backups;
 pub mod cockpit_layouts;
 pub mod companies;
+pub mod company_context;
 pub mod company_health;
 pub mod comparison;
 pub mod credentials;
