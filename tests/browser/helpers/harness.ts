@@ -184,6 +184,38 @@ export async function expectNoA11yViolations(page: Page, context: string) {
   ).toEqual([]);
 }
 
+// Two sibling regions must not paint over each other. Visibility assertions are
+// blind to this class: a grid can undersize one sibling's track (min-height:0 +
+// minmax(0,…) chains) so its content bleeds into the next sibling while both stay
+// "visible" (#416). Compares PAINTED extents — the union of each element's and its
+// visible descendants' rects — because the offender's own bounding box is exactly
+// the undersized track, not the overflowing content.
+export async function expectNoOverlap(a: Locator, b: Locator, label = "regions") {
+  const extent = (locator: Locator) =>
+    locator.evaluate((host) => {
+      const rects = [host, ...Array.from(host.querySelectorAll("*"))]
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0);
+      return {
+        top: Math.min(...rects.map((r) => r.top)),
+        bottom: Math.max(...rects.map((r) => r.bottom)),
+        left: Math.min(...rects.map((r) => r.left)),
+        right: Math.max(...rects.map((r) => r.right)),
+      };
+    });
+  const [ra, rb] = await Promise.all([extent(a), extent(b)]);
+  const TOLERANCE = 1;
+  const intersects =
+    ra.left < rb.right - TOLERANCE &&
+    rb.left < ra.right - TOLERANCE &&
+    ra.top < rb.bottom - TOLERANCE &&
+    rb.top < ra.bottom - TOLERANCE;
+  expect(
+    intersects,
+    `${label} paint over each other: ${JSON.stringify(ra)} vs ${JSON.stringify(rb)}`,
+  ).toBe(false);
+}
+
 // A region is configured as a bounded internal scroll container (so it scrolls
 // rather than pushing the page); it need not currently overflow.
 export async function expectInternalScroll(locator: Locator) {
