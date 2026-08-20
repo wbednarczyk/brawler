@@ -63,6 +63,28 @@ test("bundled variable fonts load Polish glyphs at authored weights", async ({ p
     expect.soft(r.allLoaded, `${r.family}: the latin-ext face loads`).toBe(true);
   }
 
+  // Glyph-presence raster probe (sol: load() proves the file loads, not that
+  // its cmap contains PL glyphs). A glyph missing from our face falls back to
+  // the browser default — the same font an unknown family resolves to — so the
+  // canvas raster of PL text in our face must DIFFER from the unknown-family
+  // raster, else the glyphs did not come from our font.
+  const rasters = await page.evaluate((families) => {
+    const raster = (family: string) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 96;
+      canvas.height = 28;
+      const ctx = canvas.getContext("2d")!;
+      ctx.font = `13px ${family}`;
+      ctx.fillText("żźćęąśłń", 2, 20);
+      return canvas.toDataURL();
+    };
+    const fallback = raster('"__brawler-no-such-font__"');
+    return families.map((family) => ({ family, differs: raster(`"${family}"`) !== fallback }));
+  }, MATRIX.map((m) => m.family));
+  for (const r of rasters) {
+    expect.soft(r.differs, `${r.family}: PL glyphs render from the bundled face, not fallback`).toBe(true);
+  }
+
   for (const r of results) {
     const label = `${r.family} @ ${r.weight}`;
     expect.soft(r.usedFaces, `${label}: PL text maps to at least one @font-face`).toBeGreaterThan(0);
