@@ -2039,4 +2039,19 @@ export const plText: Record<string, string> = {
   "No management promises awaiting verification.": "Brak obietnic zarządu do weryfikacji.",
   "Promises are logged from reports and management statements.":
     "Obietnice spisujesz z raportów i wystąpień zarządu.",
+
+  // Dziś v2 day queue (F2 S3, rows2/) — verb dictionary EXACT to
+  // Wiersze.dc.html/Main.dc.html: one kind, one verb, one landing place.
+  "Read report": "Przeczytaj raport",
+  "Open filing": "Otwórz komunikat",
+  "Open in the Inbox": "Otwórz w Inbox",
+  "Open article": "Otwórz artykuł",
+  "Open thesis": "Otwórz tezę",
+  "Not received": "Nie wpłynął",
+  "Thesis": "Teza",
+  "Today": "Dziś",
+  "Yesterday": "Wczoraj",
+  "Open day": "Otwórz dzień",
+  "Since your last visit": "Od Twojej ostatniej wizyty",
+  "Nothing new since your last visit": "Nic nowego od Twojej ostatniej wizyty",
 };

@@ -67,6 +67,14 @@
   border-radius: 8px;
 }
 
+/* Today's `openCompanyClaims` nav seam (F2 S3): a transient flash on arrival,
+   in either the main list or the review queue — fades on its own (component
+   clears the state after a few seconds), never a permanent style. */
+.claim-row-highlighted {
+  border-color: var(--tone-official);
+  background: color-mix(in srgb, var(--tone-official) 12%, var(--surface-raised));
+}
+
 .claim-row-main {
   display: flex;
   align-items: center;

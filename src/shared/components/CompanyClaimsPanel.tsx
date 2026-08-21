@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Plus } from "lucide-react";
 
 import {
@@ -27,6 +27,10 @@ import {
 
 type CompanyClaimsPanelProps = {
   companyId: string;
+  /** Today's `openCompanyClaims(companyId, claimId)` nav seam (F2 S3, plan
+   * decision 6): highlight + scroll this claim into view once it loads,
+   * whether it surfaces in the main list or the review queue. */
+  highlightClaimId?: string | null;
 };
 
 const VERDICTS: ClaimStatus[] = [
@@ -56,10 +60,15 @@ function verdictTone(status: ClaimStatus): StatusPillTone {
 /// "claims to verify" review queue, the full claims list with user-set verdicts, and
 /// a create-claim form. AI claim extraction is launched from the report/transcript
 /// context (like KPI extraction); this panel resolves the verdicts.
-export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
+export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: CompanyClaimsPanelProps) {
   const { text, locale } = useLocale();
   const [claims, setClaims] = useState<ManagementClaim[]>([]);
   const [queue, setQueue] = useState<ClaimsToVerify | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Fades on its own after the scroll+flash — the incoming prop stays set for
+  // the panel's lifetime (nothing clears it at the root), so the highlight
+  // itself has to be transient, not the data driving it.
+  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statement, setStatement] = useState("");
   const [dueYear, setDueYear] = useState("");
@@ -91,6 +100,19 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Scroll the targeted claim into view + flash it once it's actually
+  // rendered (either list — the main claims list or the review queue), then
+  // let the flash fade on its own after a few seconds.
+  useEffect(() => {
+    if (!highlightClaimId) return undefined;
+    const row = panelRef.current?.querySelector<HTMLElement>(`[data-claim-id="${highlightClaimId}"]`);
+    if (!row) return undefined;
+    row.scrollIntoView({ block: "center" });
+    setActiveHighlightId(highlightClaimId);
+    const timer = window.setTimeout(() => setActiveHighlightId(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [highlightClaimId, claims, queue]);
 
   const resolveVerdict = async (claim: ManagementClaim, status: ClaimStatus) => {
     if (savingVerdict) return;
@@ -138,6 +160,7 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
 
   return (
     <div
+      ref={panelRef}
       role="group"
       className="company-claims-panel"
       aria-label={text("Management claims")}
@@ -232,7 +255,13 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
 
           <div className="claims-list" aria-label={text("Management claims")}>
             {claims.map((claim) => (
-              <div className="claim-row" key={claim.id}>
+              <div
+                className={["claim-row", claim.id === activeHighlightId ? "claim-row-highlighted" : ""]
+                  .filter(Boolean)
+                  .join(" ")}
+                data-claim-id={claim.id}
+                key={claim.id}
+              >
                 <div className="claim-row-main">
                   <CheckCircle2 size={15} />
                   <span className="claim-row-statement">{claim.statement}</span>
@@ -276,7 +305,16 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
                 <div className="claims-queue-bucket" key={key}>
                   <Hint>{`${label} · ${queue[key].length}`}</Hint>
                   {queue[key].map((entry: ClaimToVerify) => (
-                    <div className="claim-queue-row" key={entry.claim.id}>
+                    <div
+                      className={[
+                        "claim-queue-row",
+                        entry.claim.id === activeHighlightId ? "claim-row-highlighted" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      data-claim-id={entry.claim.id}
+                      key={entry.claim.id}
+                    >
                       <div className="claim-queue-statement">{entry.claim.statement}</div>
                       {entry.verifyingFactCandidate ? (
                         <Hint>

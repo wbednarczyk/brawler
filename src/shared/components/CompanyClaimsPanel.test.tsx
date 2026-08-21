@@ -220,4 +220,32 @@ describe("CompanyClaimsPanel", () => {
       );
     });
   });
+
+  // Today's `openCompanyClaims(companyId, claimId)` nav seam (F2 S3, plan
+  // decision 6): the claim id reaches the panel and its row is scrolled into
+  // view + flashed — asserted on the claim's row, never the screen.
+  it("highlights and scrolls the targeted claim once it loads", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const target = claim({ id: "claim_target", statement: "Target claim" });
+    listManagementClaimsMock.mockResolvedValue([claim({ id: "claim_other" }), target]);
+
+    render(<CompanyClaimsPanel companyId="company_gpw_cdr" highlightClaimId="claim_target" />);
+
+    await waitFor(() => {
+      const row = screen.getByText("Target claim").closest("[data-claim-id]");
+      expect(row).toHaveAttribute("data-claim-id", "claim_target");
+      expect(row).toHaveClass("claim-row-highlighted");
+    });
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  it("does not highlight anything when no claim id is targeted", async () => {
+    listManagementClaimsMock.mockResolvedValue([claim({ id: "claim_a" })]);
+    render(<CompanyClaimsPanel companyId="company_gpw_cdr" />);
+    await waitFor(() => {
+      expect(screen.getByText("Net revenue will reach 1,000,000 by Q4 2026.")).toBeInTheDocument();
+    });
+    expect(document.querySelector(".claim-row-highlighted")).toBeNull();
+  });
 });

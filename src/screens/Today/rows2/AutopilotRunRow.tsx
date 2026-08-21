@@ -1,0 +1,40 @@
+import { Cpu } from "lucide-react";
+
+import type { TodayItem } from "../../../api/generated/TodayItem";
+import { useLocale } from "../../../shared/locale";
+import { StatusChip } from "../../../ui";
+import { RowShell } from "./RowShell";
+
+export type AutopilotRunItem = Extract<TodayItem, { kind: "autopilotRun" }>;
+
+/**
+ * `AutopilotRun` carries `companyId` but no `qualifiedTicker` (unlike every
+ * other `TodayItem` kind, whose company data is already inlined) — the
+ * caller resolves it, same as `AttentionRow`'s ticker.
+ */
+export function AutopilotRunRow({
+  item,
+  qualifiedTicker,
+  onOpen,
+}: {
+  item: AutopilotRunItem;
+  qualifiedTicker: string | null;
+  onOpen: () => void;
+}) {
+  const { text } = useLocale();
+
+  return (
+    <RowShell
+      icon={<Cpu aria-hidden="true" size={18} />}
+      ticker={qualifiedTicker}
+      chip={
+        <StatusChip className="dayq-chip" tone="accent">
+          {text("Autopilot")}
+        </StatusChip>
+      }
+      title={item.run.reportDocumentTitle ?? text("Autopilot finished")}
+      actionLabel={text("Read report")}
+      onAction={onOpen}
+    />
+  );
+}

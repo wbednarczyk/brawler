@@ -1,4 +1,4 @@
-import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
+import { useState, type Dispatch, type KeyboardEvent, type SetStateAction } from "react";
 import * as feedApi from "../api/feed";
 import type { Company, FeedItem } from "../api/types";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
@@ -43,6 +43,12 @@ export function useFeedController({
   setSelectedCompanyId,
   setSelectedFeedItemId,
 }: FeedControllerInput) {
+  // Today's "Otwórz komunikat" seam (F2 S3, plan decision 6): bumped on every
+  // `openInboxItem` call so InboxScreen can raise its S-overlay
+  // (`inboxDetailOpen`) from OUTSIDE without the screen reaching into that
+  // local state — it just reacts to this prop changing.
+  const [inboxDetailActivationToken, setInboxDetailActivationToken] = useState(0);
+
   function updateFeedItemState(item: FeedItem, update: (item: FeedItem) => FeedItem) {
     const nextItem = update(item);
 
@@ -171,11 +177,25 @@ export function useFeedController({
     setActiveSection("Inbox");
   }
 
+  // Today's `openInboxItem(feedItemId, companyId)` nav intent (F2 S3, plan
+  // decision 6): scope Inbox filters to the company, select EXACTLY this feed
+  // item, and bump the activation token so the S-overlay opens on it — never
+  // the silent first-row fallback (`useAppViewModel.ts` `selectedFeedItem`).
+  function openInboxItem(feedItemId: string, companyId: string) {
+    const company = companies.find((candidate) => candidate.id === companyId);
+    scopeInboxToCompany(company?.qualifiedTicker ?? "all");
+    setSelectedFeedItemId(feedItemId);
+    setActiveSection("Inbox");
+    setInboxDetailActivationToken((token) => token + 1);
+  }
+
   return {
     clearInboxFilters,
+    inboxDetailActivationToken,
     inspectCompanyFeedItem,
     markVisibleInboxAsRead,
     openCompanyWorkspaceFromFeedItem,
+    openInboxItem,
     scopeInboxToCompany,
     selectFeedItemFromKeyboard,
     toggleFeedItemReadState,

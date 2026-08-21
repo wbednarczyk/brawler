@@ -569,3 +569,155 @@
     gap: var(--space-2);
   }
 }
+
+/* Dziś v2 day queue (F2 S3, ADR 0106 dec. 3/plan decisions 1/8/9): the screen-
+   local row kit v2 (`rows2/`) — a fresh namespace so it never collides with
+   the v1 stream kit above (`.today-stream-row` et al.), which S4 removes.
+   Row anatomy per Wiersze.dc.html: icon · ticker · quiet provenance chip ·
+   human title · optional mono meta · one quiet action. */
+.dayq-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+/* The severity outline ring (plan decision 8's "obrys") — never a second
+   accent color, just weight + outline. */
+.dayq-row-accent {
+  border-color: color-mix(in srgb, var(--tone-official) 40%, var(--border));
+}
+
+.dayq-row-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.dayq-row-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.dayq-row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Quiet chip text is normal-case source copy (i18n/screen-reader hygiene);
+   the mockup's caps look is a visual transform only (`.today-sev-chip`
+   precedent). */
+.dayq-chip {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dayq-row-title {
+  margin: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.dayq-row-title-strong {
+  font-weight: 700;
+}
+
+/* The provenance thread (ADR 0104) — thesis/claim titles only. */
+.dayq-row-title-thread {
+  display: inline-block;
+  border-bottom: 1px dotted var(--tone-official);
+}
+
+.dayq-row-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+}
+
+.dayq-row-action {
+  flex: none;
+}
+
+/* Day-section header (F2 S3 decision 1/5): mono label + counters, or —
+   collapsed — a single summary line with a checkmark + recovery link. */
+.dayq-day-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+
+.dayq-day-header-collapsed {
+  align-items: center;
+  border-bottom: none;
+  color: var(--muted);
+}
+
+.dayq-day-check {
+  flex: none;
+  color: var(--tone-positive);
+}
+
+.dayq-day-label {
+  font-size: var(--font-sm);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dayq-day-count {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.dayq-day-expand {
+  margin-left: auto;
+}
+
+/* Delta header (F2 S3 decision 1/6/8): eyebrow + delta sentence + the
+   screen's one primary CTA. */
+.dayq-delta-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) 0;
+}
+
+.dayq-delta-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  letter-spacing: 0.1em;
+  color: var(--primary);
+}
+
+.dayq-delta-headline {
+  margin: 0;
+  font-size: var(--font-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.dayq-delta-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.dayq-delta-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
