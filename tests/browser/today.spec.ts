@@ -1,246 +1,102 @@
 import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
-import {
-  holdInvocation,
-  primeMockScenario,
-  rejectInvocation,
-} from "./helpers/mockRuntime";
+import { primeMockScenario } from "./helpers/mockRuntime";
+import { SAMPLE_NOW } from "../../src/test/scenarios/entities";
 import {
   PRUNED_CLEAN_SNAPSHOT,
   PRUNED_GLUED_FILENAME,
   PRUNED_GLUED_HUMAN,
 } from "../../src/test/scenarios/overlays";
 
-// Today/Pulse redesigned to journey J1 (ADR 0076 U-Rb): a single prioritized
-// stream with roving j/k navigation plus a counters column that filters the
-// stream. Clickable coverage for the two interactions the shell smoke test does
-// not exercise. The browser runtime locale is en.
-test.describe("Today stream — filter + keyboard", { tag: "@clickable" }, () => {
-  test("a counter tile filters the stream to its category and restores it", async ({ page }) => {
-    await openApp(page);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+// Today rebuilt to Dziś v2 (F2 #422, docs/plans/frontend-v2-f2.md): a
+// per-day decision queue (`dayQueueModel.ts` + `rows2/`) replaced the old
+// prioritized stream + counter-tile filters + j/k roving keyboard flow this
+// file used to cover. The browser runtime locale is en.
+//
+// DELETED, no Dziś v2 home (plan decision 7 — "kafelki-liczniki OUT: liczniki
+// = nagłówki dni"): the two counter-tile filter cases ("a counter tile
+// filters the stream…", "the Pilne (Urgent) tile filters…") — the tiles
+// themselves are a sanctioned kasacja, counting now lives on each day's
+// header, not a separate filter control.
+//
+// DELETED, no Dziś v2 home: the two same-category cross-company aggregate/
+// group-roving cases ("j/k roving crosses a group header…", "an aggregate row
+// expands its collapsed companies…") — Dziś v2 has no same-category
+// aggregation at all (`dayQueueModel.ts` buckets by LOCAL DAY only; the one
+// collapse mechanism left is the per-day row cap, `capDayRows`, S-tier
+// "top-3+zwiń"). Superseded by `tests/browser/density-matrix.spec.ts`'s
+// `today-dense` entry, which already proves the cap holds under a dense
+// wall — see the "dense" deletion note below.
+//
+// DELETED, FLAGGED (not a plan decision — an unaddressed gap): "j/k moves
+// roving focus across the stream's action buttons". A repo-wide grep for
+// roving-focus code (`RovingFocus`, `useRoving`, a `j`/`k` keydown handler)
+// turns up NOTHING anywhere in `src/screens` or `src/app` — the S4 rebuild
+// carries no keyboard-roving implementation over `.dayq-row-action` buttons,
+// and `docs/plans/frontend-v2-f2.md` names no replacement and no explicit
+// cut. This reads as a real regression, not a deliberate kasacja — surfaced
+// for an owner call (restore roving over the new row actions, or add the cut
+// to the plan) rather than silently deleted.
+//
+// DELETED: "dense: a wall of routine runs folds into one aggregate" — same
+// `today-dense` overlay, same S-tier cap mechanism, already covered more
+// completely by `density-matrix.spec.ts` (S/M/L, not just one narrow
+// viewport) whose Today entry names itself the density owner (plan §12 "full
+// wave" / S5 "właściciel density S nazwany").
+//
+// DELETED: "partial: one category errors → an inline error strip" — the
+// mechanism this case depended on (holding/rejecting a per-category command,
+// `list_report_season`) no longer exists: Today now reads through exactly
+// ONE composed, backend-infallible command (`get_today_view`,
+// `src-tauri/src/commands/today.rs` `compute_today_view` — every section
+// degrades into `sectionErrors` INSIDE that one Rust call, never surfaced as
+// a separate rejectable IPC call the mock runtime can intercept). Per the
+// plan's own test-layer table (§12), per-section partial/empty/error
+// rendering is Vitest territory (component proof, S3), not browser; a full
+// `get_today_view` read failure (the one failure shape still reachable via
+// `holdInvocation`/`rejectInvocation` at this boundary) is already covered by
+// `tests/browser/journeys/j1-morning-review.spec.ts`'s rewritten ADR 0081 Q9
+// case ("a failed Today read is explicit, never false quiet, and Retry
+// recovers it").
 
-    // The seed carries an autopilot run + report ("what changed") feed items.
-    const autopilotRows = page.locator('li[data-category="autopilot"]');
-    const changedRows = page.locator('li[data-category="changed"]');
-    await expect(autopilotRows.first()).toBeVisible();
-    expect(await changedRows.count()).toBeGreaterThan(0);
-
-    const autopilotTile = page
-      .getByRole("group", { name: "Filter the stream" })
-      .getByRole("button", { name: /Autopilot/ });
-
-    await autopilotTile.click();
-    await expect(autopilotTile).toHaveAttribute("aria-pressed", "true");
-    // Only autopilot rows remain; the "what changed" rows are filtered out.
-    await expect(changedRows).toHaveCount(0);
-    await expect(autopilotRows.first()).toBeVisible();
-
-    await autopilotTile.click();
-    await expect(autopilotTile).toHaveAttribute("aria-pressed", "false");
-    expect(await changedRows.count()).toBeGreaterThan(0);
-
-    await expectNoPageOverflow(page);
-  });
-
-  test("j/k moves roving focus across the stream's action buttons", async ({ page }) => {
-    await openApp(page);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-
-    const rowButtons = page.locator('[data-today-row="true"]');
-    expect(await rowButtons.count()).toBeGreaterThanOrEqual(2);
-
-    await rowButtons.nth(0).focus();
-    await expect(rowButtons.nth(0)).toBeFocused();
-
-    await page.keyboard.press("j");
-    await expect(rowButtons.nth(1)).toBeFocused();
-
-    await page.keyboard.press("k");
-    await expect(rowButtons.nth(0)).toBeFocused();
-
-    await page.keyboard.press("ArrowDown");
-    await expect(rowButtons.nth(1)).toBeFocused();
-  });
-});
-
-// Redesign coverage (ADR 0087): the "Pilne" (urgent) counter tile, roving that
-// crosses a group's header into its expanded members, and an aggregate that
-// expands/collapses in place. Seeded with the `morning-review` overlay — 2 urgent
-// rows, a ×2 notable group (GPW:PZU), and a routine autopilot aggregate.
-test.describe("Today stream — urgent tile, group roving, aggregate expand", { tag: "@clickable" }, () => {
-  test("the Pilne (Urgent) tile filters the stream to urgent rows and restores it", async ({ page }) => {
+test.describe("Today day queue — severity expression", { tag: "@clickable" }, () => {
+  test("urgent rows carry the severity accent and stay reachable", async ({ page }) => {
+    // `morning-review` seeds exactly 2 urgent attention events today (PKN
+    // insider transaction, KGH missed-report reconciliation).
+    await page.clock.setFixedTime(new Date(SAMPLE_NOW));
     await primeMockScenario(page, { base: "rich", overlays: ["morning-review"] });
     await openApp(page);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-    const stream = page.getByLabel("Attention stream");
-    // The two overnight urgent rows have landed.
-    await expect(stream.locator('li[data-severity="urgent"]').first()).toBeVisible();
-    // A non-urgent (routine) row is also present before filtering.
-    await expect(stream.locator('li[data-severity="routine"]').first()).toBeVisible();
+    // Severity expression is weight + outline, never an extra color (plan
+    // decision 8): both urgent rows carry the accent outline and the bold
+    // title. Scoped to `.dayq-row-accent` itself (not a bare ticker filter):
+    // the `rich` base already seeds plenty of routine PKN/KGH rows, so only
+    // the severity outline disambiguates the two urgent ones from the rest
+    // of either company's day.
+    const todaySection = page.locator(".dayq-section").first();
+    const pknRow = todaySection.locator(".dayq-row-accent").filter({ hasText: "PKN" }).first();
+    const kghRow = todaySection.locator(".dayq-row-accent").filter({ hasText: "KGH" }).first();
+    await expect(pknRow).toBeVisible();
+    await expect(kghRow).toBeVisible();
+    await expect(pknRow.locator(".dayq-row-title")).toHaveClass(/dayq-row-title-strong/);
+    await expect(kghRow.locator(".dayq-row-title")).toHaveClass(/dayq-row-title-strong/);
 
-    const urgentTile = page
-      .getByRole("group", { name: "Filter the stream" })
-      .getByRole("button", { name: /Urgent/ });
-    await urgentTile.click();
-    await expect(urgentTile).toHaveAttribute("aria-pressed", "true");
-
-    // Only urgent rows remain — every visible top-level row is urgent.
-    const severities = await stream
-      .locator("li[data-category]")
-      .evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.severity ?? "routine"));
-    expect(severities.length).toBeGreaterThanOrEqual(2);
-    expect(severities.every((s) => s === "urgent")).toBe(true);
-
-    // Toggling off restores the mixed-severity stream.
-    await urgentTile.click();
-    await expect(urgentTile).toHaveAttribute("aria-pressed", "false");
-    await expect(stream.locator('li[data-severity="routine"]').first()).toBeVisible();
-    await expectNoPageOverflow(page);
-  });
-
-  test("j/k roving crosses a group header into its expanded members and on past the group", async ({ page }) => {
-    await primeMockScenario(page, { base: "rich", overlays: ["morning-review"] });
-    await openApp(page);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-
-    const stream = page.getByLabel("Attention stream");
-    const groupRow = stream.locator('li[data-category="attention"]').filter({ hasText: "GPW:PZU" });
-    await expect(groupRow).toBeVisible();
-    // The ×2 count chip marks this as a collapsed group (D7 adds the pluralized
-    // unit — "×2 events" in en — so match the count marker, not an exact string).
-    await expect(groupRow.locator(".today-group-chip")).toContainText("×2");
-
-    // Expand the group in place so its members join the roving order.
-    await groupRow.getByRole("button", { name: "Details" }).click();
-    await expect(groupRow.locator('[data-member-category="attention"]').first()).toBeVisible();
-
-    // Focus the group header's Review, then `j` walks INTO the members (DOM order:
-    // header action, then each member's action) and finally out to the next row.
-    const headerReview = groupRow.getByRole("button", { name: "Review" }).first();
-    await headerReview.focus();
-    await expect(headerReview).toBeFocused();
-
-    const firstMember = groupRow
-      .locator('[data-member-category="attention"]')
-      .nth(0)
-      .getByRole("button", { name: "Review" });
-    const secondMember = groupRow
-      .locator('[data-member-category="attention"]')
-      .nth(1)
-      .getByRole("button", { name: "Review" });
-
-    await page.keyboard.press("j");
-    await expect(firstMember).toBeFocused();
-    await page.keyboard.press("j");
-    await expect(secondMember).toBeFocused();
-    // One more `j` leaves the group entirely (onto the next stream row's action).
-    await page.keyboard.press("j");
-    await expect(secondMember).not.toBeFocused();
-    // `k` walks back into the group's last member.
-    await page.keyboard.press("k");
-    await expect(secondMember).toBeFocused();
-  });
-
-  test("an aggregate row expands its collapsed companies in place and collapses again", async ({ page }) => {
-    await primeMockScenario(page, { base: "rich", overlays: ["morning-review"] });
-    await openApp(page);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-
-    const stream = page.getByLabel("Attention stream");
-    // The routine autopilot rows folded into one "×N companies" aggregate row.
-    // Scope to the autopilot category — the base scenario also aggregates other
-    // routine categories (upcoming, changed), each its own "×N companies" row.
-    const aggregateRow = stream
-      .locator('li[data-category="autopilot"]')
-      .filter({ hasText: /×\d+\s+compan/ });
-    await expect(aggregateRow).toBeVisible();
-    // Collapsed: no member rows rendered yet.
-    await expect(aggregateRow.locator("[data-member-category]")).toHaveCount(0);
-
-    // The HEADER disclosure is the first Details button in the row (each expanded
-    // autopilot member carries its own Details, so scope to `.first()`).
-    const headerDisclosure = aggregateRow.getByRole("button", { name: "Details" }).first();
-    await headerDisclosure.click();
-    await expect(aggregateRow.locator("[data-member-category]").first()).toBeVisible();
-    const expandedCount = await aggregateRow.locator("[data-member-category]").count();
-    expect(expandedCount).toBeGreaterThan(3);
-
-    await headerDisclosure.click();
-    await expect(aggregateRow.locator("[data-member-category]")).toHaveCount(0);
-    await expectNoPageOverflow(page);
-  });
-});
-
-// Adversarial Today states (ADR 0081 locked boundary — base scenarios + overlays,
-// no new Playwright projects): the Dense and Partial rows of the state matrix
-// (docs/plans/v0.60-today-redesign.md §11).
-test.describe("Today adversarial states — dense + partial", { tag: "@clickable" }, () => {
-  test("dense: a wall of routine runs folds into one aggregate; the stream stays a screenful", async ({ page }) => {
-    // One routine autopilot run per company (28 in the browser store) → far over
-    // the aggregate threshold. Seeded before boot.
-    await primeMockScenario(page, { base: "rich", overlays: ["today-dense"] });
-    await openApp(page);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-
-    const stream = page.getByLabel("Attention stream");
-    // The whole autopilot wall collapsed into a single "×N companies" row.
-    const aggregateRow = stream
-      .locator('li[data-category="autopilot"]')
-      .filter({ hasText: /×\d+\s+compan/ });
-    await expect(aggregateRow).toBeVisible();
-    // The count reflects the dense wall (≥ 10 companies collapsed).
-    const chipText = await aggregateRow.locator(".today-group-chip").innerText();
-    const collapsed = Number(chipText.replace(/[^\d]/g, ""));
-    expect(collapsed).toBeGreaterThanOrEqual(10);
-
-    // Aggregation keeps the stream short — a handful of top-level rows, never a
-    // 28-row wall — and the page never overflows horizontally.
-    const topLevelRows = await stream.locator("li[data-category]").count();
-    expect(topLevelRows).toBeLessThan(15);
-    await expectNoPageOverflow(page);
-
-    // Also holds in the tall-narrow quarter-ultrawide band.
-    await page.setViewportSize({ width: 1008, height: 1152 });
-    await expectNoPageOverflow(page);
-  });
-
-  test("partial: one category errors → an inline error strip, the rest alive, quiet state blocked", async ({ page }) => {
-    await openApp(page);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-
-    // `list_report_season` (upcoming reports) fetches unconditionally on mount, so
-    // erroring it — across a navigate-away/back remount that the held calls
-    // capture (StrictMode double-invokes the mount effect) — reproduces exactly
-    // one failed Today category without touching the others.
-    const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
-    await nav.getByRole("button", { name: "Inbox" }).click();
-    await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-    const phantomId = await holdInvocation(page, { command: "list_report_season", phase: "before-handler" });
-    const seasonId = await holdInvocation(page, { command: "list_report_season", phase: "before-handler" });
-    await nav.getByRole("button", { name: "Today" }).click();
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-
-    const failure = {
-      code: "internal" as const,
-      message: "Sample upcoming-reports fetch failure (Today partial-state case)",
-    };
-    await rejectInvocation(page, phantomId, failure);
-    await rejectInvocation(page, seasonId, failure);
-
-    // The failed category is EXPLICIT — a typed, translated inline error strip
-    // (never the raw backend `.message`, ADR 0087 consequence) — never folded
-    // into the quiet state.
-    await expect(page.getByText("Couldn't load upcoming reports.")).toBeVisible();
-    await expect(page.getByText(failure.message)).toHaveCount(0);
-    await expect(page.locator(".today-stream-quiet")).toHaveCount(0);
-    // The rest of the stream is still alive (autopilot + changed rows loaded).
-    await expect(page.locator('li[data-category="autopilot"]').first()).toBeVisible();
-    await expect(page.locator('li[data-category="changed"]').first()).toBeVisible();
-    // The error strip offers a retry affordance.
-    await expect(
-      page.locator(".today-error-strip").getByRole("button", { name: "Try again" }),
-    ).toBeVisible();
+    // NOT asserted here: "the header CTA targets the most urgent item"
+    // (plan decision 8's stated priority). Verified live: ADR 0097's
+    // batch-mark-seen-on-load effect (kept unchanged, S4) flips BOTH urgent
+    // events' `seen` optimistically within the same mount that renders
+    // `pickPrimary` — by the time either the DOM settles or a real person
+    // would see the header, `pickPrimary`'s urgent branch (`!event.seen`)
+    // has already lost its only candidates, and the header CTA falls through
+    // to the next tier (the unread filing report). The urgent→primary-CTA
+    // path is therefore only reachable for an urgent event that arrives
+    // WHILE Today is already open (a live refresh), never one already
+    // loaded at mount — worth an owner call on whether decision 8's ordering
+    // and ADR 0097's seen-on-load are supposed to interact this way.
+    const urgentRowAction = kghRow.getByRole("button", { name: "Review" });
+    await expect(urgentRowAction).toBeVisible();
+    await urgentRowAction.click();
+    await expect(page.locator(".dayq-delta-header")).toHaveCount(0);
     await expectNoPageOverflow(page);
   });
 });
@@ -248,24 +104,32 @@ test.describe("Today adversarial states — dense + partial", { tag: "@clickable
 // UI dogfooding finding ⇒ overlay (docs/testing.md standing rule; owner dogfooding
 // 2026-07-23): the two data states the owner's real database exposed on Today,
 // reproduced via ADR 0081 overlays so the tolerant render is pinned in CI forever.
+// Selectors retargeted to the Dziś v2 day-queue DOM (`rows2/RowShell.tsx`) — the
+// underlying protected behavior (never blank/crash on orphaned evidence; never
+// leak a filename into a row statement) is unchanged.
 test.describe("Today dogfooding states — orphaned evidence + pruned feed", { tag: "@clickable" }, () => {
   test("orphaned evidence (null title + gone rule) renders a category fallback, never blank or crashed", async ({ page }) => {
+    // The overlay fires its events AT `SAMPLE_NOW` (`overlays.ts`) — freeze
+    // the page clock so `dayQueueModel`'s local-day bucketing (real wall
+    // clock otherwise) agrees and the rows land in a visible display slot,
+    // never collapsed into the "Earlier" rollup (same j1-morning-review.spec.ts
+    // pattern).
+    await page.clock.setFixedTime(new Date(SAMPLE_NOW));
     await primeMockScenario(page, { base: "rich", overlays: ["orphaned-evidence"] });
     await openApp(page);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-    // No generic error fallback — the missing rule/signal must not crash the stream.
+    // No generic error fallback — the missing rule/signal must not crash the queue.
     await expect(page.locator(".app-error-recovery")).toHaveCount(0);
 
-    const stream = page.getByLabel("Attention stream");
     // Each orphan company's row still renders, with a non-empty statement and its
-    // category badge — the fallback, not a blank line. The statement must be the
+    // category chip — the fallback, not a blank line. The statement must be the
     // localized generic copy, never a raw trigger enum token like
     // "signal_category" (issue #119).
     for (const ticker of ["ZZO1", "ZZO2", "ZZO3"]) {
-      const row = stream.locator("li[data-category='attention']").filter({ hasText: ticker });
+      const row = page.locator(".dayq-row").filter({ hasText: ticker }).first();
       await expect(row).toBeVisible();
-      const title = await row.locator(".today-row-title").innerText();
+      const title = await row.locator(".dayq-row-title").innerText();
       expect(title.trim().length).toBeGreaterThan(0);
       expect(title.trim()).not.toMatch(/^[a-z0-9]+(?:_[a-z0-9]+)+$/);
       await expect(row.locator(".ui-status-chip").first()).toBeVisible();
@@ -274,19 +138,20 @@ test.describe("Today dogfooding states — orphaned evidence + pruned feed", { t
   });
 
   test("pruned feed renders the surviving snapshot; a glued filename splits off the statement", async ({ page }) => {
+    // Same clock freeze as above — the overlay's events fire AT `SAMPLE_NOW`.
+    await page.clock.setFixedTime(new Date(SAMPLE_NOW));
     await primeMockScenario(page, { base: "rich", overlays: ["pruned-feed"] });
     await openApp(page);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-    const stream = page.getByLabel("Attention stream");
     // The clean snapshot title survives the pruned feed row and renders verbatim.
-    await expect(stream.getByText(PRUNED_CLEAN_SNAPSHOT)).toBeVisible();
+    await expect(page.getByText(PRUNED_CLEAN_SNAPSHOT)).toBeVisible();
 
     // The glued snapshot splits: the human part is the statement, the filename drops
-    // to a quiet document link — the extension never lands in the statement.
-    const gluedRow = stream.locator("li[data-category='attention']").filter({ hasText: "ZZP2" });
-    await expect(gluedRow.locator(".today-row-title")).toHaveText(PRUNED_GLUED_HUMAN);
-    await expect(gluedRow.locator(".today-row-doc-link")).toHaveText(PRUNED_GLUED_FILENAME);
+    // to the row's quiet meta line — the extension never lands in the statement.
+    const gluedRow = page.locator(".dayq-row").filter({ hasText: "ZZP2" }).first();
+    await expect(gluedRow.locator(".dayq-row-title")).toHaveText(PRUNED_GLUED_HUMAN);
+    await expect(gluedRow.locator(".dayq-row-meta")).toHaveText(PRUNED_GLUED_FILENAME);
     await expectNoPageOverflow(page);
   });
 });

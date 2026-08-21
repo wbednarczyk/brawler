@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from "react";
 import { RefreshCw } from "lucide-react";
 
 import { getTodayView, markTodayVisited, type TodayView } from "../../api/today";
@@ -8,15 +8,18 @@ import type { Company, SourceAdapter } from "../../api/types";
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { AttentionController } from "../../app/useAttentionController";
 import { useCommandQuery } from "../../shared/state/useCommandQuery";
+import { formatDayRangeLabel } from "../../shared/format/datetime";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { COMPANY_FORMS, ITEM_FORMS, MEDIA_ITEM_FORMS, pluralNoun } from "../../shared/locale/plural";
 import { Button, EmptyState, ErrorText, PanelHeader, Skeleton } from "../../ui";
 import {
   allSeen,
   bucketByLocalDay,
+  capDayRows,
   formatDeltaHeadline,
   itemTimestamp,
   pickPrimary,
+  splitDisplayBuckets,
   type DayBucket,
   type PrimaryCandidate,
 } from "./dayQueueModel";
@@ -26,6 +29,7 @@ import { CalendarRow } from "./rows2/CalendarRow";
 import { ClaimRow } from "./rows2/ClaimRow";
 import { DayHeader } from "./rows2/DayHeader";
 import { DeltaHeader, type DeltaAction } from "./rows2/DeltaHeader";
+import { EarlierRollupRow } from "./rows2/EarlierRollupRow";
 import { FilingRow } from "./rows2/FilingRow";
 import { MediaClusterRow } from "./rows2/MediaClusterRow";
 import { NonArrivalRow } from "./rows2/NonArrivalRow";
@@ -59,6 +63,31 @@ export type TodayScreenProps = {
 // 7 gives the fullest "unreviewed days" queue + the widest calendar look-ahead.
 const DAY_LIMIT = 7;
 
+// S-tier row cap (plan Dense row "S top-3+zwiń", Compact.dc.html): measured
+// directly against the hosting pane size container, same technique as
+// EventsScreen's `usePaneCompact` — width-only here (Today's cap is a width
+// concern, not the merged width/height "compact" Events needs for its
+// week/list switch). jsdom has no `ResizeObserver` (some SSR too) → stays
+// `false`, matching EventsScreen's precedent (`density-matrix.spec.ts`
+// proves the live behavior in a real browser).
+function useNarrowPane(ref: RefObject<HTMLElement | null>): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const host = ref.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const pane = (host.closest(".cockpit-pane, .workspace") as HTMLElement | null) ?? host;
+    const measure = () => {
+      const width = pane.clientWidth;
+      setNarrow(width > 0 && width < 420);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [ref]);
+  return narrow;
+}
+
 function shortTicker(qualifiedTicker: string | null | undefined): string {
   if (!qualifiedTicker) return "";
   const idx = qualifiedTicker.indexOf(":");
@@ -87,6 +116,9 @@ export function TodayScreen({
   updateTodayReviewedDays,
 }: TodayScreenProps) {
   const { t, text, locale } = useLocale();
+
+  const rootRef = useRef<HTMLElement | null>(null);
+  const narrow = useNarrowPane(rootRef);
 
   // Refetch on the SAME signal that already refreshes root-fed attention
   // (plan decision 2's refresh coordination): `attention.events` changes
@@ -336,7 +368,7 @@ export function TodayScreen({
   }
 
   return (
-    <section className="today-screen feed-panel" aria-labelledby="today-title">
+    <section className="today-screen feed-panel" aria-labelledby="today-title" ref={rootRef}>
       <PanelHeader title={t("today.title")} description={t("today.description")} titleId="today-title" />
       <ConfigBanner conditions={configConditions} />
 
@@ -361,6 +393,7 @@ export function TodayScreen({
             attentionEvents={attention.events}
             locale={locale}
             text={text}
+            narrow={narrow}
             todayReviewedDays={todayReviewedDays}
             expandedDays={expandedDays}
             expandDay={expandDay}
@@ -426,6 +459,8 @@ type TodayBodyProps = {
   attentionEvents: AttentionEvent[];
   locale: LocaleCode;
   text: (value: string) => string;
+  /** S-tier row cap (plan Dense row "S top-3+zwiń") — see `useNarrowPane`. */
+  narrow: boolean;
   todayReviewedDays: string[];
   expandedDays: Set<string>;
   expandDay: (day: string) => void;
@@ -446,6 +481,7 @@ function TodayBody({
   attentionEvents,
   locale,
   text,
+  narrow,
   todayReviewedDays,
   expandedDays,
   expandDay,
@@ -463,8 +499,63 @@ function TodayBody({
   const primaryCandidate = useMemo(() => pickPrimary(buckets), [buckets]);
   const primaryAction = primaryCandidate ? primaryFromCandidate(primaryCandidate) : null;
 
+  // The "Wcześniej" rollup (plan decision 5 / contract §5): every bucket
+  // beyond the two freshest-with-content display slots (DZIŚ + WCZORAJ)
+  // collapses into ONE line; "Otwórz dni" reveals them session-locally.
+  const { visible: visibleBuckets, earlier } = useMemo(() => splitDisplayBuckets(buckets), [buckets]);
+  const [earlierExpanded, setEarlierExpanded] = useState(false);
+
   const hasContent = buckets.some((bucket) => bucket.total > 0) || data.toVerify.length > 0;
   const totalCount = buckets.reduce((sum, bucket) => sum + bucket.total, 0);
+
+  // A day section's rows, S-tier capped to the newest 3 (plan Dense row "S
+  // top-3+zwiń") — reusing `expandDay`'s `expandedDays` set as the same
+  // "show everything for this day" override the natural-collapse recovery
+  // link already uses (a day not naturally collapsed is never in that set,
+  // so this is a no-op there until the cap actually needs overriding).
+  function renderDayRows(bucket: DayBucket) {
+    const rows = dayRows(bucket);
+    const { visible, hidden } = capDayRows(rows, narrow, expandedDays.has(bucket.day));
+    return (
+      <>
+        <ul className="dayq-day-rows">{visible}</ul>
+        {hidden > 0 ? (
+          <div className="dayq-day-cap">
+            <span className="dayq-day-cap-count">
+              +{hidden} {pluralNoun(locale, hidden, ITEM_FORMS)}
+            </span>
+            <Button variant="minimal" type="button" onClick={() => expandDay(bucket.day)}>
+              {text("Open day")}
+            </Button>
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
+  function renderDaySection(bucket: DayBucket) {
+    // "Days older than dayLimit always collapsed" (plan decision 5) is
+    // already enforced by the BACKEND's fetch window — a bucket this far
+    // back only exists here because `get_today_view` returned it, so every
+    // bucket (today/yesterday/earlier alike) collapses by the SAME rule: the
+    // manual reviewed-set, or full derivation (`allSeen`).
+    const naturallyCollapsed = todayReviewedDays.includes(bucket.day) || allSeen(bucket);
+    const collapsed = naturallyCollapsed && !expandedDays.has(bucket.day);
+    return (
+      <section className="dayq-section" key={bucket.day} aria-label={bucket.day}>
+        <DayHeader
+          day={bucket.day}
+          relativeDay={bucket.relativeDay}
+          total={bucket.total}
+          unseen={bucket.unseen}
+          collapsed={collapsed}
+          onExpand={collapsed ? () => expandDay(bucket.day) : undefined}
+          onMarkReviewed={!collapsed ? () => markDayReviewed(bucket.day) : undefined}
+        />
+        {!collapsed ? renderDayRows(bucket) : null}
+      </section>
+    );
+  }
 
   const headline = formatDeltaHeadline(data.deltaSummary, locale, text);
   const eyebrow = `${text("Today")} · ${now.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`;
@@ -503,31 +594,22 @@ function TodayBody({
         </div>
       ) : (
         <>
-          {buckets
-            .filter((bucket) => bucket.total > 0)
-            .map((bucket) => {
-              // "Days older than dayLimit always collapsed" (plan decision 5) is
-              // already enforced by the BACKEND's fetch window — a bucket this
-              // far back only exists here because `get_today_view` returned it,
-              // so every bucket (today/yesterday/earlier alike) collapses by the
-              // SAME rule: the manual reviewed-set, or full derivation (`allSeen`).
-              const naturallyCollapsed = todayReviewedDays.includes(bucket.day) || allSeen(bucket);
-              const collapsed = naturallyCollapsed && !expandedDays.has(bucket.day);
-              return (
-                <section className="dayq-section" key={bucket.day} aria-label={bucket.day}>
-                  <DayHeader
-                    day={bucket.day}
-                    relativeDay={bucket.relativeDay}
-                    total={bucket.total}
-                    unseen={bucket.unseen}
-                    collapsed={collapsed}
-                    onExpand={collapsed ? () => expandDay(bucket.day) : undefined}
-                    onMarkReviewed={!collapsed ? () => markDayReviewed(bucket.day) : undefined}
-                  />
-                  {!collapsed ? <ul className="dayq-day-rows">{dayRows(bucket)}</ul> : null}
-                </section>
-              );
-            })}
+          {visibleBuckets.map(renderDaySection)}
+
+          {earlier ? (
+            earlierExpanded ? (
+              earlier.buckets.map(renderDaySection)
+            ) : (
+              <section className="dayq-section" aria-label={text("Earlier")}>
+                <EarlierRollupRow
+                  rangeLabel={formatDayRangeLabel(earlier.oldestDay, earlier.newestDay, locale)}
+                  count={earlier.count}
+                  unseen={earlier.unseen}
+                  onExpand={() => setEarlierExpanded(true)}
+                />
+              </section>
+            )
+          ) : null}
 
           {data.toVerify.length > 0 ? (
             <section className="dayq-section" aria-label={text("To verify")}>

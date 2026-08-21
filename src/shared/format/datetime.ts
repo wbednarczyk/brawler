@@ -139,6 +139,17 @@ export function formatLocalIsoDate(value: string | null | undefined): string {
   return year && month && day ? `${day}.${month}.${year}` : trimmed;
 }
 
+/** Localized weekday-range label for the Dziś v2 "Wcześniej" rollup (F2 S5,
+ * Delta.dc.html "pn–wt"): one weekday abbreviation, or two joined by an en
+ * dash. Safe within the read model's 7-day fetch window (`get_today_view`
+ * clamps `dayLimit` to 1..7) — the whole range always falls inside the
+ * current weekday cycle, so a bare abbreviation (never month/year) reads
+ * unambiguously. */
+export function formatDayRangeLabel(oldestDay: string, newestDay: string, locale: LocaleCode = "en"): string {
+  const label = (day: string) => weekdays(locale)[parseLocalDate(day).getDay()];
+  return oldestDay === newestDay ? label(oldestDay) : `${label(oldestDay)}–${label(newestDay)}`;
+}
+
 /** Localized "D mon – D mon" week label (ADR 0076 D4: "30 cze – 4 lip"). */
 export function formatWeekRange(startDate: string, endDate: string, locale: LocaleCode = "en"): string {
   const month = months(locale);

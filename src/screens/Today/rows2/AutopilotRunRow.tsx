@@ -32,9 +32,18 @@ export function AutopilotRunRow({
       icon={<Cpu aria-hidden="true" size={18} />}
       ticker={qualifiedTicker}
       chip={
-        <StatusChip className="dayq-chip" tone="accent">
-          {text("Autopilot")}
-        </StatusChip>
+        // A failed run must be visibly failed ON ITS OWN ROW (ADR 0091 dec. 3)
+        // — never only via the paired attention event, which lives in a
+        // separate root-fed subsystem.
+        item.run.status === "failed" ? (
+          <StatusChip className="dayq-chip" tone="danger">
+            {text("Autopilot failed")}
+          </StatusChip>
+        ) : (
+          <StatusChip className="dayq-chip" tone="accent">
+            {text("Autopilot")}
+          </StatusChip>
+        )
       }
       title={statement ?? text("Autopilot finished")}
       meta={filename}

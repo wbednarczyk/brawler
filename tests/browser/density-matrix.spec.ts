@@ -1,4 +1,13 @@
-import { test, expect, openApp, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import {
+  test,
+  expect,
+  openApp,
+  setPaneSize,
+  resetPaneSize,
+  expectNoPageOverflow,
+  expectNoHorizontalOverflow,
+} from "./helpers/harness";
+import { primeMockScenario, type ScenarioSpec } from "./helpers/mockRuntime";
 import type { Locator, Page } from "@playwright/test";
 
 // Panel density matrix (ADR 0076 D6 / U7). Every cockpit panel/screen defines
@@ -22,6 +31,10 @@ type PanelContract = {
   // multi-pane dashboard, so the pane is not always the first `.cockpit-pane`).
   open: (page: Page) => Promise<PaneLocator>;
   tiers: { S?: TierCheck; M?: TierCheck; L?: TierCheck; short?: TierCheck };
+  // Seeded BEFORE `openApp` (mock reads happen once at bootstrap) — only the
+  // contracts that need non-default data set this (Today's S-tier row cap +
+  // hostile-title wrap needs a dense, hostile-content day).
+  scenario?: ScenarioSpec;
 };
 
 const TIER_SIZE = {
@@ -78,6 +91,35 @@ async function expectSideBySide(page: Page) {
   expect(Math.abs(detail.y - list.y), "list and detail on one row").toBeLessThan(40);
 }
 
+// Today is the default landing screen (ADR 0054) — no navigation needed, just
+// the heading. Seeded via the contract's `scenario` (below): `today-dense`
+// stamps its 29 autopilot runs onto the scenario's own newest day (not a
+// fixed date — the mock's browser seed, `browserSmokeRuntime.ts`, already
+// carries a fixed CD Projekt run further out than any base-scenario date),
+// so the dense wall always lands in a VISIBLE slot, never rolled into
+// "Wcześniej". `hostile-content`'s long, unbroken ESPI title stays pinned to
+// SAMPLE_NOW — an older, only-3-row day that itself never gets capped, but
+// still falls behind the mock's OTHER fixed seed dates (per-company
+// `periodic_report` calendar events) into "Wcześniej" — expand it once so
+// the hostile row is actually in the DOM to assert against.
+async function openToday(page: Page): Promise<PaneLocator> {
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open days" }).click();
+  return page.locator(".workspace");
+}
+
+function todayDenseSection(page: Page): Locator {
+  return page.locator(".dayq-section").first();
+}
+
+async function expectTodayNoInnerOverflow(page: Page, pane: PaneLocator) {
+  // The pane-level check (`expectNoPageOverflow`, run by the loop below) is
+  // document-wide; this additionally scopes to the day-section containers
+  // themselves (contract §"no horizontal scroll on the pane AND on the inner
+  // day-section containers").
+  await expectNoHorizontalOverflow(pane, ".dayq-section, .dayq-day-rows, .dayq-row");
+}
+
 const PANEL_CONTRACTS: PanelContract[] = [
   {
     panel: "Notebook",
@@ -91,11 +133,46 @@ const PANEL_CONTRACTS: PanelContract[] = [
       L: (page) => expectSideBySide(page),
     },
   },
+  {
+    panel: "Today",
+    open: openToday,
+    scenario: { base: "rich", overlays: ["hostile-content", "today-dense"] },
+    tiers: {
+      // S top-3+zwiń (plan Dense row): the dense day caps to 3 rows + a
+      // "+N · Otwórz dzień" recovery line, zero horizontal scroll.
+      S: async (page, pane) => {
+        const dense = todayDenseSection(page);
+        await expect(dense.locator(".dayq-row")).toHaveCount(3);
+        await expect(dense.locator(".dayq-day-cap")).toBeVisible();
+        // The hostile-content overlay's own (uncapped, 3-row) day is always
+        // fully visible — the Dense row's "hostile long ESPI titles wrap
+        // inside cards" case.
+        await expect(page.getByText("Zażółć gęślą jaźń", { exact: false })).toBeVisible();
+        await expectTodayNoInnerOverflow(page, pane);
+      },
+      // M/L: no cap, every row renders (Dense row "M/L wszystkie").
+      M: async (page, pane) => {
+        const dense = todayDenseSection(page);
+        await expect(dense.locator(".dayq-day-cap")).toHaveCount(0);
+        await expect(dense.locator(".dayq-row").first()).toBeVisible();
+        await expectTodayNoInnerOverflow(page, pane);
+      },
+      L: async (page, pane) => {
+        const dense = todayDenseSection(page);
+        await expect(dense.locator(".dayq-day-cap")).toHaveCount(0);
+        await expectTodayNoInnerOverflow(page, pane);
+      },
+    },
+  },
 ];
 
 test.describe("panel density matrix", { tag: "@clickable" }, () => {
   for (const contract of PANEL_CONTRACTS) {
     test(`${contract.panel} honors its pane-density tiers`, async ({ page }) => {
+      // Priming must happen BEFORE `openApp`'s navigation (bootstrap reads
+      // happen once at mount) — contracts that need non-default data set
+      // `scenario`; the rest keep today's default (no priming).
+      if (contract.scenario) await primeMockScenario(page, contract.scenario);
       await openApp(page);
       const pane = await contract.open(page);
       for (const tier of TIER_ORDER) {

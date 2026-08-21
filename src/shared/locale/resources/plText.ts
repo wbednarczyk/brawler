@@ -161,6 +161,7 @@ export const plText: Record<string, string> = {
   "Show all in Claims": "Pokaż wszystko w Obietnicach",
   // Autopilot — autonomous report pipeline (ADR 0055)
   "Autopilot": "Autopilot",
+  "Autopilot failed": "Autopilot nie powiódł się",
   "Autopilot mode": "Tryb autopilota",
   // Composable views — new-view creator (ADR 0057)
   "New view": "Nowy widok",
@@ -2066,4 +2067,8 @@ export const plText: Record<string, string> = {
   "Couldn't load the calendar.": "Nie udało się wczytać kalendarza.",
   "Couldn't load autopilot runs.": "Nie udało się wczytać przebiegów autopilota.",
   "tracked": "obserwowanych",
+
+  // Dziś v2 "Wcześniej" rollup + S-tier row cap (F2 S5).
+  "Earlier": "Wcześniej",
+  "Open days": "Otwórz dni",
 };

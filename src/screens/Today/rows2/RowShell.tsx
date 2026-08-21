@@ -1,7 +1,24 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 import { TickerLabel } from "../../../shared/components/TickerLabel";
 import { Button } from "../../../ui";
+
+// Roving focus across the queue's row actions (ADR 0076 U-Rb D4, carried over
+// from the v1 stream kit — losing it in the F2 rebuild was a keyboard
+// regression): ArrowUp/Down and j/k move; Enter/Space fire natively. Walks
+// every `[data-dayq-action]` inside the screen body in DOM order, so focus
+// crosses day-section boundaries inline.
+function onRowActionKeyDown(event: KeyboardEvent<HTMLElement>) {
+  const isDown = event.key === "ArrowDown" || event.key === "j";
+  const isUp = event.key === "ArrowUp" || event.key === "k";
+  if (!isDown && !isUp) return;
+  event.preventDefault();
+  const list = event.currentTarget.closest(".dayq-screen-body");
+  const buttons = Array.from(list?.querySelectorAll<HTMLElement>('[data-dayq-action="true"]') ?? []);
+  const currentIndex = buttons.indexOf(event.currentTarget);
+  const nextIndex = Math.min(Math.max(currentIndex + (isDown ? 1 : -1), 0), buttons.length - 1);
+  buttons[nextIndex]?.focus();
+}
 
 /**
  * Shared row anatomy for the Dziś v2 day queue (F2 S3, screen-local — plan
@@ -77,7 +94,14 @@ export function RowShell({
         {meta ? <p className="dayq-row-meta">{meta}</p> : null}
       </div>
       {actionLabel && onAction ? (
-        <Button className="dayq-row-action" variant="ghost" type="button" onClick={onAction}>
+        <Button
+          className="dayq-row-action"
+          data-dayq-action="true"
+          variant="ghost"
+          type="button"
+          onClick={onAction}
+          onKeyDown={onRowActionKeyDown}
+        >
           {actionLabel}
         </Button>
       ) : null}

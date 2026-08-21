@@ -132,12 +132,24 @@ export function bucketByLocalDay(
     return bucket;
   }
 
+  const todayKey = formatLocalDate(now);
   for (const item of items) {
-    bucketFor(localDayKey(itemTimestamp(item))).items.push(item);
+    let day = localDayKey(itemTimestamp(item));
+    // NOTHING buckets above DZIŚ: a future calendar announcement belongs to
+    // the DZIŚ section (Main.dc.html "zapowiedzi z kalendarza"), and any other
+    // future-stamped row (clock skew, anomalous seed) must not spawn a future
+    // day that eats one of the two visible display slots and pushes the real
+    // queue into the "Earlier" rollup (caught by density/J1, S5).
+    if (day > todayKey) day = todayKey;
+    bucketFor(day).items.push(item);
   }
   for (const event of attention) {
     if (event.dismissed) continue;
-    bucketFor(localDayKey(event.firedAt)).attention.push(event);
+    // Same no-section-above-DZIŚ clamp as items: a future `firedAt` (clock
+    // skew) must not eat a visible display slot.
+    let day = localDayKey(event.firedAt);
+    if (day > todayKey) day = todayKey;
+    bucketFor(day).attention.push(event);
   }
 
   for (const bucket of byDay.values()) {
@@ -190,6 +202,62 @@ export function pickPrimary(buckets: DayBucket[]): PrimaryCandidate | null {
     if (entries[0]) return entries[0].candidate;
   }
   return null;
+}
+
+/** A single collapsed rollup line standing in for every day bucket beyond the
+ * two freshest-with-content display slots (DZIŚ + WCZORAJ) — plan decision 5
+ * / contract §5, Delta.dc.html "WCZEŚNIEJ W TYM TYGODNIU · pn–wt · 14
+ * pozycji". */
+export type EarlierRollup = {
+  /** Newest-first, same order as `bucketByLocalDay`'s output — the buckets
+   * folded into this rollup, rendered individually once expanded. */
+  buckets: DayBucket[];
+  count: number;
+  unseen: number;
+  oldestDay: string;
+  newestDay: string;
+};
+
+/**
+ * Splits bucketed days into the two always-visible display slots (the
+ * freshest two calendar days with content — usually DZIŚ + WCZORAJ, but
+ * whichever two are newest if either is empty) and a rollup summarizing
+ * everything older (plan decision 5 / contract §5). `null` earlier when
+ * there is nothing left to roll up.
+ */
+export function splitDisplayBuckets(buckets: DayBucket[]): { visible: DayBucket[]; earlier: EarlierRollup | null } {
+  const visible = buckets.slice(0, 2);
+  const rest = buckets.slice(2);
+  if (rest.length === 0) return { visible, earlier: null };
+  return {
+    visible,
+    earlier: {
+      buckets: rest,
+      count: rest.reduce((sum, bucket) => sum + bucket.total, 0),
+      unseen: rest.reduce((sum, bucket) => sum + bucket.unseen, 0),
+      oldestDay: rest[rest.length - 1].day,
+      newestDay: rest[0].day,
+    },
+  };
+}
+
+/**
+ * S-tier row cap (plan Dense row "S top-3+zwiń", Compact.dc.html): a day
+ * section narrower than 420px shows only the newest 3 rows plus a "+N ·
+ * Otwórz dzień" recovery line. The pure decision only — mirrors
+ * `EventsScreen`'s `resolveEventViewMode` split: the width MEASUREMENT is
+ * browser-only (jsdom has no container queries/ResizeObserver;
+ * `density-matrix.spec.ts` proves the live behavior), this is what a
+ * measured `narrow` turns into.
+ */
+export function capDayRows<T>(
+  rows: T[],
+  narrow: boolean,
+  expanded: boolean,
+  cap = 3,
+): { visible: T[]; hidden: number } {
+  if (!narrow || expanded || rows.length <= cap) return { visible: rows, hidden: 0 };
+  return { visible: rows.slice(0, cap), hidden: rows.length - cap };
 }
 
 /**

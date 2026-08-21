@@ -102,6 +102,19 @@ function readYesterdayFilingItem(): TodayItem {
   };
 }
 
+function olderFilingItem(day: string, feedItemId: string, title: string): TodayItem {
+  return {
+    kind: "filing",
+    feedItemId,
+    companyId: company.id,
+    qualifiedTicker: company.qualifiedTicker,
+    title,
+    publishedAt: `${day}T08:00:00Z`,
+    read: false,
+    presentationKind: "filing",
+  };
+}
+
 describe("TodayScreen", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -203,6 +216,31 @@ describe("TodayScreen", () => {
 
     await user.click(screen.getByRole("button", { name: "Open day" }));
     expect(await screen.findByText("Zawiadomienie o transakcji")).toBeInTheDocument();
+  });
+
+  it("Wcześniej rollup: buckets beyond Today/Yesterday collapse into one line, and Open days expands them", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const dayA = olderFilingItem("2026-08-19", "feed_older_a", "Starszy komunikat A");
+    const dayB = olderFilingItem("2026-08-18", "feed_older_b", "Starszy komunikat B");
+    getTodayViewMock.mockResolvedValue(
+      emptyView({ items: [unreadReportItem(), readYesterdayFilingItem(), dayA, dayB] }),
+    );
+    render(<TodayScreen {...baseProps()} />);
+
+    await screen.findByText("Today", { exact: true });
+    expect(screen.getByText("Yesterday", { exact: true })).toBeInTheDocument();
+
+    // The two older days (2026-08-19, 2026-08-18) collapse into ONE rollup
+    // line — neither renders its own day section yet.
+    expect(screen.queryByText("Starszy komunikat A")).not.toBeInTheDocument();
+    expect(screen.queryByText("Starszy komunikat B")).not.toBeInTheDocument();
+    expect(screen.getByText("Earlier", { exact: true })).toBeInTheDocument();
+
+    // "Open days" expands the rollup into individual day sections.
+    await user.click(screen.getByRole("button", { name: "Open days" }));
+    expect(await screen.findByText("Starszy komunikat A")).toBeInTheDocument();
+    expect(screen.getByText("Starszy komunikat B")).toBeInTheDocument();
+    expect(screen.queryByText("Earlier", { exact: true })).not.toBeInTheDocument();
   });
 
   it("mark_today_visited fires exactly once across a refetch, never on error", async () => {

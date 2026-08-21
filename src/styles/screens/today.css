@@ -138,6 +138,11 @@
   margin: 0;
   color: var(--text);
   font-weight: 500;
+  /* A hostile ESPI title (one long unbroken run, no spaces) must break
+     inside the card rather than force a horizontal scrollbar — density
+     contract, F2 S5 (Compact.dc.html "długie tytuły łamią się wewnątrz
+     karty"). */
+  overflow-wrap: anywhere;
 }
 
 .dayq-row-title-strong {
@@ -155,6 +160,7 @@
   color: var(--muted);
   font-size: var(--font-sm);
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .dayq-row-action {
@@ -300,4 +306,31 @@
   margin: 0;
   color: var(--muted);
   max-width: 46ch;
+}
+
+/* S-tier row cap recovery line (F2 S5, plan Dense row "S top-3+zwiń",
+   Compact.dc.html "+ 4 kolejne pozycje wczoraj · Otwórz dzień"). */
+.dayq-day-cap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+/* Named `pane` size container density tiers (ADR 0076 D6): the S width tier
+   (<420px, `.workspace`'s container — F2 S5). Row action drops below the
+   title full-width and the row cap kicks in above (`.dayq-day-cap`, driven
+   by `useNarrowPane`) — zero horizontal scroll at ~380px. */
+@container pane (max-width: 419px) {
+  .dayq-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dayq-row-action {
+    width: 100%;
+  }
 }

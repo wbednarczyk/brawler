@@ -13,9 +13,11 @@ import { makeAttentionEvent } from "../../test/scenarios/entities";
 import {
   allSeen,
   bucketByLocalDay,
+  capDayRows,
   formatDeltaHeadline,
   isItemSeen,
   pickPrimary,
+  splitDisplayBuckets,
 } from "./dayQueueModel";
 
 function filing(overrides: Partial<Extract<TodayItem, { kind: "filing" }>> = {}): TodayItem {
@@ -114,6 +116,22 @@ describe("bucketByLocalDay", () => {
     const missed = nonArrival({ eventDate: "2026-08-20" });
     const buckets = bucketByLocalDay([missed], [], NOW);
     expect(buckets.map((b) => b.day)).toEqual(["2026-08-20"]);
+  });
+
+  it("clamps ANY future-dated item into TODAY's bucket — nothing spawns a section above DZIŚ", () => {
+    // Main.dc.html: the DZIŚ section carries the calendar announcements
+    // ("2 zapowiedzi z kalendarza"); and a future-stamped run (clock skew /
+    // anomalous seed) creating its own topmost section would eat one of the
+    // two visible display slots and push the real queue into "Earlier".
+    const futureEvent = calendar({ eventKey: "far", eventDate: "2026-08-26" });
+    const futureCluster = mediaCluster({ day: "2026-08-30", latestPublishedAt: "2026-08-30T09:00:00Z" });
+    const todayFiling = filing({ feedItemId: "f1", publishedAt: "2026-08-21T06:00:00Z" });
+
+    const buckets = bucketByLocalDay([futureEvent, futureCluster, todayFiling], [], NOW);
+
+    expect(buckets.map((b) => b.day)).toEqual(["2026-08-21"]);
+    expect(buckets[0].relativeDay).toBe("today");
+    expect(buckets[0].items).toHaveLength(3);
   });
 
   it("attaches attention events to the day they fired on, and drops dismissed ones", () => {
@@ -263,5 +281,75 @@ describe("formatDeltaHeadline", () => {
   it("falls back to the clean-morning copy when nothing changed", () => {
     const summary: TodayDeltaSummary = { reportCount: 0, filingCount: 0, mediaCount: 0 };
     expect(formatDeltaHeadline(summary, "en", text)).toBe("Nothing new since your last visit");
+  });
+});
+
+// The "Wcześniej" rollup grouping helper (F2 S5, plan decision 5 / contract
+// §5): buckets beyond the two freshest-with-content display slots (DZIŚ +
+// WCZORAJ) merge into one rollup — Delta.dc.html "WCZEŚNIEJ W TYM TYGODNIU".
+describe("splitDisplayBuckets", () => {
+  it("keeps every bucket visible and returns no rollup when there are 2 or fewer", () => {
+    const buckets = bucketByLocalDay(
+      [
+        filing({ feedItemId: "today", publishedAt: "2026-08-21T06:00:00Z" }),
+        filing({ feedItemId: "yesterday", publishedAt: "2026-08-20T06:00:00Z" }),
+      ],
+      [],
+      NOW,
+    );
+
+    const { visible, earlier } = splitDisplayBuckets(buckets);
+
+    expect(visible.map((b) => b.day)).toEqual(["2026-08-21", "2026-08-20"]);
+    expect(earlier).toBeNull();
+  });
+
+  it("rolls every bucket beyond the freshest two into one summary (count + unseen + day range)", () => {
+    const buckets = bucketByLocalDay(
+      [
+        filing({ feedItemId: "today", publishedAt: "2026-08-21T06:00:00Z", read: false }),
+        filing({ feedItemId: "yesterday", publishedAt: "2026-08-20T06:00:00Z", read: false }),
+        filing({ feedItemId: "mon", publishedAt: "2026-08-17T06:00:00Z", read: true }),
+        filing({ feedItemId: "tue1", publishedAt: "2026-08-18T06:00:00Z", read: false }),
+        filing({ feedItemId: "tue2", publishedAt: "2026-08-18T09:00:00Z", read: true }),
+      ],
+      [],
+      NOW,
+    );
+
+    const { visible, earlier } = splitDisplayBuckets(buckets);
+
+    expect(visible.map((b) => b.day)).toEqual(["2026-08-21", "2026-08-20"]);
+    expect(earlier).not.toBeNull();
+    expect(earlier!.buckets.map((b) => b.day)).toEqual(["2026-08-18", "2026-08-17"]);
+    // 3 rolled-up items total (tue1, tue2, mon); only "tue1" is unseen.
+    expect(earlier!.count).toBe(3);
+    expect(earlier!.unseen).toBe(1);
+    // Oldest→newest of the rolled-up range (not the whole bucket list).
+    expect(earlier!.oldestDay).toBe("2026-08-17");
+    expect(earlier!.newestDay).toBe("2026-08-18");
+  });
+});
+
+// S-tier row cap (F2 S5, plan Dense row "S top-3+zwiń") — the pure decision;
+// the width MEASUREMENT itself is browser-only (`density-matrix.spec.ts`).
+describe("capDayRows", () => {
+  const rows = ["a", "b", "c", "d", "e"];
+
+  it("never caps when not narrow", () => {
+    expect(capDayRows(rows, false, false)).toEqual({ visible: rows, hidden: 0 });
+  });
+
+  it("never caps once the day has been manually expanded", () => {
+    expect(capDayRows(rows, true, true)).toEqual({ visible: rows, hidden: 0 });
+  });
+
+  it("never caps a day with 3 or fewer rows", () => {
+    const short = ["a", "b", "c"];
+    expect(capDayRows(short, true, false)).toEqual({ visible: short, hidden: 0 });
+  });
+
+  it("caps to the newest 3 rows and reports the hidden count", () => {
+    expect(capDayRows(rows, true, false)).toEqual({ visible: ["a", "b", "c"], hidden: 2 });
   });
 });

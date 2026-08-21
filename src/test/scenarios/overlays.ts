@@ -497,7 +497,26 @@ function applyMorningReview(data: ScenarioData): ScenarioData {
  * stay a screenful, never a page-overflowing wall.
  */
 function applyTodayDense(data: ScenarioData): ScenarioData {
-  const runs = data.companies.map((company, i) => makeRoutineRun(`run_dense_${i}`, company.id));
+  // Stamp the dense wall on the scenario's NEWEST day (not SAMPLE_NOW, which
+  // sits BELOW the rich base's newest items): the overlay's whole point is a
+  // dense freshest bucket (Dziś v2 S-cap density tier), and a base that seeds
+  // anything newer would silently push the wall into the "Earlier" rollup.
+  const newest = [
+    ...data.feedItems.map((item) => item.publishedAt),
+    ...data.autopilotRuns.map((run) => run.createdAt),
+  ].reduce((a, b) => (a > b ? a : b), SAMPLE_NOW);
+  // A base may seed a deliberately hostile/unparseable timestamp as its
+  // lexicographic max — fall back to SAMPLE_NOW rather than throwing.
+  const parsed = Date.parse(newest);
+  const newestMs = Number.isNaN(parsed) ? Date.parse(SAMPLE_NOW) : parsed;
+  const runs = data.companies.map((company, i) => ({
+    ...makeRoutineRun(`run_dense_${i}`, company.id),
+    // Same LOCAL day as the newest item but strictly OLDER (per-run second
+    // offsets): the wall densifies the freshest bucket without outranking the
+    // newest real rows (the hostile title must stay inside the S-tier top-3).
+    createdAt: new Date(newestMs - (i + 1) * 1000).toISOString(),
+    updatedAt: newest,
+  }));
   return { ...data, autopilotRuns: [...runs, ...data.autopilotRuns] };
 }
 

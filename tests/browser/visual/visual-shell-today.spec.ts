@@ -14,7 +14,10 @@ test.describe("visual — shell + today", () => {
   test("Today home", async ({ page }) => {
     await openApp(page);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Attention stream" })).toBeVisible();
+    // Dziś v2 readiness anchor (F2): the delta header + the first day section
+    // render only after get_today_view resolves — the strip/stream is gone.
+    await expect(page.locator(".dayq-delta-header")).toBeVisible();
+    await expect(page.locator(".dayq-section").first()).toBeVisible();
     await shootScreen(page, "today");
   });
 

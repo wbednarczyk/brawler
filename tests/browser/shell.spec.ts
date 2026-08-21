@@ -15,27 +15,23 @@ import {
 const EVIDENCE = "tests/browser/__shell-evidence__";
 
 test.describe("mode-based shell (ADR 0054)", () => {
-  test("Today is the default home: a prioritized stream + counters column, no clipping", async ({
+  test("Today is the default home: the Dziś v2 day queue, no clipping", async ({
     page,
   }, testInfo) => {
     await openApp(page);
 
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-    // Redesigned to journey J1 (ADR 0076 U-Rb): one stream region + a counters
-    // column with three filter tiles — no 4-column card splat.
-    await expect(page.getByRole("region", { name: "Attention stream" })).toBeVisible();
-    const counters = page.getByRole("group", { name: "Filter the stream" });
-    await expect(counters.getByRole("button", { name: /Autopilot/ })).toBeVisible();
-    await expect(counters.getByRole("button", { name: /To verify/ })).toBeVisible();
-    await expect(counters.getByRole("button", { name: /Upcoming reports/ })).toBeVisible();
+    // Rebuilt to Dziś v2 (F2 #422, docs/plans/frontend-v2-f2.md): the old
+    // stream region + counter-tile filters are gone by design (plan decision
+    // 7) — the delta header is the Today-recognition anchor now.
+    await expect(page.locator(".dayq-delta-header")).toBeVisible();
 
-    // The stream must not clip its Review buttons or overflow the page — the
+    // The queue must not clip its row actions or overflow the page — the
     // exact regression the maintainer caught on Windows — and no row may force a
     // panel-internal horizontal scrollbar (ticker/date never truncate, K1).
     await expectNoPageOverflow(page);
-    await expectNoHorizontalOverflow(page.locator(".today-body"));
-    await expectNoHorizontalOverflow(page.locator(".today-stream-region"));
+    await expectNoHorizontalOverflow(page.locator(".dayq-screen-body"));
 
     await page.screenshot({ path: `${EVIDENCE}/today-${testInfo.project.name}.png`, fullPage: true });
   });

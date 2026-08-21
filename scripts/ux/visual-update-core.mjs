@@ -51,8 +51,13 @@ export function diffSnapshots(preMap, postMap, targetFiles) {
   const preKeys = new Set(Object.keys(preMap));
   const postKeys = new Set(Object.keys(postMap));
 
-  const added = [...postKeys].filter((key) => !preKeys.has(key));
-  const removed = [...preKeys].filter((key) => !postKeys.has(key));
+  // Filename-set equality applies to SIBLINGS only: a target cell may
+  // legitimately (re)appear — the rm-PNGs-first workflow deletes targets
+  // before the run — and a target that FAILED to regenerate is reported via
+  // `missingTarget`, not as a removal. (Gap found on first real per-screen
+  // use: a freshly re-shot target counted as "added" drift.)
+  const added = [...postKeys].filter((key) => !preKeys.has(key) && !targets.has(key));
+  const removed = [...preKeys].filter((key) => !postKeys.has(key) && !targets.has(key));
   const changedSiblings = [...postKeys].filter(
     (key) => !targets.has(key) && preKeys.has(key) && preMap[key] !== postMap[key],
   );

@@ -13,9 +13,11 @@ import { CalendarRow } from "./CalendarRow";
 import { ClaimRow } from "./ClaimRow";
 import { DayHeader } from "./DayHeader";
 import { DeltaHeader } from "./DeltaHeader";
+import { EarlierRollupRow } from "./EarlierRollupRow";
 import { FilingRow } from "./FilingRow";
 import { MediaClusterRow } from "./MediaClusterRow";
 import { NonArrivalRow } from "./NonArrivalRow";
+import { RowShell } from "./RowShell";
 
 function withPolish(ui: ReactElement) {
   return (
@@ -160,6 +162,65 @@ describe("AutopilotRunRow", () => {
     expect(screen.getByText("Raport roczny 2025")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Przeczytaj raport" })).toBeInTheDocument();
   });
+
+  it("a FAILED run is visibly failed on its own row (ADR 0091 dec. 3), never only via the paired attention event", () => {
+    render(
+      withPolish(
+        <AutopilotRunRow
+          item={{
+            kind: "autopilotRun",
+            run: {
+              id: "run2",
+              companyId: "company_5",
+              reportDocumentId: "doc2",
+              trigger: "detection",
+              mode: "autopilot",
+              sweepId: null,
+              status: "failed",
+              stage: "extract",
+              summaryText: null,
+              kpiDeltaJson: null,
+              reportDiffRef: null,
+              crossRefsJson: null,
+              producedFactIds: [],
+              notificationState: "unread",
+              lastError: "extraction failed",
+              createdAt: "2026-08-21T05:00:00Z",
+              updatedAt: "2026-08-21T05:00:00Z",
+              severity: "urgent",
+              reportDocumentTitle: "Raport roczny 2025",
+            },
+          }}
+          qualifiedTicker="GPW:XYZ"
+          onOpen={vi.fn()}
+        />,
+      ),
+    );
+    const chip = screen.getByText("Autopilot nie powiódł się");
+    expect(chip.closest(".ui-status-chip")).toHaveClass("ui-status-chip-danger");
+  });
+});
+
+describe("roving focus over row actions (ADR 0076 U-Rb D4 — restored after the F2 rebuild regression)", () => {
+  it("j/ArrowDown and k move focus across [data-dayq-action] buttons within the screen body", async () => {
+    render(
+      withPolish(
+        <div className="dayq-screen-body">
+          <RowShell id="r1" icon={null} ticker="GPW:AAA" chip={null} title="A" actionLabel="Otwórz komunikat" onAction={vi.fn()} />
+          <RowShell id="r2" icon={null} ticker="GPW:BBB" chip={null} title="B" actionLabel="Otwórz komunikat" onAction={vi.fn()} />
+        </div>,
+      ),
+    );
+    const buttons = screen.getAllByRole("button", { name: "Otwórz komunikat" });
+    buttons[0].focus();
+    await userEvent.keyboard("{j}");
+    expect(buttons[1]).toHaveFocus();
+    await userEvent.keyboard("{k}");
+    expect(buttons[0]).toHaveFocus();
+    // Edges clamp — no wrap-around surprise at the top.
+    await userEvent.keyboard("{k}");
+    expect(buttons[0]).toHaveFocus();
+  });
 });
 
 describe("AttentionRow", () => {
@@ -226,6 +287,22 @@ describe("DayHeader", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Otwórz dzień" }));
     expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("EarlierRollupRow", () => {
+  it("shows the range/count and fires onExpand from Otwórz dni", async () => {
+    const onExpand = vi.fn();
+    render(withPolish(<EarlierRollupRow rangeLabel="pon–wt" count={14} unseen={0} onExpand={onExpand} />));
+    expect(screen.getByText("Wcześniej")).toBeInTheDocument();
+    expect(screen.getByText("pon–wt · 14 pozycji")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Otwórz dni" }));
+    expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it("appends an unseen clause when some rolled-up rows are unseen", () => {
+    render(withPolish(<EarlierRollupRow rangeLabel="pon" count={3} unseen={2} onExpand={vi.fn()} />));
+    expect(screen.getByText("pon · 3 pozycje · 2 nieprzejrzane")).toBeInTheDocument();
   });
 });
 
