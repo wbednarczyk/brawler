@@ -369,7 +369,7 @@ export function TodayScreen({
 
   return (
     <section className="today-screen feed-panel" aria-labelledby="today-title" ref={rootRef}>
-      <PanelHeader title={t("today.title")} description={t("today.description")} titleId="today-title" />
+      <PanelHeader title={t("today.title")} titleId="today-title" />
       <ConfigBanner conditions={configConditions} />
 
       <div className="dayq-screen-body">

@@ -36,7 +36,6 @@ export const en = {
   "nav.group.library": "Library",
   "nav.group.utilities": "Utilities",
   "today.title": "Today",
-  "today.description": "What needs your attention — what changed, what to verify, and where conviction is moving.",
   "today.view.label": "Today view",
   "today.view.active": "Active",
   "today.view.archive": "Archive",
