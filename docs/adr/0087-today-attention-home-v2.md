@@ -1,6 +1,6 @@
 # ADR 0087: Today attention home v2 — grouped stream, typed severity, quiet toasts
 
-Status: Accepted (2026-07-22, owner sign-off at v0.60 planning) — **decision 3 (toast policy v2) superseded 2026-08-06 by [ADR 0097](0097-toasts-are-action-feedback-only.md)**: attention events raise no toasts at all; ambient awareness lives in the Today sidebar badge
+Status: Accepted (2026-07-22, owner sign-off at v0.60 planning) — **decision 3 (toast policy v2) superseded 2026-08-06 by [ADR 0097](0097-toasts-are-action-feedback-only.md)**: attention events raise no toasts at all; ambient awareness lives in the Today sidebar badge. **Stream surface superseded 2026-08-21 by F2 Dziś v2 (epic #410, #422, owner-approved experience contract)**: the grouped/deduped/ranked single stream, the cross-company `×K spółek` aggregates, and the counters column are retired — Today is a per-day decision queue anchored to the last visit (delta header + day sections; volume control = day sections, the S-tier row cap, and day collapse). **What lives on unchanged:** typed severity and the 72h aging demotion (read-model semantics), the seen/dismiss distinction and the dismissed-events Archive, and the sidebar badge (ADR 0097).
 
 Deciders: maintainer. Area: frontend, attention routing, i18n.
 
