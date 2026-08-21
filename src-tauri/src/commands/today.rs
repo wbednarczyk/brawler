@@ -896,7 +896,7 @@ mod tests {
             .checkout_for_tests()
             .expect("checkout")
             .execute(
-                "INSERT INTO settings (key, value, value_type) VALUES ('todayLastVisitAt', ?1, 'string')",
+                "INSERT INTO settings (key, value, value_type) VALUES ('today_last_visit_at', ?1, 'string')",
                 rusqlite::params!["2026-08-15T07:00:00Z"],
             )
             .expect("seed anchor");

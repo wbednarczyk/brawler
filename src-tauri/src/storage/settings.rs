@@ -39,12 +39,12 @@ pub(crate) fn clamp_mcp_port(value: i64) -> i64 {
 /// (this slice), `mark_today_visited` (S2) writes it with the backend's own
 /// clock. No seed-row migration — an absent row means "never visited",
 /// distinct from any real timestamp.
-pub(crate) const TODAY_LAST_VISIT_AT_KEY: &str = "todayLastVisitAt";
+pub(crate) const TODAY_LAST_VISIT_AT_KEY: &str = "today_last_visit_at";
 
 /// The Dziś v2 "reviewed days" set (F2 plan decision 5): a JSON array of
 /// `YYYY-MM-DD` day keys, precedent `pinnedCompanyIds`. Trimmed to the 14
 /// newest on write so the row never grows unbounded.
-pub(crate) const TODAY_REVIEWED_DAYS_KEY: &str = "todayReviewedDays";
+pub(crate) const TODAY_REVIEWED_DAYS_KEY: &str = "today_reviewed_days";
 const TODAY_REVIEWED_DAYS_MAX: usize = 14;
 
 #[derive(Debug, Serialize)]

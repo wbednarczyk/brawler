@@ -828,7 +828,7 @@ fn mark_today_visited_stamps_a_parseable_timestamp_and_overwrites_a_previous_one
         .expect("connection")
         .execute(
             "INSERT INTO settings (key, value, value_type)
-             VALUES ('todayLastVisitAt', '2020-01-01T00:00:00.000Z', 'string')",
+             VALUES ('today_last_visit_at', '2020-01-01T00:00:00.000Z', 'string')",
             [],
         )
         .expect("seed stale anchor");

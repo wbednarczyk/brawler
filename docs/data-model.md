@@ -1318,6 +1318,8 @@ Initial keys:
 - `settings_import_export_format`
 - `shortcut_bindings`
 - `pinned_company_ids`
+- `today_last_visit_at` (Dziś v2 visit anchor, F2 — written only by `mark_today_visited` with the backend clock; absent row reads `null`)
+- `today_reviewed_days` (Dziś v2 reviewed-day set, F2 — JSON array of `YYYY-MM-DD`, trimmed to the 14 newest on write; absent row reads `[]`)
 - `mcp_enabled`
 - `mcp_port`
 - `mcp_writes_enabled`
