@@ -121,6 +121,12 @@ export function useSettingsController({
     updateSettings({ pinnedCompanyIds: nextPinnedCompanyIds });
   }
 
+  // Dziś v2 "Oznacz dzień jako przejrzany" set (F2 S4, plan decision 5) — same
+  // replace-the-array precedent as `pinnedCompanyIds`.
+  function updateTodayReviewedDays(nextTodayReviewedDays: string[]) {
+    updateSettings({ todayReviewedDays: nextTodayReviewedDays });
+  }
+
   function updateLogLevel(nextLevel: string) {
     updateSettings({ logLevel: nextLevel });
   }
@@ -251,6 +257,7 @@ export function useSettingsController({
     updatePinnedCompanyIds,
     updatePollInterval,
     updateShortcutBindings,
+    updateTodayReviewedDays,
     updateTheme,
     updateYoutubeTranscriptionModel,
     updateYoutubeTranscriptionTimeout,

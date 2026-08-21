@@ -460,6 +460,20 @@ function applyMorningReview(data: ScenarioData): ScenarioData {
       "Treść raportu:Rada Nadzorcza powołała w skład Zarządu PZU SA Pana Piotra Matczuka, " +
       "powierzając mu funkcję Członka Zarządu Spółki. Uchwała weszła w życie z chwilą podjęcia.",
     attachments: [],
+    publishedAt: SAMPLE_NOW,
+    fetchedAt: SAMPLE_NOW,
+  };
+
+  // A "yesterday" report (F2 S4, Dziś v2 J1 red): `makeFeedItem(spec, 0)` already
+  // yields an attachment-bearing `Official report` (presentationKind "report"),
+  // published one day before `filingFeedItem` — so the rewritten J1 journey can
+  // assert BOTH a "today" and a "yesterday" day-section rendering.
+  const reportFeedItem = {
+    ...makeFeedItem(COMPANY_SPECS.find((spec) => spec.key === "cdr")!, 0),
+    id: "feed_overlay_mr_report",
+    title: "CD Projekt: wyniki finansowe za I półrocze 2026",
+    publishedAt: "2026-06-07T17:19:00Z",
+    fetchedAt: "2026-06-07T17:19:00Z",
   };
 
   return {
@@ -467,7 +481,11 @@ function applyMorningReview(data: ScenarioData): ScenarioData {
     alertRules: [insiderRule, ...data.alertRules],
     attentionEvents: [insider, reconciliation, ...group, ...data.attentionEvents],
     autopilotRuns: [...runs, ...data.autopilotRuns],
-    feedItems: [filingFeedItem, ...data.feedItems],
+    feedItems: [filingFeedItem, reportFeedItem, ...data.feedItems],
+    // Dziś v2 visit anchor (F2 S4): one day before `filingFeedItem`/SAMPLE_NOW so
+    // the delta header has a non-empty "since your last visit" sentence and the
+    // morning-review items land inside the visible window.
+    todayLastVisitAt: "2026-06-07T18:02:00Z",
   };
 }
 

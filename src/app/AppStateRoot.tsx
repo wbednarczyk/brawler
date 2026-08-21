@@ -851,6 +851,7 @@ export function AppStateRoot({
     updatePinnedCompanyIds,
     updateShortcutBindings,
     updateTheme,
+    updateTodayReviewedDays,
     updateYoutubeTranscriptionModel,
     updateYoutubeTranscriptionTimeout,
   } = useSettingsController({
@@ -1068,8 +1069,10 @@ export function AppStateRoot({
 
   const {
     clearInboxFilters,
+    inboxDetailActivationToken,
     markVisibleInboxAsRead,
     openCompanyWorkspaceFromFeedItem,
+    openInboxItem,
     scopeInboxToCompany,
     selectFeedItemFromKeyboard,
     toggleFeedItemReadState,
@@ -1158,6 +1161,9 @@ export function AppStateRoot({
 
   const {
     focusCompanyWorkspace,
+    highlightClaimId,
+    openCompanyClaims,
+    openCompanyInboxFilter,
     openCompanyWorkspace,
     openCompanyWorkspaceFromKeyboard,
     renderNotebookOrigins,
@@ -1945,6 +1951,7 @@ export function AppStateRoot({
                     stopDetailPaneResize,
                     feedItemSummary,
                     formatTimestamp,
+                    inboxDetailActivationToken,
                   }}
                 >
                   <InboxScreen />
@@ -1963,6 +1970,7 @@ export function AppStateRoot({
                             feedItems={feedState}
                             initialCompanyId={cockpitInitialCompanyId}
                             initialLayoutId={activeCockpitLayoutId}
+                            highlightClaimId={highlightClaimId}
                             initialPresetId={cockpitInitialPresetId}
                             onLayoutsChanged={refreshCockpitLayouts}
                           />
@@ -1976,14 +1984,17 @@ export function AppStateRoot({
                 <TodayScreen
                   attention={attention}
                   companies={companies}
-                  pinnedCompanyIds={pinnedCompanyIds}
-                  recentFeedItems={feedState}
                   openCompanyWorkspace={openCompanyWorkspaceById}
+                  openInboxItem={openInboxItem}
+                  openCompanyInbox={openCompanyInboxFilter}
                   openInbox={() => setActiveSection("Inbox")}
+                  openCompanyClaims={openCompanyClaims}
                   openExternalUrl={openExternalUrl}
-                  openReportSeason={() => setActiveSection("ReportSeason")}
                   sourceAdapters={sourceAdapters}
                   openSources={() => setActiveSection("Sources")}
+                  refreshSources={refreshSources}
+                  todayReviewedDays={settings?.todayReviewedDays ?? []}
+                  updateTodayReviewedDays={updateTodayReviewedDays}
                 />
               ) : null}
               {activeSection === "Companies" ? (

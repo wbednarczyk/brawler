@@ -16,12 +16,23 @@ export type DayHeaderProps = {
   collapsed: boolean;
   /** "Otwórz dzień" — undefined when not collapsed (nothing to expand). */
   onExpand?: () => void;
+  /** "Oznacz dzień jako przejrzany" (plan decision 5's manual gesture) —
+   * undefined when already collapsed (nothing left to mark). */
+  onMarkReviewed?: () => void;
 };
 
 /** Day-section header (F2 S3): mono day label + counters, or — collapsed —
  * a single summary line with a checkmark and the "Otwórz dzień" recovery
  * link (Delta.dc.html). */
-export function DayHeader({ day, relativeDay, total, unseen, collapsed, onExpand }: DayHeaderProps) {
+export function DayHeader({
+  day,
+  relativeDay,
+  total,
+  unseen,
+  collapsed,
+  onExpand,
+  onMarkReviewed,
+}: DayHeaderProps) {
   const { text, locale } = useLocale();
   const dayLabel =
     relativeDay === "today"
@@ -53,6 +64,11 @@ export function DayHeader({ day, relativeDay, total, unseen, collapsed, onExpand
     <div className="dayq-day-header" data-dayq-day-collapsed="false">
       <span className="dayq-day-label">{dayLabel}</span>
       <span className="dayq-day-count">{countLabel}</span>
+      {onMarkReviewed ? (
+        <Button className="dayq-day-expand" variant="minimal" type="button" onClick={onMarkReviewed}>
+          {text("Mark day reviewed")}
+        </Button>
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Cpu } from "lucide-react";
 import type { TodayItem } from "../../../api/generated/TodayItem";
 import { useLocale } from "../../../shared/locale";
 import { StatusChip } from "../../../ui";
+import { splitDocumentTitle } from "../documentTitle";
 import { RowShell } from "./RowShell";
 
 export type AutopilotRunItem = Extract<TodayItem, { kind: "autopilotRun" }>;
@@ -22,6 +23,9 @@ export function AutopilotRunRow({
   onOpen: () => void;
 }) {
   const { text } = useLocale();
+  // Same anti-filename treatment as `FilingRow` (ADR 0091): a produced
+  // report's title may carry a glued filename.
+  const { statement, filename } = splitDocumentTitle(item.run.reportDocumentTitle);
 
   return (
     <RowShell
@@ -32,7 +36,8 @@ export function AutopilotRunRow({
           {text("Autopilot")}
         </StatusChip>
       }
-      title={item.run.reportDocumentTitle ?? text("Autopilot finished")}
+      title={statement ?? text("Autopilot finished")}
+      meta={filename}
       actionLabel={text("Read report")}
       onAction={onOpen}
     />

@@ -36,7 +36,10 @@ export type PrimaryCandidate =
   | { kind: "attention"; event: AttentionEvent }
   | { kind: "item"; item: TodayItem };
 
-function itemTimestamp(item: TodayItem): string {
+/** The row's own sort timestamp — exported for TodayScreen's within-day
+ * item/attention interleave (both are already sorted newest-first per list;
+ * merging them needs the same key this module sorts by internally). */
+export function itemTimestamp(item: TodayItem): string {
   switch (item.kind) {
     case "filing":
       return item.publishedAt;
@@ -64,6 +67,14 @@ function localDayKey(iso: string): string {
   if (BARE_DATE_RE.test(iso)) return iso;
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? iso.slice(0, 10) : formatLocalDate(parsed);
+}
+
+// Newest-first string compare that actually returns 0 on a tie (unlike a
+// bare `a < b ? 1 : -1`, which never does and so cannot promise stable
+// ordering for equal keys — ISO timestamps compare correctly as strings).
+function compareDesc(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? 1 : -1;
 }
 
 function relativeDayOf(day: string, now: Date): RelativeDay {
@@ -130,15 +141,19 @@ export function bucketByLocalDay(
   }
 
   for (const bucket of byDay.values()) {
-    bucket.items.sort((a, b) => (itemTimestamp(a) < itemTimestamp(b) ? 1 : -1));
-    bucket.attention.sort((a, b) => (a.firedAt < b.firedAt ? 1 : -1));
+    // A true 3-way compare (not `< ? 1 : -1`, which returns -1 for EVERY tied
+    // pair and so never actually preserves insertion order on a tie — two
+    // items published in the same second, a real possibility, would sort by
+    // implementation-defined comparator internals instead of staying stable).
+    bucket.items.sort((a, b) => compareDesc(itemTimestamp(a), itemTimestamp(b)));
+    bucket.attention.sort((a, b) => compareDesc(a.firedAt, b.firedAt));
     bucket.total = bucket.items.length + bucket.attention.length;
     bucket.unseen =
       bucket.items.filter((item) => !isItemSeen(item)).length +
       bucket.attention.filter((event) => !event.seen).length;
   }
 
-  return Array.from(byDay.values()).sort((a, b) => (a.day < b.day ? 1 : -1));
+  return Array.from(byDay.values()).sort((a, b) => compareDesc(a.day, b.day));
 }
 
 /**
@@ -171,7 +186,7 @@ export function pickPrimary(buckets: DayBucket[]): PrimaryCandidate | null {
         .filter((event) => !event.seen)
         .map((event) => ({ ts: event.firedAt, candidate: { kind: "attention" as const, event } })),
     ];
-    entries.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+    entries.sort((a, b) => compareDesc(a.ts, b.ts));
     if (entries[0]) return entries[0].candidate;
   }
   return null;

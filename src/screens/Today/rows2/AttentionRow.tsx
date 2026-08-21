@@ -4,6 +4,7 @@ import type { AlertRule, AttentionEvent } from "../../../api/attention";
 import { useLocale } from "../../../shared/locale";
 import { StatusChip } from "../../../ui";
 import { attentionEventBadgeText, attentionEventTitleText } from "../attentionEventLabels";
+import { splitDocumentTitle } from "../documentTitle";
 import { RowShell } from "./RowShell";
 
 /**
@@ -30,6 +31,10 @@ export function AttentionRow({
   onOpen: () => void;
 }) {
   const { text } = useLocale();
+  // Same anti-filename treatment as `FilingRow` (ADR 0091): `evidenceTitle`
+  // may carry a glued filename (a report-document evidence link).
+  const { statement, filename } = splitDocumentTitle(event.evidenceTitle);
+  const titleEvent = filename ? { ...event, evidenceTitle: statement } : event;
 
   return (
     <RowShell
@@ -40,7 +45,8 @@ export function AttentionRow({
           {attentionEventBadgeText(event, text)}
         </StatusChip>
       }
-      title={attentionEventTitleText(event, rule, text)}
+      title={attentionEventTitleText(titleEvent, rule, text)}
+      meta={filename}
       actionLabel={actionLabel}
       onAction={onOpen}
       emphasis={event.severity !== "routine"}

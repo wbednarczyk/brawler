@@ -144,6 +144,23 @@ describe("bucketByLocalDay", () => {
     expect(shifted[1].relativeDay).toBe("earlier");
   });
 
+  // F2 S4 harvest: the row/day/attention comparators used a bare
+  // `a < b ? 1 : -1`, which returns -1 for EVERY tied pair and so never
+  // actually preserves original (insertion) order on a genuine tie — two
+  // filings published in the same second, a real possibility, sorted by
+  // implementation-defined comparator internals instead of staying stable.
+  it("keeps same-timestamp rows in their original (insertion) order — a real tie, not just distinct times", () => {
+    const first = filing({ feedItemId: "first", publishedAt: "2026-08-20T09:00:00Z" });
+    const second = filing({ feedItemId: "second", publishedAt: "2026-08-20T09:00:00Z" });
+
+    const buckets = bucketByLocalDay([first, second], [], NOW);
+
+    expect(buckets[0].items.map((item) => (item as { feedItemId: string }).feedItemId)).toEqual([
+      "first",
+      "second",
+    ]);
+  });
+
   describe("counters and allSeen", () => {
     it("counts an unread filing and an unseen attention event as unseen", () => {
       const buckets = bucketByLocalDay(

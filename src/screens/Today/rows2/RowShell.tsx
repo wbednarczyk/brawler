@@ -12,6 +12,9 @@ import { Button } from "../../../ui";
  * hand-rolled row shells.
  */
 export type RowShellProps = {
+  /** A stable identifier for browser-test/DOM lookup of THIS row (e.g. the
+   * feed item id) — never used for React `key` (callers own that). */
+  id?: string;
   icon: ReactNode;
   /** Full qualified ticker, or `null` for a system-wide row with no company
    * (an attention event outside the registry). */
@@ -38,6 +41,7 @@ export type RowShellProps = {
 };
 
 export function RowShell({
+  id,
   icon,
   ticker,
   chip,
@@ -53,6 +57,7 @@ export function RowShell({
     <div
       className={["dayq-row", accent ? "dayq-row-accent" : ""].filter(Boolean).join(" ")}
       data-dayq-row="true"
+      data-dayq-row-id={id}
     >
       <span className="dayq-row-icon" aria-hidden="true">
         {icon}

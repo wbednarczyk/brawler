@@ -2054,4 +2054,16 @@ export const plText: Record<string, string> = {
   "Open day": "Otwórz dzień",
   "Since your last visit": "Od Twojej ostatniej wizyty",
   "Nothing new since your last visit": "Nic nowego od Twojej ostatniej wizyty",
+
+  // Dziś v2 TodayScreen rebuild (F2 S4).
+  "Mark day reviewed": "Oznacz dzień jako przejrzany",
+  "Couldn't load your Today view.": "Nie udało się wczytać widoku Dziś.",
+  "Checking what's new since your last visit…": "Sprawdzanie, co nowego od ostatniej wizyty…",
+  "Plus": "Dodatkowo",
+  "Sources are connected and the calendar names nothing due today.":
+    "Źródła są podpięte, a kalendarz nie zapowiada dziś żadnej publikacji.",
+  "Couldn't load new filings/media.": "Nie udało się wczytać nowych komunikatów/mediów.",
+  "Couldn't load the calendar.": "Nie udało się wczytać kalendarza.",
+  "Couldn't load autopilot runs.": "Nie udało się wczytać przebiegów autopilota.",
+  "tracked": "obserwowanych",
 };

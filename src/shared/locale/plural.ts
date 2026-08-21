@@ -80,6 +80,12 @@ export const FILING_FORMS: PluralForms = {
   pl: ["komunikat", "komunikaty", "komunikatów"],
 };
 
+// Dziś v2 delta header secondary note (F2 S4): "Plus N media items".
+export const MEDIA_ITEM_FORMS: PluralForms = {
+  en: ["media item", "media items"],
+  pl: ["pozycja medialna", "pozycje medialne", "pozycji medialnych"],
+};
+
 // Dziś v2 day-section header (F2 S3): "N pozycji · M nieprzejrzane" — an
 // adjective form (agrees like a noun-count suffix), not a noun, but the same
 // three-category Polish plural machinery applies.

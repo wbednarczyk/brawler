@@ -1,68 +1,62 @@
-# Attention: the Today stream, alerts, and the morning briefing
+# Attention: the Today day queue, alerts, and fired events
 
 Brawler tells you **what deserves a look** instead of leaving you to re-scan
-everything. Since v0.60 the **Today screen is a single prioritized attention
-stream**: everything that happened lands in one list, ordered by how much it
-matters — with repeats folded together so ten similar events read as one line,
-not ten. Everything here is **decision support only** — facts with links to
-evidence, never buy/sell/hold.
+everything. Since F2 (Dziś v2, `#422`) the **Today screen is a per-day
+decision queue anchored to your last visit**: a delta header answers "what
+arrived since I was last here", and the rows below are grouped DZIŚ (today) /
+WCZORAJ (yesterday) / earlier days, newest first. Everything here is
+**decision support only** — facts with links to evidence, never buy/sell/hold.
 
-## How the stream decides what leads
+## The delta header leads
 
-Every item carries one of three **importance levels**, assigned by the app
-(you never configure this):
+The header states, in one sentence, what arrived since your last visit
+(reports/filings, with a media count noted separately) and carries the
+screen's **one** filled call-to-action — the single most urgent thing in the
+queue: an unseen urgent alert first, then an unread report, then a missed
+report (`NIE WPŁYNĄŁ`), then whatever is newest and still unseen. A clean
+morning shows no CTA at all — that absence is deliberate, not a loading state.
 
-- **PILNE (urgent)** — leads the stream with a red edge: insider transactions,
-  profit warnings, auditor concerns, a report your primary source missed.
-- **UWAGA (notable)** — below urgent, amber edge: failed autopilot runs, fired
-  price alerts, dividends/meetings you asked to be alerted about, and claims
-  **overdue** for verification.
-- **Routine** — dimmed, at the bottom: successful report processing, upcoming
-  report dates.
+## The day queue
 
-**Urgency ages.** An urgent item you haven't acted on for **3 days** stops
-shouting — it demotes to notable. Nothing is hidden or deleted; it just no
-longer outranks today's news.
+Below the header, each day with anything in it gets its own section: a mono
+label (DZIŚ / WCZORAJ / the date), a count, and its rows. Rows are typed —
+report/filing (official, cyan provenance), media **clustered per company**
+(magenta, even a single article), `NIE WPŁYNĄŁ` (an announced periodic report
+past its date with no witnessing filing — disappears the moment the
+`report_delay` red flag takes over), claims to verify (a separate "DO
+WERYFIKACJI" section), autopilot runs, and fired alerts (attention events,
+root-fed — shared with the sidebar badge/Alerts). Every row action **names
+its destination and lands on the thing itself**: `Przeczytaj raport` → the
+company workspace; `Otwórz komunikat`/`Otwórz artykuł` → the Inbox with
+exactly that item selected (a narrow pane raises the detail as an overlay);
+`Otwórz w Inbox` (a real media cluster) → the company-scoped Inbox; `Otwórz
+tezę` → that claim highlighted in Claims; `Odśwież źródła` → a source refresh.
 
-**Repeats fold together.** Events of the same kind collapse: several for one
-company become one row with an **×N** count, and the same cause across many
-companies becomes one row with **×N spółek** (urgent folds from 2 companies,
-others from 4). Expand the row in place to see every member — each keeps its
-own **Przejrzyj** (Review). Attention groups also carry **Odrzuć wszystkie**
-(Dismiss all, with a confirm step) so a systemic burst clears in one action.
+**A day collapses to one line** once every row in it is read/seen, or you
+mark it reviewed by hand (**Oznacz dzień jako przejrzany** — undoable:
+re-opening it with **Otwórz dzień** clears the manual mark too). A clean
+morning (nothing new, nothing pending) renders three beats instead: the
+headline, a reassurance line, and a quiet **Odśwież źródła**.
 
 ## Archiwum
 
-W nagłówku Dziś przełącznik **Aktywne | Archiwum** otwiera drugi, **tylko do
-odczytu** widok: **Archiwum** odrzuconych zdarzeń uwagi. Odrzucenie (**Odrzuć**)
-jest **potwierdzeniem, nie usunięciem** — nic nie znika. Archiwum pokazuje te
-zdarzenia od najnowszego, z tym samym układem wiersza (waga, spółka, tytuł,
-znacznik reguły alertu), ale bez akcji odrzucania; **Przejrzyj** służy tylko do
-przejścia do dowodu. Puste archiwum mówi wprost: „Archiwum jest puste." Na razie
-(v0.60) archiwum obejmuje **tylko zdarzenia uwagi** (nie przebiegi autopilota);
-przywracania (cofnięcia odrzucenia) celowo jeszcze nie ma.
-
-## Counters and filters
-
-The right-hand tiles — **Pilne / Autopilot / Do weryfikacji / Nadchodzące
-raporty** — show live counts; click one to filter the stream to that category,
-click again to clear.
+A quiet **Archiwum** link in the footer opens the read-only list of dismissed
+attention events, fetched on first open. Dismissing (**Odrzuć**, from an
+active row) is a **confirmation, not a deletion** — nothing disappears.
+Restoring (undoing a dismissal) is intentionally still not offered.
 
 ## App-level conditions get one banner
 
 When something is wrong with the app itself — e.g. a source hasn't responded
-for days — Today shows **one dismissible banner** above the stream (with a
+for days — Today shows **one dismissible banner** above the queue (with a
 Diagnostyka shortcut), instead of repeating the condition on every row.
 
-## The morning briefing
+## The morning briefing lives in MCP now
 
-The **Poranny przegląd** strip sits above the stream: one line with a
-timestamp and grouped counts of what changed since the last briefing (new
-signals, autopilot runs, claims due, upcoming reports, fired alerts). Expand it
-for the full list — every entry click-throughs to its evidence. It is
-**deterministic** — composed from your data, no AI, no keys. One composes
-automatically each day while the app is open; **Wygeneruj** recomposes it on
-demand.
+Dziś's delta header replaced the old **Poranny przegląd** strip (ADR 0068
+amendment, F2). The deterministic composition (`gather_sources` +
+`compose_briefing`) and its commands are unchanged — an AI agent connected
+over MCP is the briefing's consumer now, not the Today screen.
 
 ## Alert rules
 
