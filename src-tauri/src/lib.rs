@@ -427,6 +427,7 @@ pub fn run() {
             commands::fundamentals_coverage::get_fundamentals_coverage,
             commands::company_context::get_company_context,
             commands::today::get_today_view,
+            commands::today::mark_today_visited,
             commands::company_health::get_company_health,
             commands::company_health::backfill_company_health_facts,
             commands::company_health::get_red_flags,

@@ -19,6 +19,13 @@ backfillYears: number, settingsSource: string, settingsImportExportFormat: strin
  */
 pinnedCompanyIds: Array<string>, 
 /**
+ * Dziś v2 "reviewed" day keys (`YYYY-MM-DD`, F2 plan decision 5). A simple
+ * local UI preference, same JSON-array-in-KV posture as `pinned_company_ids`.
+ * Tolerant default `[]` when the row is absent; trimmed to the 14 newest
+ * dates on write.
+ */
+todayReviewedDays: Array<string>, 
+/**
  * Read-only MCP server (ADR 0078): off by default, port default `8317`.
  * Absent rows read the defaults (no seed-row migration).
  */

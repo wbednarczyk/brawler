@@ -280,6 +280,11 @@ export interface ScenarioData {
   irResolutions: IrReportResolution[];
   // Platform singletons
   settings: UserSettings;
+  // Dziś v2 visit anchor (F2 plan decision 4). `null` = never visited — the
+  // same tolerant-absent-row default as the Rust `today_last_visit_at`
+  // read; not part of `UserSettings`/`get_settings` on the real backend
+  // either, so it stays a sibling field rather than a settings key.
+  todayLastVisitAt: string | null;
   licenseStatus: LicenseStatus;
   providerCatalog: typeof AI_PROVIDER_CATALOG[number][];
   credentialStatuses: CredentialStatus[];
@@ -330,6 +335,7 @@ interface Density {
 
 const EMPTY_SINGLETONS = (companies: number, adapters: number) => ({
   settings: makeUserSettings(),
+  todayLastVisitAt: null,
   licenseStatus: makeLicenseStatus("valid"),
   providerCatalog: AI_PROVIDER_CATALOG.map((entry) => ({ ...entry })),
   credentialStatuses: makeCredentialStatuses(),

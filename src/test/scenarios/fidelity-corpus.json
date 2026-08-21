@@ -1682,6 +1682,11 @@
           }
         },
         {
+          "_comment": "Dziś v2 visit anchor (F2 S2, plan decision 4): mark_today_visited stamps the anchor with each side's own clock (Rust: real wall clock; TS mock: SAMPLE_NOW) and returns it. No expectField — the two stamps are never equal by construction (same posture as get_today_view's wall-clock fields above) — this step pins only that both sides execute the write and return a value without diverging structurally (a String on both sides). The value round-trip (previousVisitAt reflecting a prior stamp) is pinned by the Rust settings unit tests, not the dual-execution corpus.",
+          "command": "mark_today_visited",
+          "input": {}
+        },
+        {
           "_comment": "Insider overview (v0.57 T6, ADR 0083 D7): a fresh company has no parsed insider substrate, so both sides return the empty overview (empty transactions/holdings; both windows belowMinimum count 0). The transactions/holdings arrays are empty, so structural equality is asserted by parity-of-execution; expectField pins only the scalar companyId. No wall-clock field is serialized, so the dual execution stays deterministic.",
           "command": "get_insider_overview",
           "input": {

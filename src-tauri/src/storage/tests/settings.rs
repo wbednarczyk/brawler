@@ -170,6 +170,7 @@ fn updates_settings_through_storage_api() {
             sources_workers: None,
             autopilot_workers: None,
             pinned_company_ids: None,
+            today_reviewed_days: None,
             mcp_enabled: None,
             mcp_port: None,
             mcp_writes_enabled: None,
@@ -253,6 +254,7 @@ fn updates_shortcut_bindings_through_storage_api() {
             sources_workers: None,
             autopilot_workers: None,
             pinned_company_ids: None,
+            today_reviewed_days: None,
             mcp_enabled: None,
             mcp_port: None,
             mcp_writes_enabled: None,
@@ -303,6 +305,7 @@ fn rejects_invalid_poll_interval_setting() {
         sources_workers: None,
         autopilot_workers: None,
         pinned_company_ids: None,
+        today_reviewed_days: None,
         mcp_enabled: None,
         mcp_port: None,
         mcp_writes_enabled: None,
@@ -336,6 +339,7 @@ fn rejects_invalid_theme_setting() {
         sources_workers: None,
         autopilot_workers: None,
         pinned_company_ids: None,
+        today_reviewed_days: None,
         mcp_enabled: None,
         mcp_port: None,
         mcp_writes_enabled: None,
@@ -382,6 +386,7 @@ fn rejects_invalid_locale_setting() {
         sources_workers: None,
         autopilot_workers: None,
         pinned_company_ids: None,
+        today_reviewed_days: None,
         mcp_enabled: None,
         mcp_port: None,
         mcp_writes_enabled: None,
@@ -775,4 +780,131 @@ fn settings_load_with_the_retired_ai_rows_deleted() {
     let queue = state.queue_config();
     assert_eq!(queue.sources_workers, 2);
     assert_eq!(queue.autopilot_workers, 3);
+}
+
+// --- Dziś v2 visit anchor + reviewed days (F2 S2, plan decisions 4-5) -----
+
+#[test]
+fn today_visit_anchor_and_reviewed_days_default_when_absent() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    assert!(
+        state
+            .settings()
+            .today_last_visit_at()
+            .expect("read")
+            .is_none(),
+        "a never-visited database has no anchor row, not an empty-string one",
+    );
+    assert!(
+        state
+            .get_settings()
+            .expect("settings")
+            .today_reviewed_days
+            .is_empty(),
+        "reviewed days default to an empty list without a seed row",
+    );
+}
+
+/// `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`'s exact shape, matched elsewhere
+/// in the codebase (e.g. `storage/tests/migration_safety.rs`'s
+/// `"2026-07-20T10:00:00.000Z"`): `YYYY-MM-DDTHH:MM:SS.SSSZ`, 24 bytes.
+fn looks_like_a_stamped_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 24 && bytes[10] == b'T' && value.ends_with('Z')
+}
+
+#[test]
+fn mark_today_visited_stamps_a_parseable_timestamp_and_overwrites_a_previous_one() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    // Seed a stale anchor directly (bypassing the write path under test) so
+    // the test can prove `mark_today_visited` OVERWRITES an existing row, not
+    // merely creates one on first use.
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "INSERT INTO settings (key, value, value_type)
+             VALUES ('todayLastVisitAt', '2020-01-01T00:00:00.000Z', 'string')",
+            [],
+        )
+        .expect("seed stale anchor");
+
+    let stamped = state
+        .settings()
+        .mark_today_visited()
+        .expect("mark_today_visited");
+
+    assert!(
+        looks_like_a_stamped_timestamp(&stamped),
+        "returned value {stamped} does not look like a stamped timestamp",
+    );
+    assert_ne!(
+        stamped, "2020-01-01T00:00:00.000Z",
+        "the stale seeded anchor must be overwritten, not left in place",
+    );
+    assert_eq!(
+        state.settings().today_last_visit_at().expect("read"),
+        Some(stamped),
+        "the stamped value must be exactly what a fresh read reports back",
+    );
+}
+
+#[test]
+fn today_reviewed_days_round_trips_trims_to_14_and_rejects_bad_format() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    // 15 dates in, newest-first order not required from the caller — the
+    // write path sorts descending and keeps the 14 newest.
+    let mut days: Vec<String> = (1..=15).map(|d| format!("2026-01-{d:02}")).collect();
+    days.reverse(); // feed them oldest-first, proving the sort is on the write side
+
+    let settings = state
+        .update_settings(SettingsUpdate {
+            today_reviewed_days: Some(days),
+            ..Default::default()
+        })
+        .expect("settings should update");
+
+    assert_eq!(settings.today_reviewed_days.len(), 14);
+    // The 14 NEWEST survive — 2026-01-01 (the oldest of the 15) is dropped.
+    assert!(!settings
+        .today_reviewed_days
+        .contains(&"2026-01-01".to_owned()));
+    assert_eq!(settings.today_reviewed_days[0], "2026-01-15");
+
+    // Round-trips through a fresh read (durable in SQLite).
+    assert_eq!(
+        state.get_settings().expect("settings").today_reviewed_days,
+        settings.today_reviewed_days,
+    );
+
+    // An invalid entry is rejected outright (no partial write).
+    let rejected = state.update_settings(SettingsUpdate {
+        today_reviewed_days: Some(vec!["2026-13-40".to_owned()]),
+        ..Default::default()
+    });
+    assert!(
+        rejected.is_err(),
+        "an out-of-range calendar entry must be rejected"
+    );
+
+    let malformed = state.update_settings(SettingsUpdate {
+        today_reviewed_days: Some(vec!["not-a-date".to_owned()]),
+        ..Default::default()
+    });
+    assert!(
+        malformed.is_err(),
+        "a non-YYYY-MM-DD entry must be rejected"
+    );
+
+    // The rejected writes left the prior (trimmed) value untouched.
+    assert_eq!(
+        state.get_settings().expect("settings").today_reviewed_days,
+        settings.today_reviewed_days,
+    );
 }

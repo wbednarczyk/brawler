@@ -176,6 +176,11 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // sidebar badge (ADR 0097 dec. 5). Agents mark individual events via the
         // exposed mark_attention_event_seen.
         excluded("mark_attention_events_seen"),
+        // Same UI-session posture as mark_attention_events_seen above: the
+        // Dziś v2 "screen was rendered" visit-anchor stamp (F2 plan decision 4)
+        // carries no research content — it exists solely to drive the
+        // frontend's own delta header on the next visit.
+        excluded("mark_today_visited"),
         excluded("save_cockpit_layout"),
         excluded("set_source_adapter_enabled"),
         excluded("set_company_autopilot"),

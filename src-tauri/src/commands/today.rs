@@ -8,7 +8,10 @@
 //! section degrades independently into `sectionErrors` (typed, closed enum)
 //! instead of failing the whole read (Partial state, ADR 0081 experience
 //! contract). Offloaded off the UI thread via `spawn_blocking`, mirroring
-//! [`crate::commands::company_context`]. Read-only — no write transactions.
+//! [`crate::commands::company_context`]. `get_today_view` itself is
+//! read-only; `mark_today_visited` (F2 S2, plan decision 4) is the one write
+//! — it stamps the visit anchor `get_today_view` reads, called by the
+//! frontend after a successful render, never on unmount.
 
 use serde::Serialize;
 
@@ -445,6 +448,23 @@ pub async fn get_today_view(
     tauri::async_runtime::spawn_blocking(move || compute_today_view(&state, day_limit))
         .await
         .map_err(|error| format!("today view task failed: {error}"))
+}
+
+/// Stamp the Dziś v2 visit anchor with the backend's own clock (F2 plan
+/// decision 4) and return the new value — called by the frontend after a
+/// successful render, never on unmount (crash-safe: a visit that never
+/// finished never moves the anchor).
+#[tauri::command]
+pub async fn mark_today_visited(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state
+            .settings()
+            .mark_today_visited()
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("mark_today_visited task failed: {error}"))?
 }
 
 #[cfg(test)]

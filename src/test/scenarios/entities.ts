@@ -1607,6 +1607,7 @@ export function makeUserSettings(): UserSettings {
     },
     queue: { sourcesWorkers: 2, autopilotWorkers: 3 },
     pinnedCompanyIds: [],
+    todayReviewedDays: [],
     mcp: { enabled: false, port: 8317, writesEnabled: false, kpiAcquisitionEnabled: false },
   };
 }

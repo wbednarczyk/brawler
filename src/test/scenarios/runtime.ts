@@ -1202,9 +1202,6 @@ function buildHandlers(): Record<string, Handler> {
         ),
       ];
 
-      // No mock KV representation for `todayLastVisitAt` yet (S2 adds the
-      // writer) — an absent anchor is the tolerant default both sides share,
-      // so every in-window item counts toward the delta (matches Rust).
       let reportCount = 0;
       let filingCount = 0;
       let mediaCount = 0;
@@ -1221,9 +1218,17 @@ function buildHandlers(): Record<string, Handler> {
         items,
         toVerify,
         deltaSummary: { reportCount, filingCount, mediaCount },
-        previousVisitAt: null,
+        previousVisitAt: d.todayLastVisitAt,
         sectionErrors: {},
       };
+    },
+
+    // Dziś v2 visit anchor (F2 S2, plan decision 4): stamp with the mock's
+    // deterministic clock (SAMPLE_NOW), mirroring the Rust command's own
+    // backend-clock stamp, and return the new value.
+    mark_today_visited: (d): string => {
+      d.todayLastVisitAt = SAMPLE_NOW;
+      return d.todayLastVisitAt;
     },
 
     // --- Red flags (v0.57 T7, ADR 0083 D8) ---
@@ -3890,6 +3895,7 @@ function buildHandlers(): Record<string, Handler> {
         backfillYears: pick("backfillYears", d.settings.backfillYears),
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),
         pinnedCompanyIds: pick("pinnedCompanyIds", d.settings.pinnedCompanyIds),
+        todayReviewedDays: pick("todayReviewedDays", d.settings.todayReviewedDays),
         mcp: {
           enabled: pick("mcpEnabled", d.settings.mcp.enabled),
           // Mirror of the backend clamp ([1024, 65535], ADR 0078).
