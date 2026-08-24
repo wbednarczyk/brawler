@@ -42,7 +42,14 @@ import { SAMPLE_NOW } from "../../../src/test/scenarios/entities";
 // between the two so the delta header has a non-empty sentence.
 
 test.describe("J1 — morning review", { tag: "@journey" }, () => {
-  test("delta leads, day sections render, and Otwórz komunikat anchors the exact item in the Inbox", async ({
+  // Canonical J1 (ux-journeys.md, sol R1 finding 9): the case previously
+  // stopped at the Inbox anchor — a TRUNCATED journey, budgeted as if the
+  // morning review ended there. The real journey (contract §1 first red row,
+  // plan §12) continues: back to Today, the Claims leg ("Otwórz tezę" → the
+  // claim highlighted in its company's Claims panel, the `openCompanyClaims`
+  // seam / DockLayout `activatePanelId`, fix wave B finding 2), then closes
+  // the loop with "Oznacz dzień jako przejrzany".
+  test("delta leads, day sections render, Otwórz komunikat/tezę anchor the exact item, and the day closes", async ({
     page,
   }) => {
     await page.clock.setFixedTime(new Date(SAMPLE_NOW));
@@ -106,6 +113,54 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     // covers — a side-by-side (non-overlay) layout would sit strictly to the
     // right of the list instead.
     expect(detailBox!.x).toBeLessThanOrEqual(listBox!.x + listBox!.width / 2);
+
+    await expectNoPageOverflow(page);
+
+    // Back to Today — closing the Inbox leg of the loop.
+    await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await j.markScreen("Today");
+
+    // The Claims leg: `data.toVerify` is the BASE "rich" scenario's bulk
+    // claims-to-verify bucket (`claimsToVerify.due[0]`, `runtime.ts`
+    // `get_today_view`), deterministically the CD Projekt claim — no overlay
+    // seed extension needed (checked: the morning-review overlay never touches
+    // `claimsToVerify`, and the base scenario already seeds a non-empty one).
+    const claimStatement = "CD Projekt targets revenue above 1.0bn next year";
+    const claimRow = page.locator(".dayq-row").filter({ hasText: claimStatement });
+    await expect(claimRow).toBeVisible();
+    await j.click(claimRow.getByRole("button", { name: "Open thesis" }));
+
+    const cockpit = page.getByLabel("Research cockpit");
+    await expect(cockpit).toBeVisible();
+    await j.markScreen("Cockpit");
+
+    // Browser-proof of the activation seam (sol R1 finding 2/9): the Claims
+    // tab is RAISED (`aria-pressed="true"`, DockLayout `AccessibleTab`), not
+    // just landing behind the dashboard's default anchor panel.
+    const claimsTab = cockpit.getByRole("button", { name: "Claims", exact: true });
+    await expect(claimsTab).toHaveAttribute("aria-pressed", "true");
+    // ...and the claim itself is highlighted (`CompanyClaimsPanel`'s
+    // `highlightClaimId` seam) — `.first()` because the mock's
+    // `list_claims_to_verify` returns the whole bulk bucket unfiltered, so the
+    // claim can render both in the company's own claims list and the review
+    // queue, both correctly highlighted.
+    const highlightedClaim = page
+      .locator('[data-claim-id="claim_sample_cdr"].claim-row-highlighted')
+      .first();
+    await expect(highlightedClaim).toBeVisible();
+    await expect(highlightedClaim).toContainText(claimStatement);
+
+    // Back to Today, then close the day (contract §7 exit path).
+    await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await j.markScreen("Today");
+
+    const todaySection = page
+      .locator(".dayq-section")
+      .filter({ has: page.locator(".dayq-day-label", { hasText: /^Today$/ }) });
+    await j.click(todaySection.getByRole("button", { name: "Mark day reviewed" }));
+    await expect(todaySection.locator(".dayq-day-header-collapsed")).toBeVisible();
 
     await expectNoPageOverflow(page);
     await j.assertBudget();

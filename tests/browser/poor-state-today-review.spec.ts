@@ -17,13 +17,14 @@ import { SAMPLE_NOW } from "../../src/test/scenarios/entities";
 // Retargeted to Dziś v2 (F2 #422): the root-fed completion event (still the
 // SOLE carrier of "what happened" — `attentionEventTitleText`) lands as a
 // `rows2/AttentionRow` in the day queue alongside the run's own item row
-// (`rows2/AutopilotRunRow`, from `get_today_view`'s `items[]`). Assertion 2 is
-// narrowed from the old spec: `AutopilotRunRow` (F2 S3) carries no per-status
-// chip of its own any more (its `StatusChip` is a flat "Autopilot" regardless
-// of outcome) — the ONE stated failure narration is the attention row
-// (assertion 1), which already satisfies "state WHICH + THAT it failed"; the
-// run's own row is checked only for presence (not silently dropped), not for
-// a redundant status chip that no longer exists.
+// (`rows2/AutopilotRunRow`, from `get_today_view`'s `items[]`). Assertion 2
+// also carries its OWN danger chip ("Autopilot failed", ADR 0091 dec. 3,
+// `rows2/AutopilotRunRow.tsx` `item.run.status === "failed"` branch) —
+// visibly failed on the run's own row, never only via the paired attention
+// event (sol R1 finding 10: this browser assertion was dropped in the F2
+// rebuild even though the chip itself, and its unit coverage —
+// `rows2.test.tsx` "a FAILED run is visibly failed on its own row" — never
+// left).
 
 // The seeded report title, read from the overlay itself — never re-typed here.
 const REPORT_TITLE = FAILED_RUN_REPORT_TITLE;
@@ -59,5 +60,9 @@ test.describe("poor state — Today morning review with a failed autopilot run",
       .locator(".dayq-row")
       .filter({ hasText: REPORT_TITLE, has: page.getByRole("button", { name: "Read report" }) });
     await expect(runRow).toHaveCount(1);
+
+    // 3. The run's OWN row also carries the danger chip (ADR 0091 dec. 3,
+    //    sol R1 finding 10) — never only the paired attention event.
+    await expect(runRow.getByText("Autopilot failed")).toBeVisible();
   });
 });

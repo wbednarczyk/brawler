@@ -505,15 +505,13 @@ function CockpitWorkspace({
     setPendingGeometry(null);
   }, [pendingGeometry]);
 
-  // Raise the Claims tab on a NEW `highlightClaimId` (Today's seam, fix wave
-  // B finding 2) — DockLayout is a child, so its own panel reconciliation
-  // already ran this commit (React flushes child effects first).
-  const lastActivatedClaimIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!highlightClaimId || lastActivatedClaimIdRef.current === highlightClaimId) return;
-    lastActivatedClaimIdRef.current = highlightClaimId;
-    dockRef.current?.activatePanel(pinned.find((panel) => panel.kind === "claims")?.id ?? "");
-  }, [highlightClaimId, pinned]);
+  // Raise the Claims tab whenever `highlightClaimId` is set (Today's seam, fix
+  // wave B finding 2 / sol R1 finding 9): passed to `DockLayout` as a PROP,
+  // not fired as a one-shot imperative call — `DockLayout` re-applies it on
+  // every `onReady`, which is the only way this survives a dock rebuild that
+  // discards the instance a one-shot call had already won against (see its
+  // doc comment).
+  const claimsPanelId = highlightClaimId ? (pinned.find((panel) => panel.kind === "claims")?.id ?? null) : null;
 
   // Activate the requested saved layout once it has loaded (ADR 0057): a view
   // created via the "+" opens with that layout. Applied once per id.
@@ -1170,6 +1168,7 @@ function CockpitWorkspace({
           storageKey={COCKPIT_LAYOUT_STORAGE_KEY}
           resetNonce={resetNonce}
           onClosePanel={handleClose}
+          activatePanelId={claimsPanelId}
         />
       )}
 

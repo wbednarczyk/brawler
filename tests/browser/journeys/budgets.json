@@ -3,8 +3,8 @@
   "schemaVersion": 2,
   "journeys": {
     "J1": {
-      "interactions": 2,
-      "screenTransitions": 2,
+      "interactions": 6,
+      "screenTransitions": 5,
       "modalOpens": 1,
       "contextLosses": 1,
       "byProject": {}

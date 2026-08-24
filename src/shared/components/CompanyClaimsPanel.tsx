@@ -103,11 +103,18 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
 
   // Scroll the targeted claim into view + flash it once it's actually
   // rendered (either list — the main claims list or the review queue), then
-  // let the flash fade on its own after a few seconds.
+  // let the flash fade on its own after a few seconds. Also lifts the short
+  // pane-height tier's collapse (`claims.css` "short height tier": the full
+  // `.claims-body` — where the row lives — is `display:none` behind
+  // `data-short-expanded` under 480px) — a highlight the user cannot see
+  // defeats the whole seam (sol R1 finding 9 browser-proof caught this: the
+  // Claims tab activated and the row got the highlight class, but the row
+  // stayed CSS-hidden in a short dock pane).
   useEffect(() => {
     if (!highlightClaimId) return undefined;
     const row = panelRef.current?.querySelector<HTMLElement>(`[data-claim-id="${highlightClaimId}"]`);
     if (!row) return undefined;
+    setShortExpanded(true);
     row.scrollIntoView({ block: "center" });
     setActiveHighlightId(highlightClaimId);
     const timer = window.setTimeout(() => setActiveHighlightId(null), 4000);
