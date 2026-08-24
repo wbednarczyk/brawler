@@ -7,6 +7,7 @@ import { LocaleContext, makeTextTranslator, makeTranslator } from "../../../shar
 import { makeAttentionEvent } from "../../../test/scenarios/entities";
 import type { TodayItem } from "../../../api/generated/TodayItem";
 import type { TodayClaim } from "../../../api/generated/TodayClaim";
+import type { MediaCluster } from "../dayQueueModel";
 import { AttentionRow } from "./AttentionRow";
 import { AutopilotRunRow } from "./AutopilotRunRow";
 import { CalendarRow } from "./CalendarRow";
@@ -54,7 +55,7 @@ describe("FilingRow", () => {
 });
 
 describe("MediaClusterRow", () => {
-  const base: Extract<TodayItem, { kind: "mediaCluster" }> = {
+  const base: MediaCluster = {
     kind: "mediaCluster",
     companyId: "company_2",
     qualifiedTicker: "GPW:KGH",
@@ -64,6 +65,7 @@ describe("MediaClusterRow", () => {
     latestPublishedAt: "2026-08-20T14:40:00Z",
     topTitles: ["Sierra Gorda, kredyt 1 mld USD"],
     feedItemIds: ["f1", "f2", "f3", "f4", "f5"],
+    unread: true,
   };
 
   it("shows \"Otwórz w Inbox\" and the ×N chip for a real cluster", () => {
@@ -126,36 +128,37 @@ describe("CalendarRow", () => {
 });
 
 describe("AutopilotRunRow", () => {
+  const baseRun: Extract<TodayItem, { kind: "autopilotRun" }>["run"] = {
+    id: "run1",
+    companyId: "company_5",
+    reportDocumentId: "doc1",
+    trigger: "detection",
+    mode: "assist",
+    sweepId: null,
+    status: "succeeded",
+    stage: "done",
+    summaryText: null,
+    kpiDeltaJson: null,
+    reportDiffRef: null,
+    crossRefsJson: null,
+    producedFactIds: [],
+    notificationState: "unread",
+    lastError: null,
+    createdAt: "2026-08-21T05:00:00Z",
+    updatedAt: "2026-08-21T05:00:00Z",
+    severity: "routine",
+    reportDocumentTitle: "Raport roczny 2025",
+  };
+
   it("resolves the caller-supplied ticker (the DTO carries none)", () => {
     render(
       withPolish(
         <AutopilotRunRow
-          item={{
-            kind: "autopilotRun",
-            run: {
-              id: "run1",
-              companyId: "company_5",
-              reportDocumentId: "doc1",
-              trigger: "detection",
-              mode: "assist",
-              sweepId: null,
-              status: "succeeded",
-              stage: "done",
-              summaryText: null,
-              kpiDeltaJson: null,
-              reportDiffRef: null,
-              crossRefsJson: null,
-              producedFactIds: [],
-              notificationState: "unread",
-              lastError: null,
-              createdAt: "2026-08-21T05:00:00Z",
-              updatedAt: "2026-08-21T05:00:00Z",
-              severity: "routine",
-              reportDocumentTitle: "Raport roczny 2025",
-            },
-          }}
+          item={{ kind: "autopilotRun", run: baseRun }}
           qualifiedTicker="GPW:XYZ"
           onOpen={vi.fn()}
+          onUndo={null}
+          onDismiss={vi.fn()}
         />,
       ),
     );
@@ -169,35 +172,92 @@ describe("AutopilotRunRow", () => {
         <AutopilotRunRow
           item={{
             kind: "autopilotRun",
-            run: {
-              id: "run2",
-              companyId: "company_5",
-              reportDocumentId: "doc2",
-              trigger: "detection",
-              mode: "autopilot",
-              sweepId: null,
-              status: "failed",
-              stage: "extract",
-              summaryText: null,
-              kpiDeltaJson: null,
-              reportDiffRef: null,
-              crossRefsJson: null,
-              producedFactIds: [],
-              notificationState: "unread",
-              lastError: "extraction failed",
-              createdAt: "2026-08-21T05:00:00Z",
-              updatedAt: "2026-08-21T05:00:00Z",
-              severity: "urgent",
-              reportDocumentTitle: "Raport roczny 2025",
-            },
+            run: { ...baseRun, id: "run2", status: "failed", stage: "extract", lastError: "extraction failed", severity: "urgent" },
           }}
           qualifiedTicker="GPW:XYZ"
           onOpen={vi.fn()}
+          onUndo={null}
+          onDismiss={vi.fn()}
         />,
       ),
     );
     const chip = screen.getByText("Autopilot nie powiódł się");
     expect(chip.closest(".ui-status-chip")).toHaveClass("ui-status-chip-danger");
+  });
+
+  // Fix wave B finding 7 (ADR 0055 §4 recovery path).
+  it("no Undo button when the run produced no facts (onUndo null) — only Dismiss shows", () => {
+    render(
+      withPolish(
+        <AutopilotRunRow
+          item={{ kind: "autopilotRun", run: baseRun }}
+          qualifiedTicker="GPW:XYZ"
+          onOpen={vi.fn()}
+          onUndo={null}
+          onDismiss={vi.fn()}
+        />,
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Cofnij" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Oznacz jako przeczytane" })).toBeInTheDocument();
+  });
+
+  it("Undo is a two-step confirm — the callback fires only after the confirm step, not the first click", async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn();
+    render(
+      withPolish(
+        <AutopilotRunRow
+          item={{ kind: "autopilotRun", run: { ...baseRun, producedFactIds: ["fact_1"] } }}
+          qualifiedTicker="GPW:XYZ"
+          onOpen={vi.fn()}
+          onUndo={onUndo}
+          onDismiss={vi.fn()}
+        />,
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Cofnij" }));
+    expect(onUndo).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Cofnij" }));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cancel on the Undo confirm step backs out without firing onUndo", async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn();
+    render(
+      withPolish(
+        <AutopilotRunRow
+          item={{ kind: "autopilotRun", run: { ...baseRun, producedFactIds: ["fact_1"] } }}
+          qualifiedTicker="GPW:XYZ"
+          onOpen={vi.fn()}
+          onUndo={onUndo}
+          onDismiss={vi.fn()}
+        />,
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Cofnij" }));
+    await user.click(screen.getByRole("button", { name: "Anuluj" }));
+    expect(onUndo).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Cofnij" })).toBeInTheDocument();
+  });
+
+  it("Dismiss (Oznacz jako przeczytane) fires its callback", async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+    render(
+      withPolish(
+        <AutopilotRunRow
+          item={{ kind: "autopilotRun", run: baseRun }}
+          qualifiedTicker="GPW:XYZ"
+          onOpen={vi.fn()}
+          onUndo={null}
+          onDismiss={onDismiss}
+        />,
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Oznacz jako przeczytane" }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
 

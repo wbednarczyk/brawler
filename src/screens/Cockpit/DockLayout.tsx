@@ -309,6 +309,12 @@ export type DockLayoutHandle = {
    *  already updated its state) — used when a pin toggle changes a panel's id and
    *  the add-only reconciler needs the stale panel dropped (U-Ra, D5). */
   removePanel: (id: string) => void;
+  /** Activate (raise the tab of) a panel by id — a no-op when the panel does
+   *  not currently exist (Today's `openCompanyClaims` seam, fix wave B finding
+   *  2: the claims panel is added by the same reconciliation effect that owns
+   *  the panel set, so a caller racing that effect on the very first paint
+   *  should re-issue the call once the panel set has settled). */
+  activatePanel: (id: string) => void;
 };
 
 export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function DockLayout(
@@ -572,6 +578,9 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
       } finally {
         rebuildingRef.current = false;
       }
+    },
+    activatePanel: (id) => {
+      apiRef.current?.getPanel(id)?.api.setActive();
     },
   }));
 

@@ -4,7 +4,9 @@ import type { SectionErrorKind } from "./SectionErrorKind";
 /**
  * Per-section degradation (plan decision 1): a storage error in one section
  * fills its slot instead of failing the whole command. `nonArrival` shares
- * the `calendar` slot — both read `company_events`/`red_flags` state, and
- * the plan's DTO enumerates exactly these four keys.
+ * the `calendar` slot — both read `company_events`/`red_flags` state.
+ * `anchor` (FIX WAVE A finding 5) covers a KV read error on the visit
+ * anchor — previously silently swallowed into "first visit"
+ * (`unwrap_or(None)`), now surfaced instead of faked.
  */
-export type TodaySectionErrors = { feed?: SectionErrorKind, calendar?: SectionErrorKind, claims?: SectionErrorKind, autopilot?: SectionErrorKind, };
+export type TodaySectionErrors = { feed?: SectionErrorKind, calendar?: SectionErrorKind, claims?: SectionErrorKind, autopilot?: SectionErrorKind, anchor?: SectionErrorKind, };

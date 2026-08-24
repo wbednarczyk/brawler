@@ -2,8 +2,8 @@
 
 /**
  * Counts of items newer than `previousVisitAt` (plan decision 1's delta
- * header). Raw item counts, not cluster counts — a 5-item media cluster
- * contributes 5 to `mediaCount`.
+ * header). One count per matching row — `mediaCount` counts flat
+ * `mediaItem` rows, one per (feed item × matched company).
  */
 export type TodayDeltaSummary = { 
 /**

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from "react";
 import { RefreshCw } from "lucide-react";
 
+import { setAutopilotRunNotificationState, undoAutopilotRun } from "../../api/autopilot";
 import { getTodayView, markTodayVisited, type TodayView } from "../../api/today";
 import type { TodayItem } from "../../api/generated/TodayItem";
-import { listAttentionEvents, type AttentionEvent } from "../../api/attention";
+import { listAttentionEvents, type AlertRule, type AttentionEvent } from "../../api/attention";
 import type { Company, SourceAdapter } from "../../api/types";
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { AttentionController } from "../../app/useAttentionController";
@@ -20,7 +21,10 @@ import {
   itemTimestamp,
   pickPrimary,
   splitDisplayBuckets,
+  suppressCapturedNonArrivals,
   type DayBucket,
+  type DayRow,
+  type MediaCluster,
   type PrimaryCandidate,
 } from "./dayQueueModel";
 import { AttentionRow } from "./rows2/AttentionRow";
@@ -57,6 +61,11 @@ export type TodayScreenProps = {
   refreshSources: (trigger: "manual") => Promise<void> | Promise<unknown>;
   todayReviewedDays: string[];
   updateTodayReviewedDays: (days: string[]) => void;
+  /** Increments once per COMPLETED source refresh (fix wave B finding 1a,
+   * `useTodayScreenWiring`'s `useRefreshCompletionSignal`) — the
+   * `get_today_view` query key, decoupled from whether the root-fed attention
+   * state's own identity happened to change on that pass. */
+  refreshCompletionCount: number;
 };
 
 // Composed read window (plan decision 1): the backend clamps to 1..7 anyway;
@@ -114,41 +123,53 @@ export function TodayScreen({
   refreshSources,
   todayReviewedDays,
   updateTodayReviewedDays,
+  refreshCompletionCount,
 }: TodayScreenProps) {
   const { t, text, locale } = useLocale();
 
   const rootRef = useRef<HTMLElement | null>(null);
   const narrow = useNarrowPane(rootRef);
 
-  // Refetch on the SAME signal that already refreshes root-fed attention
-  // (plan decision 2's refresh coordination): `attention.events` changes
-  // reference on every source-refresh completion AND on a manual seen/dismiss
-  // mutation, so keying on it here re-runs `get_today_view` in the same wave —
-  // never a dupe, never a gap, with no new AppStateRoot wiring needed.
-  const query = useCommandQuery(["todayView", attention.events], () => getTodayView(DAY_LIMIT));
+  // Refetch on the dedicated completion signal (fix wave B finding 1a) — NOT
+  // `attention.events`, whose array identity a same-shape poll leaves
+  // unchanged even after a refresh that ingested new filings/media (that
+  // fragile coupling silently missed a Today refetch). Combined with the
+  // render-level non-arrival suppression below, this guarantees exactly one
+  // row for a captured non-arrival regardless of which of the two
+  // independent fetches (this one, root-fed attention) lands first.
+  const query = useCommandQuery(["todayView", refreshCompletionCount], () => getTodayView(DAY_LIMIT));
 
-  // `mark_today_visited` fires ONCE, after the first SUCCESSFUL render, never
-  // on error/unmount (plan decision 4) — the ref guards against re-firing on
-  // every later refetch.
+  // `mark_today_visited` fires ONCE, after the first SUCCESSFUL render with a
+  // TRUSTWORTHY anchor — never on error/unmount (plan decision 4), and never
+  // when the read that PRODUCED the anchor is itself degraded (fix wave B
+  // finding 5): `sectionErrors.feed` means the delta count is a lie, and
+  // `sectionErrors.anchor` means `previousVisitAt` itself may be stale/wrong
+  // — stamping a new visit over either would silently swallow un-shown items
+  // into "already seen". The ref guards against re-firing on every later
+  // refetch once a trustworthy visit has stamped.
   const visitedRef = useRef(false);
   useEffect(() => {
-    if (query.status === "success" && !visitedRef.current) {
-      visitedRef.current = true;
-      void markTodayVisited().catch(() => {});
-    }
-  }, [query.status]);
+    if (query.status !== "success" || visitedRef.current) return;
+    if (query.data.sectionErrors.feed || query.data.sectionErrors.anchor) return;
+    visitedRef.current = true;
+    void markTodayVisited().catch(() => {});
+  }, [query.status, query.data]);
 
   // Seen = "was on screen the last time Today was open" (ADR 0097 dec. 5):
   // batch-mark every loaded unseen event once the day queue has real data, so
-  // the sidebar badge clears on a visit. One IPC call; the optimistic flip
-  // empties the unseen set, so the effect self-quiesces on the next render.
+  // the sidebar badge clears on a visit. Gated on the query's FIRST SUCCESS
+  // (fix wave B finding 4) — marking seen off a stale/loading/errored read
+  // would clear the badge for events the user never actually saw rendered.
+  // One IPC call; the optimistic flip empties the unseen set, so the effect
+  // self-quiesces on the next render.
   const { markManySeen } = attention;
   useEffect(() => {
+    if (query.status !== "success") return;
     const unseenIds = attention.events
       .filter((event) => !event.seen && !event.dismissed)
       .map((event) => event.id);
     if (unseenIds.length > 0) void markManySeen(unseenIds).catch(() => {});
-  }, [attention.events, markManySeen]);
+  }, [query.status, attention.events, markManySeen]);
 
   const companyById = useMemo(() => new Map(companies.map((company) => [company.id, company])), [companies]);
 
@@ -220,7 +241,7 @@ export function TodayScreen({
     else openInboxItem(item.feedItemId, item.companyId);
   }
 
-  function openMediaClusterItem(item: Extract<TodayItem, { kind: "mediaCluster" }>) {
+  function openMediaClusterItem(item: MediaCluster) {
     if (item.count === 1) {
       openInboxItem(item.feedItemIds[0], item.companyId);
       return;
@@ -229,7 +250,7 @@ export function TodayScreen({
     if (company) openCompanyInbox(company);
   }
 
-  function itemRowKey(item: TodayItem): string {
+  function itemRowKey(item: DayRow): string {
     switch (item.kind) {
       case "filing":
         return `filing:${item.feedItemId}`;
@@ -244,7 +265,7 @@ export function TodayScreen({
     }
   }
 
-  function renderItemRow(item: TodayItem) {
+  function renderItemRow(item: DayRow) {
     switch (item.kind) {
       case "filing":
         return <FilingRow key={itemRowKey(item)} item={item} onOpen={() => openFilingItem(item)} />;
@@ -265,6 +286,16 @@ export function TodayScreen({
             item={item}
             qualifiedTicker={companyById.get(item.run.companyId)?.qualifiedTicker ?? null}
             onOpen={() => openCompanyWorkspace(item.run.companyId, "Fundamentals")}
+            onUndo={
+              item.run.producedFactIds.length > 0
+                ? () => void undoAutopilotRun(item.run.id).catch(() => {})
+                : null
+            }
+            onDismiss={() =>
+              void setAutopilotRunNotificationState({ runId: item.run.id, notificationState: "read" }).catch(
+                () => {},
+              )
+            }
           />
         );
     }
@@ -280,6 +311,7 @@ export function TodayScreen({
         rule={event.ruleId ? attention.rulesById.get(event.ruleId) : undefined}
         actionLabel={text("Review")}
         onOpen={() => openAttentionRowAction(event)}
+        onDismiss={() => void attention.dismiss(event.id).catch(() => {})}
       />
     );
   }
@@ -391,6 +423,9 @@ export function TodayScreen({
           <TodayBody
             data={query.data}
             attentionEvents={attention.events}
+            attentionError={attention.error}
+            attentionRefresh={attention.refresh}
+            rulesById={attention.rulesById}
             locale={locale}
             text={text}
             narrow={narrow}
@@ -457,6 +492,13 @@ export function TodayScreen({
 type TodayBodyProps = {
   data: TodayView;
   attentionEvents: AttentionEvent[];
+  /** The root-fed attention state's last fetch failure (fix wave B finding
+   * 4) — an errored attention state must never look quiet: it renders its
+   * own error strip and suppresses the "clean morning" empty state, which
+   * would otherwise falsely read as confidence that nothing is pending. */
+  attentionError: string | null;
+  attentionRefresh: () => void;
+  rulesById: Map<string, AlertRule>;
   locale: LocaleCode;
   text: (value: string) => string;
   /** S-tier row cap (plan Dense row "S top-3+zwiń") — see `useNarrowPane`. */
@@ -479,6 +521,9 @@ type TodayBodyProps = {
 function TodayBody({
   data,
   attentionEvents,
+  attentionError,
+  attentionRefresh,
+  rulesById,
   locale,
   text,
   narrow,
@@ -495,7 +540,16 @@ function TodayBody({
   refetch,
 }: TodayBodyProps) {
   const now = useMemo(() => new Date(), []);
-  const buckets = useMemo(() => bucketByLocalDay(data.items, attentionEvents, now), [data.items, attentionEvents, now]);
+  // Render-level non-arrival suppression (plan decision 2 / fix wave B
+  // finding 1b): drop a `nonArrival` row whose company already has a fired
+  // `report_delay` attention event BEFORE bucketing, so exactly one row shows
+  // regardless of which of the two independent fetches (this composed read,
+  // root-fed attention) landed first or is momentarily stale.
+  const items = useMemo(
+    () => suppressCapturedNonArrivals(data.items, attentionEvents, rulesById),
+    [data.items, attentionEvents, rulesById],
+  );
+  const buckets = useMemo(() => bucketByLocalDay(items, attentionEvents, now), [items, attentionEvents, now]);
   const primaryCandidate = useMemo(() => pickPrimary(buckets), [buckets]);
   const primaryAction = primaryCandidate ? primaryFromCandidate(primaryCandidate) : null;
 
@@ -506,6 +560,11 @@ function TodayBody({
   const [earlierExpanded, setEarlierExpanded] = useState(false);
 
   const hasContent = buckets.some((bucket) => bucket.total > 0) || data.toVerify.length > 0;
+  // An errored attention state must never look quiet (fix wave B finding 4) —
+  // the "clean morning" empty state below is a POSITIVE claim ("sources are
+  // connected, nothing due"), which a failed attention fetch cannot honestly
+  // back.
+  const showEmptyState = !hasContent && !attentionError;
   const totalCount = buckets.reduce((sum, bucket) => sum + bucket.total, 0);
 
   // A day section's rows, S-tier capped to the newest 3 (plan Dense row "S
@@ -578,8 +637,9 @@ function TodayBody({
       {data.sectionErrors.calendar ? errorStrip(text("Couldn't load the calendar."), refetch) : null}
       {data.sectionErrors.claims ? errorStrip(text("Couldn't load claims to verify."), refetch) : null}
       {data.sectionErrors.autopilot ? errorStrip(text("Couldn't load autopilot runs."), refetch) : null}
+      {attentionError ? errorStrip(text("Couldn't load attention signals."), attentionRefresh) : null}
 
-      {!hasContent ? (
+      {showEmptyState ? (
         // The headline beat is already the DeltaHeader above (its zero-count
         // case, `formatDeltaHeadline`) — the empty state adds only the other
         // two of the mockup's 3 taktów (Delta.dc.html Stan B): the reassurance

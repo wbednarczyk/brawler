@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import {
   expect,
@@ -77,6 +77,26 @@ describe("Research cockpit shell", () => {
       "company_gpw_cdr",
     );
     expect(within(cockpit).queryByRole("button", { name: "Inspector" })).not.toBeInTheDocument();
+  });
+
+  it("Today's 'Open thesis' seam raises the Claims panel's own tab, not just the highlight (fix wave B finding 2)", async () => {
+    // jsdom has no `scrollIntoView` (CompanyClaimsPanel's own highlight-scroll
+    // effect calls it once a real highlighted claim row exists) — same stub
+    // `CompanyClaimsPanel.test.tsx` uses.
+    Element.prototype.scrollIntoView = vi.fn();
+    const user = userEvent.setup();
+    renderAppDefaultShell();
+
+    await screen.findByRole("heading", { name: "Today" });
+    const [openThesis] = await screen.findAllByRole("button", { name: "Open thesis" });
+    await user.click(openThesis);
+
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    // The dashboard's default anchor slot (4th panel, "Basic info") is active
+    // on open — WITHOUT the activation seam, Claims stays behind it even
+    // though `highlightClaimId` landed.
+    const claimsTab = await within(cockpit).findByRole("button", { name: "Claims" });
+    await waitFor(() => expect(claimsTab).toHaveAttribute("aria-pressed", "true"));
   });
 
   it("closes the active panel from the keyboard (Alt+W)", async () => {

@@ -7,20 +7,30 @@ import { describe, expect, it, vi } from "vitest";
 vi.stubEnv("TZ", "Europe/Warsaw");
 
 import type { AttentionEvent } from "../../api/attention";
+import type { AlertRule } from "../../api/generated/AlertRule";
+import type { AutopilotRun } from "../../api/generated/AutopilotRun";
 import type { TodayDeltaSummary } from "../../api/generated/TodayDeltaSummary";
 import type { TodayItem } from "../../api/generated/TodayItem";
-import { makeAttentionEvent } from "../../test/scenarios/entities";
+import { makeAlertRule, makeAttentionEvent } from "../../test/scenarios/entities";
 import {
   allSeen,
   bucketByLocalDay,
   capDayRows,
   formatDeltaHeadline,
   isItemSeen,
+  isReportDelaySignal,
   pickPrimary,
   splitDisplayBuckets,
+  suppressCapturedNonArrivals,
+  type DayBucket,
+  type MediaCluster,
 } from "./dayQueueModel";
 
-function filing(overrides: Partial<Extract<TodayItem, { kind: "filing" }>> = {}): TodayItem {
+// Returns the specific member (not widened to `TodayItem`) so these helpers
+// stay assignable both to `bucketByLocalDay`'s raw `TodayItem[]` input AND
+// directly to `isItemSeen`'s `DayRow` parameter (every kind here except
+// `mediaItem` is a `DayRow` member too).
+function filing(overrides: Partial<Extract<TodayItem, { kind: "filing" }>> = {}): Extract<TodayItem, { kind: "filing" }> {
   return {
     kind: "filing",
     feedItemId: "feed_1",
@@ -34,26 +44,26 @@ function filing(overrides: Partial<Extract<TodayItem, { kind: "filing" }>> = {})
   };
 }
 
-function mediaCluster(
-  overrides: Partial<Extract<TodayItem, { kind: "mediaCluster" }>> = {},
-): TodayItem {
+// The backend DTO is flat (fix wave A finding 8) — `dayQueueModel` does its
+// own (company, LOCAL day) clustering; every input row here is a single raw
+// `mediaItem`, never a pre-clustered shape.
+function mediaItem(overrides: Partial<Extract<TodayItem, { kind: "mediaItem" }>> = {}): TodayItem {
   return {
-    kind: "mediaCluster",
+    kind: "mediaItem",
+    feedItemId: "feed_2",
     companyId: "company_2",
     qualifiedTicker: "GPW:KGH",
-    day: "2026-08-20",
-    count: 5,
-    earliestPublishedAt: "2026-08-20T12:54:00Z",
-    latestPublishedAt: "2026-08-20T14:40:00Z",
-    topTitles: ["Sierra Gorda"],
-    feedItemIds: ["feed_2", "feed_3"],
+    title: "Sierra Gorda",
+    publishedAt: "2026-08-20T12:54:00Z",
+    read: false,
+    sourceName: "Bankier",
     ...overrides,
   };
 }
 
 function nonArrival(
   overrides: Partial<Extract<TodayItem, { kind: "nonArrival" }>> = {},
-): TodayItem {
+): Extract<TodayItem, { kind: "nonArrival" }> {
   return {
     kind: "nonArrival",
     eventKey: "event_1",
@@ -65,7 +75,7 @@ function nonArrival(
   };
 }
 
-function calendar(overrides: Partial<Extract<TodayItem, { kind: "calendar" }>> = {}): TodayItem {
+function calendar(overrides: Partial<Extract<TodayItem, { kind: "calendar" }>> = {}): Extract<TodayItem, { kind: "calendar" }> {
   return {
     kind: "calendar",
     eventKey: "cal_1",
@@ -78,8 +88,43 @@ function calendar(overrides: Partial<Extract<TodayItem, { kind: "calendar" }>> =
   };
 }
 
+const AUTOPILOT_RUN_BASE: AutopilotRun = {
+  id: "run_1",
+  companyId: "company_5",
+  reportDocumentId: "doc_1",
+  trigger: "detection",
+  mode: "assist",
+  sweepId: null,
+  status: "succeeded",
+  stage: "done",
+  summaryText: null,
+  kpiDeltaJson: null,
+  reportDiffRef: null,
+  crossRefsJson: null,
+  producedFactIds: [],
+  notificationState: "unread",
+  lastError: null,
+  createdAt: "2026-08-21T05:00:00Z",
+  updatedAt: "2026-08-21T05:00:00Z",
+  severity: "routine",
+  reportDocumentTitle: "Raport roczny",
+};
+
+function autopilotRun(overrides: Partial<AutopilotRun> = {}): Extract<TodayItem, { kind: "autopilotRun" }> {
+  return { kind: "autopilotRun", run: { ...AUTOPILOT_RUN_BASE, ...overrides } };
+}
+
 function attention(overrides: Partial<AttentionEvent> = {}): AttentionEvent {
   return { ...makeAttentionEvent("attn_1", "rule_1", "company_1"), ...overrides };
+}
+
+// The one media cluster synthesized for a given day bucket — helper for
+// asserting on the frontend-built `MediaCluster` shape.
+function mediaClusterRow(buckets: DayBucket[], day: string): MediaCluster {
+  const bucket = buckets.find((candidate) => candidate.day === day);
+  const row = bucket?.items.find((item) => item.kind === "mediaCluster");
+  if (!row) throw new Error(`no media cluster on ${day}`);
+  return row as MediaCluster;
 }
 
 const NOW = new Date("2026-08-21T07:25:00Z");
@@ -120,14 +165,14 @@ describe("bucketByLocalDay", () => {
 
   it("clamps ANY future-dated item into TODAY's bucket — nothing spawns a section above DZIŚ", () => {
     // Main.dc.html: the DZIŚ section carries the calendar announcements
-    // ("2 zapowiedzi z kalendarza"); and a future-stamped run (clock skew /
+    // ("2 zapowiedzi z kalendarza"); and a future-stamped row (clock skew /
     // anomalous seed) creating its own topmost section would eat one of the
     // two visible display slots and push the real queue into "Earlier".
     const futureEvent = calendar({ eventKey: "far", eventDate: "2026-08-26" });
-    const futureCluster = mediaCluster({ day: "2026-08-30", latestPublishedAt: "2026-08-30T09:00:00Z" });
+    const futureMedia = mediaItem({ feedItemId: "future", publishedAt: "2026-08-30T09:00:00Z" });
     const todayFiling = filing({ feedItemId: "f1", publishedAt: "2026-08-21T06:00:00Z" });
 
-    const buckets = bucketByLocalDay([futureEvent, futureCluster, todayFiling], [], NOW);
+    const buckets = bucketByLocalDay([futureEvent, futureMedia, todayFiling], [], NOW);
 
     expect(buckets.map((b) => b.day)).toEqual(["2026-08-21"]);
     expect(buckets[0].relativeDay).toBe("today");
@@ -179,7 +224,7 @@ describe("bucketByLocalDay", () => {
     ]);
   });
 
-  describe("counters and allSeen", () => {
+  describe("counters and allSeen (fix wave B finding 6)", () => {
     it("counts an unread filing and an unseen attention event as unseen", () => {
       const buckets = bucketByLocalDay(
         [filing({ read: false, publishedAt: "2026-08-21T06:10:00Z" })],
@@ -201,13 +246,178 @@ describe("bucketByLocalDay", () => {
       expect(allSeen(buckets[0])).toBe(true);
     });
 
-    it("a mediaCluster/nonArrival/calendar/autopilotRun row has no seen signal — always unseen", () => {
-      expect(isItemSeen(mediaCluster())).toBe(false);
-      expect(isItemSeen(nonArrival())).toBe(false);
-      expect(isItemSeen(calendar())).toBe(false);
-      const buckets = bucketByLocalDay([mediaCluster({ latestPublishedAt: "2026-08-21T06:00:00Z" })], [], NOW);
-      expect(allSeen(buckets[0])).toBe(false);
+    it("a mediaCluster is seen once EVERY member is read, not just one", () => {
+      const mixed = bucketByLocalDay(
+        [
+          mediaItem({ feedItemId: "m1", read: true, publishedAt: "2026-08-21T06:00:00Z" }),
+          mediaItem({ feedItemId: "m2", read: false, publishedAt: "2026-08-21T05:00:00Z" }),
+        ],
+        [],
+        NOW,
+      );
+      expect(isItemSeen(mediaClusterRow(mixed, "2026-08-21"))).toBe(false);
+      expect(allSeen(mixed[0])).toBe(false);
+
+      const allRead = bucketByLocalDay(
+        [mediaItem({ feedItemId: "m1", read: true, publishedAt: "2026-08-21T06:00:00Z" })],
+        [],
+        NOW,
+      );
+      expect(isItemSeen(mediaClusterRow(allRead, "2026-08-21"))).toBe(true);
+      expect(allSeen(allRead[0])).toBe(true);
     });
+
+    it("an autopilotRun is seen once its notificationState moves past unread", () => {
+      expect(isItemSeen(autopilotRun({ notificationState: "unread" }))).toBe(false);
+      expect(isItemSeen(autopilotRun({ notificationState: "read" }))).toBe(true);
+      expect(isItemSeen(autopilotRun({ notificationState: "dismissed" }))).toBe(true);
+    });
+
+    it("a calendar row is always seen — informational, carries no decision", () => {
+      expect(isItemSeen(calendar())).toBe(true);
+    });
+
+    it("a nonArrival row is NEVER seen — an unresolved missing report keeps its day open", () => {
+      expect(isItemSeen(nonArrival())).toBe(false);
+    });
+
+    it("a day of read media + a read run + a calendar row collapses; a nonArrival keeps it open", () => {
+      const readDay = bucketByLocalDay(
+        [
+          mediaItem({ feedItemId: "m1", read: true, publishedAt: "2026-08-21T06:00:00Z" }),
+          autopilotRun({ notificationState: "read" }),
+          calendar({ eventDate: "2026-08-21" }),
+        ],
+        [],
+        NOW,
+      );
+      expect(allSeen(readDay[0])).toBe(true);
+
+      const withNonArrival = bucketByLocalDay(
+        [
+          mediaItem({ feedItemId: "m1", read: true, publishedAt: "2026-08-21T06:00:00Z" }),
+          nonArrival({ eventDate: "2026-08-21" }),
+        ],
+        [],
+        NOW,
+      );
+      expect(allSeen(withNonArrival[0])).toBe(false);
+    });
+  });
+
+  describe("media clustering (fix wave B finding 3/8 — the backend DTO is flat)", () => {
+    it("clusters same-company mediaItem rows per (company, LOCAL day): count, earliest/latest, top-3 titles by recency", () => {
+      const items = [
+        mediaItem({ feedItemId: "m1", title: "A", publishedAt: "2026-08-20T09:00:00Z" }),
+        mediaItem({ feedItemId: "m2", title: "B", publishedAt: "2026-08-20T12:00:00Z" }),
+        mediaItem({ feedItemId: "m3", title: "C", publishedAt: "2026-08-20T15:00:00Z" }),
+        mediaItem({ feedItemId: "m4", title: "D", publishedAt: "2026-08-20T18:00:00Z" }),
+      ];
+      const cluster = mediaClusterRow(bucketByLocalDay(items, [], NOW), "2026-08-20");
+      expect(cluster.count).toBe(4);
+      expect(cluster.earliestPublishedAt).toBe("2026-08-20T09:00:00Z");
+      expect(cluster.latestPublishedAt).toBe("2026-08-20T18:00:00Z");
+      expect(cluster.topTitles).toEqual(["D", "C", "B"]);
+      expect(cluster.feedItemIds).toEqual(["m4", "m3", "m2", "m1"]);
+    });
+
+    it("a lone article still clusters, with count 1", () => {
+      const buckets = bucketByLocalDay([mediaItem({ feedItemId: "solo" })], [], NOW);
+      expect(mediaClusterRow(buckets, "2026-08-20").count).toBe(1);
+    });
+
+    it("a feedItemId matched to multiple companies joins EACH company's own cluster (multi-company membership)", () => {
+      const items = [
+        mediaItem({
+          feedItemId: "shared",
+          companyId: "company_a",
+          qualifiedTicker: "GPW:AAA",
+          publishedAt: "2026-08-20T10:00:00Z",
+        }),
+        mediaItem({
+          feedItemId: "shared",
+          companyId: "company_b",
+          qualifiedTicker: "GPW:BBB",
+          publishedAt: "2026-08-20T10:00:00Z",
+        }),
+      ];
+      const buckets = bucketByLocalDay(items, [], NOW);
+      const clusters = buckets[0].items.filter(
+        (item): item is MediaCluster => item.kind === "mediaCluster",
+      );
+      expect(clusters).toHaveLength(2);
+      expect(clusters.map((cluster) => cluster.companyId).sort()).toEqual(["company_a", "company_b"]);
+      for (const cluster of clusters) expect(cluster.feedItemIds).toEqual(["shared"]);
+    });
+
+    it("splits two UTC-same-day media items straddling LOCAL midnight into different clusters", () => {
+      // Warsaw is UTC+2 in August: 22:30Z is already 2026-08-21 00:30 local.
+      const late = mediaItem({ feedItemId: "late", publishedAt: "2026-08-20T22:30:00Z" });
+      const early = mediaItem({ feedItemId: "early", publishedAt: "2026-08-20T21:00:00Z" });
+      const buckets = bucketByLocalDay([late, early], [], NOW);
+      expect(buckets.map((b) => b.day)).toEqual(["2026-08-21", "2026-08-20"]);
+      expect(mediaClusterRow(buckets, "2026-08-21").feedItemIds).toEqual(["late"]);
+      expect(mediaClusterRow(buckets, "2026-08-20").feedItemIds).toEqual(["early"]);
+    });
+
+    it("one unread member keeps the whole cluster unread", () => {
+      const buckets = bucketByLocalDay(
+        [
+          mediaItem({ feedItemId: "read1", read: true, publishedAt: "2026-08-20T09:00:00Z" }),
+          mediaItem({ feedItemId: "unread1", read: false, publishedAt: "2026-08-20T10:00:00Z" }),
+        ],
+        [],
+        NOW,
+      );
+      expect(mediaClusterRow(buckets, "2026-08-20").unread).toBe(true);
+    });
+  });
+});
+
+describe("isReportDelaySignal / suppressCapturedNonArrivals (fix wave B finding 1b)", () => {
+  const reportDelayRule: AlertRule = {
+    ...makeAlertRule("rule_rd", "signal_category", "company_3"),
+    signalCategory: "report_delay",
+  };
+  // Same trigger shape, a DIFFERENT signal category — must never match.
+  const otherRule: AlertRule = makeAlertRule("rule_other", "signal_category", "company_3");
+  const rulesById = new Map([
+    [reportDelayRule.id, reportDelayRule],
+    [otherRule.id, otherRule],
+  ]);
+
+  it("matches only a company_signal event whose rule's signalCategory is report_delay", () => {
+    const rdEvent = makeAttentionEvent("attn_rd", reportDelayRule.id, "company_3");
+    const otherEvent = makeAttentionEvent("attn_other", otherRule.id, "company_3");
+    const noRuleEvent: AttentionEvent = {
+      ...makeAttentionEvent("attn_sys", "rule_ignored", "company_3"),
+      ruleId: null,
+      evidenceType: "source_reconciliation",
+    };
+    expect(isReportDelaySignal(rdEvent, rulesById)).toBe(true);
+    expect(isReportDelaySignal(otherEvent, rulesById)).toBe(false);
+    expect(isReportDelaySignal(noRuleEvent, rulesById)).toBe(false);
+  });
+
+  it("drops a nonArrival row once its company already has a fired report_delay event", () => {
+    const missed = nonArrival({ companyId: "company_3" });
+    const rdEvent = makeAttentionEvent("attn_rd", reportDelayRule.id, "company_3");
+    expect(suppressCapturedNonArrivals([missed], [rdEvent], rulesById)).toEqual([]);
+  });
+
+  it("keeps a nonArrival row when the same company's attention event is a DIFFERENT signal category", () => {
+    const missed = nonArrival({ companyId: "company_3" });
+    const otherEvent = makeAttentionEvent("attn_other", otherRule.id, "company_3");
+    expect(suppressCapturedNonArrivals([missed], [otherEvent], rulesById)).toEqual([missed]);
+  });
+
+  it("a DISMISSED report_delay event (Archive) no longer suppresses the row", () => {
+    const missed = nonArrival({ companyId: "company_3" });
+    const dismissed: AttentionEvent = {
+      ...makeAttentionEvent("attn_rd", reportDelayRule.id, "company_3"),
+      dismissed: true,
+    };
+    expect(suppressCapturedNonArrivals([missed], [dismissed], rulesById)).toEqual([missed]);
   });
 });
 
@@ -239,16 +449,22 @@ describe("pickPrimary", () => {
 
   it("tier 3: a non-arrival beats the chronological rest", () => {
     const missed = nonArrival();
-    const media = mediaCluster({ latestPublishedAt: "2026-08-21T06:30:00Z" });
+    const media = mediaItem({ publishedAt: "2026-08-21T06:30:00Z" });
     const buckets = bucketByLocalDay([media, missed], [], NOW);
     expect(pickPrimary(buckets)).toEqual({ kind: "item", item: missed });
   });
 
   it("tier 4: falls back to the newest unseen actionable row", () => {
-    const older = mediaCluster({ feedItemIds: ["a"], latestPublishedAt: "2026-08-21T05:00:00Z" });
-    const newer = mediaCluster({ feedItemIds: ["b"], latestPublishedAt: "2026-08-21T06:00:00Z" });
+    const older = mediaItem({ feedItemId: "a", companyId: "company_2a", publishedAt: "2026-08-21T05:00:00Z" });
+    const newer = mediaItem({ feedItemId: "b", companyId: "company_2b", publishedAt: "2026-08-21T06:00:00Z" });
     const buckets = bucketByLocalDay([older, newer], [], NOW);
-    expect(pickPrimary(buckets)).toEqual({ kind: "item", item: newer });
+    const primary = pickPrimary(buckets);
+    expect(primary?.kind).toBe("item");
+    expect(
+      primary && primary.kind === "item" && primary.item.kind === "mediaCluster"
+        ? primary.item.feedItemIds
+        : null,
+    ).toEqual(["b"]);
   });
 
   it("does not pick an already-read/seen row", () => {

@@ -505,6 +505,16 @@ function CockpitWorkspace({
     setPendingGeometry(null);
   }, [pendingGeometry]);
 
+  // Raise the Claims tab on a NEW `highlightClaimId` (Today's seam, fix wave
+  // B finding 2) — DockLayout is a child, so its own panel reconciliation
+  // already ran this commit (React flushes child effects first).
+  const lastActivatedClaimIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!highlightClaimId || lastActivatedClaimIdRef.current === highlightClaimId) return;
+    lastActivatedClaimIdRef.current = highlightClaimId;
+    dockRef.current?.activatePanel(pinned.find((panel) => panel.kind === "claims")?.id ?? "");
+  }, [highlightClaimId, pinned]);
+
   // Activate the requested saved layout once it has loaded (ADR 0057): a view
   // created via the "+" opens with that layout. Applied once per id.
   const appliedLayoutRef = useRef<string | null>(null);

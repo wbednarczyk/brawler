@@ -2,7 +2,7 @@ import { BellRing } from "lucide-react";
 
 import type { AlertRule, AttentionEvent } from "../../../api/attention";
 import { useLocale } from "../../../shared/locale";
-import { StatusChip } from "../../../ui";
+import { ClearButton, StatusChip } from "../../../ui";
 import { attentionEventBadgeText, attentionEventTitleText } from "../attentionEventLabels";
 import { splitDocumentTitle } from "../documentTitle";
 import { RowShell } from "./RowShell";
@@ -15,7 +15,9 @@ import { RowShell } from "./RowShell";
  * `qualifiedTicker`/`rule`/`actionLabel` are caller-resolved: the event DTO
  * carries neither a ticker nor its rule, and the landing destination varies
  * by `evidenceType` (mirrors the existing `openAttentionEvidence` routing,
- * owned by the screen wiring, not this row).
+ * owned by the screen wiring, not this row). `onDismiss` (fix wave B finding
+ * 7, ADR 0097 dec. 5) is DISTINCT from "seen" — dismiss moves the event to
+ * Archive; `null` for a read-only context (Archive itself has no dismiss).
  */
 export function AttentionRow({
   event,
@@ -23,12 +25,14 @@ export function AttentionRow({
   rule,
   actionLabel,
   onOpen,
+  onDismiss = null,
 }: {
   event: AttentionEvent;
   qualifiedTicker: string | null;
   rule?: AlertRule;
   actionLabel: string;
   onOpen: () => void;
+  onDismiss?: (() => void) | null;
 }) {
   const { text } = useLocale();
   // Same anti-filename treatment as `FilingRow` (ADR 0091): `evidenceTitle`
@@ -51,6 +55,7 @@ export function AttentionRow({
       onAction={onOpen}
       emphasis={event.severity !== "routine"}
       accent={event.severity === "urgent"}
+      secondaryActions={onDismiss ? <ClearButton label={text("Dismiss")} onClick={onDismiss} /> : null}
     />
   );
 }

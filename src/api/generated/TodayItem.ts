@@ -6,12 +6,4 @@ import type { PresentationKind } from "./PresentationKind";
  * One flat Dziś item — a tagged union so the frontend switches on `kind`
  * (plan decision 1, "PŁASKA lista items[]").
  */
-export type TodayItem = { "kind": "filing", feedItemId: string, companyId: string, qualifiedTicker: string, title: string, publishedAt: string, read: boolean, presentationKind: PresentationKind, } | { "kind": "mediaCluster", companyId: string, qualifiedTicker: string, 
-/**
- * UTC calendar day (`YYYY-MM-DD`) the cluster's items published on.
- */
-day: string, count: number, earliestPublishedAt: string, latestPublishedAt: string, 
-/**
- * The 3 most recent titles in the cluster (rows arrive latest-first).
- */
-topTitles: Array<string>, feedItemIds: Array<string>, } | { "kind": "nonArrival", eventKey: string, companyId: string, qualifiedTicker: string, eventDate: string, title: string, } | { "kind": "calendar", eventKey: string, eventDate: string, eventType: string, title: string, companyId: string, qualifiedTicker: string, } | { "kind": "autopilotRun", run: AutopilotRun, };
+export type TodayItem = { "kind": "filing", feedItemId: string, companyId: string, qualifiedTicker: string, title: string, publishedAt: string, read: boolean, presentationKind: PresentationKind, } | { "kind": "mediaItem", feedItemId: string, companyId: string, qualifiedTicker: string, title: string, publishedAt: string, read: boolean, sourceName: string, } | { "kind": "nonArrival", eventKey: string, companyId: string, qualifiedTicker: string, eventDate: string, title: string, } | { "kind": "calendar", eventKey: string, eventDate: string, eventType: string, title: string, companyId: string, qualifiedTicker: string, } | { "kind": "autopilotRun", run: AutopilotRun, };

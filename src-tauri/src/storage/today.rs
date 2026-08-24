@@ -24,6 +24,7 @@ pub struct TodayFeedRow {
     pub title: String,
     pub published_at: String,
     pub read: bool,
+    pub source_name: String,
     pub presentation_kind: PresentationKind,
 }
 
@@ -73,9 +74,27 @@ impl TodayStore {
         let connection = self.db.checkout()?;
         list_non_arrivals(&connection, today)
     }
+
+    /// `company_events` rows within `[date_from, date_to]` inclusive (finding
+    /// 7b): a date-bounded SQL path for the Dziś calendar window, instead of
+    /// `events::list_company_events` loading the WHOLE table and filtering in
+    /// process. Does not touch that function's public contract — this is a
+    /// separate, narrower query for exactly the Dziś use case.
+    pub fn list_events_in_window(
+        &self,
+        date_from: &str,
+        date_to: &str,
+    ) -> StorageResult<Vec<CompanyEvent>> {
+        let connection = self.db.checkout()?;
+        list_events_in_window(&connection, date_from, date_to)
+    }
 }
 
 fn list_recent_feed_rows(connection: &Connection, since: &str) -> StorageResult<Vec<TodayFeedRow>> {
+    // `has_attachments` is a correlated EXISTS, not a per-row follow-up query
+    // (finding 7b): the old code called `feed::feed_item_attachments` once per
+    // result row (N+1). Same truth value as that helper's "is the attachment
+    // list non-empty" check, computed in the one bulk query instead.
     let mut statement = connection.prepare(
         "
         SELECT
@@ -85,7 +104,9 @@ fn list_recent_feed_rows(connection: &Connection, since: &str) -> StorageResult<
             fi.type,
             fi.title,
             fi.published_at,
-            fi.read
+            fi.read,
+            fi.source_name,
+            EXISTS(SELECT 1 FROM feed_item_attachments fa WHERE fa.feed_item_id = fi.id)
         FROM feed_items fi
         JOIN feed_item_companies fic ON fic.feed_item_id = fi.id
         JOIN companies c ON c.id = fic.company_id
@@ -104,17 +125,24 @@ fn list_recent_feed_rows(connection: &Connection, since: &str) -> StorageResult<
             row.get::<_, String>(4)?,
             row.get::<_, String>(5)?,
             row.get::<_, bool>(6)?,
+            row.get::<_, String>(7)?,
+            row.get::<_, bool>(8)?,
         ))
     })?;
 
     let mut result = Vec::new();
     for row in rows {
-        let (feed_item_id, company_id, qualified_ticker, item_type, title, published_at, read) =
-            row?;
-        // Mirrors `feed::feed_item_from_row`'s own attachment-derived
-        // presentation kind (feed.rs) — same helper, so the two never drift.
-        let has_attachments =
-            !super::feed::feed_item_attachments(connection, &feed_item_id)?.is_empty();
+        let (
+            feed_item_id,
+            company_id,
+            qualified_ticker,
+            item_type,
+            title,
+            published_at,
+            read,
+            source_name,
+            has_attachments,
+        ) = row?;
         result.push(TodayFeedRow {
             presentation_kind: PresentationKind::derive(&item_type, has_attachments),
             feed_item_id,
@@ -124,6 +152,7 @@ fn list_recent_feed_rows(connection: &Connection, since: &str) -> StorageResult<
             title,
             published_at,
             read,
+            source_name,
         });
     }
     Ok(result)
@@ -175,6 +204,45 @@ fn list_non_arrivals(
         });
     }
     Ok(result)
+}
+
+fn list_events_in_window(
+    connection: &Connection,
+    date_from: &str,
+    date_to: &str,
+) -> StorageResult<Vec<CompanyEvent>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            company_events.id,
+            company_events.company_id,
+            companies.qualified_ticker,
+            companies.display_name,
+            company_events.event_type,
+            company_events.title,
+            company_events.event_date,
+            company_events.event_time,
+            company_events.status,
+            company_events.source_type,
+            company_events.source_adapter_id,
+            company_events.source_event_key,
+            company_events.source_url,
+            company_events.attribution,
+            company_events.fetched_at,
+            company_events.manual,
+            company_events.created_at,
+            company_events.updated_at
+        FROM company_events
+        JOIN companies ON companies.id = company_events.company_id
+        WHERE company_events.event_date >= ?1 AND company_events.event_date <= ?2
+        ORDER BY company_events.event_date ASC, company_events.event_time ASC, company_events.title ASC
+        ",
+    )?;
+    let rows = statement.query_map(
+        params![date_from, date_to],
+        super::events::company_event_from_row,
+    )?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 #[cfg(test)]
@@ -276,5 +344,135 @@ mod tests {
             0,
             "a raised report_delay flag must suppress the non-arrival row (F2 S1 decision 2)"
         );
+    }
+
+    /// Batched attachment lookup (finding 7b): `list_recent_feed_rows` used to
+    /// call `feed::feed_item_attachments` once PER ROW (N+1). The bulk
+    /// `EXISTS` correlated subquery must produce the SAME per-row
+    /// `presentation_kind` — and, critically, must not duplicate a row when
+    /// an item has MULTIPLE attachments (the risk a naive `LEFT JOIN`
+    /// batching approach would introduce).
+    #[test]
+    fn list_recent_feed_rows_derives_has_attachments_in_bulk_without_duplicating_rows() {
+        use crate::storage::PresentationKind;
+
+        let state = state();
+        let company_id = company(&state, "ATT");
+        let connection = state.checkout_for_tests().expect("checkout");
+        connection
+            .execute(
+                "INSERT INTO feed_items
+                    (id, type, source_adapter_id, source_name, source_url, title, language,
+                     published_at, fetched_at, dedupe_key, created_at, updated_at)
+                 VALUES ('feed_with_att', 'Official report', 'gpw-espi-ebi', 'Test',
+                     'https://example.test/att', 'Has attachments', 'pl',
+                     '2026-01-05T09:00:00Z', '2026-01-05T09:00:00Z', 'feed_with_att',
+                     '2026-01-05T09:00:00Z', '2026-01-05T09:00:00Z')",
+                [],
+            )
+            .expect("insert item with attachments");
+        connection
+            .execute(
+                "INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                 VALUES ('feed_with_att', ?1, 'exact')",
+                rusqlite::params![company_id],
+            )
+            .expect("link company");
+        // TWO attachments on the same item — a naive LEFT JOIN batching
+        // approach would duplicate this row into two.
+        connection
+            .execute(
+                "INSERT INTO feed_item_attachments (id, feed_item_id, label, url, position)
+                 VALUES ('att_1', 'feed_with_att', 'A', 'https://example.test/a.pdf', 0)",
+                [],
+            )
+            .expect("attachment 1");
+        connection
+            .execute(
+                "INSERT INTO feed_item_attachments (id, feed_item_id, label, url, position)
+                 VALUES ('att_2', 'feed_with_att', 'B', 'https://example.test/b.pdf', 1)",
+                [],
+            )
+            .expect("attachment 2");
+        connection
+            .execute(
+                "INSERT INTO feed_items
+                    (id, type, source_adapter_id, source_name, source_url, title, language,
+                     published_at, fetched_at, dedupe_key, created_at, updated_at)
+                 VALUES ('feed_no_att', 'Official report', 'gpw-espi-ebi', 'Test',
+                     'https://example.test/noatt', 'No attachments', 'pl',
+                     '2026-01-05T08:00:00Z', '2026-01-05T08:00:00Z', 'feed_no_att',
+                     '2026-01-05T08:00:00Z', '2026-01-05T08:00:00Z')",
+                [],
+            )
+            .expect("insert item without attachments");
+        connection
+            .execute(
+                "INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                 VALUES ('feed_no_att', ?1, 'exact')",
+                rusqlite::params![company_id],
+            )
+            .expect("link company");
+        drop(connection);
+
+        let rows = state
+            .today()
+            .list_recent_feed_rows("2026-01-01")
+            .expect("rows");
+        assert_eq!(
+            rows.len(),
+            2,
+            "no row duplication from the two-attachment item"
+        );
+
+        let with_att = rows
+            .iter()
+            .find(|r| r.feed_item_id == "feed_with_att")
+            .expect("row with attachments");
+        assert_eq!(with_att.presentation_kind, PresentationKind::Report);
+        let no_att = rows
+            .iter()
+            .find(|r| r.feed_item_id == "feed_no_att")
+            .expect("row without attachments");
+        assert_eq!(no_att.presentation_kind, PresentationKind::Filing);
+    }
+
+    /// Bounded events window (finding 7b): `list_events_in_window` reads
+    /// straight from SQL bounds instead of `events::list_company_events`'s
+    /// whole-table-then-filter — an event outside `[date_from, date_to]`
+    /// must never come back.
+    #[test]
+    fn list_events_in_window_excludes_rows_outside_the_bound() {
+        let state = state();
+        let company_id = company(&state, "WIN");
+        for (id, date) in [
+            ("ev_before", "2025-12-30"),
+            ("ev_in", "2026-01-02"),
+            ("ev_after", "2026-01-10"),
+        ] {
+            state
+                .create_company_event(NewCompanyEvent {
+                    company_id: company_id.clone(),
+                    event_type: "shareholder_meeting".to_owned(),
+                    title: id.to_owned(),
+                    event_date: date.to_owned(),
+                    event_time: None,
+                    status: None,
+                    source_type: None,
+                    source_adapter_id: None,
+                    source_event_key: None,
+                    source_url: None,
+                    attribution: None,
+                    fetched_at: None,
+                })
+                .expect("event");
+        }
+
+        let events = state
+            .today()
+            .list_events_in_window("2026-01-01", "2026-01-05")
+            .expect("events");
+        assert_eq!(events.len(), 1, "only the in-window event comes back");
+        assert_eq!(events[0].title, "ev_in");
     }
 }

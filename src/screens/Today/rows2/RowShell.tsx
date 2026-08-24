@@ -55,6 +55,11 @@ export type RowShellProps = {
   /** The signature provenance-thread underline (ADR 0104) — thesis/claim
    * titles only. */
   titleThread?: boolean;
+  /** Quiet secondary actions (fix wave B finding 7 — Undo/Dismiss, ADR 0055
+   * §4 / ADR 0097 dec. 5) rendered alongside the primary action. Kept
+   * visually QUIET per ADR 0104 ("no second filled element") — every caller
+   * uses `ghost`/`ClearButton`, never `primary`/`secondary` variants here. */
+  secondaryActions?: ReactNode;
 };
 
 export function RowShell({
@@ -69,6 +74,7 @@ export function RowShell({
   emphasis,
   accent,
   titleThread,
+  secondaryActions,
 }: RowShellProps) {
   return (
     <div
@@ -105,6 +111,7 @@ export function RowShell({
           {actionLabel}
         </Button>
       ) : null}
+      {secondaryActions ? <div className="dayq-row-secondary-actions">{secondaryActions}</div> : null}
     </div>
   );
 }

@@ -260,6 +260,8 @@ export const plText: Record<string, string> = {
   "Dismiss all alerts in this group?": "Odrzucić wszystkie alerty w tej grupie?",
   "Undo": "Cofnij",
   "Undo this run and revert its facts?": "Cofnąć ten przebieg i przywrócić jego dane?",
+  "Mark as read": "Oznacz jako przeczytane",
+  "Couldn't load attention signals.": "Nie udało się wczytać sygnałów uwagi.",
   "Reverted": "Cofnięto",
   "Open document": "Otwórz dokument",
   "From your alert rule": "Z reguły alertu",

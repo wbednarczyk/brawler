@@ -1,15 +1,16 @@
 import { Newspaper } from "lucide-react";
 
-import type { TodayItem } from "../../../api/generated/TodayItem";
 import { formatListTimestamp } from "../../../shared/format/datetime";
 import { useLocale } from "../../../shared/locale";
 import { StatusChip } from "../../../ui";
+import type { MediaCluster } from "../dayQueueModel";
 import { RowShell } from "./RowShell";
 
-export type MediaClusterItem = Extract<TodayItem, { kind: "mediaCluster" }>;
+export type MediaClusterItem = MediaCluster;
 
 /**
- * `Public media` items are always grouped per (company, day) by S1, even a
+ * `Public media` items are grouped per (company, LOCAL day) by the frontend
+ * `dayQueueModel` (fix wave B finding 8 — the backend DTO is flat), even a
  * lone article (`count === 1`). The single-article shape gets its own verb
  * ("Otwórz artykuł", Main.dc.html) — a real "×N" cluster gets "Otwórz w
  * Inbox" (plan decision 6: media never anchors a single feed item, only the

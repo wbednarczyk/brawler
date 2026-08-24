@@ -72,6 +72,7 @@ function baseProps(overrides: Partial<TodayScreenProps> = {}): TodayScreenProps 
     refreshSources: vi.fn(() => Promise.resolve()),
     todayReviewedDays: [],
     updateTodayReviewedDays: vi.fn(),
+    refreshCompletionCount: 0,
     ...overrides,
   };
 }
@@ -123,7 +124,12 @@ describe("TodayScreen", () => {
     markTodayVisitedMock.mockResolvedValue(NOW);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Drain the previous test's pending microtasks BEFORE clearing mocks: the
+    // fire-once `mark_today_visited` effect can still be in flight when a test
+    // ends, and landing on an already-cleared spy makes the NEXT test's
+    // negative assertion flaky (seen once in a full-suite run, 2026-08-23).
+    await vi.advanceTimersByTimeAsync(0);
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -249,13 +255,101 @@ describe("TodayScreen", () => {
     await screen.findByText("Nothing new since your last visit");
     await waitFor(() => expect(markTodayVisitedMock).toHaveBeenCalledTimes(1));
 
-    // A later render where `attention.events` genuinely changes (the refresh-
-    // coordination key, plan decision 2) re-keys `useCommandQuery` and refetches
-    // — the ref guard keeps the visit stamp to exactly once regardless.
-    const newEvent = makeAttentionEvent("attn_refetch", "rule1", company.id, "notable");
+    // A later render bumping `refreshCompletionCount` (fix wave B finding 1a's
+    // refresh-coordination key) re-keys `useCommandQuery` and refetches — the
+    // ref guard keeps the visit stamp to exactly once regardless.
     getTodayViewMock.mockResolvedValue(emptyView({ deltaSummary: { reportCount: 0, filingCount: 1, mediaCount: 0 } }));
-    rerender(<TodayScreen {...baseProps({ attention: fakeAttention({ events: [newEvent] }) })} />);
+    rerender(<TodayScreen {...baseProps({ refreshCompletionCount: 1 })} />);
     await waitFor(() => expect(getTodayViewMock.mock.calls.length).toBeGreaterThan(1));
     expect(markTodayVisitedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fix wave B finding 1a: bumping refreshCompletionCount refetches even when attention.events is unchanged", async () => {
+    getTodayViewMock.mockResolvedValue(emptyView());
+    const attention = fakeAttention();
+    const { rerender } = render(<TodayScreen {...baseProps({ attention })} />);
+    await screen.findByText("Nothing new since your last visit");
+    expect(getTodayViewMock.mock.calls.length).toBe(1);
+
+    // Same `attention` object (its own reference AND its `.events` array are
+    // untouched — the old, fragile key) — only the completion count moves.
+    rerender(<TodayScreen {...baseProps({ attention, refreshCompletionCount: 1 })} />);
+    await waitFor(() => expect(getTodayViewMock.mock.calls.length).toBe(2));
+  });
+
+  it("fix wave B finding 1b: a nonArrival captured by a fired report_delay attention event renders EXACTLY one row, never zero and never two", async () => {
+    const missed: TodayItem = {
+      kind: "nonArrival",
+      eventKey: "event_missed",
+      companyId: company.id,
+      qualifiedTicker: company.qualifiedTicker,
+      eventDate: TODAY,
+      title: "Raport roczny zapowiedziany",
+    };
+    getTodayViewMock.mockResolvedValue(emptyView({ items: [missed] }));
+    const reportDelayRule = { id: "rule_rd", triggerType: "signal_category" as const, signalCategory: "report_delay", priceMin: null, priceMax: null, scopeType: "company" as const, scopeRef: company.id, enabled: true, createdAt: NOW, updatedAt: NOW };
+    const rdEvent = makeAttentionEvent("attn_rd", reportDelayRule.id, company.id);
+    const attention = fakeAttention({ events: [rdEvent], rulesById: new Map([[reportDelayRule.id, reportDelayRule]]) });
+    render(<TodayScreen {...baseProps({ attention })} />);
+
+    // The attention row (the flag that captured the non-arrival) is on screen…
+    await screen.findByText("Signal");
+    // …and the non-arrival row is NOT — exactly one row for this event, not two.
+    expect(screen.queryByText("Raport roczny zapowiedziany")).not.toBeInTheDocument();
+  });
+
+  it("fix wave B finding 1b: a nonArrival with NO matching report_delay event still renders (no false suppression)", async () => {
+    const missed: TodayItem = {
+      kind: "nonArrival",
+      eventKey: "event_missed",
+      companyId: company.id,
+      qualifiedTicker: company.qualifiedTicker,
+      eventDate: TODAY,
+      title: "Raport roczny zapowiedziany",
+    };
+    getTodayViewMock.mockResolvedValue(emptyView({ items: [missed] }));
+    render(<TodayScreen {...baseProps()} />);
+    expect(await screen.findByText("Raport roczny zapowiedziany")).toBeInTheDocument();
+  });
+
+  it("fix wave B finding 4: batch-mark-seen fires only after the query's FIRST success, never while loading or on error", async () => {
+    getTodayViewMock.mockReturnValue(new Promise(() => {}));
+    const event = makeAttentionEvent("attn_unseen", "rule1", company.id, "notable");
+    const markManySeen = vi.fn(() => Promise.resolve());
+    const attention = fakeAttention({ events: [event], markManySeen });
+    render(<TodayScreen {...baseProps({ attention })} />);
+    expect(markManySeen).not.toHaveBeenCalled();
+  });
+
+  it("fix wave B finding 4: an errored attention state renders an error strip and suppresses the clean-morning empty state", async () => {
+    getTodayViewMock.mockResolvedValue(emptyView());
+    const attention = fakeAttention({ error: "network down" });
+    render(<TodayScreen {...baseProps({ attention })} />);
+
+    expect(await screen.findByText("Couldn't load attention signals.")).toBeInTheDocument();
+    // No false quiet: the "clean morning" empty-state copy must not appear.
+    expect(
+      screen.queryByText("Sources are connected and the calendar names nothing due today."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("fix wave B finding 5: mark_today_visited does NOT fire when sectionErrors.feed is set", async () => {
+    getTodayViewMock.mockResolvedValue(emptyView({ sectionErrors: { feed: "unavailable" } }));
+    render(<TodayScreen {...baseProps()} />);
+    await screen.findByText("Couldn't load new filings/media.");
+    // Passive effects (the `mark_today_visited` guard) are scheduled after
+    // paint — `findByText`'s MutationObserver-driven resolution can race
+    // ahead of them under fake timers, so force a flush before the negative
+    // assertion (same idiom as `CompanyCoveragePanel.test.tsx`).
+    await vi.advanceTimersByTimeAsync(0);
+    expect(markTodayVisitedMock).not.toHaveBeenCalled();
+  });
+
+  it("fix wave B finding 5: mark_today_visited does NOT fire when sectionErrors.anchor is set", async () => {
+    getTodayViewMock.mockResolvedValue(emptyView({ sectionErrors: { anchor: "unavailable" } }));
+    render(<TodayScreen {...baseProps()} />);
+    await screen.findByText("Nothing new since your last visit");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(markTodayVisitedMock).not.toHaveBeenCalled();
   });
 });

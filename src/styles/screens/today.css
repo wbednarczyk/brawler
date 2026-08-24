@@ -167,6 +167,17 @@
   flex: none;
 }
 
+/* Quiet secondary actions (fix wave B finding 7 — Undo/Dismiss): trailing,
+   never competing with the row's one primary action for visual weight (ADR
+   0104 "no second filled element" — callers use ghost buttons/ClearButton
+   only). */
+.dayq-row-secondary-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* Day-section header (F2 S3 decision 1/5): mono label + counters, or —
    collapsed — a single summary line with a checkmark + recovery link. */
 .dayq-day-header {

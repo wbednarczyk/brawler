@@ -13,6 +13,7 @@ import { useAppDataController } from "./useAppDataController";
 import { useCompanyController } from "./useCompanyController";
 import { useCompanyEventsController } from "./useCompanyEventsController";
 import { useDetailPaneResize } from "./useDetailPaneResize";
+import { openExternalUrl } from "./openExternalUrl";
 import {
   companyEventStatusOptions,
   companyEventTypeOptions,
@@ -39,6 +40,7 @@ import { useResearchController } from "./useResearchController";
 import { useSettingsController } from "./useSettingsController";
 import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
+import { buildTodayScreenProps, useRefreshCompletionSignal } from "./useTodayScreenWiring";
 import { useTranscriptController } from "./useTranscriptController";
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
 import {
@@ -794,6 +796,8 @@ export function AppStateRoot({
       setLicenseStatus,
     });
 
+  const { refreshCompletionCount, bumpRefreshCompletionCount } = useRefreshCompletionSignal();
+
   const {
     refreshBankierCalendarWeek,
     refreshCompanyRegistry,
@@ -801,6 +805,7 @@ export function AppStateRoot({
     refreshSources,
   } = useSourceRefreshController({
     refreshAttention: attention.refresh,
+    onRefreshCompletion: bumpRefreshCompletionCount,
     refreshCompanyEvents,
     refreshCompanyRegistryEntries,
     refreshDatabaseStatus,
@@ -1286,12 +1291,6 @@ export function AppStateRoot({
     sourceAdapters,
     sourceAdaptersRef,
   });
-
-  function openExternalUrl(url: string) {
-    void openUrl(url).catch((error) => {
-      console.error("Failed to open external URL", error);
-    });
-  }
 
   function openResearchEvidence(item: ResearchEvidenceItem) {
     const itemCompanyTicker =
@@ -1982,19 +1981,21 @@ export function AppStateRoot({
               ) : null}
               {activeSection === "Today" ? (
                 <TodayScreen
-                  attention={attention}
-                  companies={companies}
-                  openCompanyWorkspace={openCompanyWorkspaceById}
-                  openInboxItem={openInboxItem}
-                  openCompanyInbox={openCompanyInboxFilter}
-                  openInbox={() => setActiveSection("Inbox")}
-                  openCompanyClaims={openCompanyClaims}
-                  openExternalUrl={openExternalUrl}
-                  sourceAdapters={sourceAdapters}
-                  openSources={() => setActiveSection("Sources")}
-                  refreshSources={refreshSources}
-                  todayReviewedDays={settings?.todayReviewedDays ?? []}
-                  updateTodayReviewedDays={updateTodayReviewedDays}
+                  {...buildTodayScreenProps({
+                    attention,
+                    companies,
+                    openCompanyWorkspace: openCompanyWorkspaceById,
+                    openInboxItem,
+                    openCompanyInbox: openCompanyInboxFilter,
+                    openCompanyClaims,
+                    openExternalUrl,
+                    sourceAdapters,
+                    refreshSources,
+                    todayReviewedDays: settings?.todayReviewedDays ?? [],
+                    updateTodayReviewedDays,
+                    refreshCompletionCount,
+                    setActiveSection,
+                  })}
                 />
               ) : null}
               {activeSection === "Companies" ? (

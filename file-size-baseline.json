@@ -37,8 +37,8 @@
     "src-tauri/src/storage/research.rs": 1098,
     "src-tauri/src/storage/signals.rs": 1049,
     "src-tauri/src/storage/sources.rs": 1543,
-    "src/app/AppStateRoot.tsx": 2239,
-    "src/screens/Cockpit/CockpitScreen.tsx": 1408,
+    "src/app/AppStateRoot.tsx": 2240,
+    "src/screens/Cockpit/CockpitScreen.tsx": 1418,
     "src/screens/Companies/FundamentalsPanel.tsx": 1127
   }
 }

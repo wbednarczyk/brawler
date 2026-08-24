@@ -1032,9 +1032,12 @@ function buildHandlers(): Record<string, Handler> {
     // Flat items[] from four independent sections + a bulk claims-to-verify
     // scan. Mirrors `commands::today::compute_today_view`. Mock feed items
     // carry only a ticker string (no `feed_item_companies` join table), so
-    // multi-company media-cluster membership is NOT replicated here — that
+    // multi-company `mediaItem` membership is NOT replicated here — that
     // behavior is pinned by the Rust unit tests in `commands/today.rs`; the
     // mock stays faithful for the single-company case the corpus exercises.
+    // FIX WAVE A finding 8: `mediaItem` is FLAT (one row per feed item, no
+    // backend day-clustering) — the frontend owns the local display-day
+    // boundary (wave B).
     get_today_view: (d, a): TodayView => {
       const dayLimitRaw = unwrap(a).dayLimit;
       const dayLimit = Math.min(
@@ -1071,51 +1074,19 @@ function buildHandlers(): Record<string, Handler> {
         });
       }
 
-      // Media clusters per (company, UTC day) — rows arrive in `feedItems`
-      // insertion order, so no extra sort is needed for "most recent 3".
-      const clusters = new Map<
-        string,
-        {
-          companyId: string;
-          qualifiedTicker: string;
-          day: string;
-          earliest: string;
-          latest: string;
-          topTitles: string[];
-          feedItemIds: string[];
-        }
-      >();
+      // Flat media rows — one per (feed item x matched company), no
+      // day-clustering (finding 8).
       for (const fi of inWindow) {
         if (fi.type !== "Public media") continue;
-        const companyId = tickerToCompanyId.get(fi.company) ?? "";
-        const day = fi.publishedAt.slice(0, 10);
-        const key = `${companyId}|${day}`;
-        const acc = clusters.get(key) ?? {
-          companyId,
-          qualifiedTicker: fi.company,
-          day,
-          earliest: fi.publishedAt,
-          latest: fi.publishedAt,
-          topTitles: [],
-          feedItemIds: [],
-        };
-        if (fi.publishedAt < acc.earliest) acc.earliest = fi.publishedAt;
-        if (fi.publishedAt > acc.latest) acc.latest = fi.publishedAt;
-        if (acc.topTitles.length < 3) acc.topTitles.push(fi.title);
-        acc.feedItemIds.push(fi.id);
-        clusters.set(key, acc);
-      }
-      for (const acc of clusters.values()) {
         items.push({
-          kind: "mediaCluster",
-          companyId: acc.companyId,
-          qualifiedTicker: acc.qualifiedTicker,
-          day: acc.day,
-          count: acc.feedItemIds.length,
-          earliestPublishedAt: acc.earliest,
-          latestPublishedAt: acc.latest,
-          topTitles: acc.topTitles,
-          feedItemIds: acc.feedItemIds,
+          kind: "mediaItem",
+          feedItemId: fi.id,
+          companyId: tickerToCompanyId.get(fi.company) ?? "",
+          qualifiedTicker: fi.company,
+          title: fi.title,
+          publishedAt: fi.publishedAt,
+          read: !fi.unread,
+          sourceName: fi.source,
         });
       }
 
@@ -1169,9 +1140,8 @@ function buildHandlers(): Record<string, Handler> {
       const todaySortKey = (item: TodayItem): string => {
         switch (item.kind) {
           case "filing":
+          case "mediaItem":
             return item.publishedAt;
-          case "mediaCluster":
-            return item.latestPublishedAt;
           case "nonArrival":
           case "calendar":
             return item.eventDate;
