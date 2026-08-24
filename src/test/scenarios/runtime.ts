@@ -1176,6 +1176,10 @@ function buildHandlers(): Record<string, Handler> {
       let filingCount = 0;
       let mediaCount = 0;
       for (const fi of inWindow) {
+        // Contract fidelity (Rust today.rs applies the anchor cutoff): the
+        // delta counts ONLY items newer than the previous visit — a whole-
+        // window count made J1's browser evidence unfaithful (sol re-verify).
+        if (d.todayLastVisitAt && fi.publishedAt <= d.todayLastVisitAt) continue;
         if (fi.type === "Official report") {
           if (fi.presentationKind === "report") reportCount += 1;
           else filingCount += 1;

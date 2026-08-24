@@ -345,10 +345,10 @@ describe("TodayScreen", () => {
     expect(markTodayVisitedMock).not.toHaveBeenCalled();
   });
 
-  it("fix wave B finding 5: mark_today_visited does NOT fire when sectionErrors.anchor is set", async () => {
+  it("fix wave B finding 5: mark_today_visited does NOT fire when sectionErrors.anchor is set — and the failure is VISIBLE, never quiet", async () => {
     getTodayViewMock.mockResolvedValue(emptyView({ sectionErrors: { anchor: "unavailable" } }));
     render(<TodayScreen {...baseProps()} />);
-    await screen.findByText("Nothing new since your last visit");
+    await screen.findByText("Couldn't read your last-visit anchor — the delta may be incomplete.");
     await vi.advanceTimersByTimeAsync(0);
     expect(markTodayVisitedMock).not.toHaveBeenCalled();
   });

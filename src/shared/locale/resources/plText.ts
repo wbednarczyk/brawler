@@ -2065,6 +2065,8 @@ export const plText: Record<string, string> = {
   "Plus": "Dodatkowo",
   "Sources are connected and the calendar names nothing due today.":
     "Źródła są podpięte, a kalendarz nie zapowiada dziś żadnej publikacji.",
+  "Couldn't read your last-visit anchor — the delta may be incomplete.":
+    "Nie udało się odczytać znacznika ostatniej wizyty — delta może być niepełna.",
   "Couldn't load new filings/media.": "Nie udało się wczytać nowych komunikatów/mediów.",
   "Couldn't load the calendar.": "Nie udało się wczytać kalendarza.",
   "Couldn't load autopilot runs.": "Nie udało się wczytać przebiegów autopilota.",

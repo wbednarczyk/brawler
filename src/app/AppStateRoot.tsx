@@ -54,12 +54,12 @@ import {
   type CreateViewSpec,
 } from "../screens/Cockpit/CreateViewModal";
 import {
-  deleteCockpitLayout,
   listCockpitLayouts,
   renameCockpitLayout,
   saveCockpitLayout,
   type CockpitLayout,
 } from "../api/cockpit";
+import { makeCockpitViewActions } from "./useCockpitViewActions";
 import { useToast, useUndoableDelete } from "../ui";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -412,41 +412,6 @@ export function AppStateRoot({
     .filter((layout) => !layout.name.startsWith("dashboard:"))
     .map((layout) => ({ id: layout.id, name: layout.name }));
 
-  // Open a saved named view (not a company dashboard): activate its layout and
-  // clear any company scope so it renders as the pure view.
-  function openCockpitView(layoutId: string) {
-    setCockpitInitialCompanyId(null);
-    setCockpitInitialPresetId(null);
-    setActiveCockpitLayoutId(layoutId);
-    setActiveSection("Cockpit");
-  }
-
-  // Reversible destroy (ADR 0076 D5): a saved view re-creates faithfully via
-  // save_cockpit_layout (name + panelsJson + layoutJson), so it deletes
-  // immediately with an undo toast rather than a blocking dialog.
-  function deleteCockpitView(layoutId: string) {
-    const layout = cockpitLayouts.find((entry) => entry.id === layoutId);
-    if (!layout) return;
-    runUndoableDelete({
-      perform: () => deleteCockpitLayout(layoutId),
-      restore: () =>
-        saveCockpitLayout({
-          name: layout.name,
-          panelsJson: layout.panelsJson,
-          layoutJson: layout.layoutJson,
-          dockviewVersion: layout.dockviewVersion,
-        }),
-      message: text("View deleted"),
-      undoLabel: text("Undo"),
-      onPerformed: () => {
-        if (activeCockpitLayoutId === layoutId) setActiveCockpitLayoutId(null);
-        refreshCockpitLayouts();
-      },
-      onRestored: () => {
-        refreshCockpitLayouts();
-      },
-    });
-  }
 
   // Issue #89: in-place saved-view rename from the sidebar row. The backend
   // rejects duplicates (save upserts BY NAME — a duplicate would fuse two
@@ -637,6 +602,17 @@ export function AppStateRoot({
 
   // ADR 0076 D5: reversible-destroy orchestration (immediate delete + undo toast).
   const runUndoableDelete = useUndoableDelete();
+  const { openCockpitView, deleteCockpitView } = makeCockpitViewActions({
+    cockpitLayouts,
+    activeCockpitLayoutId,
+    setActiveCockpitLayoutId,
+    setCockpitInitialCompanyId,
+    setCockpitInitialPresetId,
+    setActiveSection,
+    refreshCockpitLayouts,
+    runUndoableDelete,
+    text,
+  });
   // ADR 0068 T6: transient async-success feedback on the shared Toast surface.
   const toast = useToast();
   // ADR 0076 D4: threaded date formatters. Detail/audit rows (provenance,
@@ -1244,6 +1220,7 @@ export function AppStateRoot({
     activeSection,
     companies,
     refreshAttention: attention.refresh,
+    onRefreshCompletion: bumpRefreshCompletionCount,
     companyEventCompanyFilter,
     companyEventDateFrom,
     companyEventDateTo,

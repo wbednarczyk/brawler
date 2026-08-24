@@ -288,11 +288,15 @@ export function TodayScreen({
             onOpen={() => openCompanyWorkspace(item.run.companyId, "Fundamentals")}
             onUndo={
               item.run.producedFactIds.length > 0
-                ? () => void undoAutopilotRun(item.run.id).catch(() => {})
+                ? // Refetch on success so the undone run's row updates in place —
+                  // a fired command with no visible outcome reads as "did
+                  // nothing" (sol re-verify finding 3).
+                  () => void undoAutopilotRun(item.run.id).then(query.refetch, () => {})
                 : null
             }
             onDismiss={() =>
-              void setAutopilotRunNotificationState({ runId: item.run.id, notificationState: "read" }).catch(
+              void setAutopilotRunNotificationState({ runId: item.run.id, notificationState: "read" }).then(
+                query.refetch,
                 () => {},
               )
             }
@@ -633,6 +637,9 @@ function TodayBody({
         secondaryAction={totalCount > 0 ? { label: `${text("Open Inbox")} (${totalCount})`, onClick: openInbox } : null}
       />
 
+      {data.sectionErrors.anchor
+        ? errorStrip(text("Couldn't read your last-visit anchor — the delta may be incomplete."), refetch)
+        : null}
       {data.sectionErrors.feed ? errorStrip(text("Couldn't load new filings/media."), refetch) : null}
       {data.sectionErrors.calendar ? errorStrip(text("Couldn't load the calendar."), refetch) : null}
       {data.sectionErrors.claims ? errorStrip(text("Couldn't load claims to verify."), refetch) : null}
