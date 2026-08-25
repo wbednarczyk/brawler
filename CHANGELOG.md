@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.73.1 - 2026-08-25
+
+
+### Bug Fixes
+
+- **cockpit**: declarative dock reconciliation with DOM-witness recovery (#348) (#428)
+
 ## v0.73.0 - 2026-08-25
 
 
