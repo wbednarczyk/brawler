@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 
 import { TodayScreen, type TodayScreenProps } from "./TodayScreen";
 import { getTodayView, markTodayVisited, type TodayView } from "../../api/today";
+import { setAutopilotRunNotificationState } from "../../api/autopilot";
 import { listAttentionEvents } from "../../api/attention";
 import type { TodayItem } from "../../api/generated/TodayItem";
 import type { AttentionController } from "../../app/useAttentionController";
@@ -16,10 +17,15 @@ vi.mock("../../api/today", () => ({
 vi.mock("../../api/attention", () => ({
   listAttentionEvents: vi.fn(),
 }));
+vi.mock("../../api/autopilot", () => ({
+  setAutopilotRunNotificationState: vi.fn(),
+  undoAutopilotRun: vi.fn(),
+}));
 
 const getTodayViewMock = vi.mocked(getTodayView);
 const markTodayVisitedMock = vi.mocked(markTodayVisited);
 const listAttentionEventsMock = vi.mocked(listAttentionEvents);
+const setAutopilotRunNotificationStateMock = vi.mocked(setAutopilotRunNotificationState);
 
 // The fixed "now" every test bucketing (`dayQueueModel`) resolves against —
 // TodayBody reads the real `Date` at mount, so the system clock must be
@@ -264,6 +270,40 @@ describe("TodayScreen", () => {
     expect(markTodayVisitedMock).toHaveBeenCalledTimes(1);
   });
 
+  it("sol R3 guard: a successful run dismiss (Mark as read) refetches the composed view — the row outcome is screen-visible", async () => {
+    const run: Extract<TodayItem, { kind: "autopilotRun" }> = {
+      kind: "autopilotRun",
+      run: {
+        id: "run_g1",
+        companyId: company.id,
+        reportDocumentId: "doc_g1",
+        trigger: "detection",
+        mode: "assist",
+        sweepId: null,
+        status: "succeeded",
+        stage: "done",
+        summaryText: null,
+        kpiDeltaJson: null,
+        reportDiffRef: null,
+        crossRefsJson: null,
+        producedFactIds: [],
+        notificationState: "unread",
+        lastError: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+        severity: "routine",
+        reportDocumentTitle: "Raport g1",
+      },
+    };
+    getTodayViewMock.mockResolvedValue(emptyView({ items: [run] }));
+    setAutopilotRunNotificationStateMock.mockResolvedValue({ ...run.run, notificationState: "read" });
+    render(<TodayScreen {...baseProps()} />);
+    const dismiss = await screen.findByRole("button", { name: "Mark as read" });
+    expect(getTodayViewMock.mock.calls.length).toBe(1);
+    dismiss.click();
+    await waitFor(() => expect(getTodayViewMock.mock.calls.length).toBe(2));
+  });
+
   it("fix wave B finding 1a: bumping refreshCompletionCount refetches even when attention.events is unchanged", async () => {
     getTodayViewMock.mockResolvedValue(emptyView());
     const attention = fakeAttention();
@@ -288,7 +328,9 @@ describe("TodayScreen", () => {
     };
     getTodayViewMock.mockResolvedValue(emptyView({ items: [missed] }));
     const reportDelayRule = { id: "rule_rd", triggerType: "signal_category" as const, signalCategory: "report_delay", priceMin: null, priceMax: null, scopeType: "company" as const, scopeRef: company.id, enabled: true, createdAt: NOW, updatedAt: NOW };
-    const rdEvent = makeAttentionEvent("attn_rd", reportDelayRule.id, company.id);
+    // The flag fires AFTER the event it is about (real detector timing) — the
+    // date-bound suppression key requires eventDate <= day(firedAt).
+    const rdEvent = { ...makeAttentionEvent("attn_rd", reportDelayRule.id, company.id), firedAt: NOW };
     const attention = fakeAttention({ events: [rdEvent], rulesById: new Map([[reportDelayRule.id, reportDelayRule]]) });
     render(<TodayScreen {...baseProps({ attention })} />);
 

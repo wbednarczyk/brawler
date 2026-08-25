@@ -400,7 +400,8 @@ describe("isReportDelaySignal / suppressCapturedNonArrivals (fix wave B finding 
   });
 
   it("drops a nonArrival row once its company already has a fired report_delay event", () => {
-    const missed = nonArrival({ companyId: "company_3" });
+    // Captured = the event the flag is ABOUT: its date predates the firing.
+    const missed = nonArrival({ companyId: "company_3", eventDate: "2026-06-05" });
     const rdEvent = makeAttentionEvent("attn_rd", reportDelayRule.id, "company_3");
     expect(suppressCapturedNonArrivals([missed], [rdEvent], rulesById)).toEqual([]);
   });
@@ -409,6 +410,21 @@ describe("isReportDelaySignal / suppressCapturedNonArrivals (fix wave B finding 
     const missed = nonArrival({ companyId: "company_3" });
     const otherEvent = makeAttentionEvent("attn_other", otherRule.id, "company_3");
     expect(suppressCapturedNonArrivals([missed], [otherEvent], rulesById)).toEqual([missed]);
+  });
+
+  it("an OLD report_delay event never suppresses a LATER quarter's nonArrival for the same company (sol R3): a flag can only be about an event that predates its own firedAt", () => {
+    // Q1's flag fired in April and was merely seen (not dismissed) — it must
+    // not swallow Q3's fresh missing report in August.
+    const laterQuarter = nonArrival({ companyId: "company_3", eventDate: "2026-08-20" });
+    const oldFlag: AttentionEvent = {
+      ...makeAttentionEvent("attn_rd_old", reportDelayRule.id, "company_3"),
+      firedAt: "2026-04-03T09:00:00Z",
+      seen: true,
+    };
+    expect(suppressCapturedNonArrivals([laterQuarter], [oldFlag], rulesById)).toEqual([laterQuarter]);
+    // The captured window still suppresses: the event the flag is ABOUT.
+    const captured = nonArrival({ companyId: "company_3", eventDate: "2026-03-31" });
+    expect(suppressCapturedNonArrivals([captured], [oldFlag], rulesById)).toEqual([]);
   });
 
   it("a DISMISSED report_delay event (Archive) no longer suppresses the row", () => {

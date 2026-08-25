@@ -317,22 +317,33 @@ export function isReportDelaySignal(event: AttentionEvent, rulesById: Map<string
  * `report_delay` attention event is dropped, regardless of fetch order
  * between `get_today_view` and the root-fed attention state — this guarantees
  * exactly one row (never zero, never two) independent of which of the two
- * independent fetches lands first or refreshes stale. Matches by companyId
- * only (see `isReportDelaySignal`) — the coarsest grain the data allows, but
- * a company genuinely juggling two SIMULTANEOUS overdue periodic reports is
- * not a real V1 scenario (one report calendar per company).
+ * independent fetches lands first or refreshes stale. The match key is
+ * (companyId, `eventDate <= day(firedAt)`): `evidenceRef` is an opaque hashed
+ * signal id with no frontend reconstruction, so per-eventKey matching is
+ * unavailable — but a flag can only ever be ABOUT a calendar event that
+ * predates its own firing, so the date bound stops an old, merely-seen flag
+ * from swallowing a LATER quarter's fresh non-arrival (sol R3). Two
+ * same-company events both overdue before one flag fires would still
+ * cross-suppress — the genuinely-simultaneous case the V1 one-report-calendar
+ * doesn't produce.
  */
 export function suppressCapturedNonArrivals(
   items: TodayItem[],
   attentionEvents: AttentionEvent[],
   rulesById: Map<string, AlertRule>,
 ): TodayItem[] {
-  const capturedCompanyIds = new Set(
-    attentionEvents
-      .filter((event) => !event.dismissed && isReportDelaySignal(event, rulesById))
-      .map((event) => event.companyId),
-  );
-  return items.filter((item) => !(item.kind === "nonArrival" && capturedCompanyIds.has(item.companyId)));
+  const latestFiredDayByCompany = new Map<string, string>();
+  for (const event of attentionEvents) {
+    if (event.dismissed || !isReportDelaySignal(event, rulesById) || !event.companyId) continue;
+    const firedDay = localDayKey(event.firedAt);
+    const previous = latestFiredDayByCompany.get(event.companyId);
+    if (!previous || firedDay > previous) latestFiredDayByCompany.set(event.companyId, firedDay);
+  }
+  return items.filter((item) => {
+    if (item.kind !== "nonArrival") return true;
+    const firedDay = latestFiredDayByCompany.get(item.companyId);
+    return !firedDay || item.eventDate > firedDay;
+  });
 }
 
 /**
