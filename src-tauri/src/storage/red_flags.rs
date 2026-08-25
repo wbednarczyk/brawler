@@ -250,6 +250,41 @@ fn raise_flag(
 // Detection: report_delay
 // ============================================================================
 
+/// The "no witness" half of `report_delay` (ADR 0083 D8) — shared with the
+/// Dziś non-arrival read model (F2 S1, `storage::today`).
+pub(super) fn has_no_witnessing_report(
+    connection: &Connection,
+    company_id: &str,
+    event_date: &str,
+) -> StorageResult<bool> {
+    let witnessed: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM feed_items fi JOIN feed_item_companies fic
+            ON fic.feed_item_id = fi.id WHERE fic.company_id = ?1
+            AND fi.type = 'Official report' AND fi.published_at >= ?2)",
+        params![company_id, event_date],
+        |row| row.get(0),
+    )?;
+    Ok(!witnessed)
+}
+
+/// Whether a `report_delay` flag already exists for this event, acked or not
+/// — the Dziś non-arrival read model's flag-existence suppression (F2 S1 d2).
+pub(super) fn report_delay_flag_raised(
+    connection: &Connection,
+    company_id: &str,
+    event_id: &str,
+) -> StorageResult<bool> {
+    let id = flag_id(FLAG_REPORT_DELAY, company_id, event_id);
+    let feed_item_id = super::feed_item_id(&id);
+    let signal_id = super::signals::signal_id(&feed_item_id, FLAG_REPORT_DELAY);
+    let raised: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM company_signals WHERE id = ?1)",
+        [signal_id],
+        |row| row.get(0),
+    )?;
+    Ok(raised)
+}
+
 /// Raise a `report_delay` for every tracked company whose expected
 /// `periodic_report` calendar date passed the 3-day grace with no official report
 /// ingested since (ADR 0083 Decision 8). Evidence = the calendar event. Runs at
@@ -261,13 +296,6 @@ pub(super) fn detect_report_delays(connection: &Connection, today: &str) -> Stor
          FROM company_events ce
          WHERE ce.event_type = 'periodic_report'
            AND ce.event_date <= ?1
-           AND NOT EXISTS (
-             SELECT 1 FROM feed_items fi
-             JOIN feed_item_companies fic ON fic.feed_item_id = fi.id
-             WHERE fic.company_id = ce.company_id
-               AND fi.type = 'Official report'
-               AND fi.published_at >= ce.event_date
-           )
          ORDER BY ce.event_date ASC, ce.id ASC",
     )?;
     let rows: Vec<(String, String, String, String)> = statement
@@ -278,6 +306,9 @@ pub(super) fn detect_report_delays(connection: &Connection, today: &str) -> Stor
 
     let mut raised = 0;
     for (event_id, company_id, event_date, title) in rows {
+        if !has_no_witnessing_report(connection, &company_id, &event_date)? {
+            continue;
+        }
         let flag_title = format!("Opóźniony raport okresowy: {title} (planowany {event_date})");
         if raise_flag(
             connection,

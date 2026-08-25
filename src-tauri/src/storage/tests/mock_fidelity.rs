@@ -166,6 +166,26 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Dziś v2 composed read model (F2 S1, ADR 0106 dec. 3). Same computed
+        // helper the command wrapper offloads, so the corpus can never diverge
+        // from real assembly. Infallible (typed per-section degradation), so
+        // no `.expect` needed on the compute call itself.
+        "get_today_view" => {
+            let day_limit = input["dayLimit"].as_i64().expect("dayLimit");
+            serde_json::to_value(crate::commands::today::compute_today_view(state, day_limit))
+                .unwrap()
+        }
+        // Dziś v2 visit anchor (F2 S2, plan decision 4). Same store method the
+        // command wrapper offloads. Not asserted via `expectField` (a live
+        // wall-clock stamp can never equal the TS mock's fixed `SAMPLE_NOW`),
+        // same posture as the other wall-clock-bearing corpus steps.
+        "mark_today_visited" => serde_json::to_value(
+            state
+                .settings()
+                .mark_today_visited()
+                .expect("mark_today_visited"),
+        )
+        .unwrap(),
         // Flagged/failed extraction outcomes (v0.59 A2, ADR 0061 dec. 2). Same
         // store method the command wrapper delegates to, so the mock can never
         // claim a review surface the real pipeline would not produce. A company

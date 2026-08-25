@@ -13,6 +13,12 @@ backfillYears?: number, youtubeTranscriptionProvider?: string, youtubeTranscript
  */
 pinnedCompanyIds?: Array<string>, 
 /**
+ * Replace the full Dziś v2 reviewed-days set (F2 plan decision 5). Each
+ * entry must be `YYYY-MM-DD`; the write trims to the 14 newest (sorted
+ * descending) rather than rejecting an over-long list.
+ */
+todayReviewedDays?: Array<string>, 
+/**
  * Enable/disable persistence for the MCP server (ADR 0078). The live
  * start/stop lifecycle command is separate (`set_mcp_enabled`, M3).
  */

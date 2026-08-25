@@ -61,6 +61,12 @@ export type InboxScreenProps = {
   rejectCompanySignal: (signalId: string) => Promise<void> | void;
   setSelectedFeedItemId: (itemId: string) => void;
   setActiveSection: (section: "Companies") => void;
+  /** Today's `openInboxItem` nav seam (F2 S3, plan decision 6): bumped every
+   * time an outside navigation targets a specific feed item — InboxScreen
+   * reacts by raising its own S-overlay (`inboxDetailOpen`), never reached
+   * into from outside. Optional/defaulted: the root doesn't supply a real
+   * value until S4 wires `openInboxItem` into a Today row. */
+  inboxDetailActivationToken?: number;
   markVisibleInboxAsRead: () => void;
   clearInboxFilters: () => void;
   refreshSources: (trigger: "manual") => Promise<void> | Promise<unknown>;

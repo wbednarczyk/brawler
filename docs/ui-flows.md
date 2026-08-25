@@ -63,19 +63,19 @@ Acceptance criteria:
 
 Intent: open the app at the start of the day and learn what changed and whether anything needs action, without re-scanning everything (journey **J1**, [ux-journeys.md](ux-journeys.md); ADR 0068, `v0.54.0`).
 
-Flow:
+Flow (F2 Dziś v2, epic #410 / #422; [ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) amendment 2026-08-20):
 
-1. User lands on Today.
-2. At the top, the **morning briefing** summarizes what changed in the user's companies and what needs doing — new signals, autopilot runs, claims due, upcoming report dates, and fired alerts — as a deterministic structured list ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 2 — no AI narrative). A **Generate briefing** action recomposes it on demand; it also auto-refreshes once per day while the app is open.
-3. Below it, the user triages the **attention stream** (autopilot runs, changed reports, claims to verify, upcoming reports, and fired alerts), optionally filtered by a counter tile.
-4. **Fired alerts** land in the same stream, grouped by company, each marked seen or dismissed; while the user works elsewhere, the **sidebar Today badge** counts unseen non-routine events and clears on the next visit ([ADR 0097](adr/0097-toasts-are-action-feedback-only.md) — no attention event raises a toast).
-5. User opens the 0–2 items that matter into the company workspace, then returns to Today.
+1. User lands on Today (Dziś).
+2. The **delta header** answers "what arrived since your last visit" (counts of reports/filings/media since the anchor stamped on the previous visit) and carries the screen's ONE filled CTA — the most urgent queue item's action. The old briefing card is retired from this screen; briefing composition stays available via MCP ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) posture).
+3. Below, the **per-day decision queue**: TODAY (calendar announcements + arrivals) then unreviewed days, newest first. Rows are typed — report/filing (official, cyan provenance), media **clusters per company** (magenta), `NIE WPŁYNĄŁ` (an announced periodic report with no witnessing filing — disappears the moment the `report_delay` red flag takes over via attention), claims to verify, autopilot runs, fired alerts (attention, root-fed). Day counters live in the day headers (no stat tiles).
+4. Every row action **names its destination and lands on the thing itself**: `Przeczytaj raport` → company workspace; `Otwórz komunikat`/`Otwórz artykuł` → the Inbox with exactly that item selected (narrow window: detail overlay raised); `Otwórz w Inbox` → the company-scoped Inbox; `Otwórz tezę` → the claim highlighted in Claims; `Odśwież źródła` → source refresh. The **sidebar Today badge** behavior is unchanged ([ADR 0097](adr/0097-toasts-are-action-feedback-only.md)).
+5. A reviewed day collapses to one line (`Oznacz dzień jako przejrzany`, undoable; a day whose every row is read/seen collapses by itself); a clean morning renders the three-beat empty state with a quiet `Odśwież źródła`.
 
 Setup (Library → Alerts): the user creates **alert rules** from preset chips — a signal category, an autopilot run completing, or a price condition (*price enters my range* / *52-week low*) — scoped to a company or a watchlist, each enable/disable-able. Fired alerts are reviewable there too.
 
 Acceptance criteria:
 
-- The briefing is a fully deterministic structured list and always renders, never blocked (the narrative half is retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
+- The delta header is fully deterministic and always renders; a section's storage failure degrades that section inline (typed `sectionErrors`), never the whole screen.
 - A fired alert always traces back to its evidence (signal, run, quote, or a missed report's witness URL) via the attention row's Review.
 - An alert never re-fires for the same evidence, and never phrases a fact as advice.
 - The journey stays within its interaction budget ([budgets.json](../tests/browser/journeys/budgets.json)); reading the briefing is a passive scan, not a counted interaction.

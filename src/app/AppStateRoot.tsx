@@ -13,6 +13,7 @@ import { useAppDataController } from "./useAppDataController";
 import { useCompanyController } from "./useCompanyController";
 import { useCompanyEventsController } from "./useCompanyEventsController";
 import { useDetailPaneResize } from "./useDetailPaneResize";
+import { openExternalUrl } from "./openExternalUrl";
 import {
   companyEventStatusOptions,
   companyEventTypeOptions,
@@ -39,6 +40,7 @@ import { useResearchController } from "./useResearchController";
 import { useSettingsController } from "./useSettingsController";
 import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
+import { buildTodayScreenProps, useRefreshCompletionSignal } from "./useTodayScreenWiring";
 import { useTranscriptController } from "./useTranscriptController";
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
 import {
@@ -52,12 +54,12 @@ import {
   type CreateViewSpec,
 } from "../screens/Cockpit/CreateViewModal";
 import {
-  deleteCockpitLayout,
   listCockpitLayouts,
   renameCockpitLayout,
   saveCockpitLayout,
   type CockpitLayout,
 } from "../api/cockpit";
+import { makeCockpitViewActions } from "./useCockpitViewActions";
 import { useToast, useUndoableDelete } from "../ui";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -410,41 +412,6 @@ export function AppStateRoot({
     .filter((layout) => !layout.name.startsWith("dashboard:"))
     .map((layout) => ({ id: layout.id, name: layout.name }));
 
-  // Open a saved named view (not a company dashboard): activate its layout and
-  // clear any company scope so it renders as the pure view.
-  function openCockpitView(layoutId: string) {
-    setCockpitInitialCompanyId(null);
-    setCockpitInitialPresetId(null);
-    setActiveCockpitLayoutId(layoutId);
-    setActiveSection("Cockpit");
-  }
-
-  // Reversible destroy (ADR 0076 D5): a saved view re-creates faithfully via
-  // save_cockpit_layout (name + panelsJson + layoutJson), so it deletes
-  // immediately with an undo toast rather than a blocking dialog.
-  function deleteCockpitView(layoutId: string) {
-    const layout = cockpitLayouts.find((entry) => entry.id === layoutId);
-    if (!layout) return;
-    runUndoableDelete({
-      perform: () => deleteCockpitLayout(layoutId),
-      restore: () =>
-        saveCockpitLayout({
-          name: layout.name,
-          panelsJson: layout.panelsJson,
-          layoutJson: layout.layoutJson,
-          dockviewVersion: layout.dockviewVersion,
-        }),
-      message: text("View deleted"),
-      undoLabel: text("Undo"),
-      onPerformed: () => {
-        if (activeCockpitLayoutId === layoutId) setActiveCockpitLayoutId(null);
-        refreshCockpitLayouts();
-      },
-      onRestored: () => {
-        refreshCockpitLayouts();
-      },
-    });
-  }
 
   // Issue #89: in-place saved-view rename from the sidebar row. The backend
   // rejects duplicates (save upserts BY NAME — a duplicate would fuse two
@@ -635,6 +602,17 @@ export function AppStateRoot({
 
   // ADR 0076 D5: reversible-destroy orchestration (immediate delete + undo toast).
   const runUndoableDelete = useUndoableDelete();
+  const { openCockpitView, deleteCockpitView } = makeCockpitViewActions({
+    cockpitLayouts,
+    activeCockpitLayoutId,
+    setActiveCockpitLayoutId,
+    setCockpitInitialCompanyId,
+    setCockpitInitialPresetId,
+    setActiveSection,
+    refreshCockpitLayouts,
+    runUndoableDelete,
+    text,
+  });
   // ADR 0068 T6: transient async-success feedback on the shared Toast surface.
   const toast = useToast();
   // ADR 0076 D4: threaded date formatters. Detail/audit rows (provenance,
@@ -794,6 +772,8 @@ export function AppStateRoot({
       setLicenseStatus,
     });
 
+  const { refreshCompletionCount, bumpRefreshCompletionCount } = useRefreshCompletionSignal();
+
   const {
     refreshBankierCalendarWeek,
     refreshCompanyRegistry,
@@ -801,6 +781,7 @@ export function AppStateRoot({
     refreshSources,
   } = useSourceRefreshController({
     refreshAttention: attention.refresh,
+    onRefreshCompletion: bumpRefreshCompletionCount,
     refreshCompanyEvents,
     refreshCompanyRegistryEntries,
     refreshDatabaseStatus,
@@ -851,6 +832,7 @@ export function AppStateRoot({
     updatePinnedCompanyIds,
     updateShortcutBindings,
     updateTheme,
+    updateTodayReviewedDays,
     updateYoutubeTranscriptionModel,
     updateYoutubeTranscriptionTimeout,
   } = useSettingsController({
@@ -1068,8 +1050,10 @@ export function AppStateRoot({
 
   const {
     clearInboxFilters,
+    inboxDetailActivationToken,
     markVisibleInboxAsRead,
     openCompanyWorkspaceFromFeedItem,
+    openInboxItem,
     scopeInboxToCompany,
     selectFeedItemFromKeyboard,
     toggleFeedItemReadState,
@@ -1158,6 +1142,9 @@ export function AppStateRoot({
 
   const {
     focusCompanyWorkspace,
+    highlightClaimId,
+    openCompanyClaims,
+    openCompanyInboxFilter,
     openCompanyWorkspace,
     openCompanyWorkspaceFromKeyboard,
     renderNotebookOrigins,
@@ -1233,6 +1220,7 @@ export function AppStateRoot({
     activeSection,
     companies,
     refreshAttention: attention.refresh,
+    onRefreshCompletion: bumpRefreshCompletionCount,
     companyEventCompanyFilter,
     companyEventDateFrom,
     companyEventDateTo,
@@ -1280,12 +1268,6 @@ export function AppStateRoot({
     sourceAdapters,
     sourceAdaptersRef,
   });
-
-  function openExternalUrl(url: string) {
-    void openUrl(url).catch((error) => {
-      console.error("Failed to open external URL", error);
-    });
-  }
 
   function openResearchEvidence(item: ResearchEvidenceItem) {
     const itemCompanyTicker =
@@ -1945,6 +1927,7 @@ export function AppStateRoot({
                     stopDetailPaneResize,
                     feedItemSummary,
                     formatTimestamp,
+                    inboxDetailActivationToken,
                   }}
                 >
                   <InboxScreen />
@@ -1963,6 +1946,7 @@ export function AppStateRoot({
                             feedItems={feedState}
                             initialCompanyId={cockpitInitialCompanyId}
                             initialLayoutId={activeCockpitLayoutId}
+                            highlightClaimId={highlightClaimId}
                             initialPresetId={cockpitInitialPresetId}
                             onLayoutsChanged={refreshCockpitLayouts}
                           />
@@ -1974,16 +1958,21 @@ export function AppStateRoot({
               ) : null}
               {activeSection === "Today" ? (
                 <TodayScreen
-                  attention={attention}
-                  companies={companies}
-                  pinnedCompanyIds={pinnedCompanyIds}
-                  recentFeedItems={feedState}
-                  openCompanyWorkspace={openCompanyWorkspaceById}
-                  openInbox={() => setActiveSection("Inbox")}
-                  openExternalUrl={openExternalUrl}
-                  openReportSeason={() => setActiveSection("ReportSeason")}
-                  sourceAdapters={sourceAdapters}
-                  openSources={() => setActiveSection("Sources")}
+                  {...buildTodayScreenProps({
+                    attention,
+                    companies,
+                    openCompanyWorkspace: openCompanyWorkspaceById,
+                    openInboxItem,
+                    openCompanyInbox: openCompanyInboxFilter,
+                    openCompanyClaims,
+                    openExternalUrl,
+                    sourceAdapters,
+                    refreshSources,
+                    todayReviewedDays: settings?.todayReviewedDays ?? [],
+                    updateTodayReviewedDays,
+                    refreshCompletionCount,
+                    setActiveSection,
+                  })}
                 />
               ) : null}
               {activeSection === "Companies" ? (

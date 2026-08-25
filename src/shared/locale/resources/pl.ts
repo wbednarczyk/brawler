@@ -38,7 +38,6 @@ export const pl: LocaleResources = {
   "nav.group.library": "Biblioteka",
   "nav.group.utilities": "Narzędzia",
   "today.title": "Dziś",
-  "today.description": "Co wymaga Twojej uwagi — co się zmieniło, co zweryfikować i gdzie przesuwa się przekonanie.",
   "today.view.label": "Widok Dziś",
   "today.view.active": "Aktywne",
   "today.view.archive": "Archiwum",

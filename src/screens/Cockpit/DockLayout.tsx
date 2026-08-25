@@ -298,6 +298,21 @@ type DockLayoutProps = {
   /** Fired when the user closes a panel, so the owner drops it from state
    *  (otherwise reconciliation would immediately re-add it). */
   onClosePanel?: (id: string) => void;
+  /**
+   * The panel that should be raised whenever the default layout (re)builds
+   * (Today's `openCompanyClaims` seam, sol R1 finding 9). Applied as part of
+   * `onReady`'s own build, not via a separate imperative call: dockview's
+   * `onReady` fires again on every REAL remount of the dock — including
+   * React 18/19 StrictMode's dev-only mount→cleanup→remount pass, and a plain
+   * screen-navigation remount in production (`CockpitScreen.test.tsx` "two
+   * full dockview teardown/rebuild cycles") — and a one-shot imperative
+   * `activatePanel()` call raced against exactly that: it could win against a
+   * dock instance that then gets discarded, leaving the FINAL persisting
+   * instance on its untouched default anchor panel. Re-deriving and re-
+   * applying this prop on every `onReady` is correct regardless of how many
+   * times the dock (re)initializes underneath.
+   */
+  activatePanelId?: string | null;
 };
 
 // Imperative handle for named-layout save/restore (the geometry — splits/tabs —
@@ -312,7 +327,7 @@ export type DockLayoutHandle = {
 };
 
 export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function DockLayout(
-  { panels, storageKey, resetNonce, grid, onClosePanel },
+  { panels, storageKey, resetNonce, grid, onClosePanel, activatePanelId = null },
   ref,
 ) {
   const contents = new Map(panels.map((panel) => [panel.id, panel.render]));
@@ -320,6 +335,8 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
     panels.filter((panel) => panel.pin).map((panel) => [panel.id, panel.pin as DockPanelPin]),
   );
   const apiRef = useRef<DockviewApi | null>(null);
+  const activatePanelIdRef = useRef(activatePanelId);
+  activatePanelIdRef.current = activatePanelId;
   const panelsRef = useRef(panels);
   panelsRef.current = panels;
   const gridRef = useRef(grid);
@@ -471,6 +488,13 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
       buildDefault(event.api);
     }
     rebuildingRef.current = false;
+    // Raise the requested panel (if any) — AFTER the default build's own
+    // anchor-panel activation above, so this wins. Re-derived from the ref on
+    // every `onReady`, so it survives the dock rebuilding underneath (see the
+    // prop's doc comment).
+    if (activatePanelIdRef.current) {
+      event.api.getPanel(activatePanelIdRef.current)?.api.setActive();
+    }
     // Tell the owner about user closes so it drops the panel from state.
     event.api.onDidRemovePanel((panel) => {
       if (!rebuildingRef.current) onCloseRef.current?.(panel.id);

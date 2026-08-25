@@ -35,6 +35,18 @@ pub(crate) fn clamp_mcp_port(value: i64) -> i64 {
     value.clamp(MCP_PORT_MIN, MCP_PORT_MAX)
 }
 
+/// The Dziś v2 visit anchor (F2 plan decision 4): `get_today_view` reads it
+/// (this slice), `mark_today_visited` (S2) writes it with the backend's own
+/// clock. No seed-row migration — an absent row means "never visited",
+/// distinct from any real timestamp.
+pub(crate) const TODAY_LAST_VISIT_AT_KEY: &str = "today_last_visit_at";
+
+/// The Dziś v2 "reviewed days" set (F2 plan decision 5): a JSON array of
+/// `YYYY-MM-DD` day keys, precedent `pinnedCompanyIds`. Trimmed to the 14
+/// newest on write so the row never grows unbounded.
+pub(crate) const TODAY_REVIEWED_DAYS_KEY: &str = "today_reviewed_days";
+const TODAY_REVIEWED_DAYS_MAX: usize = 14;
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -167,6 +179,11 @@ pub struct UserSettings {
     /// local UI preference stored as a JSON array in the `settings` KV table;
     /// order is the user's pin order. Tolerant default `[]` when the row is absent.
     pub pinned_company_ids: Vec<String>,
+    /// Dziś v2 "reviewed" day keys (`YYYY-MM-DD`, F2 plan decision 5). A simple
+    /// local UI preference, same JSON-array-in-KV posture as `pinned_company_ids`.
+    /// Tolerant default `[]` when the row is absent; trimmed to the 14 newest
+    /// dates on write.
+    pub today_reviewed_days: Vec<String>,
     /// Read-only MCP server (ADR 0078): off by default, port default `8317`.
     /// Absent rows read the defaults (no seed-row migration).
     pub mcp: McpSettings,
@@ -216,6 +233,10 @@ pub struct SettingsUpdate {
     /// Replace the full pinned-company list (ADR 0054). The frontend sends the
     /// complete desired order, so this overwrites rather than merges.
     pub pinned_company_ids: Option<Vec<String>>,
+    /// Replace the full Dziś v2 reviewed-days set (F2 plan decision 5). Each
+    /// entry must be `YYYY-MM-DD`; the write trims to the 14 newest (sorted
+    /// descending) rather than rejecting an over-long list.
+    pub today_reviewed_days: Option<Vec<String>>,
     /// Enable/disable persistence for the MCP server (ADR 0078). The live
     /// start/stop lifecycle command is separate (`set_mcp_enabled`, M3).
     pub mcp_enabled: Option<bool>,
@@ -264,6 +285,7 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
         },
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
         pinned_company_ids: setting_json_or_default(connection, "pinned_company_ids")?,
+        today_reviewed_days: setting_json_or_default(connection, TODAY_REVIEWED_DAYS_KEY)?,
         mcp: McpSettings {
             enabled: setting_bool_or(connection, "mcp_enabled", false)?,
             // Clamp on read too, so a hand-edited row can never drive a
@@ -463,6 +485,12 @@ pub(crate) fn update_settings(
         upsert_setting(connection, "pinned_company_ids", &value, "json")?;
     }
 
+    if let Some(today_reviewed_days) = input.today_reviewed_days {
+        let trimmed = validate_and_trim_reviewed_days(today_reviewed_days)?;
+        let value = serde_json::to_string(&trimmed).map_err(StorageError::from)?;
+        upsert_setting(connection, TODAY_REVIEWED_DAYS_KEY, &value, "json")?;
+    }
+
     // MCP server settings (ADR 0078 decision 4). No seed rows — upsert like
     // `backfill_years` so the values are never silently dropped; the port is
     // clamped to the safe range rather than rejected.
@@ -638,6 +666,20 @@ fn setting_string_or(
     }
 }
 
+/// Read a string setting, `None` when the row is absent — for keys with no
+/// meaningful default (unlike [`setting_string_or`]'s fallback value). Used by
+/// [`SettingsStore::today_last_visit_at`] (F2 S1/S2: a first-ever visit has no
+/// anchor at all, not an empty-string one).
+fn setting_string_opt(connection: &Connection, key: &'static str) -> StorageResult<Option<String>> {
+    match connection.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        row.get::<_, String>(0)
+    }) {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(StorageError::from(error)),
+    }
+}
+
 /// The persisted app locale, normalized to a supported code (`pl` | `en`), for
 /// resolving bilingual template seeds (ADR 0076 Decision 8). An absent or
 /// unrecognized row falls back to the default `pl`.
@@ -695,6 +737,67 @@ fn upsert_setting(
     )?;
 
     Ok(())
+}
+
+/// `true` for a syntactically valid `YYYY-MM-DD` day key (ASCII digits in the
+/// right places, month `01..=12`, day `01..=31`; not a full calendar
+/// validation — no date library is pulled in for a UI watermark key).
+fn is_day_key(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return false;
+    }
+    let digits_ok = value
+        .bytes()
+        .enumerate()
+        .filter(|(i, _)| *i != 4 && *i != 7)
+        .all(|(_, b)| b.is_ascii_digit());
+    if !digits_ok {
+        return false;
+    }
+    let month: u32 = value[5..7].parse().unwrap_or(0);
+    let day: u32 = value[8..10].parse().unwrap_or(0);
+    (1..=12).contains(&month) && (1..=31).contains(&day)
+}
+
+/// Validate every entry is a `YYYY-MM-DD` day key, then keep at most the 14
+/// newest (sorted descending) — F2 plan decision 5's trim rule.
+fn validate_and_trim_reviewed_days(mut days: Vec<String>) -> StorageResult<Vec<String>> {
+    for day in &days {
+        if !is_day_key(day) {
+            return Err(StorageError::InvalidSettingValue {
+                key: "today_reviewed_days",
+                value: day.clone(),
+            });
+        }
+    }
+    days.sort_unstable_by(|a, b| b.cmp(a));
+    days.dedup();
+    days.truncate(TODAY_REVIEWED_DAYS_MAX);
+    Ok(days)
+}
+
+/// Stamp the Dziś v2 visit anchor with the backend's own wall clock (F2 plan
+/// decision 4) and return the new value. Single `INSERT ... ON CONFLICT ...
+/// RETURNING` statement (no seed row — same upsert posture as
+/// [`upsert_setting`]) so the stamped value and the `updated_at` column are
+/// always the same instant, computed once by SQLite's `strftime('now')`
+/// rather than twice from two separate Rust-side reads.
+fn mark_today_visited(connection: &Connection) -> StorageResult<String> {
+    connection
+        .query_row(
+            "
+            INSERT INTO settings (key, value, value_type)
+            VALUES (?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'string')
+            ON CONFLICT (key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.value
+            RETURNING value
+            ",
+            [TODAY_LAST_VISIT_AT_KEY],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::from)
 }
 
 /// Remove duplicate IDs while preserving first-seen order (the user's pin order).
@@ -820,6 +923,22 @@ impl SettingsStore {
         let connection = self.db.checkout()?;
 
         setting_bool_or(&connection, "kpi_acquisition_enabled", false)
+    }
+
+    /// The Dziś v2 visit anchor (F2 plan decision 4). `None` on a first-ever
+    /// visit (tolerant default — no seed-row migration).
+    pub fn today_last_visit_at(&self) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+
+        setting_string_opt(&connection, TODAY_LAST_VISIT_AT_KEY)
+    }
+
+    /// Stamp the Dziś v2 visit anchor with the backend's own clock (F2 plan
+    /// decision 4) and return the new value.
+    pub fn mark_today_visited(&self) -> StorageResult<String> {
+        let connection = self.db.checkout()?;
+
+        mark_today_visited(&connection)
     }
 
     pub fn set_developer_mode_enabled(&self, enabled: bool) -> StorageResult<UserSettings> {

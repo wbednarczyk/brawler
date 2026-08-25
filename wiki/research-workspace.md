@@ -17,7 +17,13 @@ ship inside the app.
 The sidebar is grouped so you always know where you are:
 
 - **Modes** — the big destinations:
-  - **🏠 Today** — your home and the default screen (see below).
+  - **🏠 Today (Dziś)** — your home and the default screen: a morning queue broken
+    into days. The header tells you what arrived **since your last visit** (reports,
+    filings, media — media come pre-grouped per company); each row's button says
+    exactly where it takes you ("Otwórz komunikat" opens that very filing in the
+    Inbox, "Otwórz tezę" highlights that claim). An announced report that has not
+    arrived shows as "NIE WPŁYNĄŁ" until the app's own delay alert takes over. Mark
+    a day as reviewed and it folds to a single line; a quiet morning says so plainly.
   - **Companies** — browse, search, add companies, and open one to its
     dashboard (see below).
   - Below the built-in modes: your own **saved views** and a **"+ New view"**

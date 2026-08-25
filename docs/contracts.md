@@ -1130,6 +1130,22 @@ Three flag types are **detected + raised** at the producing seams (ownership ing
 
 Classified `read`-tier in the MCP registry but deliberately **not exposed** as an agent tool: it is a UI round-trip optimization, not a new capability — an agent already has full parity via `list_financial_facts`/`list_financial_periods`, `list_company_events`, `list_notebook_entries`, and `list_claims_due`.
 
+## Today View (Dziś v2)
+
+`get_today_view(dayLimit)` returns `TodayView` — everything the Dziś v2 morning queue renders, composed in ONE read ([ADR 0106](adr/0106-screen-data-layer-posture.md) decision 3; F2, epic #410). Computed; async / `spawn_blocking`. `dayLimit` is clamped to `1..=7` server-side.
+
+- `items: TodayItem[]` — a **flat** tagged union (`kind`): `filing` (official feed row: `feedItemId`, `companyId`, `qualifiedTicker`, `title`, `publishedAt`, `read`, `presentationKind`) · `mediaItem` (one row per media feed item × matched company: `feedItemId`, `companyId`, `qualifiedTicker`, `title`, `publishedAt`, `read`, `sourceName`; an item matched to several companies yields one row per company; unmatched media is excluded — same scope the Inbox feed query uses; **day-clustering is a frontend display concern** over the user's LOCAL day, never done here) · `nonArrival` (`eventKey`, `eventDate`, `title` — a `periodic_report` calendar event past its date with no witnessing official report, **suppressed once the `report_delay` red flag exists** for it: the flag's attention event takes over, atomic handoff; an event emitted as `nonArrival` is deduped out of the `calendar` list) · `calendar` (upcoming events within the window) · `autopilotRun` (the existing `AutopilotRun` shape, boxed).
+- `toVerify: TodayClaim[]` — pending management claims across **all tracked companies** (bulk; replaces the old per-pinned-company fan-out), `{ claim, qualifiedTicker, bucket: due|overdue }`.
+- `deltaSummary` — counts of report/filing/media items newer than `previousVisitAt`.
+- `previousVisitAt: string | null` — read from the `todayLastVisitAt` settings KV row (tolerant `null`). The command never takes an anchor input: one source of truth.
+- `sectionErrors: { feed?, calendar?, claims?, autopilot?, anchor? }` — closed enum (`"unavailable"`): each section composes independently and a storage failure degrades that section instead of failing the command. `anchor` marks a failed KV read of `previousVisitAt` (never silently coerced to "first visit"); the frontend renders it and withholds `mark_today_visited` while it (or `feed`) is set.
+
+Day bucketing, day counters and the `allSeen` collapse decision are **frontend concerns** (local-day display over the flat list, attention merged root-fed) — deliberately not in this DTO.
+
+`mark_today_visited()` stamps `todayLastVisitAt` with the **backend's** wall clock and returns the new value — called by the frontend after a successful Dziś render (never on unmount; a visit that never rendered never moves the anchor).
+
+MCP registry: `get_today_view` is `read`-tier but not exposed as an agent tool (round-trip optimization; agents have parity via `list_feed_items`/`list_company_events`/`list_claims_due`/`list_autopilot_runs`); `mark_today_visited` is `excluded` (UI-session state, same posture as `mark_attention_events_seen`).
+
 ## Company Signal
 
 Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).

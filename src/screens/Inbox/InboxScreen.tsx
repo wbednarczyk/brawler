@@ -9,7 +9,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
 import { useLocale } from "../../shared/locale";
@@ -87,6 +87,7 @@ export function InboxScreen() {
     stopDetailPaneResize,
     feedItemSummary,
     formatTimestamp,
+    inboxDetailActivationToken = 0,
   } = useInboxViewModel();
   const { t, text, locale } = useLocale();
   // Density contract (ADR 0076 D6): at the S width tier the detail is a full-pane
@@ -95,6 +96,16 @@ export function InboxScreen() {
   // whether the overlay is raised; activating a row opens it, the detail's back
   // control closes it. It is inert above S, where list and detail sit together.
   const [inboxDetailOpen, setInboxDetailOpen] = useState(false);
+  // Today's `openInboxItem` nav seam (F2 S3, plan decision 6): an outside
+  // navigation bumps `inboxDetailActivationToken` (the selection + company
+  // scope land through the ordinary controller setters); this reacts by
+  // raising the S-overlay the same way a row click does — never reached into
+  // from outside. Skips the initial mount (token starts at 0).
+  useEffect(() => {
+    if (inboxDetailActivationToken > 0) {
+      setInboxDetailOpen(true);
+    }
+  }, [inboxDetailActivationToken]);
   // When a feed item leaves the filtered list (e.g. marking it read under the
   // "unread" filter hides it), keep keyboard focus in the feed by moving to the
   // next row rather than dropping it on <body> (ADR 0076 D9).

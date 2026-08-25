@@ -39,6 +39,9 @@ import type { RedFlagsView } from "../../api/redFlags";
 import type { AnalystRecommendationsView } from "../../api/analystRecommendations";
 import type { CommandError } from "../../api/generated/CommandError";
 import type { UncrosswalkedConceptRow } from "../../api/generated/UncrosswalkedConceptRow";
+import type { TodayView } from "../../api/generated/TodayView";
+import type { TodayItem } from "../../api/generated/TodayItem";
+import type { TodayClaim } from "../../api/generated/TodayClaim";
 
 export type {
   MockRuntimeControls,
@@ -1023,6 +1026,183 @@ function buildHandlers(): Record<string, Handler> {
           overdue: d.claimsToVerify.overdue.filter((c) => c.claim.companyId === companyId).length,
         },
       };
+    },
+
+    // --- Dziś v2 composed read model (F2 S1, ADR 0106 dec. 3) ---
+    // Flat items[] from four independent sections + a bulk claims-to-verify
+    // scan. Mirrors `commands::today::compute_today_view`. Mock feed items
+    // carry only a ticker string (no `feed_item_companies` join table), so
+    // multi-company `mediaItem` membership is NOT replicated here — that
+    // behavior is pinned by the Rust unit tests in `commands/today.rs`; the
+    // mock stays faithful for the single-company case the corpus exercises.
+    // FIX WAVE A finding 8: `mediaItem` is FLAT (one row per feed item, no
+    // backend day-clustering) — the frontend owns the local display-day
+    // boundary (wave B).
+    get_today_view: (d, a): TodayView => {
+      const dayLimitRaw = unwrap(a).dayLimit;
+      const dayLimit = Math.min(
+        7,
+        Math.max(1, typeof dayLimitRaw === "number" ? dayLimitRaw : 1),
+      );
+      const today = SAMPLE_NOW.slice(0, 10);
+      const since = dateMinusDays(today, dayLimit);
+      const horizon = (() => {
+        const date = new Date(`${today}T00:00:00Z`);
+        date.setUTCDate(date.getUTCDate() + dayLimit);
+        return date.toISOString().slice(0, 10);
+      })();
+
+      const tickerToCompanyId = new Map(d.companies.map((c) => [c.qualifiedTicker, c.id]));
+      const sinceStamp = `${since}T00:00:00Z`;
+      const inWindow = d.feedItems.filter(
+        (fi) => fi.publishedAt >= sinceStamp && tickerToCompanyId.has(fi.company),
+      );
+
+      const items: TodayItem[] = [];
+
+      for (const fi of inWindow) {
+        if (fi.type !== "Official report") continue;
+        items.push({
+          kind: "filing",
+          feedItemId: fi.id,
+          companyId: tickerToCompanyId.get(fi.company) ?? "",
+          qualifiedTicker: fi.company,
+          title: fi.title,
+          publishedAt: fi.publishedAt,
+          read: !fi.unread,
+          presentationKind: fi.presentationKind,
+        });
+      }
+
+      // Flat media rows — one per (feed item x matched company), no
+      // day-clustering (finding 8).
+      for (const fi of inWindow) {
+        if (fi.type !== "Public media") continue;
+        items.push({
+          kind: "mediaItem",
+          feedItemId: fi.id,
+          companyId: tickerToCompanyId.get(fi.company) ?? "",
+          qualifiedTicker: fi.company,
+          title: fi.title,
+          publishedAt: fi.publishedAt,
+          read: !fi.unread,
+          sourceName: fi.source,
+        });
+      }
+
+      // Non-arrival: `periodic_report` events past their date with no
+      // witnessing report and no `report_delay` flag yet (shares the
+      // deterministic flag-id shape `raise_flag`/`red_flags.rs` writes).
+      for (const event of d.events) {
+        if (event.eventType !== "periodic_report" || event.eventDate > today) continue;
+        const witnessed = d.feedItems.some(
+          (fi) =>
+            fi.type === "Official report" &&
+            fi.company === event.company &&
+            fi.publishedAt >= event.eventDate,
+        );
+        if (witnessed) continue;
+        const flagId = `rf:report_delay:${event.companyId}:${event.id}`;
+        const flagged = d.redFlagsByCompany?.[event.companyId]?.active.some(
+          (flag) => flag.flagId === flagId,
+        );
+        if (flagged) continue;
+        items.push({
+          kind: "nonArrival",
+          eventKey: event.id,
+          companyId: event.companyId,
+          qualifiedTicker: event.company,
+          eventDate: event.eventDate,
+          title: event.title,
+        });
+      }
+
+      // Calendar: company_events within [today, today + dayLimit].
+      for (const event of d.events) {
+        if (event.eventDate < today || event.eventDate > horizon) continue;
+        items.push({
+          kind: "calendar",
+          eventKey: event.id,
+          eventDate: event.eventDate,
+          eventType: event.eventType,
+          title: event.title,
+          companyId: event.companyId,
+          qualifiedTicker: event.company,
+        });
+      }
+
+      // Autopilot: unread runs within the window.
+      for (const run of d.autopilotRuns) {
+        if (run.notificationState !== "unread" || run.createdAt < since) continue;
+        items.push({ kind: "autopilotRun", run });
+      }
+
+      const todaySortKey = (item: TodayItem): string => {
+        switch (item.kind) {
+          case "filing":
+          case "mediaItem":
+            return item.publishedAt;
+          case "nonArrival":
+          case "calendar":
+            return item.eventDate;
+          case "autopilotRun":
+            return item.run.createdAt;
+        }
+      };
+      items.sort((a, b) => todaySortKey(b).localeCompare(todaySortKey(a)));
+
+      // Claims: the mock already stores the bulk bucket flat (no per-company
+      // fan-out needed, unlike the Rust store's per-company loop).
+      const tickerOf = (companyId: string) =>
+        d.companies.find((company) => company.id === companyId)?.qualifiedTicker ?? "";
+      const toVerify: TodayClaim[] = [
+        ...d.claimsToVerify.overdue.map(
+          (c): TodayClaim => ({
+            claim: c.claim,
+            qualifiedTicker: tickerOf(c.claim.companyId),
+            bucket: "overdue",
+          }),
+        ),
+        ...d.claimsToVerify.due.map(
+          (c): TodayClaim => ({
+            claim: c.claim,
+            qualifiedTicker: tickerOf(c.claim.companyId),
+            bucket: "due",
+          }),
+        ),
+      ];
+
+      let reportCount = 0;
+      let filingCount = 0;
+      let mediaCount = 0;
+      for (const fi of inWindow) {
+        // Contract fidelity (Rust today.rs applies the anchor cutoff): the
+        // delta counts ONLY items newer than the previous visit — a whole-
+        // window count made J1's browser evidence unfaithful (sol re-verify).
+        if (d.todayLastVisitAt && fi.publishedAt <= d.todayLastVisitAt) continue;
+        if (fi.type === "Official report") {
+          if (fi.presentationKind === "report") reportCount += 1;
+          else filingCount += 1;
+        } else if (fi.type === "Public media") {
+          mediaCount += 1;
+        }
+      }
+
+      return {
+        items,
+        toVerify,
+        deltaSummary: { reportCount, filingCount, mediaCount },
+        previousVisitAt: d.todayLastVisitAt,
+        sectionErrors: {},
+      };
+    },
+
+    // Dziś v2 visit anchor (F2 S2, plan decision 4): stamp with the mock's
+    // deterministic clock (SAMPLE_NOW), mirroring the Rust command's own
+    // backend-clock stamp, and return the new value.
+    mark_today_visited: (d): string => {
+      d.todayLastVisitAt = SAMPLE_NOW;
+      return d.todayLastVisitAt;
     },
 
     // --- Red flags (v0.57 T7, ADR 0083 D8) ---
@@ -3689,6 +3869,7 @@ function buildHandlers(): Record<string, Handler> {
         backfillYears: pick("backfillYears", d.settings.backfillYears),
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),
         pinnedCompanyIds: pick("pinnedCompanyIds", d.settings.pinnedCompanyIds),
+        todayReviewedDays: pick("todayReviewedDays", d.settings.todayReviewedDays),
         mcp: {
           enabled: pick("mcpEnabled", d.settings.mcp.enabled),
           // Mirror of the backend clamp ([1024, 65535], ADR 0078).

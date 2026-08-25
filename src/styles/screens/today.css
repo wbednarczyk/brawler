@@ -1,50 +1,15 @@
-/* Today/Pulse attention home (ADR 0054), redesigned to journey J1 (ADR 0076
-   U-Rb): a single prioritized "what changed" stream plus a narrow counters
-   column that doubles as a category filter. The screen owns the panel height;
-   the stream scrolls internally. A container query reflows the two regions to a
-   stacked layout (counters strip above, stream below) on narrow panes — no
-   page-level scroll, no panel-internal horizontal scrollbars. */
+/* Dziś v2 (F2, ADR 0068 amendment 2026-08-20): a per-day decision queue
+   anchored to the user's last visit — the delta header leads, day sections
+   scroll in one column (no counters side-rail: the v1 stream/counters grid
+   and its briefing card/strip, severity chips, and group/aggregate rows
+   retired with S4's TodayScreen rebuild). The screen owns the panel height;
+   the body scrolls internally. */
 .today-screen {
   min-height: 0;
 }
 
-/* Morning-briefing card (ADR 0068 decision 4, v0.54 §T5): sits above the
-   attention stream, its own bordered card so it reads as a distinct
-   "what the app composed for you" surface rather than another stream row. */
-.today-briefing-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: var(--space-1) var(--space-1) 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-raised);
-}
-
-.today-briefing-narrative {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.today-briefing-sources {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.today-briefing-items {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
 /* Config-state banner(s) (ADR 0087 dec. 5): a condition that is a property of
-   the app, stated once above the stream, never repeated per row. */
+   the app, stated once above the queue, never repeated per row. */
 .today-config-banners {
   display: flex;
   flex-direction: column;
@@ -80,229 +45,15 @@
   margin-left: auto;
 }
 
-/* Morning-briefing STRIP (ADR 0087 dec. 5 mockup amendment): the card wall of
-   near-identical rows collapses to one summary line that expands in place. */
-.today-briefing-strip {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: var(--space-1) var(--space-1) 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-raised);
-}
-
-.today-brief-line {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.today-brief-icon {
-  flex: none;
-  align-self: center;
-  color: var(--tone-caution);
-}
-
-.today-brief-label {
-  font-weight: 650;
-  font-size: var(--font-sm);
-}
-
-.today-brief-since {
-  color: var(--muted);
-  font-size: var(--font-xs);
-}
-
-.today-brief-summary {
-  color: var(--muted);
-  font-size: var(--font-sm);
-  min-width: 0;
-}
-
-.today-brief-expand {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--primary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-}
-
-.today-brief-expand svg {
-  transition: transform 0.15s ease;
-}
-
-.today-brief-expand-open svg {
-  transform: rotate(90deg);
-}
-
-.today-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "stream counters";
-  gap: var(--space-4);
-  min-height: 0;
-  flex: 1 1 auto;
-  padding: var(--space-1);
-}
-
-.today-counters {
-  grid-area: counters;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-  align-content: start;
-}
-
-/* Archive view (owner 2026-07-23): a read-only, full-width history of dismissed
-   attention events — no counters column. */
-.today-body-archive {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "stream";
-}
-
 .today-archive-subtitle {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-sm);
 }
 
-.today-counter {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  align-items: flex-start;
-  min-width: 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-raised);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-
-/* Severity legend: a quiet info toggle beside the Pilne tile + a compact popover
-   mirroring the product-spec taxonomy (owner dogfooding 2026-07-23). */
-.today-legend {
-  position: relative;
-  align-self: flex-end;
-  margin-top: calc(-1 * var(--space-2));
-}
-
-.today-legend-toggle {
-  color: var(--muted);
-}
-
-.today-legend-popover {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + var(--space-1));
-  right: 0;
-  width: min(320px, 80vw);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-raised);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
-}
-
-.today-legend-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-2);
-  padding: 0;
-  list-style: none;
-}
-
-.today-legend-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.today-legend-badge {
-  font-weight: 600;
-  font-size: var(--font-sm);
-}
-
-.today-legend-badge.today-sev-urgent {
-  color: var(--danger);
-}
-
-.today-legend-badge.today-sev-notable {
-  color: var(--warn, var(--accent));
-}
-
-.today-legend-badge.today-sev-routine {
-  color: var(--muted);
-}
-
-.today-legend-desc {
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-.today-legend-aging {
-  margin: 0;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
-}
-
-.today-counter:hover {
-  border-color: var(--primary);
-}
-
-.today-counter[aria-pressed="true"] {
-  border-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
-}
-
-.today-counter-count {
-  font-size: var(--font-xl);
-  font-weight: 650;
-  color: var(--text);
-}
-
-.today-counter-label {
-  font-size: var(--font-sm);
-  color: var(--muted);
-}
-
-/* Zero-count tiles read as dimmed via a muted count color (not opacity, which
-   would drop text contrast below AA — axe gate). */
-.today-counter-empty {
-  background: var(--surface);
-}
-
-.today-counter-empty .today-counter-count {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-/* The "Pilne" tile (ADR 0087 mockup amendment): the urgent-row counter leads the
-   column and reads in the negative tone when it holds anything. */
-.today-counter-hot .today-counter-count {
-  color: var(--tone-negative);
-}
-
-.today-counter-hot.today-counter-empty .today-counter-count {
-  color: var(--muted);
-}
-
-/* Per-category inline error strip (ADR 0087; D1 §7): a failed category fetch is
-   always visibly errored (never false-quiet) with a scoped retry. */
+/* Inline section/whole-read error (state matrix "Partial"/"Error" rows): a
+   failed fetch is always visibly errored (never false-quiet) with a scoped
+   retry. Shared by the whole-read error and each per-section strip. */
 .today-error-strip {
   display: flex;
   align-items: center;
@@ -320,252 +71,277 @@
   min-width: 0;
 }
 
-/* The stream region owns the internal scroll (panel-scroll convention). */
+/* Archive (dismissed attention, KEPT per plan decision 7) — a quiet footer
+   toggle's own list region; reuses the `.today-stream*` list anatomy. */
 .today-stream-region {
-  grid-area: stream;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: var(--space-1);
-}
-
-.today-stream-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-2) var(--space-2);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
-  /* Severity left-border cue (ADR 0087 + mockup): red / amber / none. */
-  border-left: 3px solid transparent;
-}
-
-/* Severity cues (ADR 0087 dec. 2 render): urgent leads (red), notable (amber),
-   routine is the dimmed baseline (no accent). Dimming uses a muted title color,
-   not opacity, to stay above the AA contrast floor (axe gate). */
-.today-sev-urgent {
-  border-left-color: var(--tone-negative);
-}
-
-.today-sev-notable {
-  border-left-color: var(--tone-caution);
-}
-
-.today-sev-routine .today-row-title {
-  color: color-mix(in srgb, var(--text) 80%, var(--muted));
-}
-
-.today-sev-routine .today-row-icon {
-  color: color-mix(in srgb, var(--muted) 70%, transparent);
-}
-
-/* The severity chip reads as a compact uppercase flag. */
-.today-sev-chip {
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 650;
-}
-
-/* Grouped-row members expand in place: compact rows indented under the header,
-   each keeping its own single Review action so j/k traverses them inline. */
-.today-group-members {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding-left: var(--space-5);
-  border-top: 1px dashed color-mix(in srgb, var(--border) 60%, transparent);
-  margin-top: var(--space-1);
-  padding-top: var(--space-2);
-}
-
-.today-stream-member {
-  border-bottom: none;
-  border-left: 2px solid color-mix(in srgb, var(--border) 60%, transparent);
-  padding: var(--space-1) var(--space-2);
-}
-
-.today-stream-member .today-row-title {
-  font-size: var(--font-sm);
-}
-
-.today-row-sub {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-/* Alert-rule origin indicator: a quiet bell glyph chip in the row's fixed chip
-   slot (owner dogfooding 2026-07-23). Compact, icon-only — its name is the label. */
-.today-rule-origin {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-2);
-}
-
-/* The filename split off a document title (owner dogfooding 2026-07-23): a quiet
-   secondary link line — metadata, not prose. Monospace-ish, dimmed, truncating. */
-.today-row-doc-link {
-  margin-top: var(--space-1);
-  padding: 0;
-  max-width: 100%;
-  color: var(--muted);
-  font-size: var(--font-xs);
-  font-family: var(--font-mono, monospace);
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.today-row-doc-link:hover,
-.today-row-doc-link:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-}
-
-.today-row-expand {
-  min-width: 0;
-}
-
-.today-stream-row:last-child {
-  border-bottom: none;
-}
-
-.today-row-line {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.today-row-icon {
-  flex: none;
-  display: inline-flex;
-  margin-top: var(--space-1);
-  color: var(--muted);
-}
-
-.today-row-body {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.today-row-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.today-row-date {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: var(--font-sm);
-  white-space: nowrap;
-}
-
-/* Titles/statements wrap to a maximum of two lines — never a single-line
-   ellipsis at wide widths (kills audit class K1). Identity (ticker) and date
-   stay in the head row and are never truncated. */
-.today-row-title {
-  margin: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  color: var(--text);
-}
-
-.today-row-actions {
-  flex: none;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-1);
-}
-
-.today-row-disclosure {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-1);
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.today-row-disclosure:hover {
-  color: var(--text);
-  background: var(--surface);
-}
-
-.today-row-disclosure svg {
-  transition: transform 0.15s ease;
-}
-
-.today-row-disclosure-open svg {
-  transform: rotate(90deg);
-}
-
-/* Autopilot's in-place detail: undo/dismiss/drift, disclosed by the chevron. */
-.today-run-detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-0) var(--space-0) var(--space-6);
-}
-
-.today-run-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.today-run-drift {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
 }
 
 .today-stream-quiet {
   padding: var(--space-5) var(--space-0);
 }
 
-.today-stream-showall {
-  padding: var(--space-1) var(--space-0);
+/* Dziś v2 day queue (F2 S3/S4, ADR 0106 dec. 3/plan decisions 1/8/9): the
+   screen-local row kit v2 (`rows2/`). Row anatomy per Wiersze.dc.html: icon ·
+   ticker · quiet provenance chip · human title · optional mono meta · one
+   quiet action. */
+.dayq-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
 }
 
-/* At the S width tier (ADR 0076 D6 Today contract: pane < 420px) the counters
-   fold to a horizontal strip above the full-width stream (three tiles wrapping);
-   the M tier keeps the side column. Resolves against the named `pane` container
-   (.cockpit-pane / .workspace). */
+/* The severity outline ring (plan decision 8's "obrys") — never a second
+   accent color, just weight + outline. */
+.dayq-row-accent {
+  border-color: color-mix(in srgb, var(--tone-official) 40%, var(--border));
+}
+
+.dayq-row-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.dayq-row-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.dayq-row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Quiet chip text is normal-case source copy (i18n/screen-reader hygiene);
+   the mockup's caps look is a visual transform only. */
+.dayq-chip {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dayq-row-title {
+  margin: 0;
+  color: var(--text);
+  font-weight: 500;
+  /* A hostile ESPI title (one long unbroken run, no spaces) must break
+     inside the card rather than force a horizontal scrollbar — density
+     contract, F2 S5 (Compact.dc.html "długie tytuły łamią się wewnątrz
+     karty"). */
+  overflow-wrap: anywhere;
+}
+
+.dayq-row-title-strong {
+  font-weight: 700;
+}
+
+/* The provenance thread (ADR 0104) — thesis/claim titles only. */
+.dayq-row-title-thread {
+  display: inline-block;
+  border-bottom: 1px dotted var(--tone-official);
+}
+
+.dayq-row-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.dayq-row-action {
+  flex: none;
+}
+
+/* Quiet secondary actions (fix wave B finding 7 — Undo/Dismiss): trailing,
+   never competing with the row's one primary action for visual weight (ADR
+   0104 "no second filled element" — callers use ghost buttons/ClearButton
+   only). */
+.dayq-row-secondary-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Day-section header (F2 S3 decision 1/5): mono label + counters, or —
+   collapsed — a single summary line with a checkmark + recovery link. */
+.dayq-day-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+
+.dayq-day-header-collapsed {
+  align-items: center;
+  border-bottom: none;
+  color: var(--muted);
+}
+
+.dayq-day-check {
+  flex: none;
+  color: var(--tone-positive);
+}
+
+.dayq-day-label {
+  font-size: var(--font-sm);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dayq-day-count {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.dayq-day-expand {
+  margin-left: auto;
+}
+
+/* Delta header (F2 S3/S4 decision 1/6/8): eyebrow + delta sentence + the
+   screen's one primary CTA. */
+.dayq-delta-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) 0;
+}
+
+.dayq-delta-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  letter-spacing: 0.1em;
+  color: var(--primary);
+}
+
+.dayq-delta-headline {
+  margin: 0;
+  font-size: var(--font-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.dayq-delta-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.dayq-delta-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* F2 S4: the day-queue screen body — a single scrolling column (no counters
+   side-rail — the old stream/counters grid is retired with the v1 rows it
+   laid out). */
+.dayq-screen-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+}
+
+.dayq-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dayq-day-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dayq-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+.dayq-footer-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-sans, inherit);
+}
+
+.dayq-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.dayq-empty-headline {
+  font-size: var(--font-lg);
+  font-weight: 700;
+}
+
+.dayq-empty-detail {
+  margin: 0;
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+/* S-tier row cap recovery line (F2 S5, plan Dense row "S top-3+zwiń",
+   Compact.dc.html "+ 4 kolejne pozycje wczoraj · Otwórz dzień"). */
+.dayq-day-cap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+/* Named `pane` size container density tiers (ADR 0076 D6): the S width tier
+   (<420px, `.workspace`'s container — F2 S5). Row action drops below the
+   title full-width and the row cap kicks in above (`.dayq-day-cap`, driven
+   by `useNarrowPane`) — zero horizontal scroll at ~380px. */
 @container pane (max-width: 419px) {
-  .today-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas: "counters" "stream";
+  .dayq-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .today-counters {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .today-counter {
-    flex: 1 1 30%;
-    flex-direction: row;
-    align-items: baseline;
-    gap: var(--space-2);
+  .dayq-row-action {
+    width: 100%;
   }
 }

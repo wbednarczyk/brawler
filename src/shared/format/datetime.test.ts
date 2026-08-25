@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   companyEventDueClass,
   companyEventDueLabel,
+  formatDayRangeLabel,
   formatDetailTimestamp,
   formatListTimestamp,
   formatPollInterval,
@@ -86,6 +87,17 @@ describe("formatWeekRange — localized 'D mon – D mon' with en-dash", () => {
   });
   it("en", () => {
     expect(formatWeekRange("2026-06-30", "2026-07-04", "en")).toBe("Jun 30 – Jul 4");
+  });
+});
+
+describe("formatDayRangeLabel — Dziś v2 'Wcześniej' rollup weekday range (F2 S5)", () => {
+  it("joins two distinct weekdays with an en-dash", () => {
+    expect(formatDayRangeLabel("2026-06-29", "2026-06-30", "pl")).toBe("pon–wt");
+    expect(formatDayRangeLabel("2026-06-29", "2026-06-30", "en")).toBe("Mon–Tue");
+  });
+
+  it("collapses to a single weekday abbreviation when both ends are the same day", () => {
+    expect(formatDayRangeLabel("2026-06-30", "2026-06-30", "pl")).toBe("wt");
   });
 });
 

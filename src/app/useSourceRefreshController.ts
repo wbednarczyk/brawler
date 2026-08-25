@@ -26,7 +26,13 @@ type RefreshCallbacks = {
   refreshAttention: () => void;
 };
 
-type SourceRefreshControllerInput = RefreshCallbacks & {
+/** Fires once a source refresh (any of manual/single/event/scheduled) COMPLETES its
+ * shared post-refresh view reload — Today's `refreshCompletionCount` key (fix wave B
+ * finding 1a) increments from this, decoupled from whether attention's own data
+ * happened to change on that pass. */
+type CompletionSignal = { onRefreshCompletion?: () => void };
+
+type SourceRefreshControllerInput = RefreshCallbacks & CompletionSignal & {
   /**
    * Fired once a MANUAL all-sources refresh (`refreshSources("manual")`, from
    * the topbar control or the Sources panel) completes successfully — the
@@ -105,6 +111,7 @@ export function useSourceRefreshController({
   refreshSourceAdapters,
   refreshUnmatchedSourceItems,
   refreshAttention,
+  onRefreshCompletion,
   onManualRefreshSuccess,
   scheduledSourceAdapters,
   settings,
@@ -148,7 +155,16 @@ export function useSourceRefreshController({
       // Attention events ride every ingestion (reconciliation, fired alerts) —
       // reload the app-level state so the Today badge/stream stay current.
       Promise.resolve(refreshAttention()),
-    ]);
+    ]).then((result) => {
+      // Fires on EVERY completed refresh, independent of whether attention's
+      // own data happened to change on this pass (fix wave B finding 1a) — the
+      // old `["todayView", attention.events]` query key relied on attention's
+      // array identity changing, which `sameCollection` skips when a refresh
+      // ingests new filings/media but raises no NEW attention event, silently
+      // missing a Today refetch. A dedicated completion count can't miss one.
+      onRefreshCompletion?.();
+      return result;
+    });
   }
 
   function anySourceAdapterRefreshDue(intervalMs: number) {

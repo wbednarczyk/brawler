@@ -40,6 +40,10 @@ type AppLifecycleEffectsInput = {
   refreshDatabaseStatus: () => void;
   refreshFeedItems: () => void;
   refreshSignals: () => void;
+  /** Advance the Dziś refresh-completion signal (F2): the SCHEDULED ingest
+   * mirror below is a refresh completion too — without this bump the Today
+   * query key never moves while the app sits open (sol re-verify finding 1). */
+  onRefreshCompletion: () => void;
   /**
    * Refetch the app-level attention state (ADR 0097 dec. 6) on EVERY scheduler
    * poll tick: background work (autopilot completions, terminal job failures)
@@ -101,6 +105,7 @@ export function useAppLifecycleEffects({
   refreshDatabaseStatus,
   refreshFeedItems,
   refreshSignals,
+  onRefreshCompletion,
   refreshAttention,
   refreshGeminiCredentialStatus,
   refreshHealth,
@@ -249,6 +254,7 @@ export function useAppLifecycleEffects({
             refreshSourceAdapters();
             refreshDatabaseStatus();
             refreshCompanyRegistryEntries();
+            onRefreshCompletion();
           }
           // Every tick, not only on a source-due transition: queued background
           // work (autopilot, job failures) raises attention events on its own

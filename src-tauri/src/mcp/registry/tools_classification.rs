@@ -68,6 +68,11 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // has full parity via list_financial_facts/list_financial_periods,
         // list_company_events, list_notebook_entries, list_claims_due.
         read("get_company_context"),
+        // Today-screen composite (ADR 0106 dec. 3, F2): flat morning-queue items
+        // + claims-due + delta counts in one call. A UI round-trip optimization —
+        // agents have parity via list_feed_items/list_company_events/
+        // list_claims_due/list_autopilot_runs.
+        read("get_today_view"),
         read("list_watchlist_timeline"), // watchlist-scoped alias of list_research_evidence
         read("list_research_review_state"), // per-scope "reviewed" checkpoints (UI markers)
         read("list_evidence_links"), // internal evidence-graph edges (UI); agent reads the items directly
@@ -171,6 +176,11 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // sidebar badge (ADR 0097 dec. 5). Agents mark individual events via the
         // exposed mark_attention_event_seen.
         excluded("mark_attention_events_seen"),
+        // Same UI-session posture as mark_attention_events_seen above: the
+        // Dziś v2 "screen was rendered" visit-anchor stamp (F2 plan decision 4)
+        // carries no research content — it exists solely to drive the
+        // frontend's own delta header on the next visit.
+        excluded("mark_today_visited"),
         excluded("save_cockpit_layout"),
         excluded("set_source_adapter_enabled"),
         excluded("set_company_autopilot"),

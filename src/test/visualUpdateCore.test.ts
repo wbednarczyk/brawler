@@ -74,5 +74,15 @@ describe("visual-update-core", () => {
     const post = { "/a.png": "hash-a" };
     const diff = diffSnapshots(pre, post, ["/a.png", "/target-missing.png"]);
     expect(diff.missingTarget).toEqual(["/target-missing.png"]);
+    // A missing target is NOT also a sibling "removal" — one failure, one slot.
+    expect(diff.removed).toEqual([]);
+  });
+
+  it("diffSnapshots allows a target to (re)appear — rm-first workflow — but flags an added sibling", () => {
+    const pre = { "/sibling.png": "hash-s" };
+    const post = { "/sibling.png": "hash-s", "/target.png": "hash-t", "/stray.png": "hash-x" };
+    const diff = diffSnapshots(pre, post, ["/target.png"]);
+    expect(diff.added).toEqual(["/stray.png"]);
+    expect(diff.missingTarget).toEqual([]);
   });
 });

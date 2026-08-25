@@ -161,6 +161,7 @@ export const plText: Record<string, string> = {
   "Show all in Claims": "Pokaż wszystko w Obietnicach",
   // Autopilot — autonomous report pipeline (ADR 0055)
   "Autopilot": "Autopilot",
+  "Autopilot failed": "Autopilot nie powiódł się",
   "Autopilot mode": "Tryb autopilota",
   // Composable views — new-view creator (ADR 0057)
   "New view": "Nowy widok",
@@ -259,6 +260,8 @@ export const plText: Record<string, string> = {
   "Dismiss all alerts in this group?": "Odrzucić wszystkie alerty w tej grupie?",
   "Undo": "Cofnij",
   "Undo this run and revert its facts?": "Cofnąć ten przebieg i przywrócić jego dane?",
+  "Mark as read": "Oznacz jako przeczytane",
+  "Couldn't load attention signals.": "Nie udało się wczytać sygnałów uwagi.",
   "Reverted": "Cofnięto",
   "Open document": "Otwórz dokument",
   "From your alert rule": "Z reguły alertu",
@@ -2039,4 +2042,37 @@ export const plText: Record<string, string> = {
   "No management promises awaiting verification.": "Brak obietnic zarządu do weryfikacji.",
   "Promises are logged from reports and management statements.":
     "Obietnice spisujesz z raportów i wystąpień zarządu.",
+
+  // Dziś v2 day queue (F2 S3, rows2/) — verb dictionary EXACT to
+  // Wiersze.dc.html/Main.dc.html: one kind, one verb, one landing place.
+  "Read report": "Przeczytaj raport",
+  "Open filing": "Otwórz komunikat",
+  "Open in the Inbox": "Otwórz w Inbox",
+  "Open article": "Otwórz artykuł",
+  "Open thesis": "Otwórz tezę",
+  "Not received": "Nie wpłynął",
+  "Thesis": "Teza",
+  "Today": "Dziś",
+  "Yesterday": "Wczoraj",
+  "Open day": "Otwórz dzień",
+  "Since your last visit": "Od Twojej ostatniej wizyty",
+  "Nothing new since your last visit": "Nic nowego od Twojej ostatniej wizyty",
+
+  // Dziś v2 TodayScreen rebuild (F2 S4).
+  "Mark day reviewed": "Oznacz dzień jako przejrzany",
+  "Couldn't load your Today view.": "Nie udało się wczytać widoku Dziś.",
+  "Checking what's new since your last visit…": "Sprawdzanie, co nowego od ostatniej wizyty…",
+  "Plus": "Dodatkowo",
+  "Sources are connected and the calendar names nothing due today.":
+    "Źródła są podpięte, a kalendarz nie zapowiada dziś żadnej publikacji.",
+  "Couldn't read your last-visit anchor — the delta may be incomplete.":
+    "Nie udało się odczytać znacznika ostatniej wizyty — delta może być niepełna.",
+  "Couldn't load new filings/media.": "Nie udało się wczytać nowych komunikatów/mediów.",
+  "Couldn't load the calendar.": "Nie udało się wczytać kalendarza.",
+  "Couldn't load autopilot runs.": "Nie udało się wczytać przebiegów autopilota.",
+  "tracked": "obserwowanych",
+
+  // Dziś v2 "Wcześniej" rollup + S-tier row cap (F2 S5).
+  "Earlier": "Wcześniej",
+  "Open days": "Otwórz dni",
 };

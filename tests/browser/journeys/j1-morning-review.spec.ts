@@ -5,39 +5,54 @@ import {
   journey,
   expectNoPageOverflow,
   expectNoA11yViolations,
+  setPaneSize,
 } from "../helpers/harness";
-import { expectPrimaryActionCount, expectActionBeforeScroll } from "../helpers/interactionContracts";
+import { expectPrimaryActionCount } from "../helpers/interactionContracts";
 import {
   holdInvocation,
   primeMockScenario,
-  releaseInvocation,
   rejectInvocation,
 } from "../helpers/mockRuntime";
+import { SAMPLE_NOW } from "../../../src/test/scenarios/entities";
 
 // `recentFeedItems`/`companies` are fetched exactly once at app bootstrap (not
 // re-fetched on in-app navigation), so overlay content must be seeded BEFORE
 // boot via `primeMockScenario` (helpers/mockRuntime) — a post-`openApp` reset
 // raced and was observed flaky under worker load.
 
-// J1 — Morning review (docs/ux-journeys.md, ADR 0074/0087). Trigger: opening the
-// app at the start of the day with ~10 overnight items. The redesigned Today
-// (ADR 0087) leads with a grouped, severity-ranked stream: `urgent` rows first,
-// same-company repeats collapse into ×N groups, and >3 same-category routine rows
-// fold into one cross-company aggregate. The full review — scan the briefing,
-// open both urgent items into their workspace, review one member of a group — must
-// fit the ≤15-interaction J1 budget (experience contract §8, budgets.json ratchet).
+// J1 — Morning review, REWRITTEN for Dziś v2 (F2 S4, #422, ADR 0068 amendment
+// 2026-08-20): MorningBriefingStrip is retired from Today — the delta header
+// ("what arrived since your last visit") is the journey's entry point
+// (docs/ux-journeys.md J1). The per-day decision queue (`dayQueueModel.ts`,
+// F2 S3) replaces the severity-ranked stream; row actions name their
+// destination and land ON the item (plan decision 6, #422/3) instead of
+// "somewhere in the workspace".
 //
-// The morning-briefing read (v0.54, ADR 0068 T5) is a PASSIVE scan at the top of
-// Today — the strip renders unconditionally, so it is asserted as a screen fixture
-// (visible, above the attention stream) rather than a counted interaction.
+// `page.clock.setFixedTime(SAMPLE_NOW)` freezes the browser's `Date.now()` at
+// the mock's own anchor: `dayQueueModel`'s "Today"/"Yesterday" labels are
+// computed against the REAL wall clock (there is no test-injected clock at
+// runtime, only in its own unit tests), while `get_today_view`'s mock handler
+// (runtime.ts) anchors its "today" on the fixed `SAMPLE_NOW` constant — without
+// freezing the page clock the two would disagree and the DZIŚ/WCZORAJ pattern
+// could never render in a browser run.
 //
-// The seed is the `morning-review` overlay (src/test/scenarios/overlays.ts): 10
-// new items — 2 urgent (an insider transaction + a missed-report reconciliation),
-// a 2-member notable group (same company, repeats that collapse), and 6 routine
-// autopilot runs across distinct companies (the aggregate).
+// The seed is the `morning-review` overlay (src/test/scenarios/overlays.ts):
+// a PZU filing notice published AT `SAMPLE_NOW` ("today") and a CD Projekt
+// report published one day earlier ("yesterday"), with `todayLastVisitAt` set
+// between the two so the delta header has a non-empty sentence.
 
 test.describe("J1 — morning review", { tag: "@journey" }, () => {
-  test("urgent leads, repeats group, and the full review fits the budget", async ({ page }) => {
+  // Canonical J1 (ux-journeys.md, sol R1 finding 9): the case previously
+  // stopped at the Inbox anchor — a TRUNCATED journey, budgeted as if the
+  // morning review ended there. The real journey (contract §1 first red row,
+  // plan §12) continues: back to Today, the Claims leg ("Otwórz tezę" → the
+  // claim highlighted in its company's Claims panel, the `openCompanyClaims`
+  // seam / DockLayout `activatePanelId`, fix wave B finding 2), then closes
+  // the loop with "Oznacz dzień jako przejrzany".
+  test("delta leads, day sections render, Otwórz komunikat/tezę anchor the exact item, and the day closes", async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date(SAMPLE_NOW));
     await primeMockScenario(page, { base: "rich", overlays: ["morning-review"] });
 
     const j = journey(page, "J1");
@@ -45,100 +60,117 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await j.markScreen("Today");
 
-    // Key screen: Today is the day's landing — it must be axe-clean and not
-    // overflow before any interaction.
+    // Key screen: Today is the day's landing — axe-clean, no overflow, before
+    // any interaction.
     await expectNoA11yViolations(page, "Today (morning review)");
     await expectNoPageOverflow(page);
 
-    // Scan the morning-briefing strip at the TOP of Today, before triaging. It is
-    // the entry summary of "what changed" — asserted as a fixture (renders
-    // unconditionally as a labelled region, above the stream), never a counted
-    // interaction (ADR 0087 dec. 5 mockup amendment: the strip replaced the card).
-    const briefingStrip = page.getByRole("region", { name: "Morning briefing" });
-    const stream = page.getByLabel("Attention stream");
-    await expect(briefingStrip).toBeVisible();
-    const briefingBox = await briefingStrip.boundingBox();
-    const streamBox = await stream.boundingBox();
-    expect(briefingBox).not.toBeNull();
-    expect(streamBox).not.toBeNull();
-    expect(briefingBox!.y).toBeLessThan(streamBox!.y);
+    // The delta header leads (contract §6/§10 Entry frame): an eyebrow + a
+    // sentence naming what arrived since the last visit (Main.dc.html).
+    const deltaHeader = page.locator(".dayq-delta-header");
+    await expect(deltaHeader).toBeVisible();
+    await expect(deltaHeader).toContainText("Since your last visit");
+    // Contract §6: exactly one screen-wide primary action (the header CTA) —
+    // every row action stays quiet (plan decision 9).
+    await expectPrimaryActionCount(page.locator(".today-screen"), { max: 1 });
 
-    // (a) Urgent rows lead: the two overnight urgent alerts (insider + missed-
-    // report reconciliation) sit at the very top of the stream, above every
-    // notable/routine row. Wait for both to land first.
-    const insiderRow = stream.locator('li[data-category="attention"]').filter({ hasText: "GPW:PKN" });
-    const reconRow = stream.locator('li[data-category="attention"]').filter({ hasText: "GPW:KGH" });
-    await expect(insiderRow).toBeVisible();
-    await expect(reconRow).toBeVisible();
-    const severities = await stream.locator("li[data-category]").evaluateAll((rows) =>
-      rows.map((row) => (row as HTMLElement).dataset.severity ?? "routine"),
-    );
-    const rank = { urgent: 0, notable: 1, routine: 2 } as const;
-    const ranks = severities.map((s) => rank[s as keyof typeof rank]);
-    // Severity is monotonic non-decreasing down the stream, and the top rows are urgent.
-    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
-    expect(ranks[0]).toBe(0);
-    expect(severities.filter((s) => s === "urgent").length).toBeGreaterThanOrEqual(2);
+    // Day sections render in the DZIŚ/WCZORAJ pattern (plan decision 5): the
+    // seeded PZU filing lands "Today", the CD Projekt report "Yesterday".
+    await expect(page.getByText("Today", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Yesterday", { exact: true })).toBeVisible();
 
-    // (b) Grouped + aggregate rows render with ×N: a same-company notable group
-    // (×2) and a cross-company routine aggregate ("×N companies").
-    const groupChips = stream.locator(".today-group-chip");
-    const groupChipTexts = await groupChips.allInnerTexts();
-    // The 2-member group chip leads with "×2" (D7 appends the pluralized unit,
-    // "×2 events" in en); the cross-company aggregate chip is "×N companies".
-    expect(groupChipTexts.some((t) => t.trim().startsWith("×2"))).toBe(true);
-    expect(groupChipTexts.some((t) => /^×\d+\s+\S+/.test(t.trim()))).toBe(true);
+    // "Otwórz komunikat" on the EXACT PZU filing row lands on THAT item in the
+    // Inbox detail pane — never the silent first-row fallback (#422/3, plan
+    // decision 6). `data-dayq-row-id` carries the feed item id (RowShell).
+    const filingRow = page.locator('[data-dayq-row-id="feed_overlay_mr_filing"]');
+    await expect(filingRow).toBeVisible();
+    const openFiling = filingRow.getByRole("button", { name: "Open filing" });
+    await j.click(openFiling);
 
-    // (c) Open the first urgent item (insider transaction) into its workspace —
-    // the experience contract's single primary action per row, reachable before
-    // any scroll (ADR 0081 Q4).
-    const insiderAction = insiderRow.getByRole("button", { name: "Review" });
-    await expectPrimaryActionCount(insiderRow, { max: 1 });
-    await expectActionBeforeScroll(insiderAction, stream);
-    await j.clickPrimary(stream, insiderAction);
-    await expect(page.getByLabel("Research cockpit")).toBeVisible();
-    await j.markScreen("Company workspace");
+    await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
+    await j.markScreen("Inbox");
+    const detail = page.locator(".detail-pane");
+    await expect(detail).toContainText("Powołanie Członka Zarządu PZU SA");
+
+    // The S-overlay (`inboxDetailOpen`) is raised from OUTSIDE (the
+    // `inboxDetailActivationToken` seam, useFeedController/InboxScreen S3),
+    // never only from a row click — the flag is unconditional on viewport.
+    const detailPane = page.getByLabel("Feed item details");
+    await expect(detailPane).toHaveAttribute("data-detail-open", "true");
+
+    // At the compact (S) pane tier (ADR 0076 D6, `density-matrix.spec.ts`
+    // precedent — the named `.workspace` size container, forced regardless of
+    // the actual viewport), the raised overlay visually covers the feed row
+    // list rather than sitting side-by-side with it.
+    await setPaneSize(page, { width: 380, height: 700, pane: page.locator(".workspace").first() });
+    const [listBox, detailBox] = await Promise.all([
+      page.locator("[data-feed-row='true']").first().boundingBox(),
+      detailPane.boundingBox(),
+    ]);
+    expect(listBox).not.toBeNull();
+    expect(detailBox).not.toBeNull();
+    // The overlay's left edge reaches at least as far left as the row it
+    // covers — a side-by-side (non-overlay) layout would sit strictly to the
+    // right of the list instead.
+    expect(detailBox!.x).toBeLessThanOrEqual(listBox!.x + listBox!.width / 2);
+
     await expectNoPageOverflow(page);
 
-    // Back to Today.
+    // Back to Today — closing the Inbox leg of the loop.
     await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await j.markScreen("Today");
 
-    // Open the second urgent item (the missed-report reconciliation), then return.
-    const reconAction = reconRow.getByRole("button", { name: "Review" });
-    await expectPrimaryActionCount(reconRow, { max: 1 });
-    await expectActionBeforeScroll(reconAction, stream);
-    await j.clickPrimary(stream, reconAction);
-    await expect(page.getByLabel("Research cockpit")).toBeVisible();
-    await j.markScreen("Company workspace");
-    await expectNoPageOverflow(page);
+    // The Claims leg: `data.toVerify` is the BASE "rich" scenario's bulk
+    // claims-to-verify bucket (`claimsToVerify.due[0]`, `runtime.ts`
+    // `get_today_view`), deterministically the CD Projekt claim — no overlay
+    // seed extension needed (checked: the morning-review overlay never touches
+    // `claimsToVerify`, and the base scenario already seeds a non-empty one).
+    const claimStatement = "CD Projekt targets revenue above 1.0bn next year";
+    const claimRow = page.locator(".dayq-row").filter({ hasText: claimStatement });
+    await expect(claimRow).toBeVisible();
+    await j.click(claimRow.getByRole("button", { name: "Open thesis" }));
 
+    const cockpit = page.getByLabel("Research cockpit");
+    await expect(cockpit).toBeVisible();
+    await j.markScreen("Cockpit");
+
+    // Browser-proof of the activation seam (sol R1 finding 2/9): the Claims
+    // tab is RAISED (`aria-pressed="true"`, DockLayout `AccessibleTab`), not
+    // just landing behind the dashboard's default anchor panel.
+    const claimsTab = cockpit.getByRole("button", { name: "Claims", exact: true });
+    await expect(claimsTab).toHaveAttribute("aria-pressed", "true");
+    // ...and the claim itself is highlighted (`CompanyClaimsPanel`'s
+    // `highlightClaimId` seam) — `.first()` because the mock's
+    // `list_claims_to_verify` returns the whole bulk bucket unfiltered, so the
+    // claim can render both in the company's own claims list and the review
+    // queue, both correctly highlighted.
+    const highlightedClaim = page
+      .locator('[data-claim-id="claim_sample_cdr"].claim-row-highlighted')
+      .first();
+    await expect(highlightedClaim).toBeVisible();
+    await expect(highlightedClaim).toContainText(claimStatement);
+
+    // Back to Today, then close the day (contract §7 exit path).
     await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await j.markScreen("Today");
 
-    // Review one member of the grouped (×2) row: expand it in place, then open a
-    // member into its workspace. The group is PZU's 2 same-category notable rows.
-    const groupRow = stream.locator('li[data-category="attention"]').filter({ hasText: "GPW:PZU" });
-    await expect(groupRow).toBeVisible();
-    await j.click(groupRow.getByRole("button", { name: "Details" }));
-    const memberAction = groupRow.locator('[data-member-category="attention"]').first().getByRole("button", { name: "Review" });
-    await expect(memberAction).toBeVisible();
-    await j.clickPrimary(stream, memberAction);
-    await expect(page.getByLabel("Research cockpit")).toBeVisible();
-    await j.markScreen("Company workspace");
-    await expectNoPageOverflow(page);
+    const todaySection = page
+      .locator(".dayq-section")
+      .filter({ has: page.locator(".dayq-day-label", { hasText: /^Today$/ }) });
+    await j.click(todaySection.getByRole("button", { name: "Mark day reviewed" }));
+    await expect(todaySection.locator(".dayq-day-header-collapsed")).toBeVisible();
 
+    await expectNoPageOverflow(page);
     await j.assertBudget();
   });
 
   // J1b (F1 S5, contract §1 FIRST RED): the Inbox leg of the morning review as
-  // its OWN budgeted journey — J1's floors (7/6/1/1) were already saturated by
-  // the Today↔workspace loop, so the new leg gets a new gate instead of a
-  // loosened old one (sol round-1 finding 3, variant B). A bare ESPI/EBI filing
-  // must get the typed per-kind detail (ADR 0104/0106), never the dead
-  // "Komunikat ESPI/EBI" summary literal a bare notice used to render (F1 S1).
+  // its OWN budgeted journey — J1's floors were already saturated by the
+  // above anchoring flow, so this leg gets its own gate instead of a loosened
+  // shared one (sol round-1 finding 3, variant B). Independent of Today's own
+  // DOM/data flow — unaffected by the Dziś v2 rebuild.
   test("J1b — inbox filing review fits its own budget", async ({ page }) => {
     await primeMockScenario(page, { base: "rich", overlays: ["morning-review"] });
 
@@ -178,7 +210,8 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
   // ADR 0081 Q9: hostile/adversarial content must render legibly and stay
   // navigable — a long mixed-script title/attachment URL is real content
   // shape (GPW ESPI communiqués are not English-only, ASCII-only, or short).
-  test("hostile stream stays legible and Review reachable", async ({ page }) => {
+  test("hostile day-queue row stays legible and its action reachable", async ({ page }) => {
+    await page.clock.setFixedTime(new Date(SAMPLE_NOW));
     // The tall-narrow band (CLAUDE.md Testing Expectations) is where a long
     // unbreakable title/URL is most likely to blow out the layout.
     await page.setViewportSize({ width: 1366, height: 768 });
@@ -187,154 +220,58 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await expectNoPageOverflow(page);
 
-    // The hostile company (ZZZH) surfaces as a "what changed" row (its feed item
-    // is an "Official report" kind). Under the redesign (ADR 0087) the routine
-    // "changed" rows across the rich base collapse into a cross-company
-    // aggregate, and ZZZH — sharing the sample timestamp, so it sorts last by
-    // company id — lands as a COLLAPSED MEMBER. Expand the aggregate to reveal it
-    // (or fall back to a top-level changed row when nothing aggregated).
-    const stream = page.getByLabel("Attention stream");
-    const changedAggregate = stream
-      .locator('li[data-category="changed"]')
-      .filter({ hasText: /×\d+\s+compan/ });
-    const aggregated = (await changedAggregate.count()) > 0;
-    if (aggregated) {
-      await changedAggregate.first().getByRole("button", { name: "Details" }).first().click();
-    }
-    // The hostile row is the fixed overlay entity (ZZZH), never a brittle match on
-    // the mixed-script title — a compact aggregate member when aggregated, else a
-    // top-level changed row.
-    const hostileRow = aggregated
-      ? stream.locator('[data-member-category="changed"]').filter({ hasText: "ZZZH" })
-      : stream.locator('li[data-category="changed"]').filter({ hasText: "ZZZH" });
-    await expect(hostileRow.first()).toBeVisible();
+    // The hostile company (ZZZH) is a fixed report-kind row (F2 S4: it is not
+    // grouped/aggregated — Dziś v2 day-buckets every item individually) —
+    // matched by its fixed feed item id, never the brittle mixed-script title.
+    const hostileRow = page.locator('[data-dayq-row-id="feed_overlay_hostile_1"]');
+    await expect(hostileRow).toBeVisible();
     // The long unbreakable title/URL never blows out the layout, even in the
     // tall-narrow band.
     await expectNoPageOverflow(page);
 
-    // ADR 0081 Q4: the hostile row still carries exactly one explicit primary
-    // action (a group/aggregate member keeps its own single Review, so `j`/`k`
-    // can traverse it). The "reachable before scroll" contract applies to the
-    // aggregate's own top-level Review, not to a member the user expanded to.
-    await expectPrimaryActionCount(hostileRow.first(), { max: 1 });
-    await expect(hostileRow.first().getByRole("button", { name: "Review" })).toBeVisible();
-    await expectNoA11yViolations(page, "Today (hostile stream)");
+    // The row's action stays reachable (plan decision 9: row actions are
+    // quiet — only the header CTA carries `data-ux-primary-action`).
+    await expect(hostileRow.getByRole("button", { name: "Read report" })).toBeVisible();
+    await expectNoA11yViolations(page, "Today (hostile day queue)");
   });
 
-  // ADR 0081 Q9: a category read that fails must be explicit, never silently
-  // folded into the quiet state (docs/plans/ux-quality-loop-v2.md § J1
-  // Recovery). No scenario overlay injects a Today-category read failure —
-  // this exercises it directly via the controlled-async bridge.
-  test("a failed attention category is explicit, never false quiet", async ({ page }) => {
+  // ADR 0081 Q9: a failed Today read must be explicit, never silently folded
+  // into the quiet/empty state. Dziś v2 composes ONE read (`get_today_view`,
+  // F2 S1) instead of the four independent per-category reads the old stream
+  // held/rejected separately — the equivalent Q9 case now holds/rejects that
+  // single command. (The out-of-order/stale-response race guard the old spec
+  // proved per-category now lives in the shared `useCommandQuery` hook,
+  // already covered generically by `src/shared/state/useCommandQuery.test.ts`
+  // — F2 S4 does not duplicate that coverage here.)
+  test("a failed Today read is explicit, never false quiet, and Retry recovers it", async ({ page }) => {
     await openApp(page);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
     // `window.__brawlerMock` only exists once the app has booted, so the hold
-    // is registered after the first mount, then Today is remounted (via a
-    // navigate-away/back round trip) so the hold captures THAT mount's own
-    // `list_report_season` read (Today's "upcoming reports" category; unlike
-    // claims, it runs unconditionally — no pinned-company prerequisite).
-    // Registered TWICE: React StrictMode (dev) double-invokes mount effects,
-    // so the remount fires `list_report_season` twice — a discarded "phantom"
-    // call, then the real one the rendered component keeps.
+    // is registered after the first mount, then Today is remounted (a
+    // navigate-away/back round trip) so it captures THAT mount's own
+    // `get_today_view` read. Registered TWICE: React StrictMode (dev) double-
+    // invokes mount effects, so the remount fires it twice — a discarded
+    // "phantom" call, then the real one the rendered component keeps.
     const nav = page.getByLabel(/Primary navigation/);
     await nav.getByRole("button", { name: "Inbox" }).click();
     await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-    const phantomSeasonId = await holdInvocation(page, { command: "list_report_season", phase: "before-handler" });
-    const seasonReadId = await holdInvocation(page, { command: "list_report_season", phase: "before-handler" });
+    const phantomId = await holdInvocation(page, { command: "get_today_view", phase: "before-handler" });
+    const readId = await holdInvocation(page, { command: "get_today_view", phase: "before-handler" });
     await nav.getByRole("button", { name: "Today" }).click();
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-    const seasonFailure = {
+    const failure = {
       code: "internal" as const,
-      message: "Sample report-season fetch failure (Q9 controlled-async case)",
+      message: "Sample today-view fetch failure (Q9 controlled-async case)",
     };
-    // `useReportSeason`'s mount effect has no cancelled-guard, so whichever of
-    // the two calls settles LAST is what the UI reflects — reject both so the
-    // failure lands regardless of StrictMode's internal ordering.
-    await rejectInvocation(page, phantomSeasonId, seasonFailure);
-    await rejectInvocation(page, seasonReadId, seasonFailure);
+    await rejectInvocation(page, phantomId, failure);
+    await rejectInvocation(page, readId, failure);
 
-    // The other categories (autopilot, changed) still have content, so the
-    // stream is genuinely non-empty — the quiet state must not appear.
-    const autopilotRows = page.locator('li[data-category="autopilot"]');
-    const changedRows = page.locator('li[data-category="changed"]');
-    await expect(autopilotRows).not.toHaveCount(0);
-    await expect(changedRows).not.toHaveCount(0);
-    await expect(page.locator(".today-stream-quiet")).toHaveCount(0);
-
-    // The failed "Upcoming reports" read is EXPLICIT (ADR 0081 Q9 fix): Today
-    // renders a typed, translated failed-category error strip — NEVER the raw
-    // backend `.message` (ADR 0087 consequence: raw error strings on Today are
-    // replaced by translated copy) — and the false-quiet state is suppressed
-    // while any category errored, so a failure can never masquerade as "nothing
-    // needs attention".
-    await expect(page.getByText("Couldn't load upcoming reports.")).toBeVisible();
-    await expect(page.getByText(seasonFailure.message)).toHaveCount(0);
-    await expect(page.locator(".today-stream-quiet")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-    await expectNoPageOverflow(page);
-  });
-
-  // ADR 0081 Q9: proves the mount/unmount request-cancellation guard on
-  // Today's autopilot read — Today has no in-place refresh, so the only way
-  // to produce two overlapping `list_autopilot_runs` reads is across a
-  // navigate-away/navigate-back remount. A reply belonging to an orphaned
-  // (unmounted) Today instance, released AFTER the current instance's own
-  // read, must never resurrect stale content into the current instance.
-  test("an out-of-order attention read cannot restore stale content", async ({ page }) => {
-    await openApp(page);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-
-    const nav = page.getByLabel(/Primary navigation/);
-    await nav.getByRole("button", { name: "Inbox" }).click();
-    await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-
-    const autopilotRows = page.locator('li[data-category="autopilot"]');
-
-    // Registered before the remount so it captures THAT instance's read.
-    // Registered TWICE: React StrictMode (dev) double-invokes mount effects,
-    // so each remount fires `list_autopilot_runs` twice — a discarded
-    // "phantom" call (its own instance is cancelled almost immediately by
-    // React's effect-cleanup), then the real one the rendered component
-    // keeps. Only the real one is the "OLDER" read under test.
-    const olderPhantomId = await holdInvocation(page, { command: "list_autopilot_runs", phase: "after-handler" });
-    const olderId = await holdInvocation(page, { command: "list_autopilot_runs", phase: "after-handler" });
-    await nav.getByRole("button", { name: "Today" }).click();
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-    // Held: this fresh instance's own autopilot rows have not arrived yet
-    // (the "changed" category already has synchronously-available content,
-    // so the screen is not in its global quiet/loading state — only the
-    // autopilot category itself is still empty).
-    await expect(autopilotRows).toHaveCount(0);
-    // The phantom's own instance is already orphaned — releasing it must not
-    // surface anything either.
-    await releaseInvocation(page, olderPhantomId);
-    await expect(autopilotRows).toHaveCount(0);
-
-    // Navigate away again BEFORE releasing — this Today instance (and its
-    // pending read) is now orphaned; React's own effect-cleanup `cancelled`
-    // flag is the guard under test.
-    await nav.getByRole("button", { name: "Inbox" }).click();
-    await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-
-    const newerPhantomId = await holdInvocation(page, { command: "list_autopilot_runs", phase: "after-handler" });
-    const newerId = await holdInvocation(page, { command: "list_autopilot_runs", phase: "after-handler" });
-    await nav.getByRole("button", { name: "Today" }).click();
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-    await expect(autopilotRows).toHaveCount(0);
-    await releaseInvocation(page, newerPhantomId);
-    await expect(autopilotRows).toHaveCount(0);
-
-    // Release the NEWER (current instance's own) read first.
-    await releaseInvocation(page, newerId);
-    await expect(autopilotRows.first()).toBeVisible();
-    const settledCount = await autopilotRows.count();
-
-    // Then the OLDER, orphaned read — it must not overwrite the current
-    // instance's already-settled stream.
-    await releaseInvocation(page, olderId);
-    await expect(autopilotRows).toHaveCount(settledCount);
+    // A typed, translated error — NEVER the raw backend `.message` — with a
+    // scoped Retry (state matrix "Error" row).
+    await expect(page.getByText("Couldn't load your Today view.")).toBeVisible();
+    await expect(page.getByText(failure.message)).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await expectNoPageOverflow(page);
   });

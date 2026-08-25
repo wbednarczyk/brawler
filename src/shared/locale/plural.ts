@@ -69,6 +69,31 @@ export const DOCUMENT_FORMS: PluralForms = {
   pl: ["dokument", "dokumenty", "dokumentów"],
 };
 
+// Dziś v2 delta header (F2 S3): "N raportów, M komunikatów" since the last visit.
+export const REPORT_FORMS: PluralForms = {
+  en: ["report", "reports"],
+  pl: ["raport", "raporty", "raportów"],
+};
+
+export const FILING_FORMS: PluralForms = {
+  en: ["filing", "filings"],
+  pl: ["komunikat", "komunikaty", "komunikatów"],
+};
+
+// Dziś v2 delta header secondary note (F2 S4): "Plus N media items".
+export const MEDIA_ITEM_FORMS: PluralForms = {
+  en: ["media item", "media items"],
+  pl: ["pozycja medialna", "pozycje medialne", "pozycji medialnych"],
+};
+
+// Dziś v2 day-section header (F2 S3): "N pozycji · M nieprzejrzane" — an
+// adjective form (agrees like a noun-count suffix), not a noun, but the same
+// three-category Polish plural machinery applies.
+export const UNSEEN_FORMS: PluralForms = {
+  en: ["unread", "unread"],
+  pl: ["nieprzejrzana", "nieprzejrzane", "nieprzejrzanych"],
+};
+
 // Statement-switcher completeness bar (epic #398): "N czeka na nazwanie" — the
 // verb, not just the noun, needs Polish agreement (singular "czeka" for
 // one/many-genitive, plural "czekają" for the few category), mirroring the

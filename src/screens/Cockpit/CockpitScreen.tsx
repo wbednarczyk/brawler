@@ -383,6 +383,8 @@ export type CockpitScreenProps = {
   /** Notifies the host when saved layouts change (create/save/delete) so the
    * sidebar named-views list (ADR 0057 decision 5) stays in sync. */
   onLayoutsChanged?: () => void;
+  /** Highlights + scrolls to this claim in the curated dashboard's pinned Claims panel (Today's `openCompanyClaims` nav seam, F2 S4). */
+  highlightClaimId?: string | null;
 };
 
 export function CockpitScreen({
@@ -391,7 +393,7 @@ export function CockpitScreen({
   initialCompanyId = null,
   initialLayoutId = null,
   initialPresetId = null,
-  onLayoutsChanged,
+  onLayoutsChanged, highlightClaimId = null,
 }: CockpitScreenProps) {
   return (
     <CockpitSelectionProvider
@@ -404,7 +406,7 @@ export function CockpitScreen({
         feedItems={feedItems}
         initialLayoutId={initialLayoutId}
         initialPresetId={initialPresetId}
-        dashboardCompanyId={initialCompanyId}
+        dashboardCompanyId={initialCompanyId} highlightClaimId={highlightClaimId}
         onLayoutsChanged={onLayoutsChanged}
       />
     </CockpitSelectionProvider>
@@ -416,7 +418,7 @@ function CockpitWorkspace({
   feedItems,
   initialLayoutId = null,
   initialPresetId = null,
-  dashboardCompanyId = null,
+  dashboardCompanyId = null, highlightClaimId = null,
   onLayoutsChanged,
 }: Omit<CockpitScreenProps, "initialCompanyId"> & { dashboardCompanyId?: string | null }) {
   const { text } = useLocale();
@@ -502,6 +504,14 @@ function CockpitWorkspace({
     dockRef.current?.restore(pendingGeometry as never);
     setPendingGeometry(null);
   }, [pendingGeometry]);
+
+  // Raise the Claims tab whenever `highlightClaimId` is set (Today's seam, fix
+  // wave B finding 2 / sol R1 finding 9): passed to `DockLayout` as a PROP,
+  // not fired as a one-shot imperative call — `DockLayout` re-applies it on
+  // every `onReady`, which is the only way this survives a dock rebuild that
+  // discards the instance a one-shot call had already won against (see its
+  // doc comment).
+  const claimsPanelId = highlightClaimId ? (pinned.find((panel) => panel.kind === "claims")?.id ?? null) : null;
 
   // Activate the requested saved layout once it has loaded (ADR 0057): a view
   // created via the "+" opens with that layout. Applied once per id.
@@ -649,7 +659,7 @@ function CockpitWorkspace({
       case "reportDiff":
         return <ReportDiffPanel companyId={companyId} />;
       case "claims":
-        return <CompanyClaimsPanel companyId={companyId} />;
+        return <CompanyClaimsPanel companyId={companyId} highlightClaimId={companyId === dashboardCompanyId ? highlightClaimId : null} />;
       case "quality":
         return <QualityPanel companyId={companyId} />;
       case "documents":
@@ -1158,6 +1168,7 @@ function CockpitWorkspace({
           storageKey={COCKPIT_LAYOUT_STORAGE_KEY}
           resetNonce={resetNonce}
           onClosePanel={handleClose}
+          activatePanelId={claimsPanelId}
         />
       )}
 

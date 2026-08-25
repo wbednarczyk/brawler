@@ -6,6 +6,12 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // The suite's timezone is pinned to Europe/Warsaw in the package.json
+    // vitest scripts (spawn-time env — the only reliable point: ICU fixes the
+    // zone per process, so setting TZ from config/setup files is a no-op in
+    // workers). Local-day behavior (Dziś v2 bucketing, #422) is untestable
+    // under UTC — a UTC runner can never observe a local-midnight split. Run
+    // vitest via `npm test`, not bare `npx vitest`, or the machine TZ leaks in.
     setupFiles: ["./src/test/setup.ts"],
     // Discover Vitest specs under src only — the Playwright browser specs live in
     // tests/browser/*.spec.ts and must not be collected here (a bare `vitest run`
