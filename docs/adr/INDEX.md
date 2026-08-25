@@ -57,7 +57,7 @@
 - [0054](0054-mode-based-thesis-centric-shell.md) — Mode-Based, Thesis-Centric Application Shell — Accepted (2026-06-23)
 - [0055](0055-autonomous-report-pipeline-trust-ladder.md) — Autonomous Report Pipeline — Trust Ladder, Orchestration, and Run Record — Accepted (2026-06-24)
 - [0056](0056-per-company-settings-surface.md) — Per-Company Settings Surface (Master-Detail, Scalable) — Accepted (2026-06-25)
-- [0057](0057-composable-views-and-curated-dashboard.md) — Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard — Accepted (2026-06-25)
+- [0057](0057-composable-views-and-curated-dashboard.md) — Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard — Accepted (2026-06-25); **amended 2026-08-25 by
 - [0058](0058-investor-week-calendar.md) — Investor Week Calendar — Event Layers, Whole-Market Scope, Macro & Holiday Domains — Accepted (2026-06-30)
 - [0059](0059-worker-pools-and-queue-fairness.md) — Worker Pools, Per-Source Serialization, Per-Provider Concurrency, Chunked Refresh, Dead-Letter — Accepted (2026-07-01)
 - [0060](0060-ai-capability-routing-and-openai-compatible-provider.md) — Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider — Superseded (2026-07-20) by ADR 0084
@@ -106,3 +106,4 @@
 - [0104](0104-frontend-v2-design-language.md) — Frontend V2 Design Language — Accepted (2026-08-19, owner approval of styleguide round 1; epic #410/F0 #411)
 - [0105](0105-headless-primitives-posture-radix.md) — Headless Primitives Posture — Radix, Narrowly, Inside `src/ui` Only — Accepted (2026-08-19, owner verdict after the plain-language review
 - [0106](0106-screen-data-layer-posture.md) — Screen Data Layer — Thin Self-Fetch Hooks + Composed Read Models, No Query-Cache Library — Accepted (2026-08-20, owner verdict on the F1-pre study #415; gates F1 implement
+- [0107](0107-company-view-paradigm.md) — Company View Paradigm — Engine-Free Main Surface — Accepted (2026-08-25, owner approval of the F3a experience contract after

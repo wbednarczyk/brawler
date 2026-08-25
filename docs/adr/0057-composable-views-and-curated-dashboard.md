@@ -1,6 +1,11 @@
 # ADR 0057: Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard
 
-Status: Accepted (2026-06-25)
+Status: Accepted (2026-06-25); **amended 2026-08-25 by
+[ADR 0107](0107-company-view-paradigm.md)** — the curated per-company dashboard
+path is replaced by the engine-free `Spółka` screen; freeform layout structure
+(view creation, panel add/close/drag, preset application) is frozen until the
+#414 engine decision, with existing named views and `dashboard:*` rows kept
+reachable read-only. Decisions below describe the frozen surface.
 
 Amends [ADR 0053](0053-dockview-layout-pilot.md) (dockview scope) and [ADR 0054](0054-mode-based-thesis-centric-shell.md) (the sectioned tabbed Company workspace). Relates to [ADR 0056](0056-per-company-settings-surface.md) (Companies → library + management) and the `cockpit_layouts` persistence shipped with ADR 0053.
 

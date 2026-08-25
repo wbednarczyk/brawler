@@ -90,6 +90,21 @@ Company entry should support lookup/enrichment. After the user selects an exchan
 
 Local test samples for GPW metadata are allowed only in tests and development research, not as target runtime seed data. V1 includes a local GPW company registry cache for all companies exposed by the public GPW company list so company creation, autocomplete, and source matching are not driven by manual entry long term. The registry is stored locally, refreshed manually and by a slow in-app stale-cache scheduler, and may auto-refresh from company lookup when the runtime cache is empty. The Companies form shows cached registry suggestions while the user enters ticker, company name, or ISIN, the tracked company list is searchable, and the Sources registry list remains searchable for diagnostics and bulk inspection. The registry is used for ticker-first matching with ISIN fallback. Company names remain useful for display and suggestions, but should not silently match feed items by themselves.
 
+## Company View — Spółka (planned)
+
+Status: planned (vNEXT, ADR 0107; F3a #429). The per-company surface becomes
+one engine-free screen: a glance bar (identity + attention counters with
+defined drill targets), a co-visible core (annual KPI table with provenance
+tickets, company feed, daily-candle log-axis price chart, report coverage,
+latest recommendations), and a bottom workshop bar opening full tools (claims,
+notebook, decision journal, quality, report diff, research, ownership,
+signals, documents, events, fundamentals, coverage, recommendations, full
+feed) into the core zone — each one click, with a dirty guard on every tool
+unmount. Freeform view composition is frozen until the #414 engine decision;
+existing named views and legacy per-company dashboards stay reachable
+read-only. Contract + state matrix: `docs/plans/frontend-v2-f3a.md`
+(owner-approved 2026-08-25).
+
 ## Company Notebooks
 
 Each company has a notebook tied to its canonical company identity. Notes should support manual entry and creation from feed items, reports, and transcripts.

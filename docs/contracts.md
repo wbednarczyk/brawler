@@ -1146,6 +1146,43 @@ Day bucketing, day counters and the `allSeen` collapse decision are **frontend c
 
 MCP registry: `get_today_view` is `read`-tier but not exposed as an agent tool (round-trip optimization; agents have parity via `list_feed_items`/`list_company_events`/`list_claims_due`/`list_autopilot_runs`); `mark_today_visited` is `excluded` (UI-session state, same posture as `mark_attention_events_seen`).
 
+## Company View (Spółka)
+
+Status: planned (vNEXT, ADR 0107)
+
+`get_company_view(companyId)` returns `CompanyView` — everything the `Spółka`
+screen's glance bar and core render, composed in ONE read (ADR 0106 decision 3;
+F3a #429). Computed; async / `spawn_blocking`. Top-level error ONLY for an
+unknown company or a failed read establishment; every section otherwise
+degrades independently via `sectionErrors`.
+
+- `counters` — `signals: { unacked, byCategory }` (unacknowledged company
+  signals, full history, per-category breakdown) · `claims: { open,
+  nearestDue }` (`pending`/`partially_delivered` claims + nearest settlement
+  period) · `shorts: { activeSumPct, largestHolder }` (sum of ACTIVE registry
+  positions' percents — positions without a closing entry; percent tie →
+  alphabetically first holder) · `events: { upcoming }` (`scheduled`,
+  `event_date` in the CLOSED interval [today, today+30d], today = backend UTC
+  clock date).
+- `kpi` — FY rows (revenue / operating profit / net profit) for the last 4
+  fiscal years + yoy deltas, each figure carrying its source-document identity
+  (navigable ticket, ADR 0104 decision 7).
+- `feed` — newest 6 items (`published_at` DESC, tie-breaker `id` DESC) with
+  source tone; the full feed lives behind the `{t:"feed"}` workshop tool.
+- `price` — daily OHLC candles: the last 66 sessions present in the data
+  (sliced from the `compute_price_context` series); `last`, `delta1M` (close
+  vs close 21 sessions back), `deltaYtd` (vs the last session of the prior
+  calendar year; missing → undefined, never 0), `asOf` (last session date).
+  Rendered on a LOG axis (house standard, ADR 0107 decision 4).
+- `coverage` — per-period read status (reuses the coverage read model).
+- `recommendations` — 3 latest (full history behind `{t:"rekomendacje"}`).
+- `sectionErrors: { counters?, kpi?, feed?, price?, coverage?,
+  recommendations? }` — closed enum (`"unavailable"`), the F2 pattern.
+
+MCP registry: `read`-tier, not exposed as an agent tool (round-trip
+optimization; agents have parity via the underlying list/read commands — the
+same posture as the company-context and today-view composed reads).
+
 ## Company Signal
 
 Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).

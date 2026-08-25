@@ -36,10 +36,13 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 
 ## J4 — Report-season preparation
 
+Status: planned redefinition (vNEXT, ADR 0107) — the freeform view-creation leg
+is frozen; the journey enters through the Report Season screen directly.
+
 - **Trigger:** upcoming report dates across the watchlist.
-- **Steps:** Report-season cockpit → per-company pre-report card (open questions, unresolved claims, last KPIs, evidence) → write expectations (stance + optional metric expectations) → mark prepared.
-- **Screens:** Report season, Company workspace.
-- **Budget:** ≤13 interactions per company (re-baselined 10→13 in v0.52 when the expectations step shipped — 6 of the prior interactions are cockpit-panel-opening overhead; the expectations step is new recorded value, not a regression).
+- **Steps (planned):** `Otwórz ekran: Report Season` → per-company pre-report card (open questions, unresolved claims, last KPIs, evidence) → write expectations (stance + optional metric expectations) → mark prepared.
+- **Screens (planned):** Report Season, Spółka.
+- **Budget:** floor re-based at the redesigned journey's first honest measurement +1 (set with the S4 implementation, annotated in budgets.json; the old ≤13 measured a flow whose 3 modal opens were view-creation overhead that no longer exists).
 - **Done well:** every near-report company has a reviewed card and recorded expectations before results land.
 
 ## J5 — Claim verification
@@ -53,7 +56,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J6 — Buy / pass decision (full from v0.52, enriched through v0.64)
 
 - **Trigger:** research maturity or a price condition (v0.54 alert: price enters my range).
-- **Steps:** Company workspace synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review).
+- **Steps:** Company synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review). *Planned redefinition (vNEXT, ADR 0107):* the journal is reached as `Spółka → Otwórz dziennik decyzji` (the old Add-panel path is frozen); budget floor re-based at first measurement +1 with S4.
 - **Relative position:** the Compare screen and its `J6-compare` sub-flow were removed 2026-08-10 (#351, ADR 0089 amendment — unused in real practice); peer context lives in the Fundamentals periods × deltas table and, for agents, the MCP comparison/valuation reads.
 - **Screens:** Company workspace, decision journal.
 - **Budget:** ≤15 interactions for the recording flow (the thinking is not budgeted).
@@ -61,10 +64,13 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 
 ## J7 — Weekly review
 
+Status: planned redefinition (vNEXT, ADR 0107) — the view-creation leg is
+frozen; all four task legs stay, entered through their screens.
+
 - **Trigger:** weekend / recurring ritual.
-- **Steps:** week calendar (what's coming) → watchlist overview (v0.63: heatmap + leaderboard) → research gaps (v0.63 detector) → plan the week.
-- **Screens:** Events/Calendar, (v0.63: watchlist command center).
-- **Budget:** ≤20 interactions.
+- **Steps (planned):** `Otwórz ekran: Events` (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: heatmap + leaderboard) → Research (review queue + gaps) → Spółka (deepening) → plan the week.
+- **Screens (planned):** Events/Calendar, Watchlists, Research, Spółka.
+- **Budget:** floor re-based at the redesigned journey's first honest measurement +1 (set with S4).
 - **Done well:** next week's dates are known; the backlog of research debts is explicit, not vague guilt.
 
 ## Journey-independent utilities
