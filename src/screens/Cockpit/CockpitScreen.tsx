@@ -911,15 +911,14 @@ function CockpitWorkspace({
   }
 
   // Toggle a company-scoped panel between following the view company and pinning a
-  // frozen company (U-Ra / D5). The panel's id changes, so the stale panel is
-  // removed from dockview (geometry loss for that one panel is acceptable) and the
-  // add-only reconciler re-adds the new id — the rest of the layout is untouched.
+  // frozen company (U-Ra / D5). A pure state change: the panel's id swaps in
+  // `pinned` and the DockLayout reconciler removes/adds the dockview panels to
+  // match (#348); geometry loss for that one panel is acceptable.
   function togglePanelMode(panel: Pinned) {
     if (panel.mode === "follow") {
       // follow → pinned: freeze the current view company onto this panel.
       if (!viewCompanyId) return;
       const nextId = pinnedId(viewCompanyId, panel.kind);
-      dockRef.current?.removePanel(panel.id);
       setPinned((current) => {
         // If a pinned panel for this (kind, company) already exists, just drop the
         // follow panel rather than create a duplicate id.
@@ -937,7 +936,6 @@ function CockpitWorkspace({
       // disabled) when a follow panel of this kind already exists.
       const nextId = followId(panel.kind);
       if (pinned.some((other) => other.id === nextId)) return;
-      dockRef.current?.removePanel(panel.id);
       setPinned((current) =>
         current.map((other) =>
           other.id === panel.id ? { id: nextId, kind: panel.kind, mode: "follow" } : other,

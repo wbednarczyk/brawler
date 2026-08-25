@@ -108,7 +108,10 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
     };
   }, [api]);
   return (
-    <span className="cockpit-tab">
+    // data-panel-id lets the reconciler verify DOM against dockview's model with
+    // an independent witness (#348) — dockview's own registry cannot be trusted
+    // to report its ghosts.
+    <span className="cockpit-tab" data-panel-id={api.id}>
       <button
         type="button"
         className="cockpit-tab-activate"
@@ -320,10 +323,6 @@ type DockLayoutProps = {
 export type DockLayoutHandle = {
   capture: () => SerializedDockview | null;
   restore: (layout: SerializedDockview) => void;
-  /** Remove a single panel by id without notifying onClosePanel (the owner has
-   *  already updated its state) — used when a pin toggle changes a panel's id and
-   *  the add-only reconciler needs the stale panel dropped (U-Ra, D5). */
-  removePanel: (id: string) => void;
 };
 
 export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function DockLayout(
@@ -335,6 +334,15 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
     panels.filter((panel) => panel.pin).map((panel) => [panel.id, panel.pin as DockPanelPin]),
   );
   const apiRef = useRef<DockviewApi | null>(null);
+  // Corruption recovery (#348): bumping remounts <DockviewReact> (via `key`) so a
+  // dock whose internal model diverged from its DOM is rebuilt from scratch off
+  // the specs — the one recovery that does not consult the corrupted model.
+  const [dockNonce, setDockNonce] = useState(0);
+  // Bumped after every reconcile pass so the NEXT pass (portals committed) runs
+  // the DOM-vs-model postcondition; pendingVerifyRef marks that armed pass.
+  const [verifyNonce, setVerifyNonce] = useState(0);
+  const pendingVerifyRef = useRef(false);
+  const divergenceRemountsRef = useRef(0);
   const activatePanelIdRef = useRef(activatePanelId);
   activatePanelIdRef.current = activatePanelId;
   const panelsRef = useRef(panels);
@@ -518,6 +526,9 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
     const api = apiRef.current;
     if (api) {
       clearLayout(storageKey);
+      // The rebuild replaces the tab DOM under any armed verification — disarm it
+      // so the check does not run against pre-rebuild portals (sol R3 low).
+      pendingVerifyRef.current = false;
       rebuildingRef.current = true;
       try {
         buildDefault(api);
@@ -537,17 +548,56 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
     // eslint-disable-next-line react-hooks/exhaustive-deps -- buildDefault reads refs
   }, [resetNonce, storageKey]);
 
-  // Reconcile dockview with the spec list — ADD-ONLY. Removals are driven by the
-  // owner (via onClosePanel) so a user close is never re-added.
+  // Reconcile dockview with the spec list — the specs are the single source of
+  // truth for WHICH panels exist (issue #348). Stale panels (in dockview but no
+  // longer in the specs — e.g. a pin toggle swapped the panel's id) are removed
+  // first, guarded so onClosePanel is not re-driven: a dockview-initiated close
+  // updated the owner's state before the spec list changed. Removal used to be
+  // an imperative side-channel (`DockLayoutHandle.removePanel`) whose silent
+  // failure modes (swallowed dockview throw, getPanel miss, dockview's own
+  // wrong-tab splice on an id miss) left a ghost tab no later render could ever
+  // clean up — the #348 flake. Two recovery rules, both ending in a REMOUNT
+  // (never in more calls into the corrupted model):
+  // 1. dockview refuses a removal → remount;
+  // 2. after every reconcile pass, the next (portal-committed) pass compares the
+  //    DOM's `data-panel-id` set against `api.panels` — an independent witness
+  //    dockview cannot corrupt — and a mismatch remounts (once per episode; a
+  //    divergence that survives a fresh instance is surfaced, not looped on).
   useEffect(() => {
     const api = apiRef.current;
     if (!api) return;
+    const remount = () => {
+      apiRef.current = null;
+      // A remount invalidates any armed check — its DOM is about to be replaced.
+      pendingVerifyRef.current = false;
+      setDockNonce((nonce) => nonce + 1);
+    };
+    const specIds = new Set(panels.map((spec) => spec.id));
+    const stale = api.panels.filter((panel) => !specIds.has(panel.id));
+    let mutated = false;
+    if (stale.length > 0) {
+      rebuildingRef.current = true;
+      try {
+        for (const panel of stale) {
+          try {
+            api.removePanel(panel);
+            mutated = true;
+          } catch {
+            remount();
+            return;
+          }
+        }
+      } finally {
+        rebuildingRef.current = false;
+      }
+    }
     const liveIds = new Set(api.panels.map((p) => p.id));
     let prevId = api.panels[api.panels.length - 1]?.id;
     for (const spec of panels) {
       if (!liveIds.has(spec.id)) {
         addPanelDefault(api, spec, prevId);
         prevId = spec.id;
+        mutated = true;
       } else {
         // Keep the tab title current when a company-scoped panel's selection
         // changes (e.g. "Claims · GPW:CDR" → "Claims · GPW:DNP"). The panel is
@@ -558,7 +608,46 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
         }
       }
     }
-  }, [panels]);
+    if (mutated || !pendingVerifyRef.current) {
+      // Arm exactly one verification pass after EVERY reconcile pass — including
+      // no-op passes, because corruption can predate a pass that has nothing to
+      // reconcile (a dockview-initiated close, a duplicate-drop pin — sol R2).
+      // Tab contents (and their data-panel-id) mount with the portal commit that
+      // follows this pass, so the check must never share a pass with a mutation.
+      // Converges: the armed pass below disarms without re-arming.
+      pendingVerifyRef.current = true;
+      setVerifyNonce((nonce) => nonce + 1);
+      return;
+    }
+    pendingVerifyRef.current = false;
+    const domIdList = Array.from(
+      containerRef.current?.querySelectorAll("[data-panel-id]") ?? [],
+    ).map((element) => element.getAttribute("data-panel-id") ?? "");
+    const domIds = new Set(domIdList);
+    const modelIds = new Set(api.panels.map((p) => p.id));
+    // True two-way set equality: DOM duplicates are divergence too — a
+    // duplicated tab plus a missing one keeps raw lengths equal (sol R2).
+    const converged =
+      domIdList.length === domIds.size &&
+      domIds.size === modelIds.size &&
+      [...modelIds].every((id) => domIds.has(id));
+    if (converged) {
+      divergenceRemountsRef.current = 0;
+      return;
+    }
+    if (divergenceRemountsRef.current >= 1) {
+      console.error(
+        "cockpit dock: DOM/model divergence persists after a remount — leaving the dock as-is (#348)",
+      );
+      return;
+    }
+    divergenceRemountsRef.current += 1;
+    remount();
+    // dockNonce is a dependency so the FRESH instance verifies itself: the pass
+    // after a remount arms, the next one checks, and a converged check resets
+    // the one-remount budget — without it recovery stays permanently spent
+    // after the first episode (sol R2 HIGH).
+  }, [panels, verifyNonce, dockNonce]);
 
   // Named-layout save/restore: the geometry lives in dockview, not React state.
   useImperativeHandle(ref, () => ({
@@ -581,22 +670,6 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
         rebuildingRef.current = false;
       }
     },
-    removePanel: (id) => {
-      const api = apiRef.current;
-      if (!api) return;
-      const panel = api.getPanel(id);
-      if (!panel) return;
-      // Guard the remove so onDidRemovePanel does not re-drive onClosePanel — the
-      // owner is intentionally swapping this panel's id, not user-closing it.
-      rebuildingRef.current = true;
-      try {
-        api.removePanel(panel);
-      } catch {
-        /* panel already gone — nothing to remove */
-      } finally {
-        rebuildingRef.current = false;
-      }
-    },
   }));
 
   return (
@@ -604,6 +677,7 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
       <PanelPinContext.Provider value={pins}>
         <div ref={containerRef} className="cockpit-dock dockview-theme-brawler">
           <DockviewReact
+            key={dockNonce}
             components={DOCK_COMPONENTS}
             tabComponents={TAB_COMPONENTS}
             defaultTabComponent={AccessibleTab}
