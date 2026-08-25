@@ -427,6 +427,17 @@ describe("isReportDelaySignal / suppressCapturedNonArrivals (fix wave B finding 
     expect(suppressCapturedNonArrivals([captured], [oldFlag], rulesById)).toEqual([]);
   });
 
+  it("the firedAt→day comparison is UTC, never local (sol R4): a 23:30Z firing must not roll into the next local day", () => {
+    // Warsaw (UTC+2 in August) would read 2026-08-20T23:30Z as Aug 21 local —
+    // which would wrongly suppress the Aug 21 UTC-dated event below.
+    const nextDayEvent = nonArrival({ companyId: "company_3", eventDate: "2026-08-21" });
+    const lateFlag: AttentionEvent = {
+      ...makeAttentionEvent("attn_rd_late", reportDelayRule.id, "company_3"),
+      firedAt: "2026-08-20T23:30:00Z",
+    };
+    expect(suppressCapturedNonArrivals([nextDayEvent], [lateFlag], rulesById)).toEqual([nextDayEvent]);
+  });
+
   it("a DISMISSED report_delay event (Archive) no longer suppresses the row", () => {
     const missed = nonArrival({ companyId: "company_3" });
     const dismissed: AttentionEvent = {

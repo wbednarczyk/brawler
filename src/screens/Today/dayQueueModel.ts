@@ -335,7 +335,11 @@ export function suppressCapturedNonArrivals(
   const latestFiredDayByCompany = new Map<string, string>();
   for (const event of attentionEvents) {
     if (event.dismissed || !isReportDelaySignal(event, rulesById) || !event.companyId) continue;
-    const firedDay = localDayKey(event.firedAt);
+    // UTC day, not local (sol R4): `eventDate` is a UTC bare date (plan
+    // decision 2's detection boundary), so the comparison day must be UTC too
+    // — a 23:30Z firing must not roll into the next local day and swallow a
+    // later UTC-date event.
+    const firedDay = event.firedAt.slice(0, 10);
     const previous = latestFiredDayByCompany.get(event.companyId);
     if (!previous || firedDay > previous) latestFiredDayByCompany.set(event.companyId, firedDay);
   }
