@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.73.0 - 2026-08-25
+
+
+### Features
+
+- **today**: Dziś v2 — per-day decision queue with last-visit delta (F2 #422) (#426)
+
 ## v0.72.1 - 2026-08-20
 
 
