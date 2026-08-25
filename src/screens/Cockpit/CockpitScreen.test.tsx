@@ -9,6 +9,7 @@ import {
   waitFor,
   within,
 } from "../../test/appWorkflowHarness";
+import { DockviewComponent } from "dockview";
 import { parsePanels } from "./CockpitScreen";
 
 describe("Research cockpit shell", () => {
@@ -404,6 +405,87 @@ describe("Research cockpit — view company context (U-Ra)", () => {
         name: "Open company feed item: Transcript-derived note candidate waits for future provider work",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("recovers when dockview refuses a panel removal — the dock remounts from the specs (#348)", async () => {
+    const user = userEvent.setup();
+    const cockpit = await openCdrDashboard(user);
+    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
+      ".cockpit-tab",
+    ) as HTMLElement;
+    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
+    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
+
+    // Poison the reconciler's next removal with dockview's real corrupted-model
+    // throw (#348): the recovery path must remount the dock from the specs
+    // instead of leaving the ghost tab behind.
+    const spy = vi
+      .spyOn(DockviewComponent.prototype, "removePanel")
+      .mockImplementationOnce(() => {
+        throw new Error("invalid operation");
+      });
+    try {
+      await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
+      expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
+      });
+      // The recovery really ran: the poisoned removal was hit, not bypassed.
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("removes a DOM ghost tab the dock's own model no longer knows about (#348)", async () => {
+    const user = userEvent.setup();
+    const cockpit = await openCdrDashboard(user);
+    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
+      ".cockpit-tab",
+    ) as HTMLElement;
+    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
+    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
+
+    // Fabricate the #348 end state dockview cannot report: a tab attached in the
+    // DOM while absent from the dock's model (its wrong-tab splice / getPanel
+    // miss leave exactly this behind).
+    function injectGhost(name: string) {
+      const tabsList = cockpit.querySelector(".dv-tabs-container");
+      expect(tabsList).not.toBeNull();
+      const ghost = document.createElement("span");
+      ghost.className = "cockpit-tab";
+      ghost.setAttribute("data-panel-id", `ghost:${name}`);
+      const ghostButton = document.createElement("button");
+      ghostButton.type = "button";
+      ghostButton.textContent = name;
+      ghost.appendChild(ghostButton);
+      (tabsList as Element).appendChild(ghost);
+      expect(within(cockpit).getByRole("button", { name })).toBeInTheDocument();
+    }
+    injectGhost("GPW:GHOST · Feed");
+
+    // Blind-path trigger (sol R2): a pass with NOTHING to reconcile must still
+    // catch the ghost — the view-company switch changes no panel ids, yet the
+    // armed verification detects the ghost via the data-panel-id witness and
+    // remounts, wiping it while the legitimate pinned tab survives.
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
+    await waitFor(() => {
+      expect(within(cockpit).queryByRole("button", { name: "GPW:GHOST · Feed" })).toBeNull();
+    });
+    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
+
+    // The one-remount budget resets after a converged recovery (sol R2 HIGH):
+    // a second corruption episode must recover the same way, here through a
+    // mutating pass (the unpin swap).
+    injectGhost("GPW:GHOST2 · Feed");
+    await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
+    expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(cockpit).queryByRole("button", { name: "GPW:GHOST2 · Feed" })).toBeNull();
+    });
+    await waitFor(() => {
+      expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
+    });
   });
 
   it("offers no per-company palette entries — the header selector is the one way to retarget", async () => {
