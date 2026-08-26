@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Company, FeedItem } from "../api/types";
 import { SpolkaScreen } from "../screens/Spolka/SpolkaScreen";
-import { useSpolkaToolHost, type SpolkaToolHostApi } from "../screens/Spolka/ToolHost";
+import type { SpolkaToolHostApi } from "../screens/Spolka/ToolHost";
+export { useSpolkaToolHost } from "../screens/Spolka/ToolHost";
 import type { Tool } from "../screens/Spolka/route";
 import type { Section } from "./navigation";
 
@@ -28,14 +29,6 @@ export type SpolkaTransition = {
   cockpitLayoutId?: string | null;
 };
 
-// The Spółka workshop's tool-host state (F3a S2, ADR 0107): ONE instance,
-// owned above AppShell so cross-screen navigation (`guardedSetActiveSection`
-// in AppStateRoot) and the window-close interceptor (`useAppLifecycleEffects`)
-// can both gate through the same `guardNavigation`/`isDirty` — see
-// `../screens/Spolka/ToolHost.tsx`.
-export function useSpolkaTool(): SpolkaToolHostApi {
-  return useSpolkaToolHost();
-}
 
 type SpolkaScreenHostProps = {
   companies: Company[];

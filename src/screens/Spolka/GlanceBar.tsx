@@ -20,7 +20,7 @@ export type GlanceBarProps = {
 // Dense-state cap (plan §11 "9 sygnałów"/mockup Wasko.dc.html): a triple-digit
 // count would blow out the fixed-width chip, so it reads "99+" past the cap —
 // the exact figure lives one click away behind the counter's own tool.
-function formatCount(n: number): string {
+export function formatCount(n: number): string {
   return n > 99 ? "99+" : String(n);
 }
 

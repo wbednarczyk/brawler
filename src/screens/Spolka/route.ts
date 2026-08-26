@@ -36,6 +36,3 @@ export const TOOL_KINDS = [
   "wydarzenia",
 ] as const satisfies readonly Tool["t"][];
 
-export type CompanyRoute =
-  | { kind: "company"; companyId: string; tool?: Tool }
-  | { kind: "namedView"; layoutId: string };

@@ -10,7 +10,7 @@ import { formatFinancialValue } from "../../shared/format/financialValue";
 import { formatLocalIsoDate } from "../../shared/format/datetime";
 import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, Skeleton } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
-import { GlanceBar } from "./GlanceBar";
+import { GlanceBar, formatCount } from "./GlanceBar";
 import { CoreKpiTable } from "./CoreKpiTable";
 import { renderTool } from "./toolRegistry";
 import { SpolkaToolHostProvider, ToolHostConfirmModal, type SpolkaToolHostApi } from "./ToolHost";
@@ -179,9 +179,6 @@ export function SpolkaScreen({
   );
 }
 
-function formatCount(n: number): string {
-  return n > 99 ? "99+" : String(n);
-}
 
 // Tool-open layout (plan §3): the core collapses to a one-line strip — ticker,
 // the 4 counters, last price — while the tool fills the zone.

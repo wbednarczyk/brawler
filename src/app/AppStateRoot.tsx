@@ -58,7 +58,7 @@ import { makeCockpitViewActions } from "./useCockpitViewActions";
 import { useToast, useUndoableDelete } from "../ui";
 import { DecisionJournalGlobalPanel } from "../screens/Cockpit/DecisionJournalGlobalPanel";
 import { TodayScreen } from "../screens/Today/TodayScreen";
-import { SpolkaScreenHost, useSpolkaTool } from "./useSpolkaScreenWiring";
+import { SpolkaScreenHost, useSpolkaToolHost } from "./useSpolkaScreenWiring";
 import { buildLegacyDashboardRows } from "./SidebarViewsGroup";
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import { useSpolkaNavigate } from "./useSpolkaNavigate";
@@ -187,7 +187,7 @@ export function AppStateRoot({
   // early so `setActiveSection` below can gate every cross-section navigation
   // through its dirty-tool check (`guardNavigation`), not just the ones that
   // go through `SpolkaScreenHost` itself.
-  const spolkaTool = useSpolkaTool();
+  const spolkaTool = useSpolkaToolHost();
   // EVERY `setActiveSection` call in this file goes through the SAME
   // stay/discard gate the Spółka tool host uses for tool close/switch/company
   // switch (plan §S2, "navigating away"): a clean (or absent) tool proceeds
