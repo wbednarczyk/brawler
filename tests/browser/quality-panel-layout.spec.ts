@@ -9,21 +9,25 @@ import {
 // The Quality panel (ADR 0075) gains a qualitative-criterion form — a kind switch
 // plus a full-width guidance textarea — and agent-assessed result rows. Guard that
 // revealing that form does not force a horizontal scrollbar at a narrow window
-// (the quarter-ultrawide range, DoD §B). The Quality panel is part of the default
-// company dashboard (ADR 0057); the dual-execution mock runtime seeds a framework.
-test("quality panel qualitative form does not horizontally overflow at a narrow window", async ({
-  page,
-}) => {
+// (the quarter-ultrawide range, DoD §B). F3a S3 (ADR 0107): the Quality panel is
+// the `jakosc` workshop tool, opened via the ⌘K palette's "Open quality" entry;
+// the dual-execution mock runtime seeds a framework.
+async function openQualityTool(page: import("@playwright/test").Page) {
   await page.setViewportSize({ width: 1008, height: 900 });
   await openApp(page);
   await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill("Open quality");
+  await palette.getByRole("button", { name: "Open quality", exact: true }).first().click();
+}
 
-  // Activate the Quality dock tab so its panel body is on screen (dockview tabs
-  // are accessible buttons, ADR 0047).
-  await page.getByRole("button", { name: /Quality/ }).first().click();
+test("quality panel qualitative form does not horizontally overflow at a narrow window", async ({
+  page,
+}) => {
+  await openQualityTool(page);
 
   // Reveal the qualitative-criterion form (full-width guidance textarea — the new
   // overflow risk alongside the existing quantitative expression row).
@@ -40,14 +44,7 @@ test("quality panel qualitative form does not horizontally overflow at a narrow 
 test("company health scores render, expand, and do not overflow at a narrow window", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1008, height: 900 });
-  await openApp(page);
-  await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
-  await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
-
-  await page.getByRole("button", { name: /Quality/ }).first().click();
+  await openQualityTool(page);
 
   const healthSection = page.locator(".company-health-section");
   await expect(healthSection.getByRole("heading", { name: "Company health" })).toBeVisible();
@@ -66,9 +63,10 @@ test("company health scores render, expand, and do not overflow at a narrow wind
   await healthSection.getByRole("button", { name: /Altman Z/ }).click();
   await expect(page.getByText(/Missing inputs: Retained earnings \(FY2025\)/)).toBeVisible();
 
-  // The panel scrolls internally; the page itself never gains a horizontal
-  // scrollbar at the quarter-ultrawide width (DoD §B).
-  await expectInternalScroll(page.locator(".cockpit-pane").first());
+  // `.spolka-layout` (not the tool group itself) is the scroll region; the
+  // page itself never gains a horizontal scrollbar at the quarter-ultrawide
+  // width (DoD §B).
+  await expectInternalScroll(page.locator(".spolka-layout"));
   await expectNoPageOverflow(page);
 });
 
@@ -78,14 +76,7 @@ test("company health scores render, expand, and do not overflow at a narrow wind
 // (QualityPanel/company-workspace.css) — the element must never overflow its
 // own box, at the narrow quarter-ultrawide window (DoD §B).
 test("evaluation history timestamp never overflows and never shows raw ISO", async ({ page }) => {
-  await page.setViewportSize({ width: 1008, height: 900 });
-  await openApp(page);
-  await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
-  await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
-
-  await page.getByRole("button", { name: /Quality/ }).first().click();
+  await openQualityTool(page);
 
   const when = page.locator(".quality-history-when").first();
   await expect(when).toBeVisible();

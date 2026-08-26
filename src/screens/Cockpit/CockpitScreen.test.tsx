@@ -1,5 +1,4 @@
 import { describe, it, vi } from "vitest";
-import { fireEvent } from "@testing-library/react";
 import {
   expect,
   renderApp,
@@ -11,83 +10,100 @@ import {
 } from "../../test/appWorkflowHarness";
 import { DockviewComponent } from "dockview";
 import { parsePanels } from "./CockpitScreen";
+import { saveCockpitLayout } from "../../api/cockpit";
 
-describe("Research cockpit shell", () => {
+// F3a S3 (ADR 0107 decision 5): freeform layout STRUCTURE is frozen — every
+// command that adds/removes/reorders a panel, applies a preset, saves a
+// layout, or creates a view is gone. Domain editing INSIDE an already-open
+// panel (facts, claims, notes, journal, quality) stays fully writable; the
+// linked selection workflow (feed → inspector → claims/diff) is not a
+// structure mutation and keeps working.
+describe("Research cockpit shell — frozen (F3a S3, ADR 0107 decision 5)", () => {
   it("is not the default shell and has no standalone blank nav entry (ADR 0057 decision 5)", async () => {
     // Today/Pulse is the landing home; the cockpit is reached only via a saved
-    // named view, the "+ New view" creator, or a company's curated dashboard —
-    // there is no standalone blank-canvas "Cockpit" sidebar button anymore.
+    // named view or a legacy dashboard row — there is no standalone
+    // blank-canvas "Cockpit" sidebar button.
     renderAppDefaultShell();
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cockpit" })).not.toBeInTheDocument();
   });
 
-  it("keeps only the Preset select from the legacy layout toolbar (issue 432de51)", async () => {
-    // Only the Preset select belongs in the toolbar (issue 432de51) — saved-layout
-    // load/save/delete controls duplicate the sidebar saved-views flow.
+  it("renders the frozen-layout strip and carries no structure-mutating toolbar control", async () => {
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
-    expect(within(cockpit).getByLabelText("Preset")).toBeInTheDocument();
-    expect(within(cockpit).queryByLabelText("Saved layout")).not.toBeInTheDocument();
-    expect(within(cockpit).queryByLabelText("Layout name")).not.toBeInTheDocument();
-    expect(within(cockpit).queryByRole("button", { name: "Save layout" })).not.toBeInTheDocument();
-    expect(within(cockpit).queryByLabelText("Delete layout")).not.toBeInTheDocument();
+    expect(within(cockpit).getByText("Layout frozen until the engine decision")).toBeInTheDocument();
+    expect(within(cockpit).getByText("Edit inside panels still saves.")).toBeInTheDocument();
+
+    // Every structure-mutating command is gone: Add panel, Reset layout, Save
+    // dashboard, the Preset select. Only "Commands" (⌘K, navigation-only) stays.
+    expect(within(cockpit).queryByRole("button", { name: "Add panel" })).not.toBeInTheDocument();
+    expect(within(cockpit).queryByRole("button", { name: "Reset layout" })).not.toBeInTheDocument();
+    expect(within(cockpit).queryByRole("button", { name: "Save dashboard" })).not.toBeInTheDocument();
+    expect(within(cockpit).queryByLabelText("Preset")).not.toBeInTheDocument();
+    expect(within(cockpit).getByRole("button", { name: /Commands/ })).toBeInTheDocument();
   });
 
-  it("opens the cockpit with accessible tabs and opens a panel via the command palette", async () => {
+  it("hides the tab close (×) affordance and disables drag/drop — the dock is read-only arrangement", async () => {
     const user = userEvent.setup();
     renderApp({ section: "Cockpit" });
-
     const cockpit = await screen.findByLabelText("Research cockpit");
-    expect(cockpit).toBeInTheDocument();
 
-    // dockview tabs are accessible <button>s here (the pilot's div tabs were the
-    // a11y blocker). The default linked layout opens several panels.
+    const inspectorTab = await within(cockpit).findByRole("button", { name: "Inspector" });
+    expect(within(cockpit).queryByRole("button", { name: "Close Inspector" })).not.toBeInTheDocument();
+
+    // Alt+W (the DockLayout keyboard close model) must be a no-op while frozen.
+    await user.click(inspectorTab);
+    await user.keyboard("{Alt>}w{/Alt}");
+    await waitFor(() => {
+      expect(within(cockpit).getByRole("button", { name: "Inspector" })).toBeInTheDocument();
+    });
+  });
+
+  it("opens the cockpit with accessible tabs", async () => {
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
     const tabs = await within(cockpit).findAllByRole("button");
     expect(tabs.length).toBeGreaterThan(0);
-
-    // A company-scoped panel type binds to the view company (card 106f8a7), so
-    // choose one before opening a Quality panel via the command palette (⌘K).
-    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Quality");
-    await user.keyboard("{Enter}");
-
-    const qualityTabs = await within(cockpit).findAllByRole("button", { name: /Quality/ });
-    expect(qualityTabs.length).toBeGreaterThan(0);
   });
 
   it("opens a company directly into its curated dashboard as FOLLOW panels with unprefixed titles (U-Ra)", async () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(await screen.findByRole("button", { name: "Companies" }));
-    // F3a S1 (ADR 0107): the row now opens the Spółka screen, not the cockpit
-    // directly — it still primes `cockpitInitialCompanyId`, so the sidebar's
-    // "Dashboard" entry reaches the same CD PROJEKT-scoped cockpit.
-    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
-    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
+    // The sample scenario seeds a `dashboard:` layout for CDR, so its "Legacy
+    // dashboard · CDR" Widoki row reaches the cockpit scoped to that company.
+    await user.click(await screen.findByRole("button", { name: "Legacy dashboard · CDR" }));
 
     const cockpit = await screen.findByLabelText("Research cockpit");
     // The dashboard renders company-scoped FOLLOW panels: their tab titles are
-    // kind-only (the header selector carries the company context), NOT prefixed
-    // with the ticker (D4), and the linked Inspector stays closed.
+    // kind-only (D4), NOT prefixed with the ticker, and the linked Inspector
+    // stays closed. Legacy-dashboard views are fixed to their company (F3a
+    // S3): no "View company" selector — the row already chose it.
     expect(await within(cockpit).findByRole("button", { name: "Fundamentals" })).toBeInTheDocument();
     expect(within(cockpit).getByRole("button", { name: "Notebook" })).toBeInTheDocument();
     expect(within(cockpit).queryByRole("button", { name: /GPW:CDR · Fundamentals/ })).toBeNull();
-    // The view-company selector reflects the opened company (D2).
-    expect((within(cockpit).getByLabelText("View company") as HTMLSelectElement).value).toBe(
-      "company_gpw_cdr",
-    );
+    expect(within(cockpit).queryByLabelText("View company")).not.toBeInTheDocument();
     expect(within(cockpit).queryByRole("button", { name: "Inspector" })).not.toBeInTheDocument();
+    expect(cockpit).toHaveAttribute("data-company-id", "company_gpw_cdr");
+
+    // The curated dashboard's Fundamentals FOLLOW panel renders the real
+    // editable panel (period/fact forms), not a read-only matrix — proving
+    // domain editing inside a frozen view's panels stays fully writable.
+    await user.click(within(cockpit).getByRole("button", { name: "Fundamentals" }));
+    expect(
+      await within(cockpit).findByRole("heading", { name: "New reporting period" }),
+    ).toBeInTheDocument();
   });
 
-  it("Today's 'Open thesis' seam raises the Claims panel's own tab, not just the highlight (fix wave B finding 2)", async () => {
+  // F3a S3 addenda (26.08): red left by S3a — the claims seam no longer routes
+  // through the cockpit at all (ADR 0107 decision 2 mapping
+  // "Claims/highlightClaimId→{t:'tezy', claimId}"). "Open thesis" lands
+  // directly on the Spółka screen's claims tool with the claim highlighted.
+  it("Today's 'Open thesis' lands on Spółka's claims tool with the claim highlighted (F3a S1, ADR 0107)", async () => {
     // jsdom has no `scrollIntoView` (CompanyClaimsPanel's own highlight-scroll
-    // effect calls it once a real highlighted claim row exists) — same stub
-    // `CompanyClaimsPanel.test.tsx` uses.
+    // effect calls it once a real highlighted claim row exists).
     Element.prototype.scrollIntoView = vi.fn();
     const user = userEvent.setup();
     renderAppDefaultShell();
@@ -95,164 +111,12 @@ describe("Research cockpit shell", () => {
     await screen.findByRole("heading", { name: "Today" });
     const [openThesis] = await screen.findAllByRole("button", { name: "Open thesis" });
     await user.click(openThesis);
-    // F3a S1 (ADR 0107): the claims seam now lands on the Spółka screen, not
-    // the cockpit directly — it still primes `cockpitInitialCompanyId` +
-    // `highlightClaimId`, so the sidebar's "Dashboard" entry reaches the same
-    // cockpit with the highlight seam intact.
-    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
 
-    const cockpit = await screen.findByLabelText("Research cockpit");
-    // The dashboard's default anchor slot (4th panel, "Basic info") is active
-    // on open — WITHOUT the activation seam, Claims stays behind it even
-    // though `highlightClaimId` landed.
-    const claimsTab = await within(cockpit).findByRole("button", { name: "Claims" });
-    await waitFor(() => expect(claimsTab).toHaveAttribute("aria-pressed", "true"));
-  });
-
-  it("closes the active panel from the keyboard (Alt+W)", async () => {
-    const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    // Activate the Inspector panel via its accessible tab, then close it with
-    // the keyboard model (Alt+W closes the active panel — DockLayout).
-    const inspectorTab = await within(cockpit).findByRole("button", { name: "Inspector" });
-    await user.click(inspectorTab);
-    await user.keyboard("{Alt>}w{/Alt}");
-
-    await waitFor(() => {
-      expect(within(cockpit).queryByRole("button", { name: "Inspector" })).toBeNull();
-    });
-  });
-
-  // Own timeout budget: two full dockview teardown/rebuild cycles routinely
-  // exceed the 5s default under loaded test workers (React 19 migration).
-  it("rebuilds a working layout after closing a panel then resetting (no blank app)", { timeout: 20000 }, async () => {
-    const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    // Close the Inspector panel (the × on its accessible tab), then Reset layout.
-    // While dockview settles its initial layout it re-creates tab DOM, so a
-    // single click can land on a node detached between query and dispatch and
-    // silently vanish (React 19 timing under loaded workers). Model a user
-    // retrying: click the currently-attached close control until the tab is
-    // gone.
-    await within(cockpit).findByRole("button", { name: "Close Inspector" });
-    await waitFor(
-      () => {
-        const close = within(cockpit).queryByRole("button", { name: "Close Inspector" });
-        if (close) {
-          fireEvent.click(close);
-        }
-        expect(within(cockpit).queryByRole("button", { name: "Inspector" })).toBeNull();
-      },
-      { timeout: 10000 },
-    );
-    await user.click(within(cockpit).getByRole("button", { name: "Reset layout" }));
-
-    // The default layout must come back — not a blank cockpit. The dockview
-    // rebuild is slow under loaded test workers — give it a real timeout.
-    expect(
-      await within(cockpit).findByRole("button", { name: "Inspector" }, { timeout: 5000 }),
-    ).toBeInTheDocument();
-    expect(
-      await within(cockpit).findByRole("button", { name: "Feed" }, { timeout: 5000 }),
-    ).toBeInTheDocument();
-  });
-
-  it("applies a preset composing FOLLOW panels for the view company (Dashboard redesign)", async () => {
-    const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    // Presets follow the view company (epic c793ca1): pick a view company first,
-    // then the Sezon raportów preset opens the Report Season global plus
-    // company-scoped Report comparison / Fundamentals / Claims — as FOLLOW panels.
-    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
-    await user.selectOptions(within(cockpit).getByLabelText("Preset"), "earnings-season");
-
-    const tabs = await within(cockpit).findAllByRole("button", { name: /Report Season/ });
-    expect(tabs.length).toBeGreaterThan(0);
-    expect(
-      (await within(cockpit).findAllByRole("button", { name: /Fundamentals/ })).length,
-    ).toBeGreaterThan(0);
-    // Follow panels are kind-only (no ticker prefix) — they track the view company,
-    // they do not freeze it. A "GPW:CDR · …" pinned tab must NOT appear.
-    expect(within(cockpit).queryByRole("button", { name: /GPW:CDR ·/ })).not.toBeInTheDocument();
-    // The Preset selector reflects the active preset (visual-first UX): the user
-    // sees which arrangement is showing, not a reset-to-placeholder select.
-    expect(within(cockpit).getByLabelText("Preset")).toHaveValue("earnings-season");
-  });
-
-  it("Dowody / Research preset composes the research evidence panel", async () => {
-    const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    // Selecting the "evidence" preset composes the research evidence panel as
-    // the sole global — proven here by its tab title. The panel's real evidence
-    // render (following the view company) is proven in the browser spec
-    // cockpit-view-company.spec.ts (jsdom dockview does not mount panel bodies
-    // after a layout rebuild).
-    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
-    await user.selectOptions(within(cockpit).getByLabelText("Preset"), "evidence");
-
-    const tabs = await within(cockpit).findAllByRole("button", { name: /Research/ });
-    expect(tabs.length).toBeGreaterThan(0);
-  });
-
-  it("opens a global app screen as a cockpit panel (phase 4c)", async () => {
-    const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    // Global panels render the real, context-driven screens (Watchlists here).
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Watchlists");
-    await user.keyboard("{Enter}");
-
-    expect(await within(cockpit).findByLabelText("Watchlist name")).toBeInTheDocument();
-  });
-
-  it("loads a section-gated screen's data when hosted as a cockpit panel (phase 4c/6)", async () => {
-    const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    // Research evidence loads only while its section is active; as a cockpit
-    // panel (activeSection === "Cockpit") that gate must also fire, or the panel
-    // renders empty. Assert the timeline actually shows data, not just a frame.
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Research");
-    await user.keyboard("{Enter}");
-
-    // "CDR follow-up note" is research-evidence-only (not shown by the default
-    // Feed/Inspector/Claims panels), so finding it proves the Research panel's
-    // section-gated data loaded while hosted in the cockpit.
-    expect(await within(cockpit).findByText("CDR follow-up note")).toBeInTheDocument();
-  });
-
-  it("opens the full editable Fundamentals panel for a company (phase 4b)", async () => {
-    const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    // A company-scoped panel type binds to the view company (card 106f8a7): choose
-    // one, then launch a Fundamentals panel via the command palette; it must render
-    // the real editable panel (period/fact forms), not a read-only matrix.
-    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Fundamentals");
-    await user.keyboard("{Enter}");
-
-    // The editable panel's period form proves we render the real FundamentalsPanel.
-    expect(
-      await within(cockpit).findByRole("heading", { name: "New reporting period" }),
-    ).toBeInTheDocument();
-    expect(
-      await within(cockpit).findByRole("heading", { name: "Reporting periods" }),
-    ).toBeInTheDocument();
+    const company = await screen.findByLabelText("Company view");
+    const tool = await within(company).findByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "tezy");
+    await waitFor(() => expect(tool.querySelector(".claim-row-highlighted")).not.toBeNull());
+    expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
   });
 
   it("filters the feed panel by ticker or title (cockpit-native, phase 4a)", async () => {
@@ -284,72 +148,130 @@ describe("Research cockpit shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers a saved layout as a command-palette launcher entry", async () => {
+  // F3a S3 addenda (26.08): red left by S3a — "Load layout: …" is gone; a
+  // named view is now a navigation-only palette entry.
+  it("offers a saved layout as a navigation-only 'Open view: …' palette entry", async () => {
     const user = userEvent.setup();
-    // Plain renderApp(): the cockpit must not be mounted yet when "Deep dive" is
-    // created, or its own savedLayouts snapshot (fetched once on mount) would miss
-    // the newly created layout — it only refetches on its own mount, not when a
-    // sibling (the sidebar) saves a new one.
-    renderApp();
+    // View creation ("+ New view") no longer exists in the UI (frozen) — seed a
+    // named view through the same command the removed creator used to call,
+    // matching a pre-freeze user's existing saved view.
+    await saveCockpitLayout({
+      name: "Deep dive",
+      panelsJson: JSON.stringify({
+        pinned: [],
+        openGlobals: [],
+        closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+        selectedFeedItemId: null,
+        grid: null,
+        cells: null,
+        viewCompanyId: null,
+      }),
+      layoutJson: null,
+      dockviewVersion: null,
+    });
 
-    // Named layouts are created via the sidebar "+ New view" creator (ADR 0057
-    // decision 5).
-    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
-    await user.click(within(nav).getByRole("button", { name: "New view" }));
-    await user.type(await screen.findByLabelText("View name"), "Deep dive");
-    await user.click(screen.getByRole("button", { name: /Create view/i }));
-
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
-    // The saved layout is now launchable from the command palette.
     await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Load layout");
+    await user.type(await screen.findByLabelText("Search commands"), "Deep dive");
+    expect(await screen.findByRole("button", { name: "Open view: Deep dive" })).toBeInTheDocument();
+    // Navigation-only: the removed "Load layout"/"Apply preset" wording never
+    // appears again.
+    expect(screen.queryByRole("button", { name: /Load layout/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Apply preset/ })).toBeNull();
+  });
+
+  // Plan § "Defekty mechaniczne… inline": a rejected saved geometry (version
+  // mismatch or corrupt JSON) is now surfaced, never a silent catch.
+  it("shows the restored-default note when a saved layout's geometry is from another dockview version", async () => {
+    const user = userEvent.setup();
+    await saveCockpitLayout({
+      name: "Deep dive",
+      panelsJson: JSON.stringify({
+        pinned: [],
+        openGlobals: [],
+        closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+        selectedFeedItemId: null,
+        grid: null,
+        cells: null,
+        viewCompanyId: null,
+      }),
+      layoutJson: JSON.stringify({ grid: { root: { type: "leaf", data: { id: "g", views: [] } } } }),
+      dockviewVersion: "0.0.0-old",
+    });
+
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    // Navigate to the named view via the palette (its own dockviewVersion
+    // mismatches the running build's — the geometry replay is rejected).
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), "Deep dive");
+    await user.click(await screen.findByRole("button", { name: "Open view: Deep dive" }));
+
     expect(
-      await screen.findByRole("button", { name: "Load layout: Deep dive" }),
+      await within(await screen.findByLabelText("Research cockpit")).findByText(
+        "Saved layout comes from another version — default layout restored",
+      ),
     ).toBeInTheDocument();
   });
 });
 
-// U-Ra (ADR 0076): a cockpit view carries one "view company"; company-scoped
-// panels follow it by default and retarget in place on switch; a single panel may
-// pin a different company; saved views persist the context.
+// U-Ra (ADR 0076): a NAMED cockpit view carries one "view company"; a legacy
+// dashboard is fixed to the row's company instead (no selector — see the
+// "curated dashboard" test above). Company-scoped panels follow the view
+// company by default and retarget in place on switch; a single panel may pin
+// a different company. Retargeting a named view's company is not a structure
+// mutation (nothing is added/removed/saved), so the selector stays for named
+// views — this is also the regression harness for #348 (declarative dock
+// reconciliation).
 describe("Research cockpit — view company context (U-Ra)", () => {
-  async function openCdrDashboard(user: ReturnType<typeof userEvent.setup>) {
-    renderApp();
-    await user.click(await screen.findByRole("button", { name: "Companies" }));
-    // F3a S1 (ADR 0107): a company row now opens the Spółka screen, not the
-    // cockpit directly — it still primes `cockpitInitialCompanyId`, so the
-    // sidebar's "Dashboard" entry reaches the same CD PROJEKT-scoped cockpit.
-    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
-    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
+  // A follow `companyFeed` panel can no longer be added interactively (the
+  // "Add panel"/"Open panel" surface is gone with the freeze) — seed a named
+  // view carrying one directly through the API the removed add-panel flow
+  // used to call, then open it via the navigation-only palette.
+  async function openCdrView(user: ReturnType<typeof userEvent.setup>) {
+    await saveCockpitLayout({
+      name: "CDR follow-up",
+      panelsJson: JSON.stringify({
+        pinned: [{ id: "follow:companyFeed", kind: "companyFeed", mode: "follow" }],
+        openGlobals: [],
+        closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+        selectedFeedItemId: null,
+        grid: null,
+        cells: null,
+        viewCompanyId: "company_gpw_cdr",
+      }),
+      layoutJson: null,
+      dockviewVersion: null,
+    });
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), "CDR follow-up");
+    await user.click(await screen.findByRole("button", { name: "Open view: CDR follow-up" }));
     return screen.findByLabelText("Research cockpit");
   }
 
   it("retargets a FOLLOW panel's content in place when the view company changes", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
+    const cockpit = await openCdrView(user);
 
-    // The follow Feed panel shows CD PROJEKT's feed item at first.
     expect(
       await within(cockpit).findByRole("button", {
         name: "Open company feed item: Current report placeholder for watchlist company",
       }),
     ).toBeInTheDocument();
-    // Tab stays kind-only (no ticker prefix).
     expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
 
-    // Switch the view company via the header selector.
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
 
-    // Content retargets in place to KGHM; the tab title is still kind-only "Feed".
     expect(
       await within(cockpit).findByRole("button", {
         name: "Open company feed item: Transcript-derived note candidate waits for future provider work",
       }),
     ).toBeInTheDocument();
     expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
-    // Same reason as the unpin swap below: the outgoing company's item can survive
-    // one render past the incoming one, so wait for it to go rather than sample.
     await waitFor(() => {
       expect(
         within(cockpit).queryByRole("button", {
@@ -361,18 +283,14 @@ describe("Research cockpit — view company context (U-Ra)", () => {
 
   it("keeps a PINNED panel frozen on its company across a view-company switch", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
+    const cockpit = await openCdrView(user);
 
-    // Freeze the follow Feed panel onto CD PROJEKT via its tab pin toggle: the
-    // add-panel surface only lists generic panel types (card 106f8a7), so
-    // pinning is reached through the panel's own "Pin company" affordance.
     const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
       ".cockpit-tab",
     ) as HTMLElement;
     await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
-    // Set the view company to KGH — the pinned panel must not move.
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
     await waitFor(() => {
       expect(within(cockpit).getByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
@@ -386,30 +304,21 @@ describe("Research cockpit — view company context (U-Ra)", () => {
 
   it("pins a follow panel to the current company and rejoins the view company", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
+    const cockpit = await openCdrView(user);
 
-    // The follow Feed panel offers a pin affordance on its own tab (each follow
-    // tab has a "Pin company" button, so scope to the Feed tab specifically).
     const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
       ".cockpit-tab",
     ) as HTMLElement;
     await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
-
-    // follow → pinned freezes CD PROJEKT: the tab gains the ticker prefix.
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
-    // Switching the view company leaves the now-pinned panel on CD PROJEKT.
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
     await waitFor(() => {
       expect(within(cockpit).getByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
     });
 
-    // pinned → follow rejoins the view company (now KGH): kind-only title returns.
     await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
     expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
-    // The unpin swaps the tab node, so the prefixed title can outlive the arrival
-    // of the kind-only one by a render: await its *removal* instead of sampling
-    // the single tick after the positive assertion resolves.
     await waitFor(() => {
       expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
     });
@@ -422,16 +331,13 @@ describe("Research cockpit — view company context (U-Ra)", () => {
 
   it("recovers when dockview refuses a panel removal — the dock remounts from the specs (#348)", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
+    const cockpit = await openCdrView(user);
     const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
       ".cockpit-tab",
     ) as HTMLElement;
     await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
-    // Poison the reconciler's next removal with dockview's real corrupted-model
-    // throw (#348): the recovery path must remount the dock from the specs
-    // instead of leaving the ghost tab behind.
     const spy = vi
       .spyOn(DockviewComponent.prototype, "removePanel")
       .mockImplementationOnce(() => {
@@ -443,7 +349,6 @@ describe("Research cockpit — view company context (U-Ra)", () => {
       await waitFor(() => {
         expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
       });
-      // The recovery really ran: the poisoned removal was hit, not bypassed.
       expect(spy).toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -452,16 +357,13 @@ describe("Research cockpit — view company context (U-Ra)", () => {
 
   it("removes a DOM ghost tab the dock's own model no longer knows about (#348)", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
+    const cockpit = await openCdrView(user);
     const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
       ".cockpit-tab",
     ) as HTMLElement;
     await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
-    // Fabricate the #348 end state dockview cannot report: a tab attached in the
-    // DOM while absent from the dock's model (its wrong-tab splice / getPanel
-    // miss leave exactly this behind).
     function injectGhost(name: string) {
       const tabsList = cockpit.querySelector(".dv-tabs-container");
       expect(tabsList).not.toBeNull();
@@ -477,19 +379,12 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     }
     injectGhost("GPW:GHOST · Feed");
 
-    // Blind-path trigger (sol R2): a pass with NOTHING to reconcile must still
-    // catch the ghost — the view-company switch changes no panel ids, yet the
-    // armed verification detects the ghost via the data-panel-id witness and
-    // remounts, wiping it while the legitimate pinned tab survives.
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
     await waitFor(() => {
       expect(within(cockpit).queryByRole("button", { name: "GPW:GHOST · Feed" })).toBeNull();
     });
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
-    // The one-remount budget resets after a converged recovery (sol R2 HIGH):
-    // a second corruption episode must recover the same way, here through a
-    // mutating pass (the unpin swap).
     injectGhost("GPW:GHOST2 · Feed");
     await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
     expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
@@ -507,9 +402,6 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    // Owner dogfooding round 2: enumerating every tracked company as a
-    // "Switch view company: <ticker>" command duplicated the header selector
-    // and bloated the palette — the selector is the single retarget surface.
     await user.type(await screen.findByLabelText("Search commands"), "Switch view company");
     expect(screen.queryAllByRole("button", { name: /Switch view company/ })).toHaveLength(0);
     expect(within(cockpit).getByLabelText("View company")).toBeInTheDocument();
@@ -520,8 +412,6 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
-    // Both cockpit search surfaces wear the shared search-box dressing — a bare
-    // native input (owner dogfooding round 2) reads as unfinished.
     expect(
       (await within(cockpit).findByLabelText("Filter feed items")).closest(".search-box"),
     ).not.toBeNull();
@@ -529,78 +419,29 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     const input = await screen.findByLabelText("Search commands");
     expect(input.closest(".search-box")).not.toBeNull();
   });
-});
 
-// Card 106f8a7: the add-panel surface lists GENERIC company-scoped panel TYPES
-// (bound to the view company) plus global panels — never a per-company entry.
-describe("Research cockpit — add-panel surface (card 106f8a7)", () => {
-  async function openCdrDashboard(user: ReturnType<typeof userEvent.setup>) {
-    renderApp();
-    await user.click(await screen.findByRole("button", { name: "Companies" }));
-    // F3a S1 (ADR 0107): a company row now opens the Spółka screen, not the
-    // cockpit directly — it still primes `cockpitInitialCompanyId`, so the
-    // sidebar's "Dashboard" entry reaches the same CD PROJEKT-scoped cockpit.
-    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
-    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
-    return screen.findByLabelText("Research cockpit");
-  }
-
-  it("lists each generic company-scoped panel type once, with no per-company duplication", async () => {
+  // Plan § "Kokpit freeform zostaje... ZAMROŻONY": the linked selection
+  // workflow (feed → inspector → claims/diff) is NOT a structure mutation —
+  // it must keep working in a frozen view.
+  it("linked selection still drives inspector, claims and diff selection in a frozen view", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
 
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Open panel");
+    const feedItem = await within(cockpit).findByRole("button", {
+      name: "Inspect feed item: Current report placeholder for watchlist company",
+    });
+    await user.click(feedItem);
 
-    // Each generic company-scoped type appears exactly once (the follow entry) —
-    // no ticker-prefixed duplicate.
-    expect(screen.getAllByRole("button", { name: "Open panel: Fundamentals" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Open panel: Coverage" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Open panel: Decision journal" })).toHaveLength(1);
-
-    // No per-company entries: nothing prefixes a company ticker onto a panel kind.
-    expect(screen.queryAllByRole("button", { name: /Open panel: GPW:/ })).toHaveLength(0);
-    expect(screen.queryAllByRole("button", { name: /Open panel: NC:/ })).toHaveLength(0);
-    expect(screen.queryAllByRole("button", { name: /Open panel: .+ · / })).toHaveLength(0);
-  });
-
-  it("keeps the global panels group present alongside the company-scoped types", async () => {
-    const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
-
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Open panel");
-
-    // Global singletons stay reachable from the same surface (own group).
-    expect(screen.getByRole("button", { name: "Open panel: Report Season" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open panel: Research" })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Open panel: Journal (all companies)" }),
-    ).toBeInTheDocument();
-  });
-
-  it("adds a company-scoped panel bound to the view company (kind-only tab, no ticker prefix)", async () => {
-    const user = userEvent.setup();
-    const cockpit = await openCdrDashboard(user);
-
-    // Report comparison is not a default dashboard panel — add it from the palette.
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(
-      await screen.findByLabelText("Search commands"),
-      "Open panel: Report comparison",
-    );
-    await user.click(
-      await screen.findByRole("button", { name: "Open panel: Report comparison" }),
-    );
-
-    // It opens as a FOLLOW panel bound to the view company: kind-only tab title,
-    // no ticker prefix — so switching the view company will retarget it in place.
+      await within(cockpit).findByLabelText("Feed item inspector"),
+    ).toHaveTextContent("Current report placeholder for watchlist company");
     expect(
-      await within(cockpit).findByRole("button", { name: "Report comparison" }),
+      within(cockpit).getByRole("button", { name: /Claims · GPW:CDR/ }),
     ).toBeInTheDocument();
     expect(
-      within(cockpit).queryByRole("button", { name: /GPW:CDR · Report comparison/ }),
-    ).toBeNull();
+      within(cockpit).getByRole("button", { name: /Report comparison · GPW:CDR/ }),
+    ).toBeInTheDocument();
   });
 });
 

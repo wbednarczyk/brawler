@@ -2,6 +2,7 @@ import { useState, type Dispatch, type KeyboardEvent, type SetStateAction } from
 import { ExternalLink, Inbox } from "lucide-react";
 import type { Company, FeedItem, NotebookOrigin } from "../api/types";
 import type { Section } from "./navigation";
+import type { Tool } from "../screens/Spolka/route";
 
 type WorkspaceNavigationControllerInput = {
   companiesById: Record<string, Company>;
@@ -17,6 +18,9 @@ type WorkspaceNavigationControllerInput = {
   setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
   setCockpitInitialCompanyId: Dispatch<SetStateAction<string | null>>;
+  /** Opens a Spółka workshop tool for the given company (the ToolHost seam,
+   * F3a S2) — used to raise the claims tool for `openCompanyClaims`. */
+  openTool: (companyId: string, tool: Tool) => void;
 };
 
 export function useWorkspaceNavigationController({
@@ -30,6 +34,7 @@ export function useWorkspaceNavigationController({
   setSelectedCompanyId,
   setSelectedFeedItemId,
   setCockpitInitialCompanyId,
+  openTool,
 }: WorkspaceNavigationControllerInput) {
   // Today's `openCompanyClaims(companyId, claimId)` nav intent (F2 S3, plan
   // decision 6): the curated dashboard opens "claims" pinned by default
@@ -48,11 +53,17 @@ export function useWorkspaceNavigationController({
     setActiveSection("Spolka");
   }
 
+  // F3a S3 (ADR 0107 decision 2 mapping "Claims/highlightClaimId→{t:'tezy',
+  // claimId}"): the seam raises the claims TOOL itself — `highlightClaimId`
+  // alone (the pre-F3a shape, when the curated dashboard opened claims
+  // pinned by default) no longer surfaces the highlight anywhere, since a
+  // fresh Spółka screen opens on the core, not a tool.
   function openCompanyClaims(companyId: string, claimId: string) {
     setSelectedCompanyId(companyId);
     setCockpitInitialCompanyId(companyId);
     setActiveSection("Spolka");
     setHighlightClaimId(claimId);
+    openTool(companyId, { t: "tezy", claimId });
   }
 
   // Arrow-key navigation in the company library only moves the highlighted row;

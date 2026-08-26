@@ -53,6 +53,12 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
   for (const journey of journeys) {
     it(`mock runtime satisfies: ${journey.name}`, async () => {
       const runtime = createMockRuntime("minimal");
+      // The corpus assumes a fresh `cockpit_layouts` table (matching the real
+      // backend's clean migration), but "minimal" now seeds one legacy
+      // dashboard row for the app-facing nav tests (F3a S3, the "Widoki"
+      // sidebar group) — clear it here so ordinal/list assertions stay
+      // symmetric with the Rust side.
+      runtime.data.cockpitLayouts = [];
       const caps: Record<string, unknown> = {};
 
       for (const step of journey.steps) {

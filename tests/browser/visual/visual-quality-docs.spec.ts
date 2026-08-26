@@ -9,40 +9,36 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-async function openDashboard(page: Page) {
+// F3a S3 (ADR 0107): opening a company lands the Spółka screen; each tool
+// opens via the ⌘K palette.
+async function openCompany(page: Page) {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
-  await expect(page.getByLabel("Research cockpit")).toBeVisible();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+}
+
+async function openTool(page: Page, label: string): Promise<Locator> {
+  await openCompany(page);
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill(label);
+  await palette.getByRole("button", { name: label, exact: true }).first().click();
+  // `.spolka-layout`, not the tool group itself, carries the density
+  // contracts' `container: pane / size` (spolka.css).
+  await expect(page.getByRole("group", { name: "Workshop tool" })).toBeVisible();
+  return page.locator(".spolka-layout");
 }
 
 async function openQuality(page: Page): Promise<Locator> {
-  await openDashboard(page);
-  await page.getByRole("button", { name: /Quality/ }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.locator(".quality-panel") });
-  await expect(pane).toBeVisible();
-  return pane;
+  return openTool(page, "Open quality");
 }
 
 async function openDocuments(page: Page): Promise<Locator> {
-  await openDashboard(page);
-  await page.getByRole("button", { name: "Report documents" }).first().click();
-  const pane = page.locator(".cockpit-pane", {
-    has: page.locator('.company-report-documents[aria-label="Report documents"]'),
-  });
-  await expect(pane).toBeVisible();
-  return pane;
+  return openTool(page, "Open documents");
 }
 
 async function openCoverage(page: Page): Promise<Locator> {
-  await openDashboard(page);
-  await page.getByRole("button", { name: "Coverage" }).first().click();
-  const pane = page.locator(".cockpit-pane", {
-    has: page.locator('.company-coverage[aria-label="Coverage"]'),
-  });
-  await expect(pane).toBeVisible();
-  return pane;
+  return openTool(page, "Open coverage");
 }
 
 test.describe("visual — quality + report documents", () => {

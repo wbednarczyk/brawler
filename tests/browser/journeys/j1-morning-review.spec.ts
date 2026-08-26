@@ -131,21 +131,23 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await expect(claimRow).toBeVisible();
     await j.click(claimRow.getByRole("button", { name: "Open thesis" }));
 
-    const cockpit = page.getByLabel("Research cockpit");
-    await expect(cockpit).toBeVisible();
-    await j.markScreen("Cockpit");
+    // F3a S1/S3 (ADR 0107 decision 2 mapping "Claims/highlightClaimId→
+    // {t:'tezy', claimId}"): the seam no longer routes through the cockpit —
+    // it lands the Spółka screen with the claims tool raised.
+    const company = page.getByRole("region", { name: "Company view" });
+    await expect(company).toBeVisible();
+    await j.markScreen("Company workspace");
 
-    // Browser-proof of the activation seam (sol R1 finding 2/9): the Claims
-    // tab is RAISED (`aria-pressed="true"`, DockLayout `AccessibleTab`), not
-    // just landing behind the dashboard's default anchor panel.
-    const claimsTab = cockpit.getByRole("button", { name: "Claims", exact: true });
-    await expect(claimsTab).toHaveAttribute("aria-pressed", "true");
+    // Browser-proof of the activation seam (sol R1 finding 2/9): the claims
+    // tool is RAISED (`data-tool="tezy"`), not just primed behind the core.
+    const tool = company.getByRole("group", { name: "Workshop tool" });
+    await expect(tool).toHaveAttribute("data-tool", "tezy");
     // ...and the claim itself is highlighted (`CompanyClaimsPanel`'s
     // `highlightClaimId` seam) — `.first()` because the mock's
     // `list_claims_to_verify` returns the whole bulk bucket unfiltered, so the
     // claim can render both in the company's own claims list and the review
     // queue, both correctly highlighted.
-    const highlightedClaim = page
+    const highlightedClaim = tool
       .locator('[data-claim-id="claim_sample_cdr"].claim-row-highlighted')
       .first();
     await expect(highlightedClaim).toBeVisible();

@@ -7,6 +7,7 @@ import { SpolkaScreen, type SpolkaScreenProps } from "./SpolkaScreen";
 import { useSpolkaToolHost } from "./ToolHost";
 import { SpolkaScreenHost } from "../../app/useSpolkaScreenWiring";
 import { ToastProvider } from "../../ui";
+import { CommandPaletteProvider } from "../../app/commandPalette";
 import { ResearchProvider } from "../../app/state/screenViewModels";
 import type { ResearchScreenProps } from "../Research/ResearchScreen";
 import { getCompanyView } from "../../api/companyView";
@@ -116,11 +117,13 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
 function Harness(overrides: Partial<SpolkaScreenProps>) {
   const spolkaTool = useSpolkaToolHost();
   return (
-    <ToastProvider>
-      <ResearchProvider value={researchViewModelStub}>
-      <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
-    </ResearchProvider>
-    </ToastProvider>
+    <CommandPaletteProvider appCommands={[]} text={(s) => s}>
+      <ToastProvider>
+        <ResearchProvider value={researchViewModelStub}>
+          <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
+        </ResearchProvider>
+      </ToastProvider>
+    </CommandPaletteProvider>
   );
 }
 
@@ -248,11 +251,13 @@ describe("Spółka tool host — dirty guard", () => {
       const spolkaTool = useSpolkaToolHost();
       capturedGuard = spolkaTool.guardNavigation;
       return (
-        <ToastProvider>
-      <ResearchProvider value={researchViewModelStub}>
-          <SpolkaScreen {...baseProps({ spolkaTool })} />
-        </ResearchProvider>
-    </ToastProvider>
+        <CommandPaletteProvider appCommands={[]} text={(s) => s}>
+          <ToastProvider>
+            <ResearchProvider value={researchViewModelStub}>
+              <SpolkaScreen {...baseProps({ spolkaTool })} />
+            </ResearchProvider>
+          </ToastProvider>
+        </CommandPaletteProvider>
       );
     }
     render(<Capture />);
@@ -309,19 +314,21 @@ describe("Spółka tool host — dirty guard", () => {
     function Host({ selectedCompanyId }: { selectedCompanyId: string }) {
       const spolkaTool = useSpolkaToolHost();
       return (
-        <ToastProvider>
-      <ResearchProvider value={researchViewModelStub}>
-          <SpolkaScreenHost
-            companies={[company, companyB]}
-            selectedCompanyId={selectedCompanyId}
-            spolkaTool={spolkaTool}
-            feedItems={[]}
-            rootHighlightClaimId={null}
-            openInboxItem={() => {}}
-            refreshCompletionCount={0}
-          />
-        </ResearchProvider>
-    </ToastProvider>
+        <CommandPaletteProvider appCommands={[]} text={(s) => s}>
+          <ToastProvider>
+            <ResearchProvider value={researchViewModelStub}>
+              <SpolkaScreenHost
+                companies={[company, companyB]}
+                selectedCompanyId={selectedCompanyId}
+                spolkaTool={spolkaTool}
+                feedItems={[]}
+                rootHighlightClaimId={null}
+                openInboxItem={() => {}}
+                refreshCompletionCount={0}
+              />
+            </ResearchProvider>
+          </ToastProvider>
+        </CommandPaletteProvider>
       );
     }
     const { rerender } = render(<Host selectedCompanyId={company.id} />);
@@ -341,11 +348,13 @@ describe("Spółka tool host — dirty guard", () => {
     function Host(overrides: Partial<SpolkaScreenProps>) {
       const spolkaTool = useSpolkaToolHost();
       return (
-        <ToastProvider>
-      <ResearchProvider value={researchViewModelStub}>
-          <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
-        </ResearchProvider>
-    </ToastProvider>
+        <CommandPaletteProvider appCommands={[]} text={(s) => s}>
+          <ToastProvider>
+            <ResearchProvider value={researchViewModelStub}>
+              <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
+            </ResearchProvider>
+          </ToastProvider>
+        </CommandPaletteProvider>
       );
     }
     const { rerender } = render(<Host />);
@@ -385,11 +394,13 @@ describe("Spółka tool host — dirty guard", () => {
     function Host(overrides: Partial<SpolkaScreenProps>) {
       const spolkaTool = useSpolkaToolHost();
       return (
-        <ToastProvider>
-      <ResearchProvider value={researchViewModelStub}>
-          <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
-        </ResearchProvider>
-    </ToastProvider>
+        <CommandPaletteProvider appCommands={[]} text={(s) => s}>
+          <ToastProvider>
+            <ResearchProvider value={researchViewModelStub}>
+              <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
+            </ResearchProvider>
+          </ToastProvider>
+        </CommandPaletteProvider>
       );
     }
     const { rerender } = render(<Host refreshCompletionCount={0} />);

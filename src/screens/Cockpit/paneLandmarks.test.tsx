@@ -1,5 +1,6 @@
 import { describe, it } from "vitest";
 import { expect, renderApp, screen, userEvent, within } from "../../test/appWorkflowHarness";
+import { saveCockpitLayout } from "../../api/cockpit";
 
 // Duplicate-kind panel landmarks (issue #142). Hosting two panels of the same
 // kind — two companies' report diffs side by side, or a pinned panel next to the
@@ -34,6 +35,23 @@ const PANEL_KINDS = [
   "Analyst recommendations",
 ] as const;
 
+// PinnedKind ids (CockpitScreen.tsx), same order as PANEL_KINDS.
+const PANEL_PINNED_KINDS = [
+  "basicInfo",
+  "fundamentals",
+  "coverage",
+  "reportDiff",
+  "claims",
+  "quality",
+  "documents",
+  "companyFeed",
+  "companyNotebook",
+  "decisionJournal",
+  "shortPositions",
+  "redFlags",
+  "analystRecommendations",
+] as const;
+
 const LANDMARK_SELECTOR = [
   "section[aria-label]",
   "section[aria-labelledby]",
@@ -48,20 +66,35 @@ describe("cockpit pane landmarks", () => {
   // default once the suite runs at full parallelism.
   it("no company-scoped panel contributes a landmark of its own", { timeout: 30_000 }, async () => {
     const user = userEvent.setup();
+    // "Open panel: …" no longer exists (F3a S3 freeze, ADR 0107 decision 5) —
+    // seed a named view carrying all 13 kinds as FOLLOW panels through the API
+    // the removed add-panel flow used to call, then open it read-only.
+    await saveCockpitLayout({
+      name: "Landmarks check",
+      panelsJson: JSON.stringify({
+        pinned: PANEL_PINNED_KINDS.map((kind) => ({ id: `follow:${kind}`, kind, mode: "follow" })),
+        openGlobals: [],
+        closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+        selectedFeedItemId: null,
+        grid: null,
+        cells: null,
+        viewCompanyId: "company_gpw_cdr",
+      }),
+      layoutJson: null,
+      dockviewVersion: null,
+    });
     const { container } = renderApp({ section: "Cockpit" });
 
     const cockpit = await screen.findByLabelText("Research cockpit");
-    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), "Landmarks check");
+    await user.click(await screen.findByRole("button", { name: "Open view: Landmarks check" }));
 
     const offenders: Record<string, string[]> = {};
 
     for (const kind of PANEL_KINDS) {
-      await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-      await user.type(await screen.findByLabelText("Search commands"), `Open panel: ${kind}`);
-      await user.keyboard("{Enter}");
-
-      // A panel opens into whichever pane the layout gives it; activate the tab so
-      // this kind is the body rendered in its group.
+      // Every kind is already open (declaratively, via the seeded view);
+      // activate its tab so this kind is the body rendered in its group.
       const tab = (await within(cockpit).findAllByRole("button", { name: kind }))[0];
       await user.click(tab);
 

@@ -1,6 +1,7 @@
 import { fireEvent } from "@testing-library/react";
 import { describe, it } from "vitest";
 import packageJson from "../package.json";
+import { saveCockpitLayout } from "./api/cockpit";
 import {
   appTestState,
   expect,
@@ -8,7 +9,6 @@ import {
   renderApp,
   screen,
   userEvent,
-  vi,
   waitFor,
   within,
 } from "./test/appWorkflowHarness";
@@ -33,61 +33,19 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
   });
 
-  it("creates a named view and lists it as a Modes nav destination (ADR 0057)", async () => {
-    const user = userEvent.setup();
-    renderApp();
-
-    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
-    await user.click(within(nav).getByRole("button", { name: "New view" }));
-
-    await user.type(await screen.findByLabelText("View name"), "Earnings");
-    // Choose the 3×3 grid preset so the chosen dimensions flow end-to-end.
-    await user.click(screen.getByRole("button", { name: "3×3" }));
-    await user.click(screen.getByRole("button", { name: /Create view/i }));
-
-    // The saved view appears in the Modes group and opens pre-split into a real
-    // 3×3 grid — nine cells, each with a "Pick a panel" button (ADR 0057).
-    expect(await within(nav).findByRole("button", { name: "Earnings" })).toBeInTheDocument();
-    const cells = await screen.findAllByRole("button", { name: "Pick a panel" });
-    expect(cells.length).toBe(9);
-
-    // Since card 106f8a7 the add surface offers GENERIC company-scoped panel
-    // types bound to the view company — so the flow picks the view company
-    // first, then fills cells (the per-company palette entries are gone).
-    const viewCompany = screen.getByLabelText("View company");
-    const cdrOption = (
-      within(viewCompany).getAllByRole("option") as HTMLOptionElement[]
-    ).find((option) => option.textContent?.includes("GPW:CDR"));
-    await user.selectOptions(viewCompany, cdrOption?.value ?? "");
-
-    // Picking a panel for a cell fills it in place (one fewer empty cell, a new
-    // panel tab appears).
-    await user.click(cells[0]);
-    await user.type(await screen.findByLabelText("Search commands"), "Fundamentals");
-    await user.keyboard("{Enter}");
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "Pick a panel" }).length).toBe(cells.length - 1),
-    );
-
-    // The view can be deleted from its sidebar entry.
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    await user.click(within(nav).getByRole("button", { name: "Delete view: Earnings" }));
-    await waitFor(() =>
-      expect(within(nav).queryByRole("button", { name: "Earnings" })).not.toBeInTheDocument(),
-    );
-    confirm.mockRestore();
-  });
+  // Named-view CREATION is gone (F3a S3, consent 1 — the freeform cockpit is
+  // frozen, "+ New view" removed from AppShell); the sidebar Widoki row + the
+  // rename_cockpit_layout flow are still exercised, seeding a view directly
+  // through the real save_cockpit_layout command instead of the removed UI.
 
   // Issue #89: a saved view renames in place from its sidebar row (pencil →
   // inline TextField → Enter), through the real rename_cockpit_layout command.
   it("renames a saved view inline from its sidebar row", async () => {
     const user = userEvent.setup();
+    await saveCockpitLayout({ name: "Morning", panelsJson: "[]", layoutJson: null, dockviewVersion: null });
     renderApp();
 
     const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
-    await user.click(within(nav).getByRole("button", { name: "New view" }));
-    await user.type(await screen.findByLabelText("View name"), "Morning");
-    await user.click(screen.getByRole("button", { name: /Create view/i }));
     expect(await within(nav).findByRole("button", { name: "Morning" })).toBeInTheDocument();
 
     await user.click(within(nav).getByRole("button", { name: "Rename view: Morning" }));
@@ -129,6 +87,22 @@ describe("Sidebar IA spine (ADR 0054)", () => {
         expect.objectContaining({ input: expect.objectContaining({ pinnedCompanyIds: [] }) }),
       );
     });
+  });
+
+  // F3a S3 (ADR 0107 decision 5): legacy `dashboard:*` layouts stay reachable
+  // read-only via their "Legacy dashboard · TICKER" Widoki row — the frozen
+  // cockpit it opens is scoped to that row's company only (no company/preset
+  // selector — the row already chose it).
+  it("legacy dashboard row opens the frozen cockpit scoped to its company", async () => {
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await userEvent.click(await within(nav).findByRole("button", { name: "Legacy dashboard · CDR" }));
+
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    expect(cockpit).toHaveAttribute("data-company-id", "company_gpw_cdr");
+    expect(within(cockpit).queryByLabelText("View company")).not.toBeInTheDocument();
+    expect(within(cockpit).getByText("Layout frozen until the engine decision")).toBeInTheDocument();
   });
 });
 

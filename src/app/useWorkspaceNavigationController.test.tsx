@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
 import type { Section } from "./navigation";
+import type { Tool } from "../screens/Spolka/route";
 import { COMPANY_SPECS, makeCompany } from "../test/scenarios/entities";
 
 const company = makeCompany(COMPANY_SPECS[0]);
@@ -12,6 +13,7 @@ function useHarness() {
   const [activeSection, setActiveSection] = useState<Section>("Today");
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<string | null>(null);
+  const openToolCallsRef = useRef<Array<{ companyId: string; tool: Tool }>>([]);
 
   const controller = useWorkspaceNavigationController({
     companiesById: { [company.id]: company },
@@ -24,9 +26,18 @@ function useHarness() {
     setSelectedCompanyId,
     setSelectedFeedItemId: () => {},
     setCockpitInitialCompanyId,
+    openTool: (companyId, tool) => {
+      openToolCallsRef.current.push({ companyId, tool });
+    },
   });
 
-  return { controller, activeSection, selectedCompanyId, cockpitInitialCompanyId };
+  return {
+    controller,
+    activeSection,
+    selectedCompanyId,
+    cockpitInitialCompanyId,
+    openToolCalls: openToolCallsRef.current,
+  };
 }
 
 describe("useWorkspaceNavigationController — openCompanyClaims (F2 S3 nav seam)", () => {
@@ -44,6 +55,11 @@ describe("useWorkspaceNavigationController — openCompanyClaims (F2 S3 nav seam
     expect(result.current.selectedCompanyId).toBe(company.id);
     expect(result.current.cockpitInitialCompanyId).toBe(company.id);
     expect(result.current.controller.highlightClaimId).toBe("claim_target");
+    // F3a S3 (ADR 0107 decision 2 mapping "Claims/highlightClaimId→{t:'tezy',
+    // claimId}"): the seam raises the claims tool itself.
+    expect(result.current.openToolCalls).toEqual([
+      { companyId: company.id, tool: { t: "tezy", claimId: "claim_target" } },
+    ]);
   });
 
   it("starts with no highlight (openCompanyWorkspace alone never sets one)", () => {

@@ -15,6 +15,30 @@ import { CoreKpiTable } from "./CoreKpiTable";
 import { renderTool } from "./toolRegistry";
 import { SpolkaToolHostProvider, ToolHostConfirmModal, type SpolkaToolHostApi } from "./ToolHost";
 import type { Tool } from "./route";
+import { useCommandPaletteCommands } from "../../app/commandPalette";
+import type { PaletteCommand } from "../../shared/components/CommandPalette";
+
+// Contextual palette entries (F3a S3, plan "Trasy powierzchni globalnych" +
+// ADR 0104 dec. 3) while the Spółka screen is active: one `Open <tool>` entry
+// per parameterless Tool variant, labels identical to the workshop-bar/core
+// buttons that open the same tool (`feedItem` is excluded — it always needs a
+// specific `feedItemId`, so it has no standalone command).
+export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool; label: string; actionKey: string }> = [
+  { tool: { t: "feed" }, label: "Open feed", actionKey: "tool.open.feed" },
+  { tool: { t: "fundamenty" }, label: "Open fundamentals", actionKey: "tool.open.fundamenty" },
+  { tool: { t: "pokrycie" }, label: "Open coverage", actionKey: "tool.open.pokrycie" },
+  { tool: { t: "rekomendacje" }, label: "Open recommendations", actionKey: "tool.open.rekomendacje" },
+  { tool: { t: "tezy" }, label: "Open claims", actionKey: "tool.open.tezy" },
+  { tool: { t: "notatnik" }, label: "Open notebook", actionKey: "tool.open.notatnik" },
+  { tool: { t: "dziennik" }, label: "Open decision journal", actionKey: "tool.open.dziennik" },
+  { tool: { t: "jakosc" }, label: "Open quality", actionKey: "tool.open.jakosc" },
+  { tool: { t: "diff" }, label: "Open report diff", actionKey: "tool.open.diff" },
+  { tool: { t: "research" }, label: "Open research", actionKey: "tool.open.research" },
+  { tool: { t: "akcjonariat" }, label: "Open ownership", actionKey: "tool.open.akcjonariat" },
+  { tool: { t: "sygnaly" }, label: "Open signals", actionKey: "tool.open.sygnaly" },
+  { tool: { t: "dokumenty" }, label: "Open documents", actionKey: "tool.open.dokumenty" },
+  { tool: { t: "wydarzenia" }, label: "Open events", actionKey: "tool.open.wydarzenia" },
+];
 
 export type SpolkaScreenProps = {
   companyId: string;
@@ -73,6 +97,19 @@ export function SpolkaScreen({
     }
     spolkaTool.openTool(companyId, tool);
   }
+
+  // Contribute the tool-open commands to the global ⌘K palette while this
+  // screen is mounted (F3a S3) — dictionary-separated from the cockpit's own
+  // commands (plan "Separacja słowników"): a distinct source id, distinct
+  // `actionKey` namespace.
+  const spolkaToolCommands: PaletteCommand[] = SPOLKA_TOOL_COMMANDS.map(({ tool, label, actionKey }) => ({
+    id: `spolka-tool:${actionKey}`,
+    label: text(label),
+    verb: "open",
+    actionKey,
+    run: () => openTool(tool),
+  }));
+  useCommandPaletteCommands("spolka", spolkaToolCommands);
 
   return (
     <section className="feed-panel spolka-screen" role="region" aria-label={text("Company view")} data-company-id={companyId}>

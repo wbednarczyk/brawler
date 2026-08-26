@@ -79,6 +79,10 @@ const PanelContentContext = createContext<Map<string, () => ReactNode>>(new Map(
 // tab's label/disabled/onToggle stay current as the view company / panel set
 // changes; absent id ⇒ no pin button (non-company-scoped panels).
 const PanelPinContext = createContext<Map<string, DockPanelPin>>(new Map());
+// Layout-structure freeze (F3a S3, ADR 0107 decision 5): true while panel
+// close/drag affordances must be hidden — domain editing inside a panel stays
+// unaffected, only the dock's own arrangement is locked.
+const FrozenContext = createContext(false);
 
 function DockPanel(props: IDockviewPanelProps) {
   const contents = useContext(PanelContentContext);
@@ -99,6 +103,7 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
   const [title, setTitle] = useState(api.title);
   const pins = useContext(PanelPinContext);
   const pin = pins.get(api.id);
+  const frozen = useContext(FrozenContext);
   useEffect(() => {
     const a = api.onDidActiveChange(() => setActive(api.isActive));
     const t = api.onDidTitleChange(() => setTitle(api.title));
@@ -138,15 +143,17 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
           <Pin size={12} />
         </button>
       ) : null}
-      <button
-        type="button"
-        className="cockpit-tab-close"
-        aria-label={`Close ${title}`}
-        title={`Close ${title}`}
-        onClick={() => api.close()}
-      >
-        ×
-      </button>
+      {frozen ? null : (
+        <button
+          type="button"
+          className="cockpit-tab-close"
+          aria-label={`Close ${title}`}
+          title={`Close ${title}`}
+          onClick={() => api.close()}
+        >
+          ×
+        </button>
+      )}
     </span>
   );
 }
@@ -316,6 +323,9 @@ type DockLayoutProps = {
    * times the dock (re)initializes underneath.
    */
   activatePanelId?: string | null;
+  /** Layout-structure freeze (F3a S3, ADR 0107 decision 5): hides tab close
+   *  buttons and disables drag/drop. Domain content inside panels is unaffected. */
+  frozen?: boolean;
 };
 
 // Imperative handle for named-layout save/restore (the geometry — splits/tabs —
@@ -326,7 +336,7 @@ export type DockLayoutHandle = {
 };
 
 export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function DockLayout(
-  { panels, storageKey, resetNonce, grid, onClosePanel, activatePanelId = null },
+  { panels, storageKey, resetNonce, grid, onClosePanel, activatePanelId = null, frozen = false },
   ref,
 ) {
   const contents = new Map(panels.map((panel) => [panel.id, panel.render]));
@@ -351,6 +361,8 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
   gridRef.current = grid;
   const onCloseRef = useRef(onClosePanel);
   onCloseRef.current = onClosePanel;
+  const frozenRef = useRef(frozen);
+  frozenRef.current = frozen;
   // True while WE rebuild (reset / restore) so programmatic removals are not
   // mistaken for user closes.
   const rebuildingRef = useRef(false);
@@ -391,7 +403,7 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
           break;
         case "w":
         case "W":
-          if (isEditableTarget(event.target)) return;
+          if (frozenRef.current || isEditableTarget(event.target)) return;
           event.preventDefault();
           api.activePanel?.api.close();
           break;
@@ -675,16 +687,19 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
   return (
     <PanelContentContext.Provider value={contents}>
       <PanelPinContext.Provider value={pins}>
-        <div ref={containerRef} className="cockpit-dock dockview-theme-brawler">
-          <DockviewReact
-            key={dockNonce}
-            components={DOCK_COMPONENTS}
-            tabComponents={TAB_COMPONENTS}
-            defaultTabComponent={AccessibleTab}
-            rightHeaderActionsComponent={GroupActions}
-            onReady={onReady}
-          />
-        </div>
+        <FrozenContext.Provider value={frozen}>
+          <div ref={containerRef} className="cockpit-dock dockview-theme-brawler">
+            <DockviewReact
+              key={dockNonce}
+              components={DOCK_COMPONENTS}
+              tabComponents={TAB_COMPONENTS}
+              defaultTabComponent={AccessibleTab}
+              rightHeaderActionsComponent={GroupActions}
+              onReady={onReady}
+              disableDnd={frozen}
+            />
+          </div>
+        </FrozenContext.Provider>
       </PanelPinContext.Provider>
     </PanelContentContext.Provider>
   );

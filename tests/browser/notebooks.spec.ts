@@ -8,7 +8,7 @@ import { test, expect, openApp, openCockpitPanel } from "./helpers/harness";
 test.describe("notebooks", { tag: "@clickable" }, () => {
   test("create, edit, and delete a note for a company", async ({ page }) => {
     await openApp(page);
-    await openCockpitPanel(page, "Notebook");
+    await openCockpitPanel(page, "Notebooks");
 
     // Scope generic-named buttons (New note / Save) to the notebook panel — the
     // cockpit hosts several panels, so an unscoped "Save" is ambiguous.

@@ -1,21 +1,26 @@
 import { test, expect, openApp } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
-// Structured-first provenance UI (ADR 0061). Opening a company lands the cockpit
-// dashboard with the Fundamentals panel; each fact the deterministic pipeline
-// produced carries a source-tier + validation badge, and a fact whose layout
-// drifted from the confirmed company profile shows a clean "structure changed"
-// label diff. The browser mock runtime (browserSmokeRuntime factProvenance) seeds
-// Revenue Q3 as a clean, validated ESEF fact and Net profit Q3 as a flagged PDF
-// parse carrying drift — so this asserts both badge states and the diff card
-// render end to end (the gap a Vitest-mocked panel cannot catch).
+// Structured-first provenance UI (ADR 0061). F3a S3 (ADR 0107): opening a
+// company lands the Spółka screen; Fundamentals is the `fundamenty` workshop
+// tool, opened via the ⌘K palette's "Open fundamentals" entry — each fact the
+// deterministic pipeline produced carries a source-tier + validation badge,
+// and a fact whose layout drifted from the confirmed company profile shows a
+// clean "structure changed" label diff. The browser mock runtime
+// (browserSmokeRuntime factProvenance) seeds Revenue Q3 as a clean, validated
+// ESEF fact and Net profit Q3 as a flagged PDF parse carrying drift — so this
+// asserts both badge states and the diff card render end to end (the gap a
+// Vitest-mocked panel cannot catch).
 
 async function openFundamentals(page: Page) {
   await openApp(page);
   await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill("Open fundamentals");
+  await palette.getByRole("button", { name: "Open fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Company fundamentals")).toBeVisible();
 }
 

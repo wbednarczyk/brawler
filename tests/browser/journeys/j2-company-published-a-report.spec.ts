@@ -69,27 +69,24 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expect(page.getByRole("button", { name: "View analysis" })).toHaveCount(0);
     await expectNoPageOverflow(page);
 
-    // Open the company — the cockpit dashboard lands scoped to it (ADR 0057),
-    // visible and in view without a manual scroll, and the app shell must not have
-    // scrolled (the "moves the whole app" regression).
+    // Open the company — the Spółka screen lands scoped to it directly (F3a
+    // S1, ADR 0107; the freeform cockpit dashboard is frozen and no longer
+    // this journey's path, F3a S3, ADR 0107 decision 5), visible and in view
+    // without a manual scroll, and the app shell must not have scrolled (the
+    // "moves the whole app" regression).
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await j.markScreen("Companies");
     await expectNoA11yViolations(page, "Companies list");
     await j.click(page.locator('[data-company-id="company_gpw_cdr"] .company-row-main'));
-    // F3a S1 (ADR 0107): the row now opens the Spółka screen first — it still
-    // primes `cockpitInitialCompanyId`, so the sidebar's "Dashboard" entry
-    // reaches the same CD PROJEKT-scoped cockpit this journey still exercises
-    // (S2's in-Spółka tool host is not built yet).
-    await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }));
 
-    const workspace = page.getByRole("region", { name: "Research cockpit", exact: true });
+    const workspace = page.getByRole("region", { name: "Company view", exact: true });
     await expect(workspace).toBeVisible();
     await expect(workspace).toBeInViewport();
     await j.markScreen("Company workspace");
-    // The cockpit root's semantic company marker (ADR 0081 Q3 observation point)
+    // The Spółka root's semantic company marker (ADR 0081 Q3 observation point)
     // is the context this journey must not silently lose across the Claims/
-    // Notebook tab switches below — it is the company the facts, the resolved
+    // Notebook tool switches below — it is the company the facts, the resolved
     // claim, and the captured note must all end up attached to.
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const pageScroll = await page.evaluate(() => ({ y: window.scrollY, top: document.documentElement.scrollTop }));
@@ -97,8 +94,10 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     expect(pageScroll.top).toBe(0);
     await expectNoPageOverflow(page);
 
-    // The deterministically-extracted facts are wired through the read model: the
-    // fundamentals matrix renders directly on the dashboard (no tab).
+    // The deterministically-extracted facts are wired through the read model:
+    // the KPI core card's own "Open fundamentals" button raises the facts
+    // matrix in the fundamentals tool.
+    await j.click(workspace.getByRole("button", { name: "Open fundamentals" }));
     const fundamentals = page.getByLabel("Company fundamentals");
     await expect(fundamentals).toBeVisible();
     await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
@@ -120,12 +119,16 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await page.keyboard.press("Escape");
     await expect(factDetail).toBeHidden();
 
-    // Resolve a due management claim from the workspace Claims tab, at the real
-    // pane size the current project viewport gives it — no forced 900×700
-    // shortcut (Q3, ADR 0081). The manual claims path survives ADR 0084.
-    await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first());
-    const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });
+    // Resolve a due management claim: the workshop bar's "Open claims" stays
+    // visible whether or not a tool is open (unlike the glance bar's own
+    // "Claims counter" drill target, hidden behind the open Fundamentals
+    // tool) and raises the claims tool — at the real pane size the current
+    // project viewport gives it, no forced 900×700 shortcut (Q3, ADR 0081).
+    // The manual claims path survives ADR 0084.
+    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open claims" }));
+    const claimsPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(claimsPane).toBeVisible();
+    await expect(claimsPane).toHaveAttribute("data-tool", "tezy");
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const reviewQueue = claimsPane.getByLabel("Claims to verify");
     // At the short-height density tier (ADR 0076 D6, pane < 480px tall) the
@@ -145,11 +148,13 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expect(claimsPane.getByLabel("Claim verdict").first()).toHaveValue("delivered");
     await expectNoPageOverflow(page);
 
-    // Capture the judgment as a note in the company Notebook, again at the real
-    // pane size (no forced 900×700 shortcut).
-    await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Notebook", exact: true }).first());
-    const notebookPane = page.locator(".cockpit-pane", { has: page.locator(".notebook-panel") });
+    // Capture the judgment as a note in the company Notebook: the workshop
+    // bar's "Open notebook" raises the notebook tool — again at the real pane
+    // size (no forced 900×700 shortcut).
+    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open notebook" }));
+    const notebookPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(notebookPane).toBeVisible();
+    await expect(notebookPane).toHaveAttribute("data-tool", "notatnik");
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const notebook = notebookPane.getByLabel("Company notebook");
 

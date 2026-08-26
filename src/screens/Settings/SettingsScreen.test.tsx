@@ -75,7 +75,7 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Shortcuts are ignored while typing in fields and editors.")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Open Inbox")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Focus Inbox search")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Open Inbox search")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Open command palette")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Ctrl+1")).toBeInTheDocument();
     // The command palette now owns Ctrl+K; Focus Inbox search moved to Ctrl+F.
@@ -83,8 +83,8 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByText("Ctrl+F")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Shift+F9")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Select next inbox item")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Edit selected notebook entry")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Open next inbox item")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Open notebook entry editor")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Shortcut key Open Inbox"), {
       target: { value: "I" },
@@ -140,7 +140,7 @@ describe("Settings screen workflows", () => {
 
     expect(within(settingsRegion).getByRole("heading", { name: "Skróty klawiaturowe" })).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Otwórz Inbox")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Ustaw fokus na wyszukiwaniu inboxu")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Otwórz wyszukiwanie inboxu")).toBeInTheDocument();
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Źródła" }));
 

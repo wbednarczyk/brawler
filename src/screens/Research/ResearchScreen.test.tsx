@@ -188,11 +188,13 @@ describe("Research screen workflows", () => {
     expect(screen.getByText("Linked evidence")).toBeInTheDocument();
   });
 
-  it("opens research question evidence in the Dashboard evidence preset (not Notebooks)", async () => {
+  it("opens research question evidence in the Spółka research tool (not Notebooks)", async () => {
     const user = userEvent.setup();
 
-    // Clicking a research_question evidence item opens the company Dashboard on
-    // the "evidence" preset, never Notebooks (epic c793ca1).
+    // Clicking a research_question evidence item opens the Spółka `research`
+    // tool (F3a S3, ADR 0107 mapping "preset 'evidence'→research" — the
+    // frozen cockpit's "evidence" preset is gone with the freeze, decision
+    // 5), never Notebooks (epic c793ca1).
     renderApp({ section: "Research" });
 
     await user.click(await screen.findByRole("button", { name: "Add question" }));
@@ -217,11 +219,13 @@ describe("Research screen workflows", () => {
 
     await user.click(within(questionEvidenceRow as HTMLElement).getByTitle("Open evidence"));
 
-    // Landed in the Dashboard (the Research cockpit region), not the Notebooks screen.
-    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+    // Landed on the Spółka screen with the research tool raised, not the
+    // Notebooks screen and not the (now frozen) cockpit.
+    const company = await screen.findByRole("region", { name: "Company view" });
+    const tool = await within(company).findByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "research");
+    expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Notebooks" })).not.toBeInTheDocument();
-    // The Preset selector reflects the evidence preset it was opened on.
-    expect(screen.getByLabelText("Preset")).toHaveValue("evidence");
   });
 
   it("confirms in place and deletes a selected research question", async () => {

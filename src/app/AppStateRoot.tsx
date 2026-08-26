@@ -50,19 +50,16 @@ import {
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
 import {
-  CreateViewModal,
-  type CreateViewSpec,
-} from "../screens/Cockpit/CreateViewModal";
-import {
   listCockpitLayouts,
   renameCockpitLayout,
-  saveCockpitLayout,
   type CockpitLayout,
 } from "../api/cockpit";
 import { makeCockpitViewActions } from "./useCockpitViewActions";
 import { useToast, useUndoableDelete } from "../ui";
+import { DecisionJournalGlobalPanel } from "../screens/Cockpit/DecisionJournalGlobalPanel";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { SpolkaScreenHost, useSpolkaTool } from "./useSpolkaScreenWiring";
+import { buildLegacyDashboardRows } from "./SidebarViewsGroup";
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -203,11 +200,6 @@ export function AppStateRoot({
   // The company a workspace "Advanced layout" toggle scopes the dockview cockpit
   // to (ADR 0054); null = the cockpit opened directly, unscoped.
   const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<
-    string | null
-  >(null);
-  // The built-in preset the Dashboard opens on (epic c793ca1); null = its
-  // default (company overview).
-  const [cockpitInitialPresetId, setCockpitInitialPresetId] = useState<
     string | null
   >(null);
   const [theme, setTheme] = useState<Theme>("dark");
@@ -409,7 +401,6 @@ export function AppStateRoot({
     null,
   );
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
-  const [createViewOpen, setCreateViewOpen] = useState(false);
   const [activeCockpitLayoutId, setActiveCockpitLayoutId] = useState<
     string | null
   >(null);
@@ -450,37 +441,9 @@ export function AppStateRoot({
     }
   }
 
-  // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
-  // layout. The view starts **empty** (every linked panel closed) and is sized by
-  // the chosen grid (stored for the grid-render step); on save it is **activated**
-  // — the Cockpit opens scrolled to it (initialLayoutId), ready to fill from the
-  // panel palette. parsePanels tolerates the descriptor, so loading is safe.
-  function handleCreateView(spec: CreateViewSpec) {
-    const panelsJson = JSON.stringify({
-      pinned: [],
-      openGlobals: [],
-      closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
-      selectedFeedItemId: null,
-      grid: { cols: spec.cols, rows: spec.rows },
-      // A fresh view has no view company yet (U-Ra); follow cells prompt to choose.
-      viewCompanyId: null,
-    });
-    void saveCockpitLayout({
-      name: spec.name,
-      panelsJson,
-      layoutJson: null,
-      dockviewVersion: null,
-    })
-      .then((layout) => {
-        setCreateViewOpen(false);
-        setCockpitInitialCompanyId(null);
-        setCockpitInitialPresetId(null);
-        setActiveCockpitLayoutId(layout.id);
-        setActiveSection("Cockpit");
-        refreshCockpitLayouts();
-      })
-      .catch(() => setCreateViewOpen(false));
-  }
+  // View creation ("+ New view", `handleCreateView`) is removed with the
+  // freeze (F3a S3, ADR 0107 decision 5) — layout structure no longer saves;
+  // existing named views + legacy dashboards stay reachable read-only.
   const [sourceAdapterRefreshInFlight, setSourceAdapterRefreshInFlight] =
     useState<string | null>(null);
   const [registryRefreshState, setRegistryRefreshState] =
@@ -624,7 +587,6 @@ export function AppStateRoot({
     activeCockpitLayoutId,
     setActiveCockpitLayoutId,
     setCockpitInitialCompanyId,
-    setCockpitInitialPresetId,
     setActiveSection,
     refreshCockpitLayouts,
     runUndoableDelete,
@@ -1176,6 +1138,7 @@ export function AppStateRoot({
     setSelectedCompanyId,
     setSelectedFeedItemId,
     setCockpitInitialCompanyId,
+    openTool: spolkaTool.openTool,
   });
 
   const {
@@ -1303,9 +1266,9 @@ export function AppStateRoot({
         setActiveSection("Notebooks");
         break;
       case "research":
-        // Evidence deep-links land on the Dashboard "evidence" preset, which
-        // hosts the research evidence timeline following the view company
-        // (ADR 0057 decision 5 amendment).
+        // Evidence deep-links land on the Spółka `research` tool (F3a, ADR
+        // 0107 mapping "preset 'evidence'→research"): the frozen cockpit's
+        // "evidence" preset is gone with the freeze (ADR 0107 decision 5).
         if (item.evidenceType === "research_question") {
           if (researchMode !== "company") {
             setResearchMode("company");
@@ -1315,7 +1278,9 @@ export function AppStateRoot({
           }
           setSelectedResearchQuestionId(item.sourceId);
         }
-        openAdvancedLayout(item.companyId, "evidence");
+        setSelectedCompanyId(item.companyId);
+        setActiveSection("Spolka");
+        spolkaTool.openTool(item.companyId, { t: "research" });
         break;
       case "events":
         setCompanyEventCompanyFilter(item.companyId);
@@ -1361,14 +1326,16 @@ export function AppStateRoot({
         break;
       case "research_brief":
       case "digest":
-        // Retired Research screen (epic c793ca1): a brief/digest search result opens
-        // the company Dashboard on the "evidence" preset (the research timeline).
+        // A brief/digest search result opens the Spółka `research` tool (F3a,
+        // ADR 0107 mapping "preset 'evidence'→research").
         if (match.companyId) {
           if (researchMode !== "company") {
             setResearchMode("company");
           }
           setSelectedResearchCompanyId(match.companyId);
-          openAdvancedLayout(match.companyId, "evidence");
+          setSelectedCompanyId(match.companyId);
+          setActiveSection("Spolka");
+          spolkaTool.openTool(match.companyId, { t: "research" });
         } else {
           openDashboard();
         }
@@ -1579,10 +1546,14 @@ export function AppStateRoot({
     addCompanyToWatchlist,
     removeCompanyFromWatchlist,
   };
+  // The tab now reaches its Spółka tool (F3a S3, plan "Mapowanie WSZYSTKICH
+  // intencji") — no longer discarded here. Wrapped (not passed directly) so
+  // the reference stays lazy: `openCompanyWorkspaceById` is declared later in
+  // this component.
   const reportSeasonViewModel = {
     watchlists,
-    openCompanyWorkspace: (companyId: string, _tab: CompanyWorkspaceTab) =>
-      openCompanyWorkspaceById(companyId),
+    openCompanyWorkspace: (companyId: string, tab: CompanyWorkspaceTab) =>
+      openCompanyWorkspaceById(companyId, tab),
   };
   const researchViewModel: ResearchScreenProps = {
     companies,
@@ -1774,6 +1745,15 @@ export function AppStateRoot({
       ticker: company.ticker,
     }));
 
+  // Every tracked company (F3a S3) — feeds the palette's `Open company:
+  // TICKER` entries for every company, not only pinned ones.
+  const trackedCompanies: PinnedCompany[] = companies.map((company) => ({
+    id: company.id,
+    name: company.displayName,
+    ticker: company.ticker,
+  }));
+  const legacyDashboardLayouts = buildLegacyDashboardRows(cockpitLayouts, companiesById);
+
   function openPinnedCompany(companyId: string) {
     const company = companies.find((candidate) => candidate.id === companyId);
     if (company) {
@@ -1787,16 +1767,17 @@ export function AppStateRoot({
 
   // Company deep-dive entry points (Spółka default, ADR 0107; cockpit
   // dashboard, ADR 0057) — extracted to useCompanyEntryActions.
-  const { openCompanyWorkspaceById, openAdvancedLayout, openDashboard } =
+  const { openCompanyWorkspaceById, openAdvancedLayout, openDashboard, openSpolkaMode } =
     useCompanyEntryActions({
       companies,
       cockpitInitialCompanyId,
       pinnedCompanyIds,
+      selectedCompanyId,
       setSelectedCompanyId,
       setActiveSection,
       setActiveCockpitLayoutId,
       setCockpitInitialCompanyId,
-      setCockpitInitialPresetId,
+      openTool: spolkaTool.openTool,
     });
 
   return (
@@ -1811,17 +1792,20 @@ export function AppStateRoot({
           refreshDatabaseBackedViews={refreshDatabaseBackedViews}
           refreshSources={refreshSources}
           setActiveSection={setActiveSection}
-          onOpenDashboard={openDashboard}
-          onCreateView={() => setCreateViewOpen(true)}
+          onOpenSpolkaMode={openSpolkaMode}
           cockpitViews={cockpitViews}
           activeCockpitViewId={
             cockpitInitialCompanyId ? null : activeCockpitLayoutId
           }
+          cockpitInitialCompanyId={cockpitInitialCompanyId}
+          legacyDashboardLayouts={legacyDashboardLayouts}
           onOpenCockpitView={openCockpitView}
+          onOpenLegacyDashboard={(companyId) => openAdvancedLayout(companyId)}
           onDeleteCockpitView={deleteCockpitView}
           onRenameCockpitView={renameCockpitView}
           onNavigateToSearchResult={navigateToSearchResult}
           pinnedCompanies={pinnedCompanies}
+          trackedCompanies={trackedCompanies}
           selectedCompanyId={selectedCompanyId}
           onOpenCompany={openPinnedCompany}
           onUnpinCompany={unpinCompany}
@@ -1936,8 +1920,10 @@ export function AppStateRoot({
                             initialCompanyId={cockpitInitialCompanyId}
                             initialLayoutId={activeCockpitLayoutId}
                             highlightClaimId={highlightClaimId}
-                            initialPresetId={cockpitInitialPresetId}
                             onLayoutsChanged={refreshCockpitLayouts}
+                            onOpenView={openCockpitView}
+                            onOpenCompany={openCompanyWorkspaceById}
+                            onOpenCompaniesScreen={() => setActiveSection("Companies")}
                           />
                         </EventsProvider>
                       </ReportSeasonProvider>
@@ -1961,6 +1947,18 @@ export function AppStateRoot({
                     refreshCompletionCount={refreshCompletionCount}
                   />
                 </ResearchProvider>
+              ) : null}
+              {activeSection === "Journal" ? (
+                // Decision journal, all companies (F3a S3, ADR 0107 plan
+                // "Trasy powierzchni globalnych"): a standalone screen route —
+                // the same global panel the frozen cockpit hosts, not a panel
+                // inserted into it. No separate PanelHeader: the panel's own
+                // "Decision journal" heading (SectionHeader h3) is this
+                // screen's only heading — a second h1 above it would repeat
+                // the same title and break heading order (axe).
+                <section className="feed-panel" role="region" aria-label={text("Decision journal")}>
+                  <DecisionJournalGlobalPanel companies={companies} />
+                </section>
               ) : null}
               {activeSection === "Today" ? (
                 <TodayScreen
@@ -2212,11 +2210,6 @@ export function AppStateRoot({
             </ErrorBoundary>
           </section>
         </AppShell>
-        <CreateViewModal
-          open={createViewOpen}
-          onClose={() => setCreateViewOpen(false)}
-          onCreate={handleCreateView}
-        />
       </SettingsProvider>
     </LocaleContext.Provider>
   );

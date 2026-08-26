@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Modal, SearchField } from "../../ui";
+import type { Verb } from "../verbs";
 
 // Shared command palette — the keyboard-first launcher (⌘K). A self-contained,
 // controlled presentation unit: it renders a filtered, arrow/enter-navigable
@@ -8,7 +9,11 @@ import { Modal, SearchField } from "../../ui";
 // AppShell) feeds it the merged app + contextual list; the cockpit still mounts
 // its own instance for the cell-fill flows. Filter + keyboard nav live here.
 
-export type PaletteCommand = { id: string; label: string; run: () => void };
+// `actionKey`/`verb` (ADR 0104 dec. 3, F3a S3): stable, label-independent
+// identity for a command plus its dictionary verb — the copy gate
+// (src/app/paletteCopy.test.ts) checks every producer's labels against
+// `verb` and that no two verbs share one `actionKey`.
+export type PaletteCommand = { id: string; label: string; run: () => void; actionKey: string; verb: Verb };
 
 export function CommandPalette({
   open,

@@ -4,10 +4,11 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // unbreakable content — a long Markdown rationale and evidence rows (long ESPI
 // filenames) inside a list∥detail grid. Guard that composing an entry and
 // selecting it does not force a horizontal scrollbar at a narrow window (the
-// quarter-ultrawide range, DoD §B). Opening a company lands the cockpit dashboard
-// with the view company set, so the `decisionJournal` FOLLOW panel — added from
-// the ⌘K palette — resolves to that company. The dual-execution mock runtime
-// serves the (command-only) journal + the company timeline as the evidence pool.
+// quarter-ultrawide range, DoD §B). F3a S3 (ADR 0107): opening a company lands
+// the Spółka screen; the journal is the `dziennik` workshop tool, opened via
+// the ⌘K palette's "Open decision journal" entry. The dual-execution mock
+// runtime serves the (command-only) journal + the company timeline as the
+// evidence pool.
 test("decision journal panel does not horizontally overflow at a narrow window", async ({
   page,
 }) => {
@@ -15,17 +16,13 @@ test("decision journal panel does not horizontally overflow at a narrow window",
   await openApp(page);
   await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
-
-  // Add the Decision journal follow panel from the command palette (offered once
-  // a view company is set — the company dashboard sets it).
-  await page.getByRole("button", { name: "Add panel" }).click();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open panel: Decision journal");
-  await palette.getByRole("button", { name: "Open panel: Decision journal", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open decision journal");
+  await palette.getByRole("button", { name: "Open decision journal", exact: true }).first().click();
 
-  // Focus the panel's dock tab and open the composer.
+  // Open the composer.
   const journalPanel = page.locator(".decision-journal-panel");
   await journalPanel.getByRole("button", { name: "New entry" }).click();
 

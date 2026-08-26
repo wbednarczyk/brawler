@@ -118,7 +118,7 @@ test.describe("browser UI regression smoke", () => {
   test("keeps the notebook panes independently usable as a cockpit panel", async ({ page }) => {
     // Notebooks moved off the sidebar into the cockpit (ADR 0054); open it there.
     await openApp(page);
-    await openCockpitPanel(page, "Notebook");
+    await openCockpitPanel(page, "Notebooks");
 
     const workspace = page.getByLabel("Notebooks workspace");
     const companyNav = page.getByLabel("Notebook companies");

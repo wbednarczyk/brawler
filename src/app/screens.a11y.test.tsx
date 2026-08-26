@@ -18,6 +18,9 @@ const SCREENS = [
   "Companies",
   "Sources",
   "Events",
+  // Decision journal, all companies (F3a S3, ADR 0107) — a standalone screen
+  // route, no top-level nav item.
+  "Journal",
 ] as const;
 
 // Only two rules stay off, each for a reason that cannot be engineered away

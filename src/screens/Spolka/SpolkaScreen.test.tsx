@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { SpolkaScreen, type SpolkaScreenProps } from "./SpolkaScreen";
 import { useSpolkaToolHost } from "./ToolHost";
 import { ToastProvider } from "../../ui";
+import { CommandPaletteProvider } from "../../app/commandPalette";
 import { ResearchProvider } from "../../app/state/screenViewModels";
 import type { ResearchScreenProps } from "../Research/ResearchScreen";
 import { getCompanyView } from "../../api/companyView";
@@ -226,11 +227,13 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
 function Harness(overrides: Partial<SpolkaScreenProps>) {
   const spolkaTool = useSpolkaToolHost();
   return (
-    <ToastProvider>
-      <ResearchProvider value={researchViewModelStub}>
-      <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
-    </ResearchProvider>
-    </ToastProvider>
+    <CommandPaletteProvider appCommands={[]} text={(s) => s}>
+      <ToastProvider>
+        <ResearchProvider value={researchViewModelStub}>
+          <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
+        </ResearchProvider>
+      </ToastProvider>
+    </CommandPaletteProvider>
   );
 }
 

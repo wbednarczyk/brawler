@@ -397,7 +397,52 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     transcriptSegments,
     watchlists,
     watchlistMemberships,
-    cockpitLayouts: [],
+    // _comment: one legacy per-company dashboard layout (reserved `dashboard:`
+    // name prefix, CockpitScreen's DASHBOARD_PREFIX) on the first company so
+    // the "Widoki" sidebar group's "Dawny dashboard · TICKER" row (F3a S3) has
+    // a seed to render in browser tests. `panelsJson` mirrors CockpitScreen's
+    // own DASHBOARD_DEFAULT_KINDS (as follow panels bound to the company) —
+    // NOT `"[]"` — so opening it renders the same panel set the "no saved
+    // layout yet" default path would have seeded (an empty saved layout would
+    // otherwise silently override that default, which broke the cockpit's own
+    // add-panel-surface tests when this seed was introduced).
+    cockpitLayouts: companies[0]
+      ? [
+          {
+            id: "cockpit_layout_legacy_dashboard_sample_1",
+            name: `dashboard:${companies[0].id}`,
+            ordinal: 0,
+            panelsJson: JSON.stringify({
+              pinned: [
+                "fundamentals",
+                "coverage",
+                "companyFeed",
+                "basicInfo",
+                "claims",
+                "quality",
+                "documents",
+                "redFlags",
+                "companyNotebook",
+              ].map((kind) => ({ kind, mode: "follow" })),
+              openGlobals: [],
+              // Mirrors CockpitScreen's DASHBOARD_CLOSED_LINKED: a company
+              // dashboard uses the follow panels above, not the linked ones
+              // (open linked panels would duplicate labels, e.g. "diff-sel"
+              // vs. the "reportDiff" follow panel both read "Report
+              // comparison").
+              closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+              selectedFeedItemId: null,
+              grid: null,
+              cells: null,
+              viewCompanyId: companies[0].id,
+            }),
+            layoutJson: null,
+            dockviewVersion: null,
+            createdAt: "2025-01-01T00:00:00Z",
+            updatedAt: "2025-01-01T00:00:00Z",
+          },
+        ]
+      : [],
     autopilotModes: [],
     autopilotRuns: [],
     // Research

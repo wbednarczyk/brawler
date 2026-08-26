@@ -1,14 +1,14 @@
 import { test, expect, openApp, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
-// U7 cluster A — density contracts for the two curated-dashboard company panels
-// (Fundamentals + company Feed). Mirrors the table-driven runner in
+// U7 cluster A — density contracts for two Spółka workshop tools (Fundamentals
+// + company Feed, F3a S3, ADR 0107). Mirrors the table-driven runner in
 // density-matrix.spec.ts (ADR 0076 D6): each PANEL_CONTRACTS entry opens the
-// panel, returns the `.cockpit-pane` to size, and asserts the per-tier
-// visibility/layout rules after `setPaneSize` forces the pane to the tier size
-// (container queries resolve against the forced pane size — jsdom can't fire
-// them, so the tier SWITCH is browser-only; the fold TOGGLE semantics are
-// unit-tested in the panels' *.test.tsx files).
+// tool, returns the "Workshop tool" container to size, and asserts the
+// per-tier visibility/layout rules after `setPaneSize` forces the pane to the
+// tier size (container queries resolve against the forced pane size — jsdom
+// can't fire them, so the tier SWITCH is browser-only; the fold TOGGLE
+// semantics are unit-tested in the panels' *.test.tsx files).
 
 type PaneLocator = Locator;
 type TierCheck = (page: Page, pane: PaneLocator) => Promise<void>;
@@ -32,21 +32,19 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-// Open the curated company dashboard for GPW:CDR (shell.spec "opening a company
-// lands the cockpit dashboard"), then activate a pinned panel's tab and return
-// the `.cockpit-pane` that hosts it.
-async function openCompanyDashboard(page: Page, tabName: string, panelLabel: string): Promise<PaneLocator> {
+// Open GPW:CDR's Spółka screen, then open the named workshop tool via the ⌘K
+// palette and return `.spolka-layout` — the density contracts' `container:
+// pane / size` (spolka.css), not the "Workshop tool" group itself.
+async function openCompanyTool(page: Page, toolLabel: string): Promise<PaneLocator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
-  const cockpit = page.getByRole("region", { name: "Research cockpit" });
-  await expect(cockpit).toBeVisible();
-  // dockview mounts only the active panel body per group — activate the tab.
-  await cockpit.getByRole("button", { name: tabName, exact: true }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.getByLabel(panelLabel) });
-  await expect(pane).toBeVisible();
-  return pane;
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill(toolLabel);
+  await palette.getByRole("button", { name: toolLabel, exact: true }).first().click();
+  await expect(page.getByRole("group", { name: "Workshop tool" })).toBeVisible();
+  return page.locator(".spolka-layout");
 }
 
 async function box(locator: Locator) {
@@ -58,7 +56,7 @@ async function box(locator: Locator) {
 const PANEL_CONTRACTS: PanelContract[] = [
   {
     panel: "Fundamentals",
-    open: (page) => openCompanyDashboard(page, "Fundamentals", "Company fundamentals"),
+    open: (page) => openCompanyTool(page, "Open fundamentals"),
     tiers: {
       // S: Autopilot section collapses to one row + expand (summary toggle shown,
       // full field folded); sections stack; matrix scrolls.
@@ -94,7 +92,7 @@ const PANEL_CONTRACTS: PanelContract[] = [
   {
     panel: "Feed (company)",
     open: async (page) => {
-      const pane = await openCompanyDashboard(page, "Feed", "Company feed");
+      const pane = await openCompanyTool(page, "Open feed");
       // Select a feed item so the detail renders (split-pane at L, stacked otherwise).
       await pane.locator("[data-company-feed-row]").first().click();
       await expect(pane.locator(".company-feed-detail")).toBeVisible();
@@ -156,7 +154,7 @@ test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, ()
     page,
   }) => {
     await openApp(page);
-    const pane = await openCompanyDashboard(page, "Fundamentals", "Company fundamentals");
+    const pane = await openCompanyTool(page, "Open fundamentals");
     const section = pane.locator("section.fundamentals-periods");
     await expect(section).toBeVisible();
 

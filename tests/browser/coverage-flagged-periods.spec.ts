@@ -13,6 +13,8 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // dual-execution mock runtime serves the seeded outcomes (CD PROJEKT populated,
 // ORLEN empty).
 
+// F3a S3 (ADR 0107): opening a company lands the Spółka screen; Coverage is
+// the `pokrycie` workshop tool, opened via the ⌘K palette's "Open coverage".
 async function openCoveragePanel(page: import("@playwright/test").Page, companyId: string) {
   await page.setViewportSize({ width: 1008, height: 900 });
   await openApp(page);
@@ -21,11 +23,11 @@ async function openCoveragePanel(page: import("@playwright/test").Page, companyI
     .getByRole("button", { name: "Companies" })
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
-  // Coverage ships in the DEFAULT cockpit set, as a background dockview tab —
-  // its content is not in the DOM until activated. Activate it as a user would.
-  await page.getByRole("button", { name: "Coverage", exact: true }).first().click();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill("Open coverage");
+  await palette.getByRole("button", { name: "Open coverage", exact: true }).first().click();
 }
 
 test("flagged periods render with translated reasons and do not overflow — populated", async ({

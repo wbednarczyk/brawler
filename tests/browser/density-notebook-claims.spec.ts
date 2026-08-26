@@ -84,7 +84,7 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
 
   test("global Notebooks screen — S / M / L tier compliance", async ({ page }) => {
     await openApp(page);
-    await openCockpitPanel(page, "Notebook");
+    await openCockpitPanel(page, "Notebooks");
     const pane = page.locator(".cockpit-pane", { has: page.locator(".notebooks-screen") });
     await expect(pane).toBeVisible();
     const screenEl = pane.locator(".notebooks-screen");

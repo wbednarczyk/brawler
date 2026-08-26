@@ -17,11 +17,14 @@ test.describe("fundamentals visual harness", () => {
     // Click the name/ticker area (what a user clicks) rather than the row centre,
     // which can fall on a watchlist chip.
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-    // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
+    // F3a S3 (ADR 0107): the row opens Spółka; Fundamentals is the `fundamenty`
+    // workshop tool, opened via the ⌘K palette's "Open fundamentals" entry.
+    await page.getByRole("region", { name: "Company view" }).waitFor();
+    await page.keyboard.press("Control+K");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await palette.getByLabel("Search commands").fill("Open fundamentals");
+    await palette.getByRole("button", { name: "Open fundamentals", exact: true }).first().click();
 
-    // Opening a company lands the cockpit dashboard (ADR 0057); the Fundamentals
-    // panel is shown directly, no tab.
     const panel = page.getByLabel("Company fundamentals");
     await expect(panel).toBeVisible();
     await expect(page.getByRole("heading", { name: "Reporting periods" })).toBeVisible();
@@ -43,10 +46,13 @@ test.describe("fundamentals visual harness", () => {
 
     await page.getByLabel("Nawigacja główna").getByRole("button", { name: "Spółki" }).click();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-    // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
+    // F3a S3 (ADR 0107): the row opens Spółka; open the `fundamenty` tool.
+    await page.getByRole("region", { name: "Widok spółki" }).waitFor();
+    await page.keyboard.press("Control+K");
+    const palette = page.getByRole("dialog", { name: "Paleta poleceń" });
+    await palette.getByLabel("Szukaj poleceń").fill("Otwórz fundamenty");
+    await palette.getByRole("button", { name: "Otwórz fundamenty", exact: true }).first().click();
 
-    // Cockpit dashboard (ADR 0057) shows the Fundamentals panel directly.
     const panel = page.getByLabel("Wskaźniki finansowe spółki");
     await expect(panel).toBeVisible();
     // Localized KPI labels (not English / internal ids). Scoped to the facts

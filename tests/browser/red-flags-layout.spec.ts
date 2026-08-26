@@ -9,6 +9,8 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // populated and empty states. The dual-execution mock runtime serves the seeded
 // red flags (CD PROJEKT populated, ORLEN empty).
 
+// F3a S3 (ADR 0107): opening a company lands the Spółka screen; the
+// warning-signals content is the `sygnaly` workshop tool ("Open signals").
 async function addRedFlagsPanel(page: import("@playwright/test").Page, companyId: string) {
   await page.setViewportSize({ width: 1008, height: 900 });
   await openApp(page);
@@ -17,13 +19,11 @@ async function addRedFlagsPanel(page: import("@playwright/test").Page, companyId
     .getByRole("button", { name: "Companies" })
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
-  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
-  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
-
-  // The panel ships in the DEFAULT cockpit set (v0.57 T7) — as a background
-  // tab of a dockview group, so its content is not in the DOM until the tab is
-  // activated. Activate it the way a user would: click its tab.
-  await page.getByRole("button", { name: "Warning signals", exact: true }).first().click();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill("Open signals");
+  await palette.getByRole("button", { name: "Open signals", exact: true }).first().click();
 }
 
 test("red-flags panel renders active flags and does not overflow — populated", async ({ page }) => {

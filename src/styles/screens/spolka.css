@@ -11,6 +11,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* Named size container for the panel density contracts (ADR 0076 D6, F3a
+     S3): every hosted panel's `@container pane (…)` rule — including a tool's
+     — resolves against this scroll region, mirroring `.cockpit-pane`/
+     `.workspace`. Safe here despite `overflow: auto`: the box's own size
+     comes from the flex layout (`flex: 1; min-height: 0` inside a
+     height-bound screen), not from its content, so `contain: size` cannot
+     collapse it. */
+  container: pane / size;
 }
 
 .spolka-glance {

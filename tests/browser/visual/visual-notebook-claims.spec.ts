@@ -30,7 +30,7 @@ test.describe("visual — notebook + claims", () => {
 
   test("Notebooks (global screen) across pane tiers", async ({ page }) => {
     await openApp(page);
-    await openCockpitPanel(page, "Notebook");
+    await openCockpitPanel(page, "Notebooks");
     const pane = page.locator(".cockpit-pane", { has: page.locator(".notebooks-screen") });
     await expect(pane).toBeVisible();
     // Land on a company with notes so the list is populated for every tier.

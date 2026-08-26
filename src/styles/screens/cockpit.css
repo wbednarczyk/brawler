@@ -97,14 +97,26 @@
   text-align: center;
 }
 
-/* An empty grid-view cell: a centered "pick a panel" button (ADR 0057). */
-.cockpit-cell-empty {
+/* Layout-structure freeze strip (F3a S3, ADR 0107 decision 5): informational,
+   not dismissible — domain edits inside panels keep saving. */
+.cockpit-frozen-strip {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  min-height: 6rem;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--tone-neutral) 35%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone-neutral) 8%, var(--surface-raised));
+}
+
+.cockpit-frozen-strip-icon {
+  flex: none;
+  color: var(--tone-neutral);
+  margin-top: var(--space-0);
+}
+
+.cockpit-frozen-strip-detail {
+  margin-top: 0;
 }
 
 /* Command palette (⌘K) */
@@ -152,6 +164,7 @@
   align-items: flex-end;
   gap: var(--space-3);
 }
+
 
 .cockpit-dock {
   position: relative;
