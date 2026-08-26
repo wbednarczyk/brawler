@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, FileDown, FileText, Star } from "lucide-react";
 import { getReportDocumentsView, reclassifyReportDocuments } from "../../api/reportDocuments";
 import { extractReportDocumentData } from "../../api/fundamentalsExtraction";
@@ -86,6 +86,11 @@ type CompanyReportDocumentsPanelProps = {
   // panel and the fundamentals panel are independent cockpit panels with no
   // shared read model, so this is the invalidation signal across them.
   onExtracted?: () => void;
+  /** A KPI cell's provenance ticket (`sourceDocumentRef`, ADR 0104 dec. 7,
+   * sol-review finding 8): scroll + flash this document once it renders,
+   * expanding whatever fold (companion group / "No period") hides it —
+   * mirrors CompanyClaimsPanel's `highlightClaimId` seam. */
+  highlightDocumentRef?: string;
 };
 
 // Middle-ellipsize a long, unbreakable filename so the identity portion — the
@@ -124,9 +129,15 @@ export function CompanyReportDocumentsPanel({
   companyId,
   reloadKey = 0,
   onExtracted,
+  highlightDocumentRef,
 }: CompanyReportDocumentsPanelProps) {
   const { text, locale } = useLocale();
   const toast = useToast();
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Fades on its own after the scroll+flash (CompanyClaimsPanel's pattern) —
+  // the incoming prop stays set for the panel's lifetime, so the highlight
+  // itself has to be transient, not the data driving it.
+  const [activeHighlightRef, setActiveHighlightRef] = useState<string | null>(null);
   const [rows, setRows] = useState<ReportDocumentViewRow[]>([]);
   // Coverage roll-up (#174, epic #229 T3) — the denominator behind the rows;
   // null while the view hasn't loaded yet.
@@ -316,6 +327,37 @@ export function CompanyReportDocumentsPanel({
     return { groups: built, noPeriodRows: noPeriod };
   }, [filteredRows]);
 
+  // Provenance-ticket navigation (sol-review finding 8): a highlighted
+  // document may be hidden behind the companion fold or the "No period"
+  // toggle — both conditionally UNMOUNT their rows (unlike CompanyClaimsPanel's
+  // CSS-only short-tier hiding), so it must be expanded before the row exists
+  // to scroll to.
+  useEffect(() => {
+    if (!highlightDocumentRef) return;
+    const foldedGroup = groups.find((group) =>
+      group.folded.some((row) => row.document.id === highlightDocumentRef),
+    );
+    if (foldedGroup) {
+      setExpandedFolds((current) => (current.has(foldedGroup.key) ? current : new Set(current).add(foldedGroup.key)));
+    }
+    if (noPeriodRows.some((row) => row.document.id === highlightDocumentRef)) {
+      setNoPeriodExpanded(true);
+    }
+  }, [highlightDocumentRef, groups, noPeriodRows]);
+
+  // Scroll the targeted document into view + flash it once its row actually
+  // exists in the DOM (after the expand effect above runs), then let the
+  // flash fade on its own — same 4s pattern as CompanyClaimsPanel.
+  useEffect(() => {
+    if (!highlightDocumentRef) return undefined;
+    const row = panelRef.current?.querySelector<HTMLElement>(`[data-document-id="${highlightDocumentRef}"]`);
+    if (!row) return undefined;
+    row.scrollIntoView?.({ block: "center" });
+    setActiveHighlightRef(highlightDocumentRef);
+    const timer = window.setTimeout(() => setActiveHighlightRef(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [highlightDocumentRef, groups, noPeriodRows, expandedFolds, noPeriodExpanded]);
+
   const toggleFold = (key: string) =>
     setExpandedFolds((current) => {
       const next = new Set(current);
@@ -419,7 +461,12 @@ export function CompanyReportDocumentsPanel({
     const code = statementCode(document.docKind);
     const canonicalTitle = text("Canonical report for this period");
     return (
-      <li className="doc-row" key={document.id}>
+      <li
+        className="doc-row"
+        key={document.id}
+        data-document-id={document.id}
+        data-document-highlighted={document.id === activeHighlightRef ? "true" : undefined}
+      >
         <span className="doc-row-icon">
           <FileText size={14} aria-hidden="true" />
         </span>
@@ -503,7 +550,7 @@ export function CompanyReportDocumentsPanel({
   const hasDocuments = rows.length > 0;
 
   return (
-    <div role="group" className="company-report-documents" aria-label={text("Report documents")}>
+    <div ref={panelRef} role="group" className="company-report-documents" aria-label={text("Report documents")}>
       <SectionHeader
         paneLead
         title={text("Report documents")}

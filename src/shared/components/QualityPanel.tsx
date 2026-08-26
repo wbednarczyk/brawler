@@ -36,6 +36,7 @@ import { formatCriterionMeasure } from "../format/criterionMeasure";
 import { formatDetailTimestamp } from "../format/datetime";
 import { useLocale } from "../locale";
 import type { LocaleCode } from "../locale";
+import { useToolHost } from "../toolHost";
 import {
   ActionRow,
   Button,
@@ -174,6 +175,28 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
 
   // Name-a-framework modal (shared by New and Clone).
   const [nameModal, setNameModal] = useState<null | { mode: "new" | "clone"; value: string }>(null);
+
+  // Register the criterion-authoring / name-a-framework drafts with the
+  // Spółka workshop's dirty gate (F3a S2/R1, ADR 0107) — a no-op when hosted
+  // outside it. Dirty = typed content in either draft.
+  const { register } = useToolHost();
+  useEffect(() => {
+    return register({
+      isDirty: () =>
+        label.trim() !== "" ||
+        expression.trim() !== "" ||
+        guidance.trim() !== "" ||
+        (nameModal !== null && nameModal.value.trim() !== ""),
+      discard: () => {
+        setLabel("");
+        setExpression("");
+        setGuidance("");
+        setExprError(null);
+        setExprMetrics([]);
+        setNameModal(null);
+      },
+    });
+  }, [register, label, expression, guidance, nameModal]);
 
   const selected = useMemo(
     () => frameworks.find((framework) => framework.id === selectedId) ?? null,
@@ -638,7 +661,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                   ))}
                 </SelectField>
                 <Button
-                  variant="primary"
                   disabled={busy || label.trim() === "" || expression.trim() === "" || exprError != null}
                   onClick={handleAddCriterion}
                 >
@@ -660,7 +682,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                   placeholder={text("Wide, durable moat")}
                 />
                 <Button
-                  variant="primary"
                   disabled={busy || label.trim() === "" || guidance.trim() === ""}
                   onClick={handleAddCriterion}
                 >
@@ -682,7 +703,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
 
           </div>
           {history.length > 0 ? (
-            <aside className="quality-history" aria-label={text("Evaluation history")}>
+            <div role="group" className="quality-history" aria-label={text("Evaluation history")}>
               <button
                 type="button"
                 className="quality-history-toggle"
@@ -760,7 +781,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                 })}
               </div>
               ) : null}
-            </aside>
+            </div>
           ) : null}
         </div>
       )}

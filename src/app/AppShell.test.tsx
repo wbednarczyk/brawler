@@ -134,3 +134,38 @@ describe("AppShell — exactly one aria-current across modes, views and pinned r
     expect(current[0]).toHaveAccessibleName("Companies");
   });
 });
+
+// F3a S3/R1 finding 4 (ADR 0107 decision 5): deleting a saved view mutates
+// the "Widoki" structure (a row disappears with no undo affordance in the
+// UI) — gone with the freeze, same as "+ New view"/"Add panel". Rename
+// (metadata, not structure) stays.
+describe("AppShell — named-view delete is gone, rename stays (frozen)", () => {
+  it("renders no delete control for a saved view", () => {
+    renderShell({
+      activeSection: "Cockpit",
+      cockpitViews: [{ id: "view_1", name: "Deep dive" }],
+      activeCockpitViewId: "view_1",
+    });
+    expect(screen.queryByRole("button", { name: /Delete view/ })).not.toBeInTheDocument();
+  });
+
+  it("still renders the rename control for a saved view", () => {
+    renderShell({
+      activeSection: "Cockpit",
+      cockpitViews: [{ id: "view_1", name: "Deep dive" }],
+      activeCockpitViewId: "view_1",
+    });
+    expect(
+      screen.getByRole("button", { name: "Rename view: Deep dive" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders no delete control for a legacy dashboard row either", () => {
+    renderShell({
+      activeSection: "Cockpit",
+      legacyDashboardLayouts: [{ id: "layout_1", companyId: CDR.id, ticker: CDR.ticker }],
+      cockpitInitialCompanyId: CDR.id,
+    });
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+  });
+});

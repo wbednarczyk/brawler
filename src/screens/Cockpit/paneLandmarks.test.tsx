@@ -98,6 +98,19 @@ describe("cockpit pane landmarks", () => {
       const tab = (await within(cockpit).findAllByRole("button", { name: kind }))[0];
       await user.click(tab);
 
+      // sol R1 finding 10: Quality's evaluation history (`<aside>`, now a
+      // `role="group"` div) only renders once `history.length > 0` — never
+      // exercised by this guard before, so the regression it introduced
+      // passed vacuously. Produce one real evaluation through the actual
+      // "Evaluate" action before checking this kind's pane for landmarks.
+      if (kind === "Quality") {
+        const evaluateButton = within(cockpit).queryByRole("button", { name: "Evaluate" });
+        if (evaluateButton) {
+          await user.click(evaluateButton);
+          await within(cockpit).findByText("Evaluation history");
+        }
+      }
+
       for (const pane of Array.from(container.querySelectorAll(".cockpit-pane"))) {
         const landmarks = Array.from(pane.querySelectorAll(LANDMARK_SELECTOR)).map(
           (el) =>

@@ -1149,8 +1149,8 @@ MCP registry: `get_today_view` is `read`-tier but not exposed as an agent tool (
 ## Company View (Spółka)
 
 `get_company_view(companyId)` returns `CompanyView` — everything the `Spółka`
-screen's glance bar and core render, composed in ONE read (ADR 0106 decision 3;
-[ADR 0107](adr/0107-company-view-paradigm.md) decision 3; F3a #429, S1).
+screen's glance bar and core render, composed in ONE read
+([ADR 0107](adr/0107-company-view-paradigm.md) decision 3; F3a #429, S1).
 Computed; async / `spawn_blocking`. Top-level error ONLY for an unknown company
 or a failed read establishment; every section otherwise degrades independently
 via `sectionErrors`. Generated DTOs: `src/api/generated/CompanyView*.ts`.

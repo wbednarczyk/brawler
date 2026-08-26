@@ -68,7 +68,7 @@ function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
   return (
     <div role="group" aria-label={text("Workshop tool")} data-tool={tool.t} className="spolka-tool">
       <SectionHeader
-        level="h3"
+        level="h2"
         title={text(TOOL_TITLES[tool.t])}
         actions={
           <Button variant="icon" aria-label={text("Close tool")} onClick={ctx.onCloseTool}>
@@ -100,9 +100,9 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
         />
       );
     case "dokumenty":
-      // The panel has no document-highlight seam yet (repoctx: no such prop) —
-      // `tool.documentId` is accepted by the route but not wired here.
-      return <CompanyReportDocumentsPanel companyId={ctx.companyId} />;
+      // KPI provenance ticket navigation (sol-review finding 8, ADR 0104 dec.
+      // 7): the target document scrolls into view + flashes once loaded.
+      return <CompanyReportDocumentsPanel companyId={ctx.companyId} highlightDocumentRef={tool.documentId} />;
     case "feed":
       return <CockpitCompanyFeedPanel company={ctx.company} feedItems={ctx.feedItems} />;
     case "notatnik":

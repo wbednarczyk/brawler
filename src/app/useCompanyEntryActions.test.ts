@@ -4,6 +4,7 @@ import { act, renderHook } from "@testing-library/react";
 
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import type { Section } from "./navigation";
+import type { SpolkaTransition } from "./useSpolkaScreenWiring";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import type { Tool } from "../screens/Spolka/route";
 import { COMPANY_SPECS, makeCompany } from "../test/scenarios/entities";
@@ -14,59 +15,70 @@ const other = makeCompany(COMPANY_SPECS[1]);
 function useHarness(initialSelected: string | null = null) {
   const [activeSection, setActiveSection] = useState<Section>("Today");
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(initialSelected);
-  // A ref (not a plain const) — it must survive the re-render `setActiveSection`
+  // A ref (not a plain const) — it must survive the re-render `navigate`
   // triggers, or `result.current` after `act()` would read a fresh empty array.
-  const openToolCallsRef = useRef<Array<{ companyId: string; tool: Tool }>>([]);
+  const navigateCallsRef = useRef<SpolkaTransition[]>([]);
 
   const actions = useCompanyEntryActions({
     companies: [company, other],
     cockpitInitialCompanyId: null,
     pinnedCompanyIds: [],
     selectedCompanyId,
-    setSelectedCompanyId,
     setActiveSection,
     setActiveCockpitLayoutId: () => {},
     setCockpitInitialCompanyId: () => {},
-    openTool: (companyId, tool) => {
-      openToolCallsRef.current.push({ companyId, tool });
+    // A harness stand-in for AppStateRoot's real `navigate` (one guarded
+    // commit) — records the transition AND applies its company/section, so
+    // existing assertions on `activeSection`/`selectedCompanyId` still hold.
+    navigate: (transition) => {
+      navigateCallsRef.current.push(transition);
+      setSelectedCompanyId(transition.companyId);
+      setActiveSection(transition.section);
     },
   });
-  const openToolCalls = openToolCallsRef.current;
+  const navigateCalls = navigateCallsRef.current;
 
-  return { actions, activeSection, selectedCompanyId, openToolCalls };
+  return { actions, activeSection, selectedCompanyId, navigateCalls };
 }
 
 // F3a S3 (ADR 0107, plan "Mapowanie WSZYSTKICH intencji"): every
 // CompanyWorkspaceTab intent lands on its typed Spółka tool.
 describe("useCompanyEntryActions — openCompanyWorkspaceById tab mapping", () => {
-  const tabToTool: Array<[CompanyWorkspaceTab, Tool | null]> = [
-    ["Feed", null],
+  const tabToTool: Array<[CompanyWorkspaceTab, Tool | undefined]> = [
+    ["Feed", undefined],
     ["Notebook", { t: "notatnik" }],
     ["Claims", { t: "tezy" }],
     ["Fundamentals", { t: "fundamenty" }],
     ["Quality", { t: "jakosc" }],
     ["Metadata", { t: "akcjonariat" }],
-    ["Transcripts", null],
   ];
 
-  it.each(tabToTool)("tab %s lands on its typed Spółka tool", (tab, expectedTool) => {
+  it.each(tabToTool)("tab %s lands on its typed Spółka tool via ONE navigate() call", (tab, expectedTool) => {
     const { result } = renderHook(() => useHarness());
 
     act(() => {
       result.current.actions.openCompanyWorkspaceById(company.id, tab);
     });
 
-    if (tab === "Transcripts") {
-      // The only tab with no company-scoped Spółka tool yet — its legacy
-      // global route.
-      expect(result.current.activeSection).toBe("Transcripts");
-    } else {
-      expect(result.current.activeSection).toBe("Spolka");
-    }
+    expect(result.current.activeSection).toBe("Spolka");
     expect(result.current.selectedCompanyId).toBe(company.id);
-    expect(result.current.openToolCalls).toEqual(
-      expectedTool ? [{ companyId: company.id, tool: expectedTool }] : [],
-    );
+    expect(result.current.navigateCalls).toEqual([
+      { companyId: company.id, section: "Spolka", tool: expectedTool },
+    ]);
+  });
+
+  // The only tab with no company-scoped Spółka tool yet — its legacy global
+  // route, still committed atomically (sol R1 finding 3).
+  it("tab Transcripts lands on the legacy Transcripts route via ONE navigate() call", () => {
+    const { result } = renderHook(() => useHarness());
+
+    act(() => {
+      result.current.actions.openCompanyWorkspaceById(company.id, "Transcripts");
+    });
+
+    expect(result.current.activeSection).toBe("Transcripts");
+    expect(result.current.selectedCompanyId).toBe(company.id);
+    expect(result.current.navigateCalls).toEqual([{ companyId: company.id, section: "Transcripts" }]);
   });
 
   it("no tab: lands on the Spółka core, no tool opened", () => {
@@ -77,7 +89,24 @@ describe("useCompanyEntryActions — openCompanyWorkspaceById tab mapping", () =
     });
 
     expect(result.current.activeSection).toBe("Spolka");
-    expect(result.current.openToolCalls).toEqual([]);
+    expect(result.current.navigateCalls).toEqual([
+      { companyId: company.id, section: "Spolka", tool: undefined },
+    ]);
+  });
+
+  // sol R1 finding 3 (residual): the legacy dashboard is the same guarded
+  // transition — no setter runs ahead of the guard.
+  it("openAdvancedLayout commits the cockpit via ONE navigate() call", () => {
+    const { result } = renderHook(() => useHarness());
+
+    act(() => {
+      result.current.actions.openAdvancedLayout(company.id);
+    });
+
+    expect(result.current.activeSection).toBe("Cockpit");
+    expect(result.current.navigateCalls).toEqual([
+      { companyId: company.id, section: "Cockpit", cockpitLayoutId: null },
+    ]);
   });
 });
 
@@ -106,11 +135,13 @@ describe("useCompanyEntryActions — openSpolkaMode", () => {
           cockpitInitialCompanyId: null,
           pinnedCompanyIds: [other.id],
           selectedCompanyId,
-          setSelectedCompanyId,
           setActiveSection,
           setActiveCockpitLayoutId: () => {},
           setCockpitInitialCompanyId: () => {},
-          openTool: () => {},
+          navigate: (transition) => {
+            setSelectedCompanyId(transition.companyId);
+            setActiveSection(transition.section);
+          },
         });
         return { actions, activeSection, selectedCompanyId };
       })(),
@@ -144,11 +175,13 @@ describe("useCompanyEntryActions — openSpolkaMode", () => {
         cockpitInitialCompanyId: null,
         pinnedCompanyIds: [],
         selectedCompanyId,
-        setSelectedCompanyId,
         setActiveSection,
         setActiveCockpitLayoutId: () => {},
         setCockpitInitialCompanyId: () => {},
-        openTool: () => {},
+        navigate: (transition) => {
+          setSelectedCompanyId(transition.companyId);
+          setActiveSection(transition.section);
+        },
       });
       return { actions, activeSection };
     });

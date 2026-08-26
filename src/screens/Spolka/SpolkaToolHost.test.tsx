@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -454,5 +454,97 @@ describe("Spółka tool host — dirty guard", () => {
     await within(frame).findByText("Earlier event");
     const text = frame.textContent ?? "";
     expect(text.indexOf("Earlier event")).toBeLessThan(text.indexOf("Later event"));
+  });
+});
+
+// sol R1 finding 1: production hosts multiple draft-owning subforms under
+// ONE tool (notebook/journal/claims composers, sector/IR-URL fields,
+// ownership retyping) — the registry must be a keyed Set, not one
+// overwriteable handle, or registering a second draft silently drops the
+// first from the dirty check.
+describe("Spółka tool host — multi-handle dirty registry (sol R1 finding 1)", () => {
+  it.each([
+    { aDirty: false, bDirty: false, expectDirty: false },
+    { aDirty: true, bDirty: false, expectDirty: true },
+    { aDirty: false, bDirty: true, expectDirty: true },
+    { aDirty: true, bDirty: true, expectDirty: true },
+  ])(
+    "two registered handles (aDirty=$aDirty, bDirty=$bDirty) → isDirty() is $expectDirty",
+    ({ aDirty, bDirty, expectDirty }) => {
+      const { result } = renderHook(() => useSpolkaToolHost());
+
+      act(() => {
+        result.current.register({ isDirty: () => aDirty, discard: () => {} });
+        result.current.register({ isDirty: () => bDirty, discard: () => {} });
+      });
+
+      expect(result.current.isDirty()).toBe(expectDirty);
+    },
+  );
+
+  it("the guard covers a handle registered AFTER an earlier clean one, and discard clears every handle", () => {
+    const { result } = renderHook(() => useSpolkaToolHost());
+    const discardA = vi.fn();
+    const discardB = vi.fn();
+
+    act(() => {
+      result.current.register({ isDirty: () => false, discard: discardA });
+      result.current.register({ isDirty: () => true, discard: discardB });
+    });
+
+    expect(result.current.isDirty()).toBe(true);
+
+    const next = vi.fn();
+    act(() => {
+      result.current.guardNavigation(next);
+    });
+    expect(result.current.confirming).toBe(true);
+    expect(next).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.discardAndProceed();
+    });
+
+    expect(discardA).toHaveBeenCalledTimes(1);
+    expect(discardB).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(result.current.isDirty()).toBe(false);
+  });
+
+  it("an unregistered handle no longer counts toward the dirty check", () => {
+    const { result } = renderHook(() => useSpolkaToolHost());
+    let unregisterDirty: () => void = () => {};
+
+    act(() => {
+      unregisterDirty = result.current.register({ isDirty: () => true, discard: () => {} });
+    });
+    expect(result.current.isDirty()).toBe(true);
+
+    act(() => {
+      unregisterDirty();
+    });
+    expect(result.current.isDirty()).toBe(false);
+  });
+
+  it("a second guard request while the modal is already open is ignored, not clobbered (sol R1 finding 3)", () => {
+    const { result } = renderHook(() => useSpolkaToolHost());
+    act(() => {
+      result.current.register({ isDirty: () => true, discard: () => {} });
+    });
+
+    const firstNext = vi.fn();
+    const secondNext = vi.fn();
+    act(() => {
+      result.current.guardNavigation(firstNext);
+      result.current.guardNavigation(secondNext);
+    });
+    expect(result.current.confirming).toBe(true);
+
+    act(() => {
+      result.current.discardAndProceed();
+    });
+
+    expect(firstNext).toHaveBeenCalledTimes(1);
+    expect(secondNext).not.toHaveBeenCalled();
   });
 });

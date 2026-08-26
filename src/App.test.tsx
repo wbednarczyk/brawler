@@ -1,5 +1,5 @@
 import { fireEvent } from "@testing-library/react";
-import { describe, it } from "vitest";
+import { beforeEach, describe, it } from "vitest";
 import packageJson from "../package.json";
 import { saveCockpitLayout } from "./api/cockpit";
 import {
@@ -346,6 +346,193 @@ describe("App shell", () => {
 
     fireEvent.keyDown(document, { key: "1", code: "Digit1", ctrlKey: true });
     expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
+  });
+});
+
+// sol R1 finding 3: every company-workspace entry point (openCompanyWorkspaceById,
+// openCompanyWorkspace, openCompanyClaims, pinned row, GlobalSearch, palette
+// "Open company:", Today "Open thesis") commits companyId + section + tool as
+// ONE atomic transition behind ONE dirty guard — `selectedCompanyId` never
+// changes ahead of it. Minimal scenario: CDR is pinned by default; KGH/PKN
+// carry a "to verify" management claim (overdue/due respectively).
+describe("Spółka atomic company transitions (sol R1 finding 3)", () => {
+  // jsdom does not implement `scrollIntoView` — the documents panel's
+  // provenance-highlight effect calls it unguarded (unlike the akcjonariat
+  // tool's `?.()`-guarded call), which otherwise throws mid-render and can
+  // leave a pending timer bleeding into a later test in this file.
+  beforeEach(() => {
+    if (!Element.prototype.scrollIntoView) {
+      Element.prototype.scrollIntoView = () => {};
+    }
+  });
+
+  function claimRowFor(ticker: string): HTMLElement {
+    const row = Array.from(document.querySelectorAll('[data-dayq-row="true"]')).find((candidate) =>
+      candidate.textContent?.includes(ticker),
+    );
+    if (!row) throw new Error(`No "to verify" claim row for ${ticker}`);
+    return row as HTMLElement;
+  }
+
+  async function openDirtyNotebookOnSpolka(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Open notebook" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(await screen.findByRole("button", { name: "New note" }));
+    const titleField = await screen.findByRole("textbox", { name: "Notebook note title" });
+    await user.type(titleField, "Draft in progress");
+    return titleField;
+  }
+
+  it("clean openCompanyClaims(B) lands on B's claims tool and stays there", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(await screen.findByRole("button", { name: /^Today/ }));
+    await screen.findByRole("heading", { name: "Today" });
+
+    const row = claimRowFor("KGH");
+    await user.click(within(row).getByRole("button", { name: "Open thesis" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await waitFor(() => {
+      expect(spolka).toHaveAttribute("data-company-id", "company_gpw_kgh");
+    });
+    expect(await within(spolka).findByRole("group", { name: "Workshop tool" })).toHaveAttribute(
+      "data-tool",
+      "tezy",
+    );
+
+    // The clean transition is not reverted by the displayed-company sync
+    // effect racing behind it (the exact "openCompanyClaims(B) opens B's
+    // tool, then the sync effect clears it back to B's core" blocker) — give
+    // it another tick and confirm it's still there.
+    await waitFor(() => {
+      expect(within(spolka).getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "tezy");
+    });
+  });
+
+  it("dirty A + Stay keeps A selected everywhere (aria-current) and the tool open", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_cdr", "company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    await screen.findByRole("region", { name: "Company view" });
+    await openDirtyNotebookOnSpolka(user);
+
+    await user.click(within(nav).getByRole("button", { name: "KGH" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "CDR" })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("button", { name: "KGH" })).not.toHaveAttribute("aria-current");
+    const tool = screen.getByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "notatnik");
+    expect((screen.getByRole("textbox", { name: "Notebook note title" }) as HTMLInputElement).value).toBe(
+      "Draft in progress",
+    );
+  });
+
+  it("dirty A + Discard lands the full requested transition (company, section, tool)", async () => {
+    const user = userEvent.setup();
+    appTestState.searchResponse = {
+      groups: [
+        {
+          contentType: "digest",
+          matches: [
+            {
+              contentType: "digest",
+              sourceId: "digest_kgh_1",
+              companyId: "company_gpw_kgh",
+              title: "KGHM digest",
+              snippet: "KGHM digest",
+              score: 1.0,
+            },
+          ],
+        },
+      ],
+    };
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    await screen.findByRole("region", { name: "Company view" });
+    await openDirtyNotebookOnSpolka(user);
+
+    const input = screen.getByLabelText("Global search");
+    await user.type(input, "kgh");
+    await user.click(await screen.findByRole("option", { name: /KGHM digest/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Discard" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await waitFor(() => expect(spolka).toHaveAttribute("data-company-id", "company_gpw_kgh"));
+    expect(await within(spolka).findByRole("group", { name: "Workshop tool" })).toHaveAttribute(
+      "data-tool",
+      "research",
+    );
+  });
+
+  it("a second transition request while the guard modal is open does not clobber the pending one", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_cdr", "company_gpw_kgh", "company_gpw_pzu"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    await screen.findByRole("region", { name: "Company view" });
+    await openDirtyNotebookOnSpolka(user);
+
+    // Request #1: KGH — dirty guard opens the modal.
+    await user.click(within(nav).getByRole("button", { name: "KGH" }));
+    await screen.findByRole("dialog");
+
+    // Request #2 while the modal is still open — must be IGNORED, not
+    // overwrite request #1's pending transition.
+    await user.click(within(nav).getByRole("button", { name: "PZU" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await waitFor(() => expect(spolka).toHaveAttribute("data-company-id", "company_gpw_kgh"));
+  });
+
+  // sol R1 finding 8: a KPI provenance ticket was rendered as a button but
+  // wired to a no-op — clicking it did nothing in the real app.
+  it("KPI ticket opens the documents tool with the ticket's document highlighted", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "KGH" }));
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+
+    const ticket = await within(spolka).findByRole("button", { name: "Open source document" });
+    const ticketRef = ticket.textContent;
+    await user.click(ticket);
+
+    const tool = await within(spolka).findByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "dokumenty");
+    await waitFor(() => {
+      expect(tool.querySelector(`[data-document-id="${ticketRef}"]`)).toHaveAttribute(
+        "data-document-highlighted",
+        "true",
+      );
+    });
   });
 });
 

@@ -620,6 +620,41 @@ describe("CompanyReportDocumentsPanel", () => {
 
     expect(await screen.findByText("reclassify failed")).toBeInTheDocument();
   });
+
+  // KPI provenance ticket navigation (sol-review finding 8, ADR 0104 dec. 7):
+  // `{t:"dokumenty", documentId}` must actually land on that document. The
+  // target here is a FOLDED companion — unlike CompanyClaimsPanel's CSS-only
+  // hidden tier, a folded row is unmounted entirely, so the seam must expand
+  // the fold before it can scroll to a row that doesn't exist yet.
+  it("highlighted document ref scrolls into view and is marked", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    mockView([
+      viewRow(
+        { id: "d_ssf", title: "Consolidated 2025", docKind: "periodic_ssf" },
+        { canonical: true },
+      ),
+      viewRow(
+        { id: "d_sig", title: "signature.xades", docKind: "other", fetchStatus: "metadata_only" },
+        { canonical: false },
+      ),
+    ]);
+
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_sig" />);
+
+    await waitFor(() => {
+      const row = screen.getByText("signature.xades").closest("[data-document-id]");
+      expect(row).toHaveAttribute("data-document-id", "d_sig");
+      expect(row).toHaveAttribute("data-document-highlighted", "true");
+    });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+  });
+
+  it("does not highlight anything when no document ref is targeted", async () => {
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+    await screen.findByRole("link");
+    expect(document.querySelector("[data-document-highlighted]")).toBeNull();
+  });
 });
 
 describe("extraction indicator chip (#155)", () => {

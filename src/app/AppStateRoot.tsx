@@ -61,6 +61,7 @@ import { TodayScreen } from "../screens/Today/TodayScreen";
 import { SpolkaScreenHost, useSpolkaTool } from "./useSpolkaScreenWiring";
 import { buildLegacyDashboardRows } from "./SidebarViewsGroup";
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
+import { useSpolkaNavigate } from "./useSpolkaNavigate";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
@@ -419,7 +420,6 @@ export function AppStateRoot({
   const cockpitViews = cockpitLayouts
     .filter((layout) => !layout.name.startsWith("dashboard:"))
     .map((layout) => ({ id: layout.id, name: layout.name }));
-
 
   // Issue #89: in-place saved-view rename from the sidebar row. The backend
   // rejects duplicates (save upserts BY NAME — a duplicate would fuse two
@@ -1119,9 +1119,15 @@ export function AppStateRoot({
     return () => cancelAnimationFrame(frame);
   }, [searchFocusSelector]);
 
+  const { navigate, highlightClaimId } = useSpolkaNavigate({
+    spolkaTool,
+    setSelectedCompanyId,
+    setCockpitInitialCompanyId,
+    setActiveSectionRaw,
+    setActiveCockpitLayoutId,
+  });
   const {
     focusCompanyWorkspace,
-    highlightClaimId,
     openCompanyClaims,
     openCompanyInboxFilter,
     openCompanyWorkspace,
@@ -1137,8 +1143,7 @@ export function AppStateRoot({
     setSelectedCompanyFeedItemId,
     setSelectedCompanyId,
     setSelectedFeedItemId,
-    setCockpitInitialCompanyId,
-    openTool: spolkaTool.openTool,
+    navigate,
   });
 
   const {
@@ -1278,9 +1283,7 @@ export function AppStateRoot({
           }
           setSelectedResearchQuestionId(item.sourceId);
         }
-        setSelectedCompanyId(item.companyId);
-        setActiveSection("Spolka");
-        spolkaTool.openTool(item.companyId, { t: "research" });
+        navigate({ companyId: item.companyId, section: "Spolka", tool: { t: "research" } });
         break;
       case "events":
         setCompanyEventCompanyFilter(item.companyId);
@@ -1333,9 +1336,7 @@ export function AppStateRoot({
             setResearchMode("company");
           }
           setSelectedResearchCompanyId(match.companyId);
-          setSelectedCompanyId(match.companyId);
-          setActiveSection("Spolka");
-          spolkaTool.openTool(match.companyId, { t: "research" });
+          navigate({ companyId: match.companyId, section: "Spolka", tool: { t: "research" } });
         } else {
           openDashboard();
         }
@@ -1773,11 +1774,10 @@ export function AppStateRoot({
       cockpitInitialCompanyId,
       pinnedCompanyIds,
       selectedCompanyId,
-      setSelectedCompanyId,
       setActiveSection,
       setActiveCockpitLayoutId,
       setCockpitInitialCompanyId,
-      openTool: spolkaTool.openTool,
+      navigate,
     });
 
   return (

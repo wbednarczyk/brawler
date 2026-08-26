@@ -35,7 +35,7 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument }: CoreKpi
 
   return (
     <div role="group" aria-label={text("Annual KPI table")} className="spolka-section spolka-kpi">
-      <SectionHeader level="h3" title={text("Annual results")} description={text("PLN million · consolidated")} />
+      <SectionHeader level="h2" title={text("Annual results")} description={text("PLN million · consolidated")} />
 
       {error ? (
         <ErrorText>{text("Couldn't load the KPI table. The rest of the view is up to date.")}</ErrorText>

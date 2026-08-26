@@ -18,6 +18,14 @@ interface Step {
   expectField?: Record<string, unknown>;
   expectContains?: Record<string, unknown>;
   expectAbsent?: Record<string, unknown>;
+  /**
+   * Dotted-path deep-equality pins (e.g. `"kpi.rows.0.yoyPct"`), for nested
+   * fields `expectField`'s shallow `===` can't reach. TS-only: the Rust
+   * corpus replayer (mock_fidelity.rs) doesn't read this field, so a step
+   * using it must also be pinned against real `AppState` by a Rust unit
+   * test — name that test in the step's `_comment`.
+   */
+  expectDeep?: Record<string, unknown>;
 }
 interface Journey {
   name: string;
@@ -37,6 +45,14 @@ function substitute(value: unknown, caps: Record<string, unknown>): unknown {
     );
   }
   return value;
+}
+
+/** Resolve a dotted path (numeric segments index into arrays) against `value`. */
+function getByPath(value: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>((node, key) => {
+    if (node === null || typeof node !== "object") return undefined;
+    return (node as Record<string, unknown>)[key];
+  }, value);
 }
 
 /** True when `actual` is an object containing every key/value pair in `subset`. */
@@ -84,6 +100,11 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
             (result as unknown[]).every((item) => !isSuperset(item, subset)),
             `${step.command} expectAbsent`,
           ).toBe(true);
+        }
+        if (step.expectDeep) {
+          for (const [path, expected] of Object.entries(step.expectDeep)) {
+            expect(getByPath(result, path), `${step.command} expectDeep ${path}`).toEqual(expected);
+          }
         }
       }
     });

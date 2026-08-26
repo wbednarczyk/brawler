@@ -3,6 +3,7 @@ import { getCompanySector, listCompanySectors, setCompanySector } from "../../ap
 import { Button } from "./Button";
 import { ErrorText, SectionHeader, TextField } from "../../ui";
 import { useLocale } from "../locale";
+import { useToolHost } from "../toolHost";
 
 export type CompanySectorFieldProps = {
   companyId: string;
@@ -82,6 +83,15 @@ export function CompanySectorField({ companyId }: CompanySectorFieldProps) {
   const trimmed = value.trim() || null;
   const dirty = trimmed !== saved;
 
+  // Registers this override edit with the Spółka workshop's dirty gate (F3a
+  // S2, ADR 0107, sol R1 finding 1 — a keyed Set, so it doesn't overwrite the
+  // IR-URL field's or ownership retyping's own registration) — a no-op when
+  // hosted outside it.
+  const { register } = useToolHost();
+  useEffect(() => {
+    return register({ isDirty: () => dirty, discard: () => setValue(saved ?? "") });
+  }, [register, dirty, saved]);
+
   const query = value.trim().toLocaleLowerCase();
   const matches = query
     ? presets.filter((preset) => preset.toLocaleLowerCase().includes(query))
@@ -94,7 +104,7 @@ export function CompanySectorField({ companyId }: CompanySectorFieldProps) {
       : matches.slice(0, MAX_SECTOR_SUGGESTIONS);
 
   return (
-    <section className="fundamentals-section" aria-label={text("Sector")}>
+    <div role="group" className="fundamentals-section" aria-label={text("Sector")}>
       <SectionHeader level="h4" title={text("Sector")} />
       <p className="ai-analysis-empty">
         {text(
@@ -137,6 +147,6 @@ export function CompanySectorField({ companyId }: CompanySectorFieldProps) {
         </div>
       ) : null}
       {error ? <ErrorText>{error}</ErrorText> : null}
-    </section>
+    </div>
   );
 }

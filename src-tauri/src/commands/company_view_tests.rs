@@ -617,3 +617,51 @@ fn kpi_last_four_fy_with_yoy_and_document_tickets() {
     assert!(op_row.cells.iter().all(|cell| cell.value_numeric.is_none()));
     assert!(op_row.yoy_pct.is_none());
 }
+
+// sol-review finding 6: yoy must span the two NEWEST POPULATED cells, not
+// just the final two array positions — a gapped penultimate FY must not
+// collapse yoy to `None` when an older populated FY exists.
+#[test]
+fn yoy_skips_a_gapped_year_and_uses_the_two_newest_populated_cells() {
+    let state = state();
+    let company_id = company(&state, "GAP");
+
+    // 2022 and 2023 populated, 2024 gapped (no fact), 2025 populated.
+    for (year, revenue) in [(2022, "600"), (2023, "700"), (2025, "1000")] {
+        let period_id = kpi_period(&state, &company_id, year);
+        kpi_fact(
+            &state,
+            &company_id,
+            &period_id,
+            "revenue",
+            revenue,
+            &format!("doc_{year}"),
+        );
+    }
+    // 2024 exists as an FY period but with no revenue fact -> a gapped cell.
+    kpi_period(&state, &company_id, 2024);
+
+    let view = compute_company_view(&state, &company_id).expect("view");
+    let kpi = view.kpi.expect("kpi");
+    assert_eq!(kpi.years, vec![2022, 2023, 2024, 2025]);
+
+    let revenue_row = kpi
+        .rows
+        .iter()
+        .find(|row| row.metric_key == "revenue")
+        .expect("revenue row");
+    assert_eq!(
+        revenue_row
+            .cells
+            .iter()
+            .find(|cell| cell.fiscal_year == 2024)
+            .expect("2024 cell present")
+            .value_numeric,
+        None,
+        "2024 is the gapped year"
+    );
+    // yoy skips the gapped 2024 and uses the two newest POPULATED cells:
+    // 2023 (700) and 2025 (1000) — not cells[2]/cells[3] (2024/2025).
+    let expected_yoy = (1000.0 - 700.0) / 700.0 * 100.0;
+    assert!((revenue_row.yoy_pct.expect("yoy") - expected_yoy).abs() < 1e-9);
+}

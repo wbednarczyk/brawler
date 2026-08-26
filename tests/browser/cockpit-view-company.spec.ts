@@ -95,7 +95,7 @@ test.describe("cockpit view company", { tag: "@clickable" }, () => {
     await expectNoPageOverflow(page);
   });
 
-  test("a follow panel's tab pins it to the current view company", async ({ page }) => {
+  test("a follow panel's tab has no pin toggle under the freeze (structure is read-only)", async ({ page }) => {
     await seedFollowView(page);
     await openFollowView(page);
     const cockpit = page.getByLabel("Research cockpit");
@@ -106,13 +106,14 @@ test.describe("cockpit view company", { tag: "@clickable" }, () => {
       cockpit.getByRole("button", { name: "Report comparison", exact: true }).first(),
     ).toBeVisible();
 
-    // The tab's pin toggle freezes the current view company onto the panel: its
-    // title gains the ticker prefix (GPW:CDR · Report comparison).
+    // Pin↔follow changes panel ids — a layout-structure mutation, gone with the
+    // freeze (ADR 0107 dec. 5, sol R1 finding 4): the tab exposes no pin
+    // toggle and the title keeps its follow form (no ticker prefix).
     const tab = cockpit.locator(".cockpit-tab").filter({ hasText: "Report comparison" });
-    await tab.getByRole("button", { name: "Pin company" }).click();
+    await expect(tab.getByRole("button", { name: "Pin company" })).toHaveCount(0);
     await expect(
       cockpit.getByRole("button", { name: "GPW:CDR · Report comparison", exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expectNoPageOverflow(page);
   });
 

@@ -32,10 +32,12 @@ any named view. Opening a company from **Companies**, a pinned row, or the
 palette no longer lands here, though — it lands on the
 [Spółka screen](company-view.md) instead.
 
-## Renaming and deleting views
+## Renaming a view
 
 Hovering a saved view's sidebar row still reveals a **pencil** (rename in
-place) and an **X** (delete the saved layout — never your data).
+place). Deleting a saved view is gone with the freeze — like a legacy
+per-company dashboard, it stays reachable read-only until the engine
+decision.
 
 ## A note on saved geometry
 

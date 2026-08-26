@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type MutableRefObject } from "react";
 import { Button, Modal } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { ToolHostContext, type ToolHandle } from "../../shared/toolHost";
@@ -19,11 +19,25 @@ export type SpolkaToolHostApi = {
   toolCompanyId: string | null;
   openTool: (companyId: string, tool: Tool) => void;
   closeTool: () => void;
-  /** Runs `next` immediately when the active tool is clean; otherwise opens
-   * the stay/discard dialog and runs it only after a confirmed discard. Every
-   * cross-screen navigation (AppShell `setActiveSection`, window close) is
-   * wrapped in this — see `docs/plans/frontend-v2-f3a.md` § S2. */
+  /** Runs `next` immediately when NO registered draft handle is dirty;
+   * otherwise opens the stay/discard dialog and runs it only after a
+   * confirmed discard. Every cross-screen navigation (AppShell
+   * `setActiveSection`, window close) is wrapped in this — see
+   * `docs/plans/frontend-v2-f3a.md` § S2. A second `guardNavigation`/
+   * `openTool`/`closeTool` call while the dialog is already open is IGNORED
+   * (sol R1 finding 3) — Stay/Discard resolves the FIRST request; overwriting
+   * `pendingNext` would silently drop it. */
   guardNavigation: (next: () => void) => void;
+  /** Low-level, UNGUARDED tool commit — clears every registered draft handle
+   * and sets `tool`/`toolCompanyId` directly, skipping the dirty check. Only
+   * safe from inside an ALREADY guarded transition (`guardNavigation`, or an
+   * app-level atomic `navigate` built from it, sol R1 finding 3) — calling it
+   * on its own would silently discard a dirty draft. Also records
+   * `lastGuardedCompanyIdRef` so an independent sync effect can tell "this
+   * `selectedCompanyId` change already passed the guard" from one that
+   * didn't (`useSpolkaScreenWiring.tsx`). */
+  commitTool: (companyId: string | null, tool: Tool | null) => void;
+  lastGuardedCompanyIdRef: MutableRefObject<string | null>;
   register: (handle: ToolHandle) => () => void;
   isDirty: () => boolean;
   confirming: boolean;
@@ -35,66 +49,72 @@ export function useSpolkaToolHost(): SpolkaToolHostApi {
   const [tool, setTool] = useState<Tool | null>(null);
   const [toolCompanyId, setToolCompanyId] = useState<string | null>(null);
   const [pendingNext, setPendingNext] = useState<(() => void) | null>(null);
-  const handleRef = useRef<ToolHandle | null>(null);
+  // A keyed Set, not one overwriteable slot (sol R1 finding 1): every draft-
+  // owning subform hosted under a tool (notebook/journal/claims composers,
+  // sector/IR-URL fields, ownership retyping, …) registers its OWN handle —
+  // dirty if ANY handle is dirty, discard clears ALL of them.
+  const handlesRef = useRef<Set<ToolHandle>>(new Set());
+  const lastGuardedCompanyIdRef = useRef<string | null>(null);
 
   const register = useCallback((handle: ToolHandle) => {
-    handleRef.current = handle;
+    handlesRef.current.add(handle);
     return () => {
-      if (handleRef.current === handle) handleRef.current = null;
+      handlesRef.current.delete(handle);
     };
   }, []);
 
+  const commitTool = useCallback((companyId: string | null, nextTool: Tool | null) => {
+    handlesRef.current.clear();
+    lastGuardedCompanyIdRef.current = companyId;
+    setTool(nextTool);
+    setToolCompanyId(companyId);
+  }, []);
+
   const requestUnmount = useCallback((next: () => void) => {
-    const handle = handleRef.current;
-    if (!handle || !handle.isDirty()) {
+    const dirty = Array.from(handlesRef.current).some((handle) => handle.isDirty());
+    if (!dirty) {
       next();
       return;
     }
-    setPendingNext(() => next);
+    setPendingNext((current) => (current !== null ? current : next));
   }, []);
 
   const openTool = useCallback(
     (companyId: string, nextTool: Tool) => {
-      requestUnmount(() => {
-        handleRef.current = null;
-        setTool(nextTool);
-        setToolCompanyId(companyId);
-      });
+      requestUnmount(() => commitTool(companyId, nextTool));
     },
-    [requestUnmount],
+    [requestUnmount, commitTool],
   );
 
   const closeTool = useCallback(() => {
-    requestUnmount(() => {
-      handleRef.current = null;
-      setTool(null);
-      setToolCompanyId(null);
-    });
-  }, [requestUnmount]);
+    requestUnmount(() => commitTool(null, null));
+  }, [requestUnmount, commitTool]);
 
   const guardNavigation = useCallback(
     (next: () => void) => {
       requestUnmount(() => {
-        handleRef.current = null;
-        setTool(null);
-        setToolCompanyId(null);
+        commitTool(null, null);
         next();
       });
     },
-    [requestUnmount],
+    [requestUnmount, commitTool],
   );
 
   const stay = useCallback(() => setPendingNext(null), []);
 
   const discardAndProceed = useCallback(() => {
-    handleRef.current?.discard();
+    for (const handle of handlesRef.current) handle.discard();
+    handlesRef.current.clear();
     setPendingNext((current) => {
       current?.();
       return null;
     });
   }, []);
 
-  const isDirty = useCallback(() => Boolean(tool && handleRef.current?.isDirty()), [tool]);
+  const isDirty = useCallback(
+    () => Array.from(handlesRef.current).some((handle) => handle.isDirty()),
+    [],
+  );
 
   return {
     tool,
@@ -102,6 +122,8 @@ export function useSpolkaToolHost(): SpolkaToolHostApi {
     openTool,
     closeTool,
     guardNavigation,
+    commitTool,
+    lastGuardedCompanyIdRef,
     register,
     isDirty,
     confirming: pendingNext !== null,

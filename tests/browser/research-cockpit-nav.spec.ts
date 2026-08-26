@@ -1,21 +1,25 @@
 import { expect, openApp, test } from "./helpers/harness";
 
-// Dashboard redesign (epic c793ca1): the left-nav "Dashboard" entry opens the ONE
-// company-scoped Dashboard directly — never blank. It seeds a default company
-// (last-viewed, else a pinned/first company) so the company-overview follow panels
-// render immediately, rather than the legacy feed-linked blank cockpit. Amends ADR
-// 0057 decision 5 (the "no empty mode" rationale is preserved and strengthened).
-test("Dashboard nav entry opens the company-scoped Dashboard (never blank)", async ({ page }) => {
+// sol R1 finding 5: this spec targeted the removed "Dashboard" nav row and
+// the frozen cockpit it used to open. F3a S3 (ADR 0107 amendment) replaced
+// that bridge with the Modes "Company" nav item, which opens the Spółka
+// screen scoped to a company directly — never blank (last-viewed, else the
+// first pinned, else the first tracked company). The "no empty mode"
+// rationale this spec protects (amending ADR 0057 decision 5) carries over
+// verbatim to the new destination.
+test("Company nav entry opens the Spółka screen scoped to a company (never blank)", async ({
+  page,
+}) => {
   await openApp(page);
 
   const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
-  await nav.getByRole("button", { name: "Dashboard" }).click();
+  await nav.getByRole("button", { name: "Company" }).click();
 
-  // The cockpit renders (not the standalone Research screen) and is scoped to a
-  // company: the view company is set and a company-overview follow panel
-  // (Fundamentals) is present — proof it is not the blank feed-linked cockpit.
-  const cockpit = page.getByLabel("Research cockpit");
-  await expect(cockpit).toBeVisible();
-  await expect(cockpit).not.toHaveAttribute("data-company-id", "");
-  await expect(page.getByLabel("Company fundamentals")).toBeVisible();
+  // The Spółka screen renders scoped to a company: `data-company-id` is set
+  // and the glance bar (always-visible core, never a hosted tool) is
+  // present — proof it is not a blank/company-less screen.
+  const spolka = page.getByRole("region", { name: "Company view" });
+  await expect(spolka).toBeVisible();
+  await expect(spolka).not.toHaveAttribute("data-company-id", "");
+  await expect(page.getByRole("group", { name: "Company glance bar" })).toBeVisible();
 });

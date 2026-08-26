@@ -278,10 +278,10 @@ export const plText: Record<string, string> = {
   "Recent activity": "Ostatnia aktywność",
   "Conviction": "Przekonanie",
   "No new reports have arrived.": "Nie pojawiły się nowe raporty.",
-  "Pin companies to track their claims here.": "Przypnij spółki, aby śledzić tutaj ich deklaracje.",
-  "Checking claims to verify…": "Sprawdzanie deklaracji do weryfikacji…",
+  "Pin companies to track their claims here.": "Przypnij spółki, aby śledzić tutaj ich tezy.",
+  "Checking claims to verify…": "Sprawdzanie tez do weryfikacji…",
   "No claims are due for your pinned companies.":
-    "Brak deklaracji do weryfikacji dla przypiętych spółek.",
+    "Brak tez do weryfikacji dla przypiętych spółek.",
   "Loading the report calendar…": "Ładowanie kalendarza raportów…",
   "No upcoming report dates on the calendar.": "Brak nadchodzących dat raportów w kalendarzu.",
   "Tracking {pinned} pinned of {watchlist} watchlist companies":
@@ -368,7 +368,7 @@ export const plText: Record<string, string> = {
   "Describe what the agent should assess and what strong evidence looks like.":
     "Opisz, co agent ma ocenić i jak wyglądają mocne dowody.",
   "The agent judges this from app-held evidence only (reports, notes, claims, signals) and cites it. Decision support, not advice.":
-    "Agent ocenia to wyłącznie na podstawie dowodów w aplikacji (raporty, notatki, deklaracje, sygnały) i cytuje je. Wsparcie decyzji, nie porada.",
+    "Agent ocenia to wyłącznie na podstawie dowodów w aplikacji (raporty, notatki, tezy, sygnały) i cytuje je. Wsparcie decyzji, nie porada.",
   "Report Season": "Sezon raportów",
   "Upcoming report dates across your watchlists, each with a pre-report card.":
     "Nadchodzące terminy raportów z Twoich list obserwowanych, każdy z kartą przedraportową.",
@@ -383,9 +383,9 @@ export const plText: Record<string, string> = {
   "Prepared": "Przygotowane",
   "Processed": "Przetworzone",
   "Open workspace": "Otwórz przestrzeń",
-  "Open claims": "Otwórz deklaracje",
+  "Open claims": "Otwórz tezy",
   "Open research questions": "Otwarte pytania badawcze",
-  "Unresolved claims": "Nierozstrzygnięte deklaracje",
+  "Unresolved claims": "Nierozstrzygnięte tezy",
   "Due": "Wymagalne",
   "Last-period KPIs": "Wskaźniki KPI z ostatniego okresu",
   "No KPIs from the last reported period.": "Brak wskaźników KPI z ostatniego raportowanego okresu.",

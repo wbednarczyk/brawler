@@ -149,6 +149,18 @@ export function useAppLifecycleEffects({
 }: AppLifecycleEffectsInput) {
   const previousSourceDueRef = useRef<Record<string, number>>({});
 
+  // `useSpolkaToolHost()` returns a FRESH object every render — `spolkaTool`
+  // itself is not stable, only its `isDirty`/`guardNavigation` closures'
+  // BEHAVIOR is (they always read the latest tool state). The close-request
+  // effect below installs its listener ONCE (`[]` deps, so it doesn't leak a
+  // subscription on every render); without this ref it would keep calling
+  // the render-1 `spolkaTool` forever — bound to "no tool open yet" — so a
+  // tool opened afterward could never prevent the close (sol R1 finding 2).
+  const spolkaToolRef = useRef(spolkaTool);
+  useEffect(() => {
+    spolkaToolRef.current = spolkaTool;
+  });
+
   useEffect(() => {
     if (!isTauriRuntime()) return undefined;
 
@@ -167,8 +179,8 @@ export function useAppLifecycleEffects({
         return win
           .onCloseRequested((event) => {
             handleCloseRequested(event, {
-              isDirty: spolkaTool.isDirty,
-              ask: () => spolkaTool.guardNavigation(() => void win.destroy()),
+              isDirty: () => spolkaToolRef.current.isDirty(),
+              ask: () => spolkaToolRef.current.guardNavigation(() => void win.destroy()),
             });
           })
           .then((stop) => {
@@ -187,7 +199,9 @@ export function useAppLifecycleEffects({
       cancelled = true;
       unlisten?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- isDirty/guardNavigation are stable (useCallback); re-subscribing on every render would leak listeners
+    // Installs ONCE ([] deps, no re-listen leak) — the handler reads
+    // spolkaToolRef.current, always the latest render's host, so it needs no
+    // reactive dependency here.
   }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = effectiveTheme;

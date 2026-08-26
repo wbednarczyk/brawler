@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 
 import { useLocale, type LocaleCode } from "../locale";
+import { useToolHost } from "../toolHost";
 import { pluralNoun, type PluralForms } from "../locale/plural";
 import { formatFinancialValue } from "../format/financialValue";
 import {
@@ -98,6 +99,22 @@ export function OwnershipSection({
     previousType: string | null;
     newType: string;
   } | null>(null);
+
+  // Registers the open re-type editor with the Spółka workshop's dirty gate
+  // (F3a S2, ADR 0107, sol R1 finding 1) — dirty only while a holder's editor
+  // is OPEN and the draft type differs from that holder's current one; a
+  // no-op when hosted outside the tool host. Declared before any early
+  // return below (hooks must run unconditionally).
+  const { register } = useToolHost();
+  const editingHolderInitialType = editingHolder
+    ? (data?.holders.find((holder) => holder.holderKey === editingHolder)?.holderType ?? "other_institutional")
+    : null;
+  useEffect(() => {
+    return register({
+      isDirty: () => editingHolder !== null && draftType !== editingHolderInitialType,
+      discard: () => setEditingHolder(null),
+    });
+  }, [register, editingHolder, draftType, editingHolderInitialType]);
 
   const typeLabels: Record<string, string> = {
     founder_insider: text("Founder/insider"),

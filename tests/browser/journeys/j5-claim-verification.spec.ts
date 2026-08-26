@@ -25,7 +25,7 @@ test.describe("J5 — claim verification", { tag: "@journey" }, () => {
     await expectNoA11yViolations(page, "Companies list (claim verification)");
     // F3a S3 (ADR 0107 decision 5): opening a company now lands the Spółka
     // screen directly.
-    await j.click(page.getByRole("button", { name: "Open GPW:CDR dashboard" }));
+    await j.click(page.getByRole("button", { name: "Open GPW:CDR" }));
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await j.markScreen("Company workspace");
 

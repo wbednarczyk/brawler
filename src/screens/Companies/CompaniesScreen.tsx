@@ -11,7 +11,7 @@ type CompanyFieldRefs = MutableRefObject<Record<keyof CompanyForm, HTMLInputElem
 
 // The Companies screen is the company **library + management** surface (ADR 0057):
 // browse/search/add companies and manage per-company settings. Opening a company
-// (row click) lands the curated cockpit dashboard — the deep-dive lives there, not
+// (row click) lands the Spółka workshop (ADR 0107) — the deep-dive lives there, not
 // in a tabbed panel inside this screen.
 export type CompaniesScreenProps = {
   watchlists: Watchlist[];
@@ -259,12 +259,12 @@ export function CompaniesScreen() {
                       interactives (ADR 0076 D9). */}
                   <button
                     type="button"
-                    aria-label={`${text("Open")} ${company.qualifiedTicker} ${text("dashboard")}`}
+                    aria-label={`${text("Open")} ${company.qualifiedTicker}`}
                     className="company-row-main"
                     data-company-row="true"
                     onClick={() => openCompanyWorkspace(company)}
                     onKeyDown={(event) => openCompanyWorkspaceFromKeyboard(event, company)}
-                    title={`${text("Open")} ${company.qualifiedTicker} ${text("dashboard")}`}
+                    title={`${text("Open")} ${company.qualifiedTicker}`}
                   >
                     <h2><TickerLabel value={company.qualifiedTicker} /></h2>
                     <p>{company.displayName}</p>

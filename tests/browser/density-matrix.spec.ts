@@ -61,7 +61,7 @@ function nav(page: Page) {
 // the pre-freeze cockpit "Notebook" panel used.
 async function openCompanyNotebook(page: Page): Promise<PaneLocator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
-  await page.getByRole("button", { name: "Open GPW:CDR dashboard" }).click();
+  await page.getByRole("button", { name: "Open GPW:CDR" }).click();
   await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
   await page.getByRole("button", { name: "Open notebook", exact: true }).click();
   const pane = page.locator(".spolka-layout");

@@ -361,8 +361,10 @@ export type CockpitScreenProps = {
    * 5): the local palette's "Open view: …" entries call this instead of
    * mutating the mounted instance's state in place. */
   onOpenView?: (layoutId: string) => void;
-  /** The frozen empty-view CTA (F3a S3): opens the Spółka screen for the view
-   * company. */
+  /** Opens the Spółka screen for a company (F3a S3): the frozen empty-view
+   * CTA, and the Fundamentals/Coverage panels' "Open recommendations"/"Open
+   * coverage"/"Open documents" cross-links (R1 finding 4 — these used to add
+   * a panel in place, a structure mutation the freeze removes). */
   onOpenCompany?: (companyId: string) => void;
   /** The frozen empty-view CTA's fallback when no view company is set. */
   onOpenCompaniesScreen?: () => void;
@@ -594,7 +596,7 @@ function CockpitWorkspace({
             companyId={companyId}
             qualifiedTicker={companyById.get(companyId)?.qualifiedTicker}
             revision={fundamentalsRevision}
-            onOpenRecommendations={() => openPinned(companyId, "analystRecommendations")}
+            onOpenRecommendations={onOpenCompany ? () => onOpenCompany(companyId) : undefined}
           />
         );
       case "coverage":
@@ -602,7 +604,7 @@ function CockpitWorkspace({
           <CompanyCoveragePanel
             companyId={companyId}
             reloadKey={fundamentalsRevision}
-            onOpenDocuments={() => openPinned(companyId, "documents")}
+            onOpenDocuments={onOpenCompany ? () => onOpenCompany(companyId) : undefined}
             onHistoryRefreshed={bumpFundamentals}
           />
         );
@@ -790,17 +792,11 @@ function CockpitWorkspace({
   // there is no `onClosePanel` callback to wire up any more.
 
   // The Fundamentals/Coverage panels' inline "Otwórz rekomendacje"/"Otwórz
-  // pokrycie" cross-jumps (pre-F3a) still open a company panel — kept as the
-  // one narrow exception the freeze does not name (it opens a READ surface
-  // inline in already-open domain content, not a structure-editing command).
-  function openPinned(companyId: string, kind: PinnedKind) {
-    const id = pinnedId(companyId, kind);
-    setPinned((current) =>
-      current.some((panel) => panel.id === id)
-        ? current
-        : [...current, { id, kind, mode: "pinned", companyId }],
-    );
-  }
+  // pokrycie" cross-jumps (pre-F3a) used to open a new pinned panel in place —
+  // a structure mutation the freeze removes (R1 finding 4, ADR 0107 decision
+  // 5). They now navigate to the Spółka screen for the same company instead,
+  // where its core already offers "Open recommendations"/"Open coverage"/
+  // "Open documents" one click away (`SpolkaScreen.tsx`).
 
   // Toggle a company-scoped panel between following the view company and pinning a
   // frozen company (U-Ra / D5). A pure state change: the panel's id swaps in

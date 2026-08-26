@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Columns3, FlaskConical, Pencil, X } from "lucide-react";
+import { Columns3, FlaskConical, Pencil } from "lucide-react";
 import type { Company } from "../api/types";
 import type { CockpitLayout } from "../api/generated/CockpitLayout";
 import { TextField } from "../ui";
@@ -33,6 +33,10 @@ type SidebarViewsGroupProps = {
   cockpitInitialCompanyId: string | null;
   legacyDashboardLayouts: LegacyDashboardRow[];
   onOpenCockpitView: (viewId: string) => void;
+  /** Wired through by the host (AppStateRoot) but no longer rendered here (F3a
+   * S3/R1 finding 4, ADR 0107 decision 5): deleting a saved view is a
+   * structure mutation the freeze removes — rename (metadata) stays. Kept in
+   * the prop type so the host's existing wiring needs no change. */
   onDeleteCockpitView: (viewId: string) => void;
   onRenameCockpitView: (viewId: string, name: string) => void;
   onOpenLegacyDashboard: (companyId: string) => void;
@@ -51,7 +55,6 @@ export function SidebarViewsGroup({
   cockpitInitialCompanyId,
   legacyDashboardLayouts,
   onOpenCockpitView,
-  onDeleteCockpitView,
   onRenameCockpitView,
   onOpenLegacyDashboard,
   text,
@@ -115,15 +118,6 @@ export function SidebarViewsGroup({
                 title={text("Rename view")}
               >
                 <Pencil size={14} aria-hidden="true" />
-              </button>
-              <button
-                className="pinned-unpin icon-button"
-                onClick={() => onDeleteCockpitView(view.id)}
-                type="button"
-                aria-label={`${text("Delete view")}: ${view.name}`}
-                title={text("Delete view")}
-              >
-                <X size={14} aria-hidden="true" />
               </button>
             </div>
           );

@@ -260,7 +260,7 @@ describe("Companies screen workflows", () => {
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
-    const companyRow = await screen.findByRole("button", { name: "Open GPW:CDR dashboard" });
+    const companyRow = await screen.findByRole("button", { name: "Open GPW:CDR" });
     await user.click(companyRow);
 
     // The deep-dive is the Spółka screen now (F3a S1), not the cockpit

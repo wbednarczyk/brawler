@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { QualityPanel } from "./QualityPanel";
+import { ToolHostContext, type ToolHandle } from "../toolHost";
 import {
   createFrameworkCriterion,
   deleteFrameworkEvaluation,
@@ -571,5 +572,54 @@ describe("QualityPanel", () => {
     // The engine verdict came from the deterministic evaluation read, not from
     // any retired AI assessment command.
     expect(listFrameworkEvaluationsMock).toHaveBeenCalled();
+  });
+
+  // sol R1 finding 1: the criterion-authoring / name-a-framework drafts must
+  // register with the Spółka workshop's dirty gate, a no-op when hosted
+  // outside it (the default `render` calls above all exercise that no-op).
+  it("registers a dirty draft with the tool host", async () => {
+    const user = userEvent.setup();
+    let handle: ToolHandle | null = null;
+    const register = vi.fn((h: ToolHandle) => {
+      handle = h;
+      return () => {};
+    });
+    render(
+      <ToolHostContext.Provider value={{ register }}>
+        <QualityPanel companyId="company_gpw_cdr" />
+      </ToolHostContext.Provider>,
+    );
+    await screen.findByText("Strong return on equity");
+    expect(register).toHaveBeenCalled();
+    expect(handle!.isDirty()).toBe(false);
+
+    await user.type(screen.getByLabelText("Label"), "New criterion");
+    expect(handle!.isDirty()).toBe(true);
+
+    act(() => {
+      handle!.discard();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Label")).toHaveValue("");
+    });
+  });
+
+  // sol R1 finding 9: "Evaluate" and "Add" both rendered `variant="primary"`
+  // simultaneously once a framework is selected — at most one primary action.
+  it("renders at most one primary action (Evaluate, not Add)", async () => {
+    const { container } = render(<QualityPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Strong return on equity");
+
+    const primaries = container.querySelectorAll('[data-ui-button-variant="primary"]');
+    expect(primaries.length).toBeLessThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /Evaluate/ })).toHaveAttribute(
+      "data-ui-button-variant",
+      "primary",
+    );
+    expect(screen.getByRole("button", { name: /^Add$/ })).toHaveAttribute(
+      "data-ui-button-variant",
+      "secondary",
+    );
   });
 });

@@ -67,7 +67,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   test("inside Spółka the palette also lists the workshop tool commands", async ({ page }) => {
     await openApp(page);
     await nav(page).getByRole("button", { name: "Companies" }).click();
-    await page.getByRole("button", { name: "Open GPW:CDR dashboard" }).click();
+    await page.getByRole("button", { name: "Open GPW:CDR" }).click();
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await expectNoPageOverflow(page);
 

@@ -335,16 +335,18 @@ fn period_type_rank(period_type: &str) -> u8 {
     }
 }
 
-/// `(last − previous)/|previous|×100` over the two newest cells that both
-/// carry a parseable value; `None` (never a divide-by-zero panic/NaN) when
-/// fewer than two cells have values or the older one is zero.
+/// `(last − previous)/|previous|×100` over the two NEWEST POPULATED cells —
+/// skipping any gapped (missing/unparseable) year in between, not just the
+/// final two array positions (contracts.md § Company View — `kpi.yoyPct`).
+/// `None` (never a divide-by-zero panic/NaN) when fewer than two cells have
+/// values or the older one is zero.
 fn compute_yoy(cells: &[CompanyViewKpiCell]) -> Option<f64> {
-    let n = cells.len();
-    if n < 2 {
-        return None;
-    }
-    let last: f64 = cells[n - 1].value_numeric.as_deref()?.trim().parse().ok()?;
-    let previous: f64 = cells[n - 2].value_numeric.as_deref()?.trim().parse().ok()?;
+    let mut populated = cells
+        .iter()
+        .rev()
+        .filter_map(|cell| cell.value_numeric.as_deref()?.trim().parse::<f64>().ok());
+    let last = populated.next()?;
+    let previous = populated.next()?;
     if previous == 0.0 {
         return None;
     }

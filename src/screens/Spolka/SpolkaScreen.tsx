@@ -272,7 +272,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
           />
 
           <div role="group" aria-label={text("Company feed")} className="spolka-section spolka-feed">
-            <SectionHeader level="h3" title={text("Company feed")} />
+            <SectionHeader level="h2" title={text("Company feed")} />
             {sectionErrors.feed ? (
               <ErrorText>{text("Couldn't load the feed. The rest of the view is up to date.")}</ErrorText>
             ) : data.feed.length === 0 ? (
@@ -294,7 +294,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
           </div>
 
           <div role="group" aria-label={text("Price chart")} className="spolka-section spolka-price">
-            <SectionHeader level="h3" title={text("Price chart")} />
+            <SectionHeader level="h2" title={text("Price chart")} />
             {sectionErrors.price ? (
               <ErrorText>{text("Couldn't load the price chart. The rest of the view is up to date.")}</ErrorText>
             ) : !data.price || data.price.emptyReason ? (
@@ -347,7 +347,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
           </div>
 
           <div role="group" aria-label={text("Report coverage")} className="spolka-section spolka-coverage">
-            <SectionHeader level="h3" title={text("Report coverage")} />
+            <SectionHeader level="h2" title={text("Report coverage")} />
             {sectionErrors.coverage ? (
               <ErrorText>{text("Couldn't load report coverage. The rest of the view is up to date.")}</ErrorText>
             ) : data.coverage.length === 0 ? (
@@ -377,7 +377,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
           </div>
 
           <div role="group" aria-label={text("Recommendations")} className="spolka-section spolka-recommendations">
-            <SectionHeader level="h3" title={text("Recommendations")} />
+            <SectionHeader level="h2" title={text("Recommendations")} />
             {sectionErrors.recommendations ? (
               <ErrorText>{text("Couldn't load recommendations. The rest of the view is up to date.")}</ErrorText>
             ) : data.recommendations.length === 0 ? (

@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import {
   CheckCheck,
   RefreshCw,
@@ -15,6 +15,7 @@ import type {
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
 import { useLocale } from "../../shared/locale";
+import { useToolHost } from "../../shared/toolHost";
 import { useResearchViewModel } from "../../app/state/screenViewModels";
 import { ActionRow, Button, ErrorText, PanelHeader } from "../../ui";
 import { AddQuestionDialog, AddReminderDialog } from "./ResearchDialogs";
@@ -129,6 +130,19 @@ export function ResearchScreen() {
   } = useResearchViewModel();
   const { text } = useLocale();
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+  // Screen-vs-hosted landmark (plan §10): a top-level `Research` nav screen
+  // owns a `<section>` landmark, but hosted inside the Spółka workshop's
+  // `.spolka-tool` (ToolHost, ADR 0107) that landmark would duplicate the
+  // host's own — detected once from the mounted DOM, same ancestry-sniff
+  // pattern as QualityPanel's pane-tier detection.
+  const rootRef = useRef<HTMLElement | null>(null);
+  const setRootRef = (node: HTMLElement | null) => {
+    rootRef.current = node;
+  };
+  const [hosted, setHosted] = useState(false);
+  useEffect(() => {
+    setHosted(Boolean(rootRef.current?.closest(".spolka-tool")));
+  }, []);
   const resizeStartRef = useRef<{
     handle: "watchlistQueue";
     clientX: number;
@@ -148,6 +162,40 @@ export function ResearchScreen() {
   const [reminderTitle, setReminderTitle] = useState("");
   const [reminderBody, setReminderBody] = useState("");
   const [reminderDueAt, setReminderDueAt] = useState("");
+
+  // Register the question/reminder composer drafts with the Spółka
+  // workshop's dirty gate (F3a S2/R1, ADR 0107) — a no-op when hosted outside
+  // it. Dirty = a dialog open with any field typed.
+  const { register } = useToolHost();
+  useEffect(() => {
+    return register({
+      isDirty: () =>
+        (questionDialogOpen && (questionTitle.trim() !== "" || questionBody.trim() !== "")) ||
+        (reminderDialogOpen &&
+          (reminderTitle.trim() !== "" || reminderBody.trim() !== "" || reminderDueAt !== "")),
+      discard: () => {
+        setQuestionDialogOpen(false);
+        setQuestionTitle("");
+        setQuestionBody("");
+        setReminderDialogOpen(false);
+        setReminderTitle("");
+        setReminderBody("");
+        setReminderDueAt("");
+      },
+    });
+  }, [
+    register,
+    questionDialogOpen,
+    questionTitle,
+    questionBody,
+    reminderDialogOpen,
+    reminderTitle,
+    reminderBody,
+    reminderDueAt,
+    setQuestionTitle,
+    setQuestionBody,
+  ]);
+
   const selectedCompany = companies.find((company) => company.id === selectedCompanyId) ?? null;
   const selectedWatchlist = watchlists.find((watchlist) => watchlist.id === selectedWatchlistId) ?? null;
   const watchlistCompanyIds = selectedWatchlistId
@@ -258,8 +306,15 @@ export function ResearchScreen() {
     reviewInFlight ||
     (mode === "company" ? !selectedCompany : !selectedWatchlist || watchlistCompanies.length === 0);
 
+  const Root: "div" | "section" = hosted ? "div" : "section";
   return (
-    <section className="feed-panel research-panel" aria-labelledby="research-title">
+    <Root
+      ref={setRootRef}
+      className="feed-panel research-panel"
+      role={hosted ? "group" : undefined}
+      aria-label={hosted ? text("Research") : undefined}
+      aria-labelledby={hosted ? undefined : "research-title"}
+    >
       <PanelHeader
         className="research-header"
         paneLead
@@ -413,6 +468,6 @@ export function ResearchScreen() {
           />
         ) : null}
       </div>
-    </section>
+    </Root>
   );
 }

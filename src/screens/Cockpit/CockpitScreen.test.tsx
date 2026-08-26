@@ -10,7 +10,8 @@ import {
 } from "../../test/appWorkflowHarness";
 import { DockviewComponent } from "dockview";
 import { parsePanels } from "./CockpitScreen";
-import { saveCockpitLayout } from "../../api/cockpit";
+import { COCKPIT_LAYOUT_STORAGE_KEY } from "./DockLayout";
+import { listCockpitLayouts, saveCockpitLayout } from "../../api/cockpit";
 
 // F3a S3 (ADR 0107 decision 5): freeform layout STRUCTURE is frozen — every
 // command that adds/removes/reorders a panel, applies a preset, saves a
@@ -59,6 +60,96 @@ describe("Research cockpit shell — frozen (F3a S3, ADR 0107 decision 5)", () =
     await waitFor(() => {
       expect(within(cockpit).getByRole("button", { name: "Inspector" })).toBeInTheDocument();
     });
+  });
+
+  // Guardrail (ADR 0045 harvest) for R1 finding 4: the freeze must hold under
+  // EVERY surviving control, not only the ones each individual behavioral
+  // test happens to exercise. Panel ids, the live geometry cache
+  // (`cockpit.layout.v2`) and the saved `cockpit_layouts` rows must all be
+  // byte-identical before and after — on both a named view and a legacy
+  // dashboard.
+  it("frozen view: panel ids, groups, geometry and storage are unchanged after every available control and shortcut", async () => {
+    const user = userEvent.setup();
+
+    async function snapshot(cockpit: HTMLElement) {
+      return {
+        panelIds: Array.from(cockpit.querySelectorAll("[data-panel-id]"))
+          .map((el) => el.getAttribute("data-panel-id"))
+          .sort(),
+        geometry: window.localStorage.getItem(COCKPIT_LAYOUT_STORAGE_KEY),
+        layouts: await listCockpitLayouts(),
+      };
+    }
+
+    async function exerciseEveryControl(cockpit: HTMLElement) {
+      // Structural controls are gone, not just disabled — nothing to click.
+      expect(cockpit.querySelectorAll(".cockpit-tab-close")).toHaveLength(0);
+      expect(cockpit.querySelectorAll(".cockpit-tab-pin")).toHaveLength(0);
+      expect(within(cockpit).queryByRole("button", { name: "Float panel group" })).not.toBeInTheDocument();
+
+      // Activate every surviving tab.
+      const tabs = Array.from(cockpit.querySelectorAll<HTMLButtonElement>(".cockpit-tab-activate"));
+      for (const tab of tabs) {
+        await user.click(tab);
+      }
+
+      // Maximize is view-only (nothing added/removed/saved) and stays — round-trip it.
+      const maximizeButtons = await within(cockpit).findAllByRole("button", {
+        name: "Maximize panel group",
+      });
+      await user.click(maximizeButtons[0]);
+      await user.click(maximizeButtons[0]);
+
+      // Keyboard model: navigation stays live; Alt+W (close) is a no-op while frozen.
+      tabs[0]?.focus();
+      await user.keyboard("{Alt>}{ArrowRight}{/Alt}");
+      await user.keyboard("{Alt>}{ArrowLeft}{/Alt}");
+      await user.keyboard("{Alt>}w{/Alt}");
+      await user.keyboard("{Alt>}m{/Alt}");
+      await user.keyboard("{Alt>}m{/Alt}");
+
+      // Commands palette open/close — navigation-only, no mutation.
+      await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+      await user.keyboard("{Escape}");
+    }
+
+    // A named view.
+    await saveCockpitLayout({
+      name: "Frozen invariant view",
+      panelsJson: JSON.stringify({
+        pinned: [{ id: "follow:companyFeed", kind: "companyFeed", mode: "follow" }],
+        openGlobals: [],
+        closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+        selectedFeedItemId: null,
+        grid: null,
+        cells: null,
+        viewCompanyId: "company_gpw_cdr",
+      }),
+      layoutJson: null,
+      dockviewVersion: null,
+    });
+    renderApp();
+    await user.click(await screen.findByRole("button", { name: "Frozen invariant view" }));
+    const namedView = await screen.findByLabelText("Research cockpit");
+    // The saved layout's panelsJson loads asynchronously, and its one panel's
+    // title ("Feed") COLLIDES with the pre-load default linked triad's own
+    // "Feed" tab — wait on the unambiguous panel id instead.
+    await waitFor(() => {
+      expect(namedView.querySelector('[data-panel-id="follow:companyFeed"]')).not.toBeNull();
+    });
+    const beforeNamed = await snapshot(namedView);
+    await exerciseEveryControl(namedView);
+    expect(await snapshot(namedView)).toEqual(beforeNamed);
+
+    // A legacy per-company dashboard (seeded by the sample scenario, `dashboard:` layout for CDR).
+    await user.click(await screen.findByRole("button", { name: "Legacy dashboard · CDR" }));
+    const dashboard = await screen.findByLabelText("Research cockpit");
+    await waitFor(() => {
+      expect(dashboard.querySelector('[data-panel-id="follow:fundamentals"]')).not.toBeNull();
+    });
+    const beforeDashboard = await snapshot(dashboard);
+    await exerciseEveryControl(dashboard);
+    expect(await snapshot(dashboard)).toEqual(beforeDashboard);
   });
 
   it("opens the cockpit with accessible tabs", async () => {
@@ -226,30 +317,50 @@ describe("Research cockpit shell — frozen (F3a S3, ADR 0107 decision 5)", () =
 // views — this is also the regression harness for #348 (declarative dock
 // reconciliation).
 describe("Research cockpit — view company context (U-Ra)", () => {
+  // A saved view's `panelsJson` shape, seeded directly through the API the
+  // removed add-panel flow used to call (there is no interactive builder any
+  // more, R1 finding 4).
+  function namedViewPanelsJson(pinned: unknown[], viewCompanyId: string | null) {
+    return JSON.stringify({
+      pinned,
+      openGlobals: [],
+      closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+      selectedFeedItemId: null,
+      grid: null,
+      cells: null,
+      viewCompanyId,
+    });
+  }
+
+  // Navigates to an already-saved named view via the local palette's
+  // navigation-only "Open view: …" entry (F3a S3 freeze) — the cockpit must
+  // already be mounted (`cockpit` from a prior `screen.findByLabelText`).
+  async function openNamedView(
+    user: ReturnType<typeof userEvent.setup>,
+    cockpit: HTMLElement,
+    name: string,
+  ) {
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), name);
+    await user.click(await screen.findByRole("button", { name: `Open view: ${name}` }));
+  }
+
   // A follow `companyFeed` panel can no longer be added interactively (the
   // "Add panel"/"Open panel" surface is gone with the freeze) — seed a named
-  // view carrying one directly through the API the removed add-panel flow
-  // used to call, then open it via the navigation-only palette.
+  // view carrying one directly, then open it via the navigation-only palette.
   async function openCdrView(user: ReturnType<typeof userEvent.setup>) {
     await saveCockpitLayout({
       name: "CDR follow-up",
-      panelsJson: JSON.stringify({
-        pinned: [{ id: "follow:companyFeed", kind: "companyFeed", mode: "follow" }],
-        openGlobals: [],
-        closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
-        selectedFeedItemId: null,
-        grid: null,
-        cells: null,
-        viewCompanyId: "company_gpw_cdr",
-      }),
+      panelsJson: namedViewPanelsJson(
+        [{ id: "follow:companyFeed", kind: "companyFeed", mode: "follow" }],
+        "company_gpw_cdr",
+      ),
       layoutJson: null,
       dockviewVersion: null,
     });
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "CDR follow-up");
-    await user.click(await screen.findByRole("button", { name: "Open view: CDR follow-up" }));
+    await openNamedView(user, cockpit, "CDR follow-up");
     return screen.findByLabelText("Research cockpit");
   }
 
@@ -283,12 +394,27 @@ describe("Research cockpit — view company context (U-Ra)", () => {
 
   it("keeps a PINNED panel frozen on its company across a view-company switch", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrView(user);
-
-    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
-      ".cockpit-tab",
-    ) as HTMLElement;
-    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
+    // The pin toggle is gone with the freeze (R1 finding 4) — seed a panel
+    // already pinned, matching what the removed toggle used to produce.
+    await saveCockpitLayout({
+      name: "CDR pinned feed",
+      panelsJson: namedViewPanelsJson(
+        [
+          {
+            id: "companyFeed:company_gpw_cdr",
+            kind: "companyFeed",
+            mode: "pinned",
+            companyId: "company_gpw_cdr",
+          },
+        ],
+        "company_gpw_cdr",
+      ),
+      layoutJson: null,
+      dockviewVersion: null,
+    });
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    await openNamedView(user, cockpit, "CDR pinned feed");
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
@@ -302,40 +428,52 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     ).toBeInTheDocument();
   });
 
-  it("pins a follow panel to the current company and rejoins the view company", async () => {
-    const user = userEvent.setup();
-    const cockpit = await openCdrView(user);
-
-    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
-      ".cockpit-tab",
-    ) as HTMLElement;
-    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
-    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
-
-    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
-    await waitFor(() => {
-      expect(within(cockpit).getByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
-    });
-
-    await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
-    expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
-    });
-    expect(
-      await within(cockpit).findByRole("button", {
-        name: "Open company feed item: Transcript-derived note candidate waits for future provider work",
-      }),
-    ).toBeInTheDocument();
+  // R1 finding 4 (ADR 0107 decision 5): the pin↔follow toggle changes which
+  // panel id occupies the dock — a structure mutation, same class as
+  // add/close/drag — so it is hidden, not just the removed "+ New view"/"Add
+  // panel"/preset surface. Float (detaches the group into its own window) is
+  // hidden for the same reason; Maximize is a view-only toggle and stays.
+  it("hides the pin/follow toggle and Float — structural, gone with the freeze", async () => {
+    const cockpit = await openCdrView(userEvent.setup());
+    expect(within(cockpit).queryByRole("button", { name: "Pin company" })).not.toBeInTheDocument();
+    expect(within(cockpit).queryByRole("button", { name: "Follow view company" })).not.toBeInTheDocument();
+    expect(within(cockpit).queryByRole("button", { name: "Float panel group" })).not.toBeInTheDocument();
+    expect(within(cockpit).getByRole("button", { name: "Maximize panel group" })).toBeInTheDocument();
   });
 
   it("recovers when dockview refuses a panel removal — the dock remounts from the specs (#348)", async () => {
     const user = userEvent.setup();
-    const cockpit = await openCdrView(user);
-    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
-      ".cockpit-tab",
-    ) as HTMLElement;
-    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
+    // Two named views whose panel sets overlap in KIND but not in id (pinned
+    // vs. follow) — switching between them is navigation (not the removed pin
+    // toggle) and still drives the same real panel add/remove dockview sees.
+    await saveCockpitLayout({
+      name: "Pinned CDR feed",
+      panelsJson: namedViewPanelsJson(
+        [
+          {
+            id: "companyFeed:company_gpw_cdr",
+            kind: "companyFeed",
+            mode: "pinned",
+            companyId: "company_gpw_cdr",
+          },
+        ],
+        null,
+      ),
+      layoutJson: null,
+      dockviewVersion: null,
+    });
+    await saveCockpitLayout({
+      name: "Follow feed",
+      panelsJson: namedViewPanelsJson(
+        [{ id: "follow:companyFeed", kind: "companyFeed", mode: "follow" }],
+        "company_gpw_cdr",
+      ),
+      layoutJson: null,
+      dockviewVersion: null,
+    });
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    await openNamedView(user, cockpit, "Pinned CDR feed");
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
     const spy = vi
@@ -344,7 +482,7 @@ describe("Research cockpit — view company context (U-Ra)", () => {
         throw new Error("invalid operation");
       });
     try {
-      await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
+      await openNamedView(user, cockpit, "Follow feed");
       expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
       await waitFor(() => {
         expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
@@ -358,11 +496,6 @@ describe("Research cockpit — view company context (U-Ra)", () => {
   it("removes a DOM ghost tab the dock's own model no longer knows about (#348)", async () => {
     const user = userEvent.setup();
     const cockpit = await openCdrView(user);
-    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
-      ".cockpit-tab",
-    ) as HTMLElement;
-    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
-    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
     function injectGhost(name: string) {
       const tabsList = cockpit.querySelector(".dv-tabs-container");
@@ -379,21 +512,15 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     }
     injectGhost("GPW:GHOST · Feed");
 
+    // Retargeting the view company is still available while frozen (it
+    // renames/re-renders, never adds/removes/saves) — the same re-render that
+    // used to follow a pin toggle click, still enough to arm the DOM-witness
+    // verification pass and clean up the ghost.
     await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
     await waitFor(() => {
       expect(within(cockpit).queryByRole("button", { name: "GPW:GHOST · Feed" })).toBeNull();
     });
-    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
-
-    injectGhost("GPW:GHOST2 · Feed");
-    await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
     expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(within(cockpit).queryByRole("button", { name: "GPW:GHOST2 · Feed" })).toBeNull();
-    });
-    await waitFor(() => {
-      expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
-    });
   });
 
   it("offers no per-company palette entries — the header selector is the one way to retarget", async () => {

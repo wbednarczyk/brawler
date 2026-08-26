@@ -4,20 +4,21 @@ import type { Company } from "../api/types";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import type { Tool } from "../screens/Spolka/route";
 import type { Section } from "./navigation";
+import type { SpolkaTransition } from "./useSpolkaScreenWiring";
 
 type CompanyEntryActionsInput = {
   companies: Company[];
   cockpitInitialCompanyId: string | null;
   pinnedCompanyIds: string[];
   selectedCompanyId: string | null;
-  setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setActiveSection: Dispatch<SetStateAction<Section>>;
   setActiveCockpitLayoutId: Dispatch<SetStateAction<string | null>>;
   setCockpitInitialCompanyId: Dispatch<SetStateAction<string | null>>;
-  /** Opens a Spółka workshop tool for the given company (the ToolHost seam,
-   * F3a S2) — used to map a `CompanyWorkspaceTab` intent onto its Spółka
-   * tool (plan "Mapowanie WSZYSTKICH intencji"). */
-  openTool: (companyId: string, tool: Tool) => void;
+  /** Commits companyId + section + optional tool as ONE guarded transition
+   * (the ToolHost seam, F3a S2, sol R1 finding 3) — used to map a
+   * `CompanyWorkspaceTab` intent onto its Spółka tool (plan "Mapowanie
+   * WSZYSTKICH intencji"). */
+  navigate: (transition: SpolkaTransition) => void;
 };
 
 // Every `CompanyWorkspaceTab` that opens a Spółka tool (F3a S3, ADR 0107).
@@ -48,23 +49,16 @@ export function useCompanyEntryActions(input: CompanyEntryActionsInput) {
     if (tab === "Transcripts") {
       // No company-scoped Spółka tool for transcripts yet — the legacy
       // global Transcripts screen (plan "Mapowanie WSZYSTKICH intencji").
-      input.setSelectedCompanyId(companyId);
-      input.setActiveSection("Transcripts");
+      input.navigate({ companyId, section: "Transcripts" });
       return;
     }
-    input.setSelectedCompanyId(companyId);
-    input.setActiveSection("Spolka");
-    const tool = tab ? TAB_TOOL[tab] : undefined;
-    if (tool) {
-      input.openTool(companyId, tool);
-    }
+    input.navigate({ companyId, section: "Spolka", tool: tab ? TAB_TOOL[tab] : undefined });
   }
 
+  // The legacy dashboard goes through the SAME guarded transition as every
+  // Spółka entry (sol R1 finding 3 residual): no setter runs ahead of the guard.
   function openAdvancedLayout(companyId: string) {
-    input.setSelectedCompanyId(companyId);
-    input.setActiveCockpitLayoutId(null);
-    input.setCockpitInitialCompanyId(companyId);
-    input.setActiveSection("Cockpit");
+    input.navigate({ companyId, section: "Cockpit", cockpitLayoutId: null });
   }
 
   function openDashboard() {

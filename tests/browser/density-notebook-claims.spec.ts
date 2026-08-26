@@ -24,7 +24,7 @@ function nav(page: Page) {
 // container (spolka.css), same role as the pre-freeze `.cockpit-pane`.
 async function openCompanyTool(page: Page, toolButton: string, rootSelector: string): Promise<Locator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
-  await page.getByRole("button", { name: "Open GPW:CDR dashboard" }).click();
+  await page.getByRole("button", { name: "Open GPW:CDR" }).click();
   await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
   await page.getByRole("button", { name: toolButton, exact: true }).click();
   const pane = page.locator(".spolka-layout");

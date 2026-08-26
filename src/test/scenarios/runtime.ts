@@ -1239,6 +1239,10 @@ function buildHandlers(): Record<string, Handler> {
     get_company_view: (d, a, ctx): CompanyView => {
       const companyId = str(unwrap(a).companyId) ?? "";
       const company = d.companies.find((c) => c.id === companyId);
+      // sol-review finding 7: top-level error for an unknown company, matching
+      // Rust's `compute_company_view` (company_view.rs) message shape exactly —
+      // a blank identity previously hid the failure.
+      if (!company) throw new Error(`no tracked company for id ${companyId}`);
       const today = SAMPLE_NOW.slice(0, 10);
       const horizon = datePlusDays(today, 30);
 
@@ -1307,41 +1311,42 @@ function buildHandlers(): Record<string, Handler> {
         list.push(fact);
         factsByMetricYear.set(k, list);
       }
-      const yearsWithData = [...new Set([...fyByPeriodId.values()])]
-        .filter((fy) => KPI_METRIC_KEYS.some((key) => factsByMetricYear.has(`${key}:${fy}`)))
-        .sort((x, y) => x - y);
-      const years = yearsWithData.slice(-4);
-      let kpi: CompanyView["kpi"];
-      if (years.length > 0) {
-        let currency: string | undefined;
-        const rows = KPI_METRIC_KEYS.map((metricKey) => {
-          const cells = years.map((fiscalYear) => {
-            const candidates = factsByMetricYear.get(`${metricKey}:${fiscalYear}`) ?? [];
-            const preferred = [...candidates].sort((x, y) => {
-              const xConfirmed = x.confirmationState === "confirmed" ? 1 : 0;
-              const yConfirmed = y.confirmationState === "confirmed" ? 1 : 0;
-              return yConfirmed - xConfirmed || y.updatedAt.localeCompare(x.updatedAt);
-            })[0];
-            if (preferred?.currency) currency ??= preferred.currency;
-            return {
-              fiscalYear,
-              valueNumeric: preferred?.valueNumeric,
-              sourceDocumentRef: preferred?.sourceDocumentRef ?? undefined,
-            };
-          });
-          const populated = cells.filter((c) => c.valueNumeric !== undefined);
-          const newest = populated.slice(-2);
-          const yoyPct =
-            newest.length === 2 && Number.parseFloat(newest[0].valueNumeric ?? "0") !== 0
-              ? ((Number.parseFloat(newest[1].valueNumeric ?? "0") -
-                  Number.parseFloat(newest[0].valueNumeric ?? "0")) /
-                  Number.parseFloat(newest[0].valueNumeric ?? "0")) *
-                100
-              : undefined;
-          return { metricKey, cells, yoyPct };
+      // sol-review finding 7: years = the last 4 FY periods PRESENT, with or
+      // without target-KPI data (contracts.md § Company View) — filtering to
+      // years with a KPI fact collapsed gapped years out of the trend
+      // entirely instead of showing them as an empty cell.
+      const years = [...new Set([...fyByPeriodId.values()])].sort((x, y) => x - y).slice(-4);
+      let currency: string | undefined;
+      const rows = KPI_METRIC_KEYS.map((metricKey) => {
+        const cells = years.map((fiscalYear) => {
+          const candidates = factsByMetricYear.get(`${metricKey}:${fiscalYear}`) ?? [];
+          const preferred = [...candidates].sort((x, y) => {
+            const xConfirmed = x.confirmationState === "confirmed" ? 1 : 0;
+            const yConfirmed = y.confirmationState === "confirmed" ? 1 : 0;
+            return yConfirmed - xConfirmed || y.updatedAt.localeCompare(x.updatedAt);
+          })[0];
+          if (preferred?.currency) currency ??= preferred.currency;
+          return {
+            fiscalYear,
+            valueNumeric: preferred?.valueNumeric,
+            sourceDocumentRef: preferred?.sourceDocumentRef ?? undefined,
+          };
         });
-        kpi = { currency, rows, years };
-      }
+        // yoy spans the two NEWEST POPULATED cells, skipping any gapped year
+        // in between (sol-review finding 6 — the Rust counterpart of this
+        // same rule; mirrored here so the mock never drifts from it).
+        const populated = cells.filter((c) => c.valueNumeric !== undefined);
+        const newest = populated.slice(-2);
+        const yoyPct =
+          newest.length === 2 && Number.parseFloat(newest[0].valueNumeric ?? "0") !== 0
+            ? ((Number.parseFloat(newest[1].valueNumeric ?? "0") -
+                Number.parseFloat(newest[0].valueNumeric ?? "0")) /
+                Number.parseFloat(newest[0].valueNumeric ?? "0")) *
+              100
+            : undefined;
+        return { metricKey, cells, yoyPct };
+      });
+      const kpi: CompanyView["kpi"] = { currency, rows, years };
 
       // --- feed (newest 6 official reports / public media) ---
       const feed = (company ? d.feedItems : [])
@@ -1380,10 +1385,14 @@ function buildHandlers(): Record<string, Handler> {
             candles,
             lastClose: lastSession.close,
             asOf: lastSession.date,
-            delta1mPct: back21 ? ((lastSession.close - back21.close) / back21.close) * 100 : undefined,
-            deltaYtdPct: priorYearLastSession
-              ? ((lastSession.close - priorYearLastSession.close) / priorYearLastSession.close) * 100
-              : undefined,
+            // sol-review finding 7: never divide by a zero/missing base — the
+            // Rust counterpart (`compute_price`) returns `None`, not `NaN`/`Infinity`.
+            delta1mPct:
+              back21 && back21.close !== 0 ? ((lastSession.close - back21.close) / back21.close) * 100 : undefined,
+            deltaYtdPct:
+              priorYearLastSession && priorYearLastSession.close !== 0
+                ? ((lastSession.close - priorYearLastSession.close) / priorYearLastSession.close) * 100
+                : undefined,
             currency: priceCtx.currency,
             emptyReason: priceCtx.emptyReason,
           }
@@ -1393,9 +1402,12 @@ function buildHandlers(): Record<string, Handler> {
       const coverage = (
         handlers.get_fundamentals_coverage(d, { companyId }, ctx) as { periods: CompanyView["coverage"] }
       ).periods;
+      // sol-review finding 7: capped at 3 (contracts.md § Company View — "3
+      // latest"), matching Rust's `RECOMMENDATIONS_LIMIT`; full history lives
+      // behind `{t:"rekomendacje"}`.
       const recommendations = (
         handlers.get_analyst_recommendations(d, { companyId }, ctx) as AnalystRecommendationsView
-      ).entries;
+      ).entries.slice(0, 3);
 
       return {
         companyId,

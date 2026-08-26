@@ -76,6 +76,41 @@ describe("palette copy gate (ADR 0104 dec. 3, F3a S3)", () => {
     });
   }
 
+  // sol R1 finding 11: the cockpit's OWN commands are deliberately excluded
+  // from `collectCommands` (no shared VOCABULARY with Spółka/global, per
+  // "Separacja słowników" above) — but that exclusion left them untested
+  // against the universal STRUCTURAL copy rules (verb prefix, no full
+  // sentence) in either locale. A separate, narrow check: same two rules,
+  // both locales, without merging cockpit's actionKeys into the shared
+  // corpus the disjointness test below still guards.
+  for (const locale of ["en", "pl"] as const) {
+    it(`cockpit command labels start with their verb and are not full sentences (${locale})`, () => {
+      const text = makeTextTranslator(locale);
+      const namedLayouts: CockpitLayout[] = [
+        {
+          id: "view_1",
+          name: "Deep dive",
+          ordinal: 0,
+          panelsJson: "{}",
+          layoutJson: null,
+          dockviewVersion: null,
+          createdAt: "",
+          updatedAt: "",
+        },
+      ];
+      const cockpitCommands = buildCockpitCommands(text, namedLayouts, () => {});
+      expect(cockpitCommands.length).toBeGreaterThan(0);
+
+      const verbLabel = VERB_LABELS.open[locale];
+      const offenders = cockpitCommands.filter(
+        (command) =>
+          !(command.label.startsWith(`${verbLabel} `) || command.label.startsWith(`${verbLabel}:`)) ||
+          command.label.trim().endsWith("."),
+      );
+      expect(offenders.map((command) => `${command.actionKey}: "${command.label}"`)).toEqual([]);
+    });
+  }
+
   // F3a S3 (ADR 0107 decision 5, plan § Separacja słowników): the frozen
   // cockpit's local palette is navigation-only ("Open view: …") — it must
   // never carry a Spółka/global dictionary entry, and the Spółka palette must

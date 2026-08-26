@@ -115,8 +115,10 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     expect(remove.width, "Remove button is squeezed to icon width").toBeGreaterThan(56);
 
     // The fact detail is a Modal since card #307 — close it before moving on,
-    // or its overlay intercepts every later click in the journey.
-    await page.keyboard.press("Escape");
+    // or its overlay intercepts every later click in the journey. A real user
+    // presses Escape here — count it (sol R1 finding 5: this bypassed `j.press`,
+    // undercounting the journey's true interaction total).
+    await j.press(page, "Escape");
     await expect(factDetail).toBeHidden();
 
     // Resolve a due management claim: the workshop bar's "Open claims" stays
