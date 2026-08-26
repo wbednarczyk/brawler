@@ -44,7 +44,7 @@ test("a Views-group legacy dashboard row opens the frozen company-scoped cockpit
   // Research is a standalone screen now — reached from the ⌘K palette.
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: /Command palette|Paleta poleceń/ });
-  await palette.getByLabel(/Search commands|Szukaj poleceń/).fill("Open screen: Research");
+  await palette.getByLabel(/Search commands|Szukaj poleceń/).fill("Research");
   await palette.getByRole("button", { name: /^(Open screen|Otwórz ekran): Research/ }).first().click();
   await expect(page.locator(".research-panel")).toBeVisible();
   await page.screenshot({ path: "test-results/live/research-screen.png", fullPage: true });
