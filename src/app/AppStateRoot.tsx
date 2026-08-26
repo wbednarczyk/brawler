@@ -62,6 +62,8 @@ import {
 import { makeCockpitViewActions } from "./useCockpitViewActions";
 import { useToast, useUndoableDelete } from "../ui";
 import { TodayScreen } from "../screens/Today/TodayScreen";
+import { SpolkaScreenHost, useSpolkaTool } from "./useSpolkaScreenWiring";
+import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
@@ -345,6 +347,7 @@ export function AppStateRoot({
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(
     null,
   );
+  const setSpolkaTool = useSpolkaTool();
   const [searchFocusSelector, setSearchFocusSelector] = useState<string | null>(
     null,
   );
@@ -1767,48 +1770,19 @@ export function AppStateRoot({
     updatePinnedCompanyIds(pinnedCompanyIds.filter((id) => id !== companyId));
   }
 
-  // Opening a company (from Today, Report Season, a feed item, …) lands the
-  // curated cockpit dashboard scoped to it (ADR 0057). The legacy `tab` argument
-  // is ignored — the dashboard shows every surface at once, not one tab.
-  function openCompanyWorkspaceById(
-    companyId: string,
-    _tab?: CompanyWorkspaceTab,
-  ) {
-    openAdvancedLayout(companyId);
-  }
-
-  // Open the cockpit dashboard scoped to a company. Kept named `openAdvancedLayout`
-  // for its existing callers; it is now the single company deep-dive entry point.
-  function openAdvancedLayout(
-    companyId: string,
-    presetId: string | null = null,
-  ) {
-    setSelectedCompanyId(companyId);
-    setActiveCockpitLayoutId(null);
-    setCockpitInitialCompanyId(companyId);
-    setCockpitInitialPresetId(presetId);
-    setActiveSection("Cockpit");
-  }
-
-  // The left-nav "Dashboard" entry (epic c793ca1): open the one company-scoped
-  // Dashboard, never blank. Seed the default company from the last-viewed one,
-  // else a pinned company, else the first tracked company. With no companies at
-  // all, fall back to the (empty-state) cockpit so the entry still resolves.
-  function openDashboard() {
-    const target =
-      cockpitInitialCompanyId ??
-      pinnedCompanyIds[0] ??
-      companies[0]?.id ??
-      null;
-    if (target) {
-      openAdvancedLayout(target);
-    } else {
-      setActiveCockpitLayoutId(null);
-      setCockpitInitialCompanyId(null);
-      setCockpitInitialPresetId(null);
-      setActiveSection("Cockpit");
-    }
-  }
+  // Company deep-dive entry points (Spółka default, ADR 0107; cockpit
+  // dashboard, ADR 0057) — extracted to useCompanyEntryActions.
+  const { openCompanyWorkspaceById, openAdvancedLayout, openDashboard } =
+    useCompanyEntryActions({
+      companies,
+      cockpitInitialCompanyId,
+      pinnedCompanyIds,
+      setSelectedCompanyId,
+      setActiveSection,
+      setActiveCockpitLayoutId,
+      setCockpitInitialCompanyId,
+      setCockpitInitialPresetId,
+    });
 
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
@@ -1955,6 +1929,15 @@ export function AppStateRoot({
                     </NotebooksProvider>
                   </ResearchProvider>
                 </WatchlistsProvider>
+              ) : null}
+              {activeSection === "Spolka" ? (
+                <SpolkaScreenHost
+                  companies={companies}
+                  selectedCompanyId={selectedCompanyId}
+                  onOpenTool={setSpolkaTool}
+                  openInboxItem={openInboxItem}
+                  refreshCompletionCount={refreshCompletionCount}
+                />
               ) : null}
               {activeSection === "Today" ? (
                 <TodayScreen

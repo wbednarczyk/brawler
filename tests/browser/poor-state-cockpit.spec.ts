@@ -27,6 +27,8 @@ test.describe("poor state — company cockpit with a broken panel read", { tag: 
       .getByRole("button", { name: "Companies" })
       .click();
     await page.locator(`[data-company-id="${PARTIAL_COMPANY_ID}"] .company-row-main`).click();
+    // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
     const cockpit = page.getByLabel("Research cockpit");
     await expect(cockpit).toBeVisible();

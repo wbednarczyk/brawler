@@ -112,8 +112,8 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     const pinned = within(nav).getByRole("button", { name: "CDR" });
     await userEvent.click(pinned);
 
-    // Opening a pinned company lands the curated cockpit dashboard (ADR 0057).
-    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+    // Opening a pinned company lands the Spółka screen (F3a S1, ADR 0107).
+    expect(await screen.findByRole("region", { name: "Company view" })).toBeInTheDocument();
   });
 
   it("unpins a company from the spine and persists via update_settings", async () => {

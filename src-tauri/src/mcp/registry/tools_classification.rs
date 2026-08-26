@@ -68,6 +68,15 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // has full parity via list_financial_facts/list_financial_periods,
         // list_company_events, list_notebook_entries, list_claims_due.
         read("get_company_context"),
+        // Company View composite (F3a #429, ADR 0107 dec. 3): the Spółka
+        // screen's glance bar + core render (counters, KPI trend, feed strip,
+        // price chart, coverage, recommendations) in one call. A UI
+        // round-trip optimization, not a new capability — an agent already
+        // has full parity via list_financial_facts/list_financial_periods,
+        // get_price_context, get_red_flags, list_management_claims,
+        // list_short_positions, list_company_events, list_feed_items,
+        // get_fundamentals_coverage, get_analyst_recommendations.
+        read("get_company_view"),
         // Today-screen composite (ADR 0106 dec. 3, F2): flat morning-queue items
         // + claims-due + delta counts in one call. A UI round-trip optimization —
         // agents have parity via list_feed_items/list_company_events/

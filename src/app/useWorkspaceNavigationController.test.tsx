@@ -37,7 +37,10 @@ describe("useWorkspaceNavigationController — openCompanyClaims (F2 S3 nav seam
       result.current.controller.openCompanyClaims(company.id, "claim_target");
     });
 
-    expect(result.current.activeSection).toBe("Cockpit");
+    // F3a S1 (ADR 0107): claims open the Spółka screen now, not the cockpit
+    // directly — `cockpitInitialCompanyId` still primes the cockpit for
+    // whenever the user navigates there separately.
+    expect(result.current.activeSection).toBe("Spolka");
     expect(result.current.selectedCompanyId).toBe(company.id);
     expect(result.current.cockpitInitialCompanyId).toBe(company.id);
     expect(result.current.controller.highlightClaimId).toBe("claim_target");

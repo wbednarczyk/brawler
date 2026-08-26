@@ -1672,6 +1672,16 @@
           }
         },
         {
+          "_comment": "Company View composite (S1a, F3a #429, ADR 0107 dec. 3): a fresh company has no signals/claims/shorts/events/facts/feed/quotes/coverage/recommendations, so both sides return the empty composite with no sectionErrors. Nested shapes (counters/kpi/feed/price/coverage/recommendations) aren't asserted here — expectField is a shallow `===` superset check on the TS side, matching every other corpus entry. Populated-DTO, empty-DTO, and every counter/KPI/price-slicing rule are pinned by the Rust unit tests in commands/company_view.rs.",
+          "command": "get_company_view",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "companyId": "company_gpw_hlth"
+          }
+        },
+        {
           "_comment": "Dziś v2 composed read model (F2 S1, ADR 0106 dec. 3): a fresh company (no feed items/events/claims/autopilot runs) reads back the empty view on both sides — deterministic regardless of wall-clock 'today' since the underlying data is empty either way (the Rust side uses the real clock, the TS mock SAMPLE_NOW; both agree only because nothing exists to filter). items/toVerify/sectionErrors/deltaSummary are empty-shape objects/arrays, not assertable via the shallow === expectField check (same reason other entries skip nested/array shapes) — pinned instead by the Rust unit tests in commands/today.rs and the TS runtime.test.ts coverage. Only the scalar previousVisitAt (null, no KV row) is asserted here.",
           "command": "get_today_view",
           "input": {

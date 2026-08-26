@@ -426,6 +426,7 @@ pub fn run() {
             commands::fundamentals_extraction::rerun_extraction_outcome,
             commands::fundamentals_coverage::get_fundamentals_coverage,
             commands::company_context::get_company_context,
+            commands::company_view::get_company_view,
             commands::today::get_today_view,
             commands::today::mark_today_visited,
             commands::company_health::get_company_health,

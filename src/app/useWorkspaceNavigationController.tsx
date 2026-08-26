@@ -37,19 +37,21 @@ export function useWorkspaceNavigationController({
   // to highlight — self-contained here since nothing else needs to own it.
   const [highlightClaimId, setHighlightClaimId] = useState<string | null>(null);
 
-  // Opening a company lands the curated dashboard scoped to it (ADR 0057): the
-  // cockpit is the single company deep-dive. The library selection is kept in
-  // sync so the row stays highlighted.
+  // Opening a company lands the Spółka screen (F3a S1, ADR 0107) — the
+  // company deep-dive destination as of F3a; the cockpit dashboard stays
+  // reachable via its own nav entry. The library selection is kept in sync
+  // so the row stays highlighted; `cockpitInitialCompanyId` still primes the
+  // cockpit for whenever the user navigates there separately.
   function openCompanyWorkspace(company: Company) {
     setSelectedCompanyId(company.id);
     setCockpitInitialCompanyId(company.id);
-    setActiveSection("Cockpit");
+    setActiveSection("Spolka");
   }
 
   function openCompanyClaims(companyId: string, claimId: string) {
     setSelectedCompanyId(companyId);
     setCockpitInitialCompanyId(companyId);
-    setActiveSection("Cockpit");
+    setActiveSection("Spolka");
     setHighlightClaimId(claimId);
   }
 

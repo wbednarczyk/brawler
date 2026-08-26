@@ -19,6 +19,8 @@ async function addRecommendationsPanel(
     .getByRole("button", { name: "Companies" })
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
   await page.getByRole("button", { name: "Add panel" }).click();
   const palette = page.getByRole("dialog", { name: "Command palette" });

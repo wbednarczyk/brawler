@@ -64,7 +64,11 @@ describe("Research cockpit shell", () => {
     renderApp();
 
     await user.click(await screen.findByRole("button", { name: "Companies" }));
+    // F3a S1 (ADR 0107): the row now opens the Spółka screen, not the cockpit
+    // directly — it still primes `cockpitInitialCompanyId`, so the sidebar's
+    // "Dashboard" entry reaches the same CD PROJEKT-scoped cockpit.
     await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
+    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
 
     const cockpit = await screen.findByLabelText("Research cockpit");
     // The dashboard renders company-scoped FOLLOW panels: their tab titles are
@@ -91,6 +95,11 @@ describe("Research cockpit shell", () => {
     await screen.findByRole("heading", { name: "Today" });
     const [openThesis] = await screen.findAllByRole("button", { name: "Open thesis" });
     await user.click(openThesis);
+    // F3a S1 (ADR 0107): the claims seam now lands on the Spółka screen, not
+    // the cockpit directly — it still primes `cockpitInitialCompanyId` +
+    // `highlightClaimId`, so the sidebar's "Dashboard" entry reaches the same
+    // cockpit with the highlight seam intact.
+    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
 
     const cockpit = await screen.findByLabelText("Research cockpit");
     // The dashboard's default anchor slot (4th panel, "Basic info") is active
@@ -308,7 +317,11 @@ describe("Research cockpit — view company context (U-Ra)", () => {
   async function openCdrDashboard(user: ReturnType<typeof userEvent.setup>) {
     renderApp();
     await user.click(await screen.findByRole("button", { name: "Companies" }));
+    // F3a S1 (ADR 0107): a company row now opens the Spółka screen, not the
+    // cockpit directly — it still primes `cockpitInitialCompanyId`, so the
+    // sidebar's "Dashboard" entry reaches the same CD PROJEKT-scoped cockpit.
     await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
+    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
     return screen.findByLabelText("Research cockpit");
   }
 
@@ -524,7 +537,11 @@ describe("Research cockpit — add-panel surface (card 106f8a7)", () => {
   async function openCdrDashboard(user: ReturnType<typeof userEvent.setup>) {
     renderApp();
     await user.click(await screen.findByRole("button", { name: "Companies" }));
+    // F3a S1 (ADR 0107): a company row now opens the Spółka screen, not the
+    // cockpit directly — it still primes `cockpitInitialCompanyId`, so the
+    // sidebar's "Dashboard" entry reaches the same CD PROJEKT-scoped cockpit.
     await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
+    await user.click(await screen.findByRole("button", { name: "Dashboard" }));
     return screen.findByLabelText("Research cockpit");
   }
 

@@ -1,0 +1,139 @@
+/* Spółka screen (F3a S1, ADR 0107): glance bar + core grid + workshop bar.
+   Screen root is `.feed-panel` (shared chrome); this file owns only the
+   screen-specific layout inside `.spolka-layout` (ui-authoring's screen
+   scaffold: a padded, independently-scrolling body). */
+
+.spolka-layout {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.spolka-glance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.spolka-glance-counter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.spolka-glance-sub {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.spolka-core {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.spolka-core > * {
+  min-width: 0;
+}
+
+.spolka-kpi {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .spolka-core {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .spolka-kpi {
+    grid-column: auto;
+  }
+}
+
+.spolka-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.spolka-kpi-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.spolka-kpi-table th,
+.spolka-kpi-table td {
+  text-align: right;
+  padding: var(--space-1) var(--space-2);
+}
+
+.spolka-kpi-table th:first-child,
+.spolka-kpi-table td:first-child {
+  text-align: left;
+}
+
+.spolka-kpi-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.spolka-kpi-hint {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.spolka-feed-rows,
+.spolka-coverage-rows,
+.spolka-recommendations-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.spolka-price-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.spolka-price-asof {
+  color: var(--muted);
+}
+
+.spolka-price-caption {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.spolka-workshop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.spolka-error-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}

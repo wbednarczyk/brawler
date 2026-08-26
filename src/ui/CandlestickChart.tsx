@@ -1,5 +1,5 @@
 import { formatFinancialValue } from "../shared/format/financialValue";
-import { niceScale } from "./chartScale";
+import { niceLogScale, niceScale } from "./chartScale";
 
 // Candlestick chart for a dense OHLC series (e.g. daily session bars): one
 // wick (high–low) + body (open–close) per session, an up/down tone per
@@ -22,6 +22,10 @@ export type CandlestickChartProps = {
   formatValue?: (value: number) => string;
   height?: number;
   className?: string;
+  // Vertical axis mapping (S1b, ADR 0107 dec. 4): "log" is the house standard
+  // for price history (equal % moves read as equal distances). Default stays
+  // "linear" for full backward compat with existing consumers/snapshots.
+  scale?: "linear" | "log";
 };
 
 const VIEW_HEIGHT = 100;
@@ -36,6 +40,7 @@ export function CandlestickChart({
   formatValue,
   height = 120,
   className,
+  scale = "linear",
 }: CandlestickChartProps) {
   const usable = points.filter(
     (point) =>
@@ -52,24 +57,38 @@ export function CandlestickChart({
     );
   }
 
+  // A non-positive low has no logarithm — fall back to linear for the whole
+  // chart rather than render NaN geometry (S1b contract item 3).
+  const canLog = scale === "log" && usable.every((point) => Number.isFinite(point.low) && point.low > 0);
+  if (scale === "log" && !canLog && import.meta.env.DEV) {
+    console.warn('CandlestickChart: scale="log" requires every low > 0 — falling back to linear.');
+  }
+  const effectiveScale = canLog ? "log" : "linear";
+
   // Round-number scale (owner report 2026-07-14): the domain expands to nice
   // tick values, so labels read "120 PLN", never "120,95 PLN". Ticks are
   // evenly spaced, so labels (top→bottom) and gridlines lay out uniformly.
-  const scale = niceScale(
-    Math.min(...usable.map((point) => point.low)),
-    Math.max(...usable.map((point) => point.high)),
-  );
-  const span = scale.max - scale.min || 1;
-  const y = (value: number) => VIEW_HEIGHT - (VIEW_HEIGHT * (value - scale.min)) / span;
+  // (Log mode instead keeps the raw min/max — see niceLogScale.)
+  const dataMin = Math.min(...usable.map((point) => point.low));
+  const dataMax = Math.max(...usable.map((point) => point.high));
+  const frame = effectiveScale === "log" ? niceLogScale(dataMin, dataMax) : niceScale(dataMin, dataMax);
+  const span =
+    effectiveScale === "log"
+      ? Math.log10(frame.max) - Math.log10(frame.min) || 1
+      : frame.max - frame.min || 1;
+  const y = (value: number) =>
+    effectiveScale === "log"
+      ? VIEW_HEIGHT - (VIEW_HEIGHT * (Math.log10(value) - Math.log10(frame.min))) / span
+      : VIEW_HEIGHT - (VIEW_HEIGHT * (value - frame.min)) / span;
 
   const width = usable.length * STEP;
   const format =
     formatValue ?? ((value: number) => formatFinancialValue({ valueNumeric: String(value) }));
 
   return (
-    <div className={["ui-candlestick-chart", className].filter(Boolean).join(" ")}>
+    <div className={["ui-candlestick-chart", className].filter(Boolean).join(" ")} data-scale={effectiveScale}>
       <div className="ui-candlestick-chart-ylabels" aria-hidden="true">
-        {[...scale.ticks].reverse().map((tick) => (
+        {[...frame.ticks].reverse().map((tick) => (
           <span key={tick}>{format(tick)}</span>
         ))}
       </div>
@@ -80,7 +99,7 @@ export function CandlestickChart({
         aria-label={ariaLabel}
         preserveAspectRatio="none"
       >
-        {scale.ticks.map((tick) => (
+        {frame.ticks.map((tick) => (
           <line
             key={tick}
             x1={0}

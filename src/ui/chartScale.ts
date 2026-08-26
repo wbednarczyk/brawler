@@ -38,3 +38,33 @@ export function niceScale(dataMin: number, dataMax: number, intervals = 4): Nice
   );
   return { min, max, ticks };
 }
+
+// Log-scale ticks (S1b, ADR 0107 dec. 4 — log axis is the house standard for
+// price charts): unlike niceScale, bounds stay the raw data min/max (not
+// expanded to a step multiple), so a scale=log consumer's y-mapping keeps its
+// true geometric midpoint. Tick candidates are round 1/2/5 × 10^k mantissas
+// (decade ticks, never a bare power of 10) filtered to the data span; a span
+// too narrow for 3 mantissa ticks falls back to niceScale's ticks intersected
+// with the span — still round prices, just not mantissa-aligned.
+const LOG_MANTISSAS = [1, 2, 5];
+
+export function niceLogScale(dataMin: number, dataMax: number): NiceScale {
+  if (!(dataMin > 0) || !(dataMax > dataMin)) {
+    return niceScale(dataMin, dataMax);
+  }
+  const lowDecade = Math.floor(Math.log10(dataMin)) - 1;
+  const highDecade = Math.floor(Math.log10(dataMax)) + 1;
+  const candidates: number[] = [];
+  for (let decade = lowDecade; decade <= highDecade; decade++) {
+    for (const mantissa of LOG_MANTISSAS) {
+      candidates.push(Number((mantissa * 10 ** decade).toPrecision(12)));
+    }
+  }
+  let ticks = candidates.filter((tick) => tick >= dataMin && tick <= dataMax);
+  while (ticks.length > 6) ticks = ticks.filter((_, index) => index % 2 === 0);
+  if (ticks.length < 3) {
+    ticks = niceScale(dataMin, dataMax).ticks.filter((tick) => tick >= dataMin && tick <= dataMax);
+  }
+  if (ticks.length < 2) ticks = [dataMin, dataMax];
+  return { min: dataMin, max: dataMax, ticks: ticks.sort((a, b) => a - b) };
+}

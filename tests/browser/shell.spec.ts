@@ -55,6 +55,8 @@ test.describe("mode-based shell (ADR 0054)", () => {
     // company Dashboard from the Companies list, then show the Feed panel.
     await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
     const cockpit = page.getByLabel("Research cockpit");
     await expect(cockpit).toBeVisible();
 
@@ -96,6 +98,8 @@ test.describe("mode-based shell (ADR 0054)", () => {
     // its lower context block stops click propagation (tracked bug), so target the
     // primary area to reliably select the company across the viewport matrix.
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
     // Opening a company IS the deep-dive now (ADR 0057): no intermediate classic
     // workspace / Advanced-layout button — it lands the curated cockpit dashboard

@@ -17,6 +17,8 @@ test.describe("fundamentals visual harness", () => {
     // Click the name/ticker area (what a user clicks) rather than the row centre,
     // which can fall on a watchlist chip.
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
     // Opening a company lands the cockpit dashboard (ADR 0057); the Fundamentals
     // panel is shown directly, no tab.
@@ -41,6 +43,8 @@ test.describe("fundamentals visual harness", () => {
 
     await page.getByLabel("Nawigacja główna").getByRole("button", { name: "Spółki" }).click();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
     // Cockpit dashboard (ADR 0057) shows the Fundamentals panel directly.
     const panel = page.getByLabel("Wskaźniki finansowe spółki");

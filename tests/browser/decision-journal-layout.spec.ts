@@ -15,6 +15,8 @@ test("decision journal panel does not horizontally overflow at a narrow window",
   await openApp(page);
   await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
   // Add the Decision journal follow panel from the command palette (offered once
   // a view company is set — the company dashboard sets it).

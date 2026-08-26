@@ -7,6 +7,7 @@ pub mod cockpit_layouts;
 pub mod companies;
 pub mod company_context;
 pub mod company_health;
+pub mod company_view;
 pub mod comparison;
 pub mod credentials;
 pub mod decision_journal;

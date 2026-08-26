@@ -166,6 +166,17 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Company View composite (S1a, F3a #429, ADR 0107 dec. 3). Same
+        // computed helper the command wrapper offloads, so the corpus can
+        // never diverge from real assembly.
+        "get_company_view" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::company_view::compute_company_view(state, company_id)
+                    .expect("get_company_view"),
+            )
+            .unwrap()
+        }
         // Dziś v2 composed read model (F2 S1, ADR 0106 dec. 3). Same computed
         // helper the command wrapper offloads, so the corpus can never diverge
         // from real assembly. Infallible (typed per-section degradation), so

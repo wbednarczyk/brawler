@@ -35,6 +35,8 @@ function nav(page: Page) {
 async function openDashboard(page: Page) {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
   await expect(page.getByLabel("Research cockpit")).toBeVisible();
 }
 

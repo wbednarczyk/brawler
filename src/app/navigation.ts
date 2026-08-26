@@ -21,6 +21,10 @@ export type Section =
   | "Today"
   | "Inbox"
   | "Cockpit"
+  // The Spółka screen (F3a S1, ADR 0107) — the company deep-dive
+  // destination; not a top-level nav entry (opened by selecting a company),
+  // same posture as Cockpit/ReportSeason/etc above.
+  | "Spolka"
   | "ReportSeason"
   | "Companies"
   | "Watchlists"

@@ -18,6 +18,8 @@ test("quality panel qualitative form does not horizontally overflow at a narrow 
   await openApp(page);
   await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
   // Activate the Quality dock tab so its panel body is on screen (dockview tabs
   // are accessible buttons, ADR 0047).
@@ -42,6 +44,8 @@ test("company health scores render, expand, and do not overflow at a narrow wind
   await openApp(page);
   await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
   await page.getByRole("button", { name: /Quality/ }).first().click();
 

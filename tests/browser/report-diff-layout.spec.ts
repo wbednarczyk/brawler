@@ -13,6 +13,8 @@ test("company cockpit dashboard does not horizontally overflow at a narrow windo
   await openApp(page);
   await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
   // The default dashboard panels are present: Fundamentals + Report documents
   // (whose long ESPI filenames are the overflow risk this test guards).

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 
 import { ActionRow } from "./ActionRow";
 import { Button, type ButtonVariant } from "./Button";
+import { CandlestickChart } from "./CandlestickChart";
 import { Checkbox } from "./Checkbox";
 import { ChipList } from "./ChipList";
 import { ClearButton } from "./ClearButton";
@@ -63,6 +64,21 @@ const BUTTON_VARIANTS: ButtonVariant[] = [
   "ghost",
   "minimal",
   "danger",
+];
+
+const CANDLESTICK_POINTS = [
+  { label: "2026-01-05", open: 120, high: 128, low: 118, close: 126 },
+  { label: "2026-01-06", open: 126, high: 132, low: 122, close: 124 },
+  { label: "2026-01-07", open: 124, high: 140, low: 123, close: 138 },
+  { label: "2026-01-08", open: 138, high: 155, low: 136, close: 150 },
+  { label: "2026-01-09", open: 150, high: 152, low: 140, close: 143 },
+  { label: "2026-01-12", open: 143, high: 148, low: 130, close: 133 },
+  { label: "2026-01-13", open: 133, high: 175, low: 132, close: 172 },
+  { label: "2026-01-14", open: 172, high: 210, low: 168, close: 205 },
+  { label: "2026-01-15", open: 205, high: 260, low: 200, close: 255 },
+  { label: "2026-01-16", open: 255, high: 320, low: 250, close: 310 },
+  { label: "2026-01-19", open: 310, high: 340, low: 300, close: 305 },
+  { label: "2026-01-20", open: 305, high: 330, low: 280, close: 290 },
 ];
 
 const CHIP_TONES = ["neutral", "accent", "ok", "warn", "danger"] as const;
@@ -274,6 +290,20 @@ export function PrimitiveGallery() {
             { key: "evebitda", label: "EV/EBITDA × median", low: 108, base: 131, high: 154, rangeText: "108–154 zł" },
             { key: "pbv", label: "P/BV × median", absentText: "too few peers" },
           ]}
+        />
+        <SectionHeader title="CandlestickChart" titleId="g-candlestick" level="h3" />
+        <CandlestickChart
+          ariaLabel="Price history (linear)"
+          points={CANDLESTICK_POINTS}
+          formatValue={(value) => `${value} zł`}
+        />
+        {/* Log scale is the house standard (ADR 0107 dec. 4) — the only
+            production consumer (PriceContextSection) always passes it. */}
+        <CandlestickChart
+          ariaLabel="Price history (log)"
+          points={CANDLESTICK_POINTS}
+          scale="log"
+          formatValue={(value) => `${value} zł`}
         />
       </section>
 

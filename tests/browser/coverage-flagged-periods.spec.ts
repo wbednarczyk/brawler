@@ -21,6 +21,8 @@ async function openCoveragePanel(page: import("@playwright/test").Page, companyI
     .getByRole("button", { name: "Companies" })
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
   // Coverage ships in the DEFAULT cockpit set, as a background dockview tab —
   // its content is not in the DOM until activated. Activate it as a user would.
   await page.getByRole("button", { name: "Coverage", exact: true }).first().click();

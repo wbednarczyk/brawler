@@ -1148,36 +1148,48 @@ MCP registry: `get_today_view` is `read`-tier but not exposed as an agent tool (
 
 ## Company View (Spółka)
 
-Status: planned (vNEXT, ADR 0107)
-
 `get_company_view(companyId)` returns `CompanyView` — everything the `Spółka`
 screen's glance bar and core render, composed in ONE read (ADR 0106 decision 3;
-F3a #429). Computed; async / `spawn_blocking`. Top-level error ONLY for an
-unknown company or a failed read establishment; every section otherwise
-degrades independently via `sectionErrors`.
+[ADR 0107](adr/0107-company-view-paradigm.md) decision 3; F3a #429, S1).
+Computed; async / `spawn_blocking`. Top-level error ONLY for an unknown company
+or a failed read establishment; every section otherwise degrades independently
+via `sectionErrors`. Generated DTOs: `src/api/generated/CompanyView*.ts`.
 
-- `counters` — `signals: { unacked, byCategory }` (unacknowledged company
-  signals, full history, per-category breakdown) · `claims: { open,
-  nearestDue }` (`pending`/`partially_delivered` claims + nearest settlement
-  period) · `shorts: { activeSumPct, largestHolder }` (sum of ACTIVE registry
-  positions' percents — positions without a closing entry; percent tie →
+- Identity: `companyId`, `qualifiedTicker`, `displayName`, `isin?`.
+- `counters?` — `signals: { unacked, byCategory[{category,count}] }`
+  (unacknowledged red flags = `red_flags_view(...).active`, full history,
+  `category` = flag type, count DESC then category ASC) · `claims: { open,
+  nearestDue? }` (`pending`/`partially_delivered` claims; `nearestDue` =
+  `"{periodType} {fiscalYear}"` of the earliest due period by fiscal year then
+  domain period order Q1 < H1/Q2 < 9M/Q3 < Q4/FY) · `shorts: { activeSumPct,
+  largestHolder? }` (sum of ACTIVE registry positions' percents; percent tie →
   alphabetically first holder) · `events: { upcoming }` (`scheduled`,
   `event_date` in the CLOSED interval [today, today+30d], today = backend UTC
   clock date).
-- `kpi` — FY rows (revenue / operating profit / net profit) for the last 4
-  fiscal years + yoy deltas, each figure carrying its source-document identity
-  (navigable ticket, ADR 0104 decision 7).
-- `feed` — newest 6 items (`published_at` DESC, tie-breaker `id` DESC) with
-  source tone; the full feed lives behind the `{t:"feed"}` workshop tool.
-- `price` — daily OHLC candles: the last 66 sessions present in the data
-  (sliced from the `compute_price_context` series); `last`, `delta1M` (close
-  vs close 21 sessions back), `deltaYtd` (vs the last session of the prior
-  calendar year; missing → undefined, never 0), `asOf` (last session date).
+- `kpi?` — `{ currency?, years[≤4 FY, ascending], rows[{ metricKey, cells[{
+  fiscalYear, valueNumeric?, sourceDocumentRef? }], yoyPct? }] }` for
+  `revenue` / `operating_profit` / `net_profit` (that order); a cell prefers a
+  `confirmed` fact, then the newest; `valueNumeric` is verbatim (never
+  re-parsed); `yoyPct` spans the two newest populated cells (`undefined` when a
+  side is missing or the base is 0); `sourceDocumentRef` is the navigable
+  provenance ticket (ADR 0104 decision 7).
+- `feed[]` — newest 6 `Official report` / `Public media` items (`published_at`
+  DESC, tie-breaker `id` DESC): `{ feedItemId, title, publishedAt, read,
+  itemType, sourceName, presentationKind }`; the full feed lives behind the
+  `{t:"feed"}` workshop tool.
+- `price?` — `{ candles[{date,open,high,low,close}], lastClose, asOf,
+  delta1mPct?, deltaYtdPct?, currency, emptyReason? }`: the last 66 sessions
+  present in the data (sliced from the `compute_price_context` series); `delta1mPct`
+  = last close vs the close 21 sessions back (needs ≥ 22 sessions); `deltaYtdPct`
+  = vs the last session of the prior calendar year (missing → undefined, never
+  0); `asOf` = last session date; `emptyReason` mirrors `get_price_context`.
   Rendered on a LOG axis (house standard, ADR 0107 decision 4).
-- `coverage` — per-period read status (reuses the coverage read model).
-- `recommendations` — 3 latest (full history behind `{t:"rekomendacje"}`).
-- `sectionErrors: { counters?, kpi?, feed?, price?, coverage?,
-  recommendations? }` — closed enum (`"unavailable"`), the F2 pattern.
+- `coverage[]` — `CoveragePeriodRow` (the fundamentals-coverage read model, as-is).
+- `recommendations[]` — `AnalystRecommendationRow`, newest first (full history
+  behind `{t:"rekomendacje"}`).
+- `sectionErrors: { counters?, kpi?, feed?, price?, coverage?, recommendations? }`
+  — closed enum (`"unavailable"`), the F2 pattern; `counters` and `kpi` are
+  atomic sections (any sub-read failing degrades the whole section).
 
 MCP registry: `read`-tier, not exposed as an agent tool (round-trip
 optimization; agents have parity via the underlying list/read commands — the

@@ -77,6 +77,11 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await j.markScreen("Companies");
     await expectNoA11yViolations(page, "Companies list");
     await j.click(page.locator('[data-company-id="company_gpw_cdr"] .company-row-main'));
+    // F3a S1 (ADR 0107): the row now opens the Spółka screen first — it still
+    // primes `cockpitInitialCompanyId`, so the sidebar's "Dashboard" entry
+    // reaches the same CD PROJEKT-scoped cockpit this journey still exercises
+    // (S2's in-Spółka tool host is not built yet).
+    await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }));
 
     const workspace = page.getByRole("region", { name: "Research cockpit", exact: true });
     await expect(workspace).toBeVisible();
@@ -169,6 +174,51 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await j.assertBudget();
   });
 
+  // F3a (ADR 0107, docs/plans/frontend-v2-f3a.md § contract 1): opening a
+  // company lands on the engine-free Spółka screen — glance bar + co-visible
+  // core — and the claims tool is one click away, opened with the claim to
+  // verify highlighted. Red before S1 (screen) and S2 (tool host) by design.
+  test("opening the company lands on Spółka: glance bar + co-visible core, Otwórz tezy raises the claims tool with the highlighted claim", async ({ page }) => {
+    const j = journey(page, "J2");
+    await openApp(page);
+    await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
+    await expect(page.getByLabel("Companies list")).toBeVisible();
+    await j.click(page.locator('[data-company-id="company_gpw_cdr"] .company-row-main'));
+
+    const spolka = page.getByRole("region", { name: "Company view", exact: true });
+    await expect(spolka).toBeVisible();
+    await expect(spolka).toHaveAttribute("data-company-id", "company_gpw_cdr");
+    await j.markScreen("Spółka");
+
+    // Glance bar: identity + the four attention counters.
+    const glance = spolka.getByLabel("Company glance bar");
+    await expect(glance).toBeVisible();
+    await expect(spolka.getByText("CDR").first()).toBeVisible();
+    for (const counter of ["Signals counter", "Claims counter", "Shorts counter", "Events counter"]) {
+      await expect(glance.getByLabel(counter)).toBeVisible();
+    }
+
+    // Core: the five surfaces are co-visible at rest, no primary action at rest.
+    const core = spolka.getByLabel("Company core");
+    for (const section of ["Annual KPI table", "Company feed", "Price chart", "Report coverage", "Recommendations"]) {
+      await expect(core.getByLabel(section)).toBeVisible();
+    }
+    await expectPrimaryActionCount(spolka, { max: 0 });
+    await expect(spolka.locator('[data-ui-button-variant="primary"]')).toHaveCount(0);
+    await expectNoPageOverflow(page);
+    await expectNoA11yViolations(page, "Spółka at rest");
+
+    // One click: the claims tool opens INTO the core zone with the pending
+    // claim highlighted (the J5 highlight seam); the tool owns the primary.
+    await j.click(spolka.getByRole("button", { name: "Open claims" }));
+    const tool = spolka.getByLabel("Workshop tool");
+    await expect(tool).toBeVisible();
+    await expect(tool.locator(".company-claims-panel")).toBeVisible();
+    await expect(tool.locator(".claim-row-highlighted")).toHaveCount(1);
+    await expectPrimaryActionCount(tool, { max: 1 });
+    await expectNoPageOverflow(page);
+  });
+
   // ADR 0081 Q9: hostile filenames/labels stay contained on the surfaces this
   // journey still walks. The KPI-extraction modal that used to carry this check
   // is gone (ADR 0084), so the hostile content is stressed where it now lands —
@@ -211,6 +261,9 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S1 (ADR 0107): bridge through the sidebar "Dashboard" entry — see
+    // the note on the first test in this file.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
 
     await page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first().click();
     const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });
