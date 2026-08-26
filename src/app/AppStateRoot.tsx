@@ -184,7 +184,22 @@ export function AppStateRoot({
   });
   // Today/Pulse is the default shell home (ADR 0054); `initialSection` overrides
   // it for deep links and screen-focused tests.
-  const [activeSection, setActiveSection] = useState<Section>(initialSection);
+  const [activeSection, setActiveSectionRaw] = useState<Section>(initialSection);
+  // The Spółka workshop's tool-host state (F3a S2, ADR 0107), declared this
+  // early so `setActiveSection` below can gate every cross-section navigation
+  // through its dirty-tool check (`guardNavigation`), not just the ones that
+  // go through `SpolkaScreenHost` itself.
+  const spolkaTool = useSpolkaTool();
+  // EVERY `setActiveSection` call in this file goes through the SAME
+  // stay/discard gate the Spółka tool host uses for tool close/switch/company
+  // switch (plan §S2, "navigating away"): a clean (or absent) tool proceeds
+  // immediately; a dirty one opens the confirm dialog first.
+  const setActiveSection = useCallback(
+    (next: Section | ((current: Section) => Section)) =>
+      spolkaTool.guardNavigation(() => setActiveSectionRaw(next)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `spolkaTool` is a fresh object every render; `guardNavigation` itself is the only stable (useCallback) piece read here, and listing the whole object would make setActiveSection's identity churn every render
+    [spolkaTool.guardNavigation],
+  );
   // The company a workspace "Advanced layout" toggle scopes the dockview cockpit
   // to (ADR 0054); null = the cockpit opened directly, unscoped.
   const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<
@@ -347,7 +362,6 @@ export function AppStateRoot({
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(
     null,
   );
-  const setSpolkaTool = useSpolkaTool();
   const [searchFocusSelector, setSearchFocusSelector] = useState<string | null>(
     null,
   );
@@ -887,7 +901,7 @@ export function AppStateRoot({
     if (activeSection === "Diagnostics" && !settings?.developerMode) {
       setActiveSection("Settings");
     }
-  }, [activeSection, settings?.developerMode]);
+  }, [activeSection, settings?.developerMode, setActiveSection]);
 
   function resetDeletedWatchlistFilters(watchlistId: string) {
     setInboxWatchlistFilter((current) =>
@@ -1222,6 +1236,7 @@ export function AppStateRoot({
   useAppLifecycleEffects({
     activeSection,
     companies,
+    spolkaTool,
     refreshAttention: attention.refresh,
     onRefreshCompletion: bumpRefreshCompletionCount,
     companyEventCompanyFilter,
@@ -1931,13 +1946,21 @@ export function AppStateRoot({
                 </WatchlistsProvider>
               ) : null}
               {activeSection === "Spolka" ? (
-                <SpolkaScreenHost
-                  companies={companies}
-                  selectedCompanyId={selectedCompanyId}
-                  onOpenTool={setSpolkaTool}
-                  openInboxItem={openInboxItem}
-                  refreshCompletionCount={refreshCompletionCount}
-                />
+                // The `research` workshop tool hosts the real, context-driven
+                // ResearchScreen (F3a S2 — it has no company-scope prop of its
+                // own yet), so this branch needs the same provider Cockpit
+                // wraps it in.
+                <ResearchProvider value={researchViewModel}>
+                  <SpolkaScreenHost
+                    companies={companies}
+                    selectedCompanyId={selectedCompanyId}
+                    spolkaTool={spolkaTool}
+                    feedItems={feedState}
+                    rootHighlightClaimId={highlightClaimId}
+                    openInboxItem={openInboxItem}
+                    refreshCompletionCount={refreshCompletionCount}
+                  />
+                </ResearchProvider>
               ) : null}
               {activeSection === "Today" ? (
                 <TodayScreen

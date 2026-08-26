@@ -356,6 +356,20 @@ describe("QualityPanel", () => {
     expect(await screen.findByText("Snapshot criterion")).toBeInTheDocument();
   });
 
+  // Mechanical defect #3 (F3a study): the raw ISO timestamp
+  // (`2026-06-10T10:00:00Z`) used to render verbatim and wrap mid-string. It
+  // must go through the shared detail-timestamp formatter instead.
+  it("evaluation history formats the timestamp and never shows raw ISO", async () => {
+    listFrameworkEvaluationsMock.mockResolvedValue([evaluation()]);
+
+    const { container } = render(<QualityPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Strong return on equity");
+
+    const row = await screen.findByText("2026-06-10 10:00");
+    expect(row).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/);
+  });
+
   it("shows the empty state when there are no frameworks", async () => {
     listQualityFrameworksMock.mockResolvedValue([]);
     render(<QualityPanel companyId="company_gpw_cdr" />);

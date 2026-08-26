@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { invoke } from "@tauri-apps/api/core";
 
 import { SpolkaScreen, type SpolkaScreenProps } from "./SpolkaScreen";
+import { useSpolkaToolHost } from "./ToolHost";
+import { ToastProvider } from "../../ui";
+import { ResearchProvider } from "../../app/state/screenViewModels";
+import type { ResearchScreenProps } from "../Research/ResearchScreen";
 import { getCompanyView } from "../../api/companyView";
 import type { CompanyView } from "../../api/generated/CompanyView";
 import type { Tool } from "./route";
@@ -14,6 +19,59 @@ vi.mock("../../api/companyView", () => ({
 }));
 
 const getCompanyViewMock = vi.mocked(getCompanyView);
+
+const researchViewModelStub: ResearchScreenProps = {
+  companies: [],
+  watchlists: [],
+  watchlistMemberships: [],
+  mode: "company",
+  selectedCompanyId: null,
+  selectedWatchlistId: null,
+  selectedWatchlistCompanyId: null,
+  cascadeToCompanies: false,
+  selectedEvidenceTypes: [],
+  changedOnly: false,
+  timeline: null,
+  questions: [],
+  selectedQuestionId: null,
+  questionTitle: "",
+  questionBody: "",
+  questionLinks: [],
+  reminders: [],
+  error: null,
+  loading: false,
+  reviewInFlight: false,
+  questionInFlight: false,
+  reminderInFlight: false,
+  setMode: () => {},
+  setSelectedCompanyId: () => {},
+  setSelectedWatchlistId: () => {},
+  setSelectedWatchlistCompanyId: () => {},
+  setSelectedQuestionId: () => {},
+  setQuestionTitle: () => {},
+  setQuestionBody: () => {},
+  setCascadeToCompanies: () => {},
+  setChangedOnly: () => {},
+  toggleEvidenceType: () => {},
+  clearEvidenceTypes: () => {},
+  refreshTimeline: () => {},
+  markReviewed: () => {},
+  createQuestion: () => {},
+  updateQuestionStatus: () => {},
+  deleteQuestion: () => {},
+  linkEvidence: () => {},
+  unlinkEvidence: () => {},
+  createReminder: () => {},
+  completeReminder: () => {},
+  snoozeReminder: () => {},
+  reopenReminder: () => {},
+  deleteReminder: () => {},
+  openEvidence: () => {},
+  openEvidenceUrl: () => {},
+  formatTimestamp: (v) => v ?? "",
+};
+
+const invokeMock = vi.mocked(invoke);
 
 const company = makeCompany(COMPANY_SPECS.find((spec) => spec.key === "cdr")!);
 
@@ -152,7 +210,9 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
   return {
     companyId: company.id,
     company,
-    onOpenTool: vi.fn(),
+    spolkaTool: overrides.spolkaTool as SpolkaScreenProps["spolkaTool"],
+    feedItems: [],
+    rootHighlightClaimId: null,
     onOpenDocument: vi.fn(),
     onOpenFeedItem: vi.fn(),
     refreshCompletionCount: 0,
@@ -160,8 +220,85 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
   };
 }
 
+// A real, running tool-host instance (not a mock) so the dirty-guard seam
+// behaves exactly as it does in the app — `renderScreen`'s overrides can be
+// re-applied via `rerender` while the SAME host instance keeps its state.
+function Harness(overrides: Partial<SpolkaScreenProps>) {
+  const spolkaTool = useSpolkaToolHost();
+  return (
+    <ToastProvider>
+      <ResearchProvider value={researchViewModelStub}>
+      <SpolkaScreen {...baseProps({ ...overrides, spolkaTool })} />
+    </ResearchProvider>
+    </ToastProvider>
+  );
+}
+
+function renderScreen(overrides: Partial<SpolkaScreenProps> = {}) {
+  return render(<Harness {...overrides} />);
+}
+
 beforeEach(() => {
   getCompanyViewMock.mockReset();
+  // Generic fallback for every command a hosted tool might call — real
+  // shapes are asserted by that panel's own tests, not here; this only keeps
+  // the frame from crashing while it renders.
+  invokeMock.mockReset();
+  invokeMock.mockImplementation((command: unknown) => {
+    if (command === "list_claims_to_verify") {
+      return Promise.resolve({ due: [], overdue: [], upcoming: [] });
+    }
+    if (command === "get_ownership_overview") {
+      return Promise.resolve({ holders: [], residuals: [], insiderHoldersCount: 0, lastUpdatedAt: null });
+    }
+    if (command === "get_company_basic_info") {
+      return Promise.resolve({
+        displayName: company.displayName,
+        exchange: "GPW",
+        ticker: company.qualifiedTicker.split(":")[1] ?? company.qualifiedTicker,
+        qualifiedTicker: company.qualifiedTicker,
+        isin: null,
+        sector: null,
+        sectorSource: null,
+        sharesOutstanding: null,
+        sharesOutstandingPeriod: null,
+      });
+    }
+    if (command === "get_report_documents_view") {
+      return Promise.resolve({ rows: [], totals: null });
+    }
+    if (command === "get_fundamentals_coverage") {
+      return Promise.resolve({ periods: [] });
+    }
+    if (command === "get_price_context") {
+      return Promise.resolve({
+        lastClose: 0,
+        lastDate: "",
+        changeAbs: 0,
+        changePct: 0,
+        currency: "PLN",
+        week52High: 0,
+        week52Low: 0,
+        week52HighDistPct: 0,
+        week52LowDistPct: 0,
+        marketCap: null,
+        ratios: {},
+        history: [],
+        fetchedAt: "",
+        emptyReason: "no_quotes",
+      });
+    }
+    if (command === "get_insider_overview") {
+      return Promise.resolve({
+        companyId: company.id,
+        transactions: [],
+        holdings: [],
+        window90d: { buyCount: 0, sellCount: 0, netValue: null },
+        window12m: { buyCount: 0, sellCount: 0, netValue: null },
+      });
+    }
+    return Promise.resolve([]);
+  });
 });
 
 afterEach(() => {
@@ -171,7 +308,7 @@ afterEach(() => {
 describe("SpolkaScreen", () => {
   it("renders from a single get_company_view call", async () => {
     getCompanyViewMock.mockResolvedValue(fullView());
-    render(<SpolkaScreen {...baseProps()} />);
+    renderScreen();
 
     expect(screen.queryAllByRole("progressbar")).toHaveLength(0);
 
@@ -190,14 +327,14 @@ describe("SpolkaScreen", () => {
 
   it.each(sections)("no core section ever renders blank: $name (data)", async ({ name, data }) => {
     getCompanyViewMock.mockResolvedValue(data as CompanyView);
-    render(<SpolkaScreen {...baseProps()} />);
+    renderScreen();
     const group = await screen.findByRole("group", { name });
     expect(group.textContent?.trim().length).toBeGreaterThan(0);
   });
 
   it.each(sections)("no core section ever renders blank: $name (empty)", async ({ name, empty }) => {
     getCompanyViewMock.mockResolvedValue(emptyView(empty));
-    render(<SpolkaScreen {...baseProps()} />);
+    renderScreen();
     const group = await screen.findByRole("group", { name });
     expect(group.textContent?.trim().length).toBeGreaterThan(0);
   });
@@ -206,7 +343,7 @@ describe("SpolkaScreen", () => {
     getCompanyViewMock.mockResolvedValue(
       emptyView({ sectionErrors: { [errorKey]: "unavailable" } }),
     );
-    render(<SpolkaScreen {...baseProps()} />);
+    renderScreen();
     const group = await screen.findByRole("group", { name });
     expect(group.textContent?.trim().length).toBeGreaterThan(0);
   });
@@ -214,8 +351,7 @@ describe("SpolkaScreen", () => {
   it("every workshop tool opens in one click", async () => {
     const user = userEvent.setup();
     getCompanyViewMock.mockResolvedValue(fullView());
-    const onOpenTool = vi.fn();
-    render(<SpolkaScreen {...baseProps({ onOpenTool })} />);
+    renderScreen();
     await screen.findByText("CD Projekt");
 
     const expectations: Array<{ label: string; tool: Tool }> = [
@@ -239,18 +375,17 @@ describe("SpolkaScreen", () => {
     ];
 
     for (const { label, tool } of expectations) {
-      onOpenTool.mockClear();
       await user.click(screen.getByRole("button", { name: label }));
-      expect(onOpenTool).toHaveBeenCalledTimes(1);
-      expect(onOpenTool).toHaveBeenCalledWith(tool);
+      const frame = await screen.findByRole("group", { name: "Workshop tool" });
+      expect(frame.getAttribute("data-tool")).toBe(tool.t);
+      await user.click(within(frame).getByRole("button", { name: "Close tool" }));
+      await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     }
 
     // feedItem: click a feed row.
-    const onOpenFeedItem = vi.fn();
-    const { container: feedContainer } = render(<SpolkaScreen {...baseProps({ onOpenFeedItem })} />);
-    const feedButtons = await within(feedContainer).findAllByRole("button", { name: /Report \d/ });
-    await user.click(feedButtons[0]);
-    expect(onOpenFeedItem).toHaveBeenCalledWith("feed_0");
+    await user.click(screen.getAllByRole("button", { name: /Report \d/ })[0]);
+    const feedItemFrame = await screen.findByRole("group", { name: "Workshop tool" });
+    expect(feedItemFrame.getAttribute("data-tool")).toBe("feedItem");
 
     // Every tool kind is reachable from this screen (15).
     const reached = new Set(expectations.map((e) => e.tool.t));
@@ -262,14 +397,14 @@ describe("SpolkaScreen", () => {
     const user = userEvent.setup();
     getCompanyViewMock.mockResolvedValue(fullView());
     const onOpenDocument = vi.fn();
-    render(<SpolkaScreen {...baseProps({ onOpenDocument })} />);
+    renderScreen({ onOpenDocument });
     await user.click(await screen.findByRole("button", { name: "Open source document" }));
     expect(onOpenDocument).toHaveBeenCalledWith("Raport roczny 2026 · s. 44");
   });
 
   it("kurs and coverage carry as-of dates", async () => {
     getCompanyViewMock.mockResolvedValue(fullView());
-    render(<SpolkaScreen {...baseProps()} />);
+    renderScreen();
     const priceGroup = await screen.findByRole("group", { name: "Price chart" });
     expect(within(priceGroup).getByText(/18\.08\.2026/)).toBeInTheDocument();
     const coverageGroup = screen.getByRole("group", { name: "Report coverage" });
@@ -280,7 +415,7 @@ describe("SpolkaScreen", () => {
   it("whole-read error shows the error card with Refresh and refetches", async () => {
     const user = userEvent.setup();
     getCompanyViewMock.mockRejectedValueOnce(new Error("boom"));
-    render(<SpolkaScreen {...baseProps()} />);
+    renderScreen();
     await screen.findByText("Couldn't read this company's data.");
 
     getCompanyViewMock.mockResolvedValueOnce(fullView());
@@ -297,8 +432,8 @@ describe("SpolkaScreen", () => {
     );
     getCompanyViewMock.mockResolvedValueOnce(fullView({ companyId: companyB.id, qualifiedTicker: companyB.qualifiedTicker, displayName: companyB.displayName }));
 
-    const { rerender } = render(<SpolkaScreen {...baseProps()} />);
-    rerender(<SpolkaScreen {...baseProps({ companyId: companyB.id, company: companyB })} />);
+    const { rerender } = renderScreen();
+    rerender(<Harness companyId={companyB.id} company={companyB} />);
 
     await screen.findByText("PKN Orlen");
     resolveA(fullView());
@@ -309,7 +444,7 @@ describe("SpolkaScreen", () => {
 
   it("no primary action at rest", async () => {
     getCompanyViewMock.mockResolvedValue(fullView());
-    const { container } = render(<SpolkaScreen {...baseProps()} />);
+    const { container } = renderScreen();
     await screen.findByText("CD Projekt");
     expect(container.querySelectorAll('[data-ui-button-variant="primary"]')).toHaveLength(0);
   });
@@ -325,10 +460,11 @@ describe("SpolkaScreen", () => {
         },
       }),
     );
-    render(<SpolkaScreen {...baseProps()} />);
+    renderScreen();
     await screen.findByText("CD Projekt");
     expect(screen.getByRole("button", { name: /Signals counter/ }).textContent).toContain("99+");
     const feedGroup = screen.getByRole("group", { name: "Company feed" });
     expect(within(feedGroup).getAllByRole("button", { name: /Report \d/ })).toHaveLength(6);
   });
+
 });

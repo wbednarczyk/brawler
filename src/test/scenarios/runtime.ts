@@ -2517,7 +2517,19 @@ function buildHandlers(): Record<string, Handler> {
         ? d.managementClaims.filter((c) => c.companyId === companyId)
         : d.managementClaims;
     },
-    list_claims_to_verify: (d) => d.claimsToVerify,
+    // Company-scoped like the Rust `list_claims_to_verify(company_id)` — the
+    // unfiltered bucket leaked other companies' claims into a hosted claims
+    // panel (F3a S2 screenshot review, 2026-08-26).
+    list_claims_to_verify: (d, a) => {
+      const companyId = str(unwrap(a).companyId);
+      const scoped = <T extends { claim: { companyId: string } }>(rows: T[]) =>
+        companyId ? rows.filter((row) => row.claim.companyId === companyId) : rows;
+      return {
+        due: scoped(d.claimsToVerify.due),
+        overdue: scoped(d.claimsToVerify.overdue),
+        upcoming: scoped(d.claimsToVerify.upcoming),
+      };
+    },
     create_management_claim: (d, a, ctx) => {
       const base = { ...d.managementClaims[0] };
       const input = unwrap(a);

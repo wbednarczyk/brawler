@@ -200,6 +200,31 @@ describe("CompanyCoveragePanel", () => {
     expect(rows.getByText("2025 FY")).toBeInTheDocument();
   });
 
+  // Mechanical defect #2 (F3a study): the narrow (compact) pane hides the Data
+  // and Flagged columns entirely via `.coverage-scroll`'s horizontal scroll —
+  // the payload must still be reachable without scrolling. The period cell
+  // always carries a second-line summary (CSS switches which one is visible at
+  // the compact tier; jsdom has no container queries, so this fast layer pins
+  // the DOM always carrying both counts rather than the visual tier switch).
+  it("always renders the Data and Flagged counts under the period label", async () => {
+    getFundamentalsCoverageMock.mockResolvedValue(
+      coverage([
+        coverageRow({
+          fiscalYear: 2026,
+          periodType: "Q1",
+          facts: { total: 11, validated: 9, unvalidated: 0, flagged: 2 },
+          review: { flaggedFacts: 3 },
+        }),
+      ]),
+    );
+    render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
+
+    const periodCell = (await screen.findByText("2026 Q1")).closest("td");
+    expect(periodCell).not.toBeNull();
+    expect(within(periodCell as HTMLElement).getByText("11")).toBeInTheDocument();
+    expect(within(periodCell as HTMLElement).getByText("3")).toBeInTheDocument();
+  });
+
   it("shows the report kind chip, an ESEF chip for a structured document, and a truncated title", async () => {
     getFundamentalsCoverageMock.mockResolvedValue(
       coverage([

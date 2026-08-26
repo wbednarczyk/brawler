@@ -18,13 +18,8 @@ import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyRepo
 import { CompanyCoveragePanel } from "../../shared/components/CompanyCoveragePanel";
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
-import { FundamentalsPanel } from "../Companies/FundamentalsPanel";
 import { CockpitCompanyFeedPanel } from "./CockpitCompanyFeedPanel";
 import { InspectorPanel } from "./InspectorPanel";
-import { CompanyNotebookSection } from "../Companies/CompanyNotebookSection";
-import { NotebookDateField } from "../../shared/components/NotebookDateField";
-import { NotebookQuarterField } from "../../shared/components/NotebookQuarterField";
-import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
 import { WatchlistsScreen } from "../Watchlists/WatchlistsScreen";
 import { ResearchScreen } from "../Research/ResearchScreen";
 import { useResearchViewModel } from "../../app/state/screenViewModels";
@@ -38,18 +33,15 @@ import {
   type DockLayoutHandle,
   type DockPanelSpec,
 } from "./DockLayout";
-import { useCockpitFundamentals } from "./useCockpitFundamentals";
-import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
-import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
-import { useCockpitShortPositions } from "./useCockpitShortPositions";
-import { useCockpitRedFlags } from "./useCockpitRedFlags";
-import { useCockpitAnalystRecommendations } from "./useCockpitAnalystRecommendations";
-import { DecisionJournalSection } from "./DecisionJournalSection";
-import { ShortPositionsSection } from "./ShortPositionsSection";
-import { RedFlagsSection } from "./RedFlagsSection";
-import { AnalystRecommendationsSection } from "../../shared/components/AnalystRecommendationsSection";
+import {
+  CockpitFundamentalsPanel,
+  CockpitCompanyNotebookPanel,
+  CockpitShortPositionsPanel,
+  CockpitRedFlagsPanel,
+  CockpitAnalystRecommendationsPanel,
+  CockpitDecisionJournalPanel,
+} from "./companyPanels";
 import { DecisionJournalGlobalPanel } from "./DecisionJournalGlobalPanel";
-import { formatDetailTimestamp } from "../../shared/format/datetime";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
 import { CommandPalette, type PaletteCommand } from "../../shared/components/CommandPalette";
 import { useCommandPaletteCommands } from "../../app/commandPalette";
@@ -699,7 +691,7 @@ function CockpitWorkspace({
       case "redFlags": {
         const company = companyById.get(companyId);
         return company ? (
-          <CockpitRedFlagsPanel company={company} />
+          <CockpitRedFlagsPanel company={company} onOpenEvidence={selectFeedItem} />
         ) : (
           <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
         );
@@ -1263,153 +1255,6 @@ function FeedPanel({
   );
 }
 
-// The full, editable Fundamentals panel (ADR 0053 phase 4b). It reuses the real
-// `FundamentalsPanel` from the Companies screen — the cockpit owns the state via
-// `useCockpitFundamentals` (which calls api/financials directly), so editing
-// works for any pinned company with no AppStateRoot coupling.
-function CockpitFundamentalsPanel({
-  companyId,
-  qualifiedTicker,
-  revision,
-  onOpenRecommendations,
-}: {
-  companyId: string;
-  // Card #307: the fact-detail modal's header line. Omitted when the pinned
-  // company isn't (yet) resolvable in `companyById`.
-  qualifiedTicker?: string;
-  // Bumped by a sibling report-documents extraction; forces a facts refetch.
-  revision: number;
-  // Opens/pins the analyst-recommendations panel from the "vs target" readout.
-  onOpenRecommendations?: () => void;
-}) {
-  const props = useCockpitFundamentals(companyId, revision);
-  return (
-    <FundamentalsPanel
-      {...props}
-      qualifiedTicker={qualifiedTicker}
-      onOpenRecommendations={onOpenRecommendations}
-    />
-  );
-}
-
-// Company-scoped notebook panel for the curated dashboard (ADR 0057). Reuses the
-// real `CompanyNotebookSection` with cockpit-owned state (`useCockpitCompanyNotebook`).
-// Origins render read-only (label + external source link) — the cross-screen
-// "open origin feed item" nav belongs to the Inbox, not a self-contained panel.
-function CockpitCompanyNotebookPanel({ company }: { company: Company }) {
-  const { text } = useLocale();
-  const notebook = useCockpitCompanyNotebook(company);
-  return (
-    <CompanyNotebookSection
-      company={company}
-      notebookEntries={notebook.entries}
-      isComposerOpen={notebook.isComposerOpen}
-      notebookForm={notebook.notebookForm}
-      selectedNotebookEntry={notebook.selectedEntry}
-      notebookEditMode={notebook.editMode}
-      notebookEditForm={notebook.editForm}
-      isNotebookEditDirty={notebook.isEditDirty}
-      notebookError={notebook.error}
-      setComposerOpen={notebook.setComposerOpen}
-      updateNotebookForm={notebook.updateNotebookForm}
-      createNotebookEntry={notebook.createNotebookEntry}
-      setSelectedNotebookEntryId={notebook.setSelectedEntryId}
-      saveNotebookEntry={notebook.saveNotebookEntry}
-      cancelNotebookEdit={notebook.cancelNotebookEdit}
-      setNotebookEditMode={notebook.setEditMode}
-      updateNotebookEditForm={notebook.updateNotebookEditForm}
-      NotebookDateField={NotebookDateField}
-      NotebookQuarterField={NotebookQuarterField}
-      MarkdownNoteBody={MarkdownNoteBody}
-      renderNotebookOrigins={(origins) =>
-        origins.length === 0 ? (
-          <span className="membership-empty">None</span>
-        ) : (
-          <div className="origin-link-list">
-            {origins.map((origin) => (
-              <div className="origin-link" key={origin.id}>
-                <span>{origin.label ?? origin.sourceType.replace("_", " ")}</span>
-                {origin.sourceUrl ? (
-                  <a
-                    className="secondary-button compact-button"
-                    href={origin.sourceUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {text("Source")}
-                  </a>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )
-      }
-    />
-  );
-}
-
-// Company-scoped decision-journal panel (ADR 0071, J3). Reuses the props-driven
-// `DecisionJournalSection` with cockpit-owned state (`useCockpitDecisionJournal`),
-// mirroring the notebook panel. Not in the curated dashboard defaults — the
-// journal is an occasional-entry surface reached via the palette / add-panel.
-function CockpitShortPositionsPanel({ company }: { company: Company }) {
-  const { view, error } = useCockpitShortPositions(company);
-  return <ShortPositionsSection company={company} view={view} error={error} />;
-}
-
-function CockpitRedFlagsPanel({ company }: { company: Company }) {
-  const { view, error, acknowledge } = useCockpitRedFlags(company);
-  const { selectFeedItem } = useCockpitSelection();
-  return (
-    <RedFlagsSection
-      company={company}
-      view={view}
-      error={error}
-      onAcknowledge={acknowledge}
-      onOpenEvidence={selectFeedItem}
-    />
-  );
-}
-
-// Palette-only analyst-recommendations panel (v0.58 A3, ADR 0073). Not in the
-// curated dashboard defaults — an opt-in quiet read surface (storyboard frame 1).
-function CockpitAnalystRecommendationsPanel({ company }: { company: Company }) {
-  const { view, error, loading, lastClose, currency, reload } =
-    useCockpitAnalystRecommendations(company);
-  return (
-    <AnalystRecommendationsSection
-      company={company}
-      view={view}
-      error={error}
-      loading={loading}
-      onRetry={reload}
-      lastClose={lastClose}
-      currency={currency}
-    />
-  );
-}
-
-function CockpitDecisionJournalPanel({ company }: { company: Company }) {
-  const journal = useCockpitDecisionJournal(company);
-  return (
-    <DecisionJournalSection
-      company={company}
-      entries={journal.entries}
-      isComposerOpen={journal.isComposerOpen}
-      form={journal.form}
-      supersedingEntry={journal.supersedingEntry}
-      selectedEntry={journal.selectedEntry}
-      evidenceCandidates={journal.evidenceCandidates}
-      linkedEvidenceKeys={journal.linkedEvidenceKeys}
-      error={journal.error}
-      setComposerOpen={journal.setComposerOpen}
-      updateForm={journal.updateForm}
-      createEntry={journal.createEntry}
-      startSupersede={journal.startSupersede}
-      cancelSupersede={journal.cancelSupersede}
-      setSelectedEntryId={journal.setSelectedEntryId}
-      linkEvidence={journal.linkEvidence}
-      formatTimestamp={formatDetailTimestamp}
-    />
-  );
-}
+// The Cockpit*Panel wrappers (Fundamentals, Notebook, ShortPositions, RedFlags,
+// AnalystRecommendations, DecisionJournal) live in `./companyPanels` — shared
+// verbatim with the Spółka workshop's `toolRegistry` (F3a S2, ADR 0107).

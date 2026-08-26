@@ -33,6 +33,7 @@ import type {
 import { CompanyHealthSection } from "./CompanyHealthSection";
 import { useFocusAfterRemove } from "../focus/focusAfterRemove";
 import { formatCriterionMeasure } from "../format/criterionMeasure";
+import { formatDetailTimestamp } from "../format/datetime";
 import { useLocale } from "../locale";
 import type { LocaleCode } from "../locale";
 import {
@@ -704,7 +705,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                     <ExpandableRow
                       key={evaluation.id}
                       className="quality-history-row"
-                      label={`${evaluation.createdAt} — ${evaluation.passCount}/${total} ${text("pass")}`}
+                      label={`${formatDetailTimestamp(evaluation.createdAt)} — ${evaluation.passCount}/${total} ${text("pass")}`}
                       isExpanded={expanded}
                       onToggle={() => setExpandedRunId(expanded ? null : evaluation.id)}
                       actions={
@@ -744,7 +745,9 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                       }
                     >
                       <span className="quality-history-header">
-                        <span className="quality-history-when">{evaluation.createdAt}</span>
+                        <span className="quality-history-when">
+                          {formatDetailTimestamp(evaluation.createdAt)}
+                        </span>
                         <span className="quality-criterion-trailing">
                           <span className="quality-measured">{`${evaluation.passCount}/${total} ${text("pass")}`}</span>
                         </span>

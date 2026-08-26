@@ -2137,4 +2137,12 @@ export const plText: Record<string, string> = {
   "Couldn't read this company's data.": "Nie udało się odczytać danych spółki.",
   "The connection to your data may be interrupted.": "Połączenie z Twoimi danymi mogło zostać przerwane.",
   "Loading company view…": "Wczytywanie widoku spółki…",
+  "Workshop tool": "Narzędzie warsztatu",
+  "Close tool": "Zamknij narzędzie",
+  "Company summary strip": "Pasek podsumowania spółki",
+  "Unsaved changes in this tool": "Niezapisane zmiany w narzędziu",
+  "Stay": "Zostań",
+  "This tool has a draft in progress. Stay to keep it, or discard it to continue.":
+    "To narzędzie ma niezapisany szkic. Zostań, aby go zachować, albo odrzuć, aby kontynuować.",
+  "Couldn't load events.": "Nie udało się wczytać wydarzeń.",
 };

@@ -432,6 +432,17 @@ export function CompanyCoveragePanel({
   const reportKindLabel = (docKind: string): string =>
     docKind === "periodic_jsf" ? text("Standalone report") : text("Consolidated report");
 
+  // Compact Data/Flagged counts for the period label's second line (mechanical
+  // defect #2, F3a study): at the compact pane tier the coverage table's Data
+  // and Flagged columns hide behind `.coverage-scroll`'s horizontal scroll —
+  // this keeps the payload reachable without scrolling by relocating it under
+  // the period label instead of silently dropping it. Counts only — the rich
+  // renderFacts/renderReview cells stay the wide-pane source of truth.
+  const narrowFactsCount = (row: CoveragePeriodRow): string =>
+    row.facts.total > 0 ? String(row.facts.total) : "—";
+  const narrowFlaggedCount = (row: CoveragePeriodRow): string =>
+    row.review.flaggedFacts > 0 ? String(row.review.flaggedFacts) : "—";
+
   const renderReport = (report: CoverageReportCell | null) => {
     if (!report) {
       return (
@@ -603,6 +614,20 @@ export function CompanyCoveragePanel({
                         ) : (
                           periodLabel
                         )}
+                        <span className="coverage-period-meta">
+                          <span className="coverage-period-meta-item">
+                            {text("Data")}{" "}
+                            <span className="coverage-period-meta-value">
+                              {narrowFactsCount(row)}
+                            </span>
+                          </span>
+                          <span className="coverage-period-meta-item">
+                            {text("Flagged")}{" "}
+                            <span className="coverage-period-meta-value">
+                              {narrowFlaggedCount(row)}
+                            </span>
+                          </span>
+                        </span>
                       </td>
                       <td className="coverage-cell">{renderReport(row.report)}</td>
                       <td className="coverage-cell">{renderFacts(row)}</td>

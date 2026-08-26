@@ -214,7 +214,13 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     const tool = spolka.getByLabel("Workshop tool");
     await expect(tool).toBeVisible();
     await expect(tool.locator(".company-claims-panel")).toBeVisible();
-    await expect(tool.locator(".claim-row-highlighted")).toHaveCount(1);
+    // The highlighted claim renders in both the claims list and the review
+    // queue — one claim identity, however many rows carry it.
+    await expect(tool.locator(".claim-row-highlighted").first()).toBeVisible();
+    const highlightedIds = await tool
+      .locator(".claim-row-highlighted")
+      .evaluateAll((rows) => new Set(rows.map((row) => row.getAttribute("data-claim-id"))).size);
+    expect(highlightedIds).toBe(1);
     await expectPrimaryActionCount(tool, { max: 1 });
     await expectNoPageOverflow(page);
   });

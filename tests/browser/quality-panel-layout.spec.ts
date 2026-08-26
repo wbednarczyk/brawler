@@ -71,3 +71,31 @@ test("company health scores render, expand, and do not overflow at a narrow wind
   await expectInternalScroll(page.locator(".cockpit-pane").first());
   await expectNoPageOverflow(page);
 });
+
+// Mechanical defect #3 (F3a study): the evaluation-history timestamp used to
+// render the raw ISO string (`2026-06-08T10:00:00Z`) and wrap mid-string at
+// narrow widths. Formatted via formatDetailTimestamp + `white-space: nowrap`
+// (QualityPanel/company-workspace.css) — the element must never overflow its
+// own box, at the narrow quarter-ultrawide window (DoD §B).
+test("evaluation history timestamp never overflows and never shows raw ISO", async ({ page }) => {
+  await page.setViewportSize({ width: 1008, height: 900 });
+  await openApp(page);
+  await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
+  await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+  // F3a S1 (ADR 0107): the row opens Spółka; the legacy cockpit is reached via the sidebar Dashboard entry until S3 freezes it.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
+
+  await page.getByRole("button", { name: /Quality/ }).first().click();
+
+  const when = page.locator(".quality-history-when").first();
+  await expect(when).toBeVisible();
+  await expect(when).not.toHaveText(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/);
+
+  const box = await when.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth + 1);
+
+  await expectNoPageOverflow(page);
+});

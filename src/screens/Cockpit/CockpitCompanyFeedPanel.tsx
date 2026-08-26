@@ -8,8 +8,16 @@ import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
 // `CompanyFeedSection` with cockpit-owned selection state (`useCockpitCompanyFeed`);
 // the cross-screen actions (Open in Inbox / Note) are intentionally omitted — the
 // dashboard panel is self-contained and those stay reachable from the Inbox.
-export function CockpitCompanyFeedPanel({ company, feedItems }: { company: Company; feedItems: FeedItem[] }) {
-  const feed = useCockpitCompanyFeed(company, feedItems);
+export function CockpitCompanyFeedPanel({
+  company,
+  feedItems,
+  initialSelectedFeedItemId,
+}: {
+  company: Company;
+  feedItems: FeedItem[];
+  initialSelectedFeedItemId?: string | null;
+}) {
+  const feed = useCockpitCompanyFeed(company, feedItems, initialSelectedFeedItemId);
   return (
     <CompanyFeedSection
       company={company}
