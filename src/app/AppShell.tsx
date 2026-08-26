@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Activity, CheckCircle2, Columns3, Moon, Pencil, PinOff, Plus, RefreshCw, Sun, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Activity, CheckCircle2, Moon, PinOff, RefreshCw, Sun } from "lucide-react";
 import type {
   HealthResponse,
   SourceIngestionResult,
@@ -15,7 +15,7 @@ import type { SearchMatch } from "../api/search";
 import { GlobalSearch } from "./GlobalSearch";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { navGroups, type Section } from "./navigation";
-import { TextField } from "../ui";
+import { SidebarViewsGroup, type LegacyDashboardRow } from "./SidebarViewsGroup";
 import {
   createAppShortcutDefinitions,
   resolveAppShortcutReferenceItems,
@@ -52,19 +52,25 @@ type AppShellProps = {
   refreshDatabaseBackedViews: () => void;
   refreshSources: (trigger: SourceRefreshTrigger) => void;
   setActiveSection: (section: Section) => void;
-  // Dashboard redesign (epic c793ca1): the "Dashboard" (Cockpit) nav entry opens
-  // the one company-scoped Dashboard seeded with a default company — never the
-  // blank feed-linked cockpit — so it routes through this handler, not the generic
-  // setActiveSection.
-  onOpenDashboard: () => void;
-  onCreateView: () => void;
+  // Spółka mode (F3a S3, ADR 0107 amendment): opens the last-viewed company
+  // (selectedCompanyId), else the first pinned, else the first tracked
+  // company — never a blank screen. Replaces the old Dashboard bridge.
+  onOpenSpolkaMode: () => void;
   cockpitViews: { id: string; name: string }[];
   activeCockpitViewId: string | null;
+  /** Company a legacy dashboard or the frozen cockpit is currently scoped to
+   * (marks the matching "Widoki" row current — exactly one `aria-current`). */
+  cockpitInitialCompanyId: string | null;
+  legacyDashboardLayouts: LegacyDashboardRow[];
   onOpenCockpitView: (viewId: string) => void;
+  onOpenLegacyDashboard: (companyId: string) => void;
   onDeleteCockpitView: (viewId: string) => void;
   onRenameCockpitView: (viewId: string, name: string) => void;
   onNavigateToSearchResult: (match: SearchMatch) => void;
   pinnedCompanies: PinnedCompany[];
+  /** Every tracked company — feeds the palette's `Open company: TICKER`
+   * entries (F3a S3, plan §7); pinned companies are a subset. */
+  trackedCompanies: PinnedCompany[];
   selectedCompanyId: string | null;
   onOpenCompany: (companyId: string) => void;
   onUnpinCompany: (companyId: string) => void;
@@ -96,6 +102,69 @@ const ATTENTION_BADGE_FORMS: PluralForms = {
   pl: ["nowe ważne zdarzenie w Dziś", "nowe ważne zdarzenia w Dziś", "nowych ważnych zdarzeń w Dziś"],
 };
 
+// Global-surface palette entries (F3a S3, plan "Trasy powierzchni globalnych"
+// po F3a): screens with no top-level nav item still need an entry point once
+// the cockpit that used to host them as panels is frozen.
+const SCREEN_PALETTE_ENTRIES: ReadonlyArray<{ section: Section; labelText: string; actionKey: string }> = [
+  { section: "Research", labelText: "Research", actionKey: "screen.open.research" },
+  { section: "Events", labelText: "Events", actionKey: "screen.open.events" },
+  { section: "ReportSeason", labelText: "Report Season", actionKey: "screen.open.reportSeason" },
+  { section: "Notebooks", labelText: "Notebooks", actionKey: "screen.open.notebooks" },
+  { section: "Journal", labelText: "Decision journal", actionKey: "screen.open.journal" },
+];
+
+/** Builds AppShell's app-level palette commands — a pure function (no React)
+ * so the copy gate (paletteCopy.test.ts) can exercise it directly with a rich
+ * fixture, in both locales, without rendering. */
+export function buildAppCommands(input: {
+  shortcutBindings: Record<string, ShortcutBindingSetting>;
+  shortcutActionMap: AppShortcutActionMap;
+  cockpitViews: { id: string; name: string }[];
+  trackedCompanies: PinnedCompany[];
+  onOpenCockpitView: (viewId: string) => void;
+  onOpenCompany: (companyId: string) => void;
+  setActiveSection: (section: Section) => void;
+  text: (s: string) => string;
+}): PaletteCommand[] {
+  const { text } = input;
+  const fromShortcuts = resolveAppShortcutReferenceItems(input.shortcutBindings)
+    .filter((item) => !item.disabled && item.id !== "app.commandPalette")
+    .map((item) => ({
+      id: item.id,
+      label: text(item.label),
+      verb: item.verb,
+      actionKey: `shortcut.${item.id}`,
+      run: () => {
+        input.shortcutActionMap[item.id]();
+      },
+    }));
+  const viewCommands = input.cockpitViews.map((view) => ({
+    id: `view:${view.id}`,
+    label: `${text("Open view")}: ${view.name}`,
+    verb: "open" as const,
+    actionKey: `view.open.${view.id}`,
+    run: () => input.onOpenCockpitView(view.id),
+  }));
+  // Every tracked company (F3a S3, plan §7 "Otwórz spółkę:") — pinned
+  // companies are a subset, so this alone covers the previously-separate
+  // "pinned only" list too.
+  const companyCommands = input.trackedCompanies.map((company) => ({
+    id: `company:${company.id}`,
+    label: `${text("Open company")}: ${company.ticker ?? company.name}`,
+    verb: "open" as const,
+    actionKey: `company.open.${company.id}`,
+    run: () => input.onOpenCompany(company.id),
+  }));
+  const screenCommands = SCREEN_PALETTE_ENTRIES.map(({ section, labelText, actionKey }) => ({
+    id: `screen:${section}`,
+    label: `${text("Open screen")}: ${text(labelText)}`,
+    verb: "open" as const,
+    actionKey,
+    run: () => input.setActiveSection(section),
+  }));
+  return [...fromShortcuts, ...viewCommands, ...companyCommands, ...screenCommands];
+}
+
 export function AppShell({
   activeSection,
   children,
@@ -105,15 +174,18 @@ export function AppShell({
   refreshDatabaseBackedViews,
   refreshSources,
   setActiveSection,
-  onOpenDashboard,
-  onCreateView,
+  onOpenSpolkaMode,
   cockpitViews,
   activeCockpitViewId,
+  cockpitInitialCompanyId,
+  legacyDashboardLayouts,
   onOpenCockpitView,
+  onOpenLegacyDashboard,
   onDeleteCockpitView,
   onRenameCockpitView,
   onNavigateToSearchResult,
   pinnedCompanies,
+  trackedCompanies,
   selectedCompanyId,
   onOpenCompany,
   onUnpinCompany,
@@ -134,10 +206,6 @@ export function AppShell({
   const developerMode = useDeveloperMode();
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
-  // Issue #89: inline saved-view rename — the pencil swaps the row label for a
-  // TextField; Enter commits, Escape/blur cancels.
-  const [renamingViewId, setRenamingViewId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
 
   // ONE coalesced POLITE announcement when the unseen-attention count INCREASES
   // after hydration (ADR 0097 dec. 4): screen-reader users learn something
@@ -248,45 +316,37 @@ export function AppShell({
   useKeyboardShortcuts(shortcuts);
 
   // App-level palette commands: the resolved, enabled shortcuts (minus the palette
-  // opener itself) plus jumps to saved views, pinned companies, and view creation.
-  const appCommands = useMemo<PaletteCommand[]>(() => {
-    const fromShortcuts = resolveAppShortcutReferenceItems(shortcutBindings)
-      .filter((item) => !item.disabled && item.id !== "app.commandPalette")
-      .map((item) => ({
-        id: item.id,
-        label: text(item.label),
-        run: () => {
-          shortcutActionMap[item.id]();
-        },
-      }));
-    const viewCommands = cockpitViews.map((view) => ({
-      id: `view:${view.id}`,
-      label: `${text("Open view")}: ${view.name}`,
-      run: () => onOpenCockpitView(view.id),
-    }));
-    const companyCommands = pinnedCompanies.map((company) => ({
-      id: `company:${company.id}`,
-      label: `${text("Open company")}: ${company.ticker ?? company.name}`,
-      run: () => onOpenCompany(company.id),
-    }));
-    return [
-      ...fromShortcuts,
-      ...viewCommands,
-      ...companyCommands,
-      { id: "app.createView", label: text("New view"), run: onCreateView },
-    ];
+  // opener itself), jumps to saved views, every tracked company, and the global
+  // screens (F3a S3, plan "Trasy powierzchni globalnych"). View creation is gone
+  // (consent 1 — the freeform cockpit is frozen). Building is a pure function
+  // (`buildAppCommands`, below) so the copy gate (paletteCopy.test.ts) can
+  // exercise it directly, with a rich fixture, in both locales — without
+  // rendering.
+  const appCommands = useMemo<PaletteCommand[]>(
+    () =>
+      buildAppCommands({
+        shortcutBindings,
+        shortcutActionMap,
+        cockpitViews,
+        trackedCompanies,
+        onOpenCockpitView,
+        onOpenCompany,
+        setActiveSection,
+        text,
+      }),
     // `text` derives from `locale`; listing `locale` keeps labels re-translating.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    shortcutActionMap,
-    shortcutBindings,
-    cockpitViews,
-    pinnedCompanies,
-    onOpenCockpitView,
-    onOpenCompany,
-    onCreateView,
-    locale,
-  ]);
+    [
+      shortcutActionMap,
+      shortcutBindings,
+      cockpitViews,
+      trackedCompanies,
+      onOpenCockpitView,
+      onOpenCompany,
+      setActiveSection,
+      locale,
+    ],
+  );
 
   function sourceRefreshButtonLabel() {
     if (sourceRefreshState === "refreshing") {
@@ -347,121 +407,69 @@ export function AppShell({
                 return null;
               }
               return (
-                <div className="nav-group" key={group.id}>
-                  <div className="nav-group-label">{t(group.localeKey)}</div>
-                  <div className="nav-list">
-                    {items.map((item) => {
-                      const Icon = item.icon;
-                      const itemLabel = t(item.localeKey);
-                      return (
-                        <button
-                          className={activeSection === item.label ? "nav-item nav-item-active" : "nav-item"}
-                          aria-current={activeSection === item.label ? "page" : undefined}
-                          key={item.label}
-                          onClick={() =>
-                            item.label === "Cockpit"
-                              ? onOpenDashboard()
-                              : setActiveSection(item.label)
-                          }
-                          type="button"
-                          title={itemLabel}
-                        >
-                          <Icon size={18} aria-hidden="true" />
-                          <span>{itemLabel}</span>
-                          {item.label === "Inbox" && totalUnreadFeedItems > 0 ? (
-                            <span className="nav-badge" aria-label={`${totalUnreadFeedItems} ${text("unread feed item")}`}>
-                              {totalUnreadFeedItems}
-                            </span>
-                          ) : null}
-                          {/* Ambient attention (ADR 0097 dec. 4): unseen non-routine
-                              attention events; clears when Today marks them seen. */}
-                          {item.label === "Today" && unseenAttentionCount > 0 ? (
-                            <span
-                              className="nav-badge"
-                              aria-label={`${unseenAttentionCount} ${pluralNoun(locale, unseenAttentionCount, ATTENTION_BADGE_FORMS)}`}
-                            >
-                              {unseenAttentionCount}
-                            </span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                    {group.id === "modes" ? (
-                      <>
-                        {cockpitViews.map((view) => {
-                          const isActive = activeSection === "Cockpit" && activeCockpitViewId === view.id;
-                          const isRenaming = renamingViewId === view.id;
-                          return (
-                            <div className={isActive ? "pinned-row pinned-row-active" : "pinned-row"} key={view.id}>
-                              {isRenaming ? (
-                                <TextField
-                                  className="nav-view-rename"
-                                  aria-label={text("View name")}
-                                  value={renameDraft}
-                                  autoFocus
-                                  onChange={(event) => setRenameDraft(event.target.value)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                      const next = renameDraft.trim();
-                                      setRenamingViewId(null);
-                                      if (next && next !== view.name) {
-                                        onRenameCockpitView(view.id, next);
-                                      }
-                                    } else if (event.key === "Escape") {
-                                      setRenamingViewId(null);
-                                    }
-                                  }}
-                                  onBlur={() => setRenamingViewId(null)}
-                                />
-                              ) : (
-                                <button
-                                  className="nav-item"
-                                  aria-current={isActive ? "page" : undefined}
-                                  onClick={() => onOpenCockpitView(view.id)}
-                                  type="button"
-                                  title={view.name}
-                                >
-                                  <Columns3 size={18} aria-hidden="true" />
-                                  <span>{view.name}</span>
-                                </button>
-                              )}
-                              <button
-                                className="pinned-unpin icon-button"
-                                onClick={() => {
-                                  setRenamingViewId(view.id);
-                                  setRenameDraft(view.name);
-                                }}
-                                type="button"
-                                aria-label={`${text("Rename view")}: ${view.name}`}
-                                title={text("Rename view")}
+                <Fragment key={group.id}>
+                  <div className="nav-group">
+                    <div className="nav-group-label">{t(group.localeKey)}</div>
+                    <div className="nav-list">
+                      {items.map((item) => {
+                        const Icon = item.icon;
+                        const itemLabel = t(item.localeKey);
+                        // Spółka (F3a S3, ADR 0107 amendment): exactly one
+                        // aria-current across modes + pinned rows — a pinned,
+                        // selected company's OWN row is current instead of this
+                        // mode item.
+                        const isSpolkaMode = item.label === "Spolka";
+                        const isActive = isSpolkaMode
+                          ? activeSection === "Spolka" &&
+                            !pinnedCompanies.some((company) => company.id === selectedCompanyId)
+                          : activeSection === item.label;
+                        return (
+                          <button
+                            className={isActive ? "nav-item nav-item-active" : "nav-item"}
+                            aria-current={isActive ? "page" : undefined}
+                            key={item.label}
+                            onClick={() => (isSpolkaMode ? onOpenSpolkaMode() : setActiveSection(item.label))}
+                            type="button"
+                            title={itemLabel}
+                          >
+                            <Icon size={18} aria-hidden="true" />
+                            <span>{itemLabel}</span>
+                            {item.label === "Inbox" && totalUnreadFeedItems > 0 ? (
+                              <span className="nav-badge" aria-label={`${totalUnreadFeedItems} ${text("unread feed item")}`}>
+                                {totalUnreadFeedItems}
+                              </span>
+                            ) : null}
+                            {/* Ambient attention (ADR 0097 dec. 4): unseen non-routine
+                                attention events; clears when Today marks them seen. */}
+                            {item.label === "Today" && unseenAttentionCount > 0 ? (
+                              <span
+                                className="nav-badge"
+                                aria-label={`${unseenAttentionCount} ${pluralNoun(locale, unseenAttentionCount, ATTENTION_BADGE_FORMS)}`}
                               >
-                                <Pencil size={14} aria-hidden="true" />
-                              </button>
-                              <button
-                                className="pinned-unpin icon-button"
-                                onClick={() => onDeleteCockpitView(view.id)}
-                                type="button"
-                                aria-label={`${text("Delete view")}: ${view.name}`}
-                                title={text("Delete view")}
-                              >
-                                <X size={14} aria-hidden="true" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                        <button
-                          className="nav-item nav-item-add"
-                          onClick={onCreateView}
-                          type="button"
-                          title={text("New view")}
-                        >
-                          <Plus size={18} aria-hidden="true" />
-                          <span>{text("New view")}</span>
-                        </button>
-                      </>
-                    ) : null}
+                                {unseenAttentionCount}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                  {group.id === "modes" ? (
+                    <SidebarViewsGroup
+                      activeSection={activeSection}
+                      groupLabel={t("nav.group.views")}
+                      cockpitViews={cockpitViews}
+                      activeCockpitViewId={activeCockpitViewId}
+                      cockpitInitialCompanyId={cockpitInitialCompanyId}
+                      legacyDashboardLayouts={legacyDashboardLayouts}
+                      onOpenCockpitView={onOpenCockpitView}
+                      onOpenLegacyDashboard={onOpenLegacyDashboard}
+                      onDeleteCockpitView={onDeleteCockpitView}
+                      onRenameCockpitView={onRenameCockpitView}
+                      text={text}
+                    />
+                  ) : null}
+                </Fragment>
               );
             })}
 
@@ -470,7 +478,7 @@ export function AppShell({
                 <div className="nav-group-label">{t("nav.group.pinned")}</div>
                 <div className="nav-list" aria-label={text("Pinned companies")}>
                   {pinnedCompanies.map((company) => {
-                    const isActive = activeSection === "Companies" && selectedCompanyId === company.id;
+                    const isActive = activeSection === "Spolka" && selectedCompanyId === company.id;
                     return (
                       <div className={isActive ? "pinned-row pinned-row-active" : "pinned-row"} key={company.id}>
                         <button

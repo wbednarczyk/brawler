@@ -21,6 +21,20 @@ impl FeedStore {
         list_feed_items(&connection)
     }
 
+    /// Newest `limit` feed items matched to one company (S1a, F3a #429 —
+    /// `get_company_view`'s glance feed strip). Company-scoped counterpart to
+    /// `today::list_recent_feed_rows` — same join shape and `Official
+    /// report`/`Public media` type filter, no window, bounded by `LIMIT`
+    /// instead of a `since` date.
+    pub fn list_company_feed_newest(
+        &self,
+        company_id: &str,
+        limit: i64,
+    ) -> StorageResult<Vec<TodayFeedRow>> {
+        let connection = self.db.checkout()?;
+        list_company_feed_newest(&connection, company_id, limit)
+    }
+
     pub fn list_unmatched_source_items(
         &self,
         adapter_id: &str,
@@ -38,6 +52,75 @@ impl FeedStore {
         let connection = self.db.checkout()?;
         get_feed_item(&connection, feed_item_id)
     }
+}
+
+pub(super) fn list_company_feed_newest(
+    connection: &Connection,
+    company_id: &str,
+    limit: i64,
+) -> StorageResult<Vec<TodayFeedRow>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            fi.id,
+            fic.company_id,
+            c.qualified_ticker,
+            fi.type,
+            fi.title,
+            fi.published_at,
+            fi.read,
+            fi.source_name,
+            EXISTS(SELECT 1 FROM feed_item_attachments fa WHERE fa.feed_item_id = fi.id)
+        FROM feed_items fi
+        JOIN feed_item_companies fic ON fic.feed_item_id = fi.id
+        JOIN companies c ON c.id = fic.company_id
+        WHERE fic.company_id = ?1
+          AND fi.type IN ('Official report', 'Public media')
+        ORDER BY fi.published_at DESC, fi.id DESC
+        LIMIT ?2
+        ",
+    )?;
+
+    let rows = statement.query_map(params![company_id, limit], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, bool>(6)?,
+            row.get::<_, String>(7)?,
+            row.get::<_, bool>(8)?,
+        ))
+    })?;
+
+    let mut result = Vec::new();
+    for row in rows {
+        let (
+            feed_item_id,
+            company_id,
+            qualified_ticker,
+            item_type,
+            title,
+            published_at,
+            read,
+            source_name,
+            has_attachments,
+        ) = row?;
+        result.push(TodayFeedRow {
+            presentation_kind: PresentationKind::derive(&item_type, has_attachments),
+            feed_item_id,
+            company_id,
+            qualified_ticker,
+            item_type,
+            title,
+            published_at,
+            read,
+            source_name,
+        });
+    }
+    Ok(result)
 }
 
 pub(super) fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {

@@ -21,10 +21,10 @@ test.describe("companies", { tag: "@clickable" }, () => {
 
     // The new company is now tracked and listed (stateful create + refresh).
     const list = page.getByLabel("Companies list");
-    await expect(list.getByLabel("Open GPW:TST dashboard")).toBeVisible();
+    await expect(list.getByLabel("Open GPW:TST")).toBeVisible();
 
     // ...and it survives a list search that matches it.
     await page.getByPlaceholder("Search tracked companies").fill("Test Co");
-    await expect(list.getByLabel("Open GPW:TST dashboard")).toBeVisible();
+    await expect(list.getByLabel("Open GPW:TST")).toBeVisible();
   });
 });

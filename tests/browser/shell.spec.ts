@@ -45,65 +45,73 @@ test.describe("mode-based shell (ADR 0054)", () => {
     await expect(nav.getByRole("button", { name: "Today" })).toBeVisible();
   });
 
-  test("the cockpit feed marks only unread items bold and the inspector reads cleanly", async ({
+  // F3a S3 (ADR 0107 decision 5): the frozen dashboard's linked Feed/Inspector
+  // panels start CLOSED (DASHBOARD_CLOSED_LINKED) and the "Show panel: …"
+  // command that used to reopen them is gone — there is no UI path left to
+  // exercise the shared-selection linked workflow (feed → inspector →
+  // claims/diff) from a legacy dashboard specifically; that regression is
+  // covered instead in `CockpitScreen.test.tsx` ("linked selection still
+  // drives inspector, claims and diff selection in a frozen view") via a
+  // seeded named view. This spec keeps the achievable half: the dashboard's
+  // own company-scoped Feed panel (`companyFeed`, always open by default)
+  // still distinguishes read/unread weight.
+  test("the legacy dashboard's company feed marks only unread items bold", async ({
     page,
   }, testInfo) => {
     await openApp(page);
-    // Dashboard redesign (epic c793ca1): the cockpit is one company-scoped
-    // Dashboard; the linked Feed + Inspector panels (the feed-selection model) are
-    // no longer a preset, but stay reachable via the command palette. Open a
-    // company Dashboard from the Companies list, then show the Feed panel.
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
-    await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Legacy dashboard · CDR" }).click();
     const cockpit = page.getByLabel("Research cockpit");
     await expect(cockpit).toBeVisible();
+    await expect(cockpit.getByText("Layout frozen until the engine decision")).toBeVisible();
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
-    await palette.getByLabel("Search commands").fill("Show panel: Feed");
-    await palette.getByRole("button", { name: "Show panel: Feed", exact: true }).click();
-    await expect(page.locator(".cockpit-feed-item").first()).toBeVisible();
+    const rows = page.locator(".company-feed-row");
+    await expect(rows.first()).toBeVisible();
 
-    // Read vs unread weight must differ (real-feed behavior): not every row is bold.
-    const weights = await page.locator(".cockpit-feed-title").evaluateAll((nodes) =>
-      nodes.map((node) => Number(getComputedStyle(node).fontWeight)),
+    // Unread rows render bold (weight 700); a read row (if any is seeded for
+    // this company) renders a lighter weight — per-row correctness rather
+    // than requiring a specific read/unread MIX in the data (CD PROJEKT's
+    // company-scoped feed has no interactive mark-read affordance, unlike
+    // the pre-freeze global/linked panel this spec used to drive).
+    const rowInfo = await page.locator(".company-feed-row").evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        unread: node.classList.contains("unread"),
+        weight: Number(getComputedStyle(node.querySelector("h3")!).fontWeight),
+      })),
     );
-    if (weights.length > 1) {
-      const distinct = new Set(weights);
-      expect(distinct.size, `feed title weights should differ for read/unread, got ${[...distinct].join(",")}`).toBeGreaterThan(1);
+    for (const { unread, weight } of rowInfo) {
+      if (unread) {
+        expect(weight, "an unread row must render bold").toBe(700);
+      } else {
+        expect(weight, "a read row must not render bold").toBeLessThan(700);
+      }
     }
-
-    // Inspect a feed item; the inspector header carries the ticker + title. Open
-    // the Inspector panel from the palette (also closed by default on a Dashboard).
-    await page.locator(".cockpit-feed-item").first().click();
-    await page.keyboard.press("Control+K");
-    const palette2 = page.getByRole("dialog", { name: "Command palette" });
-    await palette2.getByLabel("Search commands").fill("Show panel: Inspector");
-    await palette2.getByRole("button", { name: "Show panel: Inspector", exact: true }).click();
-    const inspector = page.getByLabel("Feed item inspector");
-    await expect(inspector).toBeVisible();
-    await expectNoHorizontalOverflow(inspector);
+    // Scoped to the company feed panel itself (matching the original test's
+    // Inspector-scoped check) — a whole-cockpit sweep would also catch the
+    // curated dashboard's OTHER default panels (e.g. a pre-existing Basic
+    // info/insider-block overflow at this width), which is outside what this
+    // spec is about.
+    await expectNoHorizontalOverflow(page.getByLabel("Company feed", { exact: true }));
 
     await page.screenshot({ path: `${EVIDENCE}/cockpit-${testInfo.project.name}.png`, fullPage: true });
   });
 
-  test("opening a company lands the cockpit dashboard scoped to it", async ({
+  test("the legacy dashboard row opens the frozen cockpit scoped to its company", async ({
     page,
   }, testInfo) => {
     await openApp(page);
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
-    // Click the ticker/title area of the row — at narrow widths the row stacks and
-    // its lower context block stops click propagation (tracked bug), so target the
-    // primary area to reliably select the company across the viewport matrix.
-    await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S3 (ADR 0107 decision 5): opening a company now lands the Spółka
+    // screen directly; the four legacy `dashboard:*` layouts stay reachable
+    // read-only via their "Legacy dashboard · TICKER" Widoki row.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Legacy dashboard · CDR" }).click();
 
-    // Opening a company IS the deep-dive now (ADR 0057): no intermediate classic
-    // workspace / Advanced-layout button — it lands the curated cockpit dashboard
-    // scoped to the company, showing every surface (Fundamentals, report diff, …)
-    // at once.
     const cockpit = page.getByRole("region", { name: "Research cockpit" });
     await expect(cockpit).toBeVisible();
     await expect(page.getByLabel("Company fundamentals")).toBeVisible();
+    // Frozen: no structure-mutating toolbar control, no company/preset
+    // selector (the row already fixed the company), and the strip is visible.
+    await expect(cockpit.getByRole("button", { name: "Add panel" })).toHaveCount(0);
+    await expect(cockpit.getByLabel("View company")).toHaveCount(0);
+    await expect(cockpit.getByText("Layout frozen until the engine decision")).toBeVisible();
 
     await page.screenshot({ path: `${EVIDENCE}/workspace-${testInfo.project.name}.png`, fullPage: true });
     await expectNoPageOverflow(page);

@@ -22,7 +22,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 - **Trigger:** autopilot/alert notification of a new periodic report.
 - **Steps:** open the run card → review extracted KPIs (drift/diff views) → (v0.52: expectation-vs-actual review) → resolve claims-to-verify → capture a note / update the assessment.
 - **v0.59 ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)):** the AI KPI-extraction launcher and its modal are gone with the in-app AI layer — extraction is deterministic and runs unattended, so the journey opens on *results*, not on triggering a run. Facts a deterministic tier cannot produce appear as explicit flagged gaps rather than an on-demand AI extraction the user starts. The journey's marked primary action moved to the Notebook's "New note" (the durable artifact of the journey); the claims-review Delivered/Missed pair is a two-peer-primary surface and needs an owner-approved multi-primary `reason` in its experience contract before it can carry the mark. The J2 budget floor was re-baselined in the same milestone — a shortening caused by feature removal, not by a UX improvement.
-- **Screens:** Today, Company workspace (Fundamentals / Report diff / Claims), Notebook.
+- **Screens:** Today, Inbox, Companies, Spółka (Fundamentals / Claims / Notebook workshop tools, F3a, ADR 0107).
 - **Budget:** ≤25 interactions.
 - **Done well:** facts confirmed or rejected, due claims resolved, a trace of the user's judgment exists in the notebook/journal.
 
@@ -37,9 +37,9 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J4 — Report-season preparation
 
 - **Trigger:** upcoming report dates across the watchlist.
-- **Steps:** Report-season cockpit → per-company pre-report card (open questions, unresolved claims, last KPIs, evidence) → write expectations (stance + optional metric expectations) → mark prepared.
-- **Screens:** Report season, Company workspace.
-- **Budget:** ≤13 interactions per company (re-baselined 10→13 in v0.52 when the expectations step shipped — 6 of the prior interactions are cockpit-panel-opening overhead; the expectations step is new recorded value, not a regression).
+- **Steps:** `Otwórz ekran: Report Season` → per-company pre-report card (open questions, unresolved claims, last KPIs, evidence) → write expectations (stance + optional metric expectations) → mark prepared.
+- **Screens:** Report Season, Spółka.
+- **Budget:** floor re-based 2026-08-26 at first measurement +1 (consent 5, ADR 0107) — the old ≤13 measured a flow whose 3 modal opens were view-creation overhead the F3a freeze removed.
 - **Done well:** every near-report company has a reviewed card and recorded expectations before results land.
 
 ## J5 — Claim verification
@@ -53,18 +53,18 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J6 — Buy / pass decision (full from v0.52, enriched through v0.64)
 
 - **Trigger:** research maturity or a price condition (v0.54 alert: price enters my range).
-- **Steps:** Company workspace synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review).
+- **Steps:** Company synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review). The journal is reached as `Spółka → Otwórz dziennik decyzji` (F3a, ADR 0107; the old Add-panel path is frozen); budget floor re-based 2026-08-26 at first measurement +1 (consent 5).
 - **Relative position:** the Compare screen and its `J6-compare` sub-flow were removed 2026-08-10 (#351, ADR 0089 amendment — unused in real practice); peer context lives in the Fundamentals periods × deltas table and, for agents, the MCP comparison/valuation reads.
-- **Screens:** Company workspace, decision journal.
+- **Screens:** Spółka (quality + decision-journal workshop tools).
 - **Budget:** ≤15 interactions for the recording flow (the thinking is not budgeted).
 - **Done well:** the decision has a date, a rationale, provenance — and will come back for outcome review (NS2 calibration).
 
 ## J7 — Weekly review
 
 - **Trigger:** weekend / recurring ritual.
-- **Steps:** week calendar (what's coming) → watchlist overview (v0.63: heatmap + leaderboard) → research gaps (v0.63 detector) → plan the week.
-- **Screens:** Events/Calendar, (v0.63: watchlist command center).
-- **Budget:** ≤20 interactions.
+- **Steps:** `Otwórz ekran: Events` (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: heatmap + leaderboard) → `Otwórz ekran: Research` (review queue + gaps) → Spółka (deepening) → plan the week.
+- **Screens:** Events, Watchlists, Research, Spółka.
+- **Budget:** floor re-based 2026-08-26 at first measurement +1 (consent 5, ADR 0107) — the view-creation leg the old ≤9 measured is frozen; all four task legs stay, now entered through their own screens.
 - **Done well:** next week's dates are known; the backlog of research debts is explicit, not vague guilt.
 
 ## Journey-independent utilities

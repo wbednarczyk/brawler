@@ -185,6 +185,8 @@ Every user-visible string is `text("English text")` from `useLocale()`. The loca
 
 **Backend-composed user-visible strings are forbidden — the backend writes typed codes, the frontend translates.** A persisted or wire-carried field the UI renders (a briefing item's `title`/`detail`, an attention label, a run summary) must hold verbatim source data or a typed code/token, never an English sentence the Rust side composed. The frontend maps the code to localized copy through `text()`, tolerating legacy prose rows verbatim. Precedent: the morning-briefing seam (`briefingItemText.ts` over `compose_briefing`, [ADR 0087](adr/0087-today-attention-home-v2.md) dec. 4). Any new backend-composed user-visible string is a defect of this class.
 
+**Palette command labels start with a dictionary verb** (`src/shared/verbs.ts`, ADR 0104 dec. 3): Open/Otwórz, Apply/Zastosuj, Save/Zapisz, Fetch/Pobierz, Read/Przeczytaj, Refresh/Odśwież, Mark as/Oznacz jako, Add/Dodaj, Remove/Usuń — never a full sentence, never two verbs sharing one `actionKey`. Enforced by the copy gate `src/app/paletteCopy.test.ts`.
+
 ## Panel density contracts (ADR 0076 Decision 6)
 
 Normative per-panel behavior at pane tiers — width **S** <420px · **M** 420–760px · **L** >760px,

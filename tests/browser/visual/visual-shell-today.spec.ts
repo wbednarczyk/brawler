@@ -21,10 +21,11 @@ test.describe("visual — shell + today", () => {
     await shootScreen(page, "today");
   });
 
-  test("Cockpit shell (company dashboard)", async ({ page }) => {
+  test("Cockpit shell (legacy dashboard, frozen)", async ({ page }) => {
     await openApp(page);
-    await nav(page).getByRole("button", { name: "Companies" }).click();
-    await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S3 (ADR 0107 decision 5): the frozen cockpit's legacy dashboard is
+    // reached via its "Legacy dashboard · TICKER" Widoki row.
+    await nav(page).getByRole("button", { name: "Legacy dashboard · CDR" }).click();
     await expect(page.getByRole("region", { name: "Research cockpit" })).toBeVisible();
     await expect(page.getByLabel("Company fundamentals")).toBeVisible();
     await shootScreen(page, "cockpit-shell");

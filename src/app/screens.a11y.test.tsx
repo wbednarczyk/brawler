@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { axe } from "jest-axe";
-import { expect, renderApp, screen } from "../test/appWorkflowHarness";
+import { expect, renderApp, screen, userEvent } from "../test/appWorkflowHarness";
 
 // Screen-level accessibility regression guard (ADR 0048): render the app, walk
 // each primary screen, and assert axe finds no violations — extending the
@@ -18,6 +18,9 @@ const SCREENS = [
   "Companies",
   "Sources",
   "Events",
+  // Decision journal, all companies (F3a S3, ADR 0107) — a standalone screen
+  // route, no top-level nav item.
+  "Journal",
 ] as const;
 
 // Only two rules stay off, each for a reason that cannot be engineered away
@@ -53,4 +56,30 @@ describe("screen accessibility", () => {
       expect(results.violations.map((violation) => violation.id)).toEqual([]);
     });
   }
+
+  // sol R1 finding 10: the Spółka screen (ADR 0107 — F3a's default company
+  // deep-dive) was absent from this matrix entirely. Reached via a company
+  // row (no standalone nav item), checked both at rest and with one hosted
+  // workshop tool open — the exact state a hosted panel's own landmark would
+  // surface in (paneLandmarks.test.tsx covers the Cockpit dock-pane host;
+  // this covers the Spółka ToolHost host).
+  it("Spółka renders with no axe violations, at rest and with one tool open", async () => {
+    const rules = AXE_RULES;
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await screen.findByRole("button", { name: "Today" });
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR" }));
+    await screen.findByRole("region", { name: "Company view" });
+
+    const restResults = await axe(container, { rules });
+    expect(restResults.violations.map((violation) => violation.id)).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Open claims" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+
+    const toolResults = await axe(container, { rules });
+    expect(toolResults.violations.map((violation) => violation.id)).toEqual([]);
+  });
 });

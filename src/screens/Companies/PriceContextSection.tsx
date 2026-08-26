@@ -108,7 +108,8 @@ export function PriceContextSection({
 
   // Daily sessions as candlesticks (owner request 2026-07-14) with the
   // readable framing: min/mid/max price on the y axis (scaled to the candle
-  // extremes), covered date range on the x axis.
+  // extremes, log scale — house standard, ADR 0107 dec. 4), covered date
+  // range on the x axis.
   const historyPoints = data.history.map((point) => ({
     label: point.date,
     open: point.open,
@@ -230,6 +231,7 @@ export function PriceContextSection({
             height={120}
             formatValue={(value) => formatPricePerShare(value, data.currency, locale)}
             className="price-context-history-chart"
+            scale="log"
           />
         </div>
       ) : null}

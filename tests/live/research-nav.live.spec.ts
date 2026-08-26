@@ -17,13 +17,16 @@ test.afterAll(async () => {
   await connection.browser.close();
 });
 
-test("Dashboard nav opens the company-scoped Dashboard on the real app", async () => {
+test("a Views-group legacy dashboard row opens the frozen company-scoped cockpit on the real app", async () => {
   const { page } = connection;
 
   const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
   await expect(nav).toBeVisible();
 
-  const entry = nav.getByRole("button", { name: "Dashboard" });
+  // F3a S3 (ADR 0107 dec. 5): the sidebar "Dashboard" mode is gone — the four
+  // saved `dashboard:*` layouts survive read-only as "Legacy dashboard · TICKER"
+  // rows in the Views group.
+  const entry = nav.getByRole("button", { name: /^(Legacy dashboard|Dawny dashboard)/ }).first();
   await expect(entry).toBeVisible();
   await page.screenshot({ path: "test-results/live/dashboard-nav-entry.png", fullPage: true });
 
@@ -31,16 +34,18 @@ test("Dashboard nav opens the company-scoped Dashboard on the real app", async (
   const cockpit = page.getByLabel(/Research cockpit|Kokpit badawczy/);
   await expect(cockpit).toBeVisible();
 
-  // Company-scoped, never blank: the view company is set and the preset selector
-  // is present (the two Dashboard selectors).
+  // Company-scoped, structure frozen: the view company is set and the frozen
+  // strip is shown; no preset/add-panel controls exist any more.
   await expect(cockpit).not.toHaveAttribute("data-company-id", "");
-  await expect(cockpit.getByLabel(/View company|Spółka widoku/)).toBeVisible();
-  await expect(cockpit.getByLabel(/Preset/)).toBeVisible();
+  await expect(cockpit.getByText(/Layout frozen|Układ zamrożony/)).toBeVisible();
+  await expect(cockpit.getByRole("button", { name: /Add panel|Dodaj panel/ })).toHaveCount(0);
   await page.screenshot({ path: "test-results/live/dashboard-nav-cockpit.png", fullPage: true });
 
-  // Switch to the Evidence / Research preset — the retired standalone Research
-  // screen's new home — and confirm the research evidence panel renders.
-  await cockpit.getByLabel(/Preset/).selectOption("evidence");
-  await expect(cockpit.locator(".research-panel")).toBeVisible();
-  await page.screenshot({ path: "test-results/live/dashboard-evidence-preset.png", fullPage: true });
+  // Research is a standalone screen now — reached from the ⌘K palette.
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: /Command palette|Paleta poleceń/ });
+  await palette.getByLabel(/Search commands|Szukaj poleceń/).fill("Research");
+  await palette.getByRole("button", { name: /^(Open screen|Otwórz ekran): Research/ }).first().click();
+  await expect(page.locator(".research-panel")).toBeVisible();
+  await page.screenshot({ path: "test-results/live/research-screen.png", fullPage: true });
 });

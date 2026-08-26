@@ -142,8 +142,13 @@
   width: 100%;
 }
 
+/* Formatted via formatDetailTimestamp (QualityPanel) — mono + nowrap so the
+   timestamp never breaks mid-string across the row's soft hyphen/colon break
+   opportunities (F3a study mechanical defect #3). */
 .quality-history-when {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .quality-history-detail {

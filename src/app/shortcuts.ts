@@ -1,5 +1,6 @@
 import type { ShortcutBindingSetting } from "../api/types";
 import type { ShortcutDefinition, ShortcutKeyBinding, ShortcutReferenceItem } from "../shared/shortcuts";
+import type { Verb } from "../shared/verbs";
 import type { Section } from "./navigation";
 
 export type AppShortcutId =
@@ -36,6 +37,10 @@ export type AppShortcutReferenceItem = ShortcutReferenceItem & {
   defaultBinding: ShortcutKeyBinding;
   disabled: boolean;
   hasCustomBinding: boolean;
+  /** The command-palette dictionary verb this shortcut's label starts with
+   * (ADR 0104 dec. 3, F3a S3) — consumed when AppShell turns shortcuts into
+   * palette commands (`PaletteCommand.verb`). */
+  verb: Verb;
 };
 
 const navigationShortcuts = [
@@ -56,6 +61,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     label,
     group: "Navigation",
     scope: "app" as const,
+    verb: "open" as const,
     defaultBinding: {
       ctrlKey: true,
       key,
@@ -72,6 +78,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     label: "Open command palette",
     group: "Global actions",
     scope: "app",
+    verb: "open",
     binding: {
       ctrlKey: true,
       key: "K",
@@ -85,9 +92,12 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "app.focusSearch",
-    label: "Focus Inbox search",
+    // Verb dictionary (ADR 0104 dec. 3): focusing search is functionally
+    // navigating to it — `open`, not a nonexistent "focus" verb.
+    label: "Open Inbox search",
     group: "Global actions",
     scope: "app",
+    verb: "open",
     binding: {
       ctrlKey: true,
       key: "F",
@@ -104,6 +114,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     label: "Refresh sources",
     group: "Global actions",
     scope: "app",
+    verb: "refresh",
     binding: {
       key: "F9",
     },
@@ -118,6 +129,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     label: "Refresh workspace data",
     group: "Global actions",
     scope: "app",
+    verb: "refresh",
     binding: {
       shiftKey: true,
       key: "F9",
@@ -131,9 +143,12 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "inbox.nextItem",
-    label: "Select next inbox item",
+    // List navigation reads as `open` (ADR 0104 dec. 3) — there is no
+    // dictionary "select" verb.
+    label: "Open next inbox item",
     group: "Inbox",
     scope: "screen",
+    verb: "open",
     binding: {
       key: "J",
     },
@@ -145,9 +160,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "inbox.previousItem",
-    label: "Select previous inbox item",
+    label: "Open previous inbox item",
     group: "Inbox",
     scope: "screen",
+    verb: "open",
     binding: {
       key: "K",
     },
@@ -159,9 +175,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "inbox.toggleRead",
-    label: "Toggle inbox read state",
+    label: "Mark as read or unread",
     group: "Inbox",
     scope: "screen",
+    verb: "markAs",
     binding: {
       key: "M",
     },
@@ -173,9 +190,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "inbox.toggleSaved",
-    label: "Toggle inbox saved state",
+    label: "Mark as saved or unsaved",
     group: "Inbox",
     scope: "screen",
+    verb: "markAs",
     binding: {
       key: "S",
     },
@@ -190,6 +208,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     label: "Open selected inbox source",
     group: "Inbox",
     scope: "screen",
+    verb: "open",
     binding: {
       key: "O",
     },
@@ -201,9 +220,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "inbox.createNote",
-    label: "Create note from selected inbox item",
+    label: "Add note from inbox item",
     group: "Inbox",
     scope: "screen",
+    verb: "add",
     binding: {
       key: "N",
     },
@@ -215,9 +235,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "company.nextCompany",
-    label: "Select next company",
+    label: "Open next company",
     group: "Companies",
     scope: "screen",
+    verb: "open",
     binding: {
       shiftKey: true,
       key: "J",
@@ -231,9 +252,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "company.previousCompany",
-    label: "Select previous company",
+    label: "Open previous company",
     group: "Companies",
     scope: "screen",
+    verb: "open",
     binding: {
       shiftKey: true,
       key: "K",
@@ -250,6 +272,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     label: "Open next company tab",
     group: "Companies",
     scope: "screen",
+    verb: "open",
     binding: {
       key: "L",
     },
@@ -264,6 +287,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     label: "Open previous company tab",
     group: "Companies",
     scope: "screen",
+    verb: "open",
     binding: {
       key: "H",
     },
@@ -275,9 +299,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "notebook.editSelected",
-    label: "Edit selected notebook entry",
+    label: "Open notebook entry editor",
     group: "Notebooks",
     scope: "screen",
+    verb: "open",
     binding: {
       ctrlKey: true,
       key: "E",
@@ -291,9 +316,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "notebook.saveCurrent",
-    label: "Save current notebook edit",
+    label: "Save notebook edit",
     group: "Notebooks",
     scope: "screen",
+    verb: "save",
     binding: {
       ctrlKey: true,
       key: "S",

@@ -123,7 +123,7 @@ describe("Inbox screen workflows", () => {
     }
   });
 
-  it("opens the matching company dashboard from an inbox feed item (ADR 0057)", async () => {
+  it("opens the company's Spółka screen with the feed item raised in the workshop (ADR 0107)", async () => {
     const user = userEvent.setup();
 
     renderApp();
@@ -135,8 +135,11 @@ describe("Inbox screen workflows", () => {
     // reaches Inbox yet, so this is where the real KPI-reading flow lives).
     await user.click(screen.getByRole("button", { name: "Read the report" }));
 
-    // Lands the curated cockpit dashboard scoped to the company.
-    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+    // F3a (ADR 0107, sol R2 finding 3): ONE guarded transition lands the
+    // Spółka screen with the `feedItem` tool open — never the cockpit.
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    expect(spolka).toBeInTheDocument();
+    expect(await within(spolka).findByLabelText("Workshop tool")).toHaveAttribute("data-tool", "feedItem");
   });
 
   it("creates a notebook draft from an inbox feed item with feed origins", async () => {

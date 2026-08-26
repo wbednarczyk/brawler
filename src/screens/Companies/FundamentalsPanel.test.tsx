@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { FundamentalsPanel, factsRecordedLabel, tierLabel } from "./FundamentalsPanel";
+import { ToolHostContext, type ToolHandle } from "../../shared/toolHost";
 import { getPriceContext } from "../../api/marketData";
 import { getKpiComparison } from "../../api/comparison";
 import type { KpiComparison } from "../../api/comparison";
@@ -796,5 +797,83 @@ describe("FundamentalsPanel statement switcher (epic #398)", () => {
     await user.click(operatingTab);
 
     expect(await screen.findByText("1 item awaits a catalog name")).toBeInTheDocument();
+  });
+});
+
+// sol R1 finding 1: the create-period / add-fact drafts must register with
+// the Spółka workshop's dirty gate, a no-op when hosted outside it (every
+// static-props `render(<FundamentalsPanel .../>)` above exercises that
+// no-op — `updateFundamentalsForm`/`updateFinancialFactForm` are `noop`).
+describe("FundamentalsPanel dirty draft registration (sol R1 finding 1)", () => {
+  function StatefulFormHarness(props: typeof panelProps) {
+    const [fundamentalsForm, setFundamentalsForm] = useState(props.fundamentalsForm);
+    const [financialFactForm, setFinancialFactForm] = useState(props.financialFactForm);
+    return (
+      <FundamentalsPanel
+        {...props}
+        fundamentalsForm={fundamentalsForm}
+        financialFactForm={financialFactForm}
+        updateFundamentalsForm={(field, value) =>
+          setFundamentalsForm((current) => ({ ...current, [field]: value }))
+        }
+        updateFinancialFactForm={(field, value) =>
+          setFinancialFactForm((current) => ({ ...current, [field]: value }))
+        }
+      />
+    );
+  }
+
+  it("registers a dirty draft with the tool host", async () => {
+    const user = userEvent.setup();
+    let handle: ToolHandle | null = null;
+    const register = vi.fn((h: ToolHandle) => {
+      handle = h;
+      return () => {};
+    });
+    render(
+      <ToolHostContext.Provider value={{ register }}>
+        <StatefulFormHarness {...panelProps} />
+      </ToolHostContext.Provider>,
+    );
+    expect(register).toHaveBeenCalled();
+    expect(handle!.isDirty()).toBe(false);
+
+    await user.type(screen.getByLabelText("Fiscal year"), "2025");
+    expect(handle!.isDirty()).toBe(true);
+
+    act(() => {
+      handle!.discard();
+    });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Fiscal year") as HTMLInputElement).value).toBe("");
+    });
+  });
+});
+
+// sol R1 finding 9: "Create period" and "Add fact" both rendered `variant="primary"`
+// simultaneously once periods exist — at most one primary action per panel.
+describe("FundamentalsPanel primary action (sol R1 finding 9)", () => {
+  it("renders at most one primary action once periods exist (Add fact, not Create period)", () => {
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+    const primaries = container.querySelectorAll('[data-ui-button-variant="primary"]');
+    expect(primaries.length).toBeLessThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /Add fact/ })).toHaveAttribute(
+      "data-ui-button-variant",
+      "primary",
+    );
+    expect(screen.getByRole("button", { name: /Create/ })).toHaveAttribute(
+      "data-ui-button-variant",
+      "secondary",
+    );
+  });
+
+  it("Create period stays the sole primary action when no periods exist yet", () => {
+    render(<FundamentalsPanel {...panelProps} />);
+    expect(screen.getByRole("button", { name: /Create/ })).toHaveAttribute(
+      "data-ui-button-variant",
+      "primary",
+    );
+    expect(screen.queryByRole("button", { name: /Add fact/ })).not.toBeInTheDocument();
   });
 });

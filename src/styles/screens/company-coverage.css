@@ -72,6 +72,43 @@
   color: var(--primary);
 }
 
+/* Compact-tier safety net (mechanical defect #2, F3a study): a second line
+   under the period label duplicating the Data/Flagged counts, mono figures.
+   Hidden by default — the Data/Flagged columns are the wide-pane source of
+   truth; the `@container` rule below swaps which one is visible so the
+   payload is never dropped, only relocated. */
+.coverage-period-meta {
+  display: none;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-weight: 400;
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+.coverage-period-meta-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Compact tier (≲640px pane width): the table scrolls to reach the Data/
+   Flagged columns, so surface their counts inline instead of relying on that
+   scroll (ui-authoring § panel-internal scrollbars: deliberate wide content
+   still needs its payload reachable without scrolling). */
+@container pane (max-width: 640px) {
+  .coverage-table th:nth-child(3),
+  .coverage-table th:nth-child(4),
+  .coverage-table td:nth-child(3),
+  .coverage-table td:nth-child(4) {
+    display: none;
+  }
+
+  .coverage-period-meta {
+    display: flex;
+  }
+}
+
 /* The period label is a real button so it is the row's keyboard/SR affordance for
    "open documents" (the <tr> itself is not a button — see CompanyCoveragePanel).
    It reads as the plain period text: transparent, inherited color/weight. */

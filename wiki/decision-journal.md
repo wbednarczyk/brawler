@@ -9,9 +9,9 @@ records and replays what you wrote, it never grades you.
 
 A per-company, append-only log of your investment decisions.
 
-**Where:** open a company's cockpit → `+ Add panel` → **Decision journal**.
-A cross-company view lives in the command palette (`Ctrl+K`) as
-**Journal (all companies)**.
+**Where:** open the company (the [Spółka screen](company-view.md)) →
+workshop bar → **Open decision journal**. A cross-company view lives in the
+command palette (`Ctrl+K`) as **Open screen: Decision journal**.
 
 **Writing an entry:**
 
@@ -33,8 +33,8 @@ journal you can quietly rewrite is worthless for judging your own judgment.
 Before a company reports, write down what you expect — then let the actual
 numbers answer.
 
-**Where:** the **Report Season** panel → a company's upcoming-report card →
-**Write expectations**.
+**Where:** the **Report Season** screen (command palette → **Open screen:
+Report Season**) → a company's upcoming-report card → **Write expectations**.
 
 1. Record your overall **stance** for the report (a short free-text take).
 2. Optionally add **metric rows** — revenue, net profit, or any tracked KPI —

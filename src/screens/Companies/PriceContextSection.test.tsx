@@ -121,4 +121,20 @@ describe("PriceContextSection (v0.53 T5)", () => {
     expect(chart?.getAttribute("viewBox")).toBeTruthy();
     expect(screen.getByText("Price context")).toBeInTheDocument();
   });
+
+  it("renders the price history chart on a log scale (house standard, ADR 0107 dec. 4)", () => {
+    const { container } = render(
+      <PriceContextSection
+        data={makePriceContext({
+          history: [
+            { date: "2026-06-01", open: 105, high: 110, low: 100, close: 108 },
+            { date: "2026-06-15", open: 300, high: 450, low: 250, close: 400 },
+            { date: "2026-07-01", open: 600, high: 800, low: 550, close: 750 },
+          ],
+        })}
+      />,
+    );
+    const chart = container.querySelector(".price-context-history-chart");
+    expect(chart).toHaveAttribute("data-scale", "log");
+  });
 });

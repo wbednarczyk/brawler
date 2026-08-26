@@ -1,6 +1,7 @@
 import { fireEvent } from "@testing-library/react";
-import { describe, it } from "vitest";
+import { beforeEach, describe, it } from "vitest";
 import packageJson from "../package.json";
+import { saveCockpitLayout } from "./api/cockpit";
 import {
   appTestState,
   expect,
@@ -8,7 +9,6 @@ import {
   renderApp,
   screen,
   userEvent,
-  vi,
   waitFor,
   within,
 } from "./test/appWorkflowHarness";
@@ -33,61 +33,19 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
   });
 
-  it("creates a named view and lists it as a Modes nav destination (ADR 0057)", async () => {
-    const user = userEvent.setup();
-    renderApp();
-
-    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
-    await user.click(within(nav).getByRole("button", { name: "New view" }));
-
-    await user.type(await screen.findByLabelText("View name"), "Earnings");
-    // Choose the 3×3 grid preset so the chosen dimensions flow end-to-end.
-    await user.click(screen.getByRole("button", { name: "3×3" }));
-    await user.click(screen.getByRole("button", { name: /Create view/i }));
-
-    // The saved view appears in the Modes group and opens pre-split into a real
-    // 3×3 grid — nine cells, each with a "Pick a panel" button (ADR 0057).
-    expect(await within(nav).findByRole("button", { name: "Earnings" })).toBeInTheDocument();
-    const cells = await screen.findAllByRole("button", { name: "Pick a panel" });
-    expect(cells.length).toBe(9);
-
-    // Since card 106f8a7 the add surface offers GENERIC company-scoped panel
-    // types bound to the view company — so the flow picks the view company
-    // first, then fills cells (the per-company palette entries are gone).
-    const viewCompany = screen.getByLabelText("View company");
-    const cdrOption = (
-      within(viewCompany).getAllByRole("option") as HTMLOptionElement[]
-    ).find((option) => option.textContent?.includes("GPW:CDR"));
-    await user.selectOptions(viewCompany, cdrOption?.value ?? "");
-
-    // Picking a panel for a cell fills it in place (one fewer empty cell, a new
-    // panel tab appears).
-    await user.click(cells[0]);
-    await user.type(await screen.findByLabelText("Search commands"), "Fundamentals");
-    await user.keyboard("{Enter}");
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "Pick a panel" }).length).toBe(cells.length - 1),
-    );
-
-    // The view can be deleted from its sidebar entry.
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    await user.click(within(nav).getByRole("button", { name: "Delete view: Earnings" }));
-    await waitFor(() =>
-      expect(within(nav).queryByRole("button", { name: "Earnings" })).not.toBeInTheDocument(),
-    );
-    confirm.mockRestore();
-  });
+  // Named-view CREATION is gone (F3a S3, consent 1 — the freeform cockpit is
+  // frozen, "+ New view" removed from AppShell); the sidebar Widoki row + the
+  // rename_cockpit_layout flow are still exercised, seeding a view directly
+  // through the real save_cockpit_layout command instead of the removed UI.
 
   // Issue #89: a saved view renames in place from its sidebar row (pencil →
   // inline TextField → Enter), through the real rename_cockpit_layout command.
   it("renames a saved view inline from its sidebar row", async () => {
     const user = userEvent.setup();
+    await saveCockpitLayout({ name: "Morning", panelsJson: "[]", layoutJson: null, dockviewVersion: null });
     renderApp();
 
     const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
-    await user.click(within(nav).getByRole("button", { name: "New view" }));
-    await user.type(await screen.findByLabelText("View name"), "Morning");
-    await user.click(screen.getByRole("button", { name: /Create view/i }));
     expect(await within(nav).findByRole("button", { name: "Morning" })).toBeInTheDocument();
 
     await user.click(within(nav).getByRole("button", { name: "Rename view: Morning" }));
@@ -112,8 +70,8 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     const pinned = within(nav).getByRole("button", { name: "CDR" });
     await userEvent.click(pinned);
 
-    // Opening a pinned company lands the curated cockpit dashboard (ADR 0057).
-    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+    // Opening a pinned company lands the Spółka screen (F3a S1, ADR 0107).
+    expect(await screen.findByRole("region", { name: "Company view" })).toBeInTheDocument();
   });
 
   it("unpins a company from the spine and persists via update_settings", async () => {
@@ -129,6 +87,22 @@ describe("Sidebar IA spine (ADR 0054)", () => {
         expect.objectContaining({ input: expect.objectContaining({ pinnedCompanyIds: [] }) }),
       );
     });
+  });
+
+  // F3a S3 (ADR 0107 decision 5): legacy `dashboard:*` layouts stay reachable
+  // read-only via their "Legacy dashboard · TICKER" Widoki row — the frozen
+  // cockpit it opens is scoped to that row's company only (no company/preset
+  // selector — the row already chose it).
+  it("legacy dashboard row opens the frozen cockpit scoped to its company", async () => {
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await userEvent.click(await within(nav).findByRole("button", { name: "Legacy dashboard · CDR" }));
+
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    expect(cockpit).toHaveAttribute("data-company-id", "company_gpw_cdr");
+    expect(within(cockpit).queryByLabelText("View company")).not.toBeInTheDocument();
+    expect(within(cockpit).getByText("Layout frozen until the engine decision")).toBeInTheDocument();
   });
 });
 
@@ -372,6 +346,193 @@ describe("App shell", () => {
 
     fireEvent.keyDown(document, { key: "1", code: "Digit1", ctrlKey: true });
     expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
+  });
+});
+
+// sol R1 finding 3: every company-workspace entry point (openCompanyWorkspaceById,
+// openCompanyWorkspace, openCompanyClaims, pinned row, GlobalSearch, palette
+// "Open company:", Today "Open thesis") commits companyId + section + tool as
+// ONE atomic transition behind ONE dirty guard — `selectedCompanyId` never
+// changes ahead of it. Minimal scenario: CDR is pinned by default; KGH/PKN
+// carry a "to verify" management claim (overdue/due respectively).
+describe("Spółka atomic company transitions (sol R1 finding 3)", () => {
+  // jsdom does not implement `scrollIntoView` — the documents panel's
+  // provenance-highlight effect calls it unguarded (unlike the akcjonariat
+  // tool's `?.()`-guarded call), which otherwise throws mid-render and can
+  // leave a pending timer bleeding into a later test in this file.
+  beforeEach(() => {
+    if (!Element.prototype.scrollIntoView) {
+      Element.prototype.scrollIntoView = () => {};
+    }
+  });
+
+  function claimRowFor(ticker: string): HTMLElement {
+    const row = Array.from(document.querySelectorAll('[data-dayq-row="true"]')).find((candidate) =>
+      candidate.textContent?.includes(ticker),
+    );
+    if (!row) throw new Error(`No "to verify" claim row for ${ticker}`);
+    return row as HTMLElement;
+  }
+
+  async function openDirtyNotebookOnSpolka(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Open notebook" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(await screen.findByRole("button", { name: "New note" }));
+    const titleField = await screen.findByRole("textbox", { name: "Notebook note title" });
+    await user.type(titleField, "Draft in progress");
+    return titleField;
+  }
+
+  it("clean openCompanyClaims(B) lands on B's claims tool and stays there", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(await screen.findByRole("button", { name: /^Today/ }));
+    await screen.findByRole("heading", { name: "Today" });
+
+    const row = claimRowFor("KGH");
+    await user.click(within(row).getByRole("button", { name: "Open thesis" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await waitFor(() => {
+      expect(spolka).toHaveAttribute("data-company-id", "company_gpw_kgh");
+    });
+    expect(await within(spolka).findByRole("group", { name: "Workshop tool" })).toHaveAttribute(
+      "data-tool",
+      "tezy",
+    );
+
+    // The clean transition is not reverted by the displayed-company sync
+    // effect racing behind it (the exact "openCompanyClaims(B) opens B's
+    // tool, then the sync effect clears it back to B's core" blocker) — give
+    // it another tick and confirm it's still there.
+    await waitFor(() => {
+      expect(within(spolka).getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "tezy");
+    });
+  });
+
+  it("dirty A + Stay keeps A selected everywhere (aria-current) and the tool open", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_cdr", "company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    await screen.findByRole("region", { name: "Company view" });
+    await openDirtyNotebookOnSpolka(user);
+
+    await user.click(within(nav).getByRole("button", { name: "KGH" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "CDR" })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("button", { name: "KGH" })).not.toHaveAttribute("aria-current");
+    const tool = screen.getByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "notatnik");
+    expect((screen.getByRole("textbox", { name: "Notebook note title" }) as HTMLInputElement).value).toBe(
+      "Draft in progress",
+    );
+  });
+
+  it("dirty A + Discard lands the full requested transition (company, section, tool)", async () => {
+    const user = userEvent.setup();
+    appTestState.searchResponse = {
+      groups: [
+        {
+          contentType: "digest",
+          matches: [
+            {
+              contentType: "digest",
+              sourceId: "digest_kgh_1",
+              companyId: "company_gpw_kgh",
+              title: "KGHM digest",
+              snippet: "KGHM digest",
+              score: 1.0,
+            },
+          ],
+        },
+      ],
+    };
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    await screen.findByRole("region", { name: "Company view" });
+    await openDirtyNotebookOnSpolka(user);
+
+    const input = screen.getByLabelText("Global search");
+    await user.type(input, "kgh");
+    await user.click(await screen.findByRole("option", { name: /KGHM digest/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Discard" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await waitFor(() => expect(spolka).toHaveAttribute("data-company-id", "company_gpw_kgh"));
+    expect(await within(spolka).findByRole("group", { name: "Workshop tool" })).toHaveAttribute(
+      "data-tool",
+      "research",
+    );
+  });
+
+  it("a second transition request while the guard modal is open does not clobber the pending one", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_cdr", "company_gpw_kgh", "company_gpw_pzu"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    await screen.findByRole("region", { name: "Company view" });
+    await openDirtyNotebookOnSpolka(user);
+
+    // Request #1: KGH — dirty guard opens the modal.
+    await user.click(within(nav).getByRole("button", { name: "KGH" }));
+    await screen.findByRole("dialog");
+
+    // Request #2 while the modal is still open — must be IGNORED, not
+    // overwrite request #1's pending transition.
+    await user.click(within(nav).getByRole("button", { name: "PZU" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await waitFor(() => expect(spolka).toHaveAttribute("data-company-id", "company_gpw_kgh"));
+  });
+
+  // sol R1 finding 8: a KPI provenance ticket was rendered as a button but
+  // wired to a no-op — clicking it did nothing in the real app.
+  it("KPI ticket opens the documents tool with the ticket's document highlighted", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "KGH" }));
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+
+    const ticket = await within(spolka).findByRole("button", { name: "Open source document" });
+    const ticketRef = ticket.textContent;
+    await user.click(ticket);
+
+    const tool = await within(spolka).findByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "dokumenty");
+    await waitFor(() => {
+      expect(tool.querySelector(`[data-document-id="${ticketRef}"]`)).toHaveAttribute(
+        "data-document-highlighted",
+        "true",
+      );
+    });
   });
 });
 

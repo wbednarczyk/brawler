@@ -54,7 +54,7 @@ test("v0.57 pass-2 surfaces", async () => {
   await domCount("[class*='attention'], [class*='signal-card']", "attention/signal cards");
 
   // 2) Company cockpit — click Dashboard/Pulpit.
-  await clickBtn(/^(Dashboard|Pulpit)/, "Dashboard");
+  await clickBtn(/^(Legacy dashboard|Dawny dashboard)/, "Legacy dashboard row");
   await shot("21-cockpit");
 
   // 3) Try to activate a founder-led company from the sidebar pinned list.
@@ -114,7 +114,7 @@ test("v0.57 pass-2 surfaces", async () => {
       return { scrollW: d.scrollWidth, clientW: d.clientWidth, overflow: d.scrollWidth > d.clientWidth + 2 };
     });
     console.log(`NARROW 1008 quality overflow: ${JSON.stringify(overflow2)}`);
-    await clickBtn(/^(Dashboard|Pulpit)/, "Dashboard (narrow)");
+    await clickBtn(/^(Legacy dashboard|Dawny dashboard)/, "Dashboard (narrow)");
     await shot("26-narrow-1008-cockpit");
     const overflow3 = await page.evaluate(() => {
       const d = document.documentElement;

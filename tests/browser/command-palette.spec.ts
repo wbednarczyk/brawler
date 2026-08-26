@@ -3,9 +3,10 @@ import type { Page } from "@playwright/test";
 
 // Global command palette (v0.50 U6): Ctrl/⌘+K opens a shared palette from any
 // screen. It lists app-level commands (derived from the shortcut registry plus
-// saved views / pinned companies) and, on a cockpit view, the cockpit's own
-// contextual panel commands. The cockpit's "Add panel" / cell-fill flows keep
-// their local palette instance (covered by notebooks.spec / screen-walk).
+// saved views / pinned companies / global screens) and, on the Spółka screen,
+// that screen's own contextual "Open <tool>" workshop commands. F3a S3 (ADR
+// 0107 decision 5) froze the cockpit's local palette entirely — "Open panel:
+// …" and every other structure-mutating entry it used to contribute is gone.
 
 function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
@@ -38,24 +39,45 @@ test.describe("command palette", { tag: "@clickable" }, () => {
     await expect(palette).toBeHidden();
   });
 
-  test("on a cockpit view the palette also lists cockpit commands", async ({ page }) => {
+  // F3a S3 (ADR 0107 decision 5): the cockpit freeze retired the whole
+  // structure-mutating local palette — "New view" (nav), "Open panel: …" and
+  // every other "Add panel"/cell-fill command are gone; the surviving palette
+  // dictionary is app-level navigation only. Assert what's actually still
+  // offered: global "Open screen: …" / "Open company: …" entries from any
+  // screen, and the Spółka screen's own contextual "Open <tool>" entries
+  // (never "Open panel: …", the retired label).
+  test("the palette lists the global navigation commands from any screen", async ({ page }) => {
     await openApp(page);
 
-    // A plain New view lands on the cockpit without touching its local palette.
-    await nav(page).getByRole("button", { name: "New view" }).click();
-    const createModal = page.getByRole("dialog", { name: "New view" });
-    await createModal.getByLabel("View name").fill("Palette view");
-    await createModal.getByRole("button", { name: "Create view" }).click();
-    await expect(page.getByLabel("Research cockpit")).toBeVisible();
+    await page.keyboard.press("Control+K");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await expect(palette).toBeVisible();
+
+    await palette.getByLabel("Search commands").fill("Open screen");
+    await expect(palette.getByRole("button", { name: "Open screen: Research", exact: true })).toBeVisible();
+
+    await palette.getByLabel("Search commands").fill("Open company: CDR");
+    await expect(
+      palette.getByRole("button", { name: "Open company: CDR", exact: true }),
+    ).toBeVisible();
+
+    await expect(palette.getByRole("button", { name: /^Open panel:/ })).toHaveCount(0);
+  });
+
+  test("inside Spółka the palette also lists the workshop tool commands", async ({ page }) => {
+    await openApp(page);
+    await nav(page).getByRole("button", { name: "Companies" }).click();
+    await page.getByRole("button", { name: "Open GPW:CDR" }).click();
+    await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await expectNoPageOverflow(page);
 
     await page.keyboard.press("Control+K");
     const palette = page.getByRole("dialog", { name: "Command palette" });
     await expect(palette).toBeVisible();
 
-    // "Open panel: …" entries are contributed by the cockpit contextually; app
-    // commands never carry that label, so filtering isolates the contextual set.
-    await palette.getByLabel("Search commands").fill("Open panel");
-    await expect(palette.getByRole("button", { name: /Open panel:/ }).first()).toBeVisible();
+    await palette.getByLabel("Search commands").fill("Open notebook");
+    await expect(palette.getByRole("button", { name: "Open notebook", exact: true })).toBeVisible();
+
+    await expect(palette.getByRole("button", { name: /^Open panel:/ })).toHaveCount(0);
   });
 });

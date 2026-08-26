@@ -30,44 +30,36 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-// Open the curated company dashboard (ADR 0057) for the seeded GPW:CDR company,
-// whose default panels include Quality + Report documents.
-async function openDashboard(page: Page) {
+// F3a S3 (ADR 0107): opening a company lands the Spółka screen for the seeded
+// GPW:CDR company; each tool opens via the ⌘K palette.
+async function openCompany(page: Page) {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  await expect(page.getByLabel("Research cockpit")).toBeVisible();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+}
+
+// Returns `.spolka-layout` — the density contracts' `container: pane / size`
+// (spolka.css), not the "Workshop tool" group itself.
+async function openTool(page: Page, label: string): Promise<PaneLocator> {
+  await openCompany(page);
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill(label);
+  await palette.getByRole("button", { name: label, exact: true }).first().click();
+  await expect(page.getByRole("group", { name: "Workshop tool" })).toBeVisible();
+  return page.locator(".spolka-layout");
 }
 
 async function openQuality(page: Page): Promise<PaneLocator> {
-  await openDashboard(page);
-  await page.getByRole("button", { name: /Quality/ }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.locator(".quality-panel") });
-  await expect(pane).toBeVisible();
-  return pane;
+  return openTool(page, "Open quality");
 }
 
 async function openDocuments(page: Page): Promise<PaneLocator> {
-  await openDashboard(page);
-  await page.getByRole("button", { name: "Report documents" }).first().click();
-  const pane = page.locator(".cockpit-pane", {
-    has: page.locator('.company-report-documents[aria-label="Report documents"]'),
-  });
-  await expect(pane).toBeVisible();
-  return pane;
+  return openTool(page, "Open documents");
 }
 
-// The coverage panel is company-scoped, so it opens from the curated company
-// dashboard (its tab is seeded by DASHBOARD_DEFAULT_KINDS) rather than the
-// company-less `openCockpitPanel` "New view" flow, matching the sibling panels
-// in this file.
 async function openCoverage(page: Page): Promise<PaneLocator> {
-  await openDashboard(page);
-  await page.getByRole("button", { name: "Coverage" }).first().click();
-  const pane = page.locator(".cockpit-pane", {
-    has: page.locator('.company-coverage[aria-label="Coverage"]'),
-  });
-  await expect(pane).toBeVisible();
-  return pane;
+  return openTool(page, "Open coverage");
 }
 
 async function box(locator: Locator) {

@@ -44,13 +44,13 @@ describe("CommandPaletteProvider", () => {
   it("merges app + contextual commands, app first, deduped by id with contextual winning", async () => {
     const user = userEvent.setup();
     const appCommands: PaletteCommand[] = [
-      { id: "a", label: "Alpha", run: vi.fn() },
-      { id: "b", label: "Bravo", run: vi.fn() },
+      { id: "a", label: "Alpha", run: vi.fn(), actionKey: "test.a", verb: "open" },
+      { id: "b", label: "Bravo", run: vi.fn(), actionKey: "test.b", verb: "open" },
     ];
     const charlie = vi.fn();
     const contextual: PaletteCommand[] = [
-      { id: "b", label: "Bravo CTX", run: vi.fn() },
-      { id: "c", label: "Charlie", run: charlie },
+      { id: "b", label: "Bravo CTX", run: vi.fn(), actionKey: "test.b", verb: "open" },
+      { id: "c", label: "Charlie", run: charlie, actionKey: "test.c", verb: "open" },
     ];
 
     render(
@@ -74,7 +74,7 @@ describe("CommandPaletteProvider", () => {
 
   it("unregisters contextual commands on unmount", async () => {
     const user = userEvent.setup();
-    const appCommands: PaletteCommand[] = [{ id: "a", label: "Alpha", run: vi.fn() }];
+    const appCommands: PaletteCommand[] = [{ id: "a", label: "Alpha", run: vi.fn(), actionKey: "test.a", verb: "open" }];
 
     function Harness() {
       const [mounted, setMounted] = useState(true);
@@ -82,7 +82,7 @@ describe("CommandPaletteProvider", () => {
         <CommandPaletteProvider appCommands={appCommands} text={identity}>
           <OpenButton />
           {mounted ? (
-            <Contributor commands={[{ id: "c", label: "Charlie", run: vi.fn() }]} />
+            <Contributor commands={[{ id: "c", label: "Charlie", run: vi.fn(), actionKey: "test.c", verb: "open" }]} />
           ) : null}
           <button type="button" onClick={() => setMounted(false)}>
             drop
@@ -105,7 +105,7 @@ describe("CommandPaletteProvider", () => {
   it("opens and closes via the context handles", async () => {
     const user = userEvent.setup();
     render(
-      <CommandPaletteProvider appCommands={[{ id: "a", label: "Alpha", run: vi.fn() }]} text={identity}>
+      <CommandPaletteProvider appCommands={[{ id: "a", label: "Alpha", run: vi.fn(), actionKey: "test.a", verb: "open" }]} text={identity}>
         <OpenButton />
       </CommandPaletteProvider>,
     );

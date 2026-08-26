@@ -11,7 +11,7 @@ tells you *what changed* and *what to verify*, never buy/sell/hold.
 
 ## Turning it on
 
-Autopilot is **off by default** for every company. Open a company's dashboard
+Autopilot is **off by default** for every company. Open the company (Spółka screen) → **Open fundamentals**
 → the **Fundamentals** panel to set its mode for that one company, or use
 **Companies → Manage settings** to set the same mode across several companies
 at once (see [Per-company settings](company-settings.md)).

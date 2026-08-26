@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { Button, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { Button, CandlestickChart, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
@@ -418,6 +418,22 @@ describe("RangeBarChart (football field)", () => {
     const markers = container.querySelectorAll(".ui-range-bar-marker");
     expect(markers).toHaveLength(2);
     expect(screen.getByText(/current price — 132 zł/)).toBeInTheDocument();
+  });
+});
+
+describe("CandlestickChart a11y", () => {
+  const points = [
+    { label: "2026-07-10", open: 100, high: 110, low: 95, close: 105 },
+    { label: "2026-07-11", open: 105, high: 108, low: 90, close: 92 },
+    { label: "2026-07-14", open: 92, high: 99, low: 91, close: 98 },
+  ];
+
+  it("exposes an accessible name on an image-role SVG in both linear and log scale", () => {
+    const linear = render(<CandlestickChart ariaLabel="Price history (linear)" points={points} />);
+    expect(linear.getByRole("img", { name: "Price history (linear)" })).toBeInTheDocument();
+
+    const log = render(<CandlestickChart ariaLabel="Price history (log)" points={points} scale="log" />);
+    expect(log.getByRole("img", { name: "Price history (log)" })).toBeInTheDocument();
   });
 });
 

@@ -1146,6 +1146,55 @@ Day bucketing, day counters and the `allSeen` collapse decision are **frontend c
 
 MCP registry: `get_today_view` is `read`-tier but not exposed as an agent tool (round-trip optimization; agents have parity via `list_feed_items`/`list_company_events`/`list_claims_due`/`list_autopilot_runs`); `mark_today_visited` is `excluded` (UI-session state, same posture as `mark_attention_events_seen`).
 
+## Company View (Spółka)
+
+`get_company_view(companyId)` returns `CompanyView` — everything the `Spółka`
+screen's glance bar and core render, composed in ONE read
+([ADR 0107](adr/0107-company-view-paradigm.md) decision 3; F3a #429, S1).
+Computed; async / `spawn_blocking`. Top-level error ONLY for an unknown company
+or a failed read establishment; every section otherwise degrades independently
+via `sectionErrors`. Generated DTOs: `src/api/generated/CompanyView*.ts`.
+
+- Identity: `companyId`, `qualifiedTicker`, `displayName`, `isin?`.
+- `counters?` — `signals: { unacked, byCategory[{category,count}] }`
+  (unacknowledged red flags = `red_flags_view(...).active`, full history,
+  `category` = flag type, count DESC then category ASC) · `claims: { open,
+  nearestDue? }` (`pending`/`partially_delivered` claims; `nearestDue` =
+  `"{periodType} {fiscalYear}"` of the earliest due period by fiscal year then
+  domain period order Q1 < H1/Q2 < 9M/Q3 < Q4/FY) · `shorts: { activeSumPct,
+  largestHolder? }` (sum of ACTIVE registry positions' percents; percent tie →
+  alphabetically first holder) · `events: { upcoming }` (`scheduled`,
+  `event_date` in the CLOSED interval [today, today+30d], today = backend UTC
+  clock date).
+- `kpi?` — `{ currency?, years[≤4 FY, ascending], rows[{ metricKey, cells[{
+  fiscalYear, valueNumeric?, sourceDocumentRef? }], yoyPct? }] }` for
+  `revenue` / `operating_profit` / `net_profit` (that order); a cell prefers a
+  `confirmed` fact, then the newest; `valueNumeric` is verbatim (never
+  re-parsed); `yoyPct` spans the two newest populated cells (`undefined` when a
+  side is missing or the base is 0); `sourceDocumentRef` is the navigable
+  provenance ticket (ADR 0104 decision 7).
+- `feed[]` — newest 6 `Official report` / `Public media` items (`published_at`
+  DESC, tie-breaker `id` DESC): `{ feedItemId, title, publishedAt, read,
+  itemType, sourceName, presentationKind }`; the full feed lives behind the
+  `{t:"feed"}` workshop tool.
+- `price?` — `{ candles[{date,open,high,low,close}], lastClose, asOf,
+  delta1mPct?, deltaYtdPct?, currency, emptyReason? }`: the last 66 sessions
+  present in the data (sliced from the `compute_price_context` series); `delta1mPct`
+  = last close vs the close 21 sessions back (needs ≥ 22 sessions); `deltaYtdPct`
+  = vs the last session of the prior calendar year (missing → undefined, never
+  0); `asOf` = last session date; `emptyReason` mirrors `get_price_context`.
+  Rendered on a LOG axis (house standard, ADR 0107 decision 4).
+- `coverage[]` — `CoveragePeriodRow` (the fundamentals-coverage read model, as-is).
+- `recommendations[]` — `AnalystRecommendationRow`, newest first (full history
+  behind `{t:"rekomendacje"}`).
+- `sectionErrors: { counters?, kpi?, feed?, price?, coverage?, recommendations? }`
+  — closed enum (`"unavailable"`), the F2 pattern; `counters` and `kpi` are
+  atomic sections (any sub-read failing degrades the whole section).
+
+MCP registry: `read`-tier, not exposed as an agent tool (round-trip
+optimization; agents have parity via the underlying list/read commands — the
+same posture as the company-context and today-view composed reads).
+
 ## Company Signal
 
 Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).

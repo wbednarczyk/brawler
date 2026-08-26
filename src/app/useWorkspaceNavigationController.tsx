@@ -1,7 +1,8 @@
-import { useState, type Dispatch, type KeyboardEvent, type SetStateAction } from "react";
+import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import { ExternalLink, Inbox } from "lucide-react";
 import type { Company, FeedItem, NotebookOrigin } from "../api/types";
 import type { Section } from "./navigation";
+import type { SpolkaTransition } from "./useSpolkaScreenWiring";
 
 type WorkspaceNavigationControllerInput = {
   companiesById: Record<string, Company>;
@@ -12,11 +13,19 @@ type WorkspaceNavigationControllerInput = {
   scopeInboxToCompany: (company: string) => void;
   selectedCompanyFeedItemId: string | null;
   selectedCompanyId: string | null;
+  /** Cross-nav to the Inbox (`openOriginFeedItem`/`openCompanyInboxFilter`)
+   * only — every company-workspace entry point goes through `navigate`
+   * instead (sol R1 finding 3), never this directly. */
   setActiveSection: Dispatch<SetStateAction<Section>>;
   setSelectedCompanyFeedItemId: Dispatch<SetStateAction<string | null>>;
+  /** Arrow-key row highlight only (`focusCompanyWorkspace`) — does not enter
+   * the Spółka screen, so it stays outside the guarded `navigate` seam. */
   setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
-  setCockpitInitialCompanyId: Dispatch<SetStateAction<string | null>>;
+  /** Commits companyId + section + optional tool + optional claim highlight
+   * as ONE guarded transition (the ToolHost seam, F3a S2, sol R1 finding 3)
+   * — used to raise the claims tool for `openCompanyClaims`. */
+  navigate: (transition: SpolkaTransition) => void;
 };
 
 export function useWorkspaceNavigationController({
@@ -29,28 +38,23 @@ export function useWorkspaceNavigationController({
   setSelectedCompanyFeedItemId,
   setSelectedCompanyId,
   setSelectedFeedItemId,
-  setCockpitInitialCompanyId,
+  navigate,
 }: WorkspaceNavigationControllerInput) {
-  // Today's `openCompanyClaims(companyId, claimId)` nav intent (F2 S3, plan
-  // decision 6): the curated dashboard opens "claims" pinned by default
-  // (`DASHBOARD_DEFAULT_KINDS`), so the intent only has to carry the claim id
-  // to highlight — self-contained here since nothing else needs to own it.
-  const [highlightClaimId, setHighlightClaimId] = useState<string | null>(null);
-
-  // Opening a company lands the curated dashboard scoped to it (ADR 0057): the
-  // cockpit is the single company deep-dive. The library selection is kept in
-  // sync so the row stays highlighted.
+  // Opening a company lands the Spółka screen (F3a S1, ADR 0107) — the
+  // company deep-dive destination as of F3a; the cockpit dashboard stays
+  // reachable via its own nav entry.
   function openCompanyWorkspace(company: Company) {
-    setSelectedCompanyId(company.id);
-    setCockpitInitialCompanyId(company.id);
-    setActiveSection("Cockpit");
+    navigate({ companyId: company.id, section: "Spolka" });
   }
 
+  // F3a S3 (ADR 0107 decision 2 mapping "Claims/highlightClaimId→{t:'tezy',
+  // claimId}"): the seam raises the claims TOOL itself, atomically with the
+  // company + section (sol R1 finding 3) — `highlightClaimId` alone (the
+  // pre-F3a shape, when the curated dashboard opened claims pinned by
+  // default) no longer surfaces the highlight anywhere, since a fresh Spółka
+  // screen opens on the core, not a tool.
   function openCompanyClaims(companyId: string, claimId: string) {
-    setSelectedCompanyId(companyId);
-    setCockpitInitialCompanyId(companyId);
-    setActiveSection("Cockpit");
-    setHighlightClaimId(claimId);
+    navigate({ companyId, section: "Spolka", tool: { t: "tezy", claimId }, highlightClaimId: claimId });
   }
 
   // Arrow-key navigation in the company library only moves the highlighted row;
@@ -195,7 +199,6 @@ export function useWorkspaceNavigationController({
 
   return {
     focusCompanyWorkspace,
-    highlightClaimId,
     openCompanyClaims,
     openCompanyInboxFilter,
     openCompanyWorkspace,

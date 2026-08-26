@@ -31,9 +31,10 @@
       "byProject": {}
     },
     "J4": {
-      "interactions": 13,
+      "_comment": "F3a S4 consent 5: redefined off the frozen view-creation flow (ADR 0107) — floor = first honest measurement of the new `Otwórz ekran: Report Season` path + 1, re-based 2026-08-26.",
+      "interactions": 10,
       "screenTransitions": 2,
-      "modalOpens": 3,
+      "modalOpens": 2,
       "contextLosses": 1,
       "byProject": {}
     },
@@ -45,16 +46,18 @@
       "byProject": {}
     },
     "J6": {
-      "interactions": 12,
+      "_comment": "F3a S4 consent 5: redefined off the frozen view-creation flow (ADR 0107) — floor = first honest measurement of the new `Spółka → Otwórz dziennik decyzji` path + 1, re-based 2026-08-26.",
+      "interactions": 10,
       "screenTransitions": 3,
-      "modalOpens": 2,
+      "modalOpens": 1,
       "contextLosses": 1,
       "byProject": {}
     },
     "J7": {
-      "interactions": 9,
-      "screenTransitions": 3,
-      "modalOpens": 3,
+      "_comment": "F3a S4 consent 5: redefined off the frozen view-creation flow (ADR 0107) — floor = first honest measurement of the new Events → Watchlists → Research → Spółka path + 1, re-based 2026-08-26.",
+      "interactions": 13,
+      "screenTransitions": 5,
+      "modalOpens": 4,
       "contextLosses": 1,
       "byProject": {}
     }

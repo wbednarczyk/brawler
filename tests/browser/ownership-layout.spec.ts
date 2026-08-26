@@ -12,13 +12,18 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
+// F3a S3 (ADR 0107): opening a company lands the Spółka screen; the Basic
+// info/ownership content is the `akcjonariat` workshop tool ("Otwórz
+// akcjonariat" — plan "Mapowanie WSZYSTKICH intencji": Metadata→akcjonariat).
 async function openBasicInfo(page: Page) {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  const cockpit = page.getByRole("region", { name: "Research cockpit" });
-  await expect(cockpit).toBeVisible();
-  await cockpit.getByRole("button", { name: "Basic info", exact: true }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.getByLabel("Basic info") });
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill("Open ownership");
+  await palette.getByRole("button", { name: "Open ownership", exact: true }).first().click();
+  const pane = page.getByRole("group", { name: "Workshop tool" });
   await expect(pane).toBeVisible();
   return pane;
 }

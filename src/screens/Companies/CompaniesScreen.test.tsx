@@ -254,18 +254,19 @@ describe("Companies screen workflows", () => {
     });
   });
 
-  it("opens the curated cockpit dashboard from a company row (ADR 0057)", async () => {
+  it("opens the Spółka screen from a company row (F3a S1, ADR 0107)", async () => {
     const user = userEvent.setup();
 
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
-    const companyRow = await screen.findByRole("button", { name: "Open GPW:CDR dashboard" });
+    const companyRow = await screen.findByRole("button", { name: "Open GPW:CDR" });
     await user.click(companyRow);
 
-    // The deep-dive is the cockpit dashboard now, not a tabbed workspace inside
-    // the Companies screen.
-    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+    // The deep-dive is the Spółka screen now (F3a S1), not the cockpit
+    // dashboard or a tabbed workspace inside the Companies screen.
+    expect(await screen.findByRole("region", { name: "Company view" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Company workspace")).not.toBeInTheDocument();
   });
 

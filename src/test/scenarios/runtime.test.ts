@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { companyId, COMPANY_SPECS, makeEvent, makeManagementClaim } from "./entities";
 import { createMockRuntime, knownCommands, READ_COMMANDS } from "./runtime";
 import { buildScenario } from "./scenarios";
+import type { CompanyView } from "../../api/generated/CompanyView";
 
 /** True for a populated array, a non-empty bucketed read model, or any object. */
 function isNonEmpty(value: unknown): boolean {
@@ -444,5 +446,120 @@ describe("mock runtime — controlled async (Radicle a9992e2)", () => {
     expect(b.controls.pending()).toEqual([]);
     const bCompanies = await b.invoke("list_companies", {});
     expect(Array.isArray(bCompanies)).toBe(true);
+  });
+});
+
+// get_company_view mock fixes (sol-review finding 7, F3a S1a). These bugs need
+// domain data (management claims, company events, feed items, analyst
+// recommendations) the shared fidelity corpus can't seed — mock_fidelity.rs
+// (out of this slice's ownership) has no write commands for those tables — so
+// they're pinned directly against the mock runtime here instead. Rust's own
+// counters/price/recommendations behavior is pinned by company_view_tests.rs.
+// The price-delta zero-division guard (also fixed in this pass) has no case
+// here: the mock's own `get_price_context` handler always returns an empty
+// `history: []` regardless of seeding (runtime.ts, "get_price_context"), so
+// that branch of `get_company_view`'s price section is unreachable through
+// `createMockRuntime` today — the guard mirrors Rust's `compute_price`
+// semantics defensively for whenever that handler grows real history.
+describe("get_company_view mock — sol-review finding 7 fixes", () => {
+  it("throws the Rust-shaped error for an unknown company instead of a blank identity", async () => {
+    const runtime = createMockRuntime("minimal");
+    await expect(runtime.invoke("get_company_view", { companyId: "company_does_not_exist" })).rejects.toThrow(
+      "no tracked company for id company_does_not_exist",
+    );
+  });
+
+  it("counts open management claims and upcoming scheduled events", async () => {
+    const runtime = createMockRuntime("minimal");
+    const spec = COMPANY_SPECS[0];
+    const cid = companyId(spec);
+    expect(runtime.data.companies.some((c) => c.id === cid), "fixture company present").toBe(true);
+    runtime.data.managementClaims = [makeManagementClaim(spec)]; // status: "pending"
+    runtime.data.events = [makeEvent(spec)]; // eventDate 2026-06-20, status: "scheduled" — within SAMPLE_NOW's 30d window
+
+    const view = (await runtime.invoke("get_company_view", { companyId: cid })) as CompanyView;
+    expect(view.counters?.claims.open).toBe(1);
+    expect(view.counters?.events.upcoming).toBe(1);
+  });
+
+  it("feed strip is the newest 6 official-report/public-media items, publishedAt DESC then id DESC", async () => {
+    const runtime = createMockRuntime("minimal");
+    const spec = COMPANY_SPECS[0];
+    const cid = companyId(spec);
+    const company = runtime.data.companies.find((c) => c.id === cid);
+    if (!company) throw new Error("fixture company missing");
+
+    const item = (id: string, publishedAt: string, type: string) => ({
+      id,
+      company: company.qualifiedTicker,
+      type,
+      source: "GPW ESPI/EBI",
+      time: "Today 09:12",
+      title: id,
+      unread: false,
+      saved: false,
+      sourceUrl: `https://example.test/${id}`,
+      language: "pl",
+      publishedAt,
+      fetchedAt: publishedAt,
+      attribution: "GPW",
+      summary: id,
+      bodyText: id,
+      attachments: [],
+      presentationKind: "filing" as const,
+    });
+    runtime.data.feedItems = [
+      item("f1", "2026-05-01T00:00:00Z", "Official report"),
+      item("f2", "2026-05-02T00:00:00Z", "Public media"),
+      item("f3", "2026-05-03T00:00:00Z", "Official report"),
+      item("f4", "2026-05-04T00:00:00Z", "Public media"),
+      item("f5", "2026-05-05T00:00:00Z", "Official report"),
+      item("f6", "2026-05-06T00:00:00Z", "Public media"),
+      item("f7", "2026-05-07T00:00:00Z", "Official report"),
+      // Excluded item_type — never counted toward the cap.
+      item("fx", "2026-05-08T00:00:00Z", "News"),
+    ];
+
+    const view = (await runtime.invoke("get_company_view", { companyId: cid })) as CompanyView;
+    expect(view.feed.map((f) => f.feedItemId)).toEqual(["f7", "f6", "f5", "f4", "f3", "f2"]);
+  });
+
+  it("recommendations are capped at 3, newest first, matching Rust's RECOMMENDATIONS_LIMIT", async () => {
+    const runtime = createMockRuntime("minimal");
+    const spec = COMPANY_SPECS[0];
+    const cid = companyId(spec);
+    const entry = (firm: string, publishedAt: string) => ({
+      firm,
+      analyst: null,
+      rating: "trzymaj",
+      ratingPrev: null,
+      direction: "initiate",
+      targetPrice: null,
+      targetCurrency: null,
+      targetPrev: null,
+      priceAtIssue: null,
+      publishedAt,
+      reportUrl: null,
+      sourceUrl: "https://example.test/rec",
+    });
+    runtime.data.analystRecommendationsByCompany = {
+      ...runtime.data.analystRecommendationsByCompany,
+      [cid]: {
+        companyId: cid,
+        entries: [
+          entry("A", "2026-06-01T00:00:00"),
+          entry("B", "2026-05-01T00:00:00"),
+          entry("C", "2026-04-01T00:00:00"),
+          entry("D", "2026-03-01T00:00:00"),
+          entry("E", "2026-02-01T00:00:00"),
+        ],
+        latestTarget: null,
+        lastRefreshedAt: "2026-06-01T00:00:00",
+      },
+    } as typeof runtime.data.analystRecommendationsByCompany;
+
+    const view = (await runtime.invoke("get_company_view", { companyId: cid })) as CompanyView;
+    expect(view.recommendations).toHaveLength(3);
+    expect(view.recommendations.map((r) => r.firm)).toEqual(["A", "B", "C"]);
   });
 });

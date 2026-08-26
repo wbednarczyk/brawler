@@ -1,13 +1,13 @@
 import { test, expect, openApp, expectNoPageOverflow, setPaneSize } from "./helpers/harness";
 
-// Analyst-recommendations pinned panel (v0.58 A3, ADR 0073). The first red
+// Analyst-recommendations workshop tool (v0.58 A3, ADR 0073). The first red
 // journey test from the experience contract: "pinned panel lists attributed
 // recommendations for the selected company" (J6 buy/pass), plus the signal badge
 // in the feed (J1 morning review) and a narrow-pane inner-scroll overflow guard.
-// Opening a company lands the cockpit dashboard with the view company set, so the
-// palette-added `analystRecommendations` FOLLOW panel resolves to that company;
-// the dual-execution mock runtime serves the seeded history (CD PROJEKT
-// populated, ORLEN empty).
+// F3a S3 (ADR 0107): opening a company lands the Spółka screen directly; the
+// Recommendations tool opens via the ⌘K palette's "Open recommendations" entry
+// (SPOLKA_TOOL_COMMANDS) — the dual-execution mock runtime serves the seeded
+// history (CD PROJEKT populated, ORLEN empty).
 
 async function addRecommendationsPanel(
   page: import("@playwright/test").Page,
@@ -19,14 +19,11 @@ async function addRecommendationsPanel(
     .getByRole("button", { name: "Companies" })
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
-
-  await page.getByRole("button", { name: "Add panel" }).click();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open panel: Analyst recommendations");
-  await palette
-    .getByRole("button", { name: "Open panel: Analyst recommendations", exact: true })
-    .first()
-    .click();
+  await palette.getByLabel("Search commands").fill("Open recommendations");
+  await palette.getByRole("button", { name: "Open recommendations", exact: true }).first().click();
 }
 
 test("pinned panel lists attributed recommendations for the selected company", async ({ page }) => {
@@ -72,8 +69,10 @@ test("the recommendation panel does not overflow at a ~230px pane (inner scroll)
   const panel = page.locator(".analyst-recs-panel");
   await expect(panel).toBeVisible();
 
-  // Force the hosting pane to the quarter-ultrawide narrow width (frame 7).
-  const pane = page.locator(".cockpit-pane", { has: panel });
+  // Force the hosting size-container to the quarter-ultrawide narrow width
+  // (frame 7) — `.spolka-layout`, not the tool group itself, carries the
+  // density contracts' `container: pane / size` (spolka.css).
+  const pane = page.locator(".spolka-layout");
   await setPaneSize(page, { width: 230, pane });
 
   // The list + rows must wrap inside the pane, never scroll horizontally.

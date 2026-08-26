@@ -13,6 +13,7 @@ import {
 } from "../../api/managementClaims";
 import { formatFinancialValue } from "../format/financialValue";
 import { useLocale } from "../locale";
+import { useToolHost } from "../toolHost";
 import {
   Button,
   EmptyState,
@@ -82,6 +83,22 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
   // today, but a double dispatch is a latent double-write on any
   // non-idempotent successor — block re-entry while a save is pending.
   const [savingVerdict, setSavingVerdict] = useState(false);
+
+  // Register the claims composer draft with the Spółka workshop's dirty gate
+  // (F3a S2, ADR 0107) — a no-op when hosted outside it (e.g. the frozen
+  // Cockpit dockview). Dirty = composer open with any field typed.
+  const { register } = useToolHost();
+  useEffect(() => {
+    return register({
+      isDirty: () => composerOpen && (statement.trim() !== "" || dueYear !== "" || duePeriod !== ""),
+      discard: () => {
+        setComposerOpen(false);
+        setStatement("");
+        setDueYear("");
+        setDuePeriod("");
+      },
+    });
+  }, [register, composerOpen, statement, dueYear, duePeriod]);
 
   const reload = useCallback(async () => {
     try {
@@ -214,6 +231,11 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
         <div className="claims-main">
           <Button
             className="claims-add-toggle compact-button"
+            // The Spółka workshop's `tezy` tool primary action (ADR 0081 Q4,
+            // plan §6 "W otwartym narzędziu: primary narzędzia, max: 1") — the
+            // queue's Delivered/Missed pair stays unmarked (a deliberate peer
+            // binary, not this surface's single primary).
+            data-ux-primary-action="true"
             onClick={() => setComposerOpen((current) => !current)}
             aria-expanded={composerOpen}
           >

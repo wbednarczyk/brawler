@@ -79,6 +79,10 @@ const PanelContentContext = createContext<Map<string, () => ReactNode>>(new Map(
 // tab's label/disabled/onToggle stay current as the view company / panel set
 // changes; absent id ⇒ no pin button (non-company-scoped panels).
 const PanelPinContext = createContext<Map<string, DockPanelPin>>(new Map());
+// Layout-structure freeze (F3a S3, ADR 0107 decision 5): true while panel
+// close/drag affordances must be hidden — domain editing inside a panel stays
+// unaffected, only the dock's own arrangement is locked.
+const FrozenContext = createContext(false);
 
 function DockPanel(props: IDockviewPanelProps) {
   const contents = useContext(PanelContentContext);
@@ -99,6 +103,7 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
   const [title, setTitle] = useState(api.title);
   const pins = useContext(PanelPinContext);
   const pin = pins.get(api.id);
+  const frozen = useContext(FrozenContext);
   useEffect(() => {
     const a = api.onDidActiveChange(() => setActive(api.isActive));
     const t = api.onDidTitleChange(() => setTitle(api.title));
@@ -120,9 +125,11 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
       >
         {title}
       </button>
-      {pin ? (
+      {pin && !frozen ? (
         // Sibling <button> (not nested in the activate control): follow/pin toggle
-        // for company-scoped panels (U-Ra). aria-pressed carries the pinned state.
+        // for company-scoped panels (U-Ra). Hidden while frozen (F3a S3/R1
+        // finding 4, ADR 0107 decision 5): toggling swaps the panel's id — a
+        // structure mutation the freeze removes, same as tab close above.
         <button
           type="button"
           className="cockpit-tab-pin"
@@ -138,23 +145,30 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
           <Pin size={12} />
         </button>
       ) : null}
-      <button
-        type="button"
-        className="cockpit-tab-close"
-        aria-label={`Close ${title}`}
-        title={`Close ${title}`}
-        onClick={() => api.close()}
-      >
-        ×
-      </button>
+      {frozen ? null : (
+        <button
+          type="button"
+          className="cockpit-tab-close"
+          aria-label={`Close ${title}`}
+          title={`Close ${title}`}
+          onClick={() => api.close()}
+        >
+          ×
+        </button>
+      )}
     </span>
   );
 }
 
 // Per-group header actions — maximize and float. All accessible buttons.
+// Float is hidden while frozen (F3a S3/R1 finding 4, ADR 0107 decision 5): it
+// detaches the group into its own floating window, a structure mutation the
+// freeze removes. Maximize is a view-only toggle (nothing is added, removed,
+// or persisted) so it stays available.
 function GroupActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
   const { text } = useLocale();
+  const frozen = useContext(FrozenContext);
   // `title` gives the visible hover tooltip these tiny icon buttons were missing;
   // `aria-label` keeps the same text for screen readers.
   const maximizeLabel = text("Maximize panel group");
@@ -172,14 +186,16 @@ function GroupActions(props: IDockviewHeaderActionsProps) {
       >
         <Maximize2 size={13} />
       </button>
-      <button
-        type="button"
-        aria-label={floatLabel}
-        title={floatLabel}
-        onClick={() => containerApi.addFloatingGroup(group)}
-      >
-        <PictureInPicture2 size={13} />
-      </button>
+      {frozen ? null : (
+        <button
+          type="button"
+          aria-label={floatLabel}
+          title={floatLabel}
+          onClick={() => containerApi.addFloatingGroup(group)}
+        >
+          <PictureInPicture2 size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -316,6 +332,9 @@ type DockLayoutProps = {
    * times the dock (re)initializes underneath.
    */
   activatePanelId?: string | null;
+  /** Layout-structure freeze (F3a S3, ADR 0107 decision 5): hides tab close
+   *  buttons and disables drag/drop. Domain content inside panels is unaffected. */
+  frozen?: boolean;
 };
 
 // Imperative handle for named-layout save/restore (the geometry — splits/tabs —
@@ -326,7 +345,7 @@ export type DockLayoutHandle = {
 };
 
 export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function DockLayout(
-  { panels, storageKey, resetNonce, grid, onClosePanel, activatePanelId = null },
+  { panels, storageKey, resetNonce, grid, onClosePanel, activatePanelId = null, frozen = false },
   ref,
 ) {
   const contents = new Map(panels.map((panel) => [panel.id, panel.render]));
@@ -351,6 +370,8 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
   gridRef.current = grid;
   const onCloseRef = useRef(onClosePanel);
   onCloseRef.current = onClosePanel;
+  const frozenRef = useRef(frozen);
+  frozenRef.current = frozen;
   // True while WE rebuild (reset / restore) so programmatic removals are not
   // mistaken for user closes.
   const rebuildingRef = useRef(false);
@@ -391,7 +412,7 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
           break;
         case "w":
         case "W":
-          if (isEditableTarget(event.target)) return;
+          if (frozenRef.current || isEditableTarget(event.target)) return;
           event.preventDefault();
           api.activePanel?.api.close();
           break;
@@ -507,8 +528,13 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
     event.api.onDidRemovePanel((panel) => {
       if (!rebuildingRef.current) onCloseRef.current?.(panel.id);
     });
-    // Persist geometry whenever the user drags/splits/closes.
+    // Persist geometry whenever the user drags/splits/closes — never while
+    // frozen (F3a S3/R1 finding 4, ADR 0107 decision 5): drag/close are hidden,
+    // but dockview still fires this event for programmatic reconciliation
+    // (pin-toggle id swaps, spec-driven add/remove), and writing THAT to
+    // storage would persist a structure change through a back door.
     event.api.onDidLayoutChange(() => {
+      if (frozenRef.current) return;
       const api = apiRef.current;
       if (!api) return;
       writeLayout(storageKey, {
@@ -675,16 +701,19 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
   return (
     <PanelContentContext.Provider value={contents}>
       <PanelPinContext.Provider value={pins}>
-        <div ref={containerRef} className="cockpit-dock dockview-theme-brawler">
-          <DockviewReact
-            key={dockNonce}
-            components={DOCK_COMPONENTS}
-            tabComponents={TAB_COMPONENTS}
-            defaultTabComponent={AccessibleTab}
-            rightHeaderActionsComponent={GroupActions}
-            onReady={onReady}
-          />
-        </div>
+        <FrozenContext.Provider value={frozen}>
+          <div ref={containerRef} className="cockpit-dock dockview-theme-brawler">
+            <DockviewReact
+              key={dockNonce}
+              components={DOCK_COMPONENTS}
+              tabComponents={TAB_COMPONENTS}
+              defaultTabComponent={AccessibleTab}
+              rightHeaderActionsComponent={GroupActions}
+              onReady={onReady}
+              disableDnd={frozen}
+            />
+          </div>
+        </FrozenContext.Provider>
       </PanelPinContext.Provider>
     </PanelContentContext.Provider>
   );

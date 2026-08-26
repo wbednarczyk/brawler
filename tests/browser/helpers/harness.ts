@@ -61,27 +61,26 @@ export async function openInbox(page: Page) {
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 }
 
-// Open a cockpit-hosted global screen (ADR 0054): Research / Notebook / Events /
-// Report Season / Watchlists no longer have their own sidebar button — they live
-// as cockpit panels. There is also no standalone blank "Cockpit" nav entry
-// anymore (ADR 0057 decision 5): the entry point is the "+ New view" creator, so
-// this helper creates a throwaway named view, then fills its first grid cell
-// from the panel palette. `label` is the panel name as it appears in the palette
-// ("Notebook", "Research", "Events", "Report Season").
+// Open a global screen (Research / Notebooks / Events / Report Season /
+// Decision journal): a standalone route reached via the global ⌘K palette's
+// "Open screen: …" entry (plan "Trasy powierzchni globalnych po F3a", ADR
+// 0107) — no longer a cockpit-hosted panel (the freeform cockpit is frozen,
+// F3a S3, ADR 0107 decision 5: "+ New view"/"Add panel" no longer exist).
+// `label` is the screen name as it appears in the palette ("Notebooks",
+// "Research", "Events", "Report Season", "Decision journal").
 export async function openCockpitPanel(page: Page, label: string) {
-  const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
-  await nav.getByRole("button", { name: "New view" }).click();
-  const createModal = page.getByRole("dialog", { name: "New view" });
-  await createModal.getByLabel("View name").fill(`${label} test view`);
-  await createModal.getByRole("button", { name: "Create view" }).click();
-  await expect(page.getByLabel("Research cockpit")).toBeVisible();
-  // Wait for the fresh grid to render (the layout-apply effect fires just after
-  // mount) before targeting a cell, so "Add panel" doesn't race an empty grid.
-  await expect(page.getByText("Pick a panel").first()).toBeVisible();
-  await page.getByRole("button", { name: "Add panel" }).click();
+  // ⌘K is suppressed while an editable control holds focus and can race the
+  // shortcut listener's mount on a slow CI runner (shard 4/4 flake, PR #432):
+  // release focus first and press once more if the dialog does not appear.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
+  await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill(`Open panel: ${label}`);
-  await palette.getByRole("button", { name: `Open panel: ${label}`, exact: true }).first().click();
+  if (!(await palette.isVisible().catch(() => false))) {
+    await page.waitForTimeout(500);
+    if (!(await palette.isVisible().catch(() => false))) await page.keyboard.press("Control+K");
+  }
+  await palette.getByLabel("Search commands").fill(`Open screen: ${label}`);
+  await palette.getByRole("button", { name: `Open screen: ${label}`, exact: true }).first().click();
 }
 
 // No element whose content escapes its box (overflow-x visible) is wider than its

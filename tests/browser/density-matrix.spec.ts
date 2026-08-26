@@ -50,22 +50,23 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-// Reference opener: the company Notebook panel owns the "existing container
+// Reference opener: the company Notebook tool owns the "existing container
 // query" the Notebook contract row references — the `.notebook-workspace`
-// list∥detail grid in CompanyNotebookSection. NOTE: the palette entry
-// `openCockpitPanel("Notebook")` opens the GLOBAL NotebooksScreen (a rigid
-// 3-column grid with no container query yet — its contract is a separate cluster
-// task), so the tier behavior is exercised through the per-company dashboard
-// panel instead, which hosts the retiered query (notebook-shared.css).
+// list∥detail grid in CompanyNotebookSection. NOTE: the palette's global "Open
+// screen: Notebooks" entry opens the GLOBAL NotebooksScreen (a rigid 3-column
+// grid with no container query yet — its contract is a separate cluster task),
+// so the tier behavior is exercised through the Spółka screen's "notatnik"
+// workshop tool instead (F3a S2/S3, ADR 0107), which hosts the SAME
+// `CockpitCompanyNotebookPanel` (and its retiered notebook-shared.css query)
+// the pre-freeze cockpit "Notebook" panel used.
 async function openCompanyNotebook(page: Page): Promise<PaneLocator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
-  await page.getByRole("button", { name: "Open GPW:CDR dashboard" }).click();
-  const cockpit = page.getByLabel("Research cockpit");
-  await expect(cockpit).toBeVisible();
-  // dockview mounts only the active panel body per group, so activate the tab.
-  await cockpit.getByRole("button", { name: "Notebook", exact: true }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.locator(".notebook-workspace") });
+  await page.getByRole("button", { name: "Open GPW:CDR" }).click();
+  await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
+  await page.getByRole("button", { name: "Open notebook", exact: true }).click();
+  const pane = page.locator(".spolka-layout");
   await expect(pane).toBeVisible();
+  await expect(pane.locator(".notebook-workspace")).toBeVisible();
   return pane;
 }
 

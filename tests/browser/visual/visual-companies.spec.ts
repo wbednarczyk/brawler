@@ -10,35 +10,40 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-async function openCompanyDashboard(page: Page, tabName: string, panelLabel: string): Promise<Locator> {
+// F3a S3 (ADR 0107): opening a company lands the Spółka screen; each panel is
+// now a workshop tool, opened via the ⌘K palette.
+async function openCompanyTool(page: Page, toolLabel: string): Promise<Locator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-  const cockpit = page.getByRole("region", { name: "Research cockpit" });
-  await expect(cockpit).toBeVisible();
-  await cockpit.getByRole("button", { name: tabName, exact: true }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.getByLabel(panelLabel) });
-  await expect(pane).toBeVisible();
-  return pane;
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill(toolLabel);
+  await palette.getByRole("button", { name: toolLabel, exact: true }).first().click();
+  // `.spolka-layout`, not the tool group itself, carries the density
+  // contracts' `container: pane / size` (spolka.css).
+  await expect(page.getByRole("group", { name: "Workshop tool" })).toBeVisible();
+  return page.locator(".spolka-layout");
 }
 
 test.describe("visual — company dashboard panels", () => {
   test("Fundamentals across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboard(page, "Fundamentals", "Company fundamentals");
+    const pane = await openCompanyTool(page, "Open fundamentals");
     await expect(pane.getByLabel("Financial facts matrix")).toBeVisible();
     await shootPanel(page, pane, "fundamentals");
   });
 
   test("Basic info across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboard(page, "Basic info", "Basic info");
+    const pane = await openCompanyTool(page, "Open ownership");
     await expect(pane.getByText("ISIN")).toBeVisible();
     await shootPanel(page, pane, "basic-info");
   });
 
   test("Feed (company) across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboard(page, "Feed", "Company feed");
+    const pane = await openCompanyTool(page, "Open feed");
     // Select a feed item so the detail renders (split at L, stacked/overlay else).
     await pane.locator("[data-company-feed-row]").first().click();
     await expect(pane.locator(".company-feed-detail")).toBeVisible();

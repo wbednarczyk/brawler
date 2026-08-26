@@ -79,7 +79,7 @@ for (const drive of new Set([...vhdxHostMounts(), "/mnt/c"])) {
 }
 
 const remedy = [
-  "  → make disk-clean       safe: package-manager caches, mutants artifacts, old nix generations, journal, fstrim",
+  "  → make disk-clean       safe: cargo target/debug (the usual 100+ GiB hog — check `du -sh src-tauri/target/debug`), package-manager caches, mutants artifacts, old nix generations, journal, fstrim",
   "  → make disk-clean-deep  adds: cargo target/ (~tens of GiB, forces a full rebuild) + full nix GC",
   "  → WSL only: freeing space inside WSL does NOT shrink the vhdx on the host —",
   "    from Windows PowerShell (admin): wsl --shutdown; wsl --manage <distro> --set-sparse true",

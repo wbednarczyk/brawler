@@ -119,7 +119,7 @@ export function CustomKpiManager({ companyId, onDefinitionsChange }: CustomKpiMa
             className="compact-button"
             disabled={busy || !metricKey.trim() || !label.trim()}
             type="submit"
-            variant="primary"
+            variant="secondary"
           >
             <Plus size={15} />
             {text("Add KPI")}

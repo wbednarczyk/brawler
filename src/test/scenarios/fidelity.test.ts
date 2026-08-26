@@ -18,6 +18,13 @@ interface Step {
   expectField?: Record<string, unknown>;
   expectContains?: Record<string, unknown>;
   expectAbsent?: Record<string, unknown>;
+  /**
+   * Dotted-path deep-equality pins (e.g. `"kpi.rows.0.yoyPct"`), for nested
+   * fields `expectField`'s shallow `===` can't reach. Read by BOTH replayers
+   * (mock_fidelity.rs implements the same dotted-path lookup), so a deep pin
+   * is a dual-execution assertion like `expectField`.
+   */
+  expectDeep?: Record<string, unknown>;
 }
 interface Journey {
   name: string;
@@ -39,6 +46,14 @@ function substitute(value: unknown, caps: Record<string, unknown>): unknown {
   return value;
 }
 
+/** Resolve a dotted path (numeric segments index into arrays) against `value`. */
+function getByPath(value: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>((node, key) => {
+    if (node === null || typeof node !== "object") return undefined;
+    return (node as Record<string, unknown>)[key];
+  }, value);
+}
+
 /** True when `actual` is an object containing every key/value pair in `subset`. */
 function isSuperset(actual: unknown, subset: Record<string, unknown>): boolean {
   if (!actual || typeof actual !== "object") return false;
@@ -53,6 +68,12 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
   for (const journey of journeys) {
     it(`mock runtime satisfies: ${journey.name}`, async () => {
       const runtime = createMockRuntime("minimal");
+      // The corpus assumes a fresh `cockpit_layouts` table (matching the real
+      // backend's clean migration), but "minimal" now seeds one legacy
+      // dashboard row for the app-facing nav tests (F3a S3, the "Widoki"
+      // sidebar group) — clear it here so ordinal/list assertions stay
+      // symmetric with the Rust side.
+      runtime.data.cockpitLayouts = [];
       const caps: Record<string, unknown> = {};
 
       for (const step of journey.steps) {
@@ -78,6 +99,11 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
             (result as unknown[]).every((item) => !isSuperset(item, subset)),
             `${step.command} expectAbsent`,
           ).toBe(true);
+        }
+        if (step.expectDeep) {
+          for (const [path, expected] of Object.entries(step.expectDeep)) {
+            expect(getByPath(result, path), `${step.command} expectDeep ${path}`).toEqual(expected);
+          }
         }
       }
     });

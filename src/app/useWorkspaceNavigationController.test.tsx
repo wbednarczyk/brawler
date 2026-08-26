@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
 import type { Section } from "./navigation";
+import type { SpolkaTransition } from "./useSpolkaScreenWiring";
 import { COMPANY_SPECS, makeCompany } from "../test/scenarios/entities";
 
 const company = makeCompany(COMPANY_SPECS[0]);
@@ -11,7 +12,7 @@ const company = makeCompany(COMPANY_SPECS[0]);
 function useHarness() {
   const [activeSection, setActiveSection] = useState<Section>("Today");
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<string | null>(null);
+  const navigateCallsRef = useRef<SpolkaTransition[]>([]);
 
   const controller = useWorkspaceNavigationController({
     companiesById: { [company.id]: company },
@@ -23,28 +24,57 @@ function useHarness() {
     setSelectedCompanyFeedItemId: () => {},
     setSelectedCompanyId,
     setSelectedFeedItemId: () => {},
-    setCockpitInitialCompanyId,
+    // A harness stand-in for AppStateRoot's real `navigate` (one guarded
+    // commit) — records the transition AND applies its company/section so
+    // existing assertions on `activeSection`/`selectedCompanyId` still hold.
+    navigate: (transition) => {
+      navigateCallsRef.current.push(transition);
+      setSelectedCompanyId(transition.companyId);
+      setActiveSection(transition.section);
+    },
   });
 
-  return { controller, activeSection, selectedCompanyId, cockpitInitialCompanyId };
+  return {
+    controller,
+    activeSection,
+    selectedCompanyId,
+    navigateCalls: navigateCallsRef.current,
+  };
 }
 
 describe("useWorkspaceNavigationController — openCompanyClaims (F2 S3 nav seam)", () => {
-  it("opens the company's curated dashboard and carries the claim id to highlight", () => {
+  it("commits company, section, tool and the claim highlight in ONE navigate() call", () => {
     const { result } = renderHook(() => useHarness());
 
     act(() => {
       result.current.controller.openCompanyClaims(company.id, "claim_target");
     });
 
-    expect(result.current.activeSection).toBe("Cockpit");
+    // F3a S1 (ADR 0107): claims open the Spółka screen now, not the cockpit
+    // directly. F3a S2 (sol R1 finding 3): company + section + tool +
+    // highlight are ONE atomic transition, not company/section set ahead of
+    // the tool open.
+    expect(result.current.activeSection).toBe("Spolka");
     expect(result.current.selectedCompanyId).toBe(company.id);
-    expect(result.current.cockpitInitialCompanyId).toBe(company.id);
-    expect(result.current.controller.highlightClaimId).toBe("claim_target");
+    expect(result.current.navigateCalls).toEqual([
+      {
+        companyId: company.id,
+        section: "Spolka",
+        tool: { t: "tezy", claimId: "claim_target" },
+        highlightClaimId: "claim_target",
+      },
+    ]);
   });
+});
 
-  it("starts with no highlight (openCompanyWorkspace alone never sets one)", () => {
+describe("useWorkspaceNavigationController — openCompanyWorkspace", () => {
+  it("commits company + section with no tool and no claim highlight", () => {
     const { result } = renderHook(() => useHarness());
-    expect(result.current.controller.highlightClaimId).toBeNull();
+
+    act(() => {
+      result.current.controller.openCompanyWorkspace(company);
+    });
+
+    expect(result.current.navigateCalls).toEqual([{ companyId: company.id, section: "Spolka" }]);
   });
 });

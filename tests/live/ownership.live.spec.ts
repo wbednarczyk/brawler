@@ -25,7 +25,7 @@ test("Ownership section renders in Basic info on the live app", async ({}) => {
   // Self-contained navigation: the suite may start on Today — open the
   // company-scoped Dashboard first (same entry research-nav exercises).
   await page
-    .getByRole("button", { name: /^(Dashboard|Pulpit)/ })
+    .getByRole("button", { name: /^(Legacy dashboard|Dawny dashboard)/ })
     .first()
     .click();
   await expect(page.getByLabel(/Research cockpit|Kokpit/)).toBeVisible({ timeout: 15_000 });

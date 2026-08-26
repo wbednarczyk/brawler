@@ -5,8 +5,9 @@ company — who rated it, what the rating says, the target price, and when — a
 **attributed third-party opinions**. The app quotes them; it never turns them
 into its own advice, and they never leak into scores or valuation.
 
-Add the panel to any cockpit view from the panel picker (it is **opt-in**, not
-part of the default dashboard).
+The [Spółka screen's](company-view.md) core has a compact Recommendations
+card at rest; open the full history with its **Open recommendations** button
+or the matching workshop-bar tool.
 
 ## What each entry shows
 

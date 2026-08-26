@@ -270,6 +270,8 @@ check-local:
 # from Windows PowerShell (admin): wsl --shutdown; wsl --manage <distro> --set-sparse true
 disk-clean:
 	rm -rf src-tauri/mutants.out src-tauri/mutants.out.old
+	# Stale cargo debug artifacts are the usual 100+ GiB hog (owner harvest 2026-08-26): a build cache, never data — first thing to drop, ~15 min rebuild.
+	rm -rf src-tauri/target/debug
 	rm -rf $(HOME)/.npm/_cacache $(HOME)/.cache/pnpm $(HOME)/.cache/pip $(HOME)/.cache/go-build $(HOME)/.cache/node-gyp $(HOME)/.cache/typescript $(HOME)/.cache/mesa_shader_cache
 	env -u LD_LIBRARY_PATH nix-collect-garbage --delete-older-than 14d
 	@sudo -n journalctl --vacuum-size=50M 2>/dev/null || printf "disk-clean: journal vacuum skipped (no passwordless sudo)\n"

@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import { act, render } from "@testing-library/react";
 import {
   expect,
   invoke,
@@ -9,6 +10,10 @@ import {
   waitFor,
   within,
 } from "../../test/appWorkflowHarness";
+import { ResearchScreen, type ResearchScreenProps } from "./ResearchScreen";
+import { ResearchProvider } from "../../app/state/screenViewModels";
+import { ToolHostContext, type ToolHandle } from "../../shared/toolHost";
+import { COMPANY_SPECS, makeCompany } from "../../test/scenarios/entities";
 
 describe("Research screen workflows", () => {
   it("opens a feed evidence item in Inbox without hiding the selected item", async () => {
@@ -188,11 +193,13 @@ describe("Research screen workflows", () => {
     expect(screen.getByText("Linked evidence")).toBeInTheDocument();
   });
 
-  it("opens research question evidence in the Dashboard evidence preset (not Notebooks)", async () => {
+  it("opens research question evidence in the Spółka research tool (not Notebooks)", async () => {
     const user = userEvent.setup();
 
-    // Clicking a research_question evidence item opens the company Dashboard on
-    // the "evidence" preset, never Notebooks (epic c793ca1).
+    // Clicking a research_question evidence item opens the Spółka `research`
+    // tool (F3a S3, ADR 0107 mapping "preset 'evidence'→research" — the
+    // frozen cockpit's "evidence" preset is gone with the freeze, decision
+    // 5), never Notebooks (epic c793ca1).
     renderApp({ section: "Research" });
 
     await user.click(await screen.findByRole("button", { name: "Add question" }));
@@ -217,11 +224,13 @@ describe("Research screen workflows", () => {
 
     await user.click(within(questionEvidenceRow as HTMLElement).getByTitle("Open evidence"));
 
-    // Landed in the Dashboard (the Research cockpit region), not the Notebooks screen.
-    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+    // Landed on the Spółka screen with the research tool raised, not the
+    // Notebooks screen and not the (now frozen) cockpit.
+    const company = await screen.findByRole("region", { name: "Company view" });
+    const tool = await within(company).findByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "research");
+    expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Notebooks" })).not.toBeInTheDocument();
-    // The Preset selector reflects the evidence preset it was opened on.
-    expect(screen.getByLabelText("Preset")).toHaveValue("evidence");
   });
 
   it("confirms in place and deletes a selected research question", async () => {
@@ -423,5 +432,118 @@ describe("Research screen workflows", () => {
     queueResizer.focus();
     await user.keyboard("{ArrowRight}");
     expect(queueResizer).toHaveAttribute("aria-valuenow", "244");
+  });
+});
+
+// R1 findings 1 (register the question/reminder drafts) and 10 (a hosted
+// panel owns no landmark of its own — role="group" inside the Spółka
+// workshop's ToolHost, ADR 0107). A lighter, isolated render (no `renderApp`
+// scenario runtime needed) — `ResearchScreen` only reads `ResearchProvider`
+// + `ToolHostContext`.
+function researchStub(overrides: Partial<ResearchScreenProps> = {}): ResearchScreenProps {
+  const company = makeCompany(COMPANY_SPECS.find((spec) => spec.key === "cdr")!);
+  return {
+    companies: [company],
+    watchlists: [],
+    watchlistMemberships: [],
+    mode: "company",
+    selectedCompanyId: company.id,
+    selectedWatchlistId: null,
+    selectedWatchlistCompanyId: null,
+    cascadeToCompanies: false,
+    selectedEvidenceTypes: [],
+    changedOnly: false,
+    timeline: null,
+    questions: [],
+    selectedQuestionId: null,
+    questionTitle: "",
+    questionBody: "",
+    questionLinks: [],
+    reminders: [],
+    error: null,
+    loading: false,
+    reviewInFlight: false,
+    questionInFlight: false,
+    reminderInFlight: false,
+    setMode: () => {},
+    setSelectedCompanyId: () => {},
+    setSelectedWatchlistId: () => {},
+    setSelectedWatchlistCompanyId: () => {},
+    setSelectedQuestionId: () => {},
+    setQuestionTitle: () => {},
+    setQuestionBody: () => {},
+    setCascadeToCompanies: () => {},
+    setChangedOnly: () => {},
+    toggleEvidenceType: () => {},
+    clearEvidenceTypes: () => {},
+    refreshTimeline: () => {},
+    markReviewed: () => {},
+    createQuestion: () => {},
+    updateQuestionStatus: () => {},
+    deleteQuestion: () => {},
+    linkEvidence: () => {},
+    unlinkEvidence: () => {},
+    createReminder: () => {},
+    completeReminder: () => {},
+    snoozeReminder: () => {},
+    reopenReminder: () => {},
+    deleteReminder: () => {},
+    openEvidence: () => {},
+    openEvidenceUrl: () => {},
+    formatTimestamp: (v) => v ?? "",
+    ...overrides,
+  };
+}
+
+describe("Research screen: hosted landmark + dirty draft (R1 findings 1, 10)", () => {
+  it("renders its own landmark when NOT hosted in the Spółka workshop", async () => {
+    render(
+      <ResearchProvider value={researchStub()}>
+        <ResearchScreen />
+      </ResearchProvider>,
+    );
+    expect(await screen.findByRole("region", { name: "Research" })).toBeInTheDocument();
+  });
+
+  it("renders role=group, no landmark, when hosted inside the Spółka workshop's .spolka-tool", async () => {
+    render(
+      <div className="spolka-tool">
+        <ResearchProvider value={researchStub()}>
+          <ResearchScreen />
+        </ResearchProvider>
+      </div>,
+    );
+    expect(await screen.findByRole("group", { name: "Research" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Research" })).not.toBeInTheDocument();
+  });
+
+  it("registers a dirty draft with the tool host", async () => {
+    const user = userEvent.setup();
+    let handle: ToolHandle | null = null;
+    const register = vi.fn((h: ToolHandle) => {
+      handle = h;
+      return () => {};
+    });
+    render(
+      <ToolHostContext.Provider value={{ register }}>
+        <ResearchProvider value={researchStub()}>
+          <ResearchScreen />
+        </ResearchProvider>
+      </ToolHostContext.Provider>,
+    );
+    expect(register).toHaveBeenCalled();
+    expect(handle!.isDirty()).toBe(false);
+
+    await user.click(await screen.findByRole("button", { name: "Add reminder" }));
+    await user.type(screen.getByLabelText("Reminder title"), "Check Q3 guidance");
+    expect(handle!.isDirty()).toBe(true);
+
+    act(() => {
+      handle!.discard();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Add research reminder" })).not.toBeInTheDocument();
+    });
   });
 });

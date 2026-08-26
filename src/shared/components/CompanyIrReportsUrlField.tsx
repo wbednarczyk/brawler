@@ -3,6 +3,7 @@ import { getCompanyIrReportsUrl, setCompanyIrReportsUrl } from "../../api/ir";
 import { Button } from "./Button";
 import { ErrorText, SectionHeader, TextField } from "../../ui";
 import { useLocale } from "../locale";
+import { useToolHost } from "../toolHost";
 
 export type CompanyIrReportsUrlFieldProps = {
   companyId: string;
@@ -49,8 +50,15 @@ export function CompanyIrReportsUrlField({ companyId }: CompanyIrReportsUrlField
 
   const dirty = (value.trim() || null) !== saved;
 
+  // Registers this URL edit with the Spółka workshop's dirty gate (F3a S2,
+  // ADR 0107, sol R1 finding 1) — a no-op when hosted outside it.
+  const { register } = useToolHost();
+  useEffect(() => {
+    return register({ isDirty: () => dirty, discard: () => setValue(saved ?? "") });
+  }, [register, dirty, saved]);
+
   return (
-    <section className="fundamentals-section" aria-label={text("Investor relations reports page")}>
+    <div role="group" className="fundamentals-section" aria-label={text("Investor relations reports page")}>
       <SectionHeader level="h4" title={text("Investor relations reports page")} />
       <p className="ai-analysis-empty">
         {text("Used to fetch reports when a filing has no attachment. The URL rarely changes.")}
@@ -68,6 +76,6 @@ export function CompanyIrReportsUrlField({ companyId }: CompanyIrReportsUrlField
         </Button>
       </div>
       {error ? <ErrorText>{error}</ErrorText> : null}
-    </section>
+    </div>
   );
 }

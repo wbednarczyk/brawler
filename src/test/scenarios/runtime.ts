@@ -42,6 +42,8 @@ import type { UncrosswalkedConceptRow } from "../../api/generated/UncrosswalkedC
 import type { TodayView } from "../../api/generated/TodayView";
 import type { TodayItem } from "../../api/generated/TodayItem";
 import type { TodayClaim } from "../../api/generated/TodayClaim";
+import type { CompanyView } from "../../api/generated/CompanyView";
+import type { CompanyViewCounters } from "../../api/generated/CompanyViewCounters";
 
 export type {
   MockRuntimeControls,
@@ -161,6 +163,29 @@ function dateMinusDays(day: string, days: number): string {
   const date = new Date(`${day}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
+}
+
+/** `day` (YYYY-MM-DD) plus `days`, same format (Spółka screen's events-in-30-
+ * days window, F3a S1). */
+function datePlusDays(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Mirror of the Rust `canonical_period_label` used by
+ * `get_fundamentals_coverage`: uppercase, legacy `annual` -> `FY`. */
+function canonicalPeriodLabel(periodType: string): string {
+  const upper = periodType.trim().toUpperCase();
+  return upper === "ANNUAL" ? "FY" : upper;
+}
+
+/** Domain period order for "nearest due" (Spółka claims counter, F3a S1
+ * contracts.md): Q1 < H1/Q2 < 9M/Q3 < Q4/FY. */
+function periodRank(periodType: string): number {
+  const rank: Record<string, number> = { Q1: 1, Q2: 2, H1: 2, Q3: 3, "9M": 3, Q4: 4, FY: 4 };
+  // Unknown types sort LAST (Rust `period_type_rank` → 5), never first.
+  return rank[canonicalPeriodLabel(periodType)] ?? 5;
 }
 
 /** Signed contribution of a KNF register-change event to the aggregate net short
@@ -1203,6 +1228,201 @@ function buildHandlers(): Record<string, Handler> {
     mark_today_visited: (d): string => {
       d.todayLastVisitAt = SAMPLE_NOW;
       return d.todayLastVisitAt;
+    },
+
+    // Spółka screen composed read (F3a S1, ADR 0107 dec. 3): glance-bar
+    // counters + core sections in ONE call, COMPOSED from the sibling
+    // handlers/scenario data the individual panels already use — never a
+    // second, drifting computation. `handlers` below resolves at CALL time
+    // (closures over the `const handlers` binding), by which point the whole
+    // table is built, so calling a sibling defined later in this literal is
+    // safe (mirrors the `search`/`runSearch` pattern used for HANDLERS.search).
+    get_company_view: (d, a, ctx): CompanyView => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const company = d.companies.find((c) => c.id === companyId);
+      // sol-review finding 7: top-level error for an unknown company, matching
+      // Rust's `compute_company_view` (company_view.rs) message shape exactly —
+      // a blank identity previously hid the failure.
+      if (!company) throw new Error(`no tracked company for id ${companyId}`);
+      const today = SAMPLE_NOW.slice(0, 10);
+      const horizon = datePlusDays(today, 30);
+
+      // --- counters ---
+      const redFlags = handlers.get_red_flags(d, { companyId }, ctx) as RedFlagsView;
+      const categoryTally = new Map<string, number>();
+      for (const flag of redFlags.active) {
+        categoryTally.set(flag.flagType, (categoryTally.get(flag.flagType) ?? 0) + 1);
+      }
+      const byCategory = [...categoryTally.entries()]
+        .map(([category, count]) => ({ category, count }))
+        .sort((x, y) => y.count - x.count || x.category.localeCompare(y.category));
+
+      const openClaims = (
+        handlers.list_management_claims(d, { companyId }, ctx) as Array<{
+          status: string;
+          dueFiscalYear: number | null;
+          duePeriodType: string | null;
+        }>
+      ).filter((c) => c.status === "pending" || c.status === "partially_delivered");
+      const dueClaims = openClaims
+        .filter((c) => c.dueFiscalYear !== null && c.duePeriodType !== null)
+        .sort(
+          (x, y) =>
+            (x.dueFiscalYear as number) - (y.dueFiscalYear as number) ||
+            periodRank(x.duePeriodType as string) - periodRank(y.duePeriodType as string),
+        );
+      const nearestDue = dueClaims.length
+        ? `${dueClaims[0].duePeriodType} ${dueClaims[0].dueFiscalYear}`
+        : undefined;
+
+      const activeShorts = d.shortPositions
+        .filter((p) => p.companyId === companyId && p.exitedAt === null)
+        .sort((x, y) => y.netPositionPct - x.netPositionPct || x.holderName.localeCompare(y.holderName));
+      const activeSumPct = activeShorts.reduce((sum, p) => sum + p.netPositionPct, 0);
+
+      const upcomingEvents = d.events.filter(
+        (event) =>
+          event.companyId === companyId &&
+          event.status === "scheduled" &&
+          event.eventDate >= today &&
+          event.eventDate <= horizon,
+      );
+
+      const counters: CompanyViewCounters = {
+        signals: { unacked: redFlags.active.length, byCategory },
+        claims: { open: openClaims.length, nearestDue },
+        shorts: { activeSumPct, largestHolder: activeShorts[0]?.holderName },
+        events: { upcoming: upcomingEvents.length },
+      };
+
+      // --- kpi (revenue / operating_profit / net_profit, last 4 FY) ---
+      const KPI_METRIC_KEYS = ["revenue", "operating_profit", "net_profit"];
+      const fyByPeriodId = new Map(
+        d.financialPeriods
+          .filter((p) => p.companyId === companyId && canonicalPeriodLabel(p.periodType) === "FY")
+          .map((p) => [p.id, p.fiscalYear]),
+      );
+      const factsByMetricYear = new Map<string, (typeof d.financialFacts)[number][]>();
+      for (const fact of d.financialFacts) {
+        if (fact.companyId !== companyId || !KPI_METRIC_KEYS.includes(fact.metricKey)) continue;
+        const fy = fyByPeriodId.get(fact.periodId);
+        if (fy === undefined) continue;
+        const k = `${fact.metricKey}:${fy}`;
+        const list = factsByMetricYear.get(k) ?? [];
+        list.push(fact);
+        factsByMetricYear.set(k, list);
+      }
+      // sol-review finding 7: years = the last 4 FY periods PRESENT, with or
+      // without target-KPI data (contracts.md § Company View) — filtering to
+      // years with a KPI fact collapsed gapped years out of the trend
+      // entirely instead of showing them as an empty cell.
+      const years = [...new Set([...fyByPeriodId.values()])].sort((x, y) => x - y).slice(-4);
+      let currency: string | undefined;
+      const rows = KPI_METRIC_KEYS.map((metricKey) => {
+        const cells = years.map((fiscalYear) => {
+          const candidates = factsByMetricYear.get(`${metricKey}:${fiscalYear}`) ?? [];
+          const preferred = [...candidates].sort((x, y) => {
+            const xConfirmed = x.confirmationState === "confirmed" ? 1 : 0;
+            const yConfirmed = y.confirmationState === "confirmed" ? 1 : 0;
+            return yConfirmed - xConfirmed || y.createdAt.localeCompare(x.createdAt);
+          })[0];
+          if (preferred?.currency) currency ??= preferred.currency;
+          return {
+            fiscalYear,
+            valueNumeric: preferred?.valueNumeric,
+            sourceDocumentRef: preferred?.sourceDocumentRef ?? undefined,
+          };
+        });
+        // yoy spans the two NEWEST POPULATED cells, skipping any gapped year
+        // in between (sol-review finding 6 — the Rust counterpart of this
+        // same rule; mirrored here so the mock never drifts from it).
+        const populated = cells.filter((c) => c.valueNumeric !== undefined);
+        const newest = populated.slice(-2);
+        const yoyPct =
+          newest.length === 2 && Number.parseFloat(newest[0].valueNumeric ?? "0") !== 0
+            ? ((Number.parseFloat(newest[1].valueNumeric ?? "0") -
+                Number.parseFloat(newest[0].valueNumeric ?? "0")) /
+                Number.parseFloat(newest[0].valueNumeric ?? "0")) *
+              100
+            : undefined;
+        return { metricKey, cells, yoyPct };
+      });
+      const kpi: CompanyView["kpi"] = { currency, rows, years };
+
+      // --- feed (newest 6 official reports / public media) ---
+      const feed = (company ? d.feedItems : [])
+        .filter(
+          (fi) =>
+            fi.company === company?.qualifiedTicker &&
+            (fi.type === "Official report" || fi.type === "Public media"),
+        )
+        .sort((x, y) => y.publishedAt.localeCompare(x.publishedAt) || y.id.localeCompare(x.id))
+        .slice(0, 6)
+        .map((fi) => ({
+          feedItemId: fi.id,
+          title: fi.title,
+          publishedAt: fi.publishedAt,
+          read: !fi.unread,
+          itemType: fi.type,
+          sourceName: fi.source,
+          presentationKind: fi.presentationKind,
+        }));
+
+      // --- price (last 66 sessions, sliced from get_price_context) ---
+      const priceCtx = handlers.get_price_context(d, { companyId }, ctx) as {
+        history: Array<{ date: string; open: number; high: number; low: number; close: number }>;
+        currency: string;
+        emptyReason?: "no_quotes" | "unmapped_ticker";
+      };
+      const sessions = priceCtx.history;
+      const candles = sessions.slice(-66);
+      const lastSession = sessions[sessions.length - 1];
+      const back21 = sessions.length > 21 ? sessions[sessions.length - 1 - 21] : undefined;
+      const priorYearLastSession = lastSession
+        ? [...sessions].reverse().find((s) => s.date.slice(0, 4) < lastSession.date.slice(0, 4))
+        : undefined;
+      const price: CompanyView["price"] = lastSession
+        ? {
+            candles,
+            lastClose: lastSession.close,
+            asOf: lastSession.date,
+            // sol-review finding 7: never divide by a zero/missing base — the
+            // Rust counterpart (`compute_price`) returns `None`, not `NaN`/`Infinity`.
+            delta1mPct:
+              back21 && back21.close !== 0 ? ((lastSession.close - back21.close) / back21.close) * 100 : undefined,
+            deltaYtdPct:
+              priorYearLastSession && priorYearLastSession.close !== 0
+                ? ((lastSession.close - priorYearLastSession.close) / priorYearLastSession.close) * 100
+                : undefined,
+            currency: priceCtx.currency,
+            emptyReason: priceCtx.emptyReason,
+          }
+        : { candles: [], lastClose: 0, asOf: "", currency: priceCtx.currency, emptyReason: priceCtx.emptyReason };
+
+      // --- coverage / recommendations (the read models, as-is) ---
+      const coverage = (
+        handlers.get_fundamentals_coverage(d, { companyId }, ctx) as { periods: CompanyView["coverage"] }
+      ).periods;
+      // sol-review finding 7: capped at 3 (contracts.md § Company View — "3
+      // latest"), matching Rust's `RECOMMENDATIONS_LIMIT`; full history lives
+      // behind `{t:"rekomendacje"}`.
+      const recommendations = (
+        handlers.get_analyst_recommendations(d, { companyId }, ctx) as AnalystRecommendationsView
+      ).entries.slice(0, 3);
+
+      return {
+        companyId,
+        qualifiedTicker: company?.qualifiedTicker ?? "",
+        displayName: company?.displayName ?? "",
+        isin: company?.isin ?? undefined,
+        counters,
+        kpi,
+        feed,
+        price,
+        coverage,
+        recommendations,
+        sectionErrors: {},
+      };
     },
 
     // --- Red flags (v0.57 T7, ADR 0083 D8) ---
@@ -2310,7 +2530,19 @@ function buildHandlers(): Record<string, Handler> {
         ? d.managementClaims.filter((c) => c.companyId === companyId)
         : d.managementClaims;
     },
-    list_claims_to_verify: (d) => d.claimsToVerify,
+    // Company-scoped like the Rust `list_claims_to_verify(company_id)` — the
+    // unfiltered bucket leaked other companies' claims into a hosted claims
+    // panel (F3a S2 screenshot review, 2026-08-26).
+    list_claims_to_verify: (d, a) => {
+      const companyId = str(unwrap(a).companyId);
+      const scoped = <T extends { claim: { companyId: string } }>(rows: T[]) =>
+        companyId ? rows.filter((row) => row.claim.companyId === companyId) : rows;
+      return {
+        due: scoped(d.claimsToVerify.due),
+        overdue: scoped(d.claimsToVerify.overdue),
+        upcoming: scoped(d.claimsToVerify.upcoming),
+      };
+    },
     create_management_claim: (d, a, ctx) => {
       const base = { ...d.managementClaims[0] };
       const input = unwrap(a);

@@ -3,13 +3,13 @@ import * as feedApi from "../api/feed";
 import type { Company, FeedItem } from "../api/types";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import type { Section } from "./navigation";
+import type { SpolkaTransition } from "./useSpolkaScreenWiring";
 
 type FeedControllerInput = {
   companies: Company[];
   filteredFeedItems: FeedItem[];
   selectedFeedItem: FeedItem | null;
   setActiveSection: Dispatch<SetStateAction<Section>>;
-  setCockpitInitialCompanyId: Dispatch<SetStateAction<string | null>>;
   setFeedError: Dispatch<SetStateAction<string | null>>;
   setFeedState: Dispatch<SetStateAction<FeedItem[]>>;
   setInboxCompanyFilter: Dispatch<SetStateAction<string>>;
@@ -20,8 +20,10 @@ type FeedControllerInput = {
   setInboxWatchlistFilter: Dispatch<SetStateAction<string>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
   setSelectedCompanyFeedItemId: Dispatch<SetStateAction<string | null>>;
-  setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
+  /** ONE guarded company transition (F3a, sol R2 finding 3): never set
+   * company state ahead of the Spółka dirty guard. */
+  navigate: (transition: SpolkaTransition) => void;
 };
 
 export function useFeedController({
@@ -29,7 +31,6 @@ export function useFeedController({
   filteredFeedItems,
   selectedFeedItem,
   setActiveSection,
-  setCockpitInitialCompanyId,
   setFeedError,
   setFeedState,
   setInboxCompanyFilter,
@@ -40,8 +41,8 @@ export function useFeedController({
   setInboxWatchlistFilter,
   setSearchQuery,
   setSelectedCompanyFeedItemId,
-  setSelectedCompanyId,
   setSelectedFeedItemId,
+  navigate,
 }: FeedControllerInput) {
   // Today's "Otwórz komunikat" seam (F2 S3, plan decision 6): bumped on every
   // `openInboxItem` call so InboxScreen can raise its S-overlay
@@ -163,12 +164,10 @@ export function useFeedController({
       return;
     }
 
-    // Opening a company from a feed item lands the curated cockpit dashboard
-    // scoped to it (ADR 0057).
-    setSelectedCompanyId(company.id);
+    // Opening a company from a feed item lands the Spółka screen with that
+    // item raised in the workshop (ADR 0107) — one guarded transition.
     setSelectedCompanyFeedItemId(item.id);
-    setCockpitInitialCompanyId(company.id);
-    setActiveSection("Cockpit");
+    navigate({ companyId: company.id, section: "Spolka", tool: { t: "feedItem", feedItemId: item.id } });
   }
 
   function inspectCompanyFeedItem(item: FeedItem) {

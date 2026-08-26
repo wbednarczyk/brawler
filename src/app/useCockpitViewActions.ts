@@ -20,7 +20,6 @@ export function makeCockpitViewActions(deps: {
   activeCockpitLayoutId: string | null;
   setActiveCockpitLayoutId: (id: string | null) => void;
   setCockpitInitialCompanyId: (id: string | null) => void;
-  setCockpitInitialPresetId: (id: string | null) => void;
   setActiveSection: (section: Section) => void;
   refreshCockpitLayouts: () => void;
   runUndoableDelete: UndoableDelete;
@@ -29,7 +28,6 @@ export function makeCockpitViewActions(deps: {
   // Opening a saved view clears any company scope so it renders as the pure view.
   function openCockpitView(layoutId: string) {
     deps.setCockpitInitialCompanyId(null);
-    deps.setCockpitInitialPresetId(null);
     deps.setActiveCockpitLayoutId(layoutId);
     deps.setActiveSection("Cockpit");
   }

@@ -102,3 +102,19 @@ export const AWAITS_NAMING_FORMS: PluralForms = {
   en: ["awaits", "await"],
   pl: ["czeka", "czekają", "czeka"],
 };
+
+// Spółka screen glance bar (F3a S1): signals/claims/calendar-event counters.
+export const SIGNAL_FORMS: PluralForms = {
+  en: ["signal", "signals"],
+  pl: ["sygnał", "sygnały", "sygnałów"],
+};
+
+export const CLAIM_FORMS: PluralForms = {
+  en: ["claim", "claims"],
+  pl: ["teza", "tezy", "tez"],
+};
+
+export const CALENDAR_EVENT_FORMS: PluralForms = {
+  en: ["event", "events"],
+  pl: ["wydarzenie", "wydarzenia", "wydarzeń"],
+};

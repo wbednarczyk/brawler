@@ -69,22 +69,24 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expect(page.getByRole("button", { name: "View analysis" })).toHaveCount(0);
     await expectNoPageOverflow(page);
 
-    // Open the company — the cockpit dashboard lands scoped to it (ADR 0057),
-    // visible and in view without a manual scroll, and the app shell must not have
-    // scrolled (the "moves the whole app" regression).
+    // Open the company — the Spółka screen lands scoped to it directly (F3a
+    // S1, ADR 0107; the freeform cockpit dashboard is frozen and no longer
+    // this journey's path, F3a S3, ADR 0107 decision 5), visible and in view
+    // without a manual scroll, and the app shell must not have scrolled (the
+    // "moves the whole app" regression).
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await j.markScreen("Companies");
     await expectNoA11yViolations(page, "Companies list");
     await j.click(page.locator('[data-company-id="company_gpw_cdr"] .company-row-main'));
 
-    const workspace = page.getByRole("region", { name: "Research cockpit", exact: true });
+    const workspace = page.getByRole("region", { name: "Company view", exact: true });
     await expect(workspace).toBeVisible();
     await expect(workspace).toBeInViewport();
     await j.markScreen("Company workspace");
-    // The cockpit root's semantic company marker (ADR 0081 Q3 observation point)
+    // The Spółka root's semantic company marker (ADR 0081 Q3 observation point)
     // is the context this journey must not silently lose across the Claims/
-    // Notebook tab switches below — it is the company the facts, the resolved
+    // Notebook tool switches below — it is the company the facts, the resolved
     // claim, and the captured note must all end up attached to.
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const pageScroll = await page.evaluate(() => ({ y: window.scrollY, top: document.documentElement.scrollTop }));
@@ -92,8 +94,10 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     expect(pageScroll.top).toBe(0);
     await expectNoPageOverflow(page);
 
-    // The deterministically-extracted facts are wired through the read model: the
-    // fundamentals matrix renders directly on the dashboard (no tab).
+    // The deterministically-extracted facts are wired through the read model:
+    // the KPI core card's own "Open fundamentals" button raises the facts
+    // matrix in the fundamentals tool.
+    await j.click(workspace.getByRole("button", { name: "Open fundamentals" }));
     const fundamentals = page.getByLabel("Company fundamentals");
     await expect(fundamentals).toBeVisible();
     await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
@@ -111,16 +115,22 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     expect(remove.width, "Remove button is squeezed to icon width").toBeGreaterThan(56);
 
     // The fact detail is a Modal since card #307 — close it before moving on,
-    // or its overlay intercepts every later click in the journey.
-    await page.keyboard.press("Escape");
+    // or its overlay intercepts every later click in the journey. A real user
+    // presses Escape here — count it (sol R1 finding 5: this bypassed `j.press`,
+    // undercounting the journey's true interaction total).
+    await j.press(page, "Escape");
     await expect(factDetail).toBeHidden();
 
-    // Resolve a due management claim from the workspace Claims tab, at the real
-    // pane size the current project viewport gives it — no forced 900×700
-    // shortcut (Q3, ADR 0081). The manual claims path survives ADR 0084.
-    await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first());
-    const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });
+    // Resolve a due management claim: the workshop bar's "Open claims" stays
+    // visible whether or not a tool is open (unlike the glance bar's own
+    // "Claims counter" drill target, hidden behind the open Fundamentals
+    // tool) and raises the claims tool — at the real pane size the current
+    // project viewport gives it, no forced 900×700 shortcut (Q3, ADR 0081).
+    // The manual claims path survives ADR 0084.
+    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open claims" }));
+    const claimsPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(claimsPane).toBeVisible();
+    await expect(claimsPane).toHaveAttribute("data-tool", "tezy");
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const reviewQueue = claimsPane.getByLabel("Claims to verify");
     // At the short-height density tier (ADR 0076 D6, pane < 480px tall) the
@@ -140,11 +150,13 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expect(claimsPane.getByLabel("Claim verdict").first()).toHaveValue("delivered");
     await expectNoPageOverflow(page);
 
-    // Capture the judgment as a note in the company Notebook, again at the real
-    // pane size (no forced 900×700 shortcut).
-    await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Notebook", exact: true }).first());
-    const notebookPane = page.locator(".cockpit-pane", { has: page.locator(".notebook-panel") });
+    // Capture the judgment as a note in the company Notebook: the workshop
+    // bar's "Open notebook" raises the notebook tool — again at the real pane
+    // size (no forced 900×700 shortcut).
+    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open notebook" }));
+    const notebookPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(notebookPane).toBeVisible();
+    await expect(notebookPane).toHaveAttribute("data-tool", "notatnik");
     await j.preserveContext(await workspace.getAttribute("data-company-id"));
     const notebook = notebookPane.getByLabel("Company notebook");
 
@@ -167,6 +179,57 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expectNoPageOverflow(page);
 
     await j.assertBudget();
+  });
+
+  // F3a (ADR 0107, docs/plans/frontend-v2-f3a.md § contract 1): opening a
+  // company lands on the engine-free Spółka screen — glance bar + co-visible
+  // core — and the claims tool is one click away, opened with the claim to
+  // verify highlighted. Red before S1 (screen) and S2 (tool host) by design.
+  test("opening the company lands on Spółka: glance bar + co-visible core, Otwórz tezy raises the claims tool with the highlighted claim", async ({ page }) => {
+    const j = journey(page, "J2");
+    await openApp(page);
+    await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
+    await expect(page.getByLabel("Companies list")).toBeVisible();
+    await j.click(page.locator('[data-company-id="company_gpw_cdr"] .company-row-main'));
+
+    const spolka = page.getByRole("region", { name: "Company view", exact: true });
+    await expect(spolka).toBeVisible();
+    await expect(spolka).toHaveAttribute("data-company-id", "company_gpw_cdr");
+    await j.markScreen("Spółka");
+
+    // Glance bar: identity + the four attention counters.
+    const glance = spolka.getByLabel("Company glance bar");
+    await expect(glance).toBeVisible();
+    await expect(spolka.getByText("CDR").first()).toBeVisible();
+    for (const counter of ["Signals counter", "Claims counter", "Shorts counter", "Events counter"]) {
+      await expect(glance.getByLabel(counter)).toBeVisible();
+    }
+
+    // Core: the five surfaces are co-visible at rest, no primary action at rest.
+    const core = spolka.getByLabel("Company core");
+    for (const section of ["Annual KPI table", "Company feed", "Price chart", "Report coverage", "Recommendations"]) {
+      await expect(core.getByLabel(section)).toBeVisible();
+    }
+    await expectPrimaryActionCount(spolka, { max: 0 });
+    await expect(spolka.locator('[data-ui-button-variant="primary"]')).toHaveCount(0);
+    await expectNoPageOverflow(page);
+    await expectNoA11yViolations(page, "Spółka at rest");
+
+    // One click: the claims tool opens INTO the core zone with the pending
+    // claim highlighted (the J5 highlight seam); the tool owns the primary.
+    await j.click(spolka.getByRole("button", { name: "Open claims" }));
+    const tool = spolka.getByLabel("Workshop tool");
+    await expect(tool).toBeVisible();
+    await expect(tool.locator(".company-claims-panel")).toBeVisible();
+    // The highlighted claim renders in both the claims list and the review
+    // queue — one claim identity, however many rows carry it.
+    await expect(tool.locator(".claim-row-highlighted").first()).toBeVisible();
+    const highlightedIds = await tool
+      .locator(".claim-row-highlighted")
+      .evaluateAll((rows) => new Set(rows.map((row) => row.getAttribute("data-claim-id"))).size);
+    expect(highlightedIds).toBe(1);
+    await expectPrimaryActionCount(tool, { max: 1 });
+    await expectNoPageOverflow(page);
   });
 
   // ADR 0081 Q9: hostile filenames/labels stay contained on the surfaces this
@@ -211,6 +274,10 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+    // F3a S3 (ADR 0107): the frozen legacy dashboard is reached from the
+    // sidebar "Views" group — this regression case still exercises its
+    // claims pane (the surviving linked workflow).
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Legacy dashboard · CDR", exact: true }).click();
 
     await page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first().click();
     const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });

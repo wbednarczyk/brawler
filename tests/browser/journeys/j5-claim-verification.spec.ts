@@ -3,7 +3,6 @@ import {
   expect,
   openApp,
   journey,
-  setPaneSize,
   expectNoPageOverflow,
   expectNoA11yViolations,
 } from "../helpers/harness";
@@ -24,16 +23,19 @@ test.describe("J5 — claim verification", { tag: "@journey" }, () => {
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await j.markScreen("Companies");
     await expectNoA11yViolations(page, "Companies list (claim verification)");
-    await j.click(page.getByRole("button", { name: "Open GPW:CDR dashboard" }));
-    await expect(page.getByLabel("Research cockpit")).toBeVisible();
+    // F3a S3 (ADR 0107 decision 5): opening a company now lands the Spółka
+    // screen directly.
+    await j.click(page.getByRole("button", { name: "Open GPW:CDR" }));
+    await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await j.markScreen("Company workspace");
 
-    // Open the Claims tab; force the pane to L so the review queue (with the
-    // Delivered/Missed actions) renders regardless of the project's viewport.
-    await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first());
-    const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });
-    await expect(claimsPane).toBeVisible();
-    await setPaneSize(page, { width: 900, height: 700, pane: claimsPane });
+    // "Open claims" is the Spółka workshop bar's own button (F3a S2/S3, ADR
+    // 0107) — no pane forcing (never force pane sizes on a journey): the review
+    // queue (with the Delivered/Missed actions) renders at the project's own
+    // viewport, comfortably above the L-tier threshold.
+    await j.click(page.getByRole("button", { name: "Open claims", exact: true }));
+    const claimsPane = page.locator(".spolka-layout");
+    await expect(claimsPane.locator(".company-claims-panel")).toBeVisible();
 
     const reviewQueue = claimsPane.getByLabel("Claims to verify");
     await expect(reviewQueue).toBeVisible();

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ChevronRight, Pencil, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
@@ -23,7 +23,6 @@ import {
   SectionHeader,
   SegmentedControl,
   SegmentedControlOption,
-  SelectField,
   Sparkline,
   StatusChip,
   TextField,
@@ -36,6 +35,7 @@ import type { PriceContext } from "../../api/marketData";
 import { getAnalystRecommendations } from "../../api/analystRecommendations";
 import type { AnalystRecommendationTarget } from "../../api/analystRecommendations";
 import { PriceContextSection } from "./PriceContextSection";
+import { FundamentalsDraftForms } from "./FundamentalsDraftForms";
 import type { FactMatrixRow } from "./factMatrix";
 import type {
   FinancialFactForm,
@@ -226,14 +226,12 @@ export function FundamentalsPanel({
   // Company-scoped custom KPI definitions are loaded by CustomKpiManager and
   // merged with the global taxonomy so they appear in the matrix and dropdown.
   const [companyDefinitions, setCompanyDefinitions] = useState<KpiDefinition[]>([]);
-  const [kpiQuery, setKpiQuery] = useState("");
   const [confirmDeleteFact, setConfirmDeleteFact] = useState(false);
   // U7-A density disclosures (ADR 0076 D6). Collapsed by default so the CSS tier
   // switch only reveals them where the contract folds content: the Autopilot
   // summary row at S, the reporting forms when the pane is short. At tall/wide
   // tiers the container queries ignore the collapsed state and show them inline.
   const [autopilotExpanded, setAutopilotExpanded] = useState(false);
-  const [formsExpanded, setFormsExpanded] = useState(false);
 
   // Statement switcher (epic #398): one statement in view at a time — replaces
   // the old all-groups-expanded collapsible list. "Kluczowe" is the default
@@ -241,6 +239,7 @@ export function FundamentalsPanel({
   // leftover filter from the previous statement can't hide every row.
   const [activeStatementTab, setActiveStatementTab] = useState<StatementTabKey>("key");
   const [findQuery, setFindQuery] = useState("");
+
   function selectStatementTab(key: StatementTabKey) {
     setActiveStatementTab(key);
     setFindQuery("");
@@ -980,148 +979,19 @@ export function FundamentalsPanel({
 
       {/* Reporting forms (U7-A density row): create-period + add-fact side-by-side
           at L, one column at M/S, folded behind a disclosure when the pane is
-          short (only the matrix + section headers stay visible). */}
-      <div className={`fundamentals-forms${formsExpanded ? " is-expanded" : ""}`}>
-        <button
-          type="button"
-          className="fundamentals-forms-toggle"
-          aria-expanded={formsExpanded}
-          onClick={() => setFormsExpanded((value) => !value)}
-        >
-          <span aria-hidden="true" className="fundamentals-forms-chevron">
-            <ChevronRight size={15} />
-          </span>
-          {text("Reporting forms")}
-        </button>
-        <div className="fundamentals-forms-grid">
-          <div role="group" className="fundamentals-section" aria-label={text("Create reporting period")}>
-            <SectionHeader level="h4" title={text("New reporting period")} />
-            <form className="fundamentals-form" onSubmit={createFinancialPeriod}>
-              <div className="fundamentals-form-row">
-                <TextField
-                  label={text("Fiscal year")}
-                  aria-label={text("Fiscal year")}
-                  type="number"
-                  min="1900"
-                  max="2100"
-                  value={fundamentalsForm.periodFiscalYear}
-                  onChange={(event) =>
-                    updateFundamentalsForm("periodFiscalYear", event.target.value)
-                  }
-                  placeholder="2024"
-                />
-                <SelectField
-                  label={text("Period type")}
-                  aria-label={text("Period type")}
-                  value={fundamentalsForm.periodType}
-                  onChange={(event) =>
-                    updateFundamentalsForm("periodType", event.target.value)
-                  }
-                >
-                  <option value="annual">{text("Annual")}</option>
-                  <option value="q1">{text("Q1")}</option>
-                  <option value="q2">{text("Q2")}</option>
-                  <option value="q3">{text("Q3")}</option>
-                  <option value="q4">{text("Q4")}</option>
-                </SelectField>
-                <Button
-                  className="compact-button"
-                  disabled={!fundamentalsForm.periodFiscalYear.trim()}
-                  type="submit"
-                  variant="primary"
-                >
-                  <Plus size={15} />
-                  {text("Create")}
-                </Button>
-              </div>
-            </form>
-          </div>
-
-          {financialPeriods.length > 0 ? (
-            <div role="group" className="fundamentals-section" aria-label={text("Add financial fact")}>
-              <SectionHeader level="h4" title={text("Add financial fact")} />
-          <form
-            className="fundamentals-form"
-            onSubmit={async (event) => {
-              await saveFinancialFact(event);
-              setKpiQuery("");
-            }}
-          >
-            <div className="fundamentals-form-grid">
-              <TextField
-                label={text("KPI definition")}
-                aria-label={text("KPI definition")}
-                list="kpi-definition-options"
-                onChange={(event) => {
-                  const query = event.target.value;
-                  setKpiQuery(query);
-                  const match = allDefinitions.find(
-                    (definition) =>
-                      localizedKpiLabel(definition, locale) === query ||
-                      definition.metricKey === query,
-                  );
-                  updateFinancialFactForm("definitionId", match?.id ?? "");
-                }}
-                placeholder={text("Search a KPI…")}
-                value={kpiQuery}
-              />
-              <datalist id="kpi-definition-options">
-                {allDefinitions.map((definition) => (
-                  <option key={definition.id} value={localizedKpiLabel(definition, locale)} />
-                ))}
-              </datalist>
-              <SelectField
-                label={text("Reporting period")}
-                aria-label={text("Reporting period")}
-                value={financialFactForm.periodId}
-                onChange={(event) => updateFinancialFactForm("periodId", event.target.value)}
-              >
-                <option value="">{text("Select a period")}</option>
-                {factMatrix.periods.map((period) => (
-                  <option key={period.id} value={period.id}>
-                    {period.fiscalYear} {period.periodType.toUpperCase()}
-                  </option>
-                ))}
-              </SelectField>
-              <TextField
-                label={text("Value")}
-                aria-label={text("Numeric value")}
-                type="number"
-                step="any"
-                value={financialFactForm.valueNumeric}
-                onChange={(event) =>
-                  updateFinancialFactForm("valueNumeric", event.target.value)
-                }
-                placeholder="0"
-              />
-              <TextField
-                label={text("Currency")}
-                aria-label={text("Currency")}
-                value={financialFactForm.currency}
-                onChange={(event) =>
-                  updateFinancialFactForm("currency", event.target.value)
-                }
-                placeholder="USD"
-              />
-              <Button
-                className="compact-button"
-                disabled={
-                  !financialFactForm.definitionId ||
-                  !financialFactForm.periodId ||
-                  !financialFactForm.valueNumeric
-                }
-                type="submit"
-                variant="primary"
-              >
-                <Plus size={15} />
-                {text("Add fact")}
-              </Button>
-            </div>
-              </form>
-            </div>
-          ) : null}
-        </div>
-      </div>
+          short (only the matrix + section headers stay visible). Extracted to
+          FundamentalsDraftForms (file-size ratchet, ADR 0103). */}
+      <FundamentalsDraftForms
+        financialPeriods={financialPeriods}
+        matrixPeriods={factMatrix.periods}
+        allDefinitions={allDefinitions}
+        fundamentalsForm={fundamentalsForm}
+        financialFactForm={financialFactForm}
+        createFinancialPeriod={createFinancialPeriod}
+        saveFinancialFact={saveFinancialFact}
+        updateFundamentalsForm={updateFundamentalsForm}
+        updateFinancialFactForm={updateFinancialFactForm}
+      />
     </div>
   );
 }

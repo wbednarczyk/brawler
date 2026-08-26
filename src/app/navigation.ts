@@ -3,9 +3,9 @@ import {
   BellRing,
   Bug,
   Building2,
-  FlaskConical,
   Home,
   Inbox,
+  LayoutPanelTop,
   ListChecks,
   Settings,
   Video,
@@ -20,7 +20,17 @@ import type { LocaleKey } from "../shared/locale";
 export type Section =
   | "Today"
   | "Inbox"
+  // The frozen cockpit (ADR 0107 amendment) — no longer a top-level nav entry;
+  // reached only via a named-view row or a "Dawny dashboard · TICKER" row in
+  // the Widoki group (F3a S3).
   | "Cockpit"
+  // The Spółka screen (F3a S1, ADR 0107) — the company deep-dive
+  // destination and, since S3, a Modes item (replaces the old Dashboard
+  // bridge): opens the last-viewed company.
+  | "Spolka"
+  // Decision journal, all companies (F3a S3, ADR 0107) — a standalone screen
+  // route (palette-only entry point; not a nav item).
+  | "Journal"
   | "ReportSeason"
   | "Companies"
   | "Watchlists"
@@ -45,38 +55,36 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-// Mode-based, thesis-centric IA spine (ADR 0054). The left sidebar is grouped:
-//   • Modes — the investor's jobs as top-level destinations (Today/Pulse home,
-//     Company workspace), followed by the saved named views (a
-//     data-driven list, rendered by AppShell from `cockpit_layouts`) and the
-//     "+ New view" creator — the composable-views entry point (ADR 0057
-//     decision 5).
-//   • Library — the named reference surfaces the modes draw on (Inbox bulk
-//     triage, Watchlists, Transcripts, Sources).
+// Mode-based, thesis-centric IA spine (ADR 0054, amended F3a S3 / ADR 0107).
+// The left sidebar is grouped:
+//   • Modes — the investor's jobs as top-level destinations: Today, Inbox,
+//     Spółka (opens the last-viewed company). Rendered right after Modes (but
+//     NOT part of this static list — it is data-driven): the "Widoki" group,
+//     named views + legacy per-company dashboards (`AppShell`/
+//     `SidebarViewsGroup`, built from `cockpit_layouts`).
+//   • Library — the named reference surfaces the modes draw on (Companies,
+//     Watchlists, Alerts, Transcripts, Sources).
 //   • Utilities — Settings + Diagnostics (developer-gated).
-// Pinned/favorite companies render as a data-driven group between Modes and
-// Library (built at runtime from `UserSettings.pinnedCompanyIds`).
+// Pinned/favorite companies render as a data-driven group between Modes/Widoki
+// and Library (built at runtime from `UserSettings.pinnedCompanyIds`).
 export const navGroups: NavGroup[] = [
   {
     id: "modes",
     localeKey: "nav.group.modes",
     items: [
       { label: "Today", icon: Home, localeKey: "nav.today" },
-      // Dashboard — the one company-scoped cockpit, entered ONLY from here (epic
-      // c793ca1). Two selectors inside: company (scope) + preset (panel
-      // arrangement); every preset follows the view company. Amends ADR 0057
-      // decision 5: never a blank canvas (seeds a company / resumes layout).
-      { label: "Cockpit", icon: FlaskConical, localeKey: "nav.dashboard" },
+      { label: "Inbox", icon: Inbox, localeKey: "nav.inbox" },
+      // Spółka (F3a S3, ADR 0107 amendment) replaces the old Dashboard bridge:
+      // opens the last-viewed company, else the first pinned, else the first
+      // tracked company — never a blank screen.
+      { label: "Spolka", icon: LayoutPanelTop, localeKey: "nav.spolka" },
     ],
   },
   {
     id: "library",
     localeKey: "nav.group.library",
     items: [
-      // Companies lives in Library, not Modes (epic c793ca1): the Dashboard is
-      // the company workspace; the list is a reference surface.
       { label: "Companies", icon: Building2, localeKey: "nav.companies" },
-      { label: "Inbox", icon: Inbox, localeKey: "nav.inbox" },
       { label: "Watchlists", icon: ListChecks, localeKey: "nav.watchlists" },
       // Alerts (ADR 0068 T3): a Library destination — the alert-rule manager +
       // fired-alerts review are a reference surface, not a preference.

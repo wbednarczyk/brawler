@@ -10,6 +10,15 @@ import { getSchedulerStatus } from "../api/sources";
 import type { CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import type { Section } from "./navigation";
 import { emptyNotebookForm, notebookFormFromEntry } from "./notebookForms";
+import { handleCloseRequested } from "./handleCloseRequested";
+import type { SpolkaToolHostApi } from "../screens/Spolka/ToolHost";
+
+// Tauri v2 stamps this global on the window object; absent in the browser
+// dev/test harness, where the close interceptor below is a no-op (repoctx:
+// no existing runtime-detection helper to reuse).
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 // How often the UI mirrors the Rust scheduler's next-due snapshot and reloads
 // views when a background refresh has fired. The Rust scheduler owns the actual
@@ -79,6 +88,10 @@ type AppLifecycleEffectsInput = {
   setSelectedNotebookEntryId: Dispatch<SetStateAction<string | null>>;
   sourceAdapters: SourceAdapter[];
   sourceAdaptersRef: MutableRefObject<SourceAdapter[]>;
+  /** F3a S2 (ADR 0107): gates a native window-close request the same way as
+   * every other cross-screen navigation — a dirty Spółka tool prevents the
+   * close and opens the stay/discard dialog; Discard closes the window. */
+  spolkaTool: SpolkaToolHostApi;
 };
 
 export function useAppLifecycleEffects({
@@ -132,8 +145,64 @@ export function useAppLifecycleEffects({
   setSelectedNotebookEntryId,
   sourceAdapters,
   sourceAdaptersRef,
+  spolkaTool,
 }: AppLifecycleEffectsInput) {
   const previousSourceDueRef = useRef<Record<string, number>>({});
+
+  // `useSpolkaToolHost()` returns a FRESH object every render — `spolkaTool`
+  // itself is not stable, only its `isDirty`/`guardNavigation` closures'
+  // BEHAVIOR is (they always read the latest tool state). The close-request
+  // effect below installs its listener ONCE (`[]` deps, so it doesn't leak a
+  // subscription on every render); without this ref it would keep calling
+  // the render-1 `spolkaTool` forever — bound to "no tool open yet" — so a
+  // tool opened afterward could never prevent the close (sol R1 finding 2).
+  const spolkaToolRef = useRef(spolkaTool);
+  useEffect(() => {
+    spolkaToolRef.current = spolkaTool;
+  });
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return undefined;
+
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    // The browser dev/test harness (`mockIPC` from `@tauri-apps/api/mocks`)
+    // stamps `__TAURI_INTERNALS__` too, but doesn't populate the window
+    // metadata `getCurrentWindow()` needs — `isTauriRuntime()` alone can't
+    // tell the two apart, so a throw here (real or mocked) is swallowed: a
+    // real Tauri window simply gets no close interceptor that run, same as
+    // the browser harness's intended no-op.
+    void import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        if (cancelled) return;
+        const win = getCurrentWindow();
+        return win
+          .onCloseRequested((event) => {
+            handleCloseRequested(event, {
+              isDirty: () => spolkaToolRef.current.isDirty(),
+              ask: () => spolkaToolRef.current.guardNavigation(() => void win.destroy()),
+            });
+          })
+          .then((stop) => {
+            if (cancelled) {
+              stop();
+            } else {
+              unlisten = stop;
+            }
+          });
+      })
+      .catch(() => {
+        // Not a real Tauri window (or the harness's partial shim) — no-op.
+      });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+    // Installs ONCE ([] deps, no re-listen leak) — the handler reads
+    // spolkaToolRef.current, always the latest render's host, so it needs no
+    // reactive dependency here.
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = effectiveTheme;
     document.documentElement.dataset.palette = accentPalette;
