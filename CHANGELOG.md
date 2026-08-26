@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.74.0 - 2026-08-26
+
+
+### Features
+
+- **spolka**: F3a — Widok Spółka: engine-free company surface, workshop tools, frozen cockpit (#429) (#432)
+
 ## v0.73.1 - 2026-08-25
 
 
