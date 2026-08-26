@@ -25,10 +25,10 @@ The sidebar is grouped so you always know where you are:
     arrived shows as "NIE WPŁYNĄŁ" until the app's own delay alert takes over. Mark
     a day as reviewed and it folds to a single line; a quiet morning says so plainly.
   - **Companies** — browse, search, add companies, and open one to its
-    dashboard (see below).
-  - Below the built-in modes: your own **saved views** and a **"+ New view"**
-    entry to build one — see
-    [Composable cockpit views](cockpit-views.md).
+    [Spółka screen](company-view.md) (see below).
+  - Below the built-in modes: any **views** you saved before F3a — see
+    [Composable cockpit views](cockpit-views.md) (frozen: no more building
+    new ones).
 - **Pinned companies** — your favorites for one-click access. Pin a company from
   its dashboard or the Companies list; it then appears here with a small
   status dot. Unpin from the sidebar (hover the row) or the dashboard.
@@ -65,19 +65,16 @@ stream** to that category; click again to restore. The stream is fully
 keyboard-friendly: **j / k** move focus between row actions. When nothing needs
 you, Today says so and stays calm. **Open Inbox** takes you to the full feed.
 
-## Opening a company: the curated dashboard
+## Opening a company: the Spółka screen
 
 Open a company (from Companies, a pinned row, a feed item, or a Today
-**Review** button) to land its **dashboard** — a curated
-[cockpit view](cockpit-views.md) scoped to that company, opening with a calm
-starting set of panels (Fundamentals, Feed, Claims, Quality, Report
-documents, Notebook). It's the one place that shows you everything about a
-company at once, and it stays composable — add, remove, or move panels, then
-**Save dashboard** to keep the arrangement for next time.
+**Review** button) to land on its **[Spółka screen](company-view.md)** — a
+glance bar, an always-visible core (KPIs, feed, price, coverage,
+recommendations), and a one-click workshop of tools (claims, notebook,
+decision journal, quality, and more). It's the one place that shows you
+everything about a company at once; see the linked page for the full layout.
 
-Pin the company to the sidebar from here or from the Companies list. Company
-metadata (exchange, ticker, ISIN, and other identifiers) lives in the
-Companies list, not on the dashboard.
+Pin the company to the sidebar from here or from the Companies list.
 
 ## The command palette (Ctrl+K)
 

@@ -7,36 +7,40 @@ import {
   expectNoPageOverflow,
 } from "./helpers/harness";
 
-// The screens that moved off the sidebar into the cockpit (ADR 0054) —
-// Research / Notebook / Events / Report Season — no longer have their own nav
-// button; they live as cockpit panels. Open each from the command palette and
-// assert it renders without horizontal page overflow. The auto console-error
-// gate (harness fixture) additionally fails on a render error / unmocked command,
-// so this is the coverage that those screens still mount cleanly in their new home.
+// The global screens reachable only via the ⌘K palette's "Open screen: …"
+// entries (F3a S3, ADR 0107 decision 5: Research / Notebooks / Events / Report
+// Season / Decision journal) — standalone routes, mounted full-screen in
+// `.workspace`, since the freeze retired the "Add panel" surface that used to
+// host them as cockpit dashboard tabs. Open each and assert it renders without
+// horizontal page overflow. The auto console-error gate (harness fixture)
+// additionally fails on a render error / unmocked command, so this is the
+// coverage that those screens still mount cleanly in their (post-freeze) home.
 //
-// `heading` is the panel's leading in-pane heading text (may differ from the dock
-// tab label, e.g. tab "Notebook" vs heading "Notebooks"); `tab` is the dock tab
-// label; `level` is the heading level the panel renders (PanelHeader → h1;
-// SectionHeader-based global panels may lead with a lower level, e.g. the journal).
+// `heading` is the screen's leading H1 text; `level` is the heading level it
+// renders (PanelHeader → h1; SectionHeader-based global screens may lead with a
+// lower level, e.g. the journal).
 const PANELS = [
   { tab: "Research", heading: "Research", level: 1 },
-  { tab: "Notebook", heading: "Notebooks", level: 1 },
+  { tab: "Notebooks", heading: "Notebooks", level: 1 },
   { tab: "Events", heading: "Events", level: 1 },
   { tab: "Report Season", heading: "Report Season", level: 1 },
 ] as const;
 
-// The D6 compact-header rule (Decision 6) covers every cockpit-hosted panel whose
-// leading heading would otherwise duplicate its dock tab — including cockpit-native
-// globals like the cross-company decision journal (ADR 0071), whose tab already
-// reads "Journal (all companies)". Kept separate from the former-secondary-screen
-// overflow list above so the D6 sweep can grow without lengthening that loop.
-const COMPACT_HEADER_PANELS = [
+// The D6 compact-header rule (ADR 0076 Decision 6, K3 double panel chrome) is
+// scoped to `.cockpit-pane` (ui.css: "the same components rendered full-screen
+// in `.workspace` keep their full headers") — it exists to stop a cockpit dock
+// tab's title from being repeated as a visible in-panel H1. These screens have
+// no dock tab at all any more, so there is nothing to double up: the equivalent
+// assertion is the OPPOSITE of the pre-freeze one — the heading renders at full
+// size. Kept as its own cluster (grown from the pre-freeze COMPACT_HEADER_PANELS
+// list) so it can grow independently of the overflow loop above.
+const FULL_HEADER_PANELS = [
   ...PANELS,
-  { tab: "Journal (all companies)", heading: "Decision journal", level: 3 },
+  { tab: "Decision journal", heading: "Decision journal", level: 3 },
 ] as const;
 
-test.describe("cockpit-hosted screens lay out without overflow", () => {
-  test("each former secondary screen renders as a cockpit panel without overflow", async ({ page }) => {
+test.describe("global screens lay out without overflow (F3a S3: standalone routes, not cockpit panels)", () => {
+  test("each global screen renders without overflow", async ({ page }) => {
     await openApp(page);
 
     for (const { tab } of PANELS) {
@@ -47,46 +51,32 @@ test.describe("cockpit-hosted screens lay out without overflow", () => {
 
   // Real-browser a11y (#158): the jsdom guard covers these screens for
   // role/label/structure; only a real browser computes colors, so contrast in
-  // their cockpit-hosted form is checked here — across the viewport matrix and
+  // their standalone form is checked here — across the viewport matrix and
   // both theme projects.
   for (const { tab } of PANELS) {
-    test(`the ${tab} panel has no WCAG A/AA violations`, async ({ page }) => {
+    test(`the ${tab} screen has no WCAG A/AA violations`, async ({ page }) => {
       await openApp(page);
       await openCockpitPanel(page, tab);
 
-      await expectNoA11yViolations(page, `${tab} cockpit panel`);
+      await expectNoA11yViolations(page, `${tab} screen`);
     });
   }
 
-  // Compact header (ADR 0076 Decision 6, K3 double panel chrome): a cockpit-hosted
-  // panel must NOT repeat the dock tab's title as a visible in-panel H1. The
-  // leading header is compacted via `.ui-pane-lead-header` — the H1 stays in the
-  // accessible tree (so `aria-labelledby`/heading queries still resolve, and axe
-  // stays green) but is clipped to ~1px so a sighted user never reads a duplicate
-  // title. The dock TAB carries the name instead. (The same screens rendered
-  // full-screen in `.workspace` keep their full headers — the rule is
-  // `.cockpit-pane`-scoped — asserted by the sidebar screen-visible suites.)
-  for (const { tab, heading, level } of COMPACT_HEADER_PANELS) {
-    test(`compacts the duplicate in-pane heading for the ${tab} panel`, async ({ page }) => {
+  for (const { tab, heading, level } of FULL_HEADER_PANELS) {
+    test(`renders its full (non-compacted) heading for the ${tab} screen`, async ({ page }) => {
       await openApp(page);
       await openCockpitPanel(page, tab);
 
-      const pane = page.locator(".cockpit-pane", {
-        has: page.getByRole("heading", { level, name: heading, exact: true }),
-      });
+      const pane = page.locator(".workspace");
       const h1 = pane.getByRole("heading", { level, name: heading, exact: true });
 
-      // Present in the accessible tree (heading role resolves)…
-      await expect(h1).toBeAttached();
-      // …but visually removed: clipped to the ~1px visually-hidden box, so it is
-      // not a readable duplicate of the tab title.
+      await expect(h1).toBeVisible();
       const box = await h1.boundingBox();
-      expect(box, "heading must still lay out (visually-hidden, not display:none)").not.toBeNull();
-      expect(box!.width).toBeLessThanOrEqual(2);
-      expect(box!.height).toBeLessThanOrEqual(2);
-
-      // The dock tab is the visible carrier of the panel name.
-      await expect(page.locator(".cockpit-tab-activate", { hasText: tab }).first()).toBeVisible();
+      expect(box, "heading must lay out").not.toBeNull();
+      // The pre-freeze compact-header CSS clips a duplicated title to ~1px; a
+      // full, non-compacted heading is comfortably bigger than that.
+      expect(box!.width).toBeGreaterThan(2);
+      expect(box!.height).toBeGreaterThan(2);
     });
   }
 });

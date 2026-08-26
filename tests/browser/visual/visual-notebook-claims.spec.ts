@@ -9,21 +9,24 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-async function openCompanyDashboardPanel(page: Page, tab: string, rootSelector: string): Promise<Locator> {
+// F3a S2/S3 (ADR 0107): company panels live in the Spółka screen's workshop
+// tools now, not cockpit dashboard tabs — `toolButton` is the WorkshopBar's
+// "Open <tool>" label, and `.spolka-layout` is the tool's `pane` size
+// container (spolka.css), same role as the pre-freeze `.cockpit-pane`.
+async function openCompanyTool(page: Page, toolButton: string, rootSelector: string): Promise<Locator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.getByRole("button", { name: "Open GPW:CDR dashboard" }).click();
-  const cockpit = page.getByLabel("Research cockpit");
-  await expect(cockpit).toBeVisible();
-  await cockpit.getByRole("button", { name: tab, exact: true }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.locator(rootSelector) });
-  await expect(pane).toBeVisible();
+  await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
+  await page.getByRole("button", { name: toolButton, exact: true }).click();
+  const pane = page.locator(".spolka-layout");
+  await expect(pane.locator(rootSelector)).toBeVisible();
   return pane;
 }
 
 test.describe("visual — notebook + claims", () => {
   test("Notebook (company) across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboardPanel(page, "Notebook", ".notebook-workspace");
+    const pane = await openCompanyTool(page, "Open notebook", ".notebook-workspace");
     await expect(pane.locator(".notebook-list")).toBeVisible();
     await shootPanel(page, pane, "notebook-company");
   });
@@ -31,8 +34,8 @@ test.describe("visual — notebook + claims", () => {
   test("Notebooks (global screen) across pane tiers", async ({ page }) => {
     await openApp(page);
     await openCockpitPanel(page, "Notebooks");
-    const pane = page.locator(".cockpit-pane", { has: page.locator(".notebooks-screen") });
-    await expect(pane).toBeVisible();
+    const pane = page.locator(".workspace");
+    await expect(pane.locator(".notebooks-screen")).toBeVisible();
     // Land on a company with notes so the list is populated for every tier.
     await pane.getByRole("button", { name: "Open notebook company: GPW:CDR" }).click();
     await expect(pane.locator(".notebooks-notes-list .notebook-row").first()).toBeVisible();
@@ -41,7 +44,7 @@ test.describe("visual — notebook + claims", () => {
 
   test("Claims across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboardPanel(page, "Claims", ".company-claims-panel");
+    const pane = await openCompanyTool(page, "Open claims", ".company-claims-panel");
     // The claims body folds behind the queue summary at the default short pane;
     // shootPanel resizes to a tall S/M/L pane first, so assert the panel root here
     // (the list visibility is a per-tier concern the density spec already covers).

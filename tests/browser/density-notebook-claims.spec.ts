@@ -18,15 +18,18 @@ function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-async function openCompanyDashboardPanel(page: Page, tab: string, rootSelector: string): Promise<Locator> {
+// F3a S2/S3 (ADR 0107): company panels live in the Spółka screen's workshop
+// tools now, not cockpit dashboard tabs — `toolButton` is the WorkshopBar's
+// "Open <tool>" label, and `.spolka-layout` is the tool's `pane` size
+// container (spolka.css), same role as the pre-freeze `.cockpit-pane`.
+async function openCompanyTool(page: Page, toolButton: string, rootSelector: string): Promise<Locator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.getByRole("button", { name: "Open GPW:CDR dashboard" }).click();
-  const cockpit = page.getByLabel("Research cockpit");
-  await expect(cockpit).toBeVisible();
-  // dockview mounts only the active panel body per group, so activate the tab.
-  await cockpit.getByRole("button", { name: tab, exact: true }).first().click();
-  const pane = page.locator(".cockpit-pane", { has: page.locator(rootSelector) });
+  await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
+  await page.getByRole("button", { name: toolButton, exact: true }).click();
+  const pane = page.locator(".spolka-layout");
   await expect(pane).toBeVisible();
+  await expect(pane.locator(rootSelector)).toBeVisible();
   return pane;
 }
 
@@ -41,7 +44,7 @@ async function box(locator: Locator): Promise<Box> {
 test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, () => {
   test("company Notebook — S width tier toggles list ↔ detail", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboardPanel(page, "Notebook", ".notebook-workspace");
+    const pane = await openCompanyTool(page, "Open notebook", ".notebook-workspace");
     const workspace = pane.locator(".notebook-workspace");
 
     await setPaneSize(page, { width: 380, height: 700, pane });
@@ -66,7 +69,7 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
 
   test("company Notebook — short height tier folds to list, editor on select", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboardPanel(page, "Notebook", ".notebook-workspace");
+    const pane = await openCompanyTool(page, "Open notebook", ".notebook-workspace");
 
     await setPaneSize(page, { width: 900, height: 440, pane });
     // Short: list only — the empty detail folds so the list owns the height.
@@ -85,8 +88,8 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
   test("global Notebooks screen — S / M / L tier compliance", async ({ page }) => {
     await openApp(page);
     await openCockpitPanel(page, "Notebooks");
-    const pane = page.locator(".cockpit-pane", { has: page.locator(".notebooks-screen") });
-    await expect(pane).toBeVisible();
+    const pane = page.locator(".workspace");
+    await expect(pane.locator(".notebooks-screen")).toBeVisible();
     const screenEl = pane.locator(".notebooks-screen");
     // Force the clean L layout first, then land on a company with notes so the
     // note list is populated for the S toggle.
@@ -136,7 +139,7 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
 
   test("company Claims — S / M / L / short tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyDashboardPanel(page, "Claims", ".company-claims-panel");
+    const pane = await openCompanyTool(page, "Open claims", ".company-claims-panel");
 
     // L: list ∥ verdict detail column; composer inline.
     await setPaneSize(page, { width: 900, height: 700, pane });
@@ -164,6 +167,16 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
 
     // short: queue counts + top 3 due; the full panel folds behind expansion.
     await setPaneSize(page, { width: 900, height: 440, pane });
+    // Opening Claims from the Spółka workshop bar auto-highlights the first
+    // due/overdue review-queue claim (CompanyClaimsPanel's highlight seam —
+    // "a highlight the user cannot see defeats the whole seam", sol R1 finding
+    // 9), which also lifts the short-tier fold so the highlighted row stays
+    // visible. Collapse it first to reach the tier's true default-collapsed
+    // state before asserting it.
+    const shortToggle = pane.locator(".claims-short-toggle");
+    if ((await shortToggle.getAttribute("aria-expanded")) === "true") {
+      await shortToggle.click();
+    }
     await expect(pane.locator(".claims-queue-summary")).toBeVisible();
     await expect(pane.locator(".claims-body")).toBeHidden();
     await expect(pane.locator(".claims-queue-top-item").first()).toBeVisible();

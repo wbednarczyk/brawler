@@ -1,18 +1,58 @@
 import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { primeCockpitLayout } from "./helpers/mockRuntime";
 import type { Page } from "@playwright/test";
 
 // U-Ra (ADR 0076): a cockpit view carries one "view company". Company-scoped
 // panels follow it by default and retarget IN PLACE when it changes (tab titles
 // stay kind-only, the layout is preserved); a single panel may pin a frozen
-// company via the tab's pin toggle; a saved view persists the view company.
+// company via the tab's pin toggle.
+//
+// F3a S3 (ADR 0107 decision 5): the cockpit's "Add panel"/"Save dashboard"/
+// "+ New view" surface is frozen/removed, so a browser test can no longer build
+// a NAMED view with follow panels through the UI (only a per-company "Legacy
+// dashboard · TICKER" row exists out of the box, and it carries no "View
+// company" selector — it's fixed to the company that named it). Every test here
+// seeds a named view directly (`primeCockpitLayout`, the E2E equivalent of
+// `saveCockpitLayout` in paneLandmarks.test.tsx) and opens it from the sidebar
+// "Views" group — the one surviving entry point for a saved view (ADR 0107
+// decision 5, "Widoki" group). The pre-freeze "persist the view across a
+// reload" behavior is gone with `saveDashboard` (CockpitScreen.tsx) — a view
+// company change is in-session only now, so that leg is dropped rather than
+// re-pointed.
+
+const VIEW_NAME = "CDR follow view";
 
 function nav(page: Page) {
   return page.getByLabel(/Primary navigation|Nawigacja główna/);
 }
 
-async function openCdrDashboard(page: Page) {
-  await nav(page).getByRole("button", { name: "Companies" }).click();
-  await page.getByRole("button", { name: "Open GPW:CDR dashboard" }).click();
+// Follow Feed + Report comparison panels, plus the research global panel, all
+// scoped to CD PROJEKT — the fixed set every test in this file opens against.
+async function seedFollowView(page: Page) {
+  await primeCockpitLayout(page, {
+    id: "cockpit_layout_test_cdr_follow_view",
+    name: VIEW_NAME,
+    ordinal: 0,
+    panelsJson: JSON.stringify({
+      pinned: [
+        { kind: "companyFeed", mode: "follow" },
+        { kind: "reportDiff", mode: "follow" },
+      ],
+      openGlobals: ["research"],
+      closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+      selectedFeedItemId: null,
+      viewCompanyId: "company_gpw_cdr",
+    }),
+    layoutJson: null,
+    dockviewVersion: null,
+    createdAt: "2026-06-05T09:00:00Z",
+    updatedAt: "2026-06-05T09:00:00Z",
+  });
+}
+
+async function openFollowView(page: Page) {
+  await openApp(page);
+  await nav(page).getByRole("button", { name: VIEW_NAME, exact: true }).click();
   await expect(page.getByLabel("Research cockpit")).toBeVisible();
 }
 
@@ -25,12 +65,10 @@ async function activateFeedTab(page: Page) {
 }
 
 test.describe("cockpit view company", { tag: "@clickable" }, () => {
-  test("the header selector retargets follow panels in place and the view company persists", async ({
-    page,
-  }) => {
-    await openApp(page);
-    await openCdrDashboard(page);
-    let cockpit = page.getByLabel("Research cockpit");
+  test("the header selector retargets follow panels in place", async ({ page }) => {
+    await seedFollowView(page);
+    await openFollowView(page);
+    const cockpit = page.getByLabel("Research cockpit");
 
     // The follow Feed panel's tab is kind-only (no ticker prefix); activating it
     // shows CD PROJEKT's feed item.
@@ -55,36 +93,15 @@ test.describe("cockpit view company", { tag: "@clickable" }, () => {
     await expect(cockpit.getByRole("button", { name: "Feed", exact: true }).first()).toBeVisible();
     await expect(cockpit.getByRole("button", { name: /GPW:CDR · Feed/ })).toHaveCount(0);
     await expectNoPageOverflow(page);
-
-    // Persist the view: save the dashboard, leave, reopen — the saved view carries
-    // its view company (KGHM), so the follow Feed reopens on KGHM.
-    await cockpit.getByRole("button", { name: "Save dashboard" }).click();
-    await nav(page).getByRole("button", { name: "Today" }).click();
-    await openCdrDashboard(page);
-    cockpit = await activateFeedTab(page);
-    await expect(
-      cockpit.getByRole("button", {
-        name: "Open company feed item: KGHM POLSKA MIEDZ S.A. source item for browser layout smoke",
-      }),
-    ).toBeVisible();
-    await expectNoPageOverflow(page);
   });
 
-  test("opens a follow panel from the palette and pins it to the current company", async ({
-    page,
-  }) => {
-    await openApp(page);
-    await openCdrDashboard(page);
+  test("a follow panel's tab pins it to the current view company", async ({ page }) => {
+    await seedFollowView(page);
+    await openFollowView(page);
     const cockpit = page.getByLabel("Research cockpit");
 
-    // Open a follow Report comparison panel from the ⌘K palette (only offered
-    // because a view company is set). It tracks the view company (CD PROJEKT).
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
-    await palette.getByLabel("Search commands").fill("Open panel: Report comparison");
-    await palette
-      .getByRole("button", { name: "Open panel: Report comparison", exact: true })
-      .click();
+    // The seeded view already carries a follow Report comparison panel (opening
+    // one from the palette is no longer possible — "Add panel" is retired).
     await expect(
       cockpit.getByRole("button", { name: "Report comparison", exact: true }).first(),
     ).toBeVisible();
@@ -99,30 +116,28 @@ test.describe("cockpit view company", { tag: "@clickable" }, () => {
     await expectNoPageOverflow(page);
   });
 
-  test("the Dowody / Research preset renders the evidence panel following the view company", async ({
-    page,
-  }) => {
-    // Dashboard redesign (epic c793ca1): the retired standalone Research screen is
-    // now the "Evidence / Research" preset. Selecting it composes the research
-    // evidence panel; it follows the view company like every other preset (jsdom
-    // cannot mount dockview panel bodies after a rebuild, so this real render is
-    // proven here, in a real browser).
-    await openApp(page);
-    await openCdrDashboard(page);
+  test("a saved view's research global panel renders and follows the view company", async ({ page }) => {
+    // Dashboard redesign (epic c793ca1): the retired standalone Research screen
+    // was reachable as the cockpit's "Evidence / Research" preset — the whole
+    // preset surface (a structure-mutating command) is gone with the freeze
+    // (F3a S3), so this now exercises a research global panel already open in
+    // the seeded view. It still follows the view company like every other
+    // follow panel (jsdom cannot mount dockview panel bodies after a rebuild,
+    // so this real render is proven here, in a real browser).
+    await seedFollowView(page);
+    await openFollowView(page);
     const cockpit = page.getByLabel("Research cockpit");
-
-    await cockpit.getByLabel("Preset").selectOption("evidence");
 
     // The real research evidence panel renders (jsdom cannot mount it after a
     // rebuild; here it does). Assert the panel, not the `.research-timeline`
     // sub-element, which density-collapses on narrow viewports (ADR 0076 D6).
     await expect(cockpit.locator(".research-panel")).toBeVisible();
-    // The preset follows the view company: the cockpit is still scoped to CD PROJEKT.
+    // The panel follows the view company: the cockpit is still scoped to CD PROJEKT.
     await expect(cockpit).toHaveAttribute("data-company-id", "company_gpw_cdr");
     await expectNoPageOverflow(page);
 
-    // Switch the view company — the evidence panel follows: still the one research
-    // panel (retargets in place), and the cockpit is now scoped to KGHM.
+    // Switch the view company — the research panel follows: still the one panel
+    // (retargets in place), and the cockpit is now scoped to KGHM.
     await cockpit.getByLabel("View company").selectOption("company_gpw_kgh");
     await expect(cockpit.locator(".research-panel")).toBeVisible();
     await expect(cockpit).toHaveAttribute("data-company-id", "company_gpw_kgh");

@@ -5,7 +5,8 @@ import type { Locator, Page } from "@playwright/test";
 // Same table-driven runner as density-matrix.spec.ts — each panel appends a
 // PANEL_CONTRACTS entry whose `open` returns the pane Locator to size and whose
 // `tiers` assert the contract's per-tier visibility after `setPaneSize` forces
-// the hosting `pane` size container (.cockpit-pane) to that tier. jsdom has no
+// the hosting `pane` size container (.workspace, F3a S3 — these screens are
+// standalone routes now, not cockpit dashboard tabs) to that tier. jsdom has no
 // container queries, so the tier switch is browser-only here; the fold/expand and
 // list-override STATE is unit-tested in the screens' *.test.tsx files.
 //
@@ -31,30 +32,32 @@ const TIER_SIZE = {
 
 const TIER_ORDER = ["S", "M", "L", "short"] as const;
 
-// The pane hosting a freshly-added cockpit panel is the single `.cockpit-pane`
-// that contains the panel's root element.
-function paneWith(page: Page, rootSelector: string): PaneLocator {
-  return page.locator(".cockpit-pane", { has: page.locator(rootSelector) });
+// F3a S3 (ADR 0107 decision 5): Research/Events/Report Season are standalone
+// routes now (reached via the ⌘K palette's "Open screen: …" entries, not a
+// cockpit dashboard tab) — `.workspace` (the `<main>` wrapping whatever screen
+// is active, shell.css) is their `pane` size container, the same role
+// `.cockpit-pane` played pre-freeze. Asserts the expected screen root actually
+// mounted inside it before handing the pane back, matching the pre-freeze
+// helper's contract.
+async function paneWith(page: Page, rootSelector: string): Promise<PaneLocator> {
+  const pane = page.locator(".workspace");
+  await expect(pane.locator(rootSelector)).toBeVisible();
+  return pane;
 }
 
 async function openResearch(page: Page): Promise<PaneLocator> {
   await openCockpitPanel(page, "Research");
-  const pane = paneWith(page, ".research-panel");
-  await expect(pane).toBeVisible();
-  return pane;
+  return paneWith(page, ".research-panel");
 }
 
 async function openEvents(page: Page): Promise<PaneLocator> {
   await openCockpitPanel(page, "Events");
-  const pane = paneWith(page, ".events-layout");
-  await expect(pane).toBeVisible();
-  return pane;
+  return paneWith(page, ".events-layout");
 }
 
 async function openReportSeason(page: Page): Promise<PaneLocator> {
   await openCockpitPanel(page, "Report Season");
-  const pane = paneWith(page, ".report-season-layout");
-  await expect(pane).toBeVisible();
+  const pane = await paneWith(page, ".report-season-layout");
   // The default cockpit cell is small (short); size the pane to L before expanding
   // so the pre-report card is mounted and visible, then let the tier loop resize
   // it (the expanded state persists across resizes).
@@ -78,6 +81,9 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.getByRole("button", { name: /Review queue/ })).toBeVisible();
         await expect(pane.getByRole("button", { name: /Research questions/ })).toBeVisible();
         await expect(pane.locator(".research-timeline")).toBeVisible();
+        // The evidence timeline never collapses: standalone hosts at ~768px tall let
+        // reminders + questions swallow the stack and the timeline hit 0px (F3a S4 harvest).
+        expect((await pane.locator(".research-timeline-shell").boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(200);
         await expect(pane.locator(".research-summary")).toBeVisible();
         await expect(pane.locator(".research-reminders")).toBeHidden();
         await expect(pane.locator(".research-questions")).toBeHidden();

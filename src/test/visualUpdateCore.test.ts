@@ -44,9 +44,9 @@ describe("visual-update-core", () => {
     }
   });
 
-  it("every catalog cell (76 today) has an existing baseline file", () => {
+  it("every catalog cell (80 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
-    expect(cells.length).toBe(76);
+    expect(cells.length).toBe(80);
     for (const cell of cells) {
       expect(existsSync(cellFileName(cell))).toBe(true);
     }

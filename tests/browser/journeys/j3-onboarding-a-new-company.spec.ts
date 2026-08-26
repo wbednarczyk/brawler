@@ -3,7 +3,6 @@ import {
   expect,
   openApp,
   journey,
-  setPaneSize,
   expectNoPageOverflow,
   expectNoA11yViolations,
 } from "../helpers/harness";
@@ -47,25 +46,34 @@ test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
     const list = page.getByLabel("Companies list");
     await expect(list.getByLabel("Open GPW:TST dashboard")).toBeVisible();
 
-    // Open the new company's workspace and record the first note.
+    // Open the new company's workspace and record the first note. F3a S3 (ADR
+    // 0107 decision 5): opening a company now lands the Spółka screen directly
+    // (the "Research cockpit" it used to open is frozen and reached only from
+    // the sidebar "Views" group).
     await j.click(list.getByLabel("Open GPW:TST dashboard"));
-    await expect(page.getByLabel("Research cockpit")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await j.markScreen("Company workspace");
     await expectNoPageOverflow(page);
 
     // v0.56 ownership (ADR 0072): the Basic Info ownership section shows up for
-    // a freshly tracked company with ZERO added interactions — the empty state
-    // invites the report backfill; population is fully automatic afterwards.
+    // a freshly tracked company — the empty state invites the report backfill;
+    // population is fully automatic afterwards. F3a S3 (ADR 0107): ownership
+    // now lives behind the Spółka screen's "Open ownership" workshop tool (the
+    // pre-freeze curated dashboard showed Basic Info without an extra click —
+    // one added interaction, folded into the budget below).
+    await j.click(page.getByRole("button", { name: "Open ownership", exact: true }));
     const ownershipSection = page.locator(".ownership-section");
     await expect(ownershipSection).toBeVisible();
     await expect(
       ownershipSection.getByText("No ownership disclosures yet", { exact: false }),
     ).toBeVisible();
 
-    await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Notebook", exact: true }).first());
-    const notebookPane = page.locator(".cockpit-pane", { has: page.locator(".notebook-panel") });
-    await expect(notebookPane).toBeVisible();
-    await setPaneSize(page, { width: 900, height: 700, pane: notebookPane });
+    // "Open notebook" is the Spółka workshop bar's own button (F3a S2/S3, ADR
+    // 0107) — no pane forcing (never force pane sizes on a journey): the
+    // notebook tool's "New note" affordance is reachable at every density tier.
+    await j.click(page.getByRole("button", { name: "Open notebook", exact: true }));
+    const notebookPane = page.locator(".spolka-layout");
+    await expect(notebookPane.locator(".notebook-panel")).toBeVisible();
     const notebook = notebookPane.getByLabel("Company notebook");
     await j.click(notebook.getByRole("button", { name: "New note" }));
     await j.fill(notebook.getByLabel("Notebook note title"), "Why I'm watching");

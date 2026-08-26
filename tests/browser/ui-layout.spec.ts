@@ -115,23 +115,25 @@ test.describe("browser UI regression smoke", () => {
     expect(gridScroll.scrollWidth).toBeLessThanOrEqual(gridScroll.clientWidth + 1);
   });
 
-  test("keeps the notebook panes independently usable as a cockpit panel", async ({ page }) => {
-    // Notebooks moved off the sidebar into the cockpit (ADR 0054); open it there.
+  test("keeps the notebook panes independently usable as a standalone screen", async ({ page }) => {
+    // Notebooks moved off the sidebar (ADR 0054); F3a S3 (ADR 0107 decision 5)
+    // then froze the cockpit's "Add panel" surface that used to host it as a
+    // dashboard tab — it's a standalone route now, reached via the ⌘K
+    // palette's "Open screen: Notebooks" entry, mounted full-screen in
+    // `.workspace`.
     await openApp(page);
     await openCockpitPanel(page, "Notebooks");
 
     const workspace = page.getByLabel("Notebooks workspace");
     const companyNav = page.getByLabel("Notebook companies");
 
-    // The panel mounts cleanly and stays usable at any pane width. At L (≥760)
+    // The screen mounts cleanly and stays usable at any pane width. At L (≥760)
     // the three panes scroll independently; below L the density contract (ADR
     // 0076 D6, U7) stacks them into one column and the SCREEN becomes the
     // bounded scroll container, so per-pane scrollability is tier-dependent.
     await expect(workspace).toBeVisible();
     await expect(companyNav).toBeVisible();
-    const paneWidth = await workspace
-      .locator("xpath=ancestor::*[contains(@class,'cockpit-pane')]")
-      .evaluate((el) => el.clientWidth);
+    const paneWidth = await page.locator(".workspace").evaluate((el) => el.clientWidth);
     if (paneWidth >= 760) {
       await expectScrollable(companyNav);
     } else {

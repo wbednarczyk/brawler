@@ -166,7 +166,12 @@
 }
 
 .research-main-stack.company {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /* The evidence timeline keeps a floor: standalone (non-cockpit) hosts at
+     ~768px tall let reminders + questions swallow the whole stack and the
+     timeline collapsed to 0px (F3a S4 harvest, 2026-08-26). The stack scrolls
+     instead. */
+  grid-template-rows: auto auto minmax(220px, 1fr);
+  overflow-y: auto;
 }
 
 .research-main-stack.watchlist {

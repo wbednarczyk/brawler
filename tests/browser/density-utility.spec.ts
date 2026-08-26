@@ -90,11 +90,18 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expectNoPageOverflow(page);
   });
 
-  test("Watchlists (cockpit panel) folds detail below M", async ({ page }) => {
+  // The cockpit-hosted "Watchlists" global panel (opened via the removed
+  // "Add panel" surface) no longer exists (F3a S3, ADR 0107 decision 5) —
+  // Watchlists has always had its own sidebar nav button too (unlike
+  // Research/Events/Notebooks/Report Season, it never gained an "Open
+  // screen: …" palette entry, since it already had one). This exercises the
+  // same `.watchlists-workspace` component through its one surviving entry
+  // point, sized via the screen's own `.workspace` pane container.
+  test("Watchlists (sidebar screen, forced to a narrow pane) folds detail below M", async ({ page }) => {
     await openApp(page);
-    await openCockpitPanel(page, "Watchlists");
-    const pane = page.locator(".cockpit-pane", { has: page.locator(".watchlists-workspace") });
-    await expect(pane).toBeVisible();
+    await nav(page).getByRole("button", { name: "Watchlists" }).click();
+    const pane = page.locator(".workspace");
+    await expect(pane.locator(".watchlists-workspace")).toBeVisible();
     const detail = pane.getByLabel("Selected watchlist");
     const list = pane.locator(".watchlist-list");
 

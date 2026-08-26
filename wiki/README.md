@@ -15,7 +15,11 @@ per feature.
 
 - **[The research workspace](research-workspace.md)** — how the app is laid out:
   the sidebar modes, the **Today** attention home, pinned companies, opening a
-  company's dashboard, and full-screen **Focus** reading/writing.
+  company, and full-screen **Focus** reading/writing.
+- **[The Spółka screen](company-view.md)** — what you land on when you open a
+  company: the glance bar counters, the always-visible core (KPIs, feed,
+  price, coverage, recommendations), the one-click workshop of tools, the
+  unsaved-work guard, and what moved here from the old dashboard.
 - **[Autopilot](autopilot.md)** — let Brawler detect, fetch, and extract a
   company's new report automatically, per company, with everything cited,
   flagged, and reversible.
@@ -33,9 +37,10 @@ per feature.
   classification with confirm-only AI, the BiznesRadar witness, the **Insiders**
   block (MAR art. 19 transactions, management holdings, skin-in-the-game badge),
   and how unreadable shareholder tables surface as honest gaps.
-- **[Composable cockpit views](cockpit-views.md)** — build your own
-  multi-panel dashboards from a grid and a panel picker, save them by name,
-  and switch between them from the sidebar.
+- **[Composable cockpit views](cockpit-views.md)** — named views you built
+  before F3a: still open, their edits still save, but their layout structure
+  is frozen (no more building/resizing/rearranging) while opening a company
+  moved to the fixed [Spółka screen](company-view.md).
 - **[Per-company settings](company-settings.md)** — quick single-company
   controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
   surface for changing several companies, or a whole watchlist, at once.
