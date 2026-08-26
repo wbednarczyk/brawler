@@ -45,7 +45,8 @@
   --secondary: #c71985;
   --accent: #6941d9;
   --highlight: #c71985;
-  --success: #15803d;
+  /* ≥4.5:1 on tinted light surfaces (a11y harvest 2026-08-26: the ok chip hit 3.95). */
+  --success: #166534;
   --warning: #8a5200;
   --danger: #be123c;
   --tone-positive: var(--success);
@@ -104,7 +105,7 @@
   --secondary: #55388f;
   --accent: #a02a96;
   --highlight: #d6388e;
-  --success: #167a45;
+  --success: #155e37;
   --warning: #875311;
   --danger: #b81e4c;
   --tone-positive: var(--success);

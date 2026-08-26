@@ -69,8 +69,16 @@ export async function openInbox(page: Page) {
 // `label` is the screen name as it appears in the palette ("Notebooks",
 // "Research", "Events", "Report Season", "Decision journal").
 export async function openCockpitPanel(page: Page, label: string) {
+  // ⌘K is suppressed while an editable control holds focus and can race the
+  // shortcut listener's mount on a slow CI runner (shard 4/4 flake, PR #432):
+  // release focus first and press once more if the dialog does not appear.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
+  if (!(await palette.isVisible().catch(() => false))) {
+    await page.waitForTimeout(500);
+    if (!(await palette.isVisible().catch(() => false))) await page.keyboard.press("Control+K");
+  }
   await palette.getByLabel("Search commands").fill(`Open screen: ${label}`);
   await palette.getByRole("button", { name: `Open screen: ${label}`, exact: true }).first().click();
 }
