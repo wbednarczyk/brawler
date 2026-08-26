@@ -20,10 +20,9 @@ interface Step {
   expectAbsent?: Record<string, unknown>;
   /**
    * Dotted-path deep-equality pins (e.g. `"kpi.rows.0.yoyPct"`), for nested
-   * fields `expectField`'s shallow `===` can't reach. TS-only: the Rust
-   * corpus replayer (mock_fidelity.rs) doesn't read this field, so a step
-   * using it must also be pinned against real `AppState` by a Rust unit
-   * test — name that test in the step's `_comment`.
+   * fields `expectField`'s shallow `===` can't reach. Read by BOTH replayers
+   * (mock_fidelity.rs implements the same dotted-path lookup), so a deep pin
+   * is a dual-execution assertion like `expectField`.
    */
   expectDeep?: Record<string, unknown>;
 }

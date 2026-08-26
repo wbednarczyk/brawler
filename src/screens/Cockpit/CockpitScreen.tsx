@@ -46,6 +46,8 @@ import { DecisionJournalGlobalPanel } from "./DecisionJournalGlobalPanel";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
 import { CommandPalette, type PaletteCommand } from "../../shared/components/CommandPalette";
 import { useCommandPaletteCommands } from "../../app/commandPalette";
+import type { Tool } from "../Spolka/route";
+import { globalKindLabel, linkedTitle, pinnedKindLabel } from "./kindLabels";
 import { listCockpitLayouts, type CockpitLayout } from "../../api/cockpit";
 
 // Research cockpit — the full-screen docking shell spike (ADR 0053). It shows
@@ -53,8 +55,8 @@ import { listCockpitLayouts, type CockpitLayout } from "../../api/cockpit";
 // claims/diff), a rich Fundamentals panel, a command palette (⌘K) to open any
 // panel, and named saved layouts to switch task-shaped workspaces.
 
-type LinkedKind = "feed" | "inspector" | "claims-sel" | "diff-sel";
-type PinnedKind =
+export type LinkedKind = "feed" | "inspector" | "claims-sel" | "diff-sel";
+export type PinnedKind =
   | "basicInfo"
   | "fundamentals"
   | "coverage"
@@ -95,7 +97,7 @@ const PINNED_KINDS: PinnedKind[] = [
 // Global singleton panels (ADR 0053 phase 4c): full app screens that own their
 // own scope/data via contexts (mounted prop-free in AppStateRoot), so the cockpit
 // renders them directly. Not company-scoped — opened once from the palette.
-type GlobalKind =
+export type GlobalKind =
   | "watchlists"
   | "research"
   | "notebook"
@@ -112,22 +114,6 @@ const GLOBAL_KINDS: GlobalKind[] = [
   "decisionJournalGlobal",
 ];
 
-function globalKindLabel(kind: GlobalKind, text: (s: string) => string): string {
-  switch (kind) {
-    case "watchlists":
-      return text("Watchlists");
-    case "research":
-      return text("Research");
-    case "notebook":
-      return text("Notebook");
-    case "events":
-      return text("Events");
-    case "reportSeason":
-      return text("Report Season");
-    case "decisionJournalGlobal":
-      return text("Journal (all companies)");
-  }
-}
 
 // A company-scoped cockpit panel (U-Ra, ADR 0076). `follow` panels track the
 // view company and carry no companyId (resolved at render time); `pinned` panels
@@ -189,49 +175,7 @@ function isDashboardFollowSeeded(pinned: Pinned[]): boolean {
   );
 }
 
-function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string {
-  switch (kind) {
-    case "basicInfo":
-      return text("Basic info");
-    case "fundamentals":
-      return text("Fundamentals");
-    case "coverage":
-      return text("Coverage");
-    case "reportDiff":
-      return text("Report comparison");
-    case "claims":
-      return text("Claims");
-    case "quality":
-      return text("Quality");
-    case "documents":
-      return text("Report documents");
-    case "companyFeed":
-      return text("Feed");
-    case "companyNotebook":
-      return text("Notebook");
-    case "decisionJournal":
-      return text("Decision journal");
-    case "shortPositions":
-      return text("Short selling (KNF)");
-    case "redFlags":
-      return text("Warning signals");
-    case "analystRecommendations":
-      return text("Analyst recommendations");
-  }
-}
 
-function linkedTitle(kind: LinkedKind, text: (s: string) => string): string {
-  switch (kind) {
-    case "feed":
-      return text("Feed");
-    case "inspector":
-      return text("Inspector");
-    case "claims-sel":
-      return text("Claims");
-    case "diff-sel":
-      return text("Report comparison");
-  }
-}
 
 // Layout presets (ADR 0053 phase 4d) were a structure-mutating "Apply preset"
 // command — removed with the freeze (F3a S3, ADR 0107 decision 5). The curated
@@ -366,6 +310,9 @@ export type CockpitScreenProps = {
    * coverage"/"Open documents" cross-links (R1 finding 4 — these used to add
    * a panel in place, a structure mutation the freeze removes). */
   onOpenCompany?: (companyId: string) => void;
+  /** Typed cross-link target (sol R2): "Open recommendations"/"Open documents"
+   * land on THAT Spółka tool, not the core. */
+  onOpenCompanyTool?: (companyId: string, tool: Tool) => void;
   /** The frozen empty-view CTA's fallback when no view company is set. */
   onOpenCompaniesScreen?: () => void;
 };
@@ -378,6 +325,7 @@ export function CockpitScreen({
   onLayoutsChanged, highlightClaimId = null,
   onOpenView,
   onOpenCompany,
+  onOpenCompanyTool,
   onOpenCompaniesScreen,
 }: CockpitScreenProps) {
   return (
@@ -394,6 +342,7 @@ export function CockpitScreen({
         onLayoutsChanged={onLayoutsChanged}
         onOpenView={onOpenView}
         onOpenCompany={onOpenCompany}
+        onOpenCompanyTool={onOpenCompanyTool}
         onOpenCompaniesScreen={onOpenCompaniesScreen}
       />
     </CockpitSelectionProvider>
@@ -408,6 +357,7 @@ function CockpitWorkspace({
   onLayoutsChanged,
   onOpenView,
   onOpenCompany,
+  onOpenCompanyTool,
   onOpenCompaniesScreen,
 }: Omit<CockpitScreenProps, "initialCompanyId"> & { dashboardCompanyId?: string | null }) {
   const { text } = useLocale();
@@ -596,7 +546,7 @@ function CockpitWorkspace({
             companyId={companyId}
             qualifiedTicker={companyById.get(companyId)?.qualifiedTicker}
             revision={fundamentalsRevision}
-            onOpenRecommendations={onOpenCompany ? () => onOpenCompany(companyId) : undefined}
+            onOpenRecommendations={onOpenCompanyTool ? () => onOpenCompanyTool(companyId, { t: "rekomendacje" }) : undefined}
           />
         );
       case "coverage":
@@ -604,7 +554,7 @@ function CockpitWorkspace({
           <CompanyCoveragePanel
             companyId={companyId}
             reloadKey={fundamentalsRevision}
-            onOpenDocuments={onOpenCompany ? () => onOpenCompany(companyId) : undefined}
+            onOpenDocuments={onOpenCompanyTool ? () => onOpenCompanyTool(companyId, { t: "dokumenty" }) : undefined}
             onHistoryRefreshed={bumpFundamentals}
           />
         );

@@ -7,7 +7,7 @@ companies at once.
 
 ## Quick edit, one company at a time
 
-Open a company's dashboard → the **Fundamentals** panel. From there you can
+Open the company (Spółka screen) → **Open fundamentals**. From there you can
 set:
 
 - **Autopilot mode** — off / assist / autopilot (see

@@ -1027,6 +1027,13 @@ export function AppStateRoot({
     transcriptNoteForm,
   });
 
+  const { navigate, highlightClaimId } = useSpolkaNavigate({
+    spolkaTool,
+    setSelectedCompanyId,
+    setCockpitInitialCompanyId,
+    setActiveSectionRaw,
+    setActiveCockpitLayoutId,
+  });
   const {
     clearInboxFilters,
     inboxDetailActivationToken,
@@ -1042,7 +1049,6 @@ export function AppStateRoot({
     filteredFeedItems,
     selectedFeedItem,
     setActiveSection,
-    setCockpitInitialCompanyId,
     setFeedError,
     setFeedState,
     setInboxCompanyFilter,
@@ -1053,7 +1059,7 @@ export function AppStateRoot({
     setInboxWatchlistFilter,
     setSearchQuery,
     setSelectedCompanyFeedItemId,
-    setSelectedCompanyId,
+    navigate,
     setSelectedFeedItemId,
   });
 
@@ -1119,13 +1125,6 @@ export function AppStateRoot({
     return () => cancelAnimationFrame(frame);
   }, [searchFocusSelector]);
 
-  const { navigate, highlightClaimId } = useSpolkaNavigate({
-    spolkaTool,
-    setSelectedCompanyId,
-    setCockpitInitialCompanyId,
-    setActiveSectionRaw,
-    setActiveCockpitLayoutId,
-  });
   const {
     focusCompanyWorkspace,
     openCompanyClaims,
@@ -1923,6 +1922,7 @@ export function AppStateRoot({
                             onLayoutsChanged={refreshCockpitLayouts}
                             onOpenView={openCockpitView}
                             onOpenCompany={openCompanyWorkspaceById}
+                            onOpenCompanyTool={(companyId, tool) => navigate({ companyId, section: "Spolka", tool })}
                             onOpenCompaniesScreen={() => setActiveSection("Companies")}
                           />
                         </EventsProvider>

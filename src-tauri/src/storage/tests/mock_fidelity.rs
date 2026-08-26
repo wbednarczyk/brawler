@@ -1011,6 +1011,29 @@ fn rust_backend_satisfies_the_fidelity_corpus() {
                     "[{name}] {command}: result {result} is missing {field}"
                 );
             }
+            // Dotted-path deep pins (`"kpi.rows.0.yoyPct": 25`) — the same
+            // step field the TS replayer's `expectDeep` reads, so nested
+            // composed-read shapes are asserted on BOTH sides (sol R2 f7).
+            if let Some(deep) = step.get("expectDeep").and_then(Value::as_object) {
+                for (path, expected) in deep {
+                    let actual = path.split('.').try_fold(&result, |node, key| match node {
+                        Value::Array(items) => key.parse::<usize>().ok().and_then(|i| items.get(i)),
+                        Value::Object(map) => map.get(key),
+                        _ => None,
+                    });
+                    // Numbers compare by value: serde serializes `25.0` (f64)
+                    // where the JSON corpus writes `25`.
+                    let same = match (actual, expected) {
+                        (Some(Value::Number(a)), Value::Number(e)) => a.as_f64() == e.as_f64(),
+                        (Some(a), e) => a == e,
+                        (None, _) => false,
+                    };
+                    assert!(
+                        same,
+                        "[{name}] {command}: expectDeep {path} = {expected} — result {result}"
+                    );
+                }
+            }
             if let Some(subset) = step.get("expectContains") {
                 let array = result.as_array().unwrap_or_else(|| {
                     panic!("[{name}] {command}: expected an array, got {result}")

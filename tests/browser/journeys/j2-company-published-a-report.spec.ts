@@ -274,9 +274,10 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-    // F3a S1 (ADR 0107): bridge through the sidebar "Dashboard" entry — see
-    // the note on the first test in this file.
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Dashboard" }).click();
+    // F3a S3 (ADR 0107): the frozen legacy dashboard is reached from the
+    // sidebar "Views" group — this regression case still exercises its
+    // claims pane (the surviving linked workflow).
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Legacy dashboard · CDR", exact: true }).click();
 
     await page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first().click();
     const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });

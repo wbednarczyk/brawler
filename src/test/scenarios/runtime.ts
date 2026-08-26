@@ -184,7 +184,8 @@ function canonicalPeriodLabel(periodType: string): string {
  * contracts.md): Q1 < H1/Q2 < 9M/Q3 < Q4/FY. */
 function periodRank(periodType: string): number {
   const rank: Record<string, number> = { Q1: 1, Q2: 2, H1: 2, Q3: 3, "9M": 3, Q4: 4, FY: 4 };
-  return rank[canonicalPeriodLabel(periodType)] ?? 0;
+  // Unknown types sort LAST (Rust `period_type_rank` → 5), never first.
+  return rank[canonicalPeriodLabel(periodType)] ?? 5;
 }
 
 /** Signed contribution of a KNF register-change event to the aggregate net short
@@ -1323,7 +1324,7 @@ function buildHandlers(): Record<string, Handler> {
           const preferred = [...candidates].sort((x, y) => {
             const xConfirmed = x.confirmationState === "confirmed" ? 1 : 0;
             const yConfirmed = y.confirmationState === "confirmed" ? 1 : 0;
-            return yConfirmed - xConfirmed || y.updatedAt.localeCompare(x.updatedAt);
+            return yConfirmed - xConfirmed || y.createdAt.localeCompare(x.createdAt);
           })[0];
           if (preferred?.currency) currency ??= preferred.currency;
           return {
