@@ -16,7 +16,7 @@ WSL2 Ubuntu 24.04 with Nix is the primary development layer; Windows 11 is the p
 
 Do not assume a Linux GUI inside WSL — a WSL Tauri build is a Linux application, not a Windows executable.
 
-**Disk hygiene.** WSL2's grow-only vhdx means a full host drive kills sessions while `df` inside WSL shows free — `disk-guard` (first `check`/`check-local` step) watches WSL root + the vhdx/swap-hosting drives (`Lxss` autodetect; fail <10 GiB, warn <40) and names the remedy: `make disk-clean` / `disk-clean-deep`; vhdx shrink is host-side only (`wsl --shutdown` + `--set-sparse true`).
+**Disk hygiene.** WSL2's grow-only vhdx means a full host drive kills sessions while `df` inside WSL shows free — `disk-guard` (first `check`/`check-local` step) watches WSL root + the vhdx/swap-hosting drives (`Lxss` autodetect; fail <10 GiB, warn <40) and names the remedy: `make disk-clean` (drops `src-tauri/target/debug` first — stale cargo debug artifacts routinely reach 100+ GiB and are a rebuildable cache, never data; owner harvest 2026-08-26) / `disk-clean-deep`; vhdx shrink is host-side only (`wsl --shutdown` + `--set-sparse true`).
 
 Recommended workflow:
 
