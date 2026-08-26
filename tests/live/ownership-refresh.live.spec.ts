@@ -57,7 +57,7 @@ test("manual refresh rewrites aggregator ownership with sane values", async ({})
   // Ownership section on the active company's Basic info: every legend/row
   // percentage must be plausible (≤ 100) — the defect rendered share counts.
   await page
-    .getByRole("button", { name: /^(Dashboard|Pulpit)/ })
+    .getByRole("button", { name: /^(Legacy dashboard|Dawny dashboard)/ })
     .first()
     .click();
   await expect(page.getByLabel(/Research cockpit|Kokpit/)).toBeVisible({ timeout: 15_000 });

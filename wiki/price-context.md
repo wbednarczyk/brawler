@@ -53,7 +53,7 @@ ratios light up on their own.
 
 ## The Basic info panel
 
-Open a company's dashboard → the **Basic info** panel shows the identity facts
+Open the company (Spółka screen) → **Open ownership** → the **Basic info** panel shows the identity facts
 at a glance: **name, ticker, ISIN, sector** (with a chip showing whether it came
 from the registry or your manual override), and the latest recorded **shares
 outstanding** with its reporting period.

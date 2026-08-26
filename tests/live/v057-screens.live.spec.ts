@@ -59,7 +59,7 @@ test("v0.57 surfaces — screenshots", async () => {
   await dismiss();
   await shot("10-initial");
 
-  await click(/^(Dashboard|Pulpit)/, "Dashboard");
+  await click(/^(Legacy dashboard|Dawny dashboard)/, "Legacy dashboard row");
   await shot("11-cockpit");
 
   await click(/^(Podstawowe informacje|Basic info)$/, "Basic info tab");

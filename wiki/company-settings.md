@@ -7,7 +7,7 @@ companies at once.
 
 ## Quick edit, one company at a time
 
-Open the company (Spółka screen) → **Open fundamentals**. From there you can
+Open the company (Spółka screen). Autopilot: **Open fundamentals**; the IR reports URL and sector override: **Open ownership** → Basic info → Edit. From there you can
 set:
 
 - **Autopilot mode** — off / assist / autopilot (see
