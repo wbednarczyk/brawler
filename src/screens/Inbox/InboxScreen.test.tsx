@@ -141,6 +141,12 @@ describe("Inbox screen workflows", () => {
     expect(detailPane.queryByText("Regulamin")).not.toBeInTheDocument();
     expect(detailPane.queryByText("Polityka prywatności")).not.toBeInTheDocument();
     expect(detailPane.queryByText("Polityka Cookies")).not.toBeInTheDocument();
+
+    // Report kind follows the same collapse contract as media/filing (F1 #413
+    // specifies company context uniformly, not per presentationKind): it sits
+    // behind the disclosure too, collapsed by default.
+    const toggle = await detailPane.findByRole("button", { name: "Company context" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
   // ADR 0084 decision 5: the detail rail must render no AI-analysis surface at
