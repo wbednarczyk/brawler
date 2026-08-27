@@ -12,10 +12,15 @@ export function CockpitCompanyFeedPanel({
   company,
   feedItems,
   initialSelectedFeedItemId,
+  leadWithDetail,
 }: {
   company: Company;
   feedItems: FeedItem[];
   initialSelectedFeedItemId?: string | null;
+  /** Renders the pre-selected item's detail FIRST, above the list (Spółka
+   * `feedItem` workshop tool, owner dogfooding v0.74 item 7) instead of the
+   * default inline-under-the-row placement. */
+  leadWithDetail?: boolean;
 }) {
   const feed = useCockpitCompanyFeed(company, feedItems, initialSelectedFeedItemId);
   return (
@@ -33,6 +38,7 @@ export function CockpitCompanyFeedPanel({
       updateFeedItemState={feed.updateFeedItemState}
       formatTimestamp={formatTimestamp}
       feedItemSummary={feedItemSummary}
+      leadWithDetail={leadWithDetail}
     />
   );
 }

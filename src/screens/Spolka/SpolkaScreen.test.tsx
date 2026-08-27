@@ -11,6 +11,7 @@ import { ResearchProvider } from "../../app/state/screenViewModels";
 import type { ResearchScreenProps } from "../Research/ResearchScreen";
 import { getCompanyView } from "../../api/companyView";
 import type { CompanyView } from "../../api/generated/CompanyView";
+import type { FeedItem } from "../../api/types";
 import type { Tool } from "./route";
 import { TOOL_KINDS } from "./route";
 import { COMPANY_SPECS, makeCompany } from "../../test/scenarios/entities";
@@ -211,11 +212,13 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
   return {
     companyId: company.id,
     company,
+    companies: [company],
     spolkaTool: overrides.spolkaTool as SpolkaScreenProps["spolkaTool"],
     feedItems: [],
     rootHighlightClaimId: null,
     onOpenDocument: vi.fn(),
     onOpenFeedItem: vi.fn(),
+    onSwitchCompany: vi.fn(),
     refreshCompletionCount: 0,
     ...overrides,
   };
@@ -300,6 +303,15 @@ beforeEach(() => {
         window12m: { buyCount: 0, sellCount: 0, netValue: null },
       });
     }
+    if (command === "get_company_context") {
+      return Promise.resolve({
+        companyId: company.id,
+        latestPeriodFacts: null,
+        upcomingEvents: [],
+        notebook: { count: 0, latestAt: null },
+        claimsDue: { due: 0, overdue: 0 },
+      });
+    }
     return Promise.resolve([]);
   });
 });
@@ -362,19 +374,21 @@ describe("SpolkaScreen", () => {
       { label: "Claims counter", tool: { t: "tezy" } },
       { label: "Shorts counter", tool: { t: "akcjonariat" } },
       { label: "Events counter", tool: { t: "wydarzenia" } },
-      { label: "Open fundamentals", tool: { t: "fundamenty" } },
-      { label: "Open feed", tool: { t: "feed" } },
-      { label: "Open coverage", tool: { t: "pokrycie" } },
-      { label: "Open recommendations", tool: { t: "rekomendacje" } },
-      { label: "Open claims", tool: { t: "tezy" } },
-      { label: "Open notebook", tool: { t: "notatnik" } },
-      { label: "Open decision journal", tool: { t: "dziennik" } },
-      { label: "Open quality", tool: { t: "jakosc" } },
-      { label: "Open report diff", tool: { t: "diff" } },
-      { label: "Open research", tool: { t: "research" } },
-      { label: "Open ownership", tool: { t: "akcjonariat" } },
-      { label: "Open signals", tool: { t: "sygnaly" } },
-      { label: "Open documents", tool: { t: "dokumenty" } },
+      // Destination buttons are nouns (owner dogfooding v0.74 item 4; ADR
+      // 0104 dec. 3 amendment) — only the ⌘K palette keeps "Open X".
+      { label: "Fundamentals", tool: { t: "fundamenty" } },
+      { label: "Feed", tool: { t: "feed" } },
+      { label: "Coverage", tool: { t: "pokrycie" } },
+      { label: "Recommendations", tool: { t: "rekomendacje" } },
+      { label: "Claims", tool: { t: "tezy" } },
+      { label: "Notebook", tool: { t: "notatnik" } },
+      { label: "Decision journal", tool: { t: "dziennik" } },
+      { label: "Quality", tool: { t: "jakosc" } },
+      { label: "Report diff", tool: { t: "diff" } },
+      { label: "Research", tool: { t: "research" } },
+      { label: "Ownership", tool: { t: "akcjonariat" } },
+      { label: "Signals", tool: { t: "sygnaly" } },
+      { label: "Documents", tool: { t: "dokumenty" } },
     ];
 
     for (const { label, tool } of expectations) {
@@ -468,6 +482,88 @@ describe("SpolkaScreen", () => {
     expect(screen.getByRole("button", { name: /Signals counter/ }).textContent).toContain("99+");
     const feedGroup = screen.getByRole("group", { name: "Company feed" });
     expect(within(feedGroup).getAllByRole("button", { name: /Report \d/ })).toHaveLength(6);
+  });
+
+  // Owner dogfooding v0.74, item 2: the real base carries 30+ coverage
+  // periods; the core card caps display to the 8 newest, the rest stays
+  // behind the card's own "Coverage" button into the `pokrycie` tool.
+  it("coverage card caps to 8 newest periods", async () => {
+    const coverage = Array.from({ length: 30 }, (_, i) => ({
+      fiscalYear: 2026 - i,
+      periodType: "FY",
+      report: null,
+      facts: { total: 0, validated: 0, unvalidated: 0, flagged: 0 },
+      review: { flaggedFacts: 0 },
+      skippedBudget: false,
+    }));
+    getCompanyViewMock.mockResolvedValue(fullView({ coverage }));
+    renderScreen();
+    await screen.findByText("CD Projekt");
+    const coverageGroup = screen.getByRole("group", { name: "Report coverage" });
+    expect(within(coverageGroup).getAllByRole("listitem")).toHaveLength(8);
+  });
+
+  // Owner dogfooding v0.74, item 5: a tool has no obvious way back to the
+  // overview short of finding the small ✕ — a leading "Overview" button next
+  // to the tool title returns to the untouched core.
+  it("Overview returns from a tool to the untouched core", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    const { container } = renderScreen();
+    await screen.findByText("CD Projekt");
+
+    const layout = container.querySelector(".spolka-body-scroll") as HTMLElement;
+    layout.scrollTop = 240;
+    await user.click(screen.getAllByRole("button", { name: /Report 0/ })[0]);
+    await screen.findByRole("group", { name: "Workshop tool" });
+
+    await user.click(screen.getByRole("button", { name: "Overview" }));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(screen.getByRole("group", { name: "Company core" })).toBeVisible();
+    expect(layout.scrollTop).toBe(240);
+  });
+
+  // Owner dogfooding v0.74, item 7: opened from the Inbox "Otwórz spółkę",
+  // the `feedItem` tool used to bury the selected item in the whole feed
+  // list — its detail now leads, the list stays reachable below it.
+  it("feedItem tool leads with the item detail", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    // The `feedItem` tool reads the CockpitCompanyFeedPanel's OWN global
+    // `feedItems` prop (filtered by `company.qualifiedTicker`), not
+    // `data.feed` — a real detail (not the empty state) needs a matching row.
+    const feedItem: FeedItem = {
+      id: "feed_0",
+      company: company.qualifiedTicker,
+      type: "Official report",
+      source: "GPW ESPI/EBI",
+      time: "Today 09:12",
+      title: "Report 0",
+      unread: false,
+      saved: false,
+      sourceUrl: "https://example.test/feed/0",
+      language: "pl",
+      publishedAt: "2026-08-20T09:00:00Z",
+      fetchedAt: "2026-08-20T09:00:00Z",
+      attribution: "GPW",
+      summary: "Sample feed item summary.",
+      bodyText: "Body text.",
+      attachments: [],
+      presentationKind: "report",
+    };
+    renderScreen({ feedItems: [feedItem] });
+    await screen.findByText("CD Projekt");
+
+    await user.click(screen.getAllByRole("button", { name: /Report 0/ })[0]);
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    expect(frame.getAttribute("data-tool")).toBe("feedItem");
+
+    const detail = within(frame).getByLabelText("Company feed item details");
+    const list = within(frame).getByLabelText("Company feed");
+    const firstRow = list.querySelector('[data-company-feed-row="true"]');
+    expect(firstRow).not.toBeNull();
+    // The detail <aside> must precede the first feed row in DOM order.
+    expect(detail.compareDocumentPosition(firstRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
 });

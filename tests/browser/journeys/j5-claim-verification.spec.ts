@@ -29,11 +29,12 @@ test.describe("J5 — claim verification", { tag: "@journey" }, () => {
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await j.markScreen("Company workspace");
 
-    // "Open claims" is the Spółka workshop bar's own button (F3a S2/S3, ADR
-    // 0107) — no pane forcing (never force pane sizes on a journey): the review
-    // queue (with the Delivered/Missed actions) renders at the project's own
-    // viewport, comfortably above the L-tier threshold.
-    await j.click(page.getByRole("button", { name: "Open claims", exact: true }));
+    // "Claims" is the Spółka workshop bar's own destination button (F3a S2/S3,
+    // ADR 0107; noun label per ADR 0104 dec. 3 amendment) — no pane forcing
+    // (never force pane sizes on a journey): the review queue (with the
+    // Delivered/Missed actions) renders at the project's own viewport,
+    // comfortably above the L-tier threshold.
+    await j.click(page.getByRole("button", { name: "Claims", exact: true }));
     const claimsPane = page.locator(".spolka-layout");
     await expect(claimsPane.locator(".company-claims-panel")).toBeVisible();
 

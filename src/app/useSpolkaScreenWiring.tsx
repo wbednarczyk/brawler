@@ -37,6 +37,10 @@ type SpolkaScreenHostProps = {
   feedItems: FeedItem[];
   rootHighlightClaimId: string | null;
   openInboxItem: (feedItemId: string, companyId: string) => void;
+  /** The header company picker's switch (owner dogfooding v0.74, item 6) —
+   * routed through the caller's atomic `navigate`, never a direct
+   * `selectedCompanyId` set (same guard every other entry point uses). */
+  onSwitchCompany: (companyId: string) => void;
   refreshCompletionCount: number;
 };
 
@@ -47,6 +51,7 @@ export function SpolkaScreenHost({
   feedItems,
   rootHighlightClaimId,
   openInboxItem,
+  onSwitchCompany,
   refreshCompletionCount,
 }: SpolkaScreenHostProps) {
   // Switching company asks the dirty gate BEFORE the new company displaces
@@ -82,6 +87,7 @@ export function SpolkaScreenHost({
     <SpolkaScreen
       companyId={spolkaCompany.id}
       company={spolkaCompany}
+      companies={companies}
       spolkaTool={spolkaTool}
       feedItems={feedItems}
       rootHighlightClaimId={rootHighlightClaimId}
@@ -91,6 +97,7 @@ export function SpolkaScreenHost({
       // `navigate` (which is for a company/section switch).
       onOpenDocument={(documentRef) => spolkaTool.openTool(spolkaCompany.id, { t: "dokumenty", documentId: documentRef })}
       onOpenFeedItem={(feedItemId) => openInboxItem(feedItemId, spolkaCompany.id)}
+      onSwitchCompany={onSwitchCompany}
       refreshCompletionCount={refreshCompletionCount}
     />
   );

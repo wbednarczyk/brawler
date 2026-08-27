@@ -43,6 +43,12 @@ export type CompanyFeedSectionProps = {
   // Provenance-thread landing for the context block (ADR 0104 dec. 7). Optional:
   // a host with no documents navigation leaves the ticket non-interactive.
   openCompanyReportDocuments?: () => void;
+  /** Renders the selected item's detail FIRST, above the list, instead of
+   * inline under its row (Spółka `feedItem` workshop tool, owner dogfooding
+   * v0.74 item 7 — opened from the Inbox, the item could sit anywhere in a
+   * long feed). Default false preserves the existing placement (Companies
+   * tab, cockpit `companyFeed` dashboard panel). */
+  leadWithDetail?: boolean;
 };
 
 export function CompanyFeedSection({
@@ -58,8 +64,85 @@ export function CompanyFeedSection({
   openCompanyReportDocuments,
   formatTimestamp,
   feedItemSummary,
+  leadWithDetail = false,
 }: CompanyFeedSectionProps) {
   const { text, locale } = useLocale();
+
+  function renderDetail(item: FeedItem) {
+    return (
+      <aside className="company-feed-detail" aria-label={text("Company feed item details")}>
+        <FeedDetailContent
+          item={item}
+          signals={NO_SIGNALS}
+          feedItemSummary={feedItemSummary}
+          formatTimestamp={formatTimestamp}
+          onConfirmSignal={noopSignalHandler}
+          onRejectSignal={noopSignalHandler}
+          actions={
+            <ActionRow className="detail-actions" ariaLabel={text("Company feed item actions")}>
+              <Button
+                className="compact-button"
+                onClick={() =>
+                  updateFeedItemState(item, (feedItem) => ({
+                    ...feedItem,
+                    unread: !feedItem.unread,
+                  }))
+                }
+              >
+                {item.unread ? <MailOpen size={15} /> : <Mail size={15} />}
+                {item.unread ? text("Mark read") : text("Mark unread")}
+              </Button>
+              <Button
+                className="compact-button"
+                onClick={() =>
+                  updateFeedItemState(item, (feedItem) => ({
+                    ...feedItem,
+                    saved: !feedItem.saved,
+                  }))
+                }
+              >
+                <Save size={15} />
+                {item.saved ? text("Unsave") : text("Save")}
+              </Button>
+              {inspectFeedItem ? (
+                <Button className="compact-button" onClick={() => inspectFeedItem(item)}>
+                  <Inbox size={15} />
+                  {text("Open in Inbox")}
+                </Button>
+              ) : null}
+              {openFeedItemNoteDraft ? (
+                <Button className="compact-button" onClick={() => openFeedItemNoteDraft(item)}>
+                  <BookOpenText size={15} />
+                  {text("Note")}
+                </Button>
+              ) : null}
+              <a
+                // The one contracted primary action of this host's detail
+                // (experience contract §6); opening the source also marks
+                // the item read (§7 exit path).
+                className="primary-button compact-button"
+                data-ux-primary-action="true"
+                href={item.sourceUrl}
+                rel="noreferrer"
+                target="_blank"
+                onClick={() =>
+                  updateFeedItemState(item, (feedItem) => ({
+                    ...feedItem,
+                    unread: false,
+                  }))
+                }
+              >
+                <ExternalLink size={15} />
+                {text("Open source")}
+              </a>
+            </ActionRow>
+          }
+        />
+        <div className="detail-context-divider" />
+        <CompanyContextSection companyId={company.id} onOpenReportDocuments={openCompanyReportDocuments} />
+      </aside>
+    );
+  }
 
   return (
     <div
@@ -67,6 +150,7 @@ export function CompanyFeedSection({
       aria-label={text("Company feed")}
       data-company-feed-list="true"
     >
+      {leadWithDetail && selectedFeedItem ? renderDetail(selectedFeedItem) : null}
       {feedItems.map((item) => (
         <div className="company-feed-row-block" key={item.id}>
           <DenseRow
@@ -103,85 +187,7 @@ export function CompanyFeedSection({
             {item.unread ? <span className="unread-dot" title={text("Unread")} /> : null}
           </DenseRow>
 
-          {selectedFeedItem?.id === item.id ? (
-            <aside className="company-feed-detail" aria-label={text("Company feed item details")}>
-              <FeedDetailContent
-                item={selectedFeedItem}
-                signals={NO_SIGNALS}
-                feedItemSummary={feedItemSummary}
-                formatTimestamp={formatTimestamp}
-                onConfirmSignal={noopSignalHandler}
-                onRejectSignal={noopSignalHandler}
-                actions={
-                  <ActionRow className="detail-actions" ariaLabel={text("Company feed item actions")}>
-                    <Button
-                      className="compact-button"
-                      onClick={() =>
-                        updateFeedItemState(selectedFeedItem, (feedItem) => ({
-                          ...feedItem,
-                          unread: !feedItem.unread,
-                        }))
-                      }
-                    >
-                      {selectedFeedItem.unread ? <MailOpen size={15} /> : <Mail size={15} />}
-                      {selectedFeedItem.unread ? text("Mark read") : text("Mark unread")}
-                    </Button>
-                    <Button
-                      className="compact-button"
-                      onClick={() =>
-                        updateFeedItemState(selectedFeedItem, (feedItem) => ({
-                          ...feedItem,
-                          saved: !feedItem.saved,
-                        }))
-                      }
-                    >
-                      <Save size={15} />
-                      {selectedFeedItem.saved ? text("Unsave") : text("Save")}
-                    </Button>
-                    {inspectFeedItem ? (
-                      <Button
-                        className="compact-button"
-                        onClick={() => inspectFeedItem(selectedFeedItem)}
-                      >
-                        <Inbox size={15} />
-                        {text("Open in Inbox")}
-                      </Button>
-                    ) : null}
-                    {openFeedItemNoteDraft ? (
-                      <Button
-                        className="compact-button"
-                        onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
-                      >
-                        <BookOpenText size={15} />
-                        {text("Note")}
-                      </Button>
-                    ) : null}
-                    <a
-                      // The one contracted primary action of this host's detail
-                      // (experience contract §6); opening the source also marks
-                      // the item read (§7 exit path).
-                      className="primary-button compact-button"
-                      data-ux-primary-action="true"
-                      href={selectedFeedItem.sourceUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                      onClick={() =>
-                        updateFeedItemState(selectedFeedItem, (feedItem) => ({
-                          ...feedItem,
-                          unread: false,
-                        }))
-                      }
-                    >
-                      <ExternalLink size={15} />
-                      {text("Open source")}
-                    </a>
-                  </ActionRow>
-                }
-              />
-              <div className="detail-context-divider" />
-              <CompanyContextSection companyId={company.id} onOpenReportDocuments={openCompanyReportDocuments} />
-            </aside>
-          ) : null}
+          {!leadWithDetail && selectedFeedItem?.id === item.id ? renderDetail(selectedFeedItem) : null}
         </div>
       ))}
       {feedItems.length === 0 ? (

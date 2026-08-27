@@ -95,9 +95,10 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expectNoPageOverflow(page);
 
     // The deterministically-extracted facts are wired through the read model:
-    // the KPI core card's own "Open fundamentals" button raises the facts
-    // matrix in the fundamentals tool.
-    await j.click(workspace.getByRole("button", { name: "Open fundamentals" }));
+    // the KPI core card's own "Fundamentals" button raises the facts matrix
+    // in the fundamentals tool (owner dogfooding v0.74: destination buttons
+    // are nouns, ADR 0104 dec. 3 amendment).
+    await j.click(workspace.getByRole("button", { name: "Fundamentals" }));
     const fundamentals = page.getByLabel("Company fundamentals");
     await expect(fundamentals).toBeVisible();
     await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
@@ -121,13 +122,13 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await j.press(page, "Escape");
     await expect(factDetail).toBeHidden();
 
-    // Resolve a due management claim: the workshop bar's "Open claims" stays
+    // Resolve a due management claim: the workshop bar's "Claims" button stays
     // visible whether or not a tool is open (unlike the glance bar's own
     // "Claims counter" drill target, hidden behind the open Fundamentals
     // tool) and raises the claims tool — at the real pane size the current
     // project viewport gives it, no forced 900×700 shortcut (Q3, ADR 0081).
     // The manual claims path survives ADR 0084.
-    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open claims" }));
+    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }));
     const claimsPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(claimsPane).toBeVisible();
     await expect(claimsPane).toHaveAttribute("data-tool", "tezy");
@@ -151,9 +152,9 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expectNoPageOverflow(page);
 
     // Capture the judgment as a note in the company Notebook: the workshop
-    // bar's "Open notebook" raises the notebook tool — again at the real pane
-    // size (no forced 900×700 shortcut).
-    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open notebook" }));
+    // bar's "Notebook" button raises the notebook tool — again at the real
+    // pane size (no forced 900×700 shortcut).
+    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Notebook", exact: true }));
     const notebookPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(notebookPane).toBeVisible();
     await expect(notebookPane).toHaveAttribute("data-tool", "notatnik");
@@ -185,7 +186,7 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
   // company lands on the engine-free Spółka screen — glance bar + co-visible
   // core — and the claims tool is one click away, opened with the claim to
   // verify highlighted. Red before S1 (screen) and S2 (tool host) by design.
-  test("opening the company lands on Spółka: glance bar + co-visible core, Otwórz tezy raises the claims tool with the highlighted claim", async ({ page }) => {
+  test("opening the company lands on Spółka: glance bar + co-visible core, Tezy raises the claims tool with the highlighted claim", async ({ page }) => {
     const j = journey(page, "J2");
     await openApp(page);
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
@@ -217,7 +218,7 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
 
     // One click: the claims tool opens INTO the core zone with the pending
     // claim highlighted (the J5 highlight seam); the tool owns the primary.
-    await j.click(spolka.getByRole("button", { name: "Open claims" }));
+    await j.click(spolka.getByRole("button", { name: "Claims", exact: true }));
     const tool = spolka.getByLabel("Workshop tool");
     await expect(tool).toBeVisible();
     await expect(tool.locator(".company-claims-panel")).toBeVisible();

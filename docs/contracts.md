@@ -1184,7 +1184,8 @@ via `sectionErrors`. Generated DTOs: `src/api/generated/CompanyView*.ts`.
   = vs the last session of the prior calendar year (missing → undefined, never
   0); `asOf` = last session date; `emptyReason` mirrors `get_price_context`.
   Rendered on a LOG axis (house standard, ADR 0107 decision 4).
-- `coverage[]` — `CoveragePeriodRow` (the fundamentals-coverage read model, as-is).
+- `coverage[]` — `CoveragePeriodRow` (the fundamentals-coverage read model, as-is);
+  the core card displays the newest 8 (full list behind `{t:"pokrycie"}`).
 - `recommendations[]` — `AnalystRecommendationRow`, newest first (full history
   behind `{t:"rekomendacje"}`).
 - `sectionErrors: { counters?, kpi?, feed?, price?, coverage?, recommendations? }`

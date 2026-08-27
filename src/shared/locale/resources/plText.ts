@@ -711,9 +711,14 @@ export const plText: Record<string, string> = {
   "Selected company metadata": "Metadane wybranej spółki",
   "feed": "kanał",
   "Company workspace tabs": "Zakładki obszaru roboczego spółki",
-  "Feed": "Kanał",
+  // "Feed"/"Claims" unified with the F3a Spółka dictionary (ADR 0104 dec. 3,
+  // owner dogfooding v0.74 item 4) — the frozen cockpit names the SAME
+  // concepts (company feed, management-claims tracker), so both surfaces now
+  // read the same word; no cockpit test asserted the older "Kanał"/"Obietnice"
+  // wording.
+  "Feed": "Feed",
   "Notebook": "Notatnik",
-  "Claims": "Obietnice",
+  "Claims": "Tezy",
   "Transcripts": "Transkrypcje",
   "Metadata": "Metadane",
   "Company feed": "Kanał spółki",
@@ -1267,7 +1272,10 @@ export const plText: Record<string, string> = {
   "percentage": "procent",
   "count": "liczba",
   "ratio": "wskaźnik",
-  "Fundamentals": "Wskaźniki finansowe",
+  // Unified with the F3a Spółka dictionary (ADR 0104 dec. 3, owner
+  // dogfooding v0.74 item 4) — same concept as the frozen cockpit's
+  // "fundamentals" panel; no test asserted the older "Wskaźniki finansowe".
+  "Fundamentals": "Fundamenty",
   "Company fundamentals": "Wskaźniki finansowe spółki",
   "fact": "fakt",
   "facts": "fakty",
@@ -2155,4 +2163,9 @@ export const plText: Record<string, string> = {
   "This tool has a draft in progress. Stay to keep it, or discard it to continue.":
     "To narzędzie ma niezapisany szkic. Zostań, aby go zachować, albo odrzuć, aby kontynuować.",
   "Couldn't load events.": "Nie udało się wczytać wydarzeń.",
+  // Owner dogfooding v0.74 (2026-08-27):
+  "Report diff": "Diff raportów",
+  "Documents": "Dokumenty",
+  "Overview": "Przegląd",
+  "Back to overview": "Powrót do przeglądu",
 };

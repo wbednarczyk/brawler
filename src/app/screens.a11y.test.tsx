@@ -76,7 +76,7 @@ describe("screen accessibility", () => {
     const restResults = await axe(container, { rules });
     expect(restResults.violations.map((violation) => violation.id)).toEqual([]);
 
-    await user.click(screen.getByRole("button", { name: "Open claims" }));
+    await user.click(screen.getByRole("button", { name: "Claims" }));
     await screen.findByRole("group", { name: "Workshop tool" });
 
     const toolResults = await axe(container, { rules });

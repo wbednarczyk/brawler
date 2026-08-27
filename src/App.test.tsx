@@ -375,7 +375,7 @@ describe("Spółka atomic company transitions (sol R1 finding 3)", () => {
   }
 
   async function openDirtyNotebookOnSpolka(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("button", { name: "Open notebook" }));
+    await user.click(screen.getByRole("button", { name: "Notebook" }));
     await screen.findByRole("group", { name: "Workshop tool" });
     await user.click(await screen.findByRole("button", { name: "New note" }));
     const titleField = await screen.findByRole("textbox", { name: "Notebook note title" });

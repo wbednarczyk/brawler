@@ -9,8 +9,9 @@ import {
 
 // J6 — Buy / pass decision (docs/ux-journeys.md, ADR 0074, ADR 0107). Trigger:
 // research maturity or a price condition. F3a redefinition (plan § Lista
-// zgód 5): the decision journal is reached as `Spółka → Otwórz dziennik
-// decyzji` — the old cockpit "Add panel" path is frozen. The Spółka core is
+// zgód 5): the decision journal is reached as `Spółka → Dziennik decyzji`
+// (destination noun, ADR 0104 dec. 3 amendment) — the old cockpit "Add panel"
+// path is frozen. The Spółka core is
 // always co-visible before any tool opens (KPI table, feed, price, coverage,
 // recommendations — the synthesis), so this journey exercises the quality
 // scorecard (an explicit workshop tool a real decision leans on) before
@@ -26,7 +27,7 @@ import {
 // (consent 5, ADR 0107) — see budgets.json.
 
 test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
-  test("decision entry via Spółka → Otwórz dziennik decyzji", async ({ page }) => {
+  test("decision entry via Spółka → Dziennik decyzji", async ({ page }) => {
     const j = journey(page, "J6");
     await openApp(page);
     await j.markScreen("Today");
@@ -43,7 +44,7 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
     await j.markScreen("Spółka");
 
     // Synthesis: the quality scorecard.
-    await j.click(spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open quality" }));
+    await j.click(spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Quality", exact: true }));
     const qualityTool = spolka.getByLabel("Workshop tool");
     await expect(qualityTool).toBeVisible();
     await expect(qualityTool).toHaveAttribute("data-tool", "jakosc");
@@ -56,7 +57,7 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
     // Record the decision (ADR 0071): switch tools via the workshop bar —
     // stays visible whether or not a tool is open, so it's a single click.
     await j.click(
-      spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Open decision journal" }),
+      spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Decision journal", exact: true }),
     );
     const journalTool = spolka.getByLabel("Workshop tool");
     await expect(journalTool).toBeVisible();

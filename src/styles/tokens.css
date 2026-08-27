@@ -1,8 +1,9 @@
 :root {
   /* ADR 0104 dec. 2 — bundled faces (fonts.css); Inter retired. */
-  font-family:
+  --font-ui:
     "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
+  font-family: var(--font-ui);
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -104,8 +105,16 @@ h6 {
   line-height: var(--line-heading);
 }
 
-/* ADR 0076 Decision 2/4 — numeric columns/tiles align digits (U1 applies the class). */
+/* ADR 0076 Decision 2/4 — numeric columns/tiles align digits (U1 applies the class).
+   ADR 0104 dec. 2 amendment (owner dogfooding 2026-08-27): explicit UI-face
+   font-family so a figure/date/percent never inherits mono from an ancestor
+   (JetBrains Mono spaces punctuation — "15 , 2 mld PLN"). Mono stays reserved
+   for identifiers/keys/period ids/eyebrows/filenames, which don't carry this
+   class. */
 .num-tabular {
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-ui);
+  /* Proportional lining figures: Schibsted's tabular set widens "."/"," to a
+     digit cell ("1 . 1 B PLN"); right-aligned cells still line up at the end. */
+  font-variant-numeric: lining-nums;
   line-height: var(--line-numeric);
 }
