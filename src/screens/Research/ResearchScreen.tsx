@@ -53,6 +53,7 @@ export type ResearchScreenProps = {
   setSelectedCompanyId: (companyId: string | null) => void;
   setSelectedWatchlistId: (watchlistId: string | null) => void;
   setSelectedWatchlistCompanyId: (companyId: string | null) => void;
+  openCompanyWorkspaceById: (companyId: string) => void;
   setSelectedQuestionId: (questionId: string | null) => void;
   setQuestionTitle: (title: string) => void;
   setQuestionBody: (body: string) => void;
@@ -105,6 +106,7 @@ export function ResearchScreen() {
   setSelectedCompanyId,
   setSelectedWatchlistId,
   setSelectedWatchlistCompanyId,
+  openCompanyWorkspaceById,
   setSelectedQuestionId,
   setQuestionTitle,
   setQuestionBody,
@@ -426,6 +428,7 @@ export function ResearchScreen() {
               mode={mode}
               openEvidence={openEvidence}
               openEvidenceUrl={openEvidenceUrl}
+              openCompanyWorkspaceById={openCompanyWorkspaceById}
               resizeResearchPanelWithKeyboard={resizeResearchPanelWithKeyboard}
               resizeResearchPanels={resizeResearchPanels}
               selectedQuestion={selectedQuestion}

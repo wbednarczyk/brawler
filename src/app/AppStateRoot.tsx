@@ -1545,6 +1545,7 @@ export function AppStateRoot({
     deleteWatchlist,
     addCompanyToWatchlist,
     removeCompanyFromWatchlist,
+    openCompanyWorkspaceById: (companyId: string) => openCompanyWorkspaceById(companyId),
   };
   // The tab now reaches its Spółka tool (F3a S3, plan "Mapowanie WSZYSTKICH
   // intencji") — no longer discarded here. Wrapped (not passed directly) so
@@ -1582,6 +1583,7 @@ export function AppStateRoot({
     setSelectedCompanyId: setSelectedResearchCompanyId,
     setSelectedWatchlistId: setSelectedResearchWatchlistId,
     setSelectedWatchlistCompanyId: setSelectedResearchWatchlistCompanyId,
+    openCompanyWorkspaceById: (companyId: string) => openCompanyWorkspaceById(companyId),
     setSelectedQuestionId: setSelectedResearchQuestionId,
     setQuestionTitle: setResearchQuestionTitle,
     setQuestionBody: setResearchQuestionBody,
