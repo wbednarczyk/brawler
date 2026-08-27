@@ -178,6 +178,19 @@ describe("SectionHeader", () => {
     const { container } = render(<SectionHeader title="Quality" />);
     expect(container.querySelector(".ui-pane-lead-header")).toBeNull();
   });
+
+  it("renders an eyebrow above the title when given one", () => {
+    render(<SectionHeader title="Annual results" eyebrow="PLN million · consolidated" />);
+    const eyebrow = screen.getByText("PLN million · consolidated");
+    expect(eyebrow).toHaveClass("ui-section-eyebrow");
+    const heading = screen.getByRole("heading", { level: 2, name: "Annual results" });
+    expect(eyebrow.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("renders no eyebrow element when none is given", () => {
+    const { container } = render(<SectionHeader title="Quality" />);
+    expect(container.querySelector(".ui-section-eyebrow")).toBeNull();
+  });
 });
 
 describe("PanelHeader", () => {

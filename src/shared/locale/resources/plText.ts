@@ -2168,4 +2168,7 @@ export const plText: Record<string, string> = {
   "Documents": "Dokumenty",
   "Overview": "Przegląd",
   "Back to overview": "Powrót do przeglądu",
+  // Owner dogfooding v0.74 wave 2 (2026-08-27):
+  "Open overview": "Otwórz przegląd",
+  "Facts": "Fakty",
 };

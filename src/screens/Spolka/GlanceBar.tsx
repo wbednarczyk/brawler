@@ -37,6 +37,7 @@ export function GlanceBar({ counters, sectionErrors, onOpenTool }: GlanceBarProp
             variant="ghost"
             aria-label={text("Signals counter")}
             className="spolka-glance-counter"
+            data-tone={counters.signals.unacked > 0 ? "caution" : undefined}
             onClick={() => onOpenTool({ t: "sygnaly" })}
           >
             <span className="num-tabular spolka-glance-figure">{formatCount(counters.signals.unacked)}</span>
@@ -54,6 +55,7 @@ export function GlanceBar({ counters, sectionErrors, onOpenTool }: GlanceBarProp
             variant="ghost"
             aria-label={text("Claims counter")}
             className="spolka-glance-counter"
+            data-tone="official"
             onClick={() => onOpenTool({ t: "tezy" })}
           >
             <span className="num-tabular spolka-glance-figure">{formatCount(counters.claims.open)}</span>
@@ -69,6 +71,7 @@ export function GlanceBar({ counters, sectionErrors, onOpenTool }: GlanceBarProp
             variant="ghost"
             aria-label={text("Shorts counter")}
             className="spolka-glance-counter"
+            data-tone={counters.shorts.activeSumPct > 0 ? "negative" : undefined}
             onClick={() => onOpenTool({ t: "akcjonariat" })}
           >
             <span className="num-tabular spolka-glance-figure">

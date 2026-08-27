@@ -37,6 +37,10 @@ type SpolkaScreenHostProps = {
   feedItems: FeedItem[];
   rootHighlightClaimId: string | null;
   openInboxItem: (feedItemId: string, companyId: string) => void;
+  /** A KPI provenance ticket that names a URL (a BiznesRadar aggregator
+   * fact, ADR 0086) opens in the system browser — the root's shared
+   * `openExternalUrl` seam (owner dogfooding v0.74 wave 2, item 3). */
+  onOpenExternalUrl: (url: string) => void;
   /** The header company picker's switch (owner dogfooding v0.74, item 6) —
    * routed through the caller's atomic `navigate`, never a direct
    * `selectedCompanyId` set (same guard every other entry point uses). */
@@ -51,6 +55,7 @@ export function SpolkaScreenHost({
   feedItems,
   rootHighlightClaimId,
   openInboxItem,
+  onOpenExternalUrl,
   onSwitchCompany,
   refreshCompletionCount,
 }: SpolkaScreenHostProps) {
@@ -96,6 +101,7 @@ export function SpolkaScreenHost({
       // goes through `openTool` (already its own guard), not the atomic
       // `navigate` (which is for a company/section switch).
       onOpenDocument={(documentRef) => spolkaTool.openTool(spolkaCompany.id, { t: "dokumenty", documentId: documentRef })}
+      onOpenExternalUrl={onOpenExternalUrl}
       onOpenFeedItem={(feedItemId) => openInboxItem(feedItemId, spolkaCompany.id)}
       onSwitchCompany={onSwitchCompany}
       refreshCompletionCount={refreshCompletionCount}

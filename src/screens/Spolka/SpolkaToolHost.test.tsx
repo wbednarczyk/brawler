@@ -111,6 +111,7 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
     feedItems: [],
     rootHighlightClaimId: null,
     onOpenDocument: vi.fn(),
+    onOpenExternalUrl: vi.fn(),
     onOpenFeedItem: vi.fn(),
     onSwitchCompany: vi.fn(),
     refreshCompletionCount: 0,
@@ -337,6 +338,7 @@ describe("Spółka tool host — dirty guard", () => {
                 feedItems={[]}
                 rootHighlightClaimId={null}
                 openInboxItem={() => {}}
+                onOpenExternalUrl={() => {}}
                 onSwitchCompany={() => {}}
                 refreshCompletionCount={0}
               />
@@ -384,6 +386,7 @@ describe("Spółka tool host — dirty guard", () => {
                 feedItems={[]}
                 rootHighlightClaimId={null}
                 openInboxItem={() => {}}
+                onOpenExternalUrl={() => {}}
                 onSwitchCompany={(id) => spolkaTool.guardNavigation(() => setSelectedCompanyId(id))}
                 refreshCompletionCount={0}
               />

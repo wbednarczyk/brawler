@@ -5,10 +5,10 @@ import type { CompanyView } from "../../api/generated/CompanyView";
 import type { Company, FeedItem } from "../../api/types";
 import { useCommandQuery } from "../../shared/state/useCommandQuery";
 import { useLocale } from "../../shared/locale";
-import { CALENDAR_EVENT_FORMS, CLAIM_FORMS, FACT_FORMS, SIGNAL_FORMS, pluralNoun } from "../../shared/locale/plural";
-import { formatFinancialValue } from "../../shared/format/financialValue";
+import { CALENDAR_EVENT_FORMS, CLAIM_FORMS, SIGNAL_FORMS, pluralNoun } from "../../shared/locale/plural";
+import { deltaToneClass, formatFinancialValue } from "../../shared/format/financialValue";
 import { formatLocalIsoDate } from "../../shared/format/datetime";
-import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, SelectField, Skeleton } from "../../ui";
+import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, SelectField, Skeleton, StatusChip } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { GlanceBar, formatCount } from "./GlanceBar";
 import { CoreKpiTable } from "./CoreKpiTable";
@@ -21,14 +21,17 @@ import type { PaletteCommand } from "../../shared/components/CommandPalette";
 // Contextual palette entries (F3a S3, plan "Trasy powierzchni globalnych" +
 // ADR 0104 dec. 3) while the Spółka screen is active: one `Open <tool>` entry
 // per parameterless Tool variant (`feedItem` is excluded — it always needs a
-// specific `feedItemId`, so it has no standalone command). A palette command
-// is an ACTION ("Otwórz X") — the workshop-bar/core buttons that open the
-// SAME tool are DESTINATIONS and carry the noun form instead (`WORKSHOP_TOOLS`
-// below, ADR 0104 dec. 3 amendment, owner dogfooding v0.74 item 4); the two
-// labels legitimately diverge.
-export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool; label: string; actionKey: string }> = [
-  { tool: { t: "feed" }, label: "Open feed", actionKey: "tool.open.feed" },
+// specific `feedItemId`, so it has no standalone command), plus `Open
+// overview` (`tool: null`) for the closed-tool state — the same set the
+// workshop bar lists (owner dogfooding v0.74 wave 2, item 1). A palette
+// command is an ACTION ("Otwórz X") — the workshop-bar/core buttons that open
+// the SAME tool are DESTINATIONS and carry the noun form instead
+// (`WORKSHOP_TOOLS` below, ADR 0104 dec. 3 amendment, owner dogfooding v0.74
+// item 4); the two labels legitimately diverge.
+export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool | null; label: string; actionKey: string }> = [
+  { tool: null, label: "Open overview", actionKey: "tool.open.overview" },
   { tool: { t: "fundamenty" }, label: "Open fundamentals", actionKey: "tool.open.fundamenty" },
+  { tool: { t: "feed" }, label: "Open feed", actionKey: "tool.open.feed" },
   { tool: { t: "pokrycie" }, label: "Open coverage", actionKey: "tool.open.pokrycie" },
   { tool: { t: "rekomendacje" }, label: "Open recommendations", actionKey: "tool.open.rekomendacje" },
   { tool: { t: "tezy" }, label: "Open claims", actionKey: "tool.open.tezy" },
@@ -55,6 +58,10 @@ export type SpolkaScreenProps = {
    * fallback when it carries no `claimId` of its own. */
   rootHighlightClaimId: string | null;
   onOpenDocument: (documentRef: string) => void;
+  /** A KPI provenance ticket that names a URL, not a stored document (a
+   * BiznesRadar aggregator fact, ADR 0086) — opens in the system browser via
+   * the root's `openExternalUrl` seam (owner dogfooding v0.74 wave 2, item 3). */
+  onOpenExternalUrl: (url: string) => void;
   onOpenFeedItem: (feedItemId: string) => void;
   /** Picking a different company from the header — routed through the SAME
    * guarded atomic transition every entry point uses (`useSpolkaNavigate`),
@@ -75,6 +82,7 @@ export function SpolkaScreen({
   feedItems,
   rootHighlightClaimId,
   onOpenDocument,
+  onOpenExternalUrl,
   onOpenFeedItem,
   onSwitchCompany,
   refreshCompletionCount,
@@ -123,7 +131,7 @@ export function SpolkaScreen({
     label: text(label),
     verb: "open",
     actionKey,
-    run: () => openTool(tool),
+    run: () => (tool ? openTool(tool) : spolkaTool.closeTool()),
   }));
   useCommandPaletteCommands("spolka", spolkaToolCommands);
 
@@ -185,6 +193,7 @@ export function SpolkaScreen({
                 data={query.data}
                 onOpenTool={openTool}
                 onOpenDocument={onOpenDocument}
+                onOpenExternalUrl={onOpenExternalUrl}
                 text={text}
                 locale={locale}
                 hidden={isToolActive}
@@ -205,7 +214,12 @@ export function SpolkaScreen({
             ) : null}
           </div>
 
-          <WorkshopBar onOpenTool={openTool} text={text} activeToolKind={isToolActive ? spolkaTool.tool?.t ?? null : null} />
+          <WorkshopBar
+            onOpenTool={openTool}
+            onOverview={spolkaTool.closeTool}
+            text={text}
+            activeToolKind={isToolActive ? spolkaTool.tool?.t ?? null : null}
+          />
         </div>
         <ToolHostConfirmModal host={spolkaTool} />
       </SpolkaToolHostProvider>
@@ -279,6 +293,7 @@ type SpolkaBodyProps = {
   data: CompanyView;
   onOpenTool: (tool: Tool) => void;
   onOpenDocument: (documentRef: string) => void;
+  onOpenExternalUrl: (url: string) => void;
   text: (value: string) => string;
   locale: "en" | "pl";
   hidden: boolean;
@@ -288,7 +303,9 @@ function shortDate(iso: string): string {
   return `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
 }
 
-function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden }: SpolkaBodyProps) {
+const DASH = "—";
+
+function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text, locale, hidden }: SpolkaBodyProps) {
   const { sectionErrors } = data;
   // The core stays mounted (never unmounted) across a tool open/close, so this
   // selection survives on its own — no extra restore wiring needed.
@@ -309,6 +326,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden }: 
             error={Boolean(sectionErrors.kpi)}
             onOpenTool={onOpenTool}
             onOpenDocument={onOpenDocument}
+            onOpenExternalUrl={onOpenExternalUrl}
           />
 
           {/* tabIndex on every card (item 1): each now scrolls its own
@@ -348,7 +366,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden }: 
                 return (
                   <>
                     <div className="spolka-price-headline">
-                      <span className="num-tabular">
+                      <span className="num-tabular spolka-price-value">
                         {formatFinancialValue(
                           { valueNumeric: String(price.lastClose), currency: price.currency, valueKind: "monetary", unit: "per_share" },
                           locale,
@@ -358,13 +376,13 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden }: 
                         {text("GPW")} · {formatLocalIsoDate(price.asOf)}
                       </span>
                       {price.deltaYtdPct !== undefined ? (
-                        <span className="num-tabular">
+                        <span className={["num-tabular", deltaToneClass(price.deltaYtdPct)].filter(Boolean).join(" ")}>
                           {formatFinancialValue({ valueNumeric: String(price.deltaYtdPct), valueKind: "percentage" }, locale)}{" "}
                           {text("YTD")}
                         </span>
                       ) : null}
                       {price.delta1mPct !== undefined ? (
-                        <span className="num-tabular">
+                        <span className={["num-tabular", deltaToneClass(price.delta1mPct)].filter(Boolean).join(" ")}>
                           {formatFinancialValue({ valueNumeric: String(price.delta1mPct), valueKind: "percentage" }, locale)}{" "}
                           {text("1M")}
                         </span>
@@ -398,24 +416,36 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden }: 
             ) : (
               // Cap to the 8 newest periods (owner dogfooding v0.74, item 2):
               // the real base carries 30+ rows; the rest lives behind the
-              // `pokrycie` tool's own button below.
-              <ul className="spolka-coverage-rows">
-                {data.coverage.slice(0, 8).map((period) => (
-                  <li key={`${period.fiscalYear}-${period.periodType}`}>
-                    <span>
-                      {period.periodType} {period.fiscalYear}
-                    </span>{" "}
-                    <span>
-                      {period.report
-                        ? period.report.fetched
-                          ? text("read")
-                          : text("fetched")
-                        : text("expected")}
-                      {period.report ? ` · ${period.facts.total} ${pluralNoun(locale, period.facts.total, FACT_FORMS)}` : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              // `pokrycie` tool's own button below. A compact table (wave 2,
+              // item 2) — period as a mono id, status as a StatusChip
+              // (read → ok, fetched → neutral, expected → caution — the
+              // mockup's amber "oczekiwany"), facts count in the figure face.
+              <table className="spolka-coverage-table">
+                <thead>
+                  <tr>
+                    <th>{text("Period")}</th>
+                    <th>{text("Status")}</th>
+                    <th className="num-tabular">{text("Facts")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.coverage.slice(0, 8).map((period) => {
+                    const status = period.report ? (period.report.fetched ? "read" : "fetched") : "expected";
+                    const tone = status === "read" ? "ok" : status === "expected" ? "warn" : "neutral";
+                    return (
+                      <tr key={`${period.fiscalYear}-${period.periodType}`}>
+                        <td className="spolka-coverage-period">
+                          {period.periodType} {period.fiscalYear}
+                        </td>
+                        <td>
+                          <StatusChip tone={tone}>{text(status)}</StatusChip>
+                        </td>
+                        <td className="num-tabular">{period.report ? period.facts.total : DASH}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
             <Button variant="secondary" onClick={() => onOpenTool({ t: "pokrycie" })}>
               {text("Coverage")}
@@ -448,8 +478,15 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden }: 
 
 // Destination labels (owner dogfooding v0.74, item 4; ADR 0104 dec. 3
 // amendment): nouns, not verbs — "Otwórz X" is reserved for the ⌘K palette
-// command that performs the same open (`SPOLKA_TOOL_COMMANDS` above).
+// command that performs the same open (`SPOLKA_TOOL_COMMANDS` above). Every
+// tool the screen hosts, in one bar (owner dogfooding v0.74 wave 2, item 1) —
+// the card buttons for fundamenty/feed/pokrycie/rekomendacje/wydarzenia stay
+// as ADDITIONAL entry points, this is the exhaustive one.
 const WORKSHOP_TOOLS: Array<{ tool: Tool; label: string }> = [
+  { tool: { t: "fundamenty" }, label: "Fundamentals" },
+  { tool: { t: "feed" }, label: "Feed" },
+  { tool: { t: "pokrycie" }, label: "Coverage" },
+  { tool: { t: "rekomendacje" }, label: "Recommendations" },
   { tool: { t: "tezy" }, label: "Claims" },
   { tool: { t: "notatnik" }, label: "Notebook" },
   { tool: { t: "dziennik" }, label: "Decision journal" },
@@ -459,22 +496,32 @@ const WORKSHOP_TOOLS: Array<{ tool: Tool; label: string }> = [
   { tool: { t: "akcjonariat" }, label: "Ownership" },
   { tool: { t: "sygnaly" }, label: "Signals" },
   { tool: { t: "dokumenty" }, label: "Documents" },
+  { tool: { t: "wydarzenia" }, label: "Events" },
 ];
 
 // Stays visible whether or not a tool is open (deliverable 3, now rendered as
 // a FIXED sibling of the scrolling body — owner dogfooding v0.74, item 1) and
-// marks the active tool kind (`aria-pressed`).
+// marks the active tab (`aria-pressed`) with a filled/accent-bordered tab
+// look (wave 2, item 1) — selection is a sanctioned filled-cyan use (ADR 0104
+// dec. 1). "Overview" leads the bar — the main (no-tool) view, active
+// whenever no tool is open — mirroring the mockup's "Warsztat" eyebrow.
 function WorkshopBar({
   onOpenTool,
+  onOverview,
   text,
   activeToolKind,
 }: {
   onOpenTool: (tool: Tool) => void;
+  onOverview: () => void;
   text: (value: string) => string;
   activeToolKind: Tool["t"] | null;
 }) {
   return (
     <div role="group" aria-label={text("Workshop")} className="spolka-workshop">
+      <span className="ui-section-eyebrow spolka-workshop-eyebrow">{text("Workshop")}</span>
+      <Button variant="ghost" aria-pressed={activeToolKind === null} onClick={onOverview}>
+        {text("Overview")}
+      </Button>
       {WORKSHOP_TOOLS.map(({ tool, label }) => (
         <Button
           key={tool.t}

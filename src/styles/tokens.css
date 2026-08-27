@@ -118,3 +118,15 @@ h6 {
   font-variant-numeric: lining-nums;
   line-height: var(--line-numeric);
 }
+
+/* Signed delta/percentage tone (ADR 0104 visual hierarchy amendment, owner
+   dogfooding v0.74 wave 2): status semantics, exempt from the accent budget
+   (ADR 0104 dec. 1) — never decoration, always the sign of a real number.
+   Paired with `deltaToneClass` (shared/format/financialValue.ts). */
+.num-tone-positive {
+  color: var(--tone-positive);
+}
+
+.num-tone-negative {
+  color: var(--tone-negative);
+}

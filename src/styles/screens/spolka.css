@@ -78,6 +78,38 @@
   white-space: normal;
 }
 
+/* Quiet tinted tone per counter tile (owner dogfooding v0.74 wave 2, item 4):
+   status tones (caution/negative) are semantics, exempt from the accent
+   budget; "official" is provenance's quiet-cyan form (ADR 0104 dec. 1) —
+   the claims tile always carries it, the "tezy do rozliczenia" reading is
+   itself a provenance-adjacent obligation. */
+.spolka-glance-counter[data-tone="caution"] {
+  border-color: color-mix(in srgb, var(--tone-caution) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone-caution) 8%, var(--surface-raised));
+}
+
+.spolka-glance-counter[data-tone="official"] {
+  border-color: color-mix(in srgb, var(--tone-official) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone-official) 8%, var(--surface-raised));
+}
+
+.spolka-glance-counter[data-tone="negative"] {
+  border-color: color-mix(in srgb, var(--tone-negative) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone-negative) 8%, var(--surface-raised));
+}
+
+.spolka-glance-counter[data-tone="caution"] .spolka-glance-figure {
+  color: var(--tone-caution);
+}
+
+.spolka-glance-counter[data-tone="official"] .spolka-glance-figure {
+  color: var(--tone-official);
+}
+
+.spolka-glance-counter[data-tone="negative"] .spolka-glance-figure {
+  color: var(--tone-negative);
+}
+
 .spolka-glance-figure {
   font-size: var(--font-lg);
   font-weight: 600;
@@ -164,11 +196,33 @@
   text-align: left;
 }
 
+/* The provenance thread (ADR 0104 dec. 7): the newest KPI cell — the one the
+   footer ticket points at — sits on a dotted underline in the quiet-cyan
+   provenance tone, never the plain border every other cell gets. */
+.spolka-kpi-thread {
+  border-bottom: 1px dotted var(--tone-official);
+  padding-bottom: var(--space-0);
+}
+
 .spolka-kpi-footer {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* Quiet-cyan provenance ticket (ADR 0104 dec. 1/7): the ONE sanctioned quiet
+   form of the interface's cyan accent, mono, small, tinted — never the
+   filled interaction form a primary action uses. */
+.spolka-provenance-ticket {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--tone-official);
+  background: color-mix(in srgb, var(--tone-official) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone-official) 28%, transparent);
+  border-radius: 4px;
+  padding: var(--space-0) var(--space-2);
+  min-height: 0;
 }
 
 .spolka-kpi-hint {
@@ -177,7 +231,6 @@
 }
 
 .spolka-feed-rows,
-.spolka-coverage-rows,
 .spolka-recommendations-rows {
   list-style: none;
   margin: 0;
@@ -187,6 +240,28 @@
   gap: var(--space-1);
 }
 
+.spolka-coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.spolka-coverage-table th,
+.spolka-coverage-table td {
+  text-align: right;
+  padding: var(--space-1) var(--space-2);
+}
+
+.spolka-coverage-table th:first-child,
+.spolka-coverage-table td:first-child {
+  text-align: left;
+}
+
+/* Period id — an identifier, mono per ADR 0104 dec. 2. */
+.spolka-coverage-period {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+}
+
 .spolka-price-headline {
   display: flex;
   flex-wrap: wrap;
@@ -194,8 +269,16 @@
   gap: var(--space-2);
 }
 
+/* Price headline leads the card (owner dogfooding v0.74 wave 2, item 4) —
+   the as-of date stays muted, never competing for the same weight. */
+.spolka-price-value {
+  font-size: var(--font-xl);
+  font-weight: 700;
+}
+
 .spolka-price-asof {
   color: var(--muted);
+  font-size: var(--font-sm);
 }
 
 .spolka-price-caption {
@@ -207,9 +290,24 @@
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+.spolka-workshop-eyebrow {
+  margin-right: var(--space-1);
+}
+
+/* The active tab (Overview or a tool) is unmistakable — filled cyan, the
+   sanctioned SELECTION form of the interaction accent (ADR 0104 dec. 1),
+   never just a subtle border. Scoped to the workshop bar so it never bleeds
+   into every other `aria-pressed` ghost button in the app. */
+.spolka-workshop .ghost-button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 22%, var(--surface-raised));
+  color: var(--text);
 }
 
 .spolka-core-strip {

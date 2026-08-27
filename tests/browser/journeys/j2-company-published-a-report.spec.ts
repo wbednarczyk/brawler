@@ -97,8 +97,11 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     // The deterministically-extracted facts are wired through the read model:
     // the KPI core card's own "Fundamentals" button raises the facts matrix
     // in the fundamentals tool (owner dogfooding v0.74: destination buttons
-    // are nouns, ADR 0104 dec. 3 amendment).
-    await j.click(workspace.getByRole("button", { name: "Fundamentals" }));
+    // are nouns, ADR 0104 dec. 3 amendment). Scoped to the KPI card — the
+    // workshop bar now carries an IDENTICALLY-labelled entry to the same
+    // tool (wave 2, item 1), a second real entry point this journey doesn't
+    // need to exercise here.
+    await j.click(workspace.getByLabel("Annual KPI table").getByRole("button", { name: "Fundamentals" }));
     const fundamentals = page.getByLabel("Company fundamentals");
     await expect(fundamentals).toBeVisible();
     await expect(page.getByLabel("Financial facts matrix")).toBeVisible();

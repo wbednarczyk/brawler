@@ -77,6 +77,7 @@ function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
         </Button>
         <SectionHeader
           level="h2"
+          eyebrow={text("Workshop")}
           title={text(TOOL_TITLES[tool.t])}
           actions={
             <Button variant="icon" aria-label={text("Close tool")} onClick={ctx.onCloseTool}>

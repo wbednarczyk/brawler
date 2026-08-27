@@ -218,6 +218,7 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
     feedItems: [],
     rootHighlightClaimId: null,
     onOpenDocument: vi.fn(),
+    onOpenExternalUrl: vi.fn(),
     onOpenFeedItem: vi.fn(),
     onSwitchCompany: vi.fn(),
     refreshCompletionCount: 0,
@@ -369,18 +370,23 @@ describe("SpolkaScreen", () => {
     getCompanyViewMock.mockResolvedValue(fullView());
     renderScreen();
     await screen.findByText("CD Projekt");
+    // The workshop bar now ALSO lists fundamenty/feed/pokrycie/rekomendacje
+    // (wave 2, item 1) — the same noun label as those tools' card buttons, so
+    // those four are scoped to the workshop bar to disambiguate from the
+    // card's own copy of the button.
+    const workshopBar = screen.getByRole("group", { name: "Workshop" });
 
-    const expectations: Array<{ label: string; tool: Tool }> = [
+    const expectations: Array<{ label: string; tool: Tool; scopeToWorkshopBar?: boolean }> = [
       { label: "Signals counter", tool: { t: "sygnaly" } },
       { label: "Claims counter", tool: { t: "tezy" } },
       { label: "Shorts counter", tool: { t: "akcjonariat" } },
       { label: "Events counter", tool: { t: "wydarzenia" } },
       // Destination buttons are nouns (owner dogfooding v0.74 item 4; ADR
       // 0104 dec. 3 amendment) — only the ⌘K palette keeps "Open X".
-      { label: "Fundamentals", tool: { t: "fundamenty" } },
-      { label: "Feed", tool: { t: "feed" } },
-      { label: "Coverage", tool: { t: "pokrycie" } },
-      { label: "Recommendations", tool: { t: "rekomendacje" } },
+      { label: "Fundamentals", tool: { t: "fundamenty" }, scopeToWorkshopBar: true },
+      { label: "Feed", tool: { t: "feed" }, scopeToWorkshopBar: true },
+      { label: "Coverage", tool: { t: "pokrycie" }, scopeToWorkshopBar: true },
+      { label: "Recommendations", tool: { t: "rekomendacje" }, scopeToWorkshopBar: true },
       { label: "Claims", tool: { t: "tezy" } },
       { label: "Notebook", tool: { t: "notatnik" } },
       { label: "Decision journal", tool: { t: "dziennik" } },
@@ -390,10 +396,14 @@ describe("SpolkaScreen", () => {
       { label: "Ownership", tool: { t: "akcjonariat" } },
       { label: "Signals", tool: { t: "sygnaly" } },
       { label: "Documents", tool: { t: "dokumenty" } },
+      { label: "Events", tool: { t: "wydarzenia" } },
     ];
 
-    for (const { label, tool } of expectations) {
-      await user.click(screen.getByRole("button", { name: label }));
+    for (const { label, tool, scopeToWorkshopBar } of expectations) {
+      const button = scopeToWorkshopBar
+        ? within(workshopBar).getByRole("button", { name: label })
+        : screen.getByRole("button", { name: label });
+      await user.click(button);
       const frame = await screen.findByRole("group", { name: "Workshop tool" });
       expect(frame.getAttribute("data-tool")).toBe(tool.t);
       await user.click(within(frame).getByRole("button", { name: "Close tool" }));
@@ -409,6 +419,43 @@ describe("SpolkaScreen", () => {
     const reached = new Set(expectations.map((e) => e.tool.t));
     reached.add("feedItem");
     expect([...reached].sort()).toEqual([...TOOL_KINDS].sort());
+  });
+
+  // Owner dogfooding v0.74 wave 2, item 1: Przegląd/Overview leads the bar
+  // (the main, no-tool view), every workshop tool is listed (not just the
+  // ones without their own card button), and the active entry is marked.
+  it("workshop bar lists Overview first and every tool, marking the active one", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+
+    const workshopBar = screen.getByRole("group", { name: "Workshop" });
+    const labels = within(workshopBar).getAllByRole("button").map((b) => b.textContent);
+    expect(labels).toEqual([
+      "Overview",
+      "Fundamentals",
+      "Feed",
+      "Coverage",
+      "Recommendations",
+      "Claims",
+      "Notebook",
+      "Decision journal",
+      "Quality",
+      "Report diff",
+      "Research",
+      "Ownership",
+      "Signals",
+      "Documents",
+      "Events",
+    ]);
+
+    expect(within(workshopBar).getByRole("button", { name: "Overview" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(within(workshopBar).getByRole("button", { name: "Notebook" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+    expect(within(workshopBar).getByRole("button", { name: "Notebook" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(workshopBar).getByRole("button", { name: "Overview" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("KPI ticket navigates to its document", async () => {
@@ -501,7 +548,26 @@ describe("SpolkaScreen", () => {
     renderScreen();
     await screen.findByText("CD Projekt");
     const coverageGroup = screen.getByRole("group", { name: "Report coverage" });
-    expect(within(coverageGroup).getAllByRole("listitem")).toHaveLength(8);
+    // A compact table now (wave 2, item 2), not a bare list — one row per
+    // period, excluding the header row.
+    expect(within(coverageGroup).getAllByRole("row")).toHaveLength(9);
+  });
+
+  // Owner dogfooding v0.74 wave 2, item 2: the coverage card is a compact
+  // table — period as a mono id, status as a StatusChip, facts count as a
+  // figure — not a bare list.
+  it("coverage card renders period, status chip and fact count", async () => {
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+    const coverageGroup = screen.getByRole("group", { name: "Report coverage" });
+
+    const readRow = within(coverageGroup).getByText(/FY ?2025/).closest("tr")!;
+    expect(within(readRow).getByText("read")).toBeInTheDocument();
+    expect(within(readRow).getByText("128")).toBeInTheDocument();
+
+    const expectedRow = within(coverageGroup).getByText(/Q3 ?2026/).closest("tr")!;
+    expect(within(expectedRow).getByText("expected")).toBeInTheDocument();
   });
 
   // Owner dogfooding v0.74, item 5: a tool has no obvious way back to the
@@ -516,9 +582,12 @@ describe("SpolkaScreen", () => {
     const layout = container.querySelector(".spolka-body-scroll") as HTMLElement;
     layout.scrollTop = 240;
     await user.click(screen.getAllByRole("button", { name: /Report 0/ })[0]);
-    await screen.findByRole("group", { name: "Workshop tool" });
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
 
-    await user.click(screen.getByRole("button", { name: "Overview" }));
+    // Scoped to the tool frame: the workshop bar ALSO carries an "Overview"
+    // tab now (wave 2, item 1) — this exercises the tool header's own
+    // leading back button, a separate entry point to the same place.
+    await user.click(within(frame).getByRole("button", { name: "Overview" }));
     await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     expect(screen.getByRole("group", { name: "Company core" })).toBeVisible();
     expect(layout.scrollTop).toBe(240);
