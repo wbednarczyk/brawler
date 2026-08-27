@@ -66,7 +66,7 @@ test("company health scores render, expand, and do not overflow at a narrow wind
   // `.spolka-layout` (not the tool group itself) is the scroll region; the
   // page itself never gains a horizontal scrollbar at the quarter-ultrawide
   // width (DoD §B).
-  await expectInternalScroll(page.locator(".spolka-layout"));
+  await expectInternalScroll(page.locator(".spolka-body-scroll"));
   await expectNoPageOverflow(page);
 });
 

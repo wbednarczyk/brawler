@@ -32,6 +32,9 @@
   /* Scrolls only when the cards\' floors exceed the panel (short windows); the
      workshop bar sits outside this region and never scrolls away. */
   overflow-y: auto;
+  /* Never a horizontal scroller: hosted tools wrap or scroll their own
+     inner containers (DoD §B inner-container rule). */
+  overflow-x: hidden;
 }
 
 /* `hidden` must beat the flex display while a tool occupies the zone (owner
@@ -113,6 +116,7 @@
 .spolka-section,
 .spolka-kpi {
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 @media (max-width: 1100px) {
