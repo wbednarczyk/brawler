@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { getCompanyContext, type CompanyContext, type CompanyContextFact } from "../../../api/companyContext";
 import { useCommandQuery } from "../../state/useCommandQuery";
-import { Button, EmptyState, ErrorText, ProvenanceFigure, Skeleton } from "../../../ui";
+import { Button, EmptyState, ErrorText, ExpandableRow, ProvenanceFigure, Skeleton } from "../../../ui";
 import { formatListTimestamp } from "../../format/datetime";
 import { formatFinancialValue } from "../../format/financialValue";
 import { useLocale, type LocaleCode } from "../../locale";
 import { localizedKpiLabelForKey } from "../../locale/kpiLabels";
+import { FRESH_FACT_FORMS, UPCOMING_EVENT_FORMS, pluralNoun } from "../../locale/plural";
 
 export type CompanyContextSectionProps = {
   companyId: string;
@@ -39,36 +41,90 @@ function formatContextFactValue(fact: CompanyContextFact, locale: LocaleCode): s
   );
 }
 
+// Owner dogfooding finding (2026-08-27): the company-context block dominated
+// the Inbox detail pane over the item's own body. It now sits behind a
+// disclosure, collapsed by default, with a one-line teaser. The expanded
+// state is a single MODULE-LEVEL flag (not React state, not persisted to
+// settings) so it survives switching between feed items/companies within
+// this session instead of collapsing again on every selection — expanding it
+// once keeps it expanded for the rest of the session. Reset export is
+// test-only.
+let contextExpandedInSession = false;
+export function __resetCompanyContextExpandedForTests(): void {
+  contextExpandedInSession = false;
+}
+
+// The collapsed row's one-line summary: period · fresh facts · upcoming
+// events (the two signals the owner's finding called out by example). Notes
+// and claims stay inside the expanded detail only — the teaser is a scan,
+// not a full restate.
+function buildContextTeaser(context: CompanyContext, locale: LocaleCode): string {
+  const factsCount = context.latestPeriodFacts?.facts.length ?? 0;
+  const upcomingCount = context.upcomingEvents.length;
+  const parts: string[] = [];
+  if (context.latestPeriodFacts) parts.push(context.latestPeriodFacts.periodLabel);
+  parts.push(`${factsCount} ${pluralNoun(locale, factsCount, FRESH_FACT_FORMS)}`);
+  parts.push(`${upcomingCount} ${pluralNoun(locale, upcomingCount, UPCOMING_EVENT_FORMS)}`);
+  return parts.join(" · ");
+}
+
 // The Inbox detail pane's company-context block (ADR 0104 dec. 5 — the space a
 // shrunk detail frees carries company context; ADR 0106 dec. 3's single
 // `get_company_context` read). Loads on `companyId` change; degrades
 // gracefully on error (storyboard frames 3/5 — the base item detail above
 // always stays visible even when this block fails).
 export function CompanyContextSection({ companyId, onOpenReportDocuments }: CompanyContextSectionProps) {
-  const { text } = useLocale();
+  const { text, locale } = useLocale();
   const { status, data, refetch } = useCommandQuery(
     ["companyContext", companyId],
     () => getCompanyContext(companyId),
   );
+  const [expanded, setExpanded] = useState(() => contextExpandedInSession);
+
+  function toggleExpanded() {
+    setExpanded((current) => {
+      const next = !current;
+      contextExpandedInSession = next;
+      return next;
+    });
+  }
 
   return (
     <section className="feed-context-section" aria-label={text("Company context")}>
-      <div className="feed-body-heading">
-        <span>{text("Company context")}</span>
-      </div>
       {status === "loading" ? (
-        <Skeleton variant="list-row" count={3} label={text("Loading company context…")} />
+        <>
+          <div className="feed-body-heading">
+            <span>{text("Company context")}</span>
+          </div>
+          <Skeleton variant="list-row" count={3} label={text("Loading company context…")} />
+        </>
       ) : null}
       {status === "error" ? (
-        <div className="feed-context-error">
-          <ErrorText>{text("Could not load company context.")}</ErrorText>
-          <Button className="compact-button" onClick={refetch}>
-            {text("Refresh")}
-          </Button>
-        </div>
+        <>
+          <div className="feed-body-heading">
+            <span>{text("Company context")}</span>
+          </div>
+          <div className="feed-context-error">
+            <ErrorText>{text("Could not load company context.")}</ErrorText>
+            <Button className="compact-button" onClick={refetch}>
+              {text("Refresh")}
+            </Button>
+          </div>
+        </>
       ) : null}
       {status === "success" ? (
-        <CompanyContextBody context={data} onOpenReportDocuments={onOpenReportDocuments} />
+        <ExpandableRow
+          className="feed-context-toggle-row"
+          detail={<CompanyContextBody context={data} onOpenReportDocuments={onOpenReportDocuments} />}
+          isExpanded={expanded}
+          label={text("Company context")}
+          onToggle={toggleExpanded}
+        >
+          <span className="feed-context-toggle">
+            <span className="feed-context-toggle-title">{text("Company context")}</span>
+            <span className="feed-context-toggle-teaser">{buildContextTeaser(data, locale)}</span>
+          </span>
+        </ExpandableRow>
       ) : null}
     </section>
   );
