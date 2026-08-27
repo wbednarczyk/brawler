@@ -45,6 +45,55 @@ describe("Inbox screen workflows", () => {
     expect(detailPane.getByText("Yesterday")).toBeInTheDocument();
   });
 
+  // Owner dogfooding finding (2026-08-27): the media item's own body used to
+  // read as secondary next to a company-context block that dominated the
+  // pane. The item body is now the primary block; company context collapses
+  // behind a disclosure with a one-line teaser.
+  it("media detail leads with the item body; company context is collapsed with a teaser", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const selectedRow = await screen.findByRole("button", {
+      name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
+    });
+    await user.click(selectedRow);
+
+    const detailPane = within(screen.getByLabelText("Feed item details"));
+
+    // The item's own body is the primary, readable block.
+    const body = detailPane.getByText(
+      "Saved sample item used to validate the saved filter before real ingestion exists.",
+    );
+    expect(body).toHaveClass("feed-detail-excerpt");
+
+    // Company context is collapsed behind a disclosure with a teaser...
+    const toggle = detailPane.getByRole("button", { name: "Company context" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(await detailPane.findByText(/FY 2026 · 1 fresh fact · 0 upcoming events/)).toBeInTheDocument();
+
+    // ...and its expanded content (the revenue fact) is not rendered.
+    expect(detailPane.queryByText("1.1 B PLN")).not.toBeInTheDocument();
+  });
+
+  it("expanding company context reveals the facts", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const selectedRow = await screen.findByRole("button", {
+      name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
+    });
+    await user.click(selectedRow);
+
+    const detailPane = within(screen.getByLabelText("Feed item details"));
+    const toggle = await detailPane.findByRole("button", { name: "Company context" });
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(await detailPane.findByText("1.1 B PLN")).toBeInTheDocument();
+  });
+
   it("lists document attachments and hides source-page chrome in feed item details", async () => {
     appTestState.feedItemsResponse = [
       {
@@ -92,6 +141,12 @@ describe("Inbox screen workflows", () => {
     expect(detailPane.queryByText("Regulamin")).not.toBeInTheDocument();
     expect(detailPane.queryByText("Polityka prywatności")).not.toBeInTheDocument();
     expect(detailPane.queryByText("Polityka Cookies")).not.toBeInTheDocument();
+
+    // Report kind follows the same collapse contract as media/filing (F1 #413
+    // specifies company context uniformly, not per presentationKind): it sits
+    // behind the disclosure too, collapsed by default.
+    const toggle = await detailPane.findByRole("button", { name: "Company context" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
   // ADR 0084 decision 5: the detail rail must render no AI-analysis surface at
