@@ -665,3 +665,229 @@ fn yoy_skips_a_gapped_year_and_uses_the_two_newest_populated_cells() {
     let expected_yoy = (1000.0 - 700.0) / 700.0 * 100.0;
     assert!((revenue_row.yoy_pct.expect("yoy") - expected_yoy).abs() < 1e-9);
 }
+
+/// Perf regression guard (owner P1, 2026-08-27: pool-checkout fan-out — not
+/// query cost — was the real ~10s on the real DB; `real_data_section_timings`
+/// below measured 53 pool checkouts for one CDR view). `compute_company_view`
+/// must check out exactly ONE connection and thread it through every section
+/// (same pattern/budget as `mcp::kpi_ingest::start_kpi_ingest_is_checkout_bounded`).
+/// Populated across every section (claims/events/shorts/kpi/quotes/feed) so a
+/// future regression that re-adds a per-row or per-section checkout — not just
+/// an empty-company vacuous pass — reddens this.
+#[test]
+fn get_company_view_is_checkout_bounded() {
+    let state = state();
+    let isin = "PLCVB0000011";
+    let company_id = company_with_isin(&state, "CVB", Some(isin));
+
+    claim(&state, &company_id, 2026, "FY", None);
+    claim(&state, &company_id, 2026, "Q1", None);
+    seed_periodic_event(&state, &company_id, &format_date(today_date()));
+
+    seed_short_adapter(&state);
+    state
+        .short_positions()
+        .ingest_knf_short_positions(&[
+            short_entry("Alpha Fund", isin, 2.5, "2026-01-01"),
+            short_entry("Beta Fund", isin, 1.0, "2026-01-01"),
+        ])
+        .expect("ingest");
+
+    for (year, revenue) in [(2024, "500"), (2025, "600")] {
+        let period_id = kpi_period(&state, &company_id, year);
+        kpi_fact(
+            &state,
+            &company_id,
+            &period_id,
+            "revenue",
+            revenue,
+            &format!("doc_{year}"),
+        );
+    }
+
+    let quotes = daily_bars(time::macros::date!(2025 - 01 - 01), 90);
+    state
+        .market_data()
+        .upsert_quotes(&company_id, &quotes, "yahoo-eod", "2025-04-01T18:00:00Z")
+        .expect("upsert");
+
+    feed_row(
+        &state,
+        &company_id,
+        "item_1",
+        "2026-01-01T00:00:00Z",
+        "Official report",
+    );
+    feed_row(
+        &state,
+        &company_id,
+        "item_2",
+        "2026-01-02T00:00:00Z",
+        "Public media",
+    );
+
+    let before = state.checkout_count();
+    let view = compute_company_view(&state, &company_id).expect("view");
+    let delta = state.checkout_count() - before;
+
+    let sections = serde_json::to_value(&view.section_errors).expect("serialize");
+    assert_eq!(
+        sections,
+        serde_json::json!({}),
+        "no section should error in this fixture"
+    );
+    assert!(
+        delta <= 2,
+        "get_company_view took {delta} pool checkouts (budget: 2)"
+    );
+}
+
+/// Contention proof: a `get_company_view` needing only ONE checkout must not
+/// queue behind connections it doesn't need. Opens a real r2d2 pool
+/// (`storage::open_pool`, `max_connections` default 4) on a scratch temp DB,
+/// holds 3 of the 4 connections on other threads for 1.5s, and asserts the
+/// view still returns in well under a second — proving it only ever needed
+/// the 4th. Before the 2026-08-27 fix (53 checkouts for one CDR view) this
+/// same setup would have serialized behind the held connections.
+#[test]
+fn get_company_view_completes_while_three_connections_are_held() {
+    let dir = std::env::temp_dir().join(format!(
+        "brawler-company-view-contention-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let state =
+        crate::storage::open_pool(dir.join("brawler.sqlite3"), dir.clone()).expect("pool opens");
+
+    let company_id = company(&state, "CTN");
+
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+    let handles: Vec<_> = (0..3)
+        .map(|_| {
+            let state = state.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let _guard = state.checkout_for_tests().expect("checkout");
+                barrier.wait();
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+            })
+        })
+        .collect();
+
+    barrier.wait(); // all 3 workers hold a connection before we measure.
+    let start = std::time::Instant::now();
+    let view = compute_company_view(&state, &company_id).expect("view");
+    let elapsed = start.elapsed();
+
+    for handle in handles {
+        handle.join().expect("worker thread");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(view.company_id, company_id);
+    assert!(
+        elapsed < std::time::Duration::from_secs(1),
+        "get_company_view took {elapsed:?} with 3/4 pool connections held — \
+         it must need only the 4th, not queue behind checkouts it doesn't need"
+    );
+}
+
+/// Real-data timing probe (owner P1: Spółka screen ~10s on the real DB).
+/// **Inert in CI** — skips unless `BRAWLER_REAL_DB` points at a copy, exactly
+/// like the `storage::tests::real_data_*` probes. Opens the DB **read-only**
+/// (`open_database_readonly` — no migration side effect) and times each
+/// `compute_company_view` section independently, per company. Diagnostic
+/// only: asserts nothing about the numbers.
+///
+/// Run it manually:
+///
+/// ```text
+/// BRAWLER_REAL_DB=/path/to/a/throwaway/copy.sqlite3 \
+///   cargo test -p brawler --lib company_view::tests::real_data_section_timings \
+///   -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "real-data timing probe; needs BRAWLER_REAL_DB (opened read-only)"]
+fn real_data_section_timings() {
+    use std::time::Instant;
+
+    let Ok(db_path) = std::env::var("BRAWLER_REAL_DB") else {
+        eprintln!("SKIP real_data_section_timings: set BRAWLER_REAL_DB to a throwaway copy");
+        return;
+    };
+    let connection =
+        crate::storage::open_database_readonly(&db_path).expect("open real db (read-only)");
+    let state = AppState::new(connection);
+
+    let today = format_date(today_date());
+    let horizon =
+        format_date(today_date().saturating_add(time::Duration::days(EVENTS_WINDOW_DAYS)));
+
+    for company_id in ["company_gpw_cdr", "company_gpw_abe", "company_gpw_ale"] {
+        eprintln!("== {company_id} ==");
+
+        // Per-section breakdown over ONE borrowed connection (mirrors what
+        // `compute_company_view` itself now does) — dropped before the
+        // TOTAL/checkout-count measurement below so that call's own checkout
+        // isn't blocked behind this one (single-connection test `AppState`).
+        let section_connection = state.checkout_for_tests().expect("checkout");
+
+        let t = Instant::now();
+        let counters = compute_counters(&section_connection, company_id, &today, &horizon);
+        eprintln!("  counters (flags/claims/shorts/events): {:?}", t.elapsed());
+        if let Err(error) = &counters {
+            eprintln!("    error: {error}");
+        }
+
+        let t = Instant::now();
+        let kpi = compute_kpi(&section_connection, company_id);
+        eprintln!("  kpi: {:?}", t.elapsed());
+        if let Err(error) = &kpi {
+            eprintln!("    error: {error}");
+        }
+
+        let t = Instant::now();
+        let feed = compute_feed(&section_connection, company_id);
+        eprintln!("  feed: {:?}", t.elapsed());
+        if let Err(error) = &feed {
+            eprintln!("    error: {error}");
+        }
+
+        let company = reads::companies(&section_connection)
+            .expect("companies")
+            .into_iter()
+            .find(|c| c.id == company_id)
+            .expect("company present");
+        let t = Instant::now();
+        let price = compute_price(&section_connection, &company, company_id);
+        eprintln!("  price: {:?}", t.elapsed());
+        if let Err(error) = &price {
+            eprintln!("    error: {error}");
+        }
+
+        let t = Instant::now();
+        let coverage = reads::coverage_rows(&section_connection, &state, company_id);
+        eprintln!("  coverage: {:?}", t.elapsed());
+        if let Err(error) = &coverage {
+            eprintln!("    error: {error}");
+        }
+
+        let t = Instant::now();
+        let recommendations = reads::recommendations(&section_connection, company_id);
+        eprintln!("  recommendations: {:?}", t.elapsed());
+        if let Err(error) = &recommendations {
+            eprintln!("    error: {error}");
+        }
+        drop(section_connection);
+
+        let checkouts_before = state.checkout_count();
+        let t = Instant::now();
+        let view = compute_company_view(&state, company_id);
+        eprintln!(
+            "  TOTAL compute_company_view: {:?} ({} pool checkouts)",
+            t.elapsed(),
+            state.checkout_count() - checkouts_before
+        );
+        assert!(view.is_ok(), "compute_company_view failed for {company_id}");
+    }
+}

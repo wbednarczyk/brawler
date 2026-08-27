@@ -226,24 +226,7 @@ impl AutopilotStore {
         company_id: &str,
     ) -> StorageResult<std::collections::BTreeSet<String>> {
         let connection = self.db.checkout()?;
-        let mut statement = connection.prepare(
-            "SELECT report_document_id, kpi_delta_json FROM autopilot_run \
-             WHERE company_id = ?1 AND trigger = 'history_sweep'",
-        )?;
-        let rows = statement
-            .query_map([company_id], |row| {
-                Ok((
-                    row.get::<_, String>("report_document_id")?,
-                    row.get::<_, Option<String>>("kpi_delta_json")?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows
-            .into_iter()
-            .filter_map(|(document_id, delta)| {
-                kpi_delta_reason_is_skipped_budget(delta.as_deref()).then_some(document_id)
-            })
-            .collect())
+        documents_skipped_by_budget(&connection, company_id)
     }
 
     /// Create a run for a detected report, idempotently. Returns `Some(run)` when a
@@ -479,6 +462,33 @@ impl AutopilotStore {
         drop(connection);
         self.get_run(id)
     }
+}
+
+/// Borrowed-connection core of [`AutopilotStore::documents_skipped_by_budget`]
+/// — a sibling composed read (`storage::company_view_reads`) can share ONE
+/// connection instead of paying a fresh pool checkout for this lookup.
+pub(super) fn documents_skipped_by_budget(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<std::collections::BTreeSet<String>> {
+    let mut statement = connection.prepare(
+        "SELECT report_document_id, kpi_delta_json FROM autopilot_run \
+         WHERE company_id = ?1 AND trigger = 'history_sweep'",
+    )?;
+    let rows = statement
+        .query_map([company_id], |row| {
+            Ok((
+                row.get::<_, String>("report_document_id")?,
+                row.get::<_, Option<String>>("kpi_delta_json")?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(document_id, delta)| {
+            kpi_delta_reason_is_skipped_budget(delta.as_deref()).then_some(document_id)
+        })
+        .collect())
 }
 
 /// `true` iff a run's `kpi_delta_json` decodes to an object whose `reason` is

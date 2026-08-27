@@ -36,6 +36,7 @@ mod autopilot;
 mod backup;
 mod cockpit_layouts;
 mod companies;
+pub(crate) mod company_view_reads;
 mod database;
 mod decision_journal;
 mod diagnostics;
@@ -500,8 +501,8 @@ impl AppState {
             .clone()
     }
 
-    /// Check out a connection for a single storage operation.
-    fn checkout(&self) -> StorageResult<DbGuard<'_>> {
+    /// Check out a connection for a single storage operation (`pub(crate)`: `company_view_reads` composes several stores over ONE checkout).
+    pub(crate) fn checkout(&self) -> StorageResult<DbGuard<'_>> {
         self.db.checkout()
     }
 

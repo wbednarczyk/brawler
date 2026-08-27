@@ -29,7 +29,7 @@
     "src-tauri/src/storage/kpi_ingest_drafts.rs": 1149,
     "src-tauri/src/storage/kpi_ingest_runs.rs": 6017,
     "src-tauri/src/storage/migrations.rs": 1037,
-    "src-tauri/src/storage/mod.rs": 1980,
+    "src-tauri/src/storage/mod.rs": 1981,
     "src-tauri/src/storage/ownership.rs": 1798,
     "src-tauri/src/storage/quality_frameworks.rs": 1898,
     "src-tauri/src/storage/red_flags.rs": 1011,
