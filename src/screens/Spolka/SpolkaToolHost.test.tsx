@@ -47,6 +47,7 @@ const researchViewModelStub: ResearchScreenProps = {
   setSelectedCompanyId: () => {},
   setSelectedWatchlistId: () => {},
   setSelectedWatchlistCompanyId: () => {},
+  openCompanyWorkspaceById: () => {},
   setSelectedQuestionId: () => {},
   setQuestionTitle: () => {},
   setQuestionBody: () => {},

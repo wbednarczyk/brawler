@@ -63,9 +63,9 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J7 — Weekly review
 
 - **Trigger:** weekend / recurring ritual.
-- **Steps:** `Otwórz ekran: Events` (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: heatmap + leaderboard) → `Otwórz ekran: Research` (review queue + gaps) → Spółka (deepening) → plan the week.
+- **Steps:** `Otwórz ekran: Events` (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: heatmap + leaderboard) → `Otwórz ekran: Research` (review queue + gaps) → Spółka (deepening, via the review queue row's own "Open company" action — owner decision 2026-08-26, ADR 0107) → plan the week.
 - **Screens:** Events, Watchlists, Research, Spółka.
-- **Budget:** floor re-based 2026-08-26 at first measurement +1 (consent 5, ADR 0107) — the view-creation leg the old ≤9 measured is frozen; all four task legs stay, now entered through their own screens.
+- **Budget:** floor re-based 2026-08-26 at first measurement +1 (consent 5, ADR 0107) — the view-creation leg the old ≤9 measured is frozen; all four task legs stay, now entered through their own screens. Re-measured 2026-08-27: the deepening leg's row-level "Open company" action (watchlist and research rows, owner decision 2026-08-26) replaced the ⌘K palette round-trip, dropping a modal open; floor tightened to the new measurement +1.
 - **Done well:** next week's dates are known; the backlog of research debts is explicit, not vague guilt.
 
 ## Journey-independent utilities

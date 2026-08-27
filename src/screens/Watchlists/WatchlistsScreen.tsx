@@ -1,4 +1,4 @@
-import { Check, Edit3, Plus, Trash2, X } from "lucide-react";
+import { Building2, Check, Edit3, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -22,6 +22,7 @@ export type WatchlistsScreenProps = {
   deleteWatchlist: (watchlist: Watchlist) => void;
   addCompanyToWatchlist: (watchlist: Watchlist, company: Company) => void;
   removeCompanyFromWatchlist: (watchlist: Watchlist, company: Company) => void;
+  openCompanyWorkspaceById: (companyId: string) => void;
 };
 
 export function WatchlistsScreen() {
@@ -37,6 +38,7 @@ export function WatchlistsScreen() {
     deleteWatchlist,
     addCompanyToWatchlist,
     removeCompanyFromWatchlist,
+    openCompanyWorkspaceById,
   } = useWatchlistsViewModel();
   const { t, text, locale } = useLocale();
   const [watchlistName, setWatchlistName] = useState("");
@@ -368,10 +370,16 @@ export function WatchlistsScreen() {
                       <TickerLabel value={company.qualifiedTicker} />
                       <span>{company.displayName}</span>
                       <span>{company.isin ?? text("No ISIN")}</span>
-                      <Button onClick={() => removeCompanyFromWatchlist(selectedWatchlist, company)} type="button" variant="ghost">
-                        <X size={14} />
-                        {text("Remove")}
-                      </Button>
+                      <ActionRow className="watchlist-member-actions">
+                        <Button onClick={() => openCompanyWorkspaceById(company.id)} type="button" variant="ghost">
+                          <Building2 size={14} />
+                          {text("Open company")}
+                        </Button>
+                        <Button onClick={() => removeCompanyFromWatchlist(selectedWatchlist, company)} type="button" variant="ghost">
+                          <X size={14} />
+                          {text("Remove")}
+                        </Button>
+                      </ActionRow>
                     </DenseRow>
                   ))}
                   {memberCompanies.length === 0 ? (

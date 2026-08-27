@@ -1,5 +1,5 @@
 import { describe, it } from "vitest";
-import { appTestState, expect, renderApp, screen, userEvent, waitFor } from "../../test/appWorkflowHarness";
+import { appTestState, expect, renderApp, screen, userEvent, waitFor, within } from "../../test/appWorkflowHarness";
 
 // Component-level coverage for the Watchlists empty and no-search-match states.
 // These are deliberately NOT covered by the Playwright CRUD journey
@@ -29,5 +29,23 @@ describe("Watchlists screen states", () => {
     await waitFor(() => {
       expect(screen.getByText("No watchlists match this search.")).toBeInTheDocument();
     });
+  });
+
+  // Owner decision 2026-08-26 (ADR 0107): watchlist rows get an explicit
+  // "Open company" action that lands on that company's Spółka screen through
+  // the guarded entry (`openCompanyWorkspaceById`), never a direct state set.
+  it("Open company on a watchlist row lands on Spółka", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Watchlists" });
+
+    // The default scenario seeds one watchlist ("Main GPW") with one member
+    // (CDR), auto-selected by the screen's own effect.
+    const members = await screen.findByLabelText("Companies in watchlist");
+    const cdrRow = within(members).getByText("CD PROJEKT S.A.").closest(".watchlist-member-row")!;
+    await user.click(within(cdrRow as HTMLElement).getByRole("button", { name: "Open company" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    expect(spolka).toHaveAttribute("data-company-id", "company_gpw_cdr");
   });
 });

@@ -292,6 +292,24 @@ describe("Research screen workflows", () => {
     });
   });
 
+  // Owner decision 2026-08-26 (ADR 0107): the watchlist review queue's
+  // company row gets an explicit "Open company" action that lands on that
+  // company's Spółka screen through the guarded entry
+  // (`openCompanyWorkspaceById`), never a direct state set — and it must
+  // keep the row's existing select-into-the-queue behavior intact.
+  it("Open company on a watchlist row lands on Spółka", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Research" });
+    await user.click(screen.getByRole("button", { name: "Watchlist" }));
+
+    const reviewQueue = await screen.findByLabelText("Watchlist company review queue");
+    await user.click(within(reviewQueue).getByRole("button", { name: "Open company" }));
+
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    expect(spolka).toHaveAttribute("data-company-id", "company_gpw_cdr");
+  });
+
   // ADR 0084 decision 5 (clean cut): the research-brief/digest tables are
   // DROPPED, so the read-only archive the earlier slice kept has nothing to show
   // and is gone with them. Research keeps its deterministic surfaces.
@@ -469,6 +487,7 @@ function researchStub(overrides: Partial<ResearchScreenProps> = {}): ResearchScr
     setSelectedCompanyId: () => {},
     setSelectedWatchlistId: () => {},
     setSelectedWatchlistCompanyId: () => {},
+    openCompanyWorkspaceById: () => {},
     setSelectedQuestionId: () => {},
     setQuestionTitle: () => {},
     setQuestionBody: () => {},

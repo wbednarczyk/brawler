@@ -81,13 +81,12 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
     await expectNoPageOverflow(page);
 
     // Leg 4: Spółka — deepening on a company from the watchlist, via the
-    // global palette's `Open company: …` entry.
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    await j.press(page, "Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
-    await j.markModal("Command palette");
-    await j.fill(palette.getByLabel("Search commands"), "Open company: CDR");
-    await j.click(palette.getByRole("button", { name: "Open company: CDR", exact: true }).first());
+    // review queue row's own "Open company" action (owner decision
+    // 2026-08-26, ADR 0107) — no palette round-trip needed anymore. Scoped
+    // to the CDR row: the full browser mock runtime seeds many watchlist
+    // members, so an unscoped "Open company" match is ambiguous.
+    const cdrQueueRow = reviewQueue.locator(".research-company-queue-row", { hasText: "CDR" });
+    await j.click(cdrQueueRow.getByRole("button", { name: "Open company" }));
     const spolka = page.getByRole("region", { name: "Company view", exact: true });
     await expect(spolka).toBeVisible();
     await j.markScreen("Spółka");
