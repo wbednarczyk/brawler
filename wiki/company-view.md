@@ -53,15 +53,23 @@ glance.
 ## The workshop
 
 A bar of tools fixed along the bottom — it never scrolls away, even when a
-card or a tool has a lot of content. Opening a tool replaces the core with
-the tool (the core collapses to a one-line summary strip so you never lose
-the ticker/counters context) — closing it restores the core exactly as you
-left it, scroll position and selection included. Every open tool carries a
-leading **Overview** button (and the summary strip's ticker does the same) so
-you're never more than one click from the untouched core.
+card or a tool has a lot of content. The bar **leads with Overview** — the
+core itself, active whenever no tool is open — followed by every one of the
+screen's 14 tools, in this order. Opening a tool replaces the core with the
+tool (the core collapses to a one-line summary strip so you never lose the
+ticker/counters context) — closing it restores the core exactly as you left
+it, scroll position and selection included. The active entry (Overview or the
+open tool) is visibly marked. Every open tool also carries its own leading
+**Overview** button (and the summary strip's ticker does the same) so you're
+never more than one click from the untouched core.
 
-| Tool | Hosts |
+| Bar entry | Hosts |
 |---|---|
+| **Overview** | the core itself (KPI table, feed, price chart, coverage, recommendations) |
+| **Fundamentals** | the full facts matrix — also reachable from the KPI card's own button |
+| **Feed** | the full company feed — also reachable from the feed card's own button |
+| **Coverage** | the full Coverage screen — also reachable from the coverage card's own button |
+| **Recommendations** | the full recommendations history — also reachable from the recommendations card's own button |
 | **Claims** | management claims to verify, with evidence |
 | **Notebook** | this company's notes |
 | **Decision journal** | your buy/pass/keep-watching entries for this company |
@@ -71,9 +79,7 @@ you're never more than one click from the untouched core.
 | **Ownership** | holder structure + short positions |
 | **Signals** | red flags, with acknowledge/history |
 | **Documents** | the company's report documents |
-
-**Fundamentals**, **Coverage**, and **Recommendations** are reachable the
-same way from their core card's own button — see [The core](#the-core).
+| **Events** | this company's upcoming dates — also reachable from the Events glance counter |
 
 Opening a feed item from the Inbox ("Open company") lands you straight on
 that item's detail, with the rest of the feed reachable below it.

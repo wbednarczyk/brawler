@@ -225,6 +225,14 @@
   min-height: 0;
 }
 
+/* Same light-theme contrast fix as .ui-toast-action (feedback.css) /
+   .ui-provenance-figure-ticket (ui.css): small text in --tone-official
+   (= --primary) fails WCAG AA on a light surface (axe color-contrast,
+   caught in the wave-2 dogfooding gate). */
+:root[data-theme="light"] .spolka-provenance-ticket {
+  color: var(--primary-strong);
+}
+
 .spolka-kpi-hint {
   color: var(--muted);
   font-size: var(--font-sm);
