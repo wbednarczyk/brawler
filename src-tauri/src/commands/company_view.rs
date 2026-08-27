@@ -8,18 +8,34 @@
 //! [`crate::commands::company_context`]. Top-level `Err` ONLY for an unknown
 //! company or a failed read establishment. Offloaded off the UI thread via
 //! `spawn_blocking`.
+//!
+//! **One pooled connection, not one per section** (perf fix 2026-08-27,
+//! owner P1: ~10s real-world load). The six sections above read from six
+//! independent domain stores, but each store method checking out its own
+//! pool connection meant one `get_company_view` call made ~50 separate
+//! `r2d2` acquisitions for a company with a deep history (CDR: 53) — cheap
+//! uncontended, but each one an independent queueing point against the
+//! production pool's small `max_connections` (default 4) whenever a
+//! background job (scheduler sweep, KPI ingest, aggregator pull) holds a
+//! connection. `compute_company_view` now checks out ONE connection and
+//! every section reads over it via [`crate::storage::company_view_reads`] —
+//! one borrowed-connection function per section — instead of the
+//! `AppState`/`Store` facade methods that each check out their own.
 
 use std::collections::{BTreeSet, HashMap};
+use std::time::Instant;
 
+use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::app_state::AppState;
 use crate::commands::fundamentals_coverage::CoveragePeriodRow;
+use crate::commands::market_data;
 use crate::commands::today::SectionErrorKind;
-use crate::commands::{fundamentals_coverage, market_data};
+use crate::storage::company_view_reads as reads;
 use crate::storage::{
-    AnalystRecommendationRow, CompanyEventListInput, FinancialFact, ListFinancialFactsInput,
-    ListFinancialPeriodsInput, PresentationKind,
+    AnalystRecommendationRow, Company, CompanyEventListInput, FinancialFact,
+    ListFinancialFactsInput, ListFinancialPeriodsInput, PresentationKind,
 };
 
 /// Feed strip cap (contracts.md § Company View — feed cap = 6).
@@ -358,14 +374,12 @@ fn compute_yoy(cells: &[CompanyViewKpiCell]) -> Option<f64> {
 // ============================================================================
 
 fn compute_counters(
-    state: &AppState,
+    connection: &Connection,
     company_id: &str,
     today: &str,
     horizon: &str,
 ) -> Result<CompanyViewCounters, String> {
-    let flags = state
-        .red_flags()
-        .red_flags_view(company_id)
+    let flags = reads::red_flags_active(connection, company_id, today)
         .map_err(|error| error.to_string())?;
     let mut counts: HashMap<String, i64> = HashMap::new();
     for flag in &flags.active {
@@ -385,9 +399,7 @@ fn compute_counters(
         by_category,
     };
 
-    let claims = state
-        .list_management_claims(company_id)
-        .map_err(|error| error.to_string())?;
+    let claims = reads::open_claims(connection, company_id).map_err(|error| error.to_string())?;
     let open_claims: Vec<_> = claims
         .iter()
         .filter(|claim| claim.status == "pending" || claim.status == "partially_delivered")
@@ -410,10 +422,8 @@ fn compute_counters(
         nearest_due,
     };
 
-    let shorts_view = state
-        .short_positions()
-        .short_positions_view(company_id)
-        .map_err(|error| error.to_string())?;
+    let shorts_view =
+        reads::short_positions(connection, company_id, today).map_err(|error| error.to_string())?;
     // Largest active position, alphabetically-first holder on a percent tie
     // (contracts.md § Company View) — an explicit fold rather than
     // `Iterator::max_by` (which returns the LAST maximum on a tie, the wrong
@@ -437,8 +447,9 @@ fn compute_counters(
         largest_holder: largest.map(|row| row.holder_name.clone()),
     };
 
-    let events = state
-        .list_company_events(CompanyEventListInput {
+    let events = reads::upcoming_events(
+        connection,
+        CompanyEventListInput {
             mode: None,
             company_id: Some(company_id.to_owned()),
             watchlist_id: None,
@@ -446,8 +457,9 @@ fn compute_counters(
             status: Some("scheduled".to_owned()),
             date_from: Some(today.to_owned()),
             date_to: Some(horizon.to_owned()),
-        })
-        .map_err(|error| error.to_string())?;
+        },
+    )
+    .map_err(|error| error.to_string())?;
     let event_counts = CompanyViewEventCounts {
         upcoming: events.len() as i64,
     };
@@ -460,14 +472,15 @@ fn compute_counters(
     })
 }
 
-fn compute_kpi(state: &AppState, company_id: &str) -> Result<CompanyViewKpi, String> {
-    let periods = state
-        .financials()
-        .list_financial_periods(ListFinancialPeriodsInput {
+fn compute_kpi(connection: &Connection, company_id: &str) -> Result<CompanyViewKpi, String> {
+    let periods = reads::financial_periods(
+        connection,
+        ListFinancialPeriodsInput {
             company_id: company_id.to_owned(),
             fiscal_year: None,
-        })
-        .map_err(|error| error.to_string())?;
+        },
+    )
+    .map_err(|error| error.to_string())?;
 
     let mut fy_years: Vec<i64> = periods
         .iter()
@@ -495,14 +508,15 @@ fn compute_kpi(state: &AppState, company_id: &str) -> Result<CompanyViewKpi, Str
         if facts_by_period.contains_key(period_id) {
             continue;
         }
-        let facts = state
-            .financials()
-            .list_financial_facts(ListFinancialFactsInput {
+        let facts = reads::financial_facts(
+            connection,
+            ListFinancialFactsInput {
                 company_id: Some(company_id.to_owned()),
                 period_id: Some(period_id.clone()),
                 definition_id: None,
-            })
-            .map_err(|error| error.to_string())?;
+            },
+        )
+        .map_err(|error| error.to_string())?;
         facts_by_period.insert(period_id.clone(), facts);
     }
 
@@ -562,10 +576,11 @@ fn compute_kpi(state: &AppState, company_id: &str) -> Result<CompanyViewKpi, Str
     })
 }
 
-fn compute_feed(state: &AppState, company_id: &str) -> Result<Vec<CompanyViewFeedItem>, String> {
-    let rows = state
-        .feed()
-        .list_company_feed_newest(company_id, FEED_LIMIT)
+fn compute_feed(
+    connection: &Connection,
+    company_id: &str,
+) -> Result<Vec<CompanyViewFeedItem>, String> {
+    let rows = reads::feed_newest(connection, company_id, FEED_LIMIT)
         .map_err(|error| error.to_string())?;
     Ok(rows
         .into_iter()
@@ -581,24 +596,35 @@ fn compute_feed(state: &AppState, company_id: &str) -> Result<Vec<CompanyViewFee
         .collect())
 }
 
-/// Price semantics (plan `frontend-v2-f3a.md` § S1, normative): reuse
-/// `compute_price_context`'s series, then slice/compute here rather than
-/// asking that read model for a differently-shaped answer.
-fn compute_price(state: &AppState, company_id: &str) -> Result<CompanyViewPrice, String> {
-    let context = market_data::compute_price_context(state, company_id)?;
-    if context.empty_reason.is_some() {
-        return Ok(CompanyViewPrice {
-            candles: Vec::new(),
-            last_close: 0.0,
-            as_of: String::new(),
-            delta_1m_pct: None,
-            delta_ytd_pct: None,
-            currency: context.currency,
-            empty_reason: context.empty_reason,
-        });
+/// Price semantics (plan `frontend-v2-f3a.md` § S1, normative): read the
+/// quote bars directly (bounded to `HISTORY_WINDOW_DAYS`, same window
+/// `compute_price_context` uses) over the shared connection rather than
+/// through `compute_price_context` — that read model additionally builds
+/// the derived-metrics engine's market-ratio context (P/E, EV/EBITDA, ...)
+/// this section never renders, and was one more pool checkout on the
+/// `get_company_view` path (perf fix 2026-08-27). DTO unchanged.
+fn compute_price(
+    connection: &Connection,
+    company: &Company,
+    company_id: &str,
+) -> Result<CompanyViewPrice, String> {
+    if !company
+        .exchange
+        .eq_ignore_ascii_case(market_data::MAPPED_EXCHANGE)
+    {
+        return Ok(empty_price("unmapped_ticker"));
     }
 
-    let history = context.history;
+    let Some(latest) =
+        reads::latest_quote(connection, company_id).map_err(|error| error.to_string())?
+    else {
+        return Ok(empty_price("no_quotes"));
+    };
+
+    let from_date =
+        market_data::shift_iso_date_back(&latest.date, market_data::HISTORY_WINDOW_DAYS);
+    let history = reads::quote_bars_since(connection, company_id, &from_date)
+        .map_err(|error| error.to_string())?;
     let len = history.len();
     let last_close = history.last().map(|bar| bar.close).unwrap_or(0.0);
     let as_of = history
@@ -646,17 +672,34 @@ fn compute_price(state: &AppState, company_id: &str) -> Result<CompanyViewPrice,
         as_of,
         delta_1m_pct,
         delta_ytd_pct,
-        currency: context.currency,
+        currency: market_data::QUOTE_CURRENCY.to_owned(),
         empty_reason: None,
     })
 }
 
+/// The price section's own empty state (unmapped exchange / no quotes yet) —
+/// every other field carries an inert default the DTO says to ignore.
+fn empty_price(reason: &str) -> CompanyViewPrice {
+    CompanyViewPrice {
+        candles: Vec::new(),
+        last_close: 0.0,
+        as_of: String::new(),
+        delta_1m_pct: None,
+        delta_ytd_pct: None,
+        currency: market_data::QUOTE_CURRENCY.to_owned(),
+        empty_reason: Some(reason.to_owned()),
+    }
+}
+
 /// Compute the Company View read model (sync core, unit-testable). `Err`
-/// ONLY for an unknown company; every other section degrades independently
-/// into `sectionErrors` (ADR 0081 Partial).
+/// ONLY for an unknown company or a failed connection checkout; every other
+/// section degrades independently into `sectionErrors` (ADR 0081 Partial).
+/// ONE pooled connection for the whole read (perf fix 2026-08-27) — see the
+/// module doc.
 pub fn compute_company_view(state: &AppState, company_id: &str) -> Result<CompanyView, String> {
-    let company = state
-        .list_companies()
+    let connection = state.checkout().map_err(|error| error.to_string())?;
+
+    let company = reads::companies(&connection)
         .map_err(|error| error.to_string())?
         .into_iter()
         .find(|company| company.id == company_id)
@@ -668,56 +711,68 @@ pub fn compute_company_view(state: &AppState, company_id: &str) -> Result<Compan
 
     let mut section_errors = CompanyViewSectionErrors::default();
 
-    let counters = match compute_counters(state, company_id, &today, &horizon) {
+    let t = Instant::now();
+    let counters = match compute_counters(&connection, company_id, &today, &horizon) {
         Ok(value) => Some(value),
         Err(_) => {
             section_errors.counters = Some(SectionErrorKind::Unavailable);
             None
         }
     };
+    log::debug!("get_company_view[{company_id}] counters: {:?}", t.elapsed());
 
-    let kpi = match compute_kpi(state, company_id) {
+    let t = Instant::now();
+    let kpi = match compute_kpi(&connection, company_id) {
         Ok(value) => Some(value),
         Err(_) => {
             section_errors.kpi = Some(SectionErrorKind::Unavailable);
             None
         }
     };
+    log::debug!("get_company_view[{company_id}] kpi: {:?}", t.elapsed());
 
-    let feed = match compute_feed(state, company_id) {
+    let t = Instant::now();
+    let feed = match compute_feed(&connection, company_id) {
         Ok(value) => value,
         Err(_) => {
             section_errors.feed = Some(SectionErrorKind::Unavailable);
             Vec::new()
         }
     };
+    log::debug!("get_company_view[{company_id}] feed: {:?}", t.elapsed());
 
-    let price = match compute_price(state, company_id) {
+    let t = Instant::now();
+    let price = match compute_price(&connection, &company, company_id) {
         Ok(value) => Some(value),
         Err(_) => {
             section_errors.price = Some(SectionErrorKind::Unavailable);
             None
         }
     };
+    log::debug!("get_company_view[{company_id}] price: {:?}", t.elapsed());
 
-    let coverage = match fundamentals_coverage::compute_fundamentals_coverage(state, company_id) {
-        Ok(value) => value.periods,
+    let t = Instant::now();
+    let coverage = match reads::coverage_rows(&connection, state, company_id) {
+        Ok(value) => value,
         Err(_) => {
             section_errors.coverage = Some(SectionErrorKind::Unavailable);
             Vec::new()
         }
     };
+    log::debug!("get_company_view[{company_id}] coverage: {:?}", t.elapsed());
 
-    let recommendations = match state
-        .analyst_recommendations()
-        .list_analyst_recommendations(company_id)
-    {
+    let t = Instant::now();
+    let recommendations = match reads::recommendations(&connection, company_id) {
         Ok(rows) => rows.into_iter().take(RECOMMENDATIONS_LIMIT).collect(),
         Err(_) => {
             section_errors.recommendations = Some(SectionErrorKind::Unavailable);
             Vec::new()
         }
     };
+    log::debug!(
+        "get_company_view[{company_id}] recommendations: {:?}",
+        t.elapsed()
+    );
 
     Ok(CompanyView {
         company_id: company.id,
