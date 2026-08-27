@@ -174,7 +174,7 @@
   }
 }
 
-/* S width tier (pane < 420px): list only; composer behind the "Dodaj obietnicę"
+/* S width tier (pane < 420px): list only; composer behind the "Dodaj tezę"
    (Add claim) button. */
 @container pane (max-width: 419px) {
   .company-claims-panel .claims-add-toggle {

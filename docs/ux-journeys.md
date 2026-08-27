@@ -33,6 +33,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 - **Screens:** Companies, Watchlists, Company workspace.
 - **Budget:** ≤12 interactions to reach "company fueled".
 - **Done well:** after one session the company has feed, reports, fundamentals, and a recorded reason for being tracked.
+- Ownership sits behind the Spółka `Otwórz akcjonariat` tool (+1 interaction, owner-accepted 2026-08-26, ADR 0107 — the on-demand ownership chart from the F3a study).
 
 ## J4 — Report-season preparation
 

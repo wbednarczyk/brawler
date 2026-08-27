@@ -9,10 +9,8 @@ import { plText } from "./resources/plText";
 // a broad list would flag legitimate copy and erode trust in the gate.
 const FORBIDDEN = /\b(database|databases|IPC|SQL|runtime|backend|jsdom|localhost)\b/i;
 
-function offenders(strings: string[], source: string): string[] {
-  return strings
-    .filter((value) => FORBIDDEN.test(value))
-    .map((value) => `${source}: ${value}`);
+function offenders(strings: string[], source: string, pattern: RegExp = FORBIDDEN): string[] {
+  return strings.filter((value) => pattern.test(value)).map((value) => `${source}: ${value}`);
 }
 
 describe("dev-speak guard over user-facing copy", () => {
@@ -25,5 +23,21 @@ describe("dev-speak guard over user-facing copy", () => {
       ...offenders(Object.values(pl), "pl value"),
     ];
     expect(found, `Dev-speak in user-facing copy:\n${found.join("\n")}`).toEqual([]);
+  });
+});
+
+// Retired-vocabulary guard (owner decision 2026-08-26): management claims are
+// "teza/tezy" everywhere in Polish copy, never "obietnica/obietnice/obietnic"
+// (promise) or "deklaracja/deklaracje" (declaration) — pins the unification
+// shut so the old word can't creep back into a new string.
+const RETIRED_CLAIM_VOCAB = /obietnic\w*|deklaracj\w*/i;
+
+describe("retired claim-vocabulary guard over Polish copy", () => {
+  it("keeps 'obietnica'/'deklaracja' out of every Polish locale surface", () => {
+    const hits = [
+      ...offenders(Object.values(plText), "plText pl value", RETIRED_CLAIM_VOCAB),
+      ...offenders(Object.values(pl), "pl value", RETIRED_CLAIM_VOCAB),
+    ];
+    expect(hits, `Retired claim vocabulary in Polish copy:\n${hits.join("\n")}`).toEqual([]);
   });
 });

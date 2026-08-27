@@ -207,7 +207,7 @@ behind expansion when short; fixed-height artifacts (calendar, matrix) scroll in
 |---|---|---|---|---|
 | Fundamentals | sections stack; facts matrix scrolls; Autopilot section = one row + expand | matrix + one form column | matrix + forms side-by-side | only matrix + section headers; forms fold |
 | Feed (company) | item = badge+title+date, meta folds | + summary line | + detail split-pane | list only, detail on click |
-| Claims | list only; composer behind "Dodaj obietnicę" button | list + inline composer | + verdict detail column | queue counts + top 3 due |
+| Claims | list only; composer behind "Dodaj tezę" button | list + inline composer | + verdict detail column | queue counts + top 3 due |
 | Quality | scorecard chips + criteria list; expression folds into expansion | + expression column | + history side panel | chips + criteria; history folds |
 | Report documents | grouped by period; kind label + filename (middle-ellipsis, full in tooltip) + date | + kind/status chips + extract-data action (icon) | extract action gains its label | list only (chips + action hidden) |
 | Notebook | single column (list OR detail, toggled) | list + detail stacked | list ∥ detail (existing container query) | list only, editor on select |

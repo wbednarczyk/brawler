@@ -155,9 +155,9 @@ describe("composeAutopilotRunSummary", () => {
         "pl",
       ),
     );
-    expect(forms[0]).toBe("Przetworzono nowy raport — 1 obietnica do weryfikacji.");
-    expect(forms[1]).toBe("Przetworzono nowy raport — 2 obietnice do weryfikacji.");
-    expect(forms[2]).toBe("Przetworzono nowy raport — 5 obietnic do weryfikacji.");
+    expect(forms[0]).toBe("Przetworzono nowy raport — 1 teza do weryfikacji.");
+    expect(forms[1]).toBe("Przetworzono nowy raport — 2 tezy do weryfikacji.");
+    expect(forms[2]).toBe("Przetworzono nowy raport — 5 tez do weryfikacji.");
   });
 
   it("pluralizes open research questions (Polish three-form, noun+adjective agreement)", () => {
@@ -269,7 +269,7 @@ describe("renderAutopilotSummaryTokens", () => {
       "New report processed — 1 claim to verify.",
     );
     expect(renderAutopilotSummaryTokens("claims_to_verify:5", pl, "pl")).toBe(
-      "Przetworzono nowy raport — 5 obietnic do weryfikacji.",
+      "Przetworzono nowy raport — 5 tez do weryfikacji.",
     );
     expect(renderAutopilotSummaryTokens("research_questions:3", pl, "pl")).toBe(
       "Przetworzono nowy raport — 3 otwarte pytania badawcze.",

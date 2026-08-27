@@ -7,7 +7,7 @@ import type { Locator, Page } from "@playwright/test";
 // panel rows verbatim from docs/ui-authoring.md:
 //   Notebook — S: single column (list OR detail, toggled) · short: list only,
 //              editor on select.
-//   Claims   — S: list only, composer behind "Dodaj obietnicę" button ·
+//   Claims   — S: list only, composer behind "Dodaj tezę" button ·
 //              M: list + inline composer · L: + verdict detail column ·
 //              short: queue counts + top 3 due.
 // The tier switch itself is CSS-only (container queries), so — like the shared
