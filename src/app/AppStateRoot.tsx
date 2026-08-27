@@ -1936,7 +1936,6 @@ export function AppStateRoot({
                     feedItems={feedState}
                     rootHighlightClaimId={highlightClaimId}
                     openInboxItem={openInboxItem}
-                    onOpenExternalUrl={openExternalUrl}
                     onSwitchCompany={(companyId) => navigate({ companyId, section: "Spolka" })}
                     refreshCompletionCount={refreshCompletionCount}
                   />

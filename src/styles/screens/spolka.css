@@ -130,10 +130,12 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   /* Each card keeps a usable floor; the body scrolls instead of collapsing cards
      to their headers on a 768px-tall window. */
-  grid-template-rows: minmax(240px, auto) minmax(200px, 1fr) minmax(200px, 1fr);
+  grid-template-rows: auto minmax(200px, 1fr) minmax(200px, 1fr);
   gap: var(--space-3);
-  flex: 1;
-  min-height: 0;
+  /* Content-sized, never height-constrained: a constrained grid squeezes
+     `auto` rows to 0 and clips card actions (owner dogfooding wave 2). The
+     body-scroll region scrolls instead. */
+  flex: none;
 }
 
 .spolka-core > * {
@@ -155,6 +157,7 @@
   .spolka-core {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
+    grid-auto-rows: minmax(200px, auto);
   }
 
   .spolka-kpi {
@@ -299,9 +302,15 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+/* Fifteen entries must fit one row at ~1440px: compact tabs. */
+.spolka-workshop .ghost-button {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-sm);
 }
 
 .spolka-workshop-eyebrow {
