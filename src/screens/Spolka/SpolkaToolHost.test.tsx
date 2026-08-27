@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -105,11 +106,13 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
   return {
     companyId: company.id,
     company,
+    companies: [company],
     spolkaTool: overrides.spolkaTool as SpolkaScreenProps["spolkaTool"],
     feedItems: [],
     rootHighlightClaimId: null,
     onOpenDocument: vi.fn(),
     onOpenFeedItem: vi.fn(),
+    onSwitchCompany: vi.fn(),
     refreshCompletionCount: 0,
     ...overrides,
   };
@@ -129,7 +132,7 @@ function Harness(overrides: Partial<SpolkaScreenProps>) {
 }
 
 async function openDirtyNotebookTool(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: "Open notebook" }));
+  await user.click(screen.getByRole("button", { name: "Notebook" }));
   await screen.findByRole("group", { name: "Workshop tool" });
   await user.click(await screen.findByRole("button", { name: "New note" }));
   const titleField = await screen.findByRole("textbox", { name: "Notebook note title" });
@@ -194,6 +197,15 @@ beforeEach(() => {
         window12m: { buyCount: 0, sellCount: 0, netValue: null },
       });
     }
+    if (command === "get_company_context") {
+      return Promise.resolve({
+        companyId: company.id,
+        latestPeriodFacts: null,
+        upcomingEvents: [],
+        notebook: { count: 0, latestAt: null },
+        claimsDue: { due: 0, overdue: 0 },
+      });
+    }
     return Promise.resolve([]);
   });
 });
@@ -208,7 +220,7 @@ describe("Spółka tool host — dirty guard", () => {
     render(<Harness />);
     await screen.findByText("CD Projekt");
 
-    await user.click(screen.getByRole("button", { name: "Open notebook" }));
+    await user.click(screen.getByRole("button", { name: "Notebook" }));
     await screen.findByRole("group", { name: "Workshop tool" });
     await user.click(screen.getByRole("button", { name: "Close tool" }));
 
@@ -234,7 +246,7 @@ describe("Spółka tool host — dirty guard", () => {
     await screen.findByText("CD Projekt");
     await openDirtyNotebookTool(user);
 
-    await user.click(screen.getByRole("button", { name: "Open claims" }));
+    await user.click(screen.getByRole("button", { name: "Claims" }));
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Workshop tool" }).getAttribute("data-tool")).toBe("notatnik");
@@ -325,6 +337,7 @@ describe("Spółka tool host — dirty guard", () => {
                 feedItems={[]}
                 rootHighlightClaimId={null}
                 openInboxItem={() => {}}
+                onSwitchCompany={() => {}}
                 refreshCompletionCount={0}
               />
             </ResearchProvider>
@@ -334,11 +347,62 @@ describe("Spółka tool host — dirty guard", () => {
     }
     const { rerender } = render(<Host selectedCompanyId={company.id} />);
     await screen.findByText("CD Projekt");
-    await user.click(screen.getByRole("button", { name: "Open notebook" }));
+    await user.click(screen.getByRole("button", { name: "Notebook" }));
     await screen.findByRole("group", { name: "Workshop tool" });
 
     rerender(<Host selectedCompanyId={companyB.id} />);
 
+    await screen.findByText("PKN Orlen");
+    expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument();
+  });
+
+  // Owner dogfooding v0.74, item 6: the header's company picker routes
+  // through the SAME guarded transition as every other entry point
+  // (`onSwitchCompany` → `spolkaTool.guardNavigation`, mirroring
+  // `useSpolkaNavigate`'s `navigate` in the real app) — a dirty tool asks
+  // stay/discard instead of silently switching company under it.
+  it("company picker switches through the guarded transition", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === companyB.id
+          ? emptyView({ companyId: companyB.id, qualifiedTicker: companyB.qualifiedTicker, displayName: companyB.displayName })
+          : emptyView(),
+      ),
+    );
+    function Host() {
+      const spolkaTool = useSpolkaToolHost();
+      const [selectedCompanyId, setSelectedCompanyId] = useState(company.id);
+      return (
+        <CommandPaletteProvider appCommands={[]} text={(s) => s}>
+          <ToastProvider>
+            <ResearchProvider value={researchViewModelStub}>
+              <SpolkaScreenHost
+                companies={[company, companyB]}
+                selectedCompanyId={selectedCompanyId}
+                spolkaTool={spolkaTool}
+                feedItems={[]}
+                rootHighlightClaimId={null}
+                openInboxItem={() => {}}
+                onSwitchCompany={(id) => spolkaTool.guardNavigation(() => setSelectedCompanyId(id))}
+                refreshCompletionCount={0}
+              />
+            </ResearchProvider>
+          </ToastProvider>
+        </CommandPaletteProvider>
+      );
+    }
+    render(<Host />);
+    await screen.findByText("CD Projekt");
+    await openDirtyNotebookTool(user);
+
+    await user.selectOptions(screen.getByLabelText("Company"), companyB.id);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("CD Projekt")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Workshop tool" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Discard" }));
     await screen.findByText("PKN Orlen");
     expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument();
   });
@@ -360,7 +424,7 @@ describe("Spółka tool host — dirty guard", () => {
     }
     const { rerender } = render(<Host />);
     await screen.findByText("CD Projekt");
-    await user.click(screen.getByRole("button", { name: "Open claims" }));
+    await user.click(screen.getByRole("button", { name: "Claims" }));
     await screen.findByRole("group", { name: "Workshop tool" });
 
     getCompanyViewMock.mockResolvedValue(
@@ -377,7 +441,9 @@ describe("Spółka tool host — dirty guard", () => {
     const { container } = render(<Harness />);
     await screen.findByText("CD Projekt");
 
-    const layout = container.querySelector(".spolka-layout") as HTMLElement;
+    // The element that actually scrolls (owner dogfooding v0.74, item 1):
+    // `.spolka-layout` itself never scrolls any more.
+    const layout = container.querySelector(".spolka-body-scroll") as HTMLElement;
     layout.scrollTop = 240;
     await user.click(screen.getByRole("button", { name: /Report 0/ }));
     await screen.findByRole("group", { name: "Workshop tool" });
@@ -407,7 +473,7 @@ describe("Spółka tool host — dirty guard", () => {
     const { rerender } = render(<Host refreshCompletionCount={0} />);
     await screen.findByText("CD Projekt");
 
-    await user.click(screen.getByRole("button", { name: "Open notebook" }));
+    await user.click(screen.getByRole("button", { name: "Notebook" }));
     const frame = await screen.findByRole("group", { name: "Workshop tool" });
     frame.dataset.toolInstanceMarker = "still-here";
 

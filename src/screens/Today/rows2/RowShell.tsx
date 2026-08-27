@@ -40,8 +40,11 @@ export type RowShellProps = {
    * agent violet / caution amber per ADR 0104. */
   chip: ReactNode;
   title: string;
-  /** A quiet mono metadata line under the title (e.g. an event date). */
-  meta?: string | null;
+  /** A quiet metadata line under the title — plain UI-face text/figure (e.g.
+   * an event date) by default (ADR 0104 dec. 2 amendment, 2026-08-27); a
+   * caller carrying an identifier (a filename) wraps it in a
+   * `.dayq-row-meta-mono` span itself. */
+  meta?: ReactNode;
   /** Omitted entirely for a row with no landing destination (a calendar
    * "zapowiedź" row — Wiersze.dc.html "bez akcji — czeka"). */
   actionLabel?: string;

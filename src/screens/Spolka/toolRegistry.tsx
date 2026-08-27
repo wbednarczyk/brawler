@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import type { Company, FeedItem } from "../../api/types";
 import { listClaimsToVerify } from "../../api/managementClaims";
 import { listCompanyEvents } from "../../api/events";
@@ -67,15 +67,24 @@ function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
   const { text } = useLocale();
   return (
     <div role="group" aria-label={text("Workshop tool")} data-tool={tool.t} className="spolka-tool">
-      <SectionHeader
-        level="h2"
-        title={text(TOOL_TITLES[tool.t])}
-        actions={
-          <Button variant="icon" aria-label={text("Close tool")} onClick={ctx.onCloseTool}>
-            <X size={16} aria-hidden="true" />
-          </Button>
-        }
-      />
+      <div className="spolka-tool-header">
+        {/* A leading way back to the untouched core (owner dogfooding v0.74,
+            item 5) — same destination as the ✕, which stays for the
+            close-without-looking-back gesture. */}
+        <Button variant="ghost" onClick={ctx.onCloseTool}>
+          <ArrowLeft size={14} aria-hidden="true" />
+          {text("Overview")}
+        </Button>
+        <SectionHeader
+          level="h2"
+          title={text(TOOL_TITLES[tool.t])}
+          actions={
+            <Button variant="icon" aria-label={text("Close tool")} onClick={ctx.onCloseTool}>
+              <X size={16} aria-hidden="true" />
+            </Button>
+          }
+        />
+      </div>
       <div className="spolka-tool-body">{renderToolBody(tool, ctx)}</div>
     </div>
   );
@@ -92,11 +101,15 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
         />
       );
     case "feedItem":
+      // The selected item's detail leads, the list stays reachable below it
+      // (owner dogfooding v0.74, item 7) — opened from the Inbox "Otwórz
+      // spółkę", the item could sit anywhere in a 30+-row feed.
       return (
         <CockpitCompanyFeedPanel
           company={ctx.company}
           feedItems={ctx.feedItems}
           initialSelectedFeedItemId={tool.feedItemId}
+          leadWithDetail
         />
       );
     case "dokumenty":

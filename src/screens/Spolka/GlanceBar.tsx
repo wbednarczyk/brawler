@@ -39,8 +39,8 @@ export function GlanceBar({ counters, sectionErrors, onOpenTool }: GlanceBarProp
             className="spolka-glance-counter"
             onClick={() => onOpenTool({ t: "sygnaly" })}
           >
-            <span className="num-tabular">{formatCount(counters.signals.unacked)}</span>{" "}
-            {pluralNoun(locale, counters.signals.unacked, SIGNAL_FORMS)}
+            <span className="num-tabular spolka-glance-figure">{formatCount(counters.signals.unacked)}</span>
+            <span className="spolka-glance-label">{pluralNoun(locale, counters.signals.unacked, SIGNAL_FORMS)}</span>
             {counters.signals.byCategory.length > 0 ? (
               <span className="spolka-glance-sub">
                 {counters.signals.byCategory
@@ -56,8 +56,10 @@ export function GlanceBar({ counters, sectionErrors, onOpenTool }: GlanceBarProp
             className="spolka-glance-counter"
             onClick={() => onOpenTool({ t: "tezy" })}
           >
-            <span className="num-tabular">{formatCount(counters.claims.open)}</span>{" "}
-            {pluralNoun(locale, counters.claims.open, CLAIM_FORMS)} {text("to settle")}
+            <span className="num-tabular spolka-glance-figure">{formatCount(counters.claims.open)}</span>
+            <span className="spolka-glance-label">
+              {pluralNoun(locale, counters.claims.open, CLAIM_FORMS)} {text("to settle")}
+            </span>
             {counters.claims.nearestDue ? (
               <span className="spolka-glance-sub">{counters.claims.nearestDue}</span>
             ) : null}
@@ -69,13 +71,13 @@ export function GlanceBar({ counters, sectionErrors, onOpenTool }: GlanceBarProp
             className="spolka-glance-counter"
             onClick={() => onOpenTool({ t: "akcjonariat" })}
           >
-            <span className="num-tabular">
+            <span className="num-tabular spolka-glance-figure">
               {formatFinancialValue(
                 { valueNumeric: String(counters.shorts.activeSumPct), valueKind: "percentage" },
                 locale,
               )}
-            </span>{" "}
-            {text("short")}
+            </span>
+            <span className="spolka-glance-label">{text("short")}</span>
             {counters.shorts.largestHolder ? (
               <span className="spolka-glance-sub">{counters.shorts.largestHolder}</span>
             ) : null}
@@ -88,11 +90,14 @@ export function GlanceBar({ counters, sectionErrors, onOpenTool }: GlanceBarProp
             onClick={() => onOpenTool({ t: "wydarzenia" })}
           >
             {counters.events.upcoming === 0 ? (
-              text("No events scheduled")
+              <span className="spolka-glance-label">{text("No events scheduled")}</span>
             ) : (
               <>
-                <span className="num-tabular">{formatCount(counters.events.upcoming)}</span>{" "}
-                {pluralNoun(locale, counters.events.upcoming, CALENDAR_EVENT_FORMS)} ({text("30 days")})
+                <span className="num-tabular spolka-glance-figure">{formatCount(counters.events.upcoming)}</span>
+                <span className="spolka-glance-label">
+                  {pluralNoun(locale, counters.events.upcoming, CALENDAR_EVENT_FORMS)}
+                </span>
+                <span className="spolka-glance-sub">{text("30 days")}</span>
               </>
             )}
           </Button>

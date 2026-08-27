@@ -33,8 +33,12 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument }: CoreKpi
     return undefined;
   })();
 
+  // tabIndex + the existing role/label make the card's own scroll
+  // keyboard-reachable (axe scrollable-region-focusable) now that it scrolls
+  // its own overflow instead of the whole screen (owner dogfooding v0.74,
+  // item 1).
   return (
-    <div role="group" aria-label={text("Annual KPI table")} className="spolka-section spolka-kpi">
+    <div role="group" aria-label={text("Annual KPI table")} className="spolka-section spolka-kpi" tabIndex={0}>
       <SectionHeader level="h2" title={text("Annual results")} description={text("PLN million · consolidated")} />
 
       {error ? (
@@ -95,7 +99,7 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument }: CoreKpi
       )}
 
       <Button variant="secondary" onClick={() => onOpenTool({ t: "fundamenty" })}>
-        {text("Open fundamentals")}
+        {text("Fundamentals")}
       </Button>
     </div>
   );

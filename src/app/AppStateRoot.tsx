@@ -1926,9 +1926,8 @@ export function AppStateRoot({
               ) : null}
               {activeSection === "Spolka" ? (
                 // The `research` workshop tool hosts the real, context-driven
-                // ResearchScreen (F3a S2 — it has no company-scope prop of its
-                // own yet), so this branch needs the same provider Cockpit
-                // wraps it in.
+                // ResearchScreen (F3a S2 — no company-scope prop of its own
+                // yet), so this branch needs the same provider Cockpit wraps it in.
                 <ResearchProvider value={researchViewModel}>
                   <SpolkaScreenHost
                     companies={companies}
@@ -1937,6 +1936,7 @@ export function AppStateRoot({
                     feedItems={feedState}
                     rootHighlightClaimId={highlightClaimId}
                     openInboxItem={openInboxItem}
+                    onSwitchCompany={(companyId) => navigate({ companyId, section: "Spolka" })}
                     refreshCompletionCount={refreshCompletionCount}
                   />
                 </ResearchProvider>

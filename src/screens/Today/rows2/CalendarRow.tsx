@@ -27,7 +27,7 @@ export function CalendarRow({ item }: { item: CalendarItem }) {
         </StatusChip>
       }
       title={item.title}
-      meta={formatListTimestamp(item.eventDate, locale)}
+      meta={<span className="num-tabular">{formatListTimestamp(item.eventDate, locale)}</span>}
     />
   );
 }

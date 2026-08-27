@@ -8,7 +8,7 @@ import { useLocale } from "../../shared/locale";
 import { CALENDAR_EVENT_FORMS, CLAIM_FORMS, FACT_FORMS, SIGNAL_FORMS, pluralNoun } from "../../shared/locale/plural";
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import { formatLocalIsoDate } from "../../shared/format/datetime";
-import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, Skeleton } from "../../ui";
+import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, SelectField, Skeleton } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { GlanceBar, formatCount } from "./GlanceBar";
 import { CoreKpiTable } from "./CoreKpiTable";
@@ -20,9 +20,12 @@ import type { PaletteCommand } from "../../shared/components/CommandPalette";
 
 // Contextual palette entries (F3a S3, plan "Trasy powierzchni globalnych" +
 // ADR 0104 dec. 3) while the Spółka screen is active: one `Open <tool>` entry
-// per parameterless Tool variant, labels identical to the workshop-bar/core
-// buttons that open the same tool (`feedItem` is excluded — it always needs a
-// specific `feedItemId`, so it has no standalone command).
+// per parameterless Tool variant (`feedItem` is excluded — it always needs a
+// specific `feedItemId`, so it has no standalone command). A palette command
+// is an ACTION ("Otwórz X") — the workshop-bar/core buttons that open the
+// SAME tool are DESTINATIONS and carry the noun form instead (`WORKSHOP_TOOLS`
+// below, ADR 0104 dec. 3 amendment, owner dogfooding v0.74 item 4); the two
+// labels legitimately diverge.
 export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool; label: string; actionKey: string }> = [
   { tool: { t: "feed" }, label: "Open feed", actionKey: "tool.open.feed" },
   { tool: { t: "fundamenty" }, label: "Open fundamentals", actionKey: "tool.open.fundamenty" },
@@ -43,6 +46,9 @@ export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool; label: string; ac
 export type SpolkaScreenProps = {
   companyId: string;
   company: Company;
+  /** Every tracked company, for the header's company picker (owner dogfooding
+   * v0.74, 2026-08-27, item 6) — a screen with no way to switch company. */
+  companies: Company[];
   spolkaTool: SpolkaToolHostApi;
   feedItems: FeedItem[];
   /** Today's `openCompanyClaims` global highlight (F2 S3) — the `tezy` tool's
@@ -50,6 +56,10 @@ export type SpolkaScreenProps = {
   rootHighlightClaimId: string | null;
   onOpenDocument: (documentRef: string) => void;
   onOpenFeedItem: (feedItemId: string) => void;
+  /** Picking a different company from the header — routed through the SAME
+   * guarded atomic transition every entry point uses (`useSpolkaNavigate`),
+   * never a direct `selectedCompanyId` set (owner dogfooding v0.74, item 6). */
+  onSwitchCompany: (companyId: string) => void;
   refreshCompletionCount: number;
 };
 
@@ -60,16 +70,22 @@ export type SpolkaScreenProps = {
 export function SpolkaScreen({
   companyId,
   company,
+  companies,
   spolkaTool,
   feedItems,
   rootHighlightClaimId,
   onOpenDocument,
   onOpenFeedItem,
+  onSwitchCompany,
   refreshCompletionCount,
 }: SpolkaScreenProps) {
   const { text, locale } = useLocale();
   const query = useCommandQuery([companyId, refreshCompletionCount], () => getCompanyView(companyId));
-  const layoutRef = useRef<HTMLDivElement>(null);
+  // The scroll-restore ref lives on `.spolka-body-scroll` — the element that
+  // ACTUALLY scrolls (owner dogfooding v0.74, item 1): `.spolka-layout`
+  // itself never scrolls any more, so the workshop bar (its fixed sibling)
+  // can never scroll out of view with it.
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
   const lastCoreScrollTopRef = useRef(0);
 
   // A tool only belongs to THIS render if it was opened for THIS company — a
@@ -82,8 +98,8 @@ export function SpolkaScreen({
   // mounted (`hidden`, never unmounted) so its own state (the selected feed
   // row) survives on its own; only the shared scroll container needs help.
   useEffect(() => {
-    if (!isToolActive && layoutRef.current) {
-      layoutRef.current.scrollTop = lastCoreScrollTopRef.current;
+    if (!isToolActive && bodyScrollRef.current) {
+      bodyScrollRef.current.scrollTop = lastCoreScrollTopRef.current;
     }
   }, [isToolActive]);
 
@@ -92,8 +108,8 @@ export function SpolkaScreen({
     // hidden — jsdom (and the "set scrollTop directly" test scenario) does
     // not reliably fire `scroll` events, so a continuous listener would miss
     // it; a point-in-time read here is exact.
-    if (!isToolActive && layoutRef.current) {
-      lastCoreScrollTopRef.current = layoutRef.current.scrollTop;
+    if (!isToolActive && bodyScrollRef.current) {
+      lastCoreScrollTopRef.current = bodyScrollRef.current.scrollTop;
     }
     spolkaTool.openTool(companyId, tool);
   }
@@ -122,56 +138,74 @@ export function SpolkaScreen({
             {company.isin ? ` · ${company.isin}` : ""}
           </>
         }
+        actions={
+          companies.length > 1 ? (
+            <SelectField
+              label={text("Company")}
+              value={companyId}
+              onChange={(event) => onSwitchCompany(event.target.value)}
+            >
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.qualifiedTicker} · {c.displayName}
+                </option>
+              ))}
+            </SelectField>
+          ) : undefined
+        }
       />
 
       <SpolkaToolHostProvider host={spolkaTool}>
-        <div className="spolka-layout" ref={layoutRef}>
-          {isToolActive && query.status === "success" ? (
-            <SummaryStrip data={query.data} locale={locale} text={text} />
-          ) : null}
+        <div className="spolka-layout">
+          <div className="spolka-body-scroll" ref={bodyScrollRef}>
+            {isToolActive && query.status === "success" ? (
+              <SummaryStrip data={query.data} locale={locale} text={text} onOverview={spolkaTool.closeTool} />
+            ) : null}
 
-          {query.status === "loading" && !isToolActive ? (
-            <>
-              <Skeleton variant="block" label={text("Loading company view…")} />
-              <Skeleton variant="list-row" count={5} />
-            </>
-          ) : null}
+            {query.status === "loading" && !isToolActive ? (
+              <>
+                <Skeleton variant="block" label={text("Loading company view…")} />
+                <Skeleton variant="list-row" count={5} />
+              </>
+            ) : null}
 
-          {query.status === "error" && !isToolActive ? (
-            <div className="spolka-error-card" role="alert">
-              <ErrorText>{text("Couldn't read this company's data.")}</ErrorText>
-              <p>{text("The connection to your data may be interrupted.")}</p>
-              <Button variant="primary" type="button" onClick={query.refetch}>
-                <RefreshCw aria-hidden="true" size={13} />
-                {text("Refresh")}
-              </Button>
-            </div>
-          ) : null}
+            {query.status === "error" && !isToolActive ? (
+              <div className="spolka-error-card" role="alert">
+                <ErrorText>{text("Couldn't read this company's data.")}</ErrorText>
+                <p>{text("The connection to your data may be interrupted.")}</p>
+                <Button variant="primary" type="button" onClick={query.refetch}>
+                  <RefreshCw aria-hidden="true" size={13} />
+                  {text("Refresh")}
+                </Button>
+              </div>
+            ) : null}
 
-          {query.status === "success" ? (
-            <SpolkaBody
-              data={query.data}
-              onOpenTool={openTool}
-              onOpenDocument={onOpenDocument}
-              text={text}
-              locale={locale}
-              hidden={isToolActive}
-              activeToolKind={isToolActive ? spolkaTool.tool?.t ?? null : null}
-            />
-          ) : null}
+            {query.status === "success" ? (
+              <SpolkaBody
+                data={query.data}
+                onOpenTool={openTool}
+                onOpenDocument={onOpenDocument}
+                text={text}
+                locale={locale}
+                hidden={isToolActive}
+              />
+            ) : null}
 
-          {isToolActive && spolkaTool.tool ? (
-            renderTool(spolkaTool.tool, {
-              companyId,
-              company,
-              feedItems,
-              rootHighlightClaimId,
-              onOpenTool: openTool,
-              onOpenDocument,
-              onOpenFeedItem,
-              onCloseTool: spolkaTool.closeTool,
-            })
-          ) : null}
+            {isToolActive && spolkaTool.tool ? (
+              renderTool(spolkaTool.tool, {
+                companyId,
+                company,
+                feedItems,
+                rootHighlightClaimId,
+                onOpenTool: openTool,
+                onOpenDocument,
+                onOpenFeedItem,
+                onCloseTool: spolkaTool.closeTool,
+              })
+            ) : null}
+          </div>
+
+          <WorkshopBar onOpenTool={openTool} text={text} activeToolKind={isToolActive ? spolkaTool.tool?.t ?? null : null} />
         </div>
         <ToolHostConfirmModal host={spolkaTool} />
       </SpolkaToolHostProvider>
@@ -181,20 +215,31 @@ export function SpolkaScreen({
 
 
 // Tool-open layout (plan §3): the core collapses to a one-line strip — ticker,
-// the 4 counters, last price — while the tool fills the zone.
+// the 4 counters, last price — while the tool fills the zone. The ticker
+// doubles as an "Overview" shortcut (owner dogfooding v0.74, item 5) — the
+// same core the tool's own header button returns to.
 function SummaryStrip({
   data,
   locale,
   text,
+  onOverview,
 }: {
   data: CompanyView;
   locale: "en" | "pl";
   text: (value: string) => string;
+  onOverview: () => void;
 }) {
   const counters = data.counters;
   return (
     <div role="group" aria-label={text("Company summary strip")} className="spolka-core-strip">
-      <TickerLabel value={data.qualifiedTicker} />
+      <button
+        type="button"
+        className="spolka-core-strip-ticker"
+        aria-label={text("Back to overview")}
+        onClick={onOverview}
+      >
+        <TickerLabel value={data.qualifiedTicker} />
+      </button>
       {counters ? (
         <>
           <span>
@@ -237,14 +282,13 @@ type SpolkaBodyProps = {
   text: (value: string) => string;
   locale: "en" | "pl";
   hidden: boolean;
-  activeToolKind: Tool["t"] | null;
 };
 
 function shortDate(iso: string): string {
   return `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
 }
 
-function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, activeToolKind }: SpolkaBodyProps) {
+function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden }: SpolkaBodyProps) {
   const { sectionErrors } = data;
   // The core stays mounted (never unmounted) across a tool open/close, so this
   // selection survives on its own — no extra restore wiring needed.
@@ -256,9 +300,8 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
   }
 
   return (
-    <>
-      <div hidden={hidden} className="spolka-core-wrap">
-        <GlanceBar counters={data.counters} sectionErrors={sectionErrors} onOpenTool={onOpenTool} />
+    <div hidden={hidden} className="spolka-core-wrap">
+      <GlanceBar counters={data.counters} sectionErrors={sectionErrors} onOpenTool={onOpenTool} />
 
         <div role="group" aria-label={text("Company core")} className="spolka-core">
           <CoreKpiTable
@@ -268,7 +311,10 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
             onOpenDocument={onOpenDocument}
           />
 
-          <div role="group" aria-label={text("Company feed")} className="spolka-section spolka-feed">
+          {/* tabIndex on every card (item 1): each now scrolls its own
+              overflow, so axe's scrollable-region-focusable needs it
+              keyboard-reachable even before it has any focusable child. */}
+          <div role="group" aria-label={text("Company feed")} className="spolka-section spolka-feed" tabIndex={0}>
             <SectionHeader level="h2" title={text("Company feed")} />
             {sectionErrors.feed ? (
               <ErrorText>{text("Couldn't load the feed. The rest of the view is up to date.")}</ErrorText>
@@ -286,11 +332,11 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
               </ul>
             )}
             <Button variant="secondary" onClick={() => onOpenTool({ t: "feed" })}>
-              {text("Open feed")}
+              {text("Feed")}
             </Button>
           </div>
 
-          <div role="group" aria-label={text("Price chart")} className="spolka-section spolka-price">
+          <div role="group" aria-label={text("Price chart")} className="spolka-section spolka-price" tabIndex={0}>
             <SectionHeader level="h2" title={text("Price chart")} />
             {sectionErrors.price ? (
               <ErrorText>{text("Couldn't load the price chart. The rest of the view is up to date.")}</ErrorText>
@@ -343,15 +389,18 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
             )}
           </div>
 
-          <div role="group" aria-label={text("Report coverage")} className="spolka-section spolka-coverage">
+          <div role="group" aria-label={text("Report coverage")} className="spolka-section spolka-coverage" tabIndex={0}>
             <SectionHeader level="h2" title={text("Report coverage")} />
             {sectionErrors.coverage ? (
               <ErrorText>{text("Couldn't load report coverage. The rest of the view is up to date.")}</ErrorText>
             ) : data.coverage.length === 0 ? (
               <EmptyState>{text("No coverage tracked yet for this company.")}</EmptyState>
             ) : (
+              // Cap to the 8 newest periods (owner dogfooding v0.74, item 2):
+              // the real base carries 30+ rows; the rest lives behind the
+              // `pokrycie` tool's own button below.
               <ul className="spolka-coverage-rows">
-                {data.coverage.map((period) => (
+                {data.coverage.slice(0, 8).map((period) => (
                   <li key={`${period.fiscalYear}-${period.periodType}`}>
                     <span>
                       {period.periodType} {period.fiscalYear}
@@ -369,11 +418,11 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
               </ul>
             )}
             <Button variant="secondary" onClick={() => onOpenTool({ t: "pokrycie" })}>
-              {text("Open coverage")}
+              {text("Coverage")}
             </Button>
           </div>
 
-          <div role="group" aria-label={text("Recommendations")} className="spolka-section spolka-recommendations">
+          <div role="group" aria-label={text("Recommendations")} className="spolka-section spolka-recommendations" tabIndex={0}>
             <SectionHeader level="h2" title={text("Recommendations")} />
             {sectionErrors.recommendations ? (
               <ErrorText>{text("Couldn't load recommendations. The rest of the view is up to date.")}</ErrorText>
@@ -389,31 +438,32 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, text, locale, hidden, ac
               </ul>
             )}
             <Button variant="secondary" onClick={() => onOpenTool({ t: "rekomendacje" })}>
-              {text("Open recommendations")}
+              {text("Recommendations")}
             </Button>
           </div>
         </div>
       </div>
-
-      <WorkshopBar onOpenTool={onOpenTool} text={text} activeToolKind={activeToolKind} />
-    </>
   );
 }
 
+// Destination labels (owner dogfooding v0.74, item 4; ADR 0104 dec. 3
+// amendment): nouns, not verbs — "Otwórz X" is reserved for the ⌘K palette
+// command that performs the same open (`SPOLKA_TOOL_COMMANDS` above).
 const WORKSHOP_TOOLS: Array<{ tool: Tool; label: string }> = [
-  { tool: { t: "tezy" }, label: "Open claims" },
-  { tool: { t: "notatnik" }, label: "Open notebook" },
-  { tool: { t: "dziennik" }, label: "Open decision journal" },
-  { tool: { t: "jakosc" }, label: "Open quality" },
-  { tool: { t: "diff" }, label: "Open report diff" },
-  { tool: { t: "research" }, label: "Open research" },
-  { tool: { t: "akcjonariat" }, label: "Open ownership" },
-  { tool: { t: "sygnaly" }, label: "Open signals" },
-  { tool: { t: "dokumenty" }, label: "Open documents" },
+  { tool: { t: "tezy" }, label: "Claims" },
+  { tool: { t: "notatnik" }, label: "Notebook" },
+  { tool: { t: "dziennik" }, label: "Decision journal" },
+  { tool: { t: "jakosc" }, label: "Quality" },
+  { tool: { t: "diff" }, label: "Report diff" },
+  { tool: { t: "research" }, label: "Research" },
+  { tool: { t: "akcjonariat" }, label: "Ownership" },
+  { tool: { t: "sygnaly" }, label: "Signals" },
+  { tool: { t: "dokumenty" }, label: "Documents" },
 ];
 
-// Stays visible whether or not a tool is open (deliverable 3) and marks the
-// active tool kind (`aria-pressed`).
+// Stays visible whether or not a tool is open (deliverable 3, now rendered as
+// a FIXED sibling of the scrolling body — owner dogfooding v0.74, item 1) and
+// marks the active tool kind (`aria-pressed`).
 function WorkshopBar({
   onOpenTool,
   text,
@@ -427,7 +477,7 @@ function WorkshopBar({
     <div role="group" aria-label={text("Workshop")} className="spolka-workshop">
       {WORKSHOP_TOOLS.map(({ tool, label }) => (
         <Button
-          key={label}
+          key={tool.t}
           variant="ghost"
           aria-pressed={tool.t === activeToolKind}
           onClick={() => onOpenTool(tool)}

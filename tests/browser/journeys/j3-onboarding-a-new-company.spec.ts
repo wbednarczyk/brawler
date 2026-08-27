@@ -58,20 +58,21 @@ test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
     // v0.56 ownership (ADR 0072): the Basic Info ownership section shows up for
     // a freshly tracked company — the empty state invites the report backfill;
     // population is fully automatic afterwards. F3a S3 (ADR 0107): ownership
-    // now lives behind the Spółka screen's "Open ownership" workshop tool (the
+    // now lives behind the Spółka screen's "Ownership" workshop tool (the
     // pre-freeze curated dashboard showed Basic Info without an extra click —
     // one added interaction, folded into the budget below).
-    await j.click(page.getByRole("button", { name: "Open ownership", exact: true }));
+    await j.click(page.getByRole("button", { name: "Ownership", exact: true }));
     const ownershipSection = page.locator(".ownership-section");
     await expect(ownershipSection).toBeVisible();
     await expect(
       ownershipSection.getByText("No ownership disclosures yet", { exact: false }),
     ).toBeVisible();
 
-    // "Open notebook" is the Spółka workshop bar's own button (F3a S2/S3, ADR
-    // 0107) — no pane forcing (never force pane sizes on a journey): the
-    // notebook tool's "New note" affordance is reachable at every density tier.
-    await j.click(page.getByRole("button", { name: "Open notebook", exact: true }));
+    // "Notebook" is the Spółka workshop bar's own destination button (F3a
+    // S2/S3, ADR 0107; noun label per ADR 0104 dec. 3 amendment) — no pane
+    // forcing (never force pane sizes on a journey): the notebook tool's "New
+    // note" affordance is reachable at every density tier.
+    await j.click(page.getByRole("button", { name: "Notebook", exact: true }));
     const notebookPane = page.locator(".spolka-layout");
     await expect(notebookPane.locator(".notebook-panel")).toBeVisible();
     const notebook = notebookPane.getByLabel("Company notebook");

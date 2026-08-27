@@ -159,8 +159,16 @@
   margin: 0;
   color: var(--muted);
   font-size: var(--font-sm);
-  font-family: var(--font-mono);
+  /* ADR 0104 dec. 2 amendment (2026-08-27): the common case (an event date, a
+     run summary) is UI-face figures/prose, not mono. A caller carrying an
+     identifier (a filename) wraps it in `.dayq-row-meta-mono` instead. */
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+.dayq-row-meta-mono {
+  font-family: var(--font-mono);
 }
 
 .dayq-row-action {
@@ -210,6 +218,10 @@
 .dayq-day-count {
   color: var(--muted);
   font-size: var(--font-xs);
+  /* ADR 0104 dec. 2 amendment (2026-08-27): a figure — overrides the mono
+     eyebrow font it would otherwise inherit from `.dayq-day-header`. */
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
 }
 
 .dayq-day-expand {
@@ -287,16 +299,19 @@
   gap: var(--space-2);
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
-  font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--muted);
+}
+
+.dayq-footer-count {
+  /* ADR 0104 dec. 2 amendment (2026-08-27): a figure. */
+  font-variant-numeric: tabular-nums;
 }
 
 .dayq-footer-links {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  font-family: var(--font-sans, inherit);
 }
 
 .dayq-empty-state {

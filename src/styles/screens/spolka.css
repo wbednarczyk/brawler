@@ -1,30 +1,64 @@
 /* Spółka screen (F3a S1, ADR 0107): glance bar + core grid + workshop bar.
    Screen root is `.feed-panel` (shared chrome); this file owns only the
-   screen-specific layout inside `.spolka-layout` (ui-authoring's screen
-   scaffold: a padded, independently-scrolling body). */
+   screen-specific layout inside `.spolka-layout`.
+
+   Layout (owner dogfooding v0.74, 2026-08-27 — P1): the screen fills the
+   panel height with NO outer scroll. `.spolka-layout` itself never scrolls —
+   the glance bar and workshop bar are fixed flex children; only
+   `.spolka-body-scroll` (glance's sibling, wraps the core/tool zone) may
+   scroll, and only below the 1100px breakpoint. At >=1100px width each core
+   card scrolls its OWN overflow instead (`min-height: 0; overflow-y: auto`
+   on the card), so the workshop bar can never scroll out of view. */
 
 .spolka-layout {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   /* Named size container for the panel density contracts (ADR 0076 D6, F3a
      S3): every hosted panel's `@container pane (…)` rule — including a tool's
      — resolves against this scroll region, mirroring `.cockpit-pane`/
-     `.workspace`. Safe here despite `overflow: auto`: the box's own size
-     comes from the flex layout (`flex: 1; min-height: 0` inside a
-     height-bound screen), not from its content, so `contain: size` cannot
-     collapse it. */
+     `.workspace`. */
   container: pane / size;
 }
 
-.spolka-glance {
+.spolka-body-scroll {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  /* Scrolls only when the cards\' floors exceed the panel (short windows); the
+     workshop bar sits outside this region and never scrolls away. */
+  overflow-y: auto;
+}
+
+/* `hidden` must beat the flex display while a tool occupies the zone (owner
+   dogfooding 2026-08-27: the core painted under the tool header). */
+.spolka-core-wrap[hidden] {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .spolka-body-scroll {
+    overflow-y: auto;
+  }
+}
+
+.spolka-core-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+}
+
+.spolka-glance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
+  flex: 0 0 auto;
 }
 
 .spolka-glance-counter {
@@ -33,6 +67,22 @@
   align-items: flex-start;
   gap: var(--space-0);
   min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  white-space: normal;
+}
+
+.spolka-glance-figure {
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+
+.spolka-glance-label {
+  color: var(--muted);
+  font-size: var(--font-sm);
 }
 
 .spolka-glance-sub {
@@ -43,24 +93,43 @@
 .spolka-core {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* Each card keeps a usable floor; the body scrolls instead of collapsing cards
+     to their headers on a 768px-tall window. */
+  grid-template-rows: minmax(240px, auto) minmax(200px, 1fr) minmax(200px, 1fr);
   gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
 }
 
 .spolka-core > * {
   min-width: 0;
+  min-height: 0;
 }
 
 .spolka-kpi {
   grid-column: 1 / -1;
 }
 
+.spolka-section,
+.spolka-kpi {
+  overflow-y: auto;
+}
+
 @media (max-width: 1100px) {
   .spolka-core {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
   }
 
   .spolka-kpi {
     grid-column: auto;
+  }
+
+  .spolka-section,
+  .spolka-kpi {
+    /* The body-scroll wrapper scrolls as a whole below the breakpoint — a
+       stacked single column of independently-scrolling cards is unusable. */
+    overflow-y: visible;
   }
 }
 
@@ -131,9 +200,12 @@
 }
 
 .spolka-workshop {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
 }
 
 .spolka-core-strip {
@@ -143,15 +215,45 @@
   gap: var(--space-3);
 }
 
+.spolka-core-strip-ticker {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.spolka-core-strip-ticker:hover {
+  color: var(--primary);
+}
+
 .spolka-tool {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+.spolka-tool-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.spolka-tool-header > .ui-section-header {
+  flex: 1;
+  min-width: 0;
 }
 
 .spolka-tool-body {
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .spolka-tool-akcjonariat {

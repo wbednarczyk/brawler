@@ -50,7 +50,7 @@ export function AttentionRow({
         </StatusChip>
       }
       title={attentionEventTitleText(titleEvent, rule, text)}
-      meta={filename}
+      meta={filename ? <span className="dayq-row-meta-mono">{filename}</span> : null}
       actionLabel={actionLabel}
       onAction={onOpen}
       emphasis={event.severity !== "routine"}

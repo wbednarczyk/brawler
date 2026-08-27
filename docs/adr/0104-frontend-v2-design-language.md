@@ -52,6 +52,11 @@ styleguide mockup: `docs/mockups/frontend-v2-styleguide/` (canvas + five artboar
    one element the app is remembered by, and it renders the product's core promise — every number
    traces to its source — visible.
 
+### Amendment (owner dogfooding 2026-08-27)
+
+- **Decision 2 — figures/dates/percentages render in the UI face, not mono.** JetBrains Mono spaces punctuation ("15 , 2 mld PLN", "27 . 08 . 2026"), which reads as broken. Every figure/date/percent context uses Schibsted Grotesk with `font-variant-numeric: lining-nums` (the `.num-tabular` class now sets this explicitly); mono stays reserved for identifiers, keys, period ids, eyebrows, and filenames. Proportional lining figures, not tabular: Schibsted's tabular set widens "."/"," to a full digit cell ("1 . 1 B PLN"); right-aligned numeric cells still line up at their end.
+- **Decision 3 — destination labels are nouns, not verbs.** The workshop bar and core-card buttons that open a tool (`Tezy`/`Claims`, `Fundamenty`/`Fundamentals`, …) are **destinations**, styled like nav items — noun only, no leading "Otwórz"/"Open". The verb-prefixed form stays exclusively for the ⌘K palette's command entries (`SPOLKA_TOOL_COMMANDS`), where "Otwórz X" names the ACTION a command performs. A destination button and a palette command for the same tool may legitimately carry different labels.
+
 ## Foundations review (question-everything doctrine, owner 2026-08-19)
 
 Every foundation gets an explicit verdict; "keep" also needs evidence. Gated studies block their

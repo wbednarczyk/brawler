@@ -130,6 +130,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §G — Real-behavior verification (every functional change)
 - [ ] **The feature actually works end-to-end against the real runtime/data it names — not just compiles and passes tests.** Mocks/samples are not completion evidence (roadmap rule). Desktop behavior is verified through the packaged Windows `.exe` / hands-on path, not a WSL Linux build.
+- [ ] **A new or redesigned screen is rendered against the maintainer's real database before the PR** (a read-only snapshot copy via `make live-cycle` or the realdata recipe in [testing.md](testing.md)), and the handoff names what was looked at — mock/rich scenarios hide real-volume layout (30-row lists, multi-second reads) (harvest 2026-08-27, F3a dogfooding: 8 findings none of the gates saw).
 
 ### §H — Guardrail harvest (when anything was flagged or discovered) — always check
 - [ ] Every defect the user/a review/a gate/you flagged has its **class** closed in this change — a precise gate, or a documented rule + checklist line (the `guardrail-harvest` skill, `.claude/skills/guardrail-harvest/SKILL.md`). A discovered bug not fixed now → a tracked GitHub issue.

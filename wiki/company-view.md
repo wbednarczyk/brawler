@@ -11,13 +11,16 @@ co-visible core, and a workshop of tools one click away.
 - Click a company row in **Companies**, a **pinned** company in the sidebar,
   or a company mentioned from Today/Inbox.
 - Command palette (`Ctrl+K`) → **Open company: TICKER**.
+- Or switch right from the screen: a **company picker** in the header lets you
+  jump straight to any tracked company without leaving Spółka.
 
-The screen always opens scoped to that one company (`data-company-id` if
-you're ever inspecting the DOM) — no blank state, no picker.
+The screen always opens scoped to one company (`data-company-id` if you're
+ever inspecting the DOM) — no blank state.
 
 ## The glance bar
 
-Identity (ticker, name) plus four counters, each a one-click drill into the
+Identity (ticker, name) plus four counters, laid out as a row of tiles (a
+figure, a label, and a detail line each), each a one-click drill into the
 matching workshop tool:
 
 | Counter | Drills into |
@@ -31,15 +34,17 @@ A counter past 99 reads "99+" — the exact figure is one click away.
 
 ## The core
 
-Always visible at rest, no panel picking required:
+Always visible at rest, no panel picking required — the screen fills the
+panel height with no page scroll; a card with more content than fits scrolls
+its own body instead:
 
-- **KPI table** — the annual figures, with an **Open fundamentals** button
-  for the full facts matrix.
-- **Feed** — the newest items (capped); **Open feed** for the full list.
+- **KPI table** — the annual figures, with a **Fundamentals** button for the
+  full facts matrix.
+- **Feed** — the newest items (capped); **Feed** button for the full list.
 - **Price chart** — 3 months of daily candles, log scale, YTD/1M deltas.
-- **Report coverage** — per-period status; **Open coverage** for the full
-  Coverage screen.
-- **Recommendations** — the latest few; **Open recommendations** for the
+- **Report coverage** — the 8 newest periods; **Coverage** button for the
+  full Coverage screen (a tracked company can carry 30+ periods).
+- **Recommendations** — the latest few; **Recommendations** button for the
   full history.
 
 Nothing here is a buy/sell signal — it's the state of your research, at a
@@ -47,26 +52,31 @@ glance.
 
 ## The workshop
 
-A bar of tools along the bottom, always reachable, one click each. Opening a
-tool replaces the core with the tool (the core collapses to a one-line
-summary strip so you never lose the ticker/counters context) — closing it
-restores the core exactly as you left it, scroll position and selection
-included.
+A bar of tools fixed along the bottom — it never scrolls away, even when a
+card or a tool has a lot of content. Opening a tool replaces the core with
+the tool (the core collapses to a one-line summary strip so you never lose
+the ticker/counters context) — closing it restores the core exactly as you
+left it, scroll position and selection included. Every open tool carries a
+leading **Overview** button (and the summary strip's ticker does the same) so
+you're never more than one click from the untouched core.
 
 | Tool | Hosts |
 |---|---|
-| **Open claims** | management claims to verify, with evidence |
-| **Open notebook** | this company's notes |
-| **Open decision journal** | your buy/pass/keep-watching entries for this company |
-| **Open quality** | the quality scorecard |
-| **Open report diff** | report-over-report comparison |
-| **Open research** | the research review queue/questions/reminders |
-| **Open ownership** | holder structure + short positions |
-| **Open signals** | red flags, with acknowledge/history |
-| **Open documents** | the company's report documents |
-| **Open fundamentals** | the full financial facts matrix (also reachable from the KPI card) |
-| **Open coverage** | the full Coverage screen (also reachable from the coverage card) |
-| **Open recommendations** | the full analyst-recommendations history (also reachable from the card) |
+| **Claims** | management claims to verify, with evidence |
+| **Notebook** | this company's notes |
+| **Decision journal** | your buy/pass/keep-watching entries for this company |
+| **Quality** | the quality scorecard |
+| **Report diff** | report-over-report comparison |
+| **Research** | the research review queue/questions/reminders |
+| **Ownership** | holder structure + short positions |
+| **Signals** | red flags, with acknowledge/history |
+| **Documents** | the company's report documents |
+
+**Fundamentals**, **Coverage**, and **Recommendations** are reachable the
+same way from their core card's own button — see [The core](#the-core).
+
+Opening a feed item from the Inbox ("Open company") lands you straight on
+that item's detail, with the rest of the feed reachable below it.
 
 ## Unsaved work: stay or discard
 
@@ -85,11 +95,11 @@ fixed in place instead of arranged by you:
 
 | Old dashboard panel | Now |
 |---|---|
-| Fundamentals | **Open fundamentals** workshop tool (100% of the old panel) |
-| Coverage | **Open coverage** workshop tool / core coverage card |
+| Fundamentals | Core KPI card's **Fundamentals** button (100% of the old panel) |
+| Coverage | Core coverage card's **Coverage** button |
 | Short positions | **Ownership** tool (shorts counter drills straight to the section) |
-| Red flags | **Open signals** workshop tool (new home; signals counter drills here) |
-| Recommendations | Core card + **Open recommendations** workshop tool |
+| Red flags | **Signals** workshop tool (new home; signals counter drills here) |
+| Recommendations | Core card's **Recommendations** button |
 | Claims / Quality / Notebook / Journal / Report diff / Research / Documents | Same panels, now workshop tools |
-| Company feed | Core feed card (capped) + **Open feed** workshop tool for the full list |
+| Company feed | Core feed card (capped) + **Feed** workshop button for the full list |
 | Basic info (ISIN, exchange…) | Glance bar (identity) + **Ownership** tool (the rest) |

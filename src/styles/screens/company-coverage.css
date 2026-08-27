@@ -87,7 +87,8 @@
 }
 
 .coverage-period-meta-value {
-  font-family: var(--font-mono);
+  /* ADR 0104 dec. 2 amendment (2026-08-27): figures render in the UI face. */
+  font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
