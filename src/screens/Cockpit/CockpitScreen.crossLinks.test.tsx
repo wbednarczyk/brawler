@@ -18,11 +18,11 @@ vi.mock("../../shared/components/CompanyCoveragePanel", () => ({
   ),
 }));
 
-vi.mock("./companyPanels", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./companyPanels")>();
+vi.mock("../Spolka/panels/companyPanels", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../Spolka/panels/companyPanels")>();
   return {
     ...actual,
-    CockpitFundamentalsPanel: ({ onOpenRecommendations }: { onOpenRecommendations?: () => void }) => (
+    FundamentalsPanel: ({ onOpenRecommendations }: { onOpenRecommendations?: () => void }) => (
       <button type="button" onClick={onOpenRecommendations}>
         stub: open recommendations
       </button>

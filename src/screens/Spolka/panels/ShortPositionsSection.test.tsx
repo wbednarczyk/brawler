@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { Company } from "../../api/types";
-import type { ShortPositionsView } from "../../api/shortPositions";
+import type { Company } from "../../../api/types";
+import type { ShortPositionsView } from "../../../api/shortPositions";
 import { ShortPositionsSection } from "./ShortPositionsSection";
 
 const company = { id: "c1", qualifiedTicker: "GPW:CDR", displayName: "CD PROJEKT S.A." } as Company;

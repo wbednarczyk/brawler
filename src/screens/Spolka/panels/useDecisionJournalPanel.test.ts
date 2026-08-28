@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import type { Company } from "../../api/types";
-import type { DecisionEntry } from "../../api/decisionJournal";
-import { createDecisionEntry, listDecisionEntries } from "../../api/decisionJournal";
-import { createEvidenceLink, listCompanyTimeline, listEvidenceLinks } from "../../api/research";
-import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
+import type { Company } from "../../../api/types";
+import type { DecisionEntry } from "../../../api/decisionJournal";
+import { createDecisionEntry, listDecisionEntries } from "../../../api/decisionJournal";
+import { createEvidenceLink, listCompanyTimeline, listEvidenceLinks } from "../../../api/research";
+import { useDecisionJournalPanel } from "./useDecisionJournalPanel";
 
-vi.mock("../../api/decisionJournal", () => ({
+vi.mock("../../../api/decisionJournal", () => ({
   createDecisionEntry: vi.fn(),
   listDecisionEntries: vi.fn(),
 }));
 
-vi.mock("../../api/research", () => ({
+vi.mock("../../../api/research", () => ({
   createEvidenceLink: vi.fn(),
   listCompanyTimeline: vi.fn(),
   listEvidenceLinks: vi.fn(),
@@ -38,7 +38,7 @@ function entry(overrides: Partial<DecisionEntry>): DecisionEntry {
   };
 }
 
-describe("useCockpitDecisionJournal (ADR 0071, J3)", () => {
+describe("useDecisionJournalPanel (ADR 0071, J3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listDecisionEntriesMock.mockResolvedValue([]);
@@ -61,7 +61,7 @@ describe("useCockpitDecisionJournal (ADR 0071, J3)", () => {
     createDecisionEntryMock.mockResolvedValue(created);
     listDecisionEntriesMock.mockResolvedValueOnce([]).mockResolvedValue([created]);
 
-    const { result } = renderHook(() => useCockpitDecisionJournal(company));
+    const { result } = renderHook(() => useDecisionJournalPanel(company));
     await waitFor(() => expect(listDecisionEntriesMock).toHaveBeenCalledTimes(1));
 
     act(() => result.current.updateForm("rationaleMd", "New thesis."));
@@ -79,7 +79,7 @@ describe("useCockpitDecisionJournal (ADR 0071, J3)", () => {
     createDecisionEntryMock.mockResolvedValue(entry({ id: "d2", supersededByEntryId: "d1" }));
     listDecisionEntriesMock.mockResolvedValue([original]);
 
-    const { result } = renderHook(() => useCockpitDecisionJournal(company));
+    const { result } = renderHook(() => useDecisionJournalPanel(company));
     await waitFor(() => expect(result.current.entries).toEqual([original]));
 
     act(() => result.current.startSupersede(original));
@@ -135,7 +135,7 @@ describe("useCockpitDecisionJournal (ADR 0071, J3)", () => {
       createdAt: "2026-06-01T00:00:00Z",
     });
 
-    const { result } = renderHook(() => useCockpitDecisionJournal(company));
+    const { result } = renderHook(() => useDecisionJournalPanel(company));
     await waitFor(() => expect(result.current.entries).toEqual([existing]));
 
     act(() => result.current.setSelectedEntryId("d1"));

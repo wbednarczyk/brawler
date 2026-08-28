@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import type { Company } from "../../api/types";
-import type { RedFlagsView } from "../../api/redFlags";
+import type { Company } from "../../../api/types";
+import type { RedFlagsView } from "../../../api/redFlags";
 import { RedFlagsSection } from "./RedFlagsSection";
 
 const company = { id: "c1", qualifiedTicker: "GPW:RFT", displayName: "Red Flag Test S.A." } as Company;

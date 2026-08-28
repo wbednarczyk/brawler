@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { Company } from "../../api/types";
+import type { Company } from "../../../api/types";
 import {
   getAnalystRecommendations,
   type AnalystRecommendationsView,
-} from "../../api/analystRecommendations";
-import { getPriceContext } from "../../api/marketData";
+} from "../../../api/analystRecommendations";
+import { getPriceContext } from "../../../api/marketData";
 
 // Cockpit-native analyst-recommendations state for one company (v0.58 A3, ADR
 // 0073). Loads the attributed history on company change and, best-effort, the
@@ -13,7 +13,7 @@ import { getPriceContext } from "../../api/marketData";
 // a price failure never blocks the panel. `reload` re-reads on the error-state
 // retry (stale data stays visible meanwhile). Mirrors the fetch-on-company-change
 // shape of the other company-scoped cockpit hooks.
-export function useCockpitAnalystRecommendations(company: Company) {
+export function useAnalystRecommendationsPanel(company: Company) {
   const [view, setView] = useState<AnalystRecommendationsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

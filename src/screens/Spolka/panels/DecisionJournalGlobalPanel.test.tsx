@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Company } from "../../api/types";
-import type { DecisionEntry } from "../../api/decisionJournal";
-import { listDecisionEntries } from "../../api/decisionJournal";
+import type { Company } from "../../../api/types";
+import type { DecisionEntry } from "../../../api/decisionJournal";
+import { listDecisionEntries } from "../../../api/decisionJournal";
 import { DecisionJournalGlobalPanel } from "./DecisionJournalGlobalPanel";
 
-vi.mock("../../api/decisionJournal", () => ({
+vi.mock("../../../api/decisionJournal", () => ({
   listDecisionEntries: vi.fn(),
 }));
 

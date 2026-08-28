@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
-import { useCockpitFundamentals } from "./useCockpitFundamentals";
+import { useFundamentalsPanel } from "./useFundamentalsPanel";
 import {
   listFinancialFacts,
   listFinancialPeriods,
   listKpiDefinitions,
   listKpiRelevance,
-} from "../../api/financials";
+} from "../../../api/financials";
 
-vi.mock("../../api/financials", () => ({
+vi.mock("../../../api/financials", () => ({
   listFinancialFacts: vi.fn(),
   listFinancialPeriods: vi.fn(),
   listKpiDefinitions: vi.fn(),
@@ -21,7 +21,7 @@ const listFinancialPeriodsMock = vi.mocked(listFinancialPeriods);
 const listKpiDefinitionsMock = vi.mocked(listKpiDefinitions);
 const listKpiRelevanceMock = vi.mocked(listKpiRelevance);
 
-describe("useCockpitFundamentals", () => {
+describe("useFundamentalsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listFinancialFactsMock.mockResolvedValue([]);
@@ -35,7 +35,7 @@ describe("useCockpitFundamentals", () => {
   // shows stale data after a successful extraction (the owner's P1).
   it("refetches facts when the revision bumps", async () => {
     const { rerender } = renderHook(
-      ({ revision }: { revision: number }) => useCockpitFundamentals("company_gpw_cdr", revision),
+      ({ revision }: { revision: number }) => useFundamentalsPanel("company_gpw_cdr", revision),
       { initialProps: { revision: 0 } },
     );
 
@@ -48,7 +48,7 @@ describe("useCockpitFundamentals", () => {
 
   it("does not refetch when the revision is unchanged", async () => {
     const { rerender } = renderHook(
-      ({ revision }: { revision: number }) => useCockpitFundamentals("company_gpw_cdr", revision),
+      ({ revision }: { revision: number }) => useFundamentalsPanel("company_gpw_cdr", revision),
       { initialProps: { revision: 3 } },
     );
 

@@ -1,13 +1,13 @@
-import type { Company } from "../../api/types";
+import type { Company } from "../../../api/types";
 import type {
   ShortPositionEventRow,
   ShortPositionsView,
-} from "../../api/shortPositions";
-import { TickerLabel } from "../../shared/components/TickerLabel";
-import { useLocale } from "../../shared/locale";
-import { formatFixedDecimal, formatFixedPercent } from "../../shared/format/financialValue";
-import { formatDetailTimestamp } from "../../shared/format/datetime";
-import { EmptyState, ErrorText, Hint, SectionHeader, StatusChip } from "../../ui";
+} from "../../../api/shortPositions";
+import { TickerLabel } from "../../../shared/components/TickerLabel";
+import { useLocale } from "../../../shared/locale";
+import { formatFixedDecimal, formatFixedPercent } from "../../../shared/format/financialValue";
+import { formatDetailTimestamp } from "../../../shared/format/datetime";
+import { EmptyState, ErrorText, Hint, SectionHeader, StatusChip } from "../../../ui";
 
 // The company-scoped KNF short-selling panel (v0.55 T4b, ADR 0069 decision 3):
 // current net short positions from the KNF register (≥ 0.5% threshold), the
