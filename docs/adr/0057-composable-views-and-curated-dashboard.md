@@ -1,6 +1,6 @@
 # ADR 0057: Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard
 
-Status: Accepted (2026-06-25); **amended 2026-08-25 by
+Status: **Superseded (2026-08-28) by [ADR 0108](0108-retire-docking-engine.md)** — composable views and dockview removed; previously Accepted (2026-06-25); **amended 2026-08-25 by
 [ADR 0107](0107-company-view-paradigm.md)** — the curated per-company dashboard
 path is replaced by the engine-free `Spółka` screen; freeform layout structure
 (view creation, panel add/close/drag, preset application) is frozen until the

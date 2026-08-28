@@ -53,11 +53,11 @@
 - [0050](0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md) — Architecture v2 — domain stores, pluggable source pipeline, entity resolution, durable jobs, frontend decomposition, vector scaling — Accepted
 - [0051](0051-story-clustering-across-sources.md) — Story clustering across sources — evaluated and not shipped — **Rejected** (heuristic/local-embedding approach); cross-source story
 - [0052](0052-report-over-report-diff.md) — Report-over-report diff — pure-Rust statement diff, narrative MD&A deferred — **Accepted** (v0.47.0)
-- [0053](0053-dockview-layout-pilot.md) — Research Cockpit — Dockview as the App-Wide Docking Shell — Accepted
-- [0054](0054-mode-based-thesis-centric-shell.md) — Mode-Based, Thesis-Centric Application Shell — Accepted (2026-06-23)
+- [0053](0053-dockview-layout-pilot.md) — Research Cockpit — Dockview as the App-Wide Docking Shell — **Superseded (2026-08-28) by ADR 0108**
+- [0054](0054-mode-based-thesis-centric-shell.md) — Mode-Based, Thesis-Centric Application Shell — Accepted (2026-06-23); **amended 2026-08-28 by ADR 0108**
 - [0055](0055-autonomous-report-pipeline-trust-ladder.md) — Autonomous Report Pipeline — Trust Ladder, Orchestration, and Run Record — Accepted (2026-06-24)
 - [0056](0056-per-company-settings-surface.md) — Per-Company Settings Surface (Master-Detail, Scalable) — Accepted (2026-06-25)
-- [0057](0057-composable-views-and-curated-dashboard.md) — Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard — Accepted (2026-06-25); **amended 2026-08-25 by
+- [0057](0057-composable-views-and-curated-dashboard.md) — Composable Views — dockview Re-Styled, the "+" New-View Model, Curated Company Dashboard — **Superseded (2026-08-28) by ADR 0108**
 - [0058](0058-investor-week-calendar.md) — Investor Week Calendar — Event Layers, Whole-Market Scope, Macro & Holiday Domains — Accepted (2026-06-30)
 - [0059](0059-worker-pools-and-queue-fairness.md) — Worker Pools, Per-Source Serialization, Per-Provider Concurrency, Chunked Refresh, Dead-Letter — Accepted (2026-07-01)
 - [0060](0060-ai-capability-routing-and-openai-compatible-provider.md) — Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider — Superseded (2026-07-20) by ADR 0084
@@ -107,3 +107,4 @@
 - [0105](0105-headless-primitives-posture-radix.md) — Headless Primitives Posture — Radix, Narrowly, Inside `src/ui` Only — Accepted (2026-08-19, owner verdict after the plain-language review
 - [0106](0106-screen-data-layer-posture.md) — Screen Data Layer — Thin Self-Fetch Hooks + Composed Read Models, No Query-Cache Library — Accepted (2026-08-20, owner verdict on the F1-pre study #415; gates F1 implement
 - [0107](0107-company-view-paradigm.md) — Company View Paradigm — Engine-Free Main Surface — Accepted (2026-08-25, owner approval of the F3a experience contract after
+- [0108](0108-retire-docking-engine.md) — Retire the Docking Engine — No dockview, No Cockpit, No Named Views — Accepted (2026-08-28)

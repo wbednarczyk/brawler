@@ -37,7 +37,7 @@ four vocabularies over an unguessable preset↔save↔reset model.
    standard; ~3M window on the company card; series reused from
    `compute_price_context`, rendered by the shared `CandlestickChart`
    primitive extended with an opt-in log scale).
-5. **Freeform layout structure is FROZEN until the #414 engine decision**: view
+5. **Freeform layout structure is FROZEN until the #414 engine decision** (resolved 2026-08-28 by [ADR 0108](0108-retire-docking-engine.md): removed): view
    creation, panel add/close/drag and preset application are removed; existing
    named views and the four legacy `dashboard:*` rows stay reachable read-only
    ("Dawny dashboard · TICKER"), with domain editing inside panels fully
