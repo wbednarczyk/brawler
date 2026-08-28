@@ -23,7 +23,7 @@ export function ResearchSummaryStrip({
   text,
 }: ResearchSummaryStripProps) {
   return (
-    <section className="research-summary" aria-label={text("Research review summary")}>
+    <div role="group" className="research-summary" aria-label={text("Research review summary")}>
       <div>
         <span>{text("Evidence")}</span>
         <strong>{timeline?.summary.total ?? 0}</strong>
@@ -60,6 +60,6 @@ export function ResearchSummaryStrip({
           <strong>{selectedWatchlist.name}</strong>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }

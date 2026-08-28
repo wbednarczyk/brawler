@@ -70,7 +70,7 @@ export function CompanyFeedSection({
 
   function renderDetail(item: FeedItem) {
     return (
-      <aside className="company-feed-detail" aria-label={text("Company feed item details")}>
+      <div role="group" className="company-feed-detail" aria-label={text("Company feed item details")}>
         <FeedDetailContent
           item={item}
           signals={NO_SIGNALS}
@@ -140,7 +140,7 @@ export function CompanyFeedSection({
         />
         <div className="detail-context-divider" />
         <CompanyContextSection companyId={company.id} onOpenReportDocuments={openCompanyReportDocuments} />
-      </aside>
+      </div>
     );
   }
 

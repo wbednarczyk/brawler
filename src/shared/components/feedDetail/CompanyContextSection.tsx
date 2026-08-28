@@ -90,7 +90,7 @@ export function CompanyContextSection({ companyId, onOpenReportDocuments }: Comp
   }
 
   return (
-    <section className="feed-context-section" aria-label={text("Company context")}>
+    <div role="group" className="feed-context-section" aria-label={text("Company context")}>
       {status === "loading" ? (
         <>
           <div className="feed-body-heading">
@@ -126,7 +126,7 @@ export function CompanyContextSection({ companyId, onOpenReportDocuments }: Comp
           </span>
         </ExpandableRow>
       ) : null}
-    </section>
+    </div>
   );
 }
 
