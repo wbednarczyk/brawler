@@ -10,10 +10,10 @@ import {
 import { primeMockScenario, type ScenarioSpec } from "./helpers/mockRuntime";
 import type { Locator, Page } from "@playwright/test";
 
-// Panel density matrix (ADR 0076 D6 / U7). Every cockpit panel/screen defines
+// Panel density matrix (ADR 0076 D6 / U7). Every panel/screen defines
 // behavior at pane-width tiers (S <420 · M 420–760 · L >760) and height tiers
 // (short <480 · tall ≥480), driven by `@container pane (…)` rules on the named
-// `pane` size container (.cockpit-pane / .workspace, added in U7). This spec is
+// `pane` size container (.spolka-layout / .workspace, added in U7). This spec is
 // the table-driven runner the per-panel CLUSTER tasks extend: each appends a
 // PANEL_CONTRACTS entry with its opener and per-tier assertions. `setPaneSize`
 // forces the hosting pane's inline size so the container queries fire regardless
@@ -28,7 +28,7 @@ type TierCheck = (page: Page, pane: PaneLocator) => Promise<void>;
 type PanelContract = {
   panel: string;
   // Opens the panel and returns the pane Locator to size (a panel may live in a
-  // multi-pane dashboard, so the pane is not always the first `.cockpit-pane`).
+  // multi-pane dashboard, so the pane is not always the first `.spolka-layout`).
   open: (page: Page) => Promise<PaneLocator>;
   tiers: { S?: TierCheck; M?: TierCheck; L?: TierCheck; short?: TierCheck };
   // Seeded BEFORE `openApp` (mock reads happen once at bootstrap) — only the
@@ -57,8 +57,8 @@ function nav(page: Page) {
 // grid with no container query yet — its contract is a separate cluster task),
 // so the tier behavior is exercised through the Spółka screen's "notatnik"
 // workshop tool instead (F3a S2/S3, ADR 0107), which hosts the SAME
-// `CockpitCompanyNotebookPanel` (and its retiered notebook-shared.css query)
-// the pre-freeze cockpit "Notebook" panel used.
+// `CompanyNotebookPanel` (and its notebook-shared.css query) the retired
+// cockpit's "Notebook" panel used (ADR 0108).
 async function openCompanyNotebook(page: Page): Promise<PaneLocator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.getByRole("button", { name: "Open GPW:CDR" }).click();

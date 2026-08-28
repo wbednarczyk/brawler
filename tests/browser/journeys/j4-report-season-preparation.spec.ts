@@ -12,9 +12,9 @@ import type { Page } from "@playwright/test";
 // J4 — Report-season preparation (docs/ux-journeys.md, ADR 0074, ADR 0107).
 // Trigger: upcoming report dates across the watchlist. F3a redefinition
 // (plan § Lista zgód 5): the freeform view-creation leg ("+ New view" → "Add
-// panel" → palette) is frozen; the journey enters the Report Season SCREEN
-// directly through the global palette's `Open screen: …` entry (plan
-// "Trasy powierzchni globalnych po F3a") — the screen is a full route now,
+// panel" → palette) is retired (ADR 0108); the journey enters the Report
+// Season SCREEN directly through the global palette's `Open screen: …` entry
+// (plan "Trasy powierzchni globalnych po F3a") — the screen is a full route,
 // not a cockpit-hosted panel. Path: open the screen → open a company's
 // pre-report card (open questions, unresolved claims, last KPIs, evidence) →
 // write expectations (ADR 0071) → mark it prepared.

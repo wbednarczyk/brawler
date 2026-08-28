@@ -6,7 +6,7 @@ import type { Page } from "@playwright/test";
 // D7/U11). Same navigation visual-companies.spec.ts uses for the company's
 // workshop-tool panels; this spec shoots the SCREEN — glance bar + core at
 // rest, and with a tool occupying the core zone — hosted in `.workspace` like
-// the other full-screen baselines (today, cockpit-shell), so `shootScreen`
+// the other full-screen baselines (e.g. today), so `shootScreen`
 // (not `shootPanel`) is the right helper. M tier only (dark + light), per the
 // screen-baseline convention for `.workspace`-hosted screens.
 

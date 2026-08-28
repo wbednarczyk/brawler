@@ -22,26 +22,24 @@ test("Ownership section renders in Basic info on the live app", async ({}) => {
   const { page } = connection;
   test.setTimeout(120_000);
 
-  // Self-contained navigation: the suite may start on Today — open the
-  // company-scoped Dashboard first (same entry research-nav exercises).
+  // Self-contained navigation: the suite may start on Today — open a company
+  // (ADR 0107/0108: lands the Spółka screen directly, no cockpit dashboard),
+  // then the Ownership workshop tool that hosts the Basic info panel.
+  await page.getByRole("button", { name: /^(Spółki|Companies)$/ }).first().click();
+  const row = page.locator("button[data-company-row]").first();
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.click();
+  const spolka = page.getByRole("region", { name: /Widok spółki|Company view/ });
+  await expect(spolka).toBeVisible({ timeout: 15_000 });
+
   await page
-    .getByRole("button", { name: /^(Legacy dashboard|Dawny dashboard)/ })
-    .first()
+    .getByRole("group", { name: /Warsztat|Workshop/ })
+    .getByRole("button", { name: /^(Akcjonariat|Ownership)$/ })
     .click();
-  await expect(page.getByLabel(/Research cockpit|Kokpit/)).toBeVisible({ timeout: 15_000 });
+  const tool = page.getByRole("group", { name: /Narzędzie warsztatu|Workshop tool/ });
+  await expect(tool).toBeVisible({ timeout: 15_000 });
 
-  let tab = page.getByRole("button", { name: /^(Podstawowe informacje|Basic info)$/ }).first();
-  if ((await tab.count()) === 0) {
-    await page.getByRole("button", { name: /Dodaj panel|Add panel/ }).first().click();
-    await page
-      .getByRole("button", { name: /(Otwórz panel|Open panel).*(Podstawowe informacje|Basic info)/ })
-      .first()
-      .click();
-    tab = page.getByRole("button", { name: /^(Podstawowe informacje|Basic info)$/ }).first();
-  }
-  await tab.click();
-
-  const panel = page.locator(".basic-info-panel");
+  const panel = tool.locator(".basic-info-panel");
   await expect(panel).toBeVisible({ timeout: 15_000 });
 
   const section = panel.locator(".ownership-section");

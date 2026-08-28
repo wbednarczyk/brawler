@@ -64,11 +64,13 @@ async function dismissModals(): Promise<void> {
   }
 }
 
-/** Activates a dockview panel that may sit behind a tab in a shared group. */
-async function activatePanelTab(name: RegExp): Promise<void> {
-  const tab = page.locator(".dv-tab", { hasText: name }).first();
-  if ((await tab.count()) > 0) {
-    await tab.click();
+/** Opens a Spółka workshop tool by its workshop-bar button label (ADR 0107/0108: one tool at a time, no shared dockview group). */
+async function openWorkshopTool(name: RegExp): Promise<void> {
+  const button = page
+    .getByRole("group", { name: /Warsztat|Workshop/ })
+    .getByRole("button", { name });
+  if ((await button.count()) > 0) {
+    await button.first().click();
     await page.waitForTimeout(500);
   }
 }
@@ -109,8 +111,8 @@ test("dogfooding walk: every primary screen renders without an error state", asy
 test("T7-B/D/F: extracting the FY2025 .xbri twice is honest and idempotent", async () => {
   test.setTimeout(180_000);
 
-  // The owner's own path: Companies → row click → curated cockpit dashboard
-  // (default panels include Report documents).
+  // The owner's own path: Companies → row click → Spółka screen (ADR
+  // 0107/0108: the row lands it directly, no cockpit dashboard).
   await openNav(/Spółki|Companies/i);
   await clearCompaniesFilter(page);
   const cbfRow = page
@@ -121,16 +123,11 @@ test("T7-B/D/F: extracting the FY2025 .xbri twice is honest and idempotent", asy
   });
   await cbfRow.click();
   await page.waitForTimeout(2_000);
-  await page.screenshot({ path: `${SHOTS}/10-cockpit-cbf.png`, fullPage: true });
+  await page.screenshot({ path: `${SHOTS}/10-spolka-cbf.png`, fullPage: true });
 
-  // The F2 Coverage pane seeds into the same tab group and can land as the
-  // group's active tab — activate Report documents explicitly (the user's own
-  // click) instead of assuming the group's default active tab.
-  const docsTab = page.getByRole("button", { name: /^Report documents$/ }).first();
-  if (await docsTab.isVisible().catch(() => false)) {
-    await docsTab.click();
-    await page.waitForTimeout(500);
-  }
+  // Open the Documents workshop tool explicitly (the user's own click) — one
+  // tool at a time now, so there is no shared-group default tab to assume.
+  await openWorkshopTool(/^(Documents|Dokumenty)$/);
 
   // The annual ESEF package row — the exact document from the owner's report.
   // PRECONDITION SKIP (2026-07-12): this is a v0.51-closure ROUND spec — it
@@ -176,20 +173,21 @@ test("T7-B/D/F: extracting the FY2025 .xbri twice is honest and idempotent", asy
 });
 
 test("T7-D: the fundamentals panel shows the extracted FY facts", async () => {
-  // Still on the CBF cockpit view. The extraction above bumps the revision, so
-  // the sibling fundamentals panel must show data without a manual reload.
-  const fundamentals = page.locator(".dv-groupview, .cockpit-screen");
+  // Still on the CBF Spółka screen (ADR 0107/0108). The extraction above
+  // bumps the revision, so opening the Fundamentals tool (a fresh tool
+  // switch, no app reload) must show the data.
+  await openWorkshopTool(/^(Fundamentals|Fundamenty)$/);
+  const tool = page.getByRole("group", { name: /Narzędzie warsztatu|Workshop tool/ });
   await expect(
-    fundamentals.getByText(/Wskaźniki finansowe|Fundamentals/).first(),
+    tool.getByText(/Wskaźniki finansowe|Fundamentals/).first(),
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/20-fundamentals.png`, fullPage: true });
 });
 
 test("T7-A: quantitative framework evaluation runs against the live facts", async () => {
   test.setTimeout(120_000);
-  // The Quality panel shares a dockview group with Report documents — bring
-  // its tab to the front first.
-  await activatePanelTab(/Jakość|Quality/);
+  // Open the Quality workshop tool (ADR 0107/0108: one tool at a time now).
+  await openWorkshopTool(/^(Jakość|Quality)$/);
   const evaluate = page.getByRole("button", { name: /^Oceń$|^Evaluate$/ }).first();
   if (!(await evaluate.isVisible().catch(() => false))) {
     console.log("SKIP: no visible quantitative Evaluate button in the current layout");
@@ -204,7 +202,7 @@ test("T7-A: qualitative assessment (spends owner AI tokens — BRAWLER_LIVE_AI=1
   test.skip(process.env.BRAWLER_LIVE_AI !== "1", "opt-in: uses the owner's AI provider");
   test.setTimeout(300_000);
 
-  await activatePanelTab(/Jakość|Quality/);
+  await openWorkshopTool(/^(Jakość|Quality)$/);
   const assess = page.getByRole("button", { name: /Oceń jakościowo|Assess/ }).first();
   await expect(assess).toBeVisible();
   await assess.click();

@@ -54,16 +54,22 @@ test("manual refresh rewrites aggregator ownership with sane values", async ({})
       `settled in ${elapsedSeconds}s of the ${SWEEP_SETTLE_MS / 1000}s budget`,
   );
 
-  // Ownership section on the active company's Basic info: every legend/row
-  // percentage must be plausible (≤ 100) — the defect rendered share counts.
+  // Ownership section on a company's Basic info, hosted in the Spółka
+  // Ownership workshop tool (ADR 0107/0108): every legend/row percentage
+  // must be plausible (≤ 100) — the defect rendered share counts.
+  await page.getByRole("button", { name: /^(Spółki|Companies)$/ }).first().click();
+  const row = page.locator("button[data-company-row]").first();
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.click();
+  const spolka = page.getByRole("region", { name: /Widok spółki|Company view/ });
+  await expect(spolka).toBeVisible({ timeout: 15_000 });
   await page
-    .getByRole("button", { name: /^(Legacy dashboard|Dawny dashboard)/ })
-    .first()
+    .getByRole("group", { name: /Warsztat|Workshop/ })
+    .getByRole("button", { name: /^(Akcjonariat|Ownership)$/ })
     .click();
-  await expect(page.getByLabel(/Research cockpit|Kokpit/)).toBeVisible({ timeout: 15_000 });
-  const tab = page.getByRole("button", { name: /^(Podstawowe informacje|Basic info)$/ }).first();
-  await tab.click();
-  const section = page.locator(".basic-info-panel .ownership-section");
+  const tool = page.getByRole("group", { name: /Narzędzie warsztatu|Workshop tool/ });
+  await expect(tool).toBeVisible({ timeout: 15_000 });
+  const section = tool.locator(".basic-info-panel .ownership-section");
   await expect(section).toBeVisible({ timeout: 15_000 });
 
   const percentTexts = await section.locator("text=/%/").allTextContents();

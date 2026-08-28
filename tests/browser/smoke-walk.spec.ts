@@ -23,10 +23,10 @@ test.describe("layout smoke-walk", () => {
   test("every sidebar destination lays out without horizontal overflow", async ({ page }) => {
     await openApp(page);
     const nav = page.getByLabel("Primary navigation");
-    // Destinations only: the "New view" add button (`nav-item-add`) is an action
-    // that opens the view creator (ADR 0057), not a navigable destination — walk
-    // the real destinations and exclude it, so the overflow invariant still
-    // covers every screen without asserting an action button "activates".
+    // Destinations only: `.nav-item-add` (ADR 0057's now-retired "New view"
+    // action, ADR 0108) is excluded defensively — walk the real destinations
+    // so the overflow invariant still covers every screen without asserting
+    // an action button "activates".
     const buttons = nav.locator("button.nav-item:not(.nav-item-add)");
     const count = await buttons.count();
     // Sanity: the spine must expose its modes + library destinations.
@@ -37,8 +37,8 @@ test.describe("layout smoke-walk", () => {
       const label = (await button.textContent())?.trim() || `#${i}`;
       await button.click();
       // Wait for the spine to reflect the navigation before measuring. A section
-      // button gets `nav-item-active`; a pinned cockpit-view / company button
-      // marks its wrapping `.pinned-row` active instead — accept either.
+      // button gets `nav-item-active`; a pinned company button marks its
+      // wrapping `.pinned-row` active instead — accept either.
       await expect(async () => {
         const active = await button.evaluate(
           (el) =>

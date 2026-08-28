@@ -1,9 +1,9 @@
 import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 
-// The red-flags cockpit panel (v0.57 T7, ADR 0083 Decision 8/9) surfaces derived
+// The red-flags panel (v0.57 T7, ADR 0083 Decision 8/9) surfaces derived
 // warning signals — active flags with a fixed-slot severity chip and a per-row
 // acknowledge, plus a collapsed acknowledged-history group and a calm explicit
-// empty state. Guard that it renders in the default cockpit, that acknowledging a
+// empty state. Guard that it renders in the Spółka signals tool, that acknowledging a
 // flag moves it out of the active list, and that it never forces a horizontal
 // scrollbar at a narrow window (the quarter-ultrawide range, DoD §B) in both its
 // populated and empty states. The dual-execution mock runtime serves the seeded

@@ -70,10 +70,9 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await expectNoPageOverflow(page);
 
     // Open the company — the Spółka screen lands scoped to it directly (F3a
-    // S1, ADR 0107; the freeform cockpit dashboard is frozen and no longer
-    // this journey's path, F3a S3, ADR 0107 decision 5), visible and in view
-    // without a manual scroll, and the app shell must not have scrolled (the
-    // "moves the whole app" regression).
+    // S1, ADR 0107; the freeform cockpit dashboard is retired outright, ADR
+    // 0108), visible and in view without a manual scroll, and the app shell
+    // must not have scrolled (the "moves the whole app" regression).
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await j.markScreen("Companies");
@@ -278,14 +277,16 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
     await expect(page.getByLabel("Companies list")).toBeVisible();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-    // F3a S3 (ADR 0107): the frozen legacy dashboard is reached from the
-    // sidebar "Views" group — this regression case still exercises its
-    // claims pane (the surviving linked workflow).
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Legacy dashboard · CDR", exact: true }).click();
 
-    await page.getByLabel("Research cockpit").getByRole("button", { name: "Claims", exact: true }).first().click();
-    const claimsPane = page.locator(".cockpit-pane", { has: page.locator(".company-claims-panel") });
+    // ADR 0108: the frozen legacy dashboard is retired with the docking
+    // engine — this regression case now exercises the Spółka `tezy`
+    // (Claims) workshop tool, the surviving linked workflow.
+    const spolka = page.getByRole("region", { name: "Company view", exact: true });
+    await expect(spolka).toBeVisible();
+    await spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }).click();
+    const claimsPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(claimsPane).toBeVisible();
+    await expect(claimsPane).toHaveAttribute("data-tool", "tezy");
     const shortToggle = claimsPane.getByRole("button", { name: "Show all claims" });
     if (await shortToggle.isVisible()) {
       await shortToggle.click();

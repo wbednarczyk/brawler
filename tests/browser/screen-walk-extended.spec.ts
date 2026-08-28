@@ -2,7 +2,7 @@ import {
   test,
   expect,
   openApp,
-  openCockpitPanel,
+  openScreen,
   expectNoA11yViolations,
   expectNoPageOverflow,
 } from "./helpers/harness";
@@ -10,11 +10,11 @@ import {
 // The global screens reachable only via the ⌘K palette's "Open screen: …"
 // entries (F3a S3, ADR 0107 decision 5: Research / Notebooks / Events / Report
 // Season / Decision journal) — standalone routes, mounted full-screen in
-// `.workspace`, since the freeze retired the "Add panel" surface that used to
+// `.workspace`, since ADR 0108 retired the "Add panel" surface that used to
 // host them as cockpit dashboard tabs. Open each and assert it renders without
 // horizontal page overflow. The auto console-error gate (harness fixture)
 // additionally fails on a render error / unmocked command, so this is the
-// coverage that those screens still mount cleanly in their (post-freeze) home.
+// coverage that those screens still mount cleanly in their (post-retirement) home.
 //
 // `heading` is the screen's leading H1 text; `level` is the heading level it
 // renders (PanelHeader → h1; SectionHeader-based global screens may lead with a
@@ -26,25 +26,26 @@ const PANELS = [
   { tab: "Report Season", heading: "Report Season", level: 1 },
 ] as const;
 
-// The D6 compact-header rule (ADR 0076 Decision 6, K3 double panel chrome) is
+// The D6 compact-header rule (ADR 0076 Decision 6, K3 double panel chrome) was
 // scoped to `.cockpit-pane` (ui.css: "the same components rendered full-screen
-// in `.workspace` keep their full headers") — it exists to stop a cockpit dock
+// in `.workspace` keep their full headers") — it existed to stop a cockpit dock
 // tab's title from being repeated as a visible in-panel H1. These screens have
-// no dock tab at all any more, so there is nothing to double up: the equivalent
-// assertion is the OPPOSITE of the pre-freeze one — the heading renders at full
-// size. Kept as its own cluster (grown from the pre-freeze COMPACT_HEADER_PANELS
-// list) so it can grow independently of the overflow loop above.
+// no dock tab at all any more (ADR 0108), so there is nothing to double up: the
+// equivalent assertion is the OPPOSITE of the pre-retirement one — the heading
+// renders at full size. Kept as its own cluster (grown from the pre-retirement
+// COMPACT_HEADER_PANELS list) so it can grow independently of the overflow loop
+// above.
 const FULL_HEADER_PANELS = [
   ...PANELS,
   { tab: "Decision journal", heading: "Decision journal", level: 3 },
 ] as const;
 
-test.describe("global screens lay out without overflow (F3a S3: standalone routes, not cockpit panels)", () => {
+test.describe("global screens lay out without overflow (F3a S3, ADR 0108: standalone routes, not cockpit panels)", () => {
   test("each global screen renders without overflow", async ({ page }) => {
     await openApp(page);
 
     for (const { tab } of PANELS) {
-      await openCockpitPanel(page, tab);
+      await openScreen(page, tab);
       await expectNoPageOverflow(page);
     }
   });
@@ -56,7 +57,7 @@ test.describe("global screens lay out without overflow (F3a S3: standalone route
   for (const { tab } of PANELS) {
     test(`the ${tab} screen has no WCAG A/AA violations`, async ({ page }) => {
       await openApp(page);
-      await openCockpitPanel(page, tab);
+      await openScreen(page, tab);
 
       await expectNoA11yViolations(page, `${tab} screen`);
     });
@@ -65,7 +66,7 @@ test.describe("global screens lay out without overflow (F3a S3: standalone route
   for (const { tab, heading, level } of FULL_HEADER_PANELS) {
     test(`renders its full (non-compacted) heading for the ${tab} screen`, async ({ page }) => {
       await openApp(page);
-      await openCockpitPanel(page, tab);
+      await openScreen(page, tab);
 
       const pane = page.locator(".workspace");
       const h1 = pane.getByRole("heading", { level, name: heading, exact: true });

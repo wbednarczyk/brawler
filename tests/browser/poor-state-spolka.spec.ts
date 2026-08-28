@@ -9,11 +9,10 @@ import { primeChaos, primeMockScenario } from "./helpers/mockRuntime";
 // What must hold: the broken tool NAMES its failure (and the failing command),
 // the partial tool reports its emptiness honestly, and neither corrupts the
 // other — a company's workshop tools degrade independently, never as one
-// silent blank. F3a S3 (ADR 0107): `company_gpw_partial` has no legacy
-// `dashboard:` layout, so this walks the Spółka screen's tool path (the
-// frozen cockpit shell is not reachable for this company at all) — only one
-// tool is open at a time, so "neither corrupts the other" is proven by
-// re-opening Fundamentals after the signals failure and finding it unchanged.
+// silent blank. F3a S3 (ADR 0107) / ADR 0108: the cockpit shell is retired
+// outright, so this walks the Spółka screen's tool path — only one tool is
+// open at a time, so "neither corrupts the other" is proven by re-opening
+// Fundamentals after the signals failure and finding it unchanged.
 
 const PARTIAL_COMPANY_ID = "company_gpw_partial";
 const CHAOS_MESSAGE = "warning-signal index unavailable";

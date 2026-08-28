@@ -29,7 +29,8 @@ export interface CatalogEntry {
   /**
    * Dark-project tiers this screen produces (light always shoots M only, per
    * the shoot helpers). Most screens are forced across S/M/L; a bare
-   * `shootScreen` call with no forced tiers (today, cockpit-shell) is M-only.
+   * `shootScreen` call with no forced tiers (today, spolka-rest,
+   * spolka-tool-claims) is M-only.
    */
   tiers: Tier[];
 }

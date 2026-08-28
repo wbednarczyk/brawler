@@ -1,11 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
 
-// Live proof (ADR 0066) for the Dashboard redesign (epic c793ca1): the left-nav
-// "Dashboard" entry opens the ONE company-scoped Dashboard — never blank —
-// carrying a view-company + preset selector, against the owner's real database.
-// Deliberately non-destructive: navigation + selector reads only, no
-// create/edit/delete.
+// Live proof (ADR 0066) for the Spółka company surface (ADR 0107/0108): the
+// left-nav "Company" mode entry opens the ONE company-scoped Spółka screen —
+// never blank — against the owner's real database. Deliberately
+// non-destructive: navigation + selector reads only, no create/edit/delete.
 
 let connection: LiveConnection;
 
@@ -17,29 +16,29 @@ test.afterAll(async () => {
   await connection.browser.close();
 });
 
-test("a Views-group legacy dashboard row opens the frozen company-scoped cockpit on the real app", async () => {
+test("the Company mode nav entry opens the Spółka screen scoped to a company on the real app", async () => {
   const { page } = connection;
 
   const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
   await expect(nav).toBeVisible();
 
-  // F3a S3 (ADR 0107 dec. 5): the sidebar "Dashboard" mode is gone — the four
-  // saved `dashboard:*` layouts survive read-only as "Legacy dashboard · TICKER"
-  // rows in the Views group.
-  const entry = nav.getByRole("button", { name: /^(Legacy dashboard|Dawny dashboard)/ }).first();
+  // ADR 0107 amendment / ADR 0108: the sidebar "Dashboard" mode and the
+  // cockpit it used to open are retired outright — the Modes "Company" nav
+  // item opens the Spółka screen scoped to a company directly, never blank.
+  const entry = nav.getByRole("button", { name: /^(Company|Spółka)$/ }).first();
   await expect(entry).toBeVisible();
   await page.screenshot({ path: "test-results/live/dashboard-nav-entry.png", fullPage: true });
 
   await entry.click();
-  const cockpit = page.getByLabel(/Research cockpit|Kokpit badawczy/);
-  await expect(cockpit).toBeVisible();
+  const spolka = page.getByRole("region", { name: /Widok spółki|Company view/ });
+  await expect(spolka).toBeVisible();
 
-  // Company-scoped, structure frozen: the view company is set and the frozen
-  // strip is shown; no preset/add-panel controls exist any more.
-  await expect(cockpit).not.toHaveAttribute("data-company-id", "");
-  await expect(cockpit.getByText(/Layout frozen|Układ zamrożony/)).toBeVisible();
-  await expect(cockpit.getByRole("button", { name: /Add panel|Dodaj panel/ })).toHaveCount(0);
-  await page.screenshot({ path: "test-results/live/dashboard-nav-cockpit.png", fullPage: true });
+  // Company-scoped, never blank: the glance bar (always-visible core, never a
+  // hosted tool) is present, and no cockpit-era "Add panel" control exists.
+  await expect(spolka).not.toHaveAttribute("data-company-id", "");
+  await expect(page.getByRole("group", { name: /Pasek informacyjny spółki|Company glance bar/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Add panel|Dodaj panel/ })).toHaveCount(0);
+  await page.screenshot({ path: "test-results/live/dashboard-nav-spolka.png", fullPage: true });
 
   // Research is a standalone screen now — reached from the ⌘K palette.
   await page.keyboard.press("Control+K");

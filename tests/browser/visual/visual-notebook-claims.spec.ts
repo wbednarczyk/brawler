@@ -1,4 +1,4 @@
-import { test, expect, openApp, openCockpitPanel } from "../helpers/harness";
+import { test, expect, openApp, openScreen } from "../helpers/harness";
 import { shootPanel } from "./helpers";
 import type { Locator, Page } from "@playwright/test";
 
@@ -10,9 +10,8 @@ function nav(page: Page) {
 }
 
 // F3a S2/S3 (ADR 0107): company panels live in the Spółka screen's workshop
-// tools now, not cockpit dashboard tabs — `toolButton` is the WorkshopBar's
-// "Open <tool>" label, and `.spolka-layout` is the tool's `pane` size
-// container (spolka.css), same role as the pre-freeze `.cockpit-pane`.
+// tools now — `toolButton` is the WorkshopBar's "Open <tool>" label, and
+// `.spolka-layout` is the tool's `pane` size container (spolka.css).
 async function openCompanyTool(page: Page, toolButton: string, rootSelector: string): Promise<Locator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.getByRole("button", { name: "Open GPW:CDR" }).click();
@@ -33,7 +32,7 @@ test.describe("visual — notebook + claims", () => {
 
   test("Notebooks (global screen) across pane tiers", async ({ page }) => {
     await openApp(page);
-    await openCockpitPanel(page, "Notebooks");
+    await openScreen(page, "Notebooks");
     const pane = page.locator(".workspace");
     await expect(pane.locator(".notebooks-screen")).toBeVisible();
     // Land on a company with notes so the list is populated for every tier.

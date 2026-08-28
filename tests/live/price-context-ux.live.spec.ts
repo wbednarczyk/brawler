@@ -21,14 +21,16 @@ test("price history renders with a readable scale and the sector field has no ch
   const { page } = connection;
   test.setTimeout(120_000);
 
-  // The owner's own path: Companies → row click → cockpit → Fundamentals tab.
+  // The owner's own path: Companies → row click → Spółka → Fundamentals
+  // workshop tool (ADR 0107/0108: the row lands the Spółka screen directly,
+  // no cockpit dashboard).
   await page.getByRole("button", { name: /Spółki|Companies/ }).first().click();
   await clearCompaniesFilter(page);
   const row = page.locator("button[data-company-row]").first();
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.click();
   await page
-    .getByRole("button", { name: /Wskaźniki finansowe|Fundamentals/ })
+    .getByRole("button", { name: /^(Fundamenty|Fundamentals)$/ })
     .first()
     .click();
 
@@ -55,20 +57,17 @@ test("Basic info panel shows read-only identity facts with edit behind one toggl
   const { page } = connection;
   test.setTimeout(120_000);
 
-  // The Basic info tab is part of the curated default set — but the owner's
-  // saved layouts predate it, so open it via Add panel if absent.
-  let tab = page.getByRole("button", { name: /^(Podstawowe informacje|Basic info)$/ }).first();
-  if ((await tab.count()) === 0) {
-    await page.getByRole("button", { name: /Dodaj panel|Add panel/ }).first().click();
-    await page
-      .getByRole("button", { name: /(Otwórz panel|Open panel).*(Podstawowe informacje|Basic info)/ })
-      .first()
-      .click();
-    tab = page.getByRole("button", { name: /^(Podstawowe informacje|Basic info)$/ }).first();
-  }
-  await tab.click();
+  // The Basic info panel is hosted inside the Spółka Ownership workshop tool
+  // now (ADR 0107/0108, toolRegistry.tsx `akcjonariat` → CompanyBasicInfoPanel)
+  // — continuing from the previous test's company context.
+  await page
+    .getByRole("group", { name: /Warsztat|Workshop/ })
+    .getByRole("button", { name: /^(Akcjonariat|Ownership)$/ })
+    .click();
+  const tool = page.getByRole("group", { name: /Narzędzie warsztatu|Workshop tool/ });
+  await expect(tool).toBeVisible();
 
-  const panel = page.locator(".basic-info-panel");
+  const panel = tool.locator(".basic-info-panel");
   await expect(panel).toBeVisible({ timeout: 15_000 });
   // Read-only facts render; edit fields stay hidden until the toggle.
   await expect(panel.getByText(/Nazwa|Name/).first()).toBeVisible();

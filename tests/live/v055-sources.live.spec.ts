@@ -87,38 +87,25 @@ test("Diagnostics shows the reconciliation ledger section", async () => {
   await page.screenshot({ path: `${SHOTS}/03-diagnostics.png`, fullPage: true });
 });
 
-test("shortPositions cockpit panel opens from the palette on a real company", async () => {
+test("short positions section renders inside the Spółka Ownership tool on a real company", async () => {
   test.setTimeout(120_000);
   await openScreen(/Spółki|Companies/);
   await clearCompaniesFilter(page);
-  // Open the first tracked company's cockpit dashboard.
+  // Open the first tracked company's Spółka screen (ADR 0107/0108: the row
+  // lands it directly, no cockpit dashboard).
   await page.locator(".company-row, [data-company-row], tbody tr").first().click();
   await page.waitForTimeout(2_000);
-  // Idempotent: a persisted layout may already carry the panel from a previous
-  // run — only go through the palette when its tab is absent.
-  const panelTab = page
-    .locator(".dv-tab, .cockpit-tab-activate", { hasText: /Krótka sprzedaż|Short selling/ })
-    .first();
-  if ((await panelTab.count()) === 0) {
-    await page.keyboard.press("Control+k");
-    // The palette dialog has its own filter input — do not touch the global search box.
-    const paletteFilter = page.getByPlaceholder(/filtrować polecenia|filter commands/i);
-    await expect(paletteFilter).toBeVisible();
-    await paletteFilter.fill("Krótka sprzedaż");
-    await page.waitForTimeout(500);
-    // Click the command INSIDE the palette overlay, never a matching element behind it.
-    await page
-      .locator(".ui-modal-overlay")
-      .getByText(/Krótka sprzedaż \(KNF\)|Short selling \(KNF\)/)
-      .first()
-      .click();
-    await page.waitForTimeout(1_500);
-  }
-  // The panel must actually be open: its tab is the evidence.
+  // ADR 0107/0108: short positions is a stacked section inside the Ownership
+  // (`akcjonariat`) workshop tool, not a standalone panel/palette command.
+  await page
+    .getByRole("group", { name: /Warsztat|Workshop/ })
+    .getByRole("button", { name: /^(Akcjonariat|Ownership)$/ })
+    .click();
+  await page.waitForTimeout(1_000);
+  // The tool auto-scrolls its short-positions section into view on mount —
+  // the section itself is the evidence.
   await expect(
-    page
-      .locator(".dv-tab, .cockpit-tab-activate", { hasText: /Krótka sprzedaż|Short selling/ })
-      .first(),
+    page.locator('[data-section="shorts"]', { hasText: /Krótka sprzedaż|Short selling/ }).first(),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/05-short-positions-panel.png`, fullPage: true });
   // Close any modal/palette overlay the flow left open so later tests can navigate.
