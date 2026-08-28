@@ -152,10 +152,9 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   const historyOpen = historyManual ?? !paneShort;
 
   useEffect(() => {
-    // The hosting `container: pane / size` ancestor: `.cockpit-pane` (frozen
-    // cockpit, ADR 0053) or `.spolka-layout` (Spółka workshop tool, F3a S3,
-    // ADR 0107) — the same panel is shared between both hosts.
-    const pane = panelRef.current?.closest<HTMLElement>(".cockpit-pane, .spolka-layout");
+    // The hosting `container: pane / size` ancestor: `.spolka-layout`
+    // (Spółka workshop tool, F3a S3, ADR 0107).
+    const pane = panelRef.current?.closest<HTMLElement>(".spolka-layout");
     if (!pane || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       setPaneShort(pane.clientHeight < 480);

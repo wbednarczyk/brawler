@@ -27,14 +27,6 @@ function baseProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     refreshSources: () => {},
     setActiveSection: () => {},
     onOpenSpolkaMode: () => {},
-    cockpitViews: [],
-    activeCockpitViewId: null,
-    cockpitInitialCompanyId: null,
-    legacyDashboardLayouts: [],
-    onOpenCockpitView: () => {},
-    onOpenLegacyDashboard: () => {},
-    onDeleteCockpitView: () => {},
-    onRenameCockpitView: () => {},
     onNavigateToSearchResult: () => {},
     pinnedCompanies: [],
     trackedCompanies: [CDR, PZU],
@@ -63,9 +55,8 @@ function renderShell(overrides: Partial<AppShellProps> = {}) {
 }
 
 // F3a S3 (ADR 0107, consent 3): exactly one `aria-current="page"` across
-// modes, the Widoki group (named views + legacy dashboards), and pinned rows,
-// for every state the sidebar can be in.
-describe("AppShell — exactly one aria-current across modes, views and pinned rows", () => {
+// modes and pinned rows, for every state the sidebar can be in.
+describe("AppShell — exactly one aria-current across modes and pinned rows", () => {
   it("Today", () => {
     renderShell({ activeSection: "Today" });
     const current = document.querySelectorAll('[aria-current="page"]');
@@ -104,68 +95,10 @@ describe("AppShell — exactly one aria-current across modes, views and pinned r
     expect(current[0]).toHaveAccessibleName("Company");
   });
 
-  it("named view", () => {
-    renderShell({
-      activeSection: "Cockpit",
-      cockpitViews: [{ id: "view_1", name: "Deep dive" }],
-      activeCockpitViewId: "view_1",
-    });
-    const current = document.querySelectorAll('[aria-current="page"]');
-    expect(current).toHaveLength(1);
-    expect(current[0]).toHaveAccessibleName("Deep dive");
-  });
-
-  it("legacy dashboard", () => {
-    renderShell({
-      activeSection: "Cockpit",
-      legacyDashboardLayouts: [{ id: "layout_1", companyId: CDR.id, ticker: CDR.ticker }],
-      cockpitInitialCompanyId: CDR.id,
-      activeCockpitViewId: null,
-    });
-    const current = document.querySelectorAll('[aria-current="page"]');
-    expect(current).toHaveLength(1);
-    expect(current[0]).toHaveAccessibleName("Legacy dashboard · CDR");
-  });
-
   it("Companies", () => {
     renderShell({ activeSection: "Companies" });
     const current = document.querySelectorAll('[aria-current="page"]');
     expect(current).toHaveLength(1);
     expect(current[0]).toHaveAccessibleName("Companies");
-  });
-});
-
-// F3a S3/R1 finding 4 (ADR 0107 decision 5): deleting a saved view mutates
-// the "Widoki" structure (a row disappears with no undo affordance in the
-// UI) — gone with the freeze, same as "+ New view"/"Add panel". Rename
-// (metadata, not structure) stays.
-describe("AppShell — named-view delete is gone, rename stays (frozen)", () => {
-  it("renders no delete control for a saved view", () => {
-    renderShell({
-      activeSection: "Cockpit",
-      cockpitViews: [{ id: "view_1", name: "Deep dive" }],
-      activeCockpitViewId: "view_1",
-    });
-    expect(screen.queryByRole("button", { name: /Delete view/ })).not.toBeInTheDocument();
-  });
-
-  it("still renders the rename control for a saved view", () => {
-    renderShell({
-      activeSection: "Cockpit",
-      cockpitViews: [{ id: "view_1", name: "Deep dive" }],
-      activeCockpitViewId: "view_1",
-    });
-    expect(
-      screen.getByRole("button", { name: "Rename view: Deep dive" }),
-    ).toBeInTheDocument();
-  });
-
-  it("renders no delete control for a legacy dashboard row either", () => {
-    renderShell({
-      activeSection: "Cockpit",
-      legacyDashboardLayouts: [{ id: "layout_1", companyId: CDR.id, ticker: CDR.ticker }],
-      cockpitInitialCompanyId: CDR.id,
-    });
-    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
   });
 });

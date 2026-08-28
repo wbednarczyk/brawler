@@ -9,12 +9,12 @@ import { formatFinancialValue, formatFixedPercent } from "../format/financialVal
 import { formatDetailTimestamp, formatLocalIsoDate } from "../format/datetime";
 import { Button, EmptyState, ErrorText, Hint, SectionHeader, StatusChip } from "../../ui";
 
-// The company-scoped analyst-recommendations cockpit panel (v0.58 A3, ADR 0073).
+// The company-scoped analyst-recommendations panel (v0.58 A3, ADR 0073).
 // A quiet read surface (experience contract § 6: NO primary action) rendering
 // attributed third-party opinions — never advice. Every row carries firm + date
 // inseparably from the numbers; ratings are quoted verbatim in the source
 // vocabulary. Follows the redFlags/shortPositions precedent: props-driven, with
-// cockpit-owned state (`useCockpitAnalystRecommendations`). Composes src/ui
+// its own state (`useAnalystRecommendationsPanel`). Composes src/ui
 // primitives only.
 export type AnalystRecommendationsSectionProps = {
   company: Company;

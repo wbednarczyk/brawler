@@ -184,7 +184,7 @@
 
 /* -------------------------------------------------------------------------- */
 /* Watchlists density contract (U7-E2 / ADR 0076 Decision 6)                  */
-/* Rides the named `pane` size container (.workspace / .cockpit-pane). Base    */
+/* Rides the named `pane` size container (.workspace). Base                   */
 /* above is the L tier: names sidebar ∥ detail with the full company table     */
 /* (ticker · name · ISIN · remove).                                           */
 /* -------------------------------------------------------------------------- */

@@ -22,9 +22,9 @@ const noopSignalHandler = () => {};
 
 // The company-scoped feed list + selected-item detail (read/save, inspect,
 // note draft, AI analysis). Extracted from the tabbed CompanyWorkspace so both
-// the workspace and the cockpit `companyFeed` dashboard panel (ADR 0057) render
-// the same surface from explicit props — no AppStateRoot coupling beyond the
-// handlers passed in.
+// the workspace and the Spółka `feed` workshop tool (ADR 0057, ADR 0107)
+// render the same surface from explicit props — no AppStateRoot coupling
+// beyond the handlers passed in.
 export type CompanyFeedSectionProps = {
   company: Company;
   feedItems: FeedItem[];
@@ -35,8 +35,8 @@ export type CompanyFeedSectionProps = {
   formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   feedItemSummary: (item: FeedItem) => string;
   // Cross-screen actions are optional: the tabbed workspace wires them to the
-  // AppStateRoot navigation, but the self-contained cockpit dashboard panel
-  // (ADR 0057) omits them — the same actions stay reachable from the Inbox.
+  // AppStateRoot navigation, but the self-contained Spółka `feed` tool (ADR
+  // 0057) omits them — the same actions stay reachable from the Inbox.
   inspectFeedItem?: (item: FeedItem) => void;
   openFeedItemNoteDraft?: (item: FeedItem) => void;
   openInboxFilter?: (company: Company) => void;
@@ -47,7 +47,7 @@ export type CompanyFeedSectionProps = {
    * inline under its row (Spółka `feedItem` workshop tool, owner dogfooding
    * v0.74 item 7 — opened from the Inbox, the item could sit anywhere in a
    * long feed). Default false preserves the existing placement (Companies
-   * tab, cockpit `companyFeed` dashboard panel). */
+   * tab, Spółka `feed` workshop tool). */
   leadWithDetail?: boolean;
 };
 

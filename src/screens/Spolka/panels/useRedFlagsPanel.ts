@@ -3,11 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 import type { Company } from "../../../api/types";
 import { acknowledgeRedFlag, getRedFlags, type RedFlagsView } from "../../../api/redFlags";
 
-// Cockpit-native red-flags state for one company (v0.57 T7, ADR 0083 D8). Loads
-// the computed panel view (active flags + acknowledged history) on company change
-// and exposes an idempotent acknowledge that swaps in the refreshed view the
-// command returns. Mirrors the fetch-on-company-change shape of the other
-// company-scoped cockpit hooks.
+// Company-scoped red-flags state for one company (v0.57 T7, ADR 0083 D8).
+// Loads the computed panel view (active flags + acknowledged history) on
+// company change and exposes an idempotent acknowledge that swaps in the
+// refreshed view the command returns. Mirrors the fetch-on-company-change
+// shape of the other company-scoped panel hooks.
 export function useRedFlagsPanel(company: Company) {
   const [view, setView] = useState<RedFlagsView | null>(null);
   const [error, setError] = useState<string | null>(null);

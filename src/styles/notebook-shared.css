@@ -148,7 +148,7 @@
 /* Pane-width responsiveness (ADR 0076 D6 density contract; guardrail ADR 0045):
    the workspace stacks below the L width tier (pane ≤ 759px) instead of forcing
    a panel-level horizontal scrollbar. Resolves against the named `pane`
-   container (.cockpit-pane / .workspace). The S-tier single-column-toggle
+   container (.workspace or .spolka-layout). The S-tier single-column-toggle
    behavior is a follow-up cluster task; only the boundary moves here. */
 @container pane (max-width: 759px) {
   .notebook-workspace {

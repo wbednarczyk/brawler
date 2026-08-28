@@ -256,7 +256,7 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  /* Named size container so full-screen (non-cockpit) hosts also resolve the
+  /* Named size container so full-screen hosts also resolve the
      panel density contracts' `@container pane (…)` rules (ADR 0076 D6). The
      workspace row has a definite height, so size containment is safe. */
   container: pane / size;

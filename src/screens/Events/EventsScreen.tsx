@@ -29,7 +29,7 @@ import { resolveEventViewMode } from "./eventTypes";
 
 // U7-D density (ADR 0076 D6): the Events week grid can't collapse purely in CSS —
 // week vs list are distinct component trees — so the tier is measured on the
-// hosting `pane` size container (.cockpit-pane / .workspace, the same subject the
+// hosting `pane` size container (.workspace, the same subject the
 // `@container pane` rules resolve against) and surfaced to React. Compact = S
 // width tier (<420px) OR short height tier (<480px). No ResizeObserver (jsdom,
 // some SSR) → not compact, i.e. the stored preference is honored.
@@ -39,7 +39,7 @@ function usePaneCompact(ref: RefObject<HTMLElement | null>): boolean {
   useEffect(() => {
     const host = ref.current;
     if (!host || typeof ResizeObserver === "undefined") return;
-    const pane = (host.closest(".cockpit-pane, .workspace") as HTMLElement | null) ?? host;
+    const pane = (host.closest(".workspace") as HTMLElement | null) ?? host;
     const measure = () => {
       // Guard against an unmeasured pane (0×0 in jsdom / before first layout):
       // only a real, positive dimension below the tier boundary counts as compact,

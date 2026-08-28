@@ -20,10 +20,10 @@ const noopHost: ToolHostContextValue = {
 // The seam a draft-carrying panel (notebook editor, decision-journal composer,
 // claims composer) registers into so the Spółka workshop's shared stay/discard
 // gate (`src/screens/Spolka/ToolHost.tsx`, F3a S2, ADR 0107) can intercept
-// every unmount. These panels are shared verbatim with the frozen Cockpit
-// dockview (ADR 0057), which never provides a host — there registration is a
-// no-op, kept in `src/shared` (not `src/screens/Spolka`) so panels outside the
-// Spółka screen can import it without a shared→screens boundary violation.
+// every unmount. These panels are shared verbatim with hosts that provide no
+// dirty gate of their own (e.g. the Companies screen), where registration is
+// a no-op — kept in `src/shared` (not `src/screens/Spolka`) so panels outside
+// the Spółka screen can import it without a shared→screens boundary violation.
 export const ToolHostContext = createContext<ToolHostContextValue>(noopHost);
 
 export function useToolHost(): ToolHostContextValue {

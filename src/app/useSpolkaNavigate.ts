@@ -7,9 +7,7 @@ import type { SpolkaTransition } from "./useSpolkaScreenWiring";
 type SpolkaNavigateInput = {
   spolkaTool: SpolkaToolHostApi;
   setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
-  setCockpitInitialCompanyId: Dispatch<SetStateAction<string | null>>;
   setActiveSectionRaw: Dispatch<SetStateAction<Section>>;
-  setActiveCockpitLayoutId: Dispatch<SetStateAction<string | null>>;
 };
 
 /**
@@ -36,11 +34,7 @@ export function useSpolkaNavigate(input: SpolkaNavigateInput) {
     (transition: SpolkaTransition) => {
       input.spolkaTool.guardNavigation(() => {
         input.setSelectedCompanyId(transition.companyId);
-        input.setCockpitInitialCompanyId(transition.companyId);
         input.setActiveSectionRaw(transition.section);
-        if (transition.section === "Cockpit") {
-          input.setActiveCockpitLayoutId(transition.cockpitLayoutId ?? null);
-        }
         if (transition.highlightClaimId !== undefined) {
           setHighlightClaimId(transition.highlightClaimId);
         }

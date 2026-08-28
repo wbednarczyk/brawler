@@ -191,7 +191,7 @@ describe("Inbox screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Read the report" }));
 
     // F3a (ADR 0107, sol R2 finding 3): ONE guarded transition lands the
-    // Spółka screen with the `feedItem` tool open — never the cockpit.
+    // Spółka screen with the `feedItem` tool open.
     const spolka = await screen.findByRole("region", { name: "Company view" });
     expect(spolka).toBeInTheDocument();
     expect(await within(spolka).findByLabelText("Workshop tool")).toHaveAttribute("data-tool", "feedItem");

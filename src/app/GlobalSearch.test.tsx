@@ -178,4 +178,37 @@ describe("Global search", () => {
       expect(selectedRow).toHaveAttribute("aria-current", "true");
     });
   });
+
+  // ADR 0108: with the docking engine gone, a companyless research brief/
+  // digest result has no cockpit dashboard to open — it lands on the
+  // standalone Research screen instead.
+  it("a companyless research brief result opens the Research screen", async () => {
+    const user = userEvent.setup();
+    appTestState.searchResponse = {
+      groups: [
+        {
+          contentType: "research_brief",
+          matches: [
+            {
+              contentType: "research_brief",
+              sourceId: "brief_1",
+              companyId: null,
+              title: "Weekly market brief",
+              snippet: "Weekly market brief",
+              score: 1.0,
+            },
+          ],
+        },
+      ],
+    };
+
+    renderApp();
+
+    const input = screen.getByLabelText("Global search");
+    await user.type(input, "weekly");
+
+    await user.click(await screen.findByRole("option", { name: /Weekly market brief/ }));
+
+    expect(await screen.findByRole("heading", { name: "Research" })).toBeInTheDocument();
+  });
 });

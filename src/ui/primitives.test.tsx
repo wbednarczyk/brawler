@@ -163,11 +163,12 @@ describe("SectionHeader", () => {
   });
 
   // ADR 0076 Decision 6 (compact header, K3 double panel chrome): a panel's
-  // leading header opts into the pane-lead hook so the shared `.cockpit-pane`
-  // rule can visually compact its title. The class only tags the header — the
-  // title must stay in the accessible tree so `aria-labelledby` /
-  // `getByRole("heading")` keep resolving (the compaction is CSS clip-path, not
-  // removal), and it is inert (no compaction) outside a `.cockpit-pane`.
+  // leading header opts into the pane-lead hook, which used to let a shared
+  // CSS rule visually compact its title. That rule was scoped to the retired
+  // `.cockpit-pane` host (ADR 0108) and has no replacement yet, so the class
+  // is currently inert everywhere — this test only checks the hook tags the
+  // header and keeps the title in the accessible tree (`aria-labelledby` /
+  // `getByRole("heading")` keep resolving; the class alone is future-proofing).
   it("tags the leading header with the pane-lead hook while keeping the title accessible", () => {
     const { container } = render(<SectionHeader title="Quality" paneLead />);
     expect(container.querySelector(".ui-pane-lead-header")).not.toBeNull();

@@ -25,8 +25,8 @@ import type {
 
 // The company-scoped notebook composer + list/detail editor (with the
 // distraction-free Focus writer). Extracted from the tabbed CompanyWorkspace so
-// both the workspace and the cockpit `companyNotebook` dashboard panel (ADR 0057)
-// render the same surface from explicit props.
+// both the workspace and the Spółka `notatnik` workshop tool (ADR 0057, ADR
+// 0107) render the same surface from explicit props.
 export type CompanyNotebookSectionProps = {
   company: Company;
   notebookEntries: NotebookEntry[];

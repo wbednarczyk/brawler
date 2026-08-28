@@ -15,7 +15,6 @@ import type { SearchMatch } from "../api/search";
 import { GlobalSearch } from "./GlobalSearch";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { navGroups, type Section } from "./navigation";
-import { SidebarViewsGroup, type LegacyDashboardRow } from "./SidebarViewsGroup";
 import {
   createAppShortcutDefinitions,
   resolveAppShortcutReferenceItems,
@@ -56,16 +55,6 @@ type AppShellProps = {
   // (selectedCompanyId), else the first pinned, else the first tracked
   // company — never a blank screen. Replaces the old Dashboard bridge.
   onOpenSpolkaMode: () => void;
-  cockpitViews: { id: string; name: string }[];
-  activeCockpitViewId: string | null;
-  /** Company a legacy dashboard or the frozen cockpit is currently scoped to
-   * (marks the matching "Widoki" row current — exactly one `aria-current`). */
-  cockpitInitialCompanyId: string | null;
-  legacyDashboardLayouts: LegacyDashboardRow[];
-  onOpenCockpitView: (viewId: string) => void;
-  onOpenLegacyDashboard: (companyId: string) => void;
-  onDeleteCockpitView: (viewId: string) => void;
-  onRenameCockpitView: (viewId: string, name: string) => void;
   onNavigateToSearchResult: (match: SearchMatch) => void;
   pinnedCompanies: PinnedCompany[];
   /** Every tracked company — feeds the palette's `Open company: TICKER`
@@ -103,8 +92,7 @@ const ATTENTION_BADGE_FORMS: PluralForms = {
 };
 
 // Global-surface palette entries (F3a S3, plan "Trasy powierzchni globalnych"
-// po F3a): screens with no top-level nav item still need an entry point once
-// the cockpit that used to host them as panels is frozen.
+// po F3a): screens with no top-level nav item still need an entry point.
 const SCREEN_PALETTE_ENTRIES: ReadonlyArray<{ section: Section; labelText: string; actionKey: string }> = [
   { section: "Research", labelText: "Research", actionKey: "screen.open.research" },
   { section: "Events", labelText: "Events", actionKey: "screen.open.events" },
@@ -119,9 +107,7 @@ const SCREEN_PALETTE_ENTRIES: ReadonlyArray<{ section: Section; labelText: strin
 export function buildAppCommands(input: {
   shortcutBindings: Record<string, ShortcutBindingSetting>;
   shortcutActionMap: AppShortcutActionMap;
-  cockpitViews: { id: string; name: string }[];
   trackedCompanies: PinnedCompany[];
-  onOpenCockpitView: (viewId: string) => void;
   onOpenCompany: (companyId: string) => void;
   setActiveSection: (section: Section) => void;
   text: (s: string) => string;
@@ -138,13 +124,6 @@ export function buildAppCommands(input: {
         input.shortcutActionMap[item.id]();
       },
     }));
-  const viewCommands = input.cockpitViews.map((view) => ({
-    id: `view:${view.id}`,
-    label: `${text("Open view")}: ${view.name}`,
-    verb: "open" as const,
-    actionKey: `view.open.${view.id}`,
-    run: () => input.onOpenCockpitView(view.id),
-  }));
   // Every tracked company (F3a S3, plan §7 "Otwórz spółkę:") — pinned
   // companies are a subset, so this alone covers the previously-separate
   // "pinned only" list too.
@@ -162,7 +141,7 @@ export function buildAppCommands(input: {
     actionKey,
     run: () => input.setActiveSection(section),
   }));
-  return [...fromShortcuts, ...viewCommands, ...companyCommands, ...screenCommands];
+  return [...fromShortcuts, ...companyCommands, ...screenCommands];
 }
 
 export function AppShell({
@@ -175,14 +154,6 @@ export function AppShell({
   refreshSources,
   setActiveSection,
   onOpenSpolkaMode,
-  cockpitViews,
-  activeCockpitViewId,
-  cockpitInitialCompanyId,
-  legacyDashboardLayouts,
-  onOpenCockpitView,
-  onOpenLegacyDashboard,
-  onDeleteCockpitView,
-  onRenameCockpitView,
   onNavigateToSearchResult,
   pinnedCompanies,
   trackedCompanies,
@@ -315,21 +286,18 @@ export function AppShell({
 
   useKeyboardShortcuts(shortcuts);
 
-  // App-level palette commands: the resolved, enabled shortcuts (minus the palette
-  // opener itself), jumps to saved views, every tracked company, and the global
-  // screens (F3a S3, plan "Trasy powierzchni globalnych"). View creation is gone
-  // (consent 1 — the freeform cockpit is frozen). Building is a pure function
-  // (`buildAppCommands`, below) so the copy gate (paletteCopy.test.ts) can
-  // exercise it directly, with a rich fixture, in both locales — without
+  // App-level palette commands: the resolved, enabled shortcuts (minus the
+  // palette opener itself), every tracked company, and the global screens
+  // (F3a S3, plan "Trasy powierzchni globalnych"). Building is a pure
+  // function (`buildAppCommands`, below) so the copy gate (paletteCopy.test.ts)
+  // can exercise it directly, with a rich fixture, in both locales — without
   // rendering.
   const appCommands = useMemo<PaletteCommand[]>(
     () =>
       buildAppCommands({
         shortcutBindings,
         shortcutActionMap,
-        cockpitViews,
         trackedCompanies,
-        onOpenCockpitView,
         onOpenCompany,
         setActiveSection,
         text,
@@ -339,9 +307,7 @@ export function AppShell({
     [
       shortcutActionMap,
       shortcutBindings,
-      cockpitViews,
       trackedCompanies,
-      onOpenCockpitView,
       onOpenCompany,
       setActiveSection,
       locale,
@@ -454,21 +420,6 @@ export function AppShell({
                       })}
                     </div>
                   </div>
-                  {group.id === "modes" ? (
-                    <SidebarViewsGroup
-                      activeSection={activeSection}
-                      groupLabel={t("nav.group.views")}
-                      cockpitViews={cockpitViews}
-                      activeCockpitViewId={activeCockpitViewId}
-                      cockpitInitialCompanyId={cockpitInitialCompanyId}
-                      legacyDashboardLayouts={legacyDashboardLayouts}
-                      onOpenCockpitView={onOpenCockpitView}
-                      onOpenLegacyDashboard={onOpenLegacyDashboard}
-                      onDeleteCockpitView={onDeleteCockpitView}
-                      onRenameCockpitView={onRenameCockpitView}
-                      text={text}
-                    />
-                  ) : null}
                 </Fragment>
               );
             })}

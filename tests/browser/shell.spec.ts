@@ -7,10 +7,10 @@ import {
 } from "./helpers/harness";
 
 // Coverage for the mode-based shell (ADR 0054): the Today/Pulse home, the
-// left-sidebar spine, the company workspace pin + Advanced-layout entry, and the
-// cockpit feed/inspector. Runs across the viewport matrix (playwright.config.ts),
-// including the tall/narrow quarter-ultrawide windows. Captures evidence PNGs
-// into __shell-evidence__/ for manual review. The browser runtime locale is en.
+// left-sidebar spine, and the Spółka company feed workshop tool. Runs across
+// the viewport matrix (playwright.config.ts), including the tall/narrow
+// quarter-ultrawide windows. Captures evidence PNGs into __shell-evidence__/
+// for manual review. The browser runtime locale is en.
 
 const EVIDENCE = "tests/browser/__shell-evidence__";
 
@@ -36,33 +36,34 @@ test.describe("mode-based shell (ADR 0054)", () => {
     await page.screenshot({ path: `${EVIDENCE}/today-${testInfo.project.name}.png`, fullPage: true });
   });
 
-  test("the sidebar spine groups modes, library and utilities", async ({ page }) => {
+  test("the sidebar spine groups modes, library and utilities — no Views group", async ({ page }) => {
     await openApp(page);
     const nav = page.getByLabel("Primary navigation");
     await expect(nav.getByText("Modes", { exact: true })).toBeVisible();
     await expect(nav.getByText("Library", { exact: true })).toBeVisible();
     await expect(nav.getByText("Utilities", { exact: true })).toBeVisible();
     await expect(nav.getByRole("button", { name: "Today" })).toBeVisible();
+    // ADR 0108: the docking engine, its named views, and the "Widoki"/Views
+    // sidebar group are retired — Modes is Today/Inbox/Company only.
+    await expect(nav.getByText("Views", { exact: true })).toHaveCount(0);
+    await expect(nav.getByRole("button", { name: /^Legacy dashboard/ })).toHaveCount(0);
   });
 
-  // F3a S3 (ADR 0107 decision 5): the frozen dashboard's linked Feed/Inspector
-  // panels start CLOSED (DASHBOARD_CLOSED_LINKED) and the "Show panel: …"
-  // command that used to reopen them is gone — there is no UI path left to
-  // exercise the shared-selection linked workflow (feed → inspector →
-  // claims/diff) from a legacy dashboard specifically; that regression is
-  // covered instead in `CockpitScreen.test.tsx` ("linked selection still
-  // drives inspector, claims and diff selection in a frozen view") via a
-  // seeded named view. This spec keeps the achievable half: the dashboard's
-  // own company-scoped Feed panel (`companyFeed`, always open by default)
-  // still distinguishes read/unread weight.
-  test("the legacy dashboard's company feed marks only unread items bold", async ({
+  // ADR 0108: opening a company lands the Spółka screen directly (no cockpit
+  // dashboard to host it); the company-scoped Feed workshop tool still
+  // distinguishes read/unread weight.
+  test("the Spółka feed tool marks only unread items bold", async ({
     page,
   }, testInfo) => {
     await openApp(page);
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Legacy dashboard · CDR" }).click();
-    const cockpit = page.getByLabel("Research cockpit");
-    await expect(cockpit).toBeVisible();
-    await expect(cockpit.getByText("Layout frozen until the engine decision")).toBeVisible();
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
+    await page.getByRole("button", { name: "Open GPW:CDR" }).click();
+    const spolka = page.getByRole("region", { name: "Company view", exact: true });
+    await expect(spolka).toBeVisible();
+    await spolka.getByLabel("Workshop").getByRole("button", { name: "Feed", exact: true }).click();
+    const tool = spolka.getByLabel("Workshop tool");
+    await expect(tool).toBeVisible();
+    await expect(tool).toHaveAttribute("data-tool", "feed");
 
     const rows = page.locator(".company-feed-row");
     await expect(rows.first()).toBeVisible();
@@ -70,8 +71,7 @@ test.describe("mode-based shell (ADR 0054)", () => {
     // Unread rows render bold (weight 700); a read row (if any is seeded for
     // this company) renders a lighter weight — per-row correctness rather
     // than requiring a specific read/unread MIX in the data (CD PROJEKT's
-    // company-scoped feed has no interactive mark-read affordance, unlike
-    // the pre-freeze global/linked panel this spec used to drive).
+    // company-scoped feed has no interactive mark-read affordance).
     const rowInfo = await page.locator(".company-feed-row").evaluateAll((nodes) =>
       nodes.map((node) => ({
         unread: node.classList.contains("unread"),
@@ -85,33 +85,22 @@ test.describe("mode-based shell (ADR 0054)", () => {
         expect(weight, "a read row must not render bold").toBeLessThan(700);
       }
     }
-    // Scoped to the company feed panel itself (matching the original test's
-    // Inspector-scoped check) — a whole-cockpit sweep would also catch the
-    // curated dashboard's OTHER default panels (e.g. a pre-existing Basic
-    // info/insider-block overflow at this width), which is outside what this
-    // spec is about.
-    await expectNoHorizontalOverflow(page.getByLabel("Company feed", { exact: true }));
+    await expectNoHorizontalOverflow(tool.getByLabel("Company feed", { exact: true }));
 
-    await page.screenshot({ path: `${EVIDENCE}/cockpit-${testInfo.project.name}.png`, fullPage: true });
+    await page.screenshot({ path: `${EVIDENCE}/spolka-feed-${testInfo.project.name}.png`, fullPage: true });
   });
 
-  test("the legacy dashboard row opens the frozen cockpit scoped to its company", async ({
+  test("opening a company lands the Spółka screen directly, fundamentals reachable via the workshop", async ({
     page,
   }, testInfo) => {
     await openApp(page);
-    // F3a S3 (ADR 0107 decision 5): opening a company now lands the Spółka
-    // screen directly; the four legacy `dashboard:*` layouts stay reachable
-    // read-only via their "Legacy dashboard · TICKER" Widoki row.
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Legacy dashboard · CDR" }).click();
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
+    await page.getByRole("button", { name: "Open GPW:CDR" }).click();
 
-    const cockpit = page.getByRole("region", { name: "Research cockpit" });
-    await expect(cockpit).toBeVisible();
+    const spolka = page.getByRole("region", { name: "Company view", exact: true });
+    await expect(spolka).toBeVisible();
+    await spolka.getByLabel("Workshop").getByRole("button", { name: "Fundamentals", exact: true }).click();
     await expect(page.getByLabel("Company fundamentals")).toBeVisible();
-    // Frozen: no structure-mutating toolbar control, no company/preset
-    // selector (the row already fixed the company), and the strip is visible.
-    await expect(cockpit.getByRole("button", { name: "Add panel" })).toHaveCount(0);
-    await expect(cockpit.getByLabel("View company")).toHaveCount(0);
-    await expect(cockpit.getByText("Layout frozen until the engine decision")).toBeVisible();
 
     await page.screenshot({ path: `${EVIDENCE}/workspace-${testInfo.project.name}.png`, fullPage: true });
     await expectNoPageOverflow(page);

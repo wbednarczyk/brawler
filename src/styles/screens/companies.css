@@ -1475,7 +1475,7 @@
 
 /* -------------------------------------------------------------------------- */
 /* Fundamentals density contract (U7-A / ADR 0076 Decision 6)                  */
-/* Tier switches ride the named `pane` size container (.cockpit-pane); base    */
+/* Tier switches ride the named `pane` size container (.workspace); base      */
 /* fundamentals styles above. Compact header: no in-panel title duplicating    */
 /* the "Fundamentals" pane tab.                                                */
 /* -------------------------------------------------------------------------- */

@@ -5,9 +5,9 @@ import { ToastProvider } from "../ui";
 
 type AppProps = {
   initialLicenseStatus?: LicenseStatus | null;
-  /** Override the starting section. Defaults to the Cockpit (ADR 0053 phase 6).
-   *  Used for deep links, and by tests to land directly on a screen not
-   *  reachable from the top-nav (hosted as a Cockpit panel instead). */
+  /** Override the starting section. Defaults to Today. Used for deep links,
+   *  and by tests to land directly on a screen not reachable from the
+   *  top-nav (reached via the palette or deep links instead). */
   initialSection?: Section;
 };
 

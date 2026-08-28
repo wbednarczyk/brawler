@@ -270,7 +270,7 @@ export function useAppLifecycleEffects({
   useEffect(() => {
     if (
       !licenseCanUseApp ||
-      (activeSection !== "Events" && activeSection !== "Cockpit") ||
+      activeSection !== "Events" ||
       companyEventViewMode !== "week"
     ) {
       return;
@@ -362,7 +362,7 @@ export function useAppLifecycleEffects({
   useEffect(() => {
     if (
       !licenseCanUseApp ||
-      (activeSection !== "Notebooks" && activeSection !== "Cockpit") ||
+      activeSection !== "Notebooks" ||
       companies.length === 0
     ) {
       return;

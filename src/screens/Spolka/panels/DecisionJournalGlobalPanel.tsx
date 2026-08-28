@@ -55,11 +55,11 @@ export function DecisionJournalGlobalPanel({ companies }: { companies: Company[]
 
   return (
     <div className="feed-panel decision-journal-global-panel" aria-label={text("Decision journal")}>
-      {/* Compact in-pane header (ADR 0076 D6): this panel only ever renders
-          inside a cockpit dock pane whose tab already reads "Journal (all
-          companies)", so `paneLead` clips the duplicating title (kept in the
-          accessible tree via .cockpit-pane). The entry count lives in the meta
-          slot, which survives compaction, rather than the dropped subtitle. */}
+      {/* `paneLead` (ADR 0076 D6) is currently inert (its compact-header CSS
+          rule was scoped to the retired `.cockpit-pane` host, ADR 0108, with
+          no replacement yet) — kept for consistency with the tool-hosted
+          panels sharing this component. The entry count lives in the meta
+          slot regardless, ahead of a re-scoped rule. */}
       <SectionHeader
         level="h3"
         paneLead

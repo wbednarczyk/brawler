@@ -13,7 +13,7 @@ import { EmptyState, ErrorText, Hint, SectionHeader, StatusChip } from "../../..
 // current net short positions from the KNF register (≥ 0.5% threshold), the
 // change history that feeds the `short_position_change` signal, and a
 // most-common EMPTY state. Read-only — the register is populated by the daily
-// adapter. Palette-only cockpit panel (not in the curated default set).
+// adapter. Hosted in the Spółka `akcjonariat` (Ownership) workshop tool.
 export type ShortPositionsSectionProps = {
   company: Company;
   view: ShortPositionsView | null;

@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-// Guardrail for the white-screen class of bug (a cockpit panel threw and blanked
-// the whole app, nav included). A boundary must contain the failure so siblings
+// Guardrail for the white-screen class of bug (a panel threw and blanked the
+// whole app, nav included). A boundary must contain the failure so siblings
 // survive and the user gets a recovery action.
 function Bomb({ explode }: { explode: boolean }) {
   if (explode) throw new Error("boom");
