@@ -59,9 +59,8 @@ screen's 14 tools, in this order. Opening a tool replaces the core with the
 tool (the core collapses to a one-line summary strip so you never lose the
 ticker/counters context) — closing it restores the core exactly as you left
 it, scroll position and selection included. The active entry (Overview or the
-open tool) is visibly marked. Every open tool also carries its own leading
-**Overview** button (and the summary strip's ticker does the same) so you're
-never more than one click from the untouched core.
+open tool) is visibly marked; the **Overview** tab (or the summary strip's
+ticker, or the tool's ✕) brings back the untouched core in one click.
 
 | Bar entry | Hosts |
 |---|---|

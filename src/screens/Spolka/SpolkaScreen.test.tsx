@@ -570,10 +570,10 @@ describe("SpolkaScreen", () => {
     expect(within(expectedRow).getByText("expected")).toBeInTheDocument();
   });
 
-  // Owner dogfooding v0.74, item 5: a tool has no obvious way back to the
-  // overview short of finding the small ✕ — a leading "Overview" button next
-  // to the tool title returns to the untouched core.
-  it("Overview returns from a tool to the untouched core", async () => {
+  // Owner dogfooding v0.74 (item 5, then wave 3): the workshop bar's Overview
+  // tab is THE way back to the untouched core — the tool header carries no
+  // leading back button of its own.
+  it("Overview tab returns from a tool to the untouched core", async () => {
     const user = userEvent.setup();
     getCompanyViewMock.mockResolvedValue(fullView());
     const { container } = renderScreen();
@@ -584,10 +584,8 @@ describe("SpolkaScreen", () => {
     await user.click(screen.getAllByRole("button", { name: /Report 0/ })[0]);
     const frame = await screen.findByRole("group", { name: "Workshop tool" });
 
-    // Scoped to the tool frame: the workshop bar ALSO carries an "Overview"
-    // tab now (wave 2, item 1) — this exercises the tool header's own
-    // leading back button, a separate entry point to the same place.
-    await user.click(within(frame).getByRole("button", { name: "Overview" }));
+    expect(within(frame).queryByRole("button", { name: "Overview" })).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "Workshop" })).getByRole("button", { name: "Overview" }));
     await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     expect(screen.getByRole("group", { name: "Company core" })).toBeVisible();
     expect(layout.scrollTop).toBe(240);

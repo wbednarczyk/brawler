@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { ArrowLeft, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { Company, FeedItem } from "../../api/types";
 import { listClaimsToVerify } from "../../api/managementClaims";
 import { listCompanyEvents } from "../../api/events";
@@ -68,13 +68,8 @@ function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
   return (
     <div role="group" aria-label={text("Workshop tool")} data-tool={tool.t} className="spolka-tool">
       <div className="spolka-tool-header">
-        {/* A leading way back to the untouched core (owner dogfooding v0.74,
-            item 5) — same destination as the ✕, which stays for the
-            close-without-looking-back gesture. */}
-        <Button variant="ghost" onClick={ctx.onCloseTool}>
-          <ArrowLeft size={14} aria-hidden="true" />
-          {text("Overview")}
-        </Button>
+        {/* No leading back button: the workshop bar's Overview tab is the way
+            back (owner dogfooding v0.74 wave 3); ✕ stays for close. */}
         <SectionHeader
           level="h2"
           eyebrow={text("Workshop")}
