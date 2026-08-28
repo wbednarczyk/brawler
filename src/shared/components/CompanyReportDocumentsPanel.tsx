@@ -82,9 +82,9 @@ type CompanyReportDocumentsPanelProps = {
   // Bump to force a reload (e.g. after a backfill completes).
   reloadKey?: number;
   // Fired after an extraction that actually produced new facts, so a sibling
-  // panel (the cockpit Fundamentals view) can refetch — the report-documents
-  // panel and the fundamentals panel are independent cockpit panels with no
-  // shared read model, so this is the invalidation signal across them.
+  // panel (the Fundamentals view) can refetch — the report-documents panel
+  // and the fundamentals panel are independent panels with no shared read
+  // model, so this is the invalidation signal across them.
   onExtracted?: () => void;
   /** A KPI cell's provenance ticket (`sourceDocumentRef`, ADR 0104 dec. 7,
    * sol-review finding 8): scroll + flash this document once it renders,

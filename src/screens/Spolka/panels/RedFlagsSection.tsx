@@ -15,13 +15,13 @@ import {
   StatusChip,
 } from "../../../ui";
 
-// The company-scoped red-flags cockpit panel (v0.57 T7, ADR 0083 Decision 8/9):
+// The company-scoped red-flags panel (v0.57 T7, ADR 0083 Decision 8/9):
 // active flags with a fixed-slot severity chip, a per-row acknowledge (inline
 // confirm), and a collapsed acknowledged-history group. Decision support only —
 // the app raises "something smells here" from reports, ownership, health scores,
 // the auditor opinion, and short selling; never advice language. A calm explicit
 // empty state, never blank. `onOpenEvidence` selects the underlying feed item —
-// the caller (cockpit or the Spółka `redFlags` tool) owns where that navigates.
+// the caller (the Spółka `sygnaly` tool) owns where that navigates.
 export type RedFlagsSectionProps = {
   company: Company;
   view: RedFlagsView | null;

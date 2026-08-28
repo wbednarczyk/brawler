@@ -5,6 +5,7 @@
 @import "./styles/layout.css";
 @import "./styles/controls.css";
 @import "./styles/ui.css";
+@import "./styles/command-palette.css";
 @import "./styles/feedback.css";
 @import "./styles/ticker.css";
 @import "./styles/driftDiff.css";
@@ -28,7 +29,6 @@
 @import "./styles/notebook-shared.css";
 @import "./styles/screens/inbox.css";
 @import "./styles/screens/report-season.css";
-@import "./styles/screens/cockpit.css";
 @import "./styles/screens/decision-journal.css";
 @import "./styles/screens/short-positions.css";
 @import "./styles/screens/red-flags.css";

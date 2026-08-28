@@ -597,7 +597,7 @@ describe("SpolkaScreen", () => {
   it("feedItem tool leads with the item detail", async () => {
     const user = userEvent.setup();
     getCompanyViewMock.mockResolvedValue(fullView());
-    // The `feedItem` tool reads the CockpitCompanyFeedPanel's OWN global
+    // The `feedItem` tool reads the CompanyFeedPanel's OWN global
     // `feedItems` prop (filtered by `company.qualifiedTicker`), not
     // `data.feed` — a real detail (not the empty state) needs a matching row.
     const feedItem: FeedItem = {

@@ -17,8 +17,7 @@
   flex-direction: column;
   /* Named size container for the panel density contracts (ADR 0076 D6, F3a
      S3): every hosted panel's `@container pane (…)` rule — including a tool's
-     — resolves against this scroll region, mirroring `.cockpit-pane`/
-     `.workspace`. */
+     — resolves against this scroll region, mirroring `.workspace`. */
   container: pane / size;
 }
 

@@ -197,9 +197,8 @@ describe("Research screen workflows", () => {
     const user = userEvent.setup();
 
     // Clicking a research_question evidence item opens the Spółka `research`
-    // tool (F3a S3, ADR 0107 mapping "preset 'evidence'→research" — the
-    // frozen cockpit's "evidence" preset is gone with the freeze, decision
-    // 5), never Notebooks (epic c793ca1).
+    // tool (F3a S3, ADR 0107 mapping "preset 'evidence'→research"), never
+    // Notebooks (epic c793ca1).
     renderApp({ section: "Research" });
 
     await user.click(await screen.findByRole("button", { name: "Add question" }));
@@ -225,11 +224,10 @@ describe("Research screen workflows", () => {
     await user.click(within(questionEvidenceRow as HTMLElement).getByTitle("Open evidence"));
 
     // Landed on the Spółka screen with the research tool raised, not the
-    // Notebooks screen and not the (now frozen) cockpit.
+    // Notebooks screen.
     const company = await screen.findByRole("region", { name: "Company view" });
     const tool = await within(company).findByRole("group", { name: "Workshop tool" });
     expect(tool).toHaveAttribute("data-tool", "research");
-    expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Notebooks" })).not.toBeInTheDocument();
   });
 

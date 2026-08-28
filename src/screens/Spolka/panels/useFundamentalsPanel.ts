@@ -28,12 +28,12 @@ const EMPTY_FACT_FORM: FinancialFactForm = {
   dataQuality: "final",
 };
 
-// Cockpit-native fundamentals state + actions for one company. It owns the
+// Company-scoped fundamentals state + actions for one company. It owns the
 // periods/facts/KPI state and the two forms (the part AppStateRoot owns for the
 // Companies screen), then composes the shared `useFundamentalsController`
-// (decision: clean cockpit panels reuse the real editable panel via api/* —
-// no AppStateRoot coupling). Lets the full, editable `FundamentalsPanel` render
-// for any company a panel pins (ADR 0053 phase 4b).
+// (decision: the panel reuses the real editable panel via api/* — no
+// AppStateRoot coupling). Lets the full, editable `FundamentalsPanel` render
+// for any company the Spółka `fundamenty` tool opens.
 // `revision` bumps when a sibling panel writes facts for this company (a
 // report-documents extraction); it forces the facts/periods refetch below so the
 // panel never shows stale data after a successful extraction.
@@ -64,8 +64,8 @@ export function useFundamentalsPanel(companyId: string, revision = 0) {
     setKpiDefinitions(await listKpiDefinitions({ companyId }));
   }, [companyId]);
 
-  // Reload everything when the pinned company changes; a load failure surfaces
-  // in the panel without crashing the cockpit.
+  // Reload everything when the company changes; a load failure surfaces
+  // in the panel without crashing the screen.
   useEffect(() => {
     let cancelled = false;
     setFundamentalsLoadError(null);

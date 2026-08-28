@@ -24,7 +24,7 @@ type CompanyBasicInfoPanelProps = {
 
 const DASH = "—";
 
-/// "Basic info" cockpit panel (owner request 2026-07-14, mockup
+/// "Basic info" panel (owner request 2026-07-14, mockup
 /// docs/mockups/basic-info-panel.html): identity facts (name, ticker, ISIN),
 /// sector with provenance, latest recorded shares_outstanding — read-only by
 /// default. Edit affordances (sector override, IR reports URL) stay hidden

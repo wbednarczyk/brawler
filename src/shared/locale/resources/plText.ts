@@ -163,32 +163,10 @@ export const plText: Record<string, string> = {
   "Autopilot": "Autopilot",
   "Autopilot failed": "Autopilot nie powiódł się",
   "Autopilot mode": "Tryb autopilota",
-  // Composable views — new-view creator (ADR 0057)
-  "New view": "Nowy widok",
-  "Delete view": "Usuń widok",
-  // Saved-view rename (issue #89) — "View name" reuses the creator's entry.
-  "Rename view": "Zmień nazwę widoku",
-  "A view with this name already exists.": "Widok o tej nazwie już istnieje.",
-  "View name cannot be empty.": "Nazwa widoku nie może być pusta.",
-  "Delete this saved view?": "Usunąć ten zapisany widok?",
   // Undo toasts for reversible deletes (ADR 0076 D5)
   "View deleted": "Widok usunięty",
   "Note deleted": "Notatka usunięta",
   "Reminder deleted": "Przypomnienie usunięte",
-  "View name": "Nazwa widoku",
-  "e.g. Earnings day": "np. Dzień wyników",
-  "Grid presets": "Gotowe siatki",
-  "Columns": "Kolumny",
-  "Rows": "Wiersze",
-  "Preview": "Podgląd",
-  "Create view": "Utwórz widok",
-  "Save dashboard": "Zapisz dashboard",
-  // Cockpit view-company context (U-Ra, ADR 0076)
-  "View company": "Spółka widoku",
-  "Pin company": "Przypnij spółkę",
-  "Follow view company": "Podążaj za spółką widoku",
-  "Another panel already follows the view company": "Inny panel już podąża za spółką widoku",
-  "Choose the view company": "Wybierz spółkę widoku",
   // Per-company settings surface (ADR 0056)
   "Manage settings": "Zarządzaj ustawieniami",
   "Done": "Gotowe",
@@ -509,7 +487,6 @@ export const plText: Record<string, string> = {
   "Enter license key": "Wprowadź klucz licencyjny",
   "Open company": "Otwórz spółkę",
   "Open screen": "Otwórz ekran",
-  "Legacy dashboard": "Dawny dashboard",
   "Note": "Notatka",
   "Source URL": "URL źródła",
   "Published": "Opublikowano",
@@ -712,10 +689,9 @@ export const plText: Record<string, string> = {
   "feed": "kanał",
   "Company workspace tabs": "Zakładki obszaru roboczego spółki",
   // "Feed"/"Claims" unified with the F3a Spółka dictionary (ADR 0104 dec. 3,
-  // owner dogfooding v0.74 item 4) — the frozen cockpit names the SAME
-  // concepts (company feed, management-claims tracker), so both surfaces now
-  // read the same word; no cockpit test asserted the older "Kanał"/"Obietnice"
-  // wording.
+  // owner dogfooding v0.74 item 4): the Spółka `feed`/`tezy` tools name the
+  // SAME concepts (company feed, management-claims tracker) as the Companies
+  // tab, so both surfaces now read the same word.
   "Feed": "Feed",
   "Notebook": "Notatnik",
   "Claims": "Tezy",
@@ -1273,8 +1249,8 @@ export const plText: Record<string, string> = {
   "count": "liczba",
   "ratio": "wskaźnik",
   // Unified with the F3a Spółka dictionary (ADR 0104 dec. 3, owner
-  // dogfooding v0.74 item 4) — same concept as the frozen cockpit's
-  // "fundamentals" panel; no test asserted the older "Wskaźniki finansowe".
+  // dogfooding v0.74 item 4) — same concept as the Spółka `fundamenty`
+  // tool; no test asserted the older "Wskaźniki finansowe".
   "Fundamentals": "Fundamenty",
   "Company fundamentals": "Wskaźniki finansowe spółki",
   "fact": "fakt",
@@ -1397,39 +1373,18 @@ export const plText: Record<string, string> = {
   "Report comparison": "Porównanie raportów",
   "Consolidated statement (SSF)": "Sprawozdanie skonsolidowane (SSF)",
   "Standalone statement (JSF)": "Sprawozdanie jednostkowe (JSF)",
-  "Research cockpit": "Kokpit badawczy",
   "Open company panels and drag a tab to split them side by side.":
     "Otwórz panele spółek i przeciągnij zakładkę, aby ustawić je obok siebie.",
-  "Open a cockpit panel": "Otwórz panel kokpitu",
   "Open panel": "Otwórz panel",
   "Panel": "Panel",
   "Add panel": "Dodaj panel",
   "Pick a panel": "Wybierz panel",
-  "Empty cell": "Pusta komórka",
   "This view is empty.": "Ten widok jest pusty.",
   "Add panels to build your view — pick a pre-built panel from the palette.": "Dodaj panele, aby zbudować widok — wybierz gotowy panel z palety.",
   "Reset layout": "Resetuj układ",
-  // Layout-structure freeze (F3a S3, ADR 0107 decision 5)
-  "Layout frozen until the engine decision": "Układ zamrożony do decyzji o silniku",
-  "Edit inside panels still saves.": "Edycja wewnątrz paneli nadal się zapisuje.",
-  "This view has no panels. Layout structure is frozen until the engine decision.":
-    "Ten widok nie ma paneli. Układ jest zamrożony do decyzji o silniku.",
-  "Saved layout comes from another version — default layout restored":
-    "Zapisany układ pochodzi z innej wersji — odtworzono domyślny",
-  "Inspector": "Inspektor",
-  "Cockpit feed": "Kanał kokpitu",
-  "Feed item inspector": "Inspektor pozycji kanału",
-  "Inspect feed item": "Zbadaj pozycję kanału",
-  "No stored feed items.": "Brak zapisanych pozycji kanału.",
-  "No matching feed items.": "Brak pasujących pozycji kanału.",
-  "Filter feed items": "Filtruj pozycje kanału",
   "Filter by title or ticker…": "Filtruj po tytule lub tickerze…",
-  "Search the feed…": "Szukaj w kanale…",
-  "Maximize panel group": "Maksymalizuj grupę paneli",
-  "Float panel group": "Odepnij grupę paneli (pływające)",
   "Something went wrong displaying this view.": "Coś poszło nie tak przy wyświetlaniu tego widoku.",
   "Try again": "Spróbuj ponownie",
-  "Reset cockpit layout": "Zresetuj układ kokpitu",
   "Reload app": "Przeładuj aplikację",
   "Preset": "Preset",
   "Choose a preset…": "Wybierz preset…",
@@ -1438,13 +1393,10 @@ export const plText: Record<string, string> = {
   "Evidence / Research": "Dowody / Research",
   "Earnings season": "Sezon raportów",
   "Deep dive": "Pogłębiona analiza",
-  "Select a feed item to inspect it.": "Wybierz pozycję kanału, aby ją zbadać.",
   "Select a feed item — the inspector and the company's claims and diff follow it.":
     "Wybierz pozycję kanału — inspektor oraz tezy i różnice spółki podążają za nią.",
   "Command palette": "Paleta poleceń",
   "Open command palette": "Otwórz paletę poleceń",
-  "Open view": "Otwórz widok",
-  "Commands": "Polecenia",
   "Search commands": "Szukaj poleceń",
   "Type to filter commands…": "Wpisz, aby filtrować polecenia…",
   "No matching commands.": "Brak pasujących poleceń.",
@@ -1690,7 +1642,6 @@ export const plText: Record<string, string> = {
   "Keep watching": "Obserwuję dalej",
   "Sell note": "Notatka o sprzedaży",
   "Decision journal": "Dziennik decyzji",
-  "Journal (all companies)": "Dziennik (wszystkie spółki)",
   "New entry": "Nowy wpis",
   "Decision": "Decyzja",
   "Decision kind": "Rodzaj decyzji",

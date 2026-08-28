@@ -42,11 +42,10 @@ describe("DecisionJournalGlobalPanel (ADR 0071, J3)", () => {
   });
 
   it("marks the leading header compact (ADR 0076 D6) with the count in meta", async () => {
-    // The dock tab already reads "Journal (all companies)"; the panel must not
-    // repeat that identity as a visible in-pane heading (K3 double chrome). The
-    // leading SectionHeader carries `paneLead` so `.cockpit-pane` clips its title
-    // (kept in the accessible tree) — and the entry count moves to the meta slot,
-    // which survives compaction, instead of the dropped subtitle.
+    // The leading SectionHeader carries `paneLead` for consistency with the
+    // tool-hosted panels sharing this component (the class is currently
+    // inert everywhere — see the component's own comment) — and the entry
+    // count lives in the meta slot rather than the subtitle.
     const { container } = render(<DecisionJournalGlobalPanel companies={companies} />);
     expect(await screen.findByText("GPW:CDR")).toBeInTheDocument();
     const leadHeader = container.querySelector(".ui-section-header");

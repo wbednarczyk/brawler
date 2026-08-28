@@ -1,4 +1,4 @@
-/* Analyst-recommendations cockpit panel (v0.58 A3, ADR 0073). Composes the design
+/* Analyst-recommendations panel (v0.58 A3, ADR 0073). Composes the design
    system for the approved storyboard docs/mockups/v058-analyst-recommendations-
    storyboard.html. Every grid/flex ancestor carries min-width: 0 so long firm /
    analyst names wrap instead of forcing a page-level horizontal scrollbar; the

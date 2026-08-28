@@ -49,18 +49,10 @@ import {
   type AppShortcutActionMap,
 } from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
-import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
-import {
-  listCockpitLayouts,
-  renameCockpitLayout,
-  type CockpitLayout,
-} from "../api/cockpit";
-import { makeCockpitViewActions } from "./useCockpitViewActions";
 import { useToast, useUndoableDelete } from "../ui";
 import { DecisionJournalGlobalPanel } from "../screens/Spolka/panels/DecisionJournalGlobalPanel";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { SpolkaScreenHost, useSpolkaToolHost } from "./useSpolkaScreenWiring";
-import { buildLegacyDashboardRows } from "./SidebarViewsGroup";
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import { useSpolkaNavigate } from "./useSpolkaNavigate";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -198,11 +190,6 @@ export function AppStateRoot({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `spolkaTool` is a fresh object every render; `guardNavigation` itself is the only stable (useCallback) piece read here, and listing the whole object would make setActiveSection's identity churn every render
     [spolkaTool.guardNavigation],
   );
-  // The company a workspace "Advanced layout" toggle scopes the dockview cockpit
-  // to (ADR 0054); null = the cockpit opened directly, unscoped.
-  const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<
-    string | null
-  >(null);
   const [theme, setTheme] = useState<Theme>("dark");
   const [accentPalette, setAccentPalette] =
     useState<UserSettings["accentPalette"]>("night-neon");
@@ -402,48 +389,6 @@ export function AppStateRoot({
     null,
   );
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
-  const [activeCockpitLayoutId, setActiveCockpitLayoutId] = useState<
-    string | null
-  >(null);
-  // Saved named views shown as nav destinations in the Modes group (ADR 0057
-  // decision 5). Dashboard layouts (reserved `dashboard:` names) are excluded —
-  // they are reached by opening a company, not from the views list.
-  const [cockpitLayouts, setCockpitLayouts] = useState<CockpitLayout[]>([]);
-  const refreshCockpitLayouts = useCallback(() => {
-    listCockpitLayouts()
-      .then(setCockpitLayouts)
-      .catch(() => setCockpitLayouts([]));
-  }, []);
-  useEffect(() => {
-    refreshCockpitLayouts();
-  }, [refreshCockpitLayouts]);
-  const cockpitViews = cockpitLayouts
-    .filter((layout) => !layout.name.startsWith("dashboard:"))
-    .map((layout) => ({ id: layout.id, name: layout.name }));
-
-  // Issue #89: in-place saved-view rename from the sidebar row. The backend
-  // rejects duplicates (save upserts BY NAME — a duplicate would fuse two
-  // layouts on the next save); the codes surface as translated toasts.
-  async function renameCockpitView(layoutId: string, name: string) {
-    try {
-      await renameCockpitLayout(layoutId, name);
-      await refreshCockpitLayouts();
-    } catch (caught) {
-      const message = String(caught);
-      toast.show({
-        message: message.includes("duplicate_cockpit_layout_name")
-          ? text("A view with this name already exists.")
-          : message.includes("invalid_cockpit_layout_name")
-            ? text("View name cannot be empty.")
-            : message,
-        tone: "negative",
-      });
-    }
-  }
-
-  // View creation ("+ New view", `handleCreateView`) is removed with the
-  // freeze (F3a S3, ADR 0107 decision 5) — layout structure no longer saves;
-  // existing named views + legacy dashboards stay reachable read-only.
   const [sourceAdapterRefreshInFlight, setSourceAdapterRefreshInFlight] =
     useState<string | null>(null);
   const [registryRefreshState, setRegistryRefreshState] =
@@ -582,16 +527,6 @@ export function AppStateRoot({
 
   // ADR 0076 D5: reversible-destroy orchestration (immediate delete + undo toast).
   const runUndoableDelete = useUndoableDelete();
-  const { openCockpitView, deleteCockpitView } = makeCockpitViewActions({
-    cockpitLayouts,
-    activeCockpitLayoutId,
-    setActiveCockpitLayoutId,
-    setCockpitInitialCompanyId,
-    setActiveSection,
-    refreshCockpitLayouts,
-    runUndoableDelete,
-    text,
-  });
   // ADR 0068 T6: transient async-success feedback on the shared Toast surface.
   const toast = useToast();
   // ADR 0076 D4: threaded date formatters. Detail/audit rows (provenance,
@@ -1030,9 +965,7 @@ export function AppStateRoot({
   const { navigate, highlightClaimId } = useSpolkaNavigate({
     spolkaTool,
     setSelectedCompanyId,
-    setCockpitInitialCompanyId,
     setActiveSectionRaw,
-    setActiveCockpitLayoutId,
   });
   const {
     clearInboxFilters,
@@ -1271,8 +1204,7 @@ export function AppStateRoot({
         break;
       case "research":
         // Evidence deep-links land on the Spółka `research` tool (F3a, ADR
-        // 0107 mapping "preset 'evidence'→research"): the frozen cockpit's
-        // "evidence" preset is gone with the freeze (ADR 0107 decision 5).
+        // 0107 mapping "preset 'evidence'→research").
         if (item.evidenceType === "research_question") {
           if (researchMode !== "company") {
             setResearchMode("company");
@@ -1302,7 +1234,7 @@ export function AppStateRoot({
   function navigateToSearchResult(match: SearchMatch) {
     switch (match.contentType) {
       case "company":
-        // A company result opens the curated cockpit dashboard (ADR 0057).
+        // A company result opens the Spółka screen (F3a S1, ADR 0107).
         openCompanyWorkspaceById(match.sourceId);
         break;
       case "watchlist":
@@ -1328,8 +1260,10 @@ export function AppStateRoot({
         break;
       case "research_brief":
       case "digest":
-        // A brief/digest search result opens the Spółka `research` tool (F3a,
-        // ADR 0107 mapping "preset 'evidence'→research").
+        // A company-scoped brief/digest opens the Spółka `research` tool
+        // (F3a, ADR 0107 mapping "preset 'evidence'→research"); a companyless
+        // one opens the standalone Research screen (ADR 0108 — no docking
+        // engine to host it as a panel).
         if (match.companyId) {
           if (researchMode !== "company") {
             setResearchMode("company");
@@ -1337,7 +1271,8 @@ export function AppStateRoot({
           setSelectedResearchCompanyId(match.companyId);
           navigate({ companyId: match.companyId, section: "Spolka", tool: { t: "research" } });
         } else {
-          openDashboard();
+          setActiveSection("Research");
+          setSearchFocusSelector(`[data-search-result-id="${match.sourceId}"]`);
         }
         break;
       case "event":
@@ -1478,7 +1413,7 @@ export function AppStateRoot({
       },
       "company.nextCompany": () => selectAdjacentCompany(1),
       "company.previousCompany": () => selectAdjacentCompany(-1),
-      // The company deep-dive is the cockpit dashboard now (ADR 0057); there is no
+      // The company deep-dive is the Spółka screen (ADR 0107); there is no
       // tabbed workspace to cycle. The shortcuts are kept as no-ops so existing
       // bindings/config stay valid.
       "company.nextTab": () => false,
@@ -1529,10 +1464,8 @@ export function AppStateRoot({
     ],
   );
 
-  // Global-screen view-models, extracted so both the top-nav section blocks and
-  // the Research cockpit (which hosts these screens as panels, ADR 0053 phase 4c)
-  // share one source of truth. Lifting these providers to also wrap the cockpit
-  // is the decoupling the cockpit-as-host end state (phase 6) needs.
+  // Global-screen view-models, extracted so every render site (a standalone
+  // route, a palette entry point) shares one source of truth.
   const researchViewModel: ResearchScreenProps = {
     companies,
     watchlists,
@@ -1731,8 +1664,6 @@ export function AppStateRoot({
     name: company.displayName,
     ticker: company.ticker,
   }));
-  const legacyDashboardLayouts = buildLegacyDashboardRows(cockpitLayouts, companiesById);
-
   function openPinnedCompany(companyId: string) {
     const company = companies.find((candidate) => candidate.id === companyId);
     if (company) {
@@ -1744,19 +1675,15 @@ export function AppStateRoot({
     updatePinnedCompanyIds(pinnedCompanyIds.filter((id) => id !== companyId));
   }
 
-  // Company deep-dive entry points (Spółka default, ADR 0107; cockpit
-  // dashboard, ADR 0057) — extracted to useCompanyEntryActions.
-  const { openCompanyWorkspaceById, openAdvancedLayout, openDashboard, openSpolkaMode } =
-    useCompanyEntryActions({
-      companies,
-      cockpitInitialCompanyId,
-      pinnedCompanyIds,
-      selectedCompanyId,
-      setActiveSection,
-      setActiveCockpitLayoutId,
-      setCockpitInitialCompanyId,
-      navigate,
-    });
+  // Company deep-dive entry points (Spółka default, ADR 0107) — extracted to
+  // useCompanyEntryActions.
+  const { openCompanyWorkspaceById, openSpolkaMode } = useCompanyEntryActions({
+    companies,
+    pinnedCompanyIds,
+    selectedCompanyId,
+    setActiveSection,
+    navigate,
+  });
   const { watchlistsViewModel, reportSeasonViewModel } = buildWatchlistsScreenProps({
     companies,
     watchlists,
@@ -1785,16 +1712,6 @@ export function AppStateRoot({
           refreshSources={refreshSources}
           setActiveSection={setActiveSection}
           onOpenSpolkaMode={openSpolkaMode}
-          cockpitViews={cockpitViews}
-          activeCockpitViewId={
-            cockpitInitialCompanyId ? null : activeCockpitLayoutId
-          }
-          cockpitInitialCompanyId={cockpitInitialCompanyId}
-          legacyDashboardLayouts={legacyDashboardLayouts}
-          onOpenCockpitView={openCockpitView}
-          onOpenLegacyDashboard={(companyId) => openAdvancedLayout(companyId)}
-          onDeleteCockpitView={deleteCockpitView}
-          onRenameCockpitView={renameCockpitView}
           onNavigateToSearchResult={navigateToSearchResult}
           pinnedCompanies={pinnedCompanies}
           trackedCompanies={trackedCompanies}
@@ -1898,36 +1815,10 @@ export function AppStateRoot({
                   <InboxScreen />
                 </InboxProvider>
               ) : null}
-              {activeSection === "Cockpit" ? (
-                // The cockpit hosts the global app screens as panels (ADR 0053 phase
-                // 4c), so it shares their view-model providers with the top-nav.
-                <WatchlistsProvider value={watchlistsViewModel}>
-                  <ResearchProvider value={researchViewModel}>
-                    <NotebooksProvider value={notebooksViewModel}>
-                      <ReportSeasonProvider value={reportSeasonViewModel}>
-                        <EventsProvider value={eventsViewModel}>
-                          <CockpitScreen
-                            companies={companies}
-                            feedItems={feedState}
-                            initialCompanyId={cockpitInitialCompanyId}
-                            initialLayoutId={activeCockpitLayoutId}
-                            highlightClaimId={highlightClaimId}
-                            onLayoutsChanged={refreshCockpitLayouts}
-                            onOpenView={openCockpitView}
-                            onOpenCompany={openCompanyWorkspaceById}
-                            onOpenCompanyTool={(companyId, tool) => navigate({ companyId, section: "Spolka", tool })}
-                            onOpenCompaniesScreen={() => setActiveSection("Companies")}
-                          />
-                        </EventsProvider>
-                      </ReportSeasonProvider>
-                    </NotebooksProvider>
-                  </ResearchProvider>
-                </WatchlistsProvider>
-              ) : null}
               {activeSection === "Spolka" ? (
                 // The `research` workshop tool hosts the real, context-driven
                 // ResearchScreen (F3a S2 — no company-scope prop of its own
-                // yet), so this branch needs the same provider Cockpit wraps it in.
+                // yet), so this branch needs its own provider.
                 <ResearchProvider value={researchViewModel}>
                   <SpolkaScreenHost
                     companies={companies}
@@ -1943,9 +1834,8 @@ export function AppStateRoot({
               ) : null}
               {activeSection === "Journal" ? (
                 // Decision journal, all companies (F3a S3, ADR 0107 plan
-                // "Trasy powierzchni globalnych"): a standalone screen route —
-                // the same global panel the frozen cockpit hosts, not a panel
-                // inserted into it. No separate PanelHeader: the panel's own
+                // "Trasy powierzchni globalnych"): a standalone screen route.
+                // No separate PanelHeader: the panel's own
                 // "Decision journal" heading (SectionHeader h3) is this
                 // screen's only heading — a second h1 above it would repeat
                 // the same title and break heading order (axe).

@@ -13,7 +13,6 @@ const SCREENS = [
   "Notebooks",
   "Research",
   "Settings",
-  "Cockpit",
   "Inbox",
   "Companies",
   "Sources",
@@ -43,10 +42,9 @@ describe("screen accessibility", () => {
   for (const name of SCREENS) {
     it(`${name} renders with no axe violations`, async () => {
       // Land directly on the screen via the initial section: the slimmed top-nav
-      // (ADR 0053 phase 6) no longer exposes some of these as buttons (they are
-      // Cockpit panels now, and Cockpit itself has no standalone nav button per
-      // ADR 0057 decision 5), but they remain valid sections we still guard.
-      // "Today" is always present in the spine and stands in as the render-ready
+      // (ADR 0054) does not expose some of these as buttons — they are reached
+      // via the palette or deep links — but they remain valid sections we still
+      // guard. "Today" is always present in the spine and stands in as the render-ready
       // signal regardless of which section is active.
       const { container } = renderApp({ section: name });
 
@@ -61,8 +59,7 @@ describe("screen accessibility", () => {
   // deep-dive) was absent from this matrix entirely. Reached via a company
   // row (no standalone nav item), checked both at rest and with one hosted
   // workshop tool open — the exact state a hosted panel's own landmark would
-  // surface in (paneLandmarks.test.tsx covers the Cockpit dock-pane host;
-  // this covers the Spółka ToolHost host).
+  // surface in (the Spółka ToolHost host).
   it("Spółka renders with no axe violations, at rest and with one tool open", async () => {
     const rules = AXE_RULES;
     const user = userEvent.setup();

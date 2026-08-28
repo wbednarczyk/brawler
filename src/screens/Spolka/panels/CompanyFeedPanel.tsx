@@ -4,10 +4,11 @@ import { feedItemSummary } from "../../../app/useNotebookController";
 import { CompanyFeedSection } from "../../Companies/CompanyFeedSection";
 import { useCompanyFeedPanel } from "./useCompanyFeedPanel";
 
-// Company-scoped feed panel for the curated dashboard (ADR 0057). Reuses the real
-// `CompanyFeedSection` with cockpit-owned selection state (`useCompanyFeedPanel`);
-// the cross-screen actions (Open in Inbox / Note) are intentionally omitted — the
-// dashboard panel is self-contained and those stay reachable from the Inbox.
+// Company-scoped feed panel for the Spółka `feed` workshop tool (ADR 0057,
+// ADR 0107). Reuses the real `CompanyFeedSection` with its own selection
+// state (`useCompanyFeedPanel`); the cross-screen actions (Open in Inbox /
+// Note) are intentionally omitted — the panel is self-contained and those
+// stay reachable from the Inbox.
 export function CompanyFeedPanel({
   company,
   feedItems,

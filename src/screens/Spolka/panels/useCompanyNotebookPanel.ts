@@ -10,7 +10,7 @@ import {
   notebookUpdateInput,
 } from "../../../app/notebookForms";
 
-// Cockpit-native company notebook state for one company (ADR 0057). It owns the
+// Company-scoped notebook state for one company (ADR 0057). It owns the
 // entry list, the composer + edit forms, and the create/save/edit commands via
 // `api/notebooks` directly — the company-scoped subset of `useNotebookController`
 // with none of its cross-screen (Inbox / Notebooks screen / transcript) coupling.

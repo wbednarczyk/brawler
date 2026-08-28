@@ -24,9 +24,8 @@ import {
 } from "./panels/companyPanels";
 import type { Tool } from "./route";
 
-// Maps every `Tool` variant to the SAME hosted component the cockpit's
-// `renderPinned`/`renderLinked` use (F3a S2, ADR 0107) — reused verbatim via
-// `./panels/companyPanels`, never re-implemented.
+// Maps every `Tool` variant to its hosted component (F3a S2, ADR 0107) —
+// reused verbatim via `./panels/companyPanels`, never re-implemented.
 
 export type ToolRenderContext = {
   companyId: string;

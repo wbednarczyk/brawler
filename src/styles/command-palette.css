@@ -1,0 +1,39 @@
+/* Shared command palette (⌘K, src/shared/components/CommandPalette.tsx) —
+   used by the global app palette and any contextual instance (ADR 0108). */
+.command-palette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: min(32rem, 80vw);
+}
+
+.command-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 24rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+}
+
+.command-palette-item {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 6px;
+}
+
+.command-palette-item.is-active,
+.command-palette-item:hover {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.command-palette-empty {
+  color: var(--muted);
+  padding: var(--space-2) var(--space-3);
+}

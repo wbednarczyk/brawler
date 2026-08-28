@@ -1,14 +1,9 @@
 import { test, expect, openApp } from "../helpers/harness";
 import { shootScreen } from "./helpers";
-import type { Page } from "@playwright/test";
 
-// Visual baseline — Today home + the cockpit shell (ADR 0076 D7 / U11). Neither
-// forces `.workspace` in its density/shell spec, so each is the M-equivalent
-// only: the workspace at the project viewport (light shoots the same single M).
-
-function nav(page: Page) {
-  return page.getByLabel(/Primary navigation|Nawigacja główna/);
-}
+// Visual baseline — Today home (ADR 0076 D7 / U11). Does not force `.workspace`
+// in its density/shell spec, so this is the M-equivalent only: the workspace
+// at the project viewport (light shoots the same single M).
 
 test.describe("visual — shell + today", () => {
   test("Today home", async ({ page }) => {
@@ -19,15 +14,5 @@ test.describe("visual — shell + today", () => {
     await expect(page.locator(".dayq-delta-header")).toBeVisible();
     await expect(page.locator(".dayq-section").first()).toBeVisible();
     await shootScreen(page, "today");
-  });
-
-  test("Cockpit shell (legacy dashboard, frozen)", async ({ page }) => {
-    await openApp(page);
-    // F3a S3 (ADR 0107 decision 5): the frozen cockpit's legacy dashboard is
-    // reached via its "Legacy dashboard · TICKER" Widoki row.
-    await nav(page).getByRole("button", { name: "Legacy dashboard · CDR" }).click();
-    await expect(page.getByRole("region", { name: "Research cockpit" })).toBeVisible();
-    await expect(page.getByLabel("Company fundamentals")).toBeVisible();
-    await shootScreen(page, "cockpit-shell");
   });
 });

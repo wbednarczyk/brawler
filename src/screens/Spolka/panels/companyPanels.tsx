@@ -20,10 +20,9 @@ import { ShortPositionsSection } from "./ShortPositionsSection";
 import { RedFlagsSection } from "./RedFlagsSection";
 import { AnalystRecommendationsSection } from "../../../shared/components/AnalystRecommendationsSection";
 
-// Company-scoped panel wrappers shared by the cockpit's `renderPinned` (ADR
-// 0057, frozen per F3a) and the Spółka workshop's `toolRegistry` (F3a S2, ADR
-// 0107) — extracted from CockpitScreen.tsx so both hosts render the SAME
-// component/props instead of diverging copies (file-size ratchet, ADR 0103).
+// Company-scoped panel wrappers for the Spółka workshop's `toolRegistry`
+// (F3a S2, ADR 0107; ADR 0108 — the sole host since the docking engine's
+// removal), kept as their own module (file-size ratchet, ADR 0103).
 
 // The full, editable Fundamentals panel (ADR 0053 phase 4b). It reuses the real
 // `FundamentalsPanel` from the Companies screen — the caller owns the state via
@@ -132,7 +131,7 @@ export function ShortPositionsPanel({ company }: { company: Company }) {
 }
 
 // `onOpenEvidence` selects the underlying feed item — the caller owns where
-// that navigates (cockpit selection vs. the Spółka feed-item tool).
+// that navigates (the Spółka `feedItem` tool).
 export function RedFlagsPanel({
   company,
   onOpenEvidence,

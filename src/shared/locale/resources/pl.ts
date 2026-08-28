@@ -35,7 +35,6 @@ export const pl: LocaleResources = {
   "nav.settings": "Ustawienia",
   "nav.today": "Dziś",
   "nav.group.modes": "Tryby",
-  "nav.group.views": "Widoki",
   "nav.group.pinned": "Przypięte spółki",
   "nav.group.library": "Biblioteka",
   "nav.group.utilities": "Narzędzia",

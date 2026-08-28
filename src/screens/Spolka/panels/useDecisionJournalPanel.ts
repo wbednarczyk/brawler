@@ -22,7 +22,7 @@ function emptyForm(): DecisionEntryForm {
   return { kind: "buy", rationaleMd: "", decidedAt: formatLocalDate(new Date()) };
 }
 
-// Cockpit-native decision-journal state for one company (ADR 0071 / J3). Owns the
+// Company-scoped decision-journal state for one company (ADR 0071 / J3). Owns the
 // entry list, the composer draft, the selected entry, and its evidence links via
 // `api/decisionJournal` + the shared evidence-link machinery (`api/research`)
 // directly — the company-scoped surface with no cross-screen coupling. Mirrors

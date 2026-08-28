@@ -85,8 +85,8 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
   const [savingVerdict, setSavingVerdict] = useState(false);
 
   // Register the claims composer draft with the Spółka workshop's dirty gate
-  // (F3a S2, ADR 0107) — a no-op when hosted outside it (e.g. the frozen
-  // Cockpit dockview). Dirty = composer open with any field typed.
+  // (F3a S2, ADR 0107) — a no-op when hosted outside it (e.g. the Companies
+  // screen). Dirty = composer open with any field typed.
   const { register } = useToolHost();
   useEffect(() => {
     return register({

@@ -3,14 +3,9 @@ import { configure } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 
 // Per-test isolation for browser storage (ADR 0048 decision 2 — "no cross-test
-// bleed" — which the runtime reset honored but `localStorage` did not).
-// The cockpit persists its live dockview geometry under `cockpit.layout.v2` on
-// EVERY layout change, and restores it on mount whenever the saved panel ids all
-// still exist. jsdom keeps one `localStorage` for the whole FILE, so each cockpit
-// test inherited whatever geometry the previous one happened to leave — and
-// whether the save landed before the test ended depends on machine timing. That
-// is the real reason `CockpitScreen.test.tsx`'s pin/unpin test failed twice in
-// CI while passing on every local run (PRs #316, #317).
+// bleed" — which the runtime reset honored but `localStorage` did not). jsdom
+// keeps one `localStorage` for the whole FILE, so any persisted UI state
+// (e.g. a stored pane width) would otherwise bleed across tests.
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -49,11 +44,9 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(() => Promise.resolve("/tmp/brawler-export.json")),
 }));
 
-// dockview (Companies workspace pilot, ADR 0053) constructs a ResizeObserver at
-// mount; jsdom does not implement it. This minimal stub lets the docked
-// workspace render in the jsdom harness. NOTE for the pilot evaluation: needing
-// to polyfill a browser layout API to test the view at all is a recorded cost of
-// adopting dockview (test-architecture-fit criterion).
+// Several density-tier hooks (QualityPanel, TodayScreen, EventsScreen — ADR
+// 0076 D6) construct a ResizeObserver at mount; jsdom does not implement it.
+// This minimal stub lets those views render in the jsdom harness.
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
     observe() {}

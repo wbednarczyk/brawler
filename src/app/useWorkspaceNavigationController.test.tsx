@@ -50,10 +50,9 @@ describe("useWorkspaceNavigationController — openCompanyClaims (F2 S3 nav seam
       result.current.controller.openCompanyClaims(company.id, "claim_target");
     });
 
-    // F3a S1 (ADR 0107): claims open the Spółka screen now, not the cockpit
-    // directly. F3a S2 (sol R1 finding 3): company + section + tool +
-    // highlight are ONE atomic transition, not company/section set ahead of
-    // the tool open.
+    // F3a S1 (ADR 0107): claims open the Spółka screen. F3a S2 (sol R1
+    // finding 3): company + section + tool + highlight are ONE atomic
+    // transition, not company/section set ahead of the tool open.
     expect(result.current.activeSection).toBe("Spolka");
     expect(result.current.selectedCompanyId).toBe(company.id);
     expect(result.current.navigateCalls).toEqual([

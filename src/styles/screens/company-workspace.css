@@ -184,7 +184,7 @@
 /* ---------------------------------------------------------------------------
    Panel density contracts (ADR 0076 D6 / U7-B): Quality + Report documents.
    Container queries resolve against the named `pane` size container on
-   `.cockpit-pane` (cockpit.css). Tiers: S <420 · M 420–760 · L >760 (width),
+   `.workspace` or `.spolka-layout`. Tiers: S <420 · M 420–760 · L >760 (width),
    short <480 (height).
    --------------------------------------------------------------------------- */
 
