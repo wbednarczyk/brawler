@@ -215,9 +215,11 @@ test("visual-update-guard exits non-zero when only SCREEN is set", () => {
 
 // ---- 7. a real two-screen contact-sheet smoke produces an openable HTML file
 
+// Launches a real browser via Playwright: opt-in (BRAWLER_CONTACT_SHEET_SMOKE=1)
+// so the unit tests above can run inside the static gate without browsers.
 test(
   "real contact-sheet smoke: two screens produce an openable index.html",
-  { timeout: 180_000 },
+  { timeout: 180_000, skip: process.env.BRAWLER_CONTACT_SHEET_SMOKE !== "1" && "opt-in: BRAWLER_CONTACT_SHEET_SMOKE=1" },
   () => {
     const stamp = `smoketest-${Date.now()}`;
     const result = execFileSync(
