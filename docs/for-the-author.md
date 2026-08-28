@@ -6,7 +6,7 @@
 
 ## Pięć warstw (przekrój od góry)
 
-**1 · Co widzisz** — 11 trybów/ekranów w lewym menu; tryb Porównaj usunięty 2026-08-10 (#351) — porównania wielospółkowe robi Twój agent przez MCP, a w apce została tabela **pozycje × okresy** (QoQ/YoY) w panelu Fundamenty kokpitu spółki.
+**1 · Co widzisz** — 11 trybów/ekranów w lewym menu; tryb Porównaj usunięty 2026-08-10 (#351) — porównania wielospółkowe robi Twój agent przez MCP, a w apce została tabela **pozycje × okresy** (QoQ/YoY) w panelu Fundamenty ekranu Spółka.
 
 **2 · Rozmowa UI↔silnik** — każdy klik woła nazwaną, typowaną komendę (kontrakty w `docs/contracts.md`); nowe komendy zwracają kopertę błędów `kod+wiadomość`; bliźniaczy mock silnika pozwala testować UI, a korpus „fidelity” pilnuje, żeby mock nie kłamał.
 
@@ -22,16 +22,16 @@ Pełne `make check` jako wymagany check każdego PR, twardo (nigdy lokalnie): te
 
 ## Gdzie co znaleźć (jako użytkownik)
 
-- Zapis decyzji: kokpit spółki → `+ Dodaj panel` → **Dziennik decyzji** (globalnie: paleta → „Dziennik (wszystkie spółki)”).
+- Zapis decyzji: Spółka → pasek warsztatu → **Dziennik decyzji** (globalnie: paleta → „Dziennik (wszystkie spółki)”).
 - Oczekiwania przed raportem: panel **Sezon raportów** → karta spółki → **Zapisz oczekiwania**; przegląd „oczekiwane vs fakty” pojawia się po potwierdzeniu danych.
 - MCP: Ustawienia → **Serwer MCP** (włącznik, port, token pokazany raz, gotowe snippety dla Claude).
-- Krótka sprzedaż na spółce: kokpit spółki → `+ Dodaj panel` / paleta → **Krótka sprzedaż (KNF)**; alert na zmiany: Alerty → preset „Pozycja krótka".
+- Krótka sprzedaż na spółce: Spółka → pasek warsztatu / paleta → **Krótka sprzedaż (KNF)**; alert na zmiany: Alerty → preset „Pozycja krótka".
 - Czy Bankier niczego nie przegapił: Źródła → wiersz **GPW ESPI/EBI (Świadek)**; pełna księga porównań: Diagnostyka → „Uzgadnianie źródeł".
-- Kto jest właścicielem spółki: kokpit spółki → panel **Podstawowe informacje** → sekcja **Akcjonariat** (donut + pakiety w czasie + free float; typ akcjonariusza edytujesz ręcznie, gdy klasyfikacja słownika się myli).
-- Co mówią analitycy: kokpit spółki → `+ Dodaj panel` / paleta → **Rekomendacje analityków**; skrót „vs cel" przy kursie w Kontekście cenowym; alert: Alerty → kategoria „Zmiana rekomendacji".
+- Kto jest właścicielem spółki: Spółka → panel **Podstawowe informacje** → sekcja **Akcjonariat** (donut + pakiety w czasie + free float; typ akcjonariusza edytujesz ręcznie, gdy klasyfikacja słownika się myli).
+- Co mówią analitycy: Spółka → pasek warsztatu / paleta → **Rekomendacje analityków**; skrót „vs cel" przy kursie w Kontekście cenowym; alert: Alerty → kategoria „Zmiana rekomendacji".
 - Ręczne czyszczenie feedu: Ustawienia → Źródła → sekcja czyszczenia → **„Wyczyść teraz"** (automat wyłączony na stałe decyzją z 2026-07-19).
 - Skąd jest ta liczba: Fundamenty → klik w wartość → proweniencja (tier, metoda, cytat do wiersza strony/dokumentu); rozjazdy źródeł: Pokrycie → Oflagowane okresy.
 - Ręczna poprawka KPI: Fundamenty → edycja/dodanie wartości (Twój wpis jest nietykalny dla automatu; sprzeciw agregatora wyląduje jako informacja w Oflagowanych).
 - Porównanie spółek: ekran Porównaj usunięty (#351) — w apce została tabela okresów jednej spółki (niżej), a porównania wielospółkowe robi agent przez MCP (get_kpi_comparison / get_sector_percentiles / compute_comparative_valuation).
-- Delty okresowe jednej spółki: kokpit spółki → panel **Fundamenty** → tabela **pozycje × okresy** (QoQ/YoY inline, każda liczba z dowodem).
+- Delty okresowe jednej spółki: Spółka → panel **Fundamenty** → tabela **pozycje × okresy** (QoQ/YoY inline, każda liczba z dowodem).
 - Instrukcje użytkowe per funkcja: katalog `wiki/`.

@@ -276,6 +276,64 @@
     {
       "token": "nav.compare",
       "adr": "ADR 0089 amendment (#351)"
+    },
+    {
+      "token": "dockview",
+      "adr": "ADR 0108",
+      "allow": [
+        "docs/roadmap.md",
+        "docs/ui-information-architecture.md"
+      ]
+    },
+    {
+      "token": "cockpit_layouts",
+      "adr": "ADR 0108",
+      "allow": [
+        "docs/roadmap.md"
+      ]
+    },
+    {
+      "token": "list_cockpit_layouts",
+      "adr": "ADR 0108"
+    },
+    {
+      "token": "save_cockpit_layout",
+      "adr": "ADR 0108"
+    },
+    {
+      "token": "rename_cockpit_layout",
+      "adr": "ADR 0108"
+    },
+    {
+      "token": "delete_cockpit_layout",
+      "adr": "ADR 0108"
+    },
+    {
+      "token": "Research cockpit",
+      "adr": "ADR 0108",
+      "allow": [
+        "docs/roadmap.md"
+      ]
+    },
+    {
+      "token": "Research Cockpit",
+      "adr": "ADR 0108",
+      "allow": [
+        "docs/contracts.md",
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": ".cockpit-pane",
+      "adr": "ADR 0108"
+    },
+    {
+      "token": "cockpit-palette",
+      "adr": "ADR 0108"
+    },
+    {
+      "token": "Open view:",
+      "adr": "ADR 0108"
     }
   ]
 }

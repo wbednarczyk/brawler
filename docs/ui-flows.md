@@ -131,8 +131,8 @@ Intent: answer "what do I know about this company and what should I check later?
 
 Flow:
 
-1. User opens a company (from the Companies library, a pinned sidebar entry, a feed item, or global search), landing the curated cockpit dashboard scoped to it ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)).
-2. The dashboard opens with a calm default panel set (Fundamentals, Feed, Claims, Quality, Report documents, Notebook) and stays composable; the company `Notebook` panel is one of them.
+1. User opens a company (from the Companies library, a pinned sidebar entry, a feed item, or global search), landing the **Spółka** company screen ([ADR 0107](adr/0107-company-view-paradigm.md)).
+2. The co-visible core (KPI table, feed, price chart, coverage, recommendations) sits above a workshop bar of typed tools; the `Notebook` tool opens the company's notes in place of the core.
 3. Notebook panel lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
 4. User opens a note in the detail pane.
 5. User edits note content, changes claim status, or opens linked source material.
@@ -171,7 +171,7 @@ Intent: see who owns a tracked company and how stakes moved over time, straight 
 
 Flow:
 
-1. The user opens a company's cockpit dashboard; the **Ownership ("Akcjonariat") section** sits under the Basic info identity facts — no navigation, it is just there. Once the company's periodic reports are fetched, deterministic extraction has already populated it (zero interaction).
+1. The user opens a company's **Spółka** screen; the **Ownership ("Akcjonariat") section** sits under the Basic info identity facts — no navigation, it is just there. Once the company's periodic reports are fetched, deterministic extraction has already populated it (zero interaction).
 2. The populated section shows a donut by holder type with the derived free-float slice, a stakes-over-time chart, and holder rows with type chips; the derived free float also appears as a Basic-info rowline.
 3. If nothing is disclosed yet, the section shows an empty state with a **"Wydobądź z raportów"** CTA that force-enqueues deterministic extraction across the company's reports (`backfill_ownership_extraction`), with per-document progress; normally the automatic post-backfill run makes this unnecessary.
 4. Holder types are assigned deterministically from a dictionary ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); no type-confirmation chip appears — types come from the dictionary or the user's own edit.
@@ -195,7 +195,7 @@ Intent: see at a glance whether a company's published health formulas and disclo
 
 Flow:
 
-1. The user opens a company's cockpit dashboard; the Quality panel shows Piotroski F and Altman Z″ tiles (band-colored, variant labeled) computed automatically from confirmed facts — or an explicit "insufficient data" state listing the missing inputs, or "not applicable" for financials.
+1. The user opens a company's **Spółka** screen; the Quality tool shows Piotroski F and Altman Z″ tiles (band-colored, variant labeled) computed automatically from confirmed facts — or an explicit "insufficient data" state listing the missing inputs, or "not applicable" for financials.
 2. Expanding a score tile reveals its per-component breakdown (each of the 9 F signals / 4 Z″ inputs with measured values) and the published-formula citation.
 3. The **Red flags panel** lists active flags (auditor red flag, report delay, fund exit, score deterioration, short spike) with severity and an evidence link; acknowledging a flag moves it to history and never re-raises it for the same evidence. No flags = a calm explicit "no active flags" state.
 4. In the Ownership section, founder/management holders carry a skin-in-the-game badge; the insider view shows the parsed transaction timeline and rolling 90-day / 12-month net buy−sell (only once ≥ 2 transactions exist).
@@ -234,7 +234,7 @@ Intent: capture a judgment (and why) the moment it is made, so the decision reco
 
 Flow:
 
-1. From a company's cockpit dashboard, the user opens the **Decision journal** panel (via the panel palette / Add panel — it is not a default dashboard panel).
+1. From a company's **Spółka** screen, the user opens the **Decision journal** tool (workshop bar).
 2. The user records an entry: a decision kind (`buy` / `pass` / `keep_watching` / `sell_note`), a decided-on date, and a Markdown rationale.
 3. The entry appears in the company's chronological list (by decided_at) and joins the company research timeline.
 4. Selecting an entry, the user links supporting evidence — feed items, notes, claims, or events from the company timeline — to the decision.

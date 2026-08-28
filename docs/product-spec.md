@@ -92,7 +92,7 @@ Local test samples for GPW metadata are allowed only in tests and development re
 
 ## Company View — Spółka
 
-Status: in progress ([ADR 0107](adr/0107-company-view-paradigm.md); F3a #429 — S1 shipped the screen's glance bar + core + workshop bar and `get_company_view`; S2 hosts the tools, S3 the nav/freeze). The per-company surface becomes
+Status: delivered ([ADR 0107](adr/0107-company-view-paradigm.md); F3a #429 shipped the screen's glance bar + core + workshop bar and `get_company_view`). The per-company surface is
 one engine-free screen: a glance bar (identity + attention counters with
 defined drill targets), a co-visible core (annual KPI table with provenance
 tickets, company feed, daily-candle log-axis price chart, report coverage,
@@ -100,9 +100,8 @@ latest recommendations), and a bottom workshop bar opening full tools (claims,
 notebook, decision journal, quality, report diff, research, ownership,
 signals, documents, events, fundamentals, coverage, recommendations, full
 feed) into the core zone — each one click, with a dirty guard on every tool
-unmount. Freeform view composition is frozen until the #414 engine decision;
-existing named views and legacy per-company dashboards stay reachable
-read-only. Contract + state matrix: `docs/plans/frontend-v2-f3a.md`
+unmount. The docking engine, named views, and legacy per-company dashboards
+were retired ([ADR 0108](adr/0108-retire-docking-engine.md)). Contract + state matrix: `docs/plans/frontend-v2-f3a.md`
 (owner-approved 2026-08-25).
 
 ## Company Notebooks
@@ -227,7 +226,7 @@ Behavior:
 - **Health scores**: Piotroski F (0–9) and Altman Z″ (emerging-markets variant; safe/grey/distress bands) computed deterministically from confirmed facts for annual periods, shown in the Quality area with an expandable per-component breakdown and the formula citation. A score renders only when every input is present; otherwise an explicit "insufficient data" state lists what computed and what is missing — never a partial or rescaled headline number. Banks, insurers, and other financial-statement companies show "not applicable" for Z″. Scores are also usable in scorecard criteria.
 - **Insider activity**: MAR art. 19 notifications are parsed into who bought or sold, in what role, how much, and when; the mandatory periodic-report management-holdings table is parsed the same way. Together they mark founder/management shareholders in the Ownership section (skin-in-the-game badge) and feed an insider timeline with rolling 90-day and 12-month net buy/sell aggregates (shown only once at least 2 transactions exist).
 - **Red flags**: a per-company panel collects auditor red flags (qualified opinion / going concern), report publication delays (expected calendar date passed with no filing), fund exits (a disclosed holder vanishing from the newest ownership picture), score deteriorations, and short-position spikes — each with a fixed severity, a link to its evidence, and an acknowledge action (acknowledged flags move to history and never re-raise for the same evidence). New flags raise typed signals, so existing alert rules and the morning briefing pick them up.
-- **Analyst recommendations** (v0.58, [ADR 0073](adr/0073-analyst-recommendations-tracking.md)): sell-side ratings and target prices tracked strictly as **attributed third-party opinions**. Each entry preserves the source vocabulary verbatim (e.g. "akumuluj") plus a derived direction (upgrade/downgrade/initiate/reiterate vs the same firm's prior entry), target price with currency, price at issuance, publication date, analyst + issuing firm, and a broker-PDF link. History is **append-only and accumulates locally from ingestion start** (the free BiznesRadar page shows only the latest ~3–5 entries; the panel footer states this honestly). A new entry raises the `recommendation_change` typed signal (feed badge, Today/briefing, alert rules). Surfaces: an **opt-in** cockpit panel (every row shows firm + date; summary card = latest target with full attribution) and a "vs target" readout beside the price context that always carries firm + date under the number. Never advice: recommendations are quoted, never aggregated into the app's own stance, and never feed scorecards or valuation.
+- **Analyst recommendations** (v0.58, [ADR 0073](adr/0073-analyst-recommendations-tracking.md)): sell-side ratings and target prices tracked strictly as **attributed third-party opinions**. Each entry preserves the source vocabulary verbatim (e.g. "akumuluj") plus a derived direction (upgrade/downgrade/initiate/reiterate vs the same firm's prior entry), target price with currency, price at issuance, publication date, analyst + issuing firm, and a broker-PDF link. History is **append-only and accumulates locally from ingestion start** (the free BiznesRadar page shows only the latest ~3–5 entries; the panel footer states this honestly). A new entry raises the `recommendation_change` typed signal (feed badge, Today/briefing, alert rules). Surfaces: a Spółka panel (every row shows firm + date; summary card = latest target with full attribution) and a "vs target" readout beside the price context that always carries firm + date under the number. Never advice: recommendations are quoted, never aggregated into the app's own stance, and never feed scorecards or valuation.
 - Everything is decision support: scores cite their published formulas, flags state facts with evidence, and no surface phrases a buy/sell/hold action or composes the inputs into a single conviction rating.
 
 ## Report Documents

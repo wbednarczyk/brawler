@@ -370,7 +370,7 @@ Rules:
 - Each detected change writes one `feed_items` row (`Official report` type, `knf-short-selling` adapter) and one `confirmed` `short_position_change` `company_signals` row, firing matching `signal_category` alert rules ([ADR 0068](adr/0068-attention-routing.md)) on the same path as the ESPI classifier.
 - Exit detection treats the current register as complete for positions ≥ 0.5%: a stored live position whose holder is absent from a fresh snapshot is marked `exited`.
 
-**Read model** (`v0.55` T4b): `short_positions_view(company_id)` composes the cockpit panel view (contract in [Contracts § Short Positions (KNF)](contracts.md#short-positions-knf)) — never a stored projection. Active positions (aggregate = sum of active `net_position_pct`), the change history newest-first by `position_date`, the most recent remembered exit, and `delta_30d_pp` = the **signed sum of in-window event deltas** (entered `+to`, increased/decreased `to−from`, exited `−from`). The signed-delta sum is used because a clean "aggregate 30 days ago" is not reconstructable from the current mirror alone (only the latest per-holder value is stored); it equals `aggregate_now − aggregate_30d_ago` since the ingester writes exactly one event per detected change. The 30-day window is anchored to the read's UTC date.
+**Read model** (`v0.55` T4b): `short_positions_view(company_id)` composes the Spółka panel view (contract in [Contracts § Short Positions (KNF)](contracts.md#short-positions-knf)) — never a stored projection. Active positions (aggregate = sum of active `net_position_pct`), the change history newest-first by `position_date`, the most recent remembered exit, and `delta_30d_pp` = the **signed sum of in-window event deltas** (entered `+to`, increased/decreased `to−from`, exited `−from`). The signed-delta sum is used because a clean "aggregate 30 days ago" is not reconstructable from the current mirror alone (only the latest per-holder value is stored); it equals `aggregate_now − aggregate_30d_ago` since the ingester writes exactly one event per detected change. The 30-day window is anchored to the read's UTC date.
 
 ### Analyst Recommendations
 
@@ -1081,7 +1081,7 @@ Rules:
 
 ### Research Cockpit Layouts (retired)
 
-The docking engine and its saved-layout table are retired ([ADR 0108](adr/0108-retire-docking-engine.md)); a forward migration drops the table (see the migrations directory).
+The docking engine and its saved-layout table are retired ([ADR 0108](adr/0108-retire-docking-engine.md)); migration `0152_drop_cockpit_layouts.sql` drops the table.
 
 ### Jobs
 

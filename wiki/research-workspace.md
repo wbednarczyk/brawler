@@ -26,9 +26,6 @@ The sidebar is grouped so you always know where you are:
     a day as reviewed and it folds to a single line; a quiet morning says so plainly.
   - **Companies** — browse, search, add companies, and open one to its
     [Spółka screen](company-view.md) (see below).
-  - Below the built-in modes: any **views** you saved before F3a — see
-    [Composable cockpit views](cockpit-views.md) (frozen: no more building
-    new ones).
 - **Pinned companies** — your favorites for one-click access. Pin a company from
   its dashboard or the Companies list; it then appears here with a small
   status dot. Unpin from the sidebar (hover the row) or the dashboard.
@@ -80,8 +77,8 @@ Pin the company to the sidebar from here or from the Companies list.
 
 Press **Ctrl+K** anywhere to open the **command palette**: type to filter, hit
 Enter to run. It's the fastest way to jump between screens or trigger an action
-without reaching for the mouse. (Inside a cockpit view, the palette also lists
-that view's panel commands.) All shortcuts are listed under
+without reaching for the mouse. (On the Spółka screen, the palette also lists
+that company's workshop tools.) All shortcuts are listed under
 **Settings → Keyboard shortcuts** — shortcuts are ignored while you're typing
 in a field or editor, so they never fight your text.
 

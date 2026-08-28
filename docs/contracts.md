@@ -124,7 +124,7 @@ Rules (uniqueness of `qualifiedTicker`/`ticker` and optional identifier fields a
 
 **Sector** ([ADR 0067](adr/0067-market-data-foundation.md) Decision 3, `v0.53.0`): a company carries a `sector` classification auto-populated from the GPW/NewConnect directory (`sector_source='registry'`), with a manual override that a registry refresh never clobbers. `get_company_sector(companyId)` returns the current sector (or `null`); `set_company_sector(companyId, sector)` sets a manual override (`sector_source='manual'`) and returns the stored value — an empty/null `sector` clears the manual override, letting the next registry refresh fill it. `list_company_sectors()` returns the distinct registry-sourced taxonomy (active directory entries), the preset values the override picker offers so manual entries stay on the same taxonomy the KPI `sector` scope keys off. Field-level storage rules are canonical in [Data Model § Companies](data-model.md#companies). The taxonomy folds case variants (the GPW and NewConnect taxonomies spell shared sectors differently) into one entry, most frequent spelling first; the UI offers it as type-to-filter suggestions, never a full preset wall ([ui-authoring § visual-first](ui-authoring.md)).
 
-**Basic info** (owner request 2026-07-14): `get_company_basic_info(companyId)` returns the read model behind the "Basic info" cockpit panel — identity facts plus sector provenance and the latest recorded shares fact:
+**Basic info** (owner request 2026-07-14): `get_company_basic_info(companyId)` returns the read model behind the "Basic info" Spółka panel — identity facts plus sector provenance and the latest recorded shares fact:
 
 ```json
 {
@@ -671,7 +671,7 @@ Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandErr
 
 Per-company read model for the KNF short-selling register ([ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) decision 3, `v0.55`). Read-only: the register is populated by the daily `knf-short-selling` adapter; storage rules are canonical in [Data Model § Short Positions (KNF)](data-model.md#short-positions-knf).
 
-`list_short_positions(input)` (`input` = `{ companyId }`) returns the cockpit view:
+`list_short_positions(input)` (`input` = `{ companyId }`) returns the Spółka panel view:
 
 ```json
 {
@@ -694,7 +694,7 @@ Per-company read model for the KNF short-selling register ([ADR 0069](adr/0069-s
 - `lastExit` is the most recent remembered exit (empty-state "Ostatnia obecność"), or null.
 - `aggregatePct` is the sum of active `netPositionPct`. `delta30dPp` is the 30-day change in percentage points, defined as the signed sum of in-window event deltas (entered `+to`, increased/decreased `to−from`, exited `−from`) — equal to `aggregate_now − aggregate_30d_ago` because the ingester writes one event per detected change (a clean "aggregate 30 days ago" is not derivable from the current mirror alone).
 
-Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `list_short_positions`. A company with no register presence reads back the empty view (`positions: []`, `lastExit: null`, zero aggregate/delta). Surfaced by the palette-only `shortPositions` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `list_short_positions`. A company with no register presence reads back the empty view (`positions: []`, `lastExit: null`, zero aggregate/delta). Surfaced by the Spółka workshop's `shortPositions` panel ([UI IA § Company panels](ui-information-architecture.md)).
 
 ## Analyst Recommendations
 
@@ -724,7 +724,7 @@ Per-company read model for sell-side analyst recommendations ([ADR 0073](adr/007
 - `latestTarget` (optional, omitted when no entry has a target) is the newest target-carrying entry, for the attributed "vs target" readout beside Price context (`PriceContextSection`) — always shown with firm + date.
 - `lastRefreshedAt` (optional, omitted before the adapter has ever run) mirrors `source_adapters.last_success_at` for `biznesradar-rekomendacje`, for the footer's honest refresh line — never faked.
 
-Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_analyst_recommendations`. A company with no ingested recommendations reads back the empty view (`entries: []`, `latestTarget`/`lastRefreshedAt` omitted). Surfaced by the palette-only, opt-in `analystRecommendations` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)); each new entry also emits a `recommendation_change` signal (feed/Today/digests/alerts).
+Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_analyst_recommendations`. A company with no ingested recommendations reads back the empty view (`entries: []`, `latestTarget`/`lastRefreshedAt` omitted). Surfaced by the Spółka workshop's `analystRecommendations` panel ([UI IA § Company panels](ui-information-architecture.md)); each new entry also emits a `recommendation_change` signal (feed/Today/digests/alerts).
 
 ## Research Cockpit (retired)
 
@@ -1051,7 +1051,7 @@ never OCR-guessed.
 
 `backfill_ownership_extraction(companyId)` force-enqueues deterministic extraction across the company's fetched periodic reports (the "Wydobądź z raportów" CTA) and returns the number of documents queued (extraction drains on the autopilot lane). AI holder-type classification and the tier-4 OCR **generation** passes (`run_ownership_classification`, `run_ownership_ocr_extraction`, `run_company_ownership_ocr`) are retired with the in-app AI layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decisions 1/4): residuals a deterministic tier cannot read are flagged, never OCR-guessed. Holder types stay user-editable.
 
-Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_ownership_overview`, `backfill_ownership_extraction`, `set_ownership_holder_type`. Surfaced by the Ownership section of the Basic Info panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_ownership_overview`, `backfill_ownership_extraction`, `set_ownership_holder_type`. Surfaced by the Ownership section of the Basic Info panel ([UI IA § Company panels](ui-information-architecture.md)).
 
 ## Company Health
 
@@ -1075,7 +1075,7 @@ Score scalars `piotroski_f` / `altman_z` (the latest-FY headlines only) are addi
 
 ### Red flags (v0.57.0)
 
-`RedFlagsView` is a computed read model (no stored projection); both commands are async / `spawn_blocking`. Surfaced by the `redFlags` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+`RedFlagsView` is a computed read model (no stored projection); both commands are async / `spawn_blocking`. Surfaced by the Spółka workshop's `redFlags` panel ([UI IA § Company panels](ui-information-architecture.md)).
 
 - `get_red_flags(companyId)` → `RedFlagsView` `{ active: RedFlag[], history: RedFlag[] }`. Each `RedFlag` = `flagId` (deterministic `rf:<type>:<company>:<evidence>`), `flagType` (`auditor_red_flag | report_delay | fund_exit | score_deterioration | short_spike`), `severity` (`high | medium`, ADR 0083 D8 static map), `title`, `raisedDate`, `evidenceUrl?`, `evidenceFeedItemId?`, `ackedAt?` (history only). `active` is highest-severity-first; `history` is newest-ack-first.
 - `acknowledge_red_flag(input)`: `{ flagId }` — moves a flag from `active` to `history`; idempotent; the same evidence never re-raises (and its signal, already written, never re-fires). Returns the refreshed `RedFlagsView`.
@@ -1084,7 +1084,7 @@ Three flag types are **detected + raised** at the producing seams (ownership ing
 
 ### Insider overview (v0.57.0)
 
-`get_insider_overview(companyId)` returns `InsiderOverview` — the parsed insider substrate folded into a computed read model (ADR 0083 Decision 7); async / `spawn_blocking`. Surfaced by the "Insiderzy" block of the Ownership area ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)). Decision support only — counts, volumes, and who; never verdict language.
+`get_insider_overview(companyId)` returns `InsiderOverview` — the parsed insider substrate folded into a computed read model (ADR 0083 Decision 7); async / `spawn_blocking`. Surfaced by the "Insiderzy" block of the Ownership area ([UI IA § Company panels](ui-information-architecture.md)). Decision support only — counts, volumes, and who; never verdict language.
 
 - `companyId`, `transactions` (the timeline, newest effective-date first), `holdings` (latest disclosure per management/supervisory person, newest first), and `window90d` / `window12m` (the rolling aggregates).
 - Each `InsiderTransactionEntry` = `id`, `person`, `role?` (`management | supervisory | closely_associated`), `relatedPdmr?`, `direction?` (`buy | sell | other`), `instrument?`, `volume?` / `price?` / `currency?`, `txDate?`, `effectiveDate?` (the date used for windowing — `txDate`, else the filing signal date), `dateSource` (`transaction | filing | unknown`), `feedItemId`, `sourceUrl?`. Figure fields are nullable and never fabricated (the cover note omits volume/price/date for most filings; T4b fills them from the attachment PDF).
@@ -2548,7 +2548,7 @@ Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamen
   - Cell `review` (`CoverageReviewCell`) — `{ flaggedFacts }`: mirrors `facts.flagged` — flagged deterministic facts are the only review surface ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5 removed the proposals input with the KPI staging ledger).
   - Field `skippedBudget` (`boolean`) — `true` when the period's canonical report's `trigger='history_sweep'` autopilot run recorded `reason: "skipped_budget"` on its `kpiDeltaJson` (a budget-denied tier-4, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §6). Run ids are per-`(company, document)` deterministic, so there is at most one run per document; a later successful extraction clears the flag two ways (facts appear → non-gap; the run's delta is overwritten). Tolerant: an absent/garbled delta, or any other `reason`, reads `false`.
   - **Period-union rule**: a period appears iff at least one of {a canonical report, ≥1 fact} names it — there is no proposal queue ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5); rows are sorted newest-first (DESC by `fiscalYear`, then period index `Q1<H1<Q3<FY`).
-  - **UI entry point**: the **Coverage panel** (`src/shared/components/CompanyCoveragePanel.tsx`, T2.2) — a company-scoped cockpit pane (kind `coverage`, label "Coverage") seeded into the curated company dashboard. It renders one table row per period (Period / Report / Data / To review); clicking a row opens the company's Report documents pane. Fetched via the `getFundamentalsCoverage(companyId)` wrapper (`src/api/fundamentalsCoverage.ts`), reloading on `companyId` change. Its **history-actions footer** (T3.2) drives "Backfill history" and "Extract missing periods" (below), with a lean status line and a live drain counter while a sweep runs — the sweep is fully deterministic, so there is no AI-call spend to report ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
+  - **UI entry point**: the **Coverage panel** (`src/screens/Spolka/panels/CompanyCoveragePanel.tsx`, T2.2) — hosted by the Spółka workshop's `pokrycie` tool (kind `coverage`, label "Coverage"). It renders one table row per period (Period / Report / Data / To review); clicking a row opens the company's Report documents pane. Fetched via the `getFundamentalsCoverage(companyId)` wrapper (`src/api/fundamentalsCoverage.ts`), reloading on `companyId` change. Its **history-actions footer** (T3.2) drives "Backfill history" and "Extract missing periods" (below), with a lean status line and a live drain counter while a sweep runs — the sweep is fully deterministic, so there is no AI-call spend to report ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 
 #### History Sweep (`v0.51.0`, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §3)
 
