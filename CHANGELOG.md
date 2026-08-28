@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.76.0 - 2026-08-28
+
+
+### Features
+
+- **shell**: retire the docking engine — ADR 0108 (dockview, cockpit, named views) (#438)
+
 ## v0.75.0 - 2026-08-28
 
 
