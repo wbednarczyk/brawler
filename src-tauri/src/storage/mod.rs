@@ -528,7 +528,6 @@ impl AppState {
         watchlists::WatchlistStore::new(self.db.clone())
     }
 
-
     /// Feed operations as a focused domain store (Architecture v2 / ADR 0050).
     pub fn feed(&self) -> feed::FeedStore {
         feed::FeedStore::new(self.db.clone())
