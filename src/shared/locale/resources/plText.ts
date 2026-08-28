@@ -270,8 +270,6 @@ export const plText: Record<string, string> = {
   "Pin": "Przypnij",
   "Pinned": "Przypięto",
   "Advanced layout": "Układ zaawansowany",
-  "Open this company in the advanced dockview layout":
-    "Otwórz tę spółkę w zaawansowanym układzie dockview",
   // Focus reader/writer modes (ADR 0054)
   "Focus": "Skup",
   "Write full-screen, distraction-free": "Pisz na pełnym ekranie, bez rozpraszania",

@@ -16,7 +16,7 @@ ship inside the app.
 
 The sidebar is grouped so you always know where you are:
 
-- **Modes** — the big destinations:
+- **Modes** — the big destinations: **Today**, **Inbox** and **Company (Spółka)**:
   - **🏠 Today (Dziś)** — your home and the default screen: a morning queue broken
     into days. The header tells you what arrived **since your last visit** (reports,
     filings, media — media come pre-grouped per company); each row's button says
@@ -24,12 +24,12 @@ The sidebar is grouped so you always know where you are:
     Inbox, "Otwórz tezę" highlights that claim). An announced report that has not
     arrived shows as "NIE WPŁYNĄŁ" until the app's own delay alert takes over. Mark
     a day as reviewed and it folds to a single line; a quiet morning says so plainly.
-  - **Companies** — browse, search, add companies, and open one to its
-    [Spółka screen](company-view.md) (see below).
-- **Pinned companies** — your favorites for one-click access. Pin a company from
-  its dashboard or the Companies list; it then appears here with a small
-  status dot. Unpin from the sidebar (hover the row) or the dashboard.
-- **Library** — the reference surfaces: **Inbox** (the full feed), **Watchlists**,
+  - **Inbox** — the full feed with per-item detail.
+  - **Company (Spółka)** — the [Spółka screen](company-view.md) of the selected
+    company (see below).
+- **Pinned companies** — companies you marked for one-click access; each shows
+  a small status dot. Unpin from the sidebar (hover the row).
+- **Library** — the reference surfaces: **Companies** (browse, search, add), **Watchlists**, **Alerts**,
   **Transcripts**, **Sources**.
 - **Utilities** — **Settings** (and **Diagnostics** in developer mode).
 
@@ -71,7 +71,7 @@ recommendations), and a one-click workshop of tools (claims, notebook,
 decision journal, quality, and more). It's the one place that shows you
 everything about a company at once; see the linked page for the full layout.
 
-Pin the company to the sidebar from here or from the Companies list.
+Switch companies with the header picker; the sidebar keeps your pinned ones one click away.
 
 ## The command palette (Ctrl+K)
 

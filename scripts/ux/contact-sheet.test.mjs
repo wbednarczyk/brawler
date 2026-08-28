@@ -154,7 +154,7 @@ test("resolveScreens maps a spec-owned file to its screens via --changed", async
     changedFiles: ["tests/browser/visual/visual-shell-today.spec.ts"],
     resolveChangedFiles: catalog.resolveChangedFiles,
   });
-  assert.deepEqual(screens.sort(), ["cockpit-shell", "today"]);
+  assert.deepEqual(screens.sort(), ["today"]);
 });
 
 test("resolveScreens maps a shared style file to every catalog screen via --changed", async () => {

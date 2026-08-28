@@ -1261,9 +1261,9 @@ export function AppStateRoot({
       case "research_brief":
       case "digest":
         // A company-scoped brief/digest opens the Spółka `research` tool
-        // (F3a, ADR 0107 mapping "preset 'evidence'→research"); a companyless
-        // one opens the standalone Research screen (ADR 0108 — no docking
-        // engine to host it as a panel).
+        // (F3a, ADR 0107); a companyless one opens the standalone Research
+        // screen (ADR 0108). Briefs/digests render no row of their own (ADR
+        // 0084 retired them), so there is nothing to focus.
         if (match.companyId) {
           if (researchMode !== "company") {
             setResearchMode("company");
@@ -1272,7 +1272,6 @@ export function AppStateRoot({
           navigate({ companyId: match.companyId, section: "Spolka", tool: { t: "research" } });
         } else {
           setActiveSection("Research");
-          setSearchFocusSelector(`[data-search-result-id="${match.sourceId}"]`);
         }
         break;
       case "event":

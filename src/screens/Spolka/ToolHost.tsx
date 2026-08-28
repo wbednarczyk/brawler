@@ -9,7 +9,7 @@ export { useToolHost, type ToolHandle } from "../../shared/toolHost";
 // The Spółka workshop's tool-host state (F3a S2, ADR 0107): ONE `activeTool`
 // for the whole screen, gated by the SAME stay/discard dialog on every
 // unmount path — closing the tool (✕), opening another tool, switching
-// company, navigating away (Dziś/Inbox/global screens/named views), and the
+// company, navigating away (Dziś/Inbox/global screens), and the
 // window close request (`handleCloseRequested.ts`). `toolCompanyId` keys the
 // open tool to the company it was opened for so a late `get_company_view`
 // response, or a switch away and back, can never reopen/leak across

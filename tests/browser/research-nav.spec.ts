@@ -1,8 +1,7 @@
 import { expect, openApp, test } from "./helpers/harness";
 
-// sol R1 finding 5: this spec targeted the removed "Dashboard" nav row and
-// the cockpit it used to open (retired outright, ADR 0108). F3a S3 (ADR 0107
-// amendment) replaced that bridge with the Modes "Company" nav item, which
+// The Modes "Company" nav item opens the Spółka screen (ADR 0107; the docking
+// engine is gone, ADR 0108); Research is one of its workshop tools. This spec
 // opens the Spółka
 // screen scoped to a company directly — never blank (last-viewed, else the
 // first pinned, else the first tracked company). The "no empty mode"

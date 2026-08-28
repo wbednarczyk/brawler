@@ -26,15 +26,8 @@ const PANELS = [
   { tab: "Report Season", heading: "Report Season", level: 1 },
 ] as const;
 
-// The D6 compact-header rule (ADR 0076 Decision 6, K3 double panel chrome) was
-// scoped to `.cockpit-pane` (ui.css: "the same components rendered full-screen
-// in `.workspace` keep their full headers") — it existed to stop a cockpit dock
-// tab's title from being repeated as a visible in-panel H1. These screens have
-// no dock tab at all any more (ADR 0108), so there is nothing to double up: the
-// equivalent assertion is the OPPOSITE of the pre-retirement one — the heading
-// renders at full size. Kept as its own cluster (grown from the pre-retirement
-// COMPACT_HEADER_PANELS list) so it can grow independently of the overflow loop
-// above.
+// The D6 compact-header rule (ADR 0076 Decision 6) applies only inside a Spółka
+// tool frame; standalone screens render their leading heading at full size.
 const FULL_HEADER_PANELS = [
   ...PANELS,
   { tab: "Decision journal", heading: "Decision journal", level: 3 },

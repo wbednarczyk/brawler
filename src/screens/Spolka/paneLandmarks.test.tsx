@@ -281,21 +281,15 @@ describe("Spółka workshop tool landmarks", () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
 
-      // sol R1 finding 10 (ported from the cockpit-era guard): Quality's
-      // evaluation history (a `role="group"` div, not a landmark) only
-      // renders once `history.length > 0` — never exercised by this guard
-      // before, so a regression there would pass vacuously. Produce one real
-      // evaluation through the actual "Evaluate" action before checking this
-      // tool for landmarks.
+      // Quality's evaluation history only renders once `history.length > 0`;
+      // produce one real evaluation so the guard never passes vacuously there.
       if (kind === "jakosc") {
-        const evaluateButton = screen.queryByRole("button", { name: "Evaluate" });
-        if (evaluateButton) {
-          await act(async () => {
-            evaluateButton.click();
-            await new Promise((resolve) => setTimeout(resolve, 0));
-          });
-          await screen.findByText("Evaluation history");
-        }
+        const evaluateButton = await screen.findByRole("button", { name: "Evaluate" });
+        await act(async () => {
+          evaluateButton.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        await screen.findByText("Evaluation history");
       }
 
       const landmarks = Array.from(frame.querySelectorAll(LANDMARK_SELECTOR)).map(
