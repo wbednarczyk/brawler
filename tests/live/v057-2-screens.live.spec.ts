@@ -3,9 +3,9 @@ import { mkdirSync } from "node:fs";
 import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
 
 // v0.57 pass-2 screenshot evidence. Best-effort, non-mutating: navigates by
-// tab/sidebar clicks only (never rearranges saved layouts). Captures the Today
-// view (toast-cap vs the owner's wall complaint), a company cockpit, the
-// ownership+insider block (skin badge), the quality/health tab, and a
+// tab/sidebar clicks only. Captures the Today view (toast-cap vs the owner's
+// wall complaint), the Spółka screen (ADR 0107/0108: no cockpit dashboard),
+// the ownership+insider block (skin badge), the quality/health tool, and a
 // narrow-viewport (1008px via CDP emulation) pass.
 
 const SHOTS = "test-results/live/v057-2";
@@ -53,9 +53,16 @@ test("v0.57 pass-2 surfaces", async () => {
   await domCount("[class*='toast']", "toast elements");
   await domCount("[class*='attention'], [class*='signal-card']", "attention/signal cards");
 
-  // 2) Company cockpit — click Dashboard/Pulpit.
-  await clickBtn(/^(Legacy dashboard|Dawny dashboard)/, "Legacy dashboard row");
-  await shot("21-cockpit");
+  // 2) Company Spółka screen — Companies list → first row (ADR 0107/0108:
+  // the row lands it directly, no cockpit dashboard). Step 3 below then tries
+  // to activate a specific founder-led company via the pinned sidebar.
+  await clickBtn(/^(Spółki|Companies)$/, "Companies nav");
+  try {
+    await page.locator(".company-row-main, [data-company-row]").first().click({ timeout: 4000, force: true });
+    await page.waitForTimeout(1000);
+    console.log("clicked first company row");
+  } catch (e) { console.log(`click first company row skipped: ${String(e).slice(0, 90)}`); }
+  await shot("21-spolka");
 
   // 3) Try to activate a founder-led company from the sidebar pinned list.
   const founderNames = [/CD ?Projekt/i, /Kruk/i, /Asseco/i, /cyber/i, /AB S\.?A\.?|^AB\b/i, /Text/i, /Digitree|Digital/i];
@@ -74,21 +81,16 @@ test("v0.57 pass-2 surfaces", async () => {
   }
   if (!activated) console.log("no founder-led company found in sidebar; capturing current active company");
 
-  // 4) Basic info tab — ownership + insider block (skin badge).
-  let tab = page.getByRole("button", { name: /^(Podstawowe informacje|Basic info)$/ }).first();
-  if ((await tab.count()) === 0) {
-    await clickBtn(/Dodaj panel|Add panel/, "Add panel");
-    await clickBtn(/(Otwórz panel|Open panel).*(Podstawowe informacje|Basic info)/, "Open Basic info panel");
-    tab = page.getByRole("button", { name: /^(Podstawowe informacje|Basic info)$/ }).first();
-  }
-  if (await tab.count()) { await tab.click({ force: true }).catch(() => {}); await page.waitForTimeout(1500); }
+  // 4) Ownership workshop tool — hosts Basic info + the ownership/insider
+  // block (skin badge), ADR 0107/0108.
+  await clickBtn(/^(Akcjonariat|Ownership)$/, "Ownership workshop tool");
   await shot("22-basic-info-ownership-insider");
   await domCount(".ownership-skin-badge, [class*='skin']", "skin badge");
   await domCount("[class*='insider']", "insider block");
   await domCount(".ownership-holder-row", "ownership holder rows");
 
-  // 5) Quality tab — health tiles + red flags.
-  await clickBtn(/^(Jakość|Quality)$/, "Quality tab");
+  // 5) Quality workshop tool — health tiles + red flags.
+  await clickBtn(/^(Jakość|Quality)$/, "Quality workshop tool");
   await shot("23-quality-health");
   await domCount(".company-health-section, [class*='health']", "health section");
   await domCount("[class*='red-flag'], [class*='redFlag']", "red flag rows");
@@ -107,20 +109,20 @@ test("v0.57 pass-2 surfaces", async () => {
       return { scrollW: d.scrollWidth, clientW: d.clientWidth, overflow: d.scrollWidth > d.clientWidth + 2 };
     });
     console.log(`NARROW 1008 overflow: ${JSON.stringify(overflow)}`);
-    await clickBtn(/^(Jakość|Quality)$/, "Quality tab (narrow)");
+    await clickBtn(/^(Jakość|Quality)$/, "Quality workshop tool (narrow)");
     await shot("25-narrow-1008-quality-health");
     const overflow2 = await page.evaluate(() => {
       const d = document.documentElement;
       return { scrollW: d.scrollWidth, clientW: d.clientWidth, overflow: d.scrollWidth > d.clientWidth + 2 };
     });
     console.log(`NARROW 1008 quality overflow: ${JSON.stringify(overflow2)}`);
-    await clickBtn(/^(Legacy dashboard|Dawny dashboard)/, "Dashboard (narrow)");
-    await shot("26-narrow-1008-cockpit");
+    await clickBtn(/^(Akcjonariat|Ownership)$/, "Ownership workshop tool (narrow)");
+    await shot("26-narrow-1008-spolka");
     const overflow3 = await page.evaluate(() => {
       const d = document.documentElement;
       return { scrollW: d.scrollWidth, clientW: d.clientWidth, overflow: d.scrollWidth > d.clientWidth + 2 };
     });
-    console.log(`NARROW 1008 cockpit overflow: ${JSON.stringify(overflow3)}`);
+    console.log(`NARROW 1008 spolka overflow: ${JSON.stringify(overflow3)}`);
     // restore
     await client.send("Emulation.clearDeviceMetricsOverride");
   } catch (e) {

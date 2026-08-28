@@ -33,7 +33,6 @@ export const en = {
   "nav.settings": "Settings",
   "nav.today": "Today",
   "nav.group.modes": "Modes",
-  "nav.group.views": "Views",
   "nav.group.pinned": "Pinned companies",
   "nav.group.library": "Library",
   "nav.group.utilities": "Utilities",

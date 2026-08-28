@@ -185,7 +185,7 @@
 }
 
 /* U7-D density contract (ADR 0076 D6) — driven by the hosting `pane` size
-   container (.cockpit-pane / .workspace). Rows always show name+date+state chip;
+   container (.workspace). Rows always show name+date+state chip;
    the pre-report card's density is tiered:
    S (<420) rows only · M (420–759) + prep checklist · L (>=760) + extended
    context (KPIs, recent evidence) · short (<480h) rows only. Identity fields

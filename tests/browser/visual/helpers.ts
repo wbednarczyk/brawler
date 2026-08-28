@@ -100,26 +100,15 @@ async function writeContactSheetEvidence(
   );
 }
 
-// A cockpit panel: force the hosting `.cockpit-pane` to each width tier and
-// snapshot the pane element. Dark shoots S/M/L; light shoots M only.
+// A company workshop-tool or global-screen panel: force the hosting pane
+// (`.spolka-layout` / `.workspace`) to each width tier and snapshot the pane
+// element. Dark shoots S/M/L; light shoots M only.
 export async function shootPanel(
   page: Page,
   pane: Locator,
   name: string,
   opts: ShootOptions = {},
 ): Promise<void> {
-  // Maximize the pane's dockview group for the duration of the shots. A pane
-  // whose group cell is smaller than the forced tier size overflows the cell's
-  // `overflow: hidden` clip, and the neighbouring group then paints inside the
-  // screenshot box — the baseline silently framed the neighbour instead of the
-  // pane's own bottom (caught on the coverage actions footer, T3.2). Maximizing
-  // uses the real user affordance and gives the forced pane the whole dock.
-  const maximize = page
-    .locator(".dv-groupview", { has: pane })
-    .getByRole("button", { name: /Maximize panel group/ })
-    .first();
-  const canMaximize = (await maximize.count()) > 0;
-  if (canMaximize) await maximize.click();
   const state = opts.state ?? "default";
   const tiers: Tier[] = lightPass() ? ["M"] : ["S", "M", "L"];
   for (const tier of tiers) {
@@ -129,8 +118,6 @@ export async function shootPanel(
     await expect(pane).toHaveScreenshot(`${name}-${tier}.png`, screenshotOptions(opts));
     await resetPaneSize(page, pane);
   }
-  // The header button toggles: a second click exits the maximized state.
-  if (canMaximize) await maximize.click();
 }
 
 // A region INSIDE a panel that `shootPanel` cannot reach: the pane shot is

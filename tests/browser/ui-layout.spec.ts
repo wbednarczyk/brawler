@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { openCockpitPanel } from "./helpers/harness";
+import { openScreen } from "./helpers/harness";
 
 test.describe("browser UI regression smoke", () => {
   test("keeps app chrome fixed and avoids a global application scrollbar", async ({ page }) => {
@@ -29,9 +29,9 @@ test.describe("browser UI regression smoke", () => {
     await openApp(page);
 
     // The sidebar destinations whose screen heading matches the nav label (ADR
-    // 0054). Cockpit ("Research cockpit") + the cockpit-hosted screens are walked
-    // by smoke-walk / screen-walk-extended; Notebooks/Research/Events/ReportSeason
-    // are no longer sidebar buttons.
+    // 0054). The retired cockpit's hosted screens (ADR 0108) are walked by
+    // smoke-walk / screen-walk-extended instead; Notebooks/Research/Events/
+    // ReportSeason are no longer sidebar buttons.
     for (const screenName of [
       "Today",
       "Companies",
@@ -118,11 +118,12 @@ test.describe("browser UI regression smoke", () => {
   test("keeps the notebook panes independently usable as a standalone screen", async ({ page }) => {
     // Notebooks moved off the sidebar (ADR 0054); F3a S3 (ADR 0107 decision 5)
     // then froze the cockpit's "Add panel" surface that used to host it as a
-    // dashboard tab — it's a standalone route now, reached via the ⌘K
+    // dashboard tab, and ADR 0108 retired the cockpit outright — it's a
+    // standalone route now, reached via the ⌘K
     // palette's "Open screen: Notebooks" entry, mounted full-screen in
     // `.workspace`.
     await openApp(page);
-    await openCockpitPanel(page, "Notebooks");
+    await openScreen(page, "Notebooks");
 
     const workspace = page.getByLabel("Notebooks workspace");
     const companyNav = page.getByLabel("Notebook companies");

@@ -93,10 +93,9 @@ asks: **"Unsaved changes in this tool"**, with **Stay** (keep the draft) or
 
 ## What moved from the old dashboard
 
-The freeform, per-company dashboard (build-your-own panel grid) is frozen —
-see [Composable cockpit views](cockpit-views.md) for what that means for any
-dashboards you already built. Every capability it hosted is still here, just
-fixed in place instead of arranged by you:
+The freeform, per-company dashboard (build-your-own panel grid) was removed.
+Every capability it hosted is still here, just fixed in place instead of
+arranged by you:
 
 | Old dashboard panel | Now |
 |---|---|

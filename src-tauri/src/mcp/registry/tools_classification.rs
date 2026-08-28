@@ -35,7 +35,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         read("get_license_status"), // licensing state (config)
         read("get_provider_credential_status"), // credential presence (sensitive)
         read("list_source_adapters"), // source-adapter enable/config catalog
-        read("list_cockpit_layouts"), // UI dashboard layout persistence
         read("list_company_autopilot_modes"), // autopilot-mode picker presets (UI)
         read("get_company_autopilot"), // per-company autopilot mode (config; runs exposed)
         // Reference / lookup / autocomplete plumbing:
@@ -125,7 +124,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         act("set_company_ir_reports_url", None),
         act("set_company_sector", None),
         act("rename_watchlist", None), // watchlist rename (UI config)
-        act("rename_cockpit_layout", None), // saved-view rename (UI config, issue #89)
         act("resolve_transcript_job_company", None), // transcript-triage UI step
         // Report-pipeline job triggers (multi-stage document machinery; UI-driven
         // per-document, not a clean headless agent surface):
@@ -158,7 +156,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // ---- Excluded: deletes ---------------------------------------------
         excluded("delete_company"),
         excluded("delete_watchlist"),
-        excluded("delete_cockpit_layout"),
         excluded("delete_research_question"),
         excluded("delete_evidence_link"),
         excluded("delete_research_reminder"),
@@ -190,7 +187,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // carries no research content — it exists solely to drive the
         // frontend's own delta header on the next visit.
         excluded("mark_today_visited"),
-        excluded("save_cockpit_layout"),
         excluded("set_source_adapter_enabled"),
         excluded("set_company_autopilot"),
         excluded("set_companies_autopilot"),

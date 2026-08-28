@@ -1,4 +1,4 @@
-/* KNF short-selling cockpit panel (v0.55 T4b, ADR 0069 decision 3). Composes the
+/* KNF short-selling panel (v0.55 T4b, ADR 0069 decision 3). Composes the
    design system for the mockup at docs/mockups/short-positions-panel.html. Every
    grid/flex ancestor carries min-width: 0 so long holder names truncate/wrap
    instead of forcing a page-level horizontal scrollbar; the positions table gets

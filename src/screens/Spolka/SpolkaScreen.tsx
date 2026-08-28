@@ -123,9 +123,8 @@ export function SpolkaScreen({
   }
 
   // Contribute the tool-open commands to the global ⌘K palette while this
-  // screen is mounted (F3a S3) — dictionary-separated from the cockpit's own
-  // commands (plan "Separacja słowników"): a distinct source id, distinct
-  // `actionKey` namespace.
+  // screen is mounted (F3a S3): a distinct source id, distinct `actionKey`
+  // namespace.
   const spolkaToolCommands: PaletteCommand[] = SPOLKA_TOOL_COMMANDS.map(({ tool, label, actionKey }) => ({
     id: `spolka-tool:${actionKey}`,
     label: text(label),

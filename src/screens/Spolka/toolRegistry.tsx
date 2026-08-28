@@ -13,20 +13,19 @@ import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyRepo
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
 import { ResearchScreen } from "../Research/ResearchScreen";
-import { CockpitCompanyFeedPanel } from "../Cockpit/CockpitCompanyFeedPanel";
+import { CompanyFeedPanel } from "./panels/CompanyFeedPanel";
 import {
-  CockpitAnalystRecommendationsPanel,
-  CockpitCompanyNotebookPanel,
-  CockpitDecisionJournalPanel,
-  CockpitFundamentalsPanel,
-  CockpitRedFlagsPanel,
-  CockpitShortPositionsPanel,
-} from "../Cockpit/companyPanels";
+  AnalystRecommendationsPanel,
+  CompanyNotebookPanel,
+  DecisionJournalPanel,
+  FundamentalsPanel,
+  RedFlagsPanel,
+  ShortPositionsPanel,
+} from "./panels/companyPanels";
 import type { Tool } from "./route";
 
-// Maps every `Tool` variant to the SAME hosted component the cockpit's
-// `renderPinned`/`renderLinked` use (F3a S2, ADR 0107) — reused verbatim via
-// `../Cockpit/companyPanels`, never re-implemented.
+// Maps every `Tool` variant to its hosted component (F3a S2, ADR 0107) —
+// reused verbatim via `./panels/companyPanels`, never re-implemented.
 
 export type ToolRenderContext = {
   companyId: string;
@@ -101,7 +100,7 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
       // (owner dogfooding v0.74, item 7) — opened from the Inbox "Otwórz
       // spółkę", the item could sit anywhere in a 30+-row feed.
       return (
-        <CockpitCompanyFeedPanel
+        <CompanyFeedPanel
           company={ctx.company}
           feedItems={ctx.feedItems}
           initialSelectedFeedItemId={tool.feedItemId}
@@ -113,11 +112,11 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
       // 7): the target document scrolls into view + flashes once loaded.
       return <CompanyReportDocumentsPanel companyId={ctx.companyId} highlightDocumentRef={tool.documentId} />;
     case "feed":
-      return <CockpitCompanyFeedPanel company={ctx.company} feedItems={ctx.feedItems} />;
+      return <CompanyFeedPanel company={ctx.company} feedItems={ctx.feedItems} />;
     case "notatnik":
-      return <CockpitCompanyNotebookPanel company={ctx.company} />;
+      return <CompanyNotebookPanel company={ctx.company} />;
     case "dziennik":
-      return <CockpitDecisionJournalPanel company={ctx.company} />;
+      return <DecisionJournalPanel company={ctx.company} />;
     case "jakosc":
       return <QualityPanel companyId={ctx.companyId} />;
     case "diff":
@@ -129,10 +128,10 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
     case "akcjonariat":
       return <AkcjonariatTool companyId={ctx.companyId} company={ctx.company} />;
     case "sygnaly":
-      return <CockpitRedFlagsPanel company={ctx.company} onOpenEvidence={ctx.onOpenFeedItem} />;
+      return <RedFlagsPanel company={ctx.company} onOpenEvidence={ctx.onOpenFeedItem} />;
     case "fundamenty":
       return (
-        <CockpitFundamentalsPanel
+        <FundamentalsPanel
           companyId={ctx.companyId}
           qualifiedTicker={ctx.company.qualifiedTicker}
           revision={0}
@@ -147,7 +146,7 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
         />
       );
     case "rekomendacje":
-      return <CockpitAnalystRecommendationsPanel company={ctx.company} />;
+      return <AnalystRecommendationsPanel company={ctx.company} />;
     case "wydarzenia":
       return <WydarzeniaTool companyId={ctx.companyId} />;
   }
@@ -202,7 +201,7 @@ function AkcjonariatTool({ companyId, company }: { companyId: string; company: C
     <div className="spolka-tool-akcjonariat">
       <CompanyBasicInfoPanel companyId={companyId} />
       <div ref={shortsRef} data-section="shorts">
-        <CockpitShortPositionsPanel company={company} />
+        <ShortPositionsPanel company={company} />
       </div>
     </div>
   );

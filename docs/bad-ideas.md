@@ -17,4 +17,5 @@ rows into prose here — add the detail to the ADR instead.
 | CBF 0.30/0.98 extraction ratchet | 2026-08-05 | superseded by #182 ground-truth measurement | [0095](adr/0095-retire-html-positional-tier.md) |
 | Facts review queue (ratification workflow) | 2026-07-21 | manual review kills usability; facts are review-free | [0086](adr/0086-aggregator-primary-fundamentals.md) dec. 5 |
 | AI-era witness seam (aggregator-as-witness) | 2026-07-21 | aggregator promoted primary, AI gap-fill retired | [0084](adr/0084-retire-in-app-ai-layer.md) |
+| App-wide docking shell (dockview cockpit, named views) | 2026-08-28 | zero named views ever; Spółka needs no engine | [0108](adr/0108-retire-docking-engine.md) |
 | Compare screen (cross-company mode) | 2026-08-10 | built v0.61, never used; MCP reads stay | [0089](adr/0089-cross-company-comparison-and-valuation-l1.md) amendment (#351) |

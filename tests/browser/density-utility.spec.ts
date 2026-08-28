@@ -2,7 +2,7 @@ import {
   test,
   expect,
   openApp,
-  openCockpitPanel,
+  openScreen,
   setPaneSize,
   resetPaneSize,
   expectNoPageOverflow,
@@ -12,7 +12,7 @@ import type { Locator, Page } from "@playwright/test";
 // U7-E2 density contracts (ADR 0076 D6): Watchlists · Transcripts · Settings ·
 // Diagnostics. jsdom has no container queries, so the *tier switch itself* can
 // only be asserted in a real browser — this spec forces the hosting `pane` size
-// container (.workspace for sidebar screens / .cockpit-pane for cockpit panels)
+// container (.workspace for sidebar screens / .spolka-layout for company tools)
 // to each tier via `setPaneSize` and asserts the contract's visibility rules
 // plus the no-page-overflow gate. The disclosure/select *semantics* are
 // unit-tested in each screen's *.test.tsx (jsdom-visible). Runner shape mirrors
@@ -90,8 +90,8 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expectNoPageOverflow(page);
   });
 
-  // The cockpit-hosted "Watchlists" global panel (opened via the removed
-  // "Add panel" surface) no longer exists (F3a S3, ADR 0107 decision 5) —
+  // The cockpit-hosted "Watchlists" global panel (opened via the retired
+  // "Add panel" surface) no longer exists (F3a S3, ADR 0107 decision 5; ADR 0108) —
   // Watchlists has always had its own sidebar nav button too (unlike
   // Research/Events/Notebooks/Report Season, it never gained an "Open
   // screen: …" palette entry, since it already had one). This exercises the

@@ -52,7 +52,7 @@ export function ResearchScopeBar({
   const selectedEvidenceTypeSet = new Set(selectedEvidenceTypes);
 
   return (
-    <section className="research-toolbar" aria-label={text("Research filters")}>
+    <div role="group" className="research-toolbar" aria-label={text("Research filters")}>
       <div className="research-mode-switch" aria-label={text("Research mode")}>
         <button
           className={mode === "company" ? "research-mode-option active" : "research-mode-option"}
@@ -130,6 +130,6 @@ export function ResearchScopeBar({
           label={<span>{text("Also mark member companies reviewed")}</span>}
         />
       ) : null}
-    </section>
+    </div>
   );
 }

@@ -31,8 +31,8 @@ function expectNoForbiddenNormalUserTerms(section: string) {
 describe("normal user UI guardrails", () => {
   it("does not expose implementation wording in normal app sections", async () => {
     // Render each section in isolation via its initial section, including
-    // Notebooks/Events (Cockpit panels, not top-nav buttons, ADR 0053 phase 6)
-    // — the wording guard must still cover them.
+    // Notebooks/Events (reached via the palette, not top-nav buttons) — the
+    // wording guard must still cover them.
     const sectionHeadings = [
       "Inbox",
       "Companies",
@@ -54,7 +54,7 @@ describe("normal user UI guardrails", () => {
     }
 
     // Diagnostics stays hidden from the slimmed nav unless developer mode is on.
-    const { unmount } = renderApp({ section: "Cockpit" });
+    const { unmount } = renderApp({ section: "Today" });
     expect(screen.queryByRole("button", { name: "Diagnostics" })).not.toBeInTheDocument();
     unmount();
   });

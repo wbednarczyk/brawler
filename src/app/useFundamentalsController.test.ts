@@ -10,14 +10,14 @@ import {
 } from "./useFundamentalsController";
 
 // useFundamentalsController is the shared editing/action layer behind both the
-// Companies-screen Fundamentals tab and the cockpit's fundamentals panel
-// (useCockpitFundamentals). It owns period/fact create-edit-delete and the two
+// Companies-screen Fundamentals tab and the Spółka `fundamenty` workshop tool
+// (useFundamentalsPanel). It owns period/fact create-edit-delete and the two
 // forms; the surrounding screens only own load state. Exercised here directly
 // via renderHook (a mocked api/financials module) rather than through a full
-// screen workflow: reaching it from the app requires drilling into the cockpit
-// via company selection + panel pinning, which is disproportionate to pin this
-// controller's own branches (valid/invalid input, create vs. edit, error
-// surfacing) — those are the controller's job, not the screen's.
+// screen workflow: reaching it from the app requires drilling into the Spółka
+// screen via company selection + tool switching, which is disproportionate to
+// pin this controller's own branches (valid/invalid input, create vs. edit,
+// error surfacing) — those are the controller's job, not the screen's.
 
 vi.mock("../api/financials");
 

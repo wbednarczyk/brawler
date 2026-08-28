@@ -37,7 +37,7 @@ export function ResearchRemindersPanel({
     { rowSelector: ".research-reminder-row", focusSelector: ".icon-button" },
   );
   return (
-    <section className="research-reminders" aria-label={text("Research reminders")}>
+    <div role="group" className="research-reminders" aria-label={text("Research reminders")}>
       <SectionHeader
         actions={
           <Button className="compact-button" disabled={reminderInFlight || !canAdd} onClick={onAdd}>
@@ -103,6 +103,6 @@ export function ResearchRemindersPanel({
         ))}
         {reminders.length === 0 ? <EmptyState>{text("No research reminders.")}</EmptyState> : null}
       </div>
-    </section>
+    </div>
   );
 }

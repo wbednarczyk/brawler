@@ -263,10 +263,9 @@ describe("Companies screen workflows", () => {
     const companyRow = await screen.findByRole("button", { name: "Open GPW:CDR" });
     await user.click(companyRow);
 
-    // The deep-dive is the Spółka screen now (F3a S1), not the cockpit
-    // dashboard or a tabbed workspace inside the Companies screen.
+    // The deep-dive is the Spółka screen now (F3a S1), not a tabbed workspace
+    // inside the Companies screen.
     expect(await screen.findByRole("region", { name: "Company view" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Company workspace")).not.toBeInTheDocument();
   });
 

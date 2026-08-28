@@ -104,7 +104,7 @@
 }
 
 /* U7-D density contract (ADR 0076 D6) — driven by the hosting `pane` size
-   container (.cockpit-pane / .workspace), NOT the window. The tiers:
+   container (.workspace or .spolka-layout), NOT the window. The tiers:
    S (<420) tabs + timeline (chips only) · M (420–759) + review-queue strip ·
    L (>=760) + questions/reminders columns · short (<480h) summary + timeline. */
 

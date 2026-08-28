@@ -13,17 +13,12 @@ import {
 import type { LocaleKey } from "../shared/locale";
 
 // The full set of app sections. ReportSeason, Research, Notebooks, and Events
-// are not top-level nav destinations — they are hosted as panels inside the
-// Cockpit / Company workspace (ADR 0053/0054) — but remain valid
-// `activeSection` values because deep links / programmatic navigation still
-// use them and AppStateRoot still renders them.
+// are not top-level nav destinations — they are reached via the palette or
+// deep links, but remain valid `activeSection` values because AppStateRoot
+// still renders them.
 export type Section =
   | "Today"
   | "Inbox"
-  // The frozen cockpit (ADR 0107 amendment) — no longer a top-level nav entry;
-  // reached only via a named-view row or a "Dawny dashboard · TICKER" row in
-  // the Widoki group (F3a S3).
-  | "Cockpit"
   // The Spółka screen (F3a S1, ADR 0107) — the company deep-dive
   // destination and, since S3, a Modes item (replaces the old Dashboard
   // bridge): opens the last-viewed company.
@@ -55,17 +50,15 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-// Mode-based, thesis-centric IA spine (ADR 0054, amended F3a S3 / ADR 0107).
-// The left sidebar is grouped:
+// Mode-based, thesis-centric IA spine (ADR 0054, amended F3a S3 / ADR 0107,
+// ADR 0108 — no docking engine, no "Widoki" group). The left sidebar is
+// grouped:
 //   • Modes — the investor's jobs as top-level destinations: Today, Inbox,
-//     Spółka (opens the last-viewed company). Rendered right after Modes (but
-//     NOT part of this static list — it is data-driven): the "Widoki" group,
-//     named views + legacy per-company dashboards (`AppShell`/
-//     `SidebarViewsGroup`, built from `cockpit_layouts`).
+//     Spółka (opens the last-viewed company).
 //   • Library — the named reference surfaces the modes draw on (Companies,
 //     Watchlists, Alerts, Transcripts, Sources).
 //   • Utilities — Settings + Diagnostics (developer-gated).
-// Pinned/favorite companies render as a data-driven group between Modes/Widoki
+// Pinned/favorite companies render as a data-driven group between Modes
 // and Library (built at runtime from `UserSettings.pinnedCompanyIds`).
 export const navGroups: NavGroup[] = [
   {

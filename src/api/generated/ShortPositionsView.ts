@@ -4,7 +4,7 @@ import type { ShortPositionExit } from "./ShortPositionExit";
 import type { ShortPositionRow } from "./ShortPositionRow";
 
 /**
- * Per-company short-selling read model (v0.55 T4b) — the cockpit
+ * Per-company short-selling read model (v0.55 T4b) — the Spółka ownership tool
  * "Krótka sprzedaż (KNF)" panel. Current active positions, the change history,
  * the last remembered exit (empty-state "Ostatnia obecność"), the aggregate net
  * short %, and the 30-day change in pp.

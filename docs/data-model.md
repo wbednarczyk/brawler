@@ -370,7 +370,7 @@ Rules:
 - Each detected change writes one `feed_items` row (`Official report` type, `knf-short-selling` adapter) and one `confirmed` `short_position_change` `company_signals` row, firing matching `signal_category` alert rules ([ADR 0068](adr/0068-attention-routing.md)) on the same path as the ESPI classifier.
 - Exit detection treats the current register as complete for positions ≥ 0.5%: a stored live position whose holder is absent from a fresh snapshot is marked `exited`.
 
-**Read model** (`v0.55` T4b): `short_positions_view(company_id)` composes the cockpit panel view (contract in [Contracts § Short Positions (KNF)](contracts.md#short-positions-knf)) — never a stored projection. Active positions (aggregate = sum of active `net_position_pct`), the change history newest-first by `position_date`, the most recent remembered exit, and `delta_30d_pp` = the **signed sum of in-window event deltas** (entered `+to`, increased/decreased `to−from`, exited `−from`). The signed-delta sum is used because a clean "aggregate 30 days ago" is not reconstructable from the current mirror alone (only the latest per-holder value is stored); it equals `aggregate_now − aggregate_30d_ago` since the ingester writes exactly one event per detected change. The 30-day window is anchored to the read's UTC date.
+**Read model** (`v0.55` T4b): `short_positions_view(company_id)` composes the Spółka panel view (contract in [Contracts § Short Positions (KNF)](contracts.md#short-positions-knf)) — never a stored projection. Active positions (aggregate = sum of active `net_position_pct`), the change history newest-first by `position_date`, the most recent remembered exit, and `delta_30d_pp` = the **signed sum of in-window event deltas** (entered `+to`, increased/decreased `to−from`, exited `−from`). The signed-delta sum is used because a clean "aggregate 30 days ago" is not reconstructable from the current mirror alone (only the latest per-holder value is stored); it equals `aggregate_now − aggregate_30d_ago` since the ingester writes exactly one event per detected change. The 30-day window is anchored to the read's UTC date.
 
 ### Analyst Recommendations
 
@@ -1079,24 +1079,9 @@ Rules:
 - Frameworks + criteria (and any `user`-scope `kpi_definitions` a criterion references) are owner durable state, carried in the import/export bundle so an exported framework imports cleanly. Evaluations are reproducible snapshots; their export is optional.
 - The migration is append-only, idempotent, and self-healing; adding the `user` value to the `kpi_definitions.scope` CHECK is handled by a guarded table rebuild if the constraint is restrictive.
 
-### Research Cockpit Layouts
+### Research Cockpit Layouts (retired)
 
-Named, user-saved layouts for the research cockpit — the dockview docking shell ([ADR 0053](adr/0053-dockview-layout-pilot.md)). A *layout* is the user's saved panel arrangement (which panels are open + their split/tab geometry + the linked selection), so they can switch task-shaped workspaces ("Earnings season", "Daily triage", "Deep dive"). Owner durable state. Migration `0054_cockpit_layouts.sql` (append-only, idempotent, self-healing). Decision 3A in [ADR 0053](adr/0053-dockview-layout-pilot.md).
-
-`cockpit_layouts`:
-
-- `id`, `name` (user-facing label, unique), `ordinal` (display order).
-- `panels_json`: the cockpit's own descriptor of which panels are open and the linked selection — the app-owned, stable part that survives a dockview upgrade. A company-scoped panel carries a `mode`: `follow` (tracks the view company; no `companyId` stored — resolved at render time) or `pinned` (freezes a specific `companyId`, e.g. `fundamentals:company_gpw_cdr`). The descriptor also carries `viewCompanyId` — the view company follow panels resolve to (U-Ra, [ADR 0076](adr/0076-ui-design-system-and-density-contracts.md)). Parsing is tolerant: a legacy entry without `mode` is read as `pinned`, and a missing `viewCompanyId` defaults to null.
-- `layout_json`: the serialized **dockview geometry** (`api.toJSON()`) — splits, tab groups, sizes. Opaque to us; restored via `api.fromJSON()`.
-- `dockview_version`: the dockview version that produced `layout_json`, so a future format change can be migrated or safely discarded.
-- `created_at`, `updated_at`.
-
-Rules:
-
-- **Versioned restore with safe fallback.** On load, if `dockview_version` is incompatible or `fromJSON` throws, the geometry is discarded and the layout is rebuilt from `panels_json` in the default arrangement — a layout never crashes the shell. A panel in `panels_json` referencing a removed company/screen is dropped on restore (tolerate-missing, per the standing migration-resilience rule).
-- The geometry (`layout_json`) is a derived convenience; `panels_json` is the source of truth for *what* is open. A layout with only `panels_json` (no geometry) is valid.
-- Layouts are owner durable state and are carried in the import/export bundle ([ADR 0018](adr/0018-import-export-boundaries.md), `v0.52.0` per-feature coverage); `dockview_version` travels with the layout so an imported layout restores or falls back correctly.
-- Spike note: the proof-of-concept persisted to `localStorage`; the production cockpit uses this table (decision 3A). Do not ship `localStorage` layout persistence.
+The docking engine and its saved-layout table are retired ([ADR 0108](adr/0108-retire-docking-engine.md)); migration `0152_drop_cockpit_layouts.sql` drops the table.
 
 ### Jobs
 

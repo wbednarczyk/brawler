@@ -1,6 +1,6 @@
 # ADR 0054: Mode-Based, Thesis-Centric Application Shell
 
-Status: Accepted (2026-06-23)
+Status: Accepted (2026-06-23); **amended 2026-08-28 by [ADR 0108](0108-retire-docking-engine.md)** — dockview is no longer the workspace engine (retired; Spółka is the company surface)
 
 > **Update (2026-07-11, v0.52.0 audit):** two reality notes. (1) **Drift recorded:** in the delivered shell, dockview is the *default* pane host of the cockpit (`DockLayout` renders unconditionally as the cockpit body) — not an "opt-in advanced layout"; no default-vs-advanced switch exists. The framing below is amended to match reality: dockview is the cockpit's pane engine, load-bearing by default. (2) The never-validated **OS-window pop-out** path (dockview `addPopoutGroup` via `window.open` + the `core:webview:allow-create-webview-window` capability) is **removed** in `v0.52.0` ([ADR 0080](0080-retire-embedding-model.md) decision 5); in-app floating groups stay. A future OS pop-out returns only with the Tauri `WebviewWindow` validation sub-spike ADR 0053 called for.
 

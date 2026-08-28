@@ -11,7 +11,7 @@ import {
 // research maturity or a price condition. F3a redefinition (plan § Lista
 // zgód 5): the decision journal is reached as `Spółka → Dziennik decyzji`
 // (destination noun, ADR 0104 dec. 3 amendment) — the old cockpit "Add panel"
-// path is frozen. The Spółka core is
+// path is retired (ADR 0108). The Spółka core is
 // always co-visible before any tool opens (KPI table, feed, price, coverage,
 // recommendations — the synthesis), so this journey exercises the quality
 // scorecard (an explicit workshop tool a real decision leans on) before

@@ -132,30 +132,28 @@
   margin-left: auto;
 }
 
-/* Compact in-pane panel headers (ADR 0076 Decision 6 — K3 double panel chrome).
-   A cockpit-hosted panel's leading header (marked `paneLead` on SectionHeader /
-   PanelHeader → `.ui-pane-lead-header`) duplicates the dock tab's title, so
-   inside a `.cockpit-pane` its title is visually removed and its subtitle
-   dropped. The title element STAYS in the accessible tree (the established
-   `.visually-hidden` clip-path pattern — never `display:none`), so every
-   `aria-labelledby` and `getByRole("heading")` keeps resolving. Any actions in
-   the same header stay visible (the header degrades to a compact action row).
-   Scoped to `.cockpit-pane`: the same components rendered full-screen in
-   `.workspace` keep their full headers. */
-.cockpit-pane .ui-pane-lead-header {
+
+/* Compact in-tool panel headers (ADR 0076 Decision 6 — K3 double panel chrome).
+   A workshop-hosted panel's leading header (`paneLead` on SectionHeader /
+   PanelHeader → `.ui-pane-lead-header`) duplicates the tool frame's title
+   (`.spolka-tool-header`), so inside `.spolka-tool` its title is visually
+   removed and its subtitle dropped. The title STAYS in the accessible tree
+   (clip-path pattern, never `display:none`) so `aria-labelledby` and
+   `getByRole("heading")` keep resolving; header actions stay visible. Scoped to
+   `.spolka-tool`: the same components rendered full-screen in `.workspace`
+   keep their full headers. */
+.spolka-tool .ui-pane-lead-header {
   padding: 0;
   border-bottom: 0;
   min-height: 0;
   gap: 0;
 }
 
-/* Neutralize the PanelHeader title column's reserved min-width so a compacted
-   header doesn't leave a phantom gap before its actions. */
-.cockpit-pane .ui-pane-lead-header > div:first-child {
+.spolka-tool .ui-pane-lead-header > div:first-child {
   min-width: 0;
 }
 
-.cockpit-pane .ui-pane-lead-header :is(h1, h2, h3, h4) {
+.spolka-tool .ui-pane-lead-header :is(h1, h2, h3, h4) {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -167,8 +165,8 @@
   border: 0;
 }
 
-.cockpit-pane .ui-pane-lead-header .ui-section-title > p,
-.cockpit-pane .ui-pane-lead-header > div:first-child > p {
+.spolka-tool .ui-pane-lead-header .ui-section-title > p,
+.spolka-tool .ui-pane-lead-header > div:first-child > p {
   display: none;
 }
 
@@ -1192,8 +1190,8 @@ button.ui-provenance-figure-ticket:focus-visible {
    transparent so the existing per-consumer layout is unchanged. At S
    (@container pane max-width 419px) the search slot stays visible while the
    controls fold behind the "Filtry" disclosure (aria-expanded + rotating
-   chevron, D9). Requires a named `pane` container ancestor (cockpit.css /
-   shell.css). */
+   chevron, D9). Requires a named `pane` container ancestor (shell.css /
+   spolka.css). */
 .filter-toolbar-search,
 .filter-toolbar-controls {
   display: contents;

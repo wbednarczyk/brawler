@@ -66,7 +66,7 @@ export function ResearchEvidencePanel({
     <div className={mode === "watchlist" ? "research-review-layout" : "research-review-region"}>
       {mode === "watchlist" ? (
         <>
-          <section className="research-company-queue" aria-label={text("Watchlist company review queue")}>
+          <div role="group" className="research-company-queue" aria-label={text("Watchlist company review queue")}>
             {watchlistCompanies.map((company) => {
               const summary = companySummaryById.get(company.id);
               const isSelected = selectedWatchlistCompanyId === company.id;
@@ -106,7 +106,7 @@ export function ResearchEvidencePanel({
             {watchlistCompanies.length === 0 ? (
               <EmptyState>{text("Selected watchlist has no companies.")}</EmptyState>
             ) : null}
-          </section>
+          </div>
           <div
             aria-label={text("Resize watchlist company list")}
             aria-orientation="vertical"
@@ -125,7 +125,7 @@ export function ResearchEvidencePanel({
         </>
       ) : null}
 
-      <section className="research-timeline-shell" aria-label={text("Evidence timeline")}>
+      <div role="group" className="research-timeline-shell" aria-label={text("Evidence timeline")}>
         <SectionHeader
           className="research-section-evidence"
           description={text("Source items, notes, events, and transcripts for this scope.")}
@@ -161,7 +161,7 @@ export function ResearchEvidencePanel({
             </EmptyState>
           ) : null}
         </div>
-      </section>
+      </div>
     </div>
   );
 }

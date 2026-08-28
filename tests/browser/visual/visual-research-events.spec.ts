@@ -1,4 +1,4 @@
-import { test, expect, openApp, openCockpitPanel, setPaneSize } from "../helpers/harness";
+import { test, expect, openApp, openScreen, setPaneSize } from "../helpers/harness";
 import { shootPanel } from "./helpers";
 import type { Locator, Page } from "@playwright/test";
 
@@ -6,10 +6,9 @@ import type { Locator, Page } from "@playwright/test";
 // mirroring density-research-events.spec.ts.
 
 // F3a S3 (ADR 0107 decision 5): Research/Events/Report Season are standalone
-// routes now (reached via the ⌘K palette's "Open screen: …" entries, not a
-// cockpit dashboard tab) — `.workspace` (the `<main>` wrapping whatever screen
-// is active, shell.css) is their `pane` size container, the same role
-// `.cockpit-pane` played pre-freeze.
+// routes (reached via the ⌘K palette's "Open screen: …" entries) —
+// `.workspace` (the `<main>` wrapping whatever screen is active, shell.css)
+// is their `pane` size container.
 async function paneWith(page: Page, rootSelector: string): Promise<Locator> {
   const pane = page.locator(".workspace");
   await expect(pane.locator(rootSelector)).toBeVisible();
@@ -17,17 +16,17 @@ async function paneWith(page: Page, rootSelector: string): Promise<Locator> {
 }
 
 async function openResearch(page: Page): Promise<Locator> {
-  await openCockpitPanel(page, "Research");
+  await openScreen(page, "Research");
   return paneWith(page, ".research-panel");
 }
 
 async function openEvents(page: Page): Promise<Locator> {
-  await openCockpitPanel(page, "Events");
+  await openScreen(page, "Events");
   return paneWith(page, ".events-layout");
 }
 
 async function openReportSeason(page: Page): Promise<Locator> {
-  await openCockpitPanel(page, "Report Season");
+  await openScreen(page, "Report Season");
   const pane = await paneWith(page, ".report-season-layout");
   // Size to L first so the pre-report card mounts, then expand the first row; the
   // expanded state persists across the tier resizes the shoot helper performs.

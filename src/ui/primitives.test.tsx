@@ -163,11 +163,11 @@ describe("SectionHeader", () => {
   });
 
   // ADR 0076 Decision 6 (compact header, K3 double panel chrome): a panel's
-  // leading header opts into the pane-lead hook so the shared `.cockpit-pane`
-  // rule can visually compact its title. The class only tags the header — the
-  // title must stay in the accessible tree so `aria-labelledby` /
-  // `getByRole("heading")` keep resolving (the compaction is CSS clip-path, not
-  // removal), and it is inert (no compaction) outside a `.cockpit-pane`.
+  // leading header opts into the pane-lead hook; the shared CSS rule (scoped to
+  // the Spółka tool frame `.spolka-tool`) visually compacts its title while the
+  // title stays in the accessible tree (`aria-labelledby` / `getByRole("heading")`
+  // keep resolving). jsdom has no CSS, so this test checks the hook tags the
+  // header and the title remains accessible.
   it("tags the leading header with the pane-lead hook while keeping the title accessible", () => {
     const { container } = render(<SectionHeader title="Quality" paneLead />);
     expect(container.querySelector(".ui-pane-lead-header")).not.toBeNull();

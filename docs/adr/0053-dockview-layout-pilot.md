@@ -1,6 +1,6 @@
 # ADR 0053: Research Cockpit — Dockview as the App-Wide Docking Shell
 
-Status: Accepted — **amended by [ADR 0054](0054-mode-based-thesis-centric-shell.md)**
+Status: **Superseded (2026-08-28) by [ADR 0108](0108-retire-docking-engine.md)** — the docking engine is retired; previously amended by [ADR 0054](0054-mode-based-thesis-centric-shell.md)
 
 > **Revision (2026-06-23): dockview re-scoped from the app-wide shell to a workspace engine.** Real owner use showed the app-wide freeform grid feels overwhelming and directionless for a non-professional investor (a generic 2×2 with no focal point, full screens crammed into cells, the superpowers buried). [ADR 0054](0054-mode-based-thesis-centric-shell.md) keeps dockview but moves it from "the whole app shell" to the **engine of the Company-workspace (deep-dive) and Compare modes** inside a **mode-based, thesis-centric shell** (Today/Pulse home · Company workspace · Compare · Focus reader/writer), with the command palette + global semantic search as the spine. Everything built here (the `CockpitSelectionContext` store, `cockpit_layouts` persistence, the command palette, accessible tabs/keyboard model, pop-out, task presets, the section-gated-data fix) carries forward into those modes — the change is *where* dockview is used, not *whether*. The decisions below stand for the workspace/compare modes; the "app-wide shell / retire top-nav as a generic grid" framing is superseded by ADR 0054.
 

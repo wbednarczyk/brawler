@@ -1,9 +1,9 @@
-import { test, expect, openApp, openCockpitPanel, setPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openScreen, setPaneSize, expectNoPageOverflow } from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
 // Density contracts — Notebook + Claims panels (ADR 0076 D6 / U7 cluster C).
-// The cross-cutting infrastructure (named `pane` size container on .cockpit-pane
-// and .workspace, `setPaneSize`) lands in U7-core; this spec asserts the two
+// The cross-cutting infrastructure (named `pane` size container on
+// .spolka-layout and .workspace, `setPaneSize`) lands in U7-core; this spec asserts the two
 // panel rows verbatim from docs/ui-authoring.md:
 //   Notebook — S: single column (list OR detail, toggled) · short: list only,
 //              editor on select.
@@ -19,9 +19,8 @@ function nav(page: Page) {
 }
 
 // F3a S2/S3 (ADR 0107): company panels live in the Spółka screen's workshop
-// tools now, not cockpit dashboard tabs — `toolButton` is the WorkshopBar's
-// "Open <tool>" label, and `.spolka-layout` is the tool's `pane` size
-// container (spolka.css), same role as the pre-freeze `.cockpit-pane`.
+// tools now — `toolButton` is the WorkshopBar's "Open <tool>" label, and
+// `.spolka-layout` is the tool's `pane` size container (spolka.css).
 async function openCompanyTool(page: Page, toolButton: string, rootSelector: string): Promise<Locator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.getByRole("button", { name: "Open GPW:CDR" }).click();
@@ -87,7 +86,7 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
 
   test("global Notebooks screen — S / M / L tier compliance", async ({ page }) => {
     await openApp(page);
-    await openCockpitPanel(page, "Notebooks");
+    await openScreen(page, "Notebooks");
     const pane = page.locator(".workspace");
     await expect(pane.locator(".notebooks-screen")).toBeVisible();
     const screenEl = pane.locator(".notebooks-screen");

@@ -10,11 +10,11 @@ type PanelHeaderProps = {
   actions?: ReactNode;
   className?: string;
   description?: ReactNode;
-  /** Marks this as the panel's leading title header. Inside a `.cockpit-pane`
-   *  the shared compact-header rule (ADR 0076 Decision 6, K3 double panel chrome)
-   *  visually hides the title (kept in the accessible tree — clip-path, not
-   *  removal — so `aria-labelledby`/heading queries still resolve) and drops the
-   *  subtitle, because the dock tab already shows the name. Inert full-screen. */
+  /** Marks this as the panel's leading title header — tags `.ui-pane-lead-header`
+   *  so the shared compact-header rule (ADR 0076 Decision 6, K3 double panel
+   *  chrome; `src/styles/ui.css`, scoped to `.spolka-tool`) visually hides the
+   *  title (kept in the accessible tree — clip-path, not removal) and drops the
+   *  subtitle when the workshop tool frame already shows the name. */
   paneLead?: boolean;
   title: ReactNode;
   titleId?: string;

@@ -1,4 +1,4 @@
-import { test, expect, openApp, openCockpitPanel, setPaneSize, resetPaneSize, expectNoPageOverflow, expectNoOverlap } from "./helpers/harness";
+import { test, expect, openApp, openScreen, setPaneSize, resetPaneSize, expectNoPageOverflow, expectNoOverlap } from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
 // U7-D panel density contracts (ADR 0076 D6): Research, Events, Report Season.
@@ -6,13 +6,13 @@ import type { Locator, Page } from "@playwright/test";
 // PANEL_CONTRACTS entry whose `open` returns the pane Locator to size and whose
 // `tiers` assert the contract's per-tier visibility after `setPaneSize` forces
 // the hosting `pane` size container (.workspace, F3a S3 — these screens are
-// standalone routes now, not cockpit dashboard tabs) to that tier. jsdom has no
-// container queries, so the tier switch is browser-only here; the fold/expand and
-// list-override STATE is unit-tested in the screens' *.test.tsx files.
+// standalone routes) to that tier. jsdom has no container queries, so the
+// tier switch is browser-only here; the fold/expand and list-override STATE
+// is unit-tested in the screens' *.test.tsx files.
 //
 // The ADR names two audit regressions this cluster must fix — "Research rows
 // overlapping the reminder button" and "the Events week calendar reduced to day
-// headers" in short 2×2 cockpit cells — asserted as explicit cases below.
+// headers" in a short 2×2 pane — asserted as explicit cases below.
 
 type PaneLocator = Locator;
 type TierCheck = (page: Page, pane: PaneLocator) => Promise<void>;
@@ -33,12 +33,10 @@ const TIER_SIZE = {
 const TIER_ORDER = ["S", "M", "L", "short"] as const;
 
 // F3a S3 (ADR 0107 decision 5): Research/Events/Report Season are standalone
-// routes now (reached via the ⌘K palette's "Open screen: …" entries, not a
-// cockpit dashboard tab) — `.workspace` (the `<main>` wrapping whatever screen
-// is active, shell.css) is their `pane` size container, the same role
-// `.cockpit-pane` played pre-freeze. Asserts the expected screen root actually
-// mounted inside it before handing the pane back, matching the pre-freeze
-// helper's contract.
+// routes (reached via the ⌘K palette's "Open screen: …" entries) —
+// `.workspace` (the `<main>` wrapping whatever screen is active, shell.css)
+// is their `pane` size container. Asserts the expected screen root actually
+// mounted inside it before handing the pane back.
 async function paneWith(page: Page, rootSelector: string): Promise<PaneLocator> {
   const pane = page.locator(".workspace");
   await expect(pane.locator(rootSelector)).toBeVisible();
@@ -46,19 +44,19 @@ async function paneWith(page: Page, rootSelector: string): Promise<PaneLocator> 
 }
 
 async function openResearch(page: Page): Promise<PaneLocator> {
-  await openCockpitPanel(page, "Research");
+  await openScreen(page, "Research");
   return paneWith(page, ".research-panel");
 }
 
 async function openEvents(page: Page): Promise<PaneLocator> {
-  await openCockpitPanel(page, "Events");
+  await openScreen(page, "Events");
   return paneWith(page, ".events-layout");
 }
 
 async function openReportSeason(page: Page): Promise<PaneLocator> {
-  await openCockpitPanel(page, "Report Season");
+  await openScreen(page, "Report Season");
   const pane = await paneWith(page, ".report-season-layout");
-  // The default cockpit cell is small (short); size the pane to L before expanding
+  // The default pane is small (short); size the pane to L before expanding
   // so the pre-report card is mounted and visible, then let the tier loop resize
   // it (the expanded state persists across resizes).
   await setPaneSize(page, { ...TIER_SIZE.L, pane });
@@ -196,7 +194,7 @@ test.describe("panel density — Research / Events / Report Season", { tag: "@cl
     });
   }
 
-  // Audit regression (ADR 0076 D6): in a short 2×2 cockpit cell the Research rows
+  // Audit regression (ADR 0076 D6): in a short 2×2 pane the Research rows
   // overlapped the reminder button. The short tier must show summary counts +
   // timeline with the review queue folded — never the full rows on top of it.
   test("Research short cell shows summary + timeline with the review queue folded", async ({ page }) => {

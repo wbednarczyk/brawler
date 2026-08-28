@@ -40,14 +40,14 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
     await j.markScreen("Today");
 
     // Leg 1: Events — the week calendar, a global screen (F3a S3; the
-    // cockpit "New view" creator this journey used before is frozen).
+    // cockpit "New view" creator this journey used before is retired, ADR 0108).
     await openScreenViaJourney(j, page, "Events");
     const eventsLayout = page.locator(".events-layout");
     await expect(eventsLayout).toBeVisible();
     await j.markScreen("Events");
     // Whichever mode the screen renders at this project's real viewport —
-    // it's a full screen now, not a forced cockpit pane (plan §2 note: never
-    // force a pane in a journey).
+    // it's a full screen, not a forced pane (plan §2 note: never force a
+    // pane in a journey).
     const weekGrid = eventsLayout.locator(".event-week-grid");
     if (await weekGrid.isVisible()) {
       await expect(weekGrid).toBeVisible();

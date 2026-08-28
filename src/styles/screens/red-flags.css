@@ -1,4 +1,4 @@
-/* Red-flags cockpit panel (v0.57 T7, ADR 0083 Decision 8/9). Composes the design
+/* Red-flags panel (v0.57 T7, ADR 0083 Decision 8/9). Composes the design
    system for the mockup at docs/mockups/v057-red-flags-panel.html. Every grid/flex
    ancestor carries min-width: 0 so long evidence titles wrap instead of forcing a
    page-level horizontal scrollbar; the severity chip sits in a FIXED leading slot

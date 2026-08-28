@@ -84,7 +84,7 @@ function useNarrowPane(ref: RefObject<HTMLElement | null>): boolean {
   useEffect(() => {
     const host = ref.current;
     if (!host || typeof ResizeObserver === "undefined") return;
-    const pane = (host.closest(".cockpit-pane, .workspace") as HTMLElement | null) ?? host;
+    const pane = (host.closest(".workspace") as HTMLElement | null) ?? host;
     const measure = () => {
       const width = pane.clientWidth;
       setNarrow(width > 0 && width < 420);

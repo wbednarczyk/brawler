@@ -200,7 +200,7 @@ check-docs-gates:
 	$(NIX) node scripts/check/docs-drift.mjs
 	$(NIX) node scripts/check/retired-surface.mjs
 	$(NIX) node scripts/check/file-size-ratchet.mjs
-	$(NIX) node --test "scripts/check/*.test.mjs"
+	$(NIX) node --test "scripts/check/*.test.mjs" "scripts/ux/*.test.mjs"
 	$(NIX) npm run release:version-check
 
 # Commit-message gate (ADR 0090): validate every commit subject in RANGE against

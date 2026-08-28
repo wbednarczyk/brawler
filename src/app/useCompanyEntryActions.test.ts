@@ -21,12 +21,9 @@ function useHarness(initialSelected: string | null = null) {
 
   const actions = useCompanyEntryActions({
     companies: [company, other],
-    cockpitInitialCompanyId: null,
     pinnedCompanyIds: [],
     selectedCompanyId,
     setActiveSection,
-    setActiveCockpitLayoutId: () => {},
-    setCockpitInitialCompanyId: () => {},
     // A harness stand-in for AppStateRoot's real `navigate` (one guarded
     // commit) — records the transition AND applies its company/section, so
     // existing assertions on `activeSection`/`selectedCompanyId` still hold.
@@ -93,21 +90,6 @@ describe("useCompanyEntryActions — openCompanyWorkspaceById tab mapping", () =
       { companyId: company.id, section: "Spolka", tool: undefined },
     ]);
   });
-
-  // sol R1 finding 3 (residual): the legacy dashboard is the same guarded
-  // transition — no setter runs ahead of the guard.
-  it("openAdvancedLayout commits the cockpit via ONE navigate() call", () => {
-    const { result } = renderHook(() => useHarness());
-
-    act(() => {
-      result.current.actions.openAdvancedLayout(company.id);
-    });
-
-    expect(result.current.activeSection).toBe("Cockpit");
-    expect(result.current.navigateCalls).toEqual([
-      { companyId: company.id, section: "Cockpit", cockpitLayoutId: null },
-    ]);
-  });
 });
 
 // F3a S3 (ADR 0107 amendment, consent 3): Spółka mode opens the last-viewed
@@ -132,12 +114,9 @@ describe("useCompanyEntryActions — openSpolkaMode", () => {
         const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
         const actions = useCompanyEntryActions({
           companies: [company, other],
-          cockpitInitialCompanyId: null,
           pinnedCompanyIds: [other.id],
           selectedCompanyId,
           setActiveSection,
-          setActiveCockpitLayoutId: () => {},
-          setCockpitInitialCompanyId: () => {},
           navigate: (transition) => {
             setSelectedCompanyId(transition.companyId);
             setActiveSection(transition.section);
@@ -172,12 +151,9 @@ describe("useCompanyEntryActions — openSpolkaMode", () => {
       const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
       const actions = useCompanyEntryActions({
         companies: [],
-        cockpitInitialCompanyId: null,
         pinnedCompanyIds: [],
         selectedCompanyId,
         setActiveSection,
-        setActiveCockpitLayoutId: () => {},
-        setCockpitInitialCompanyId: () => {},
         navigate: (transition) => {
           setSelectedCompanyId(transition.companyId);
           setActiveSection(transition.section);

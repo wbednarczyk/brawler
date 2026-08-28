@@ -54,10 +54,10 @@ test("J1 + J2 read-safe mechanical evidence on the real app", async () => {
   const review = page.locator(".today-row-review").first();
   if (await review.count()) {
     await review.click();
-    const cockpit = page.getByLabel(/Research cockpit|Kokpit badawczy/);
-    await expect(cockpit).toBeVisible();
-    await expect(cockpit).not.toHaveAttribute("data-company-id", "");
-    observations.push("J1: Review opened a company-scoped cockpit; return next.");
+    const spolka = page.getByRole("region", { name: /Widok spółki|Company view/ });
+    await expect(spolka).toBeVisible();
+    await expect(spolka).not.toHaveAttribute("data-company-id", "");
+    observations.push("J1: Review opened a company-scoped Spółka screen; return next.");
     await nav.getByRole("button", { name: /Today|Dziś/ }).click();
     await expect(errorFallback).toHaveCount(0);
   } else {
@@ -67,7 +67,7 @@ test("J1 + J2 read-safe mechanical evidence on the real app", async () => {
   // --- J2: report published (read-safe — surface discovery only, no extraction) ---
   await nav.getByRole("button", { name: /Inbox/ }).click();
   await expect(errorFallback).toHaveCount(0);
-  const feedItems = page.locator("[data-feed-item-id], .cockpit-feed-item, .feed-item");
+  const feedItems = page.locator("[data-feed-item-id], .feed-item");
   const feedCount = await feedItems.count();
   if (feedCount > 0) {
     await feedItems.first().click();

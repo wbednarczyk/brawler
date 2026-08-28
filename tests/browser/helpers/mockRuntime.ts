@@ -1,6 +1,5 @@
 import type { Page } from "@playwright/test";
 import type { ScenarioOverlayName } from "../../../src/test/scenarios/overlays";
-import type { CockpitLayout } from "../../../src/api/generated/CockpitLayout";
 
 // Typed Playwright bridge onto `window.__brawlerMock` (ADR 0081 Q2, Radicle
 // a9992e2 / src/test/browserSmokeRuntime.ts). Every call crosses via
@@ -48,7 +47,6 @@ interface BrawlerMockBridge {
   failNext(command: string, error: MockCommandError): void;
   chaos(command: string, error: MockCommandError): void;
   clearChaos(): void;
-  seedCockpitLayout(layout: CockpitLayout): void;
 }
 
 declare global {
@@ -59,8 +57,7 @@ declare global {
 
 type PrimingAction =
   | { kind: "scenario"; spec: ScenarioName | ScenarioSpec }
-  | { kind: "chaos"; rules: readonly ChaosRule[] }
-  | { kind: "cockpitLayout"; layout: CockpitLayout };
+  | { kind: "chaos"; rules: readonly ChaosRule[] };
 
 /**
  * Applies a priming action to the bridge BEFORE the app boots. Bootstrap reads
@@ -89,21 +86,16 @@ async function primeBeforeBoot(page: Page, action: PrimingAction): Promise<void>
         const mock = bridge as {
           reset: (spec: unknown) => void;
           chaos: (command: string, error: unknown) => void;
-          seedCockpitLayout: (layout: unknown) => void;
         };
-        // Scenario resets run BEFORE chaos rules / cockpit-layout seeds
-        // regardless of call order: `reset()` replaces the whole store, so the
-        // reverse order would drop them.
+        // Scenario resets run BEFORE chaos rules regardless of call order:
+        // `reset()` replaces the whole store, so the reverse order would drop
+        // them.
         for (const item of queue) {
           if (item.kind === "scenario") mock.reset(item.spec);
         }
         for (const item of queue) {
           if (item.kind !== "chaos") continue;
           for (const rule of item.rules) mock.chaos(rule.command, rule.error);
-        }
-        for (const item of queue) {
-          if (item.kind !== "cockpitLayout") continue;
-          mock.seedCockpitLayout(item.layout);
         }
         installed = bridge;
       },
@@ -127,17 +119,6 @@ export async function primeMockScenario(
  * `?chaos=<command>[:<code>]`. */
 export async function primeChaos(page: Page, rules: readonly ChaosRule[]): Promise<void> {
   await primeBeforeBoot(page, { kind: "chaos", rules });
-}
-
-/** Seed a raw `cockpit_layouts` row BEFORE the app boots (F3a S3, ADR 0107
- * decision 5): the frozen cockpit has no "Add panel"/"Save dashboard"/
- * "+ New view" surface left, so a browser test can no longer build a named
- * view (with follow panels, a view company, open globals) through the UI —
- * this is the E2E equivalent of `saveCockpitLayout` in a jsdom component test
- * (paneLandmarks.test.tsx). The seeded row appears in the sidebar's "Views"
- * group like any other saved view. */
-export async function primeCockpitLayout(page: Page, layout: CockpitLayout): Promise<void> {
-  await primeBeforeBoot(page, { kind: "cockpitLayout", layout });
 }
 
 /** Re-seed the mock store (optionally with Q2 overlays). Setup order inside

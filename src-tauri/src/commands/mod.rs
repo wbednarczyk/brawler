@@ -3,7 +3,6 @@ pub mod analyst_recommendations;
 pub mod attention;
 pub mod autopilot;
 pub mod backups;
-pub mod cockpit_layouts;
 pub mod companies;
 pub mod company_context;
 pub mod company_health;

@@ -166,7 +166,7 @@
 }
 
 .research-main-stack.company {
-  /* The evidence timeline keeps a floor: standalone (non-cockpit) hosts at
+  /* The evidence timeline keeps a floor: standalone hosts at
      ~768px tall let reminders + questions swallow the whole stack and the
      timeline collapsed to 0px (F3a S4 harvest, 2026-08-26). The stack scrolls
      instead. */

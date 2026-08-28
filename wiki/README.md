@@ -37,10 +37,6 @@ per feature.
   classification with confirm-only AI, the BiznesRadar witness, the **Insiders**
   block (MAR art. 19 transactions, management holdings, skin-in-the-game badge),
   and how unreadable shareholder tables surface as honest gaps.
-- **[Composable cockpit views](cockpit-views.md)** — named views you built
-  before F3a: still open, their edits still save, but their layout structure
-  is frozen (no more building/resizing/rearranging) while opening a company
-  moved to the fixed [Spółka screen](company-view.md).
 - **[Per-company settings](company-settings.md)** — quick single-company
   controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
   surface for changing several companies, or a whole watchlist, at once.

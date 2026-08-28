@@ -40,9 +40,8 @@ export function useWorkspaceNavigationController({
   setSelectedFeedItemId,
   navigate,
 }: WorkspaceNavigationControllerInput) {
-  // Opening a company lands the Spółka screen (F3a S1, ADR 0107) — the
-  // company deep-dive destination as of F3a; the cockpit dashboard stays
-  // reachable via its own nav entry.
+  // Opening a company lands the Spółka screen (F3a S1, ADR 0107) — the ONE
+  // company deep-dive destination (ADR 0108).
   function openCompanyWorkspace(company: Company) {
     navigate({ companyId: company.id, section: "Spolka" });
   }
@@ -58,7 +57,7 @@ export function useWorkspaceNavigationController({
   }
 
   // Arrow-key navigation in the company library only moves the highlighted row;
-  // it must not yank the whole app into the cockpit on every keypress.
+  // it must not yank the whole app into the Spółka screen on every keypress.
   function focusCompanyWorkspace(companyId: string) {
     setSelectedCompanyId(companyId);
   }

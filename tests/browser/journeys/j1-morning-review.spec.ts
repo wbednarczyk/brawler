@@ -132,8 +132,8 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await j.click(claimRow.getByRole("button", { name: "Open thesis" }));
 
     // F3a S1/S3 (ADR 0107 decision 2 mapping "Claims/highlightClaimId→
-    // {t:'tezy', claimId}"): the seam no longer routes through the cockpit —
-    // it lands the Spółka screen with the claims tool raised.
+    // {t:'tezy', claimId}"): the seam lands the Spółka screen with the claims
+    // tool raised (never the cockpit, retired by ADR 0108).
     const company = page.getByRole("region", { name: "Company view" });
     await expect(company).toBeVisible();
     await j.markScreen("Company workspace");

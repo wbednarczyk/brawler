@@ -6,7 +6,7 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // "Show in Fundamentals" promote action.
 //
 // Guarded here (browser, not jsdom): the compact line and the expanded list
-// both render inside the real cockpit Coverage pane without forcing a
+// both render inside the real Spółka Coverage workshop tool without forcing a
 // horizontal scrollbar at the narrow quarter-ultrawide window (DoD §B), and
 // the promote action updates the row in place. The dual-execution mock
 // runtime serves a fixed sample for CD PROJEKT only (Layer 1 has no seeding

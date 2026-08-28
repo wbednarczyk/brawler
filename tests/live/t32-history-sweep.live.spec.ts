@@ -23,17 +23,20 @@ test("manual history sweep on CBF completes and reports runs", async () => {
   test.setTimeout(420_000);
   const { page } = connection;
 
-  // Open the CBF cockpit.
+  // Open CBF's Spółka screen (ADR 0107/0108: the row lands it directly).
   const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
   await expect(nav).toBeVisible();
   await nav.getByRole("button", { name: /Companies|Spółki/ }).click();
   await clearCompaniesFilter(page);
   await page.locator('[data-company-id="company_gpw_cbf"] .company-row-main').click();
-  await expect(page.getByLabel(/Research cockpit|Kokpit badawczy/)).toBeVisible();
+  await expect(page.getByRole("region", { name: /Widok spółki|Company view/ })).toBeVisible();
 
-  // Bring up the Coverage pane.
-  await page.getByRole("button", { name: /^(Coverage|Pokrycie)$/ }).first().click();
-  const pane = page.locator(".cockpit-pane", {
+  // Bring up the Coverage workshop tool.
+  await page
+    .getByRole("group", { name: /Warsztat|Workshop/ })
+    .getByRole("button", { name: /^(Coverage|Pokrycie)$/ })
+    .click();
+  const pane = page.locator(".spolka-layout", {
     has: page.locator(".company-coverage"),
   });
   await expect(pane).toBeVisible();

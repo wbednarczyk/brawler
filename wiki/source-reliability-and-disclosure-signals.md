@@ -31,10 +31,9 @@ is now a source. Daily, for your tracked companies:
 - a fund **entering, increasing, decreasing, or exiting** a short position
   becomes a feed item and a **"Short position" signal** (badge + filter),
 - you can attach an **alert rule** to it like to any signal category,
-- the company dashboard offers a **"Krótka sprzedaż (KNF)" panel** (add it from
-  the panel palette): current holders and sizes, a 30-day change, and the full
-  history of moves. Most companies show the calm empty state — no registered
-  positions.
+- the company's Spółka screen offers a **"Krótka sprzedaż (KNF)" workshop
+  tool**: current holders and sizes, a 30-day change, and the full history of
+  moves. Most companies show the calm empty state — no registered positions.
 
 ## Auditor-opinion signal
 

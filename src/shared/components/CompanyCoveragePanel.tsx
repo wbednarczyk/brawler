@@ -545,9 +545,9 @@ export function CompanyCoveragePanel({
 
   const clickable = Boolean(onOpenDocuments);
 
-  // data-company-id: a cockpit layout can hold several coverage panes (follow +
-  // pinned to other companies) — tests and live probes MUST scope by company, or
-  // a read can silently land on a neighbour's pane (found live, 2026-07-10).
+  // data-company-id: several coverage panes can render at once (e.g. pinned
+  // companies) — tests and live probes MUST scope by company, or a read can
+  // silently land on a neighbour's pane (found live, 2026-07-10).
   return (
     <div role="group" className="company-coverage" data-company-id={companyId} aria-label={text("Coverage")}>
       <SectionHeader paneLead title={text("Coverage")} meta={periods.length} />

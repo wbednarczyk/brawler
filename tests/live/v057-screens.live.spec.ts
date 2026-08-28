@@ -59,13 +59,21 @@ test("v0.57 surfaces — screenshots", async () => {
   await dismiss();
   await shot("10-initial");
 
-  await click(/^(Legacy dashboard|Dawny dashboard)/, "Legacy dashboard row");
-  await shot("11-cockpit");
+  // ADR 0107/0108: a company row lands the Spółka screen directly, no cockpit
+  // dashboard.
+  await click(/^(Spółki|Companies)$/, "Companies nav");
+  try {
+    await page.locator(".company-row-main, [data-company-row]").first().click({ timeout: 4000, force: true });
+    await page.waitForTimeout(1000);
+    console.log("clicked first company row");
+  } catch (e) { console.log(`click first company row skipped: ${String(e).slice(0, 90)}`); }
+  await shot("11-spolka");
 
-  await click(/^(Podstawowe informacje|Basic info)$/, "Basic info tab");
+  // Basic info + ownership/insider block is hosted in the Ownership tool.
+  await click(/^(Akcjonariat|Ownership)$/, "Ownership workshop tool");
   await shot("12-basic-info-ownership-insider");
 
-  await click(/^(Jakość|Quality)$/, "Quality tab");
+  await click(/^(Jakość|Quality)$/, "Quality workshop tool");
   await shot("13-quality-health");
 
   // Report which v0.57 surfaces are present in the DOM (best-effort).

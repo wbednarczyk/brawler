@@ -91,7 +91,7 @@ function updateNotebookFormState(
   }));
 }
 
-// Shared root for every render site (Inbox, Cockpit, Company feed): a
+// Shared root for every render site (Inbox, Spółka, Company feed): a
 // "filing" is a bare official-report notice with no attachments, so its
 // stored summary is the dead "Komunikat ESPI/EBI" literal — suppress it here
 // once rather than forking a guard into each caller.

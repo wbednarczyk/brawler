@@ -1,17 +1,17 @@
-import { test, expect, openApp, openCockpitPanel } from "./helpers/harness";
+import { test, expect, openApp, openScreen } from "./helpers/harness";
 
 // Clickable Notebooks lifecycle against the stateful browser mock runtime
 // (ADR 0048): create a note, edit its title, then delete it — each step
 // asserts the runtime reflected the write back into the note list. The standalone
-// Notebooks screen now lives as a cockpit panel (ADR 0054), opened via the palette.
+// Notebooks screen is a global route (ADR 0107/0108), opened via the palette.
 
 test.describe("notebooks", { tag: "@clickable" }, () => {
   test("create, edit, and delete a note for a company", async ({ page }) => {
     await openApp(page);
-    await openCockpitPanel(page, "Notebooks");
+    await openScreen(page, "Notebooks");
 
     // Scope generic-named buttons (New note / Save) to the notebook panel — the
-    // cockpit hosts several panels, so an unscoped "Save" is ambiguous.
+    // screen hosts several sections, so an unscoped "Save" is ambiguous.
     const notebook = page.getByLabel("Notebooks workspace");
 
     // Pick a company so the composer can be opened.

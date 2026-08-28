@@ -64,11 +64,11 @@ export async function openInbox(page: Page) {
 // Open a global screen (Research / Notebooks / Events / Report Season /
 // Decision journal): a standalone route reached via the global ⌘K palette's
 // "Open screen: …" entry (plan "Trasy powierzchni globalnych po F3a", ADR
-// 0107) — no longer a cockpit-hosted panel (the freeform cockpit is frozen,
-// F3a S3, ADR 0107 decision 5: "+ New view"/"Add panel" no longer exist).
+// 0107) — never a cockpit-hosted panel; the docking engine and its freeform
+// cockpit are retired outright (ADR 0108: no "+ New view"/"Add panel").
 // `label` is the screen name as it appears in the palette ("Notebooks",
 // "Research", "Events", "Report Season", "Decision journal").
-export async function openCockpitPanel(page: Page, label: string) {
+export async function openScreen(page: Page, label: string) {
   // ⌘K is suppressed while an editable control holds focus and can race the
   // shortcut listener's mount on a slow CI runner (shard 4/4 flake, PR #432):
   // release focus first and press once more if the dialog does not appear.
@@ -223,17 +223,18 @@ export async function expectInternalScroll(locator: Locator) {
 }
 
 // Panel density contracts (ADR 0076 D6) are driven by `@container pane (…)`
-// rules on the named `pane` size container (.cockpit-pane / .workspace). To
-// exercise a width/height tier in a real browser we force the pane's own inline
-// size — direct style is the sanctioned approach (plan U7: "bezpośredni styl")
-// because the container query then resolves against the forced size regardless
-// of the window/dock cell. By default targets the FIRST visible `.cockpit-pane`;
+// rules on the named `pane` size container (`.spolka-layout` for the Spółka
+// workshop, `.workspace` for standalone screens). To exercise a width/height
+// tier in a real browser we force the pane's own inline size — direct style
+// is the sanctioned approach (plan U7: "bezpośredni styl") because the
+// container query then resolves against the forced size regardless of the
+// window/screen cell. By default targets the FIRST visible `.workspace`;
 // pass an explicit locator to size a different pane.
 export async function setPaneSize(
   page: Page,
   { width, height, pane }: { width?: number; height?: number; pane?: Locator } = {},
 ) {
-  const target = pane ?? page.locator(".cockpit-pane").first();
+  const target = pane ?? page.locator(".workspace").first();
   await target.evaluate((el, size) => {
     const node = el as HTMLElement;
     if (size.width != null) node.style.width = `${size.width}px`;
@@ -245,7 +246,7 @@ export async function setPaneSize(
 }
 
 export async function resetPaneSize(page: Page, pane?: Locator) {
-  const target = pane ?? page.locator(".cockpit-pane").first();
+  const target = pane ?? page.locator(".workspace").first();
   await target.evaluate((el) => {
     const node = el as HTMLElement;
     node.style.removeProperty("width");

@@ -34,7 +34,6 @@ mod analyst_recommendations;
 mod attention;
 mod autopilot;
 mod backup;
-mod cockpit_layouts;
 mod companies;
 pub(crate) mod company_view_reads;
 mod database;
@@ -109,7 +108,6 @@ pub use autopilot::{
     ListAutopilotRunsInput, MODE_ASSIST, MODE_AUTOPILOT, MODE_OFF,
 };
 pub use backup::{BackupEntry, BackupStatus};
-pub use cockpit_layouts::{CockpitLayout, CockpitLayoutStore, NewCockpitLayout};
 pub use decision_journal::{
     DecisionEntry, DecisionEntryListInput, DecisionJournalStore, NewDecisionEntry,
     DECISION_ENTRY_KINDS,
@@ -528,12 +526,6 @@ impl AppState {
     /// whole `AppState` facade.
     pub fn watchlists(&self) -> watchlists::WatchlistStore {
         watchlists::WatchlistStore::new(self.db.clone())
-    }
-
-    /// Research cockpit layout persistence as a focused domain store
-    /// (Architecture v2 / ADR 0050; cockpit decision 3A in ADR 0053).
-    pub fn cockpit_layouts(&self) -> cockpit_layouts::CockpitLayoutStore {
-        cockpit_layouts::CockpitLayoutStore::new(self.db.clone())
     }
 
     /// Feed operations as a focused domain store (Architecture v2 / ADR 0050).

@@ -6,7 +6,7 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // typed reason translated into plain language, and a per-period re-run.
 //
 // Guarded here (browser, not jsdom): the section really renders inside the
-// cockpit Coverage pane, the SENTINEL period of a `no_period_derived` failure
+// Spółka Coverage workshop tool, the SENTINEL period of a `no_period_derived` failure
 // reads as "Period unknown" rather than a fabricated fiscal year, the reassuring
 // empty state shows for a company with nothing flagged, and neither state forces
 // a horizontal scrollbar at the narrow quarter-ultrawide width (DoD §B). The

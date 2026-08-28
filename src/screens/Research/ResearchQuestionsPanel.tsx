@@ -49,7 +49,7 @@ export function ResearchQuestionsPanel({
     { rowSelector: ".research-question-row", focusSelector: ".research-question-row-main" },
   );
   return (
-    <section className="research-questions" aria-label={text("Research questions")}>
+    <div role="group" className="research-questions" aria-label={text("Research questions")}>
       <div className="research-question-strip">
         <SectionHeader
           className="research-section-questions"
@@ -154,6 +154,6 @@ export function ResearchQuestionsPanel({
           </div>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }

@@ -66,7 +66,7 @@
 
 /* -------------------------------------------------------------------------- */
 /* Transcripts density contract (U7-E2 / ADR 0076 Decision 6)                 */
-/* Rides the named `pane` size container (.workspace / .cockpit-pane). Base is */
+/* Rides the named `pane` size container (.workspace). Base is                */
 /* the M tier: list + segments stacked in the expanded job detail.            */
 /* -------------------------------------------------------------------------- */
 

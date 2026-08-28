@@ -27,9 +27,6 @@ export type SpolkaTransition = {
   section: Section;
   tool?: Tool;
   highlightClaimId?: string;
-  /** Only for `section: "Cockpit"` — the named view to show (null = the
-   * company-scoped legacy dashboard). Committed inside the same guard. */
-  cockpitLayoutId?: string | null;
 };
 
 

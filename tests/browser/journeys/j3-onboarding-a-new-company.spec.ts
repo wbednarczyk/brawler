@@ -48,8 +48,7 @@ test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
 
     // Open the new company's workspace and record the first note. F3a S3 (ADR
     // 0107 decision 5): opening a company now lands the Spółka screen directly
-    // (the "Research cockpit" it used to open is frozen and reached only from
-    // the sidebar "Views" group).
+    // (the "Research cockpit" it used to open is retired outright, ADR 0108).
     await j.click(list.getByLabel("Open GPW:TST"));
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await j.markScreen("Company workspace");

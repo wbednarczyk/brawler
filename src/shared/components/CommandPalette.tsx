@@ -6,8 +6,8 @@ import type { Verb } from "../verbs";
 // controlled presentation unit: it renders a filtered, arrow/enter-navigable
 // list of {id,label,run} commands inside a Modal. The command set is supplied
 // by the caller — the global palette (src/app/commandPalette.tsx, mounted in
-// AppShell) feeds it the merged app + contextual list; the cockpit still mounts
-// its own instance for the cell-fill flows. Filter + keyboard nav live here.
+// AppShell) feeds it the merged app + contextual list. Filter + keyboard nav
+// live here.
 
 // `actionKey`/`verb` (ADR 0104 dec. 3, F3a S3): stable, label-independent
 // identity for a command plus its dictionary verb — the copy gate
@@ -50,7 +50,7 @@ export function CommandPalette({
 
   return (
     <Modal open={open} onClose={onClose} title={text("Command palette")} ariaLabel={text("Command palette")}>
-      <div className="cockpit-palette">
+      <div className="command-palette">
         <SearchField
           ariaLabel={text("Search commands")}
           className="search-box"
@@ -76,15 +76,15 @@ export function CommandPalette({
             },
           }}
         />
-        <ul className="cockpit-palette-list">
+        <ul className="command-palette-list">
           {filtered.length === 0 ? (
-            <li className="cockpit-palette-empty">{text("No matching commands.")}</li>
+            <li className="command-palette-empty">{text("No matching commands.")}</li>
           ) : null}
           {filtered.map((command, index) => (
             <li key={command.id}>
               <button
                 type="button"
-                className={["cockpit-palette-item", index === clampedActive ? "is-active" : ""]
+                className={["command-palette-item", index === clampedActive ? "is-active" : ""]
                   .filter(Boolean)
                   .join(" ")}
                 onClick={() => run(index)}
