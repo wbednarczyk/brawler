@@ -726,34 +726,9 @@ Per-company read model for sell-side analyst recommendations ([ADR 0073](adr/007
 
 Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_analyst_recommendations`. A company with no ingested recommendations reads back the empty view (`entries: []`, `latestTarget`/`lastRefreshedAt` omitted). Surfaced by the palette-only, opt-in `analystRecommendations` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)); each new entry also emits a `recommendation_change` signal (feed/Today/digests/alerts).
 
-## Research Cockpit
+## Research Cockpit (retired)
 
-The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockview docking shell. The only persisted state is **named saved layouts** (`cockpit_layouts`); the panel arrangement itself is live UI state. Decision 3A: layouts live in SQLite (not `localStorage`), with versioned dockview geometry and a safe fallback.
-
-`list_cockpit_layouts()` → the saved layouts, ordered by `ordinal`:
-
-```json
-[
-  {
-    "id": "layout_earnings_season",
-    "name": "Earnings season",
-    "ordinal": 0,
-    "panelsJson": "{\"pinned\":[{\"id\":\"follow:fundamentals\",\"kind\":\"fundamentals\",\"mode\":\"follow\"},{\"id\":\"reportDiff:company_gpw_cdr\",\"kind\":\"reportDiff\",\"mode\":\"pinned\",\"companyId\":\"company_gpw_cdr\"}],\"openGlobals\":[],\"closedLinked\":[\"feed\",\"inspector\",\"claims-sel\",\"diff-sel\"],\"selectedFeedItemId\":\"feed_01\",\"grid\":null,\"cells\":null,\"viewCompanyId\":\"company_gpw_cdr\"}",
-    "layoutJson": "{ /* dockview api.toJSON() */ }",
-    "dockviewVersion": "6.6.1"
-  }
-]
-```
-
-Workflow actions:
-
-- `save_cockpit_layout(input)`: `{ name, panelsJson, layoutJson, dockviewVersion }` → upserts a layout by `name`, returns the saved row. `name` must be non-empty.
-- `rename_cockpit_layout(input)`: `{ layoutId, name }` (`RenameCockpitLayoutInput`) → renames the layout **in place** (id, ordinal, panels/layout JSON untouched), returns the updated row (issue #89). The name must be non-empty and unique: because `save_cockpit_layout` upserts BY NAME, a duplicate rename would silently fuse two layouts on the next save — rejected with `duplicate_cockpit_layout_name`. A rename to the layout's own name is a no-op update. **UI entry point**: the pencil affordance on the saved view's sidebar row (inline rename; Enter commits, Escape/blur cancels).
-- `delete_cockpit_layout(layoutId)` → removes the layout by id (idempotent — deleting an absent id is a no-op).
-
-Restore/fallback behavior, source-of-truth split between `panelsJson`/`layoutJson`, and import/export durability are canonical in [Data Model § Research Cockpit Layouts](data-model.md#research-cockpit-layouts).
-
-Error codes: `cockpit_layout_not_found`, `invalid_cockpit_layout_name`, `duplicate_cockpit_layout_name`.
+The docking engine and its four saved-layout commands are retired ([ADR 0108](adr/0108-retire-docking-engine.md)); the company surface's tools are documented under Spółka in the UI information architecture.
 
 ## Report-Over-Report Diff
 

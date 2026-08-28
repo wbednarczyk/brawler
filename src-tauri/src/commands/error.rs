@@ -137,9 +137,6 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::InvalidReportSeasonValue { .. } => InvalidInput,
         StorageError::InvalidFrameworkValue { .. } => InvalidInput,
         StorageError::InvalidCriterionExpression { .. } => InvalidInput,
-        StorageError::InvalidCockpitLayoutName { .. } => InvalidInput,
-        // Renaming onto an existing layout name is caller input, not a bug.
-        StorageError::DuplicateCockpitLayoutName { .. } => InvalidInput,
         StorageError::InvalidAlertRuleValue { .. } => InvalidInput,
         // Creating a rule identical to an existing one is caller input, not a bug.
         StorageError::DuplicateAlertRule { .. } => InvalidInput,
@@ -158,7 +155,6 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // (the period's facts already landed), not with the input's shape.
         StorageError::ReportExpectationFrozen { .. } => Conflict,
         StorageError::MissingFrameworkReference { .. } => NotFound,
-        StorageError::CockpitLayoutNotFound { .. } => NotFound,
         StorageError::AlertRuleNotFound { .. } => NotFound,
         // Internal ML/derivation step failure — no more specific code.
         StorageError::Classification(_) => Internal,
@@ -370,7 +366,7 @@ mod tests {
     fn not_found_variants_map_to_not_found() {
         use CommandErrorCode::NotFound;
         assert_eq!(
-            code_of(StorageError::CockpitLayoutNotFound {
+            code_of(StorageError::AlertRuleNotFound {
                 id: "layout_x".to_owned()
             }),
             NotFound
@@ -436,8 +432,9 @@ mod tests {
             InvalidInput
         );
         assert_eq!(
-            code_of(StorageError::InvalidCockpitLayoutName {
-                name: "".to_owned()
+            code_of(StorageError::InvalidAlertRuleValue {
+                key: "trigger",
+                value: "".to_owned()
             }),
             InvalidInput
         );
@@ -486,7 +483,7 @@ mod tests {
 
     #[test]
     fn envelope_serializes_to_code_and_message() {
-        let envelope = CommandError::from(StorageError::CockpitLayoutNotFound {
+        let envelope = CommandError::from(StorageError::AlertRuleNotFound {
             id: "layout_demo".to_owned(),
         });
         let json = serde_json::to_string_pretty(&envelope).unwrap();

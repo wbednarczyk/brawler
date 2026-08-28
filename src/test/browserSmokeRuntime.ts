@@ -23,7 +23,6 @@ import type {
 import type { FactProvenance } from "../api/generated/FactProvenance";
 import type { ReportDocument } from "../api/reportDocumentsTypes";
 import type { AutopilotRun } from "../api/autopilot";
-import type { CockpitLayout } from "../api/generated/CockpitLayout";
 import {
   createMockRuntime,
   type InvocationMatch,
@@ -1374,14 +1373,6 @@ export interface BrawlerMockBridge {
   chaos(command: string, error: CommandError): void;
   /** Drop every persistent chaos rule. */
   clearChaos(): void;
-  /** Appends a raw `cockpit_layouts` row (F3a S3, ADR 0107 decision 5): the
-   * frozen cockpit's "Add panel"/"Save dashboard"/"+ New view" surface is
-   * gone, so a browser test can no longer build a named view (with follow
-   * panels) through the UI — this seeds one directly, the browser-E2E
-   * equivalent of `saveCockpitLayout` in a jsdom component test
-   * (paneLandmarks.test.tsx). Must run BEFORE `openApp` (the sidebar's
-   * "Views" group reads the layout list once at boot, not reactively). */
-  seedCockpitLayout(layout: CockpitLayout): void;
 }
 
 declare global {
@@ -1508,9 +1499,6 @@ export function installBrowserSmokeRuntime() {
     failNext: (command, error) => runtime.failNext(command, error),
     chaos: (command, error) => runtime.chaos(command, error),
     clearChaos: () => runtime.clearChaos(),
-    seedCockpitLayout: (layout) => {
-      runtime.data.cockpitLayouts = [...runtime.data.cockpitLayouts, layout];
-    },
   };
   mockIPC((command, args) => dispatch(command, args as InvokeArgs), {
     shouldMockEvents: true,

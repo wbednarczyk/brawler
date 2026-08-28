@@ -12,7 +12,6 @@ mod analyst_recommendations;
 mod attention;
 mod autopilot;
 mod backup_pool;
-mod cockpit_layouts;
 mod common;
 mod companies;
 mod decision_journal;
