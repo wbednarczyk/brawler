@@ -1,24 +1,24 @@
 import { useEffect } from "react";
-import type { Company } from "../../api/types";
-import { useLocale } from "../../shared/locale";
-import { useToolHost } from "../../shared/toolHost";
-import { NotebookDateField } from "../../shared/components/NotebookDateField";
-import { NotebookQuarterField } from "../../shared/components/NotebookQuarterField";
-import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
-import { CompanyNotebookSection } from "../Companies/CompanyNotebookSection";
-import { FundamentalsPanel } from "../Companies/FundamentalsPanel";
-import { formatDetailTimestamp } from "../../shared/format/datetime";
-import { emptyNotebookForm } from "../../app/notebookForms";
-import { useCockpitFundamentals } from "./useCockpitFundamentals";
-import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
-import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
-import { useCockpitShortPositions } from "./useCockpitShortPositions";
-import { useCockpitRedFlags } from "./useCockpitRedFlags";
-import { useCockpitAnalystRecommendations } from "./useCockpitAnalystRecommendations";
+import type { Company } from "../../../api/types";
+import { useLocale } from "../../../shared/locale";
+import { useToolHost } from "../../../shared/toolHost";
+import { NotebookDateField } from "../../../shared/components/NotebookDateField";
+import { NotebookQuarterField } from "../../../shared/components/NotebookQuarterField";
+import { MarkdownNoteBody } from "../../../shared/components/MarkdownNoteBody";
+import { CompanyNotebookSection } from "../../Companies/CompanyNotebookSection";
+import { FundamentalsPanel as CompanyFundamentalsPanel } from "../../Companies/FundamentalsPanel";
+import { formatDetailTimestamp } from "../../../shared/format/datetime";
+import { emptyNotebookForm } from "../../../app/notebookForms";
+import { useFundamentalsPanel } from "./useFundamentalsPanel";
+import { useCompanyNotebookPanel } from "./useCompanyNotebookPanel";
+import { useDecisionJournalPanel } from "./useDecisionJournalPanel";
+import { useShortPositionsPanel } from "./useShortPositionsPanel";
+import { useRedFlagsPanel } from "./useRedFlagsPanel";
+import { useAnalystRecommendationsPanel } from "./useAnalystRecommendationsPanel";
 import { DecisionJournalSection } from "./DecisionJournalSection";
 import { ShortPositionsSection } from "./ShortPositionsSection";
 import { RedFlagsSection } from "./RedFlagsSection";
-import { AnalystRecommendationsSection } from "../../shared/components/AnalystRecommendationsSection";
+import { AnalystRecommendationsSection } from "../../../shared/components/AnalystRecommendationsSection";
 
 // Company-scoped panel wrappers shared by the cockpit's `renderPinned` (ADR
 // 0057, frozen per F3a) and the Spółka workshop's `toolRegistry` (F3a S2, ADR
@@ -27,9 +27,9 @@ import { AnalystRecommendationsSection } from "../../shared/components/AnalystRe
 
 // The full, editable Fundamentals panel (ADR 0053 phase 4b). It reuses the real
 // `FundamentalsPanel` from the Companies screen — the caller owns the state via
-// `useCockpitFundamentals` (which calls api/financials directly), so editing
+// `useFundamentalsPanel` (which calls api/financials directly), so editing
 // works for any company with no host-specific coupling.
-export function CockpitFundamentalsPanel({
+export function FundamentalsPanel({
   companyId,
   qualifiedTicker,
   revision,
@@ -44,9 +44,9 @@ export function CockpitFundamentalsPanel({
   // Opens/pins the analyst-recommendations panel from the "vs target" readout.
   onOpenRecommendations?: () => void;
 }) {
-  const props = useCockpitFundamentals(companyId, revision);
+  const props = useFundamentalsPanel(companyId, revision);
   return (
-    <FundamentalsPanel
+    <CompanyFundamentalsPanel
       {...props}
       qualifiedTicker={qualifiedTicker}
       onOpenRecommendations={onOpenRecommendations}
@@ -55,12 +55,12 @@ export function CockpitFundamentalsPanel({
 }
 
 // Company-scoped notebook panel (ADR 0057/0107). Reuses the real
-// `CompanyNotebookSection` with caller-owned state (`useCockpitCompanyNotebook`).
+// `CompanyNotebookSection` with caller-owned state (`useCompanyNotebookPanel`).
 // Origins render read-only (label + external source link) — the cross-screen
 // "open origin feed item" nav belongs to the Inbox, not a self-contained panel.
-export function CockpitCompanyNotebookPanel({ company }: { company: Company }) {
+export function CompanyNotebookPanel({ company }: { company: Company }) {
   const { text } = useLocale();
-  const notebook = useCockpitCompanyNotebook(company);
+  const notebook = useCompanyNotebookPanel(company);
 
   // Register the notebook composer/edit draft with the Spółka workshop's
   // dirty gate (F3a S2, ADR 0107) — a no-op when hosted outside it.
@@ -126,21 +126,21 @@ export function CockpitCompanyNotebookPanel({ company }: { company: Company }) {
   );
 }
 
-export function CockpitShortPositionsPanel({ company }: { company: Company }) {
-  const { view, error } = useCockpitShortPositions(company);
+export function ShortPositionsPanel({ company }: { company: Company }) {
+  const { view, error } = useShortPositionsPanel(company);
   return <ShortPositionsSection company={company} view={view} error={error} />;
 }
 
 // `onOpenEvidence` selects the underlying feed item — the caller owns where
 // that navigates (cockpit selection vs. the Spółka feed-item tool).
-export function CockpitRedFlagsPanel({
+export function RedFlagsPanel({
   company,
   onOpenEvidence,
 }: {
   company: Company;
   onOpenEvidence?: (feedItemId: string) => void;
 }) {
-  const { view, error, acknowledge } = useCockpitRedFlags(company);
+  const { view, error, acknowledge } = useRedFlagsPanel(company);
   return (
     <RedFlagsSection
       company={company}
@@ -153,9 +153,9 @@ export function CockpitRedFlagsPanel({
 }
 
 // Analyst-recommendations panel (v0.58 A3, ADR 0073).
-export function CockpitAnalystRecommendationsPanel({ company }: { company: Company }) {
+export function AnalystRecommendationsPanel({ company }: { company: Company }) {
   const { view, error, loading, lastClose, currency, reload } =
-    useCockpitAnalystRecommendations(company);
+    useAnalystRecommendationsPanel(company);
   return (
     <AnalystRecommendationsSection
       company={company}
@@ -169,8 +169,8 @@ export function CockpitAnalystRecommendationsPanel({ company }: { company: Compa
   );
 }
 
-export function CockpitDecisionJournalPanel({ company }: { company: Company }) {
-  const journal = useCockpitDecisionJournal(company);
+export function DecisionJournalPanel({ company }: { company: Company }) {
+  const journal = useDecisionJournalPanel(company);
 
   // Register the decision-entry composer draft with the Spółka workshop's
   // dirty gate (F3a S2, ADR 0107) — a no-op when hosted outside it. Entries

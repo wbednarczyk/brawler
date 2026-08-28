@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Company } from "../../api/types";
-import * as decisionJournalApi from "../../api/decisionJournal";
-import type { DecisionEntry } from "../../api/decisionJournal";
-import { DECISION_KINDS } from "./useCockpitDecisionJournal";
+import type { Company } from "../../../api/types";
+import * as decisionJournalApi from "../../../api/decisionJournal";
+import type { DecisionEntry } from "../../../api/decisionJournal";
+import { DECISION_KINDS } from "./useDecisionJournalPanel";
 import { decisionKindLabel } from "./DecisionJournalSection";
-import { TickerLabel } from "../../shared/components/TickerLabel";
-import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
-import { useLocale } from "../../shared/locale";
-import { pluralNoun } from "../../shared/locale/plural";
+import { TickerLabel } from "../../../shared/components/TickerLabel";
+import { MarkdownNoteBody } from "../../../shared/components/MarkdownNoteBody";
+import { useLocale } from "../../../shared/locale";
+import { pluralNoun } from "../../../shared/locale/plural";
 import {
   EmptyState,
   ErrorText,
@@ -16,7 +16,7 @@ import {
   SelectField,
   StatusChip,
   StatusPill,
-} from "../../ui";
+} from "../../../ui";
 
 // The global, cross-company decision journal (ADR 0071, J3): a read-only
 // chronological list (decided_at, newest first — the backend orders it) with

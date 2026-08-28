@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Company } from "../../api/types";
-import { listShortPositions, type ShortPositionsView } from "../../api/shortPositions";
+import type { Company } from "../../../api/types";
+import { listShortPositions, type ShortPositionsView } from "../../../api/shortPositions";
 
 // Cockpit-native KNF short-selling state for one company (v0.55 T4b, ADR 0069
 // decision 3). Read-only: the register is populated by the daily
@@ -8,7 +8,7 @@ import { listShortPositions, type ShortPositionsView } from "../../api/shortPosi
 // positions, change history, aggregate net short %, 30-day pp change) so the
 // palette-only "Krótka sprzedaż (KNF)" panel works for any company. Mirrors the
 // fetch-on-company-change shape of the other company-scoped cockpit hooks.
-export function useCockpitShortPositions(company: Company) {
+export function useShortPositionsPanel(company: Company) {
   const [view, setView] = useState<ShortPositionsView | null>(null);
   const [error, setError] = useState<string | null>(null);
 

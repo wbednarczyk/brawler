@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { updateFeedItemState as persistFeedItemState } from "../../api/feed";
-import type { Company, FeedItem } from "../../api/types";
+import { updateFeedItemState as persistFeedItemState } from "../../../api/feed";
+import type { Company, FeedItem } from "../../../api/types";
 
 // Cockpit-native company feed state for one company (ADR 0057). It seeds a local
 // item list from the global feed snapshot filtered to the company, owns the
 // selection, persists read/save toggles through the real `update_feed_item_state`
 // command (updating the local copy from the response), so the dashboard
 // `companyFeed` panel works with no AppStateRoot coupling — mirroring
-// `useCockpitFundamentals`.
-export function useCockpitCompanyFeed(
+// `useFundamentalsPanel`.
+export function useCompanyFeedPanel(
   company: Company,
   feedItems: FeedItem[],
   // Pre-selects one item on mount (Spółka `feedItem` tool, F3a S2 — the

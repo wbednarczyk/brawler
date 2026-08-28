@@ -57,7 +57,7 @@ import {
 } from "../api/cockpit";
 import { makeCockpitViewActions } from "./useCockpitViewActions";
 import { useToast, useUndoableDelete } from "../ui";
-import { DecisionJournalGlobalPanel } from "../screens/Cockpit/DecisionJournalGlobalPanel";
+import { DecisionJournalGlobalPanel } from "../screens/Spolka/panels/DecisionJournalGlobalPanel";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { SpolkaScreenHost, useSpolkaToolHost } from "./useSpolkaScreenWiring";
 import { buildLegacyDashboardRows } from "./SidebarViewsGroup";

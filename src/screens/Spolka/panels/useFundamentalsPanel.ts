@@ -4,19 +4,19 @@ import {
   listFinancialPeriods,
   listKpiDefinitions,
   listKpiRelevance,
-} from "../../api/financials";
+} from "../../../api/financials";
 import type {
   FinancialFact,
   FinancialPeriod,
   KpiDefinition,
   KpiRelevance,
-} from "../../api/financialsTypes";
-import { useLocale } from "../../shared/locale";
+} from "../../../api/financialsTypes";
+import { useLocale } from "../../../shared/locale";
 import {
   useFundamentalsController,
   type FinancialFactForm,
   type FundamentalsForm,
-} from "../../app/useFundamentalsController";
+} from "../../../app/useFundamentalsController";
 
 const EMPTY_FUNDAMENTALS_FORM: FundamentalsForm = { periodFiscalYear: "", periodType: "annual" };
 const EMPTY_FACT_FORM: FinancialFactForm = {
@@ -37,7 +37,7 @@ const EMPTY_FACT_FORM: FinancialFactForm = {
 // `revision` bumps when a sibling panel writes facts for this company (a
 // report-documents extraction); it forces the facts/periods refetch below so the
 // panel never shows stale data after a successful extraction.
-export function useCockpitFundamentals(companyId: string, revision = 0) {
+export function useFundamentalsPanel(companyId: string, revision = 0) {
   const { text } = useLocale();
   const [financialPeriods, setFinancialPeriods] = useState<FinancialPeriod[]>([]);
   const [financialFacts, setFinancialFacts] = useState<FinancialFact[]>([]);

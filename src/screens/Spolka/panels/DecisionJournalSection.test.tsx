@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
-import type { Company } from "../../api/types";
-import type { DecisionEntry } from "../../api/decisionJournal";
+import type { Company } from "../../../api/types";
+import type { DecisionEntry } from "../../../api/decisionJournal";
 import type { DecisionJournalSectionProps } from "./DecisionJournalSection";
 import { DecisionJournalSection } from "./DecisionJournalSection";
 

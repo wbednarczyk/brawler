@@ -1,14 +1,14 @@
-import type { Company, FeedItem } from "../../api/types";
-import { formatDetailTimestamp as formatTimestamp } from "../../shared/format/datetime";
-import { feedItemSummary } from "../../app/useNotebookController";
-import { CompanyFeedSection } from "../Companies/CompanyFeedSection";
-import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
+import type { Company, FeedItem } from "../../../api/types";
+import { formatDetailTimestamp as formatTimestamp } from "../../../shared/format/datetime";
+import { feedItemSummary } from "../../../app/useNotebookController";
+import { CompanyFeedSection } from "../../Companies/CompanyFeedSection";
+import { useCompanyFeedPanel } from "./useCompanyFeedPanel";
 
 // Company-scoped feed panel for the curated dashboard (ADR 0057). Reuses the real
-// `CompanyFeedSection` with cockpit-owned selection state (`useCockpitCompanyFeed`);
+// `CompanyFeedSection` with cockpit-owned selection state (`useCompanyFeedPanel`);
 // the cross-screen actions (Open in Inbox / Note) are intentionally omitted — the
 // dashboard panel is self-contained and those stay reachable from the Inbox.
-export function CockpitCompanyFeedPanel({
+export function CompanyFeedPanel({
   company,
   feedItems,
   initialSelectedFeedItemId,
@@ -22,7 +22,7 @@ export function CockpitCompanyFeedPanel({
    * default inline-under-the-row placement. */
   leadWithDetail?: boolean;
 }) {
-  const feed = useCockpitCompanyFeed(company, feedItems, initialSelectedFeedItemId);
+  const feed = useCompanyFeedPanel(company, feedItems, initialSelectedFeedItemId);
   return (
     <CompanyFeedSection
       company={company}

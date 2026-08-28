@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Company } from "../../api/types";
-import type { ResearchEvidenceItem } from "../../api/researchTypes";
-import * as decisionJournalApi from "../../api/decisionJournal";
-import type { DecisionEntry } from "../../api/decisionJournal";
-import * as researchApi from "../../api/research";
-import { listCompanyTimeline } from "../../api/research";
-import { formatLocalDate } from "../../shared/format/datetime";
+import type { Company } from "../../../api/types";
+import type { ResearchEvidenceItem } from "../../../api/researchTypes";
+import * as decisionJournalApi from "../../../api/decisionJournal";
+import type { DecisionEntry } from "../../../api/decisionJournal";
+import * as researchApi from "../../../api/research";
+import { listCompanyTimeline } from "../../../api/research";
+import { formatLocalDate } from "../../../shared/format/datetime";
 
 // The composer draft. `kind` is one of the four recorded judgments (ADR 0071);
 // `decidedAt` is the decision's own date (the journal's chronology), distinct
@@ -26,10 +26,10 @@ function emptyForm(): DecisionEntryForm {
 // entry list, the composer draft, the selected entry, and its evidence links via
 // `api/decisionJournal` + the shared evidence-link machinery (`api/research`)
 // directly — the company-scoped surface with no cross-screen coupling. Mirrors
-// `useCockpitCompanyNotebook` so the dashboard `decisionJournal` panel works for
+// `useCompanyNotebookPanel` so the dashboard `decisionJournal` panel works for
 // any company. Entries are IMMUTABLE: the only correction is a follow-up entry
 // created via `startSupersede` (linked with `supersededByEntryId`).
-export function useCockpitDecisionJournal(company: Company) {
+export function useDecisionJournalPanel(company: Company) {
   const [entries, setEntries] = useState<DecisionEntry[]>([]);
   const [isComposerOpen, setComposerOpen] = useState(false);
   const [form, setForm] = useState<DecisionEntryForm>(emptyForm);

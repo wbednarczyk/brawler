@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import * as notebooksApi from "../../api/notebooks";
-import type { Company, NotebookEntry } from "../../api/types";
-import type { NotebookForm } from "../../shared/types/notebook";
+import * as notebooksApi from "../../../api/notebooks";
+import type { Company, NotebookEntry } from "../../../api/types";
+import type { NotebookForm } from "../../../shared/types/notebook";
 import {
   emptyNotebookForm,
   manualNotebookOrigins,
   notebookCreateInput,
   notebookFormFromEntry,
   notebookUpdateInput,
-} from "../../app/notebookForms";
+} from "../../../app/notebookForms";
 
 // Cockpit-native company notebook state for one company (ADR 0057). It owns the
 // entry list, the composer + edit forms, and the create/save/edit commands via
 // `api/notebooks` directly — the company-scoped subset of `useNotebookController`
 // with none of its cross-screen (Inbox / Notebooks screen / transcript) coupling.
-// Mirrors `useCockpitFundamentals` so the dashboard `companyNotebook` panel works
+// Mirrors `useFundamentalsPanel` so the dashboard `companyNotebook` panel works
 // for any pinned company.
-export function useCockpitCompanyNotebook(company: Company) {
+export function useCompanyNotebookPanel(company: Company) {
   const [entries, setEntries] = useState<NotebookEntry[]>([]);
   const [isComposerOpen, setComposerOpen] = useState(false);
   const [notebookForm, setNotebookForm] = useState<NotebookForm>(emptyNotebookForm);

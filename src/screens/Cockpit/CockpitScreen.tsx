@@ -19,7 +19,7 @@ import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyRepo
 import { CompanyCoveragePanel } from "../../shared/components/CompanyCoveragePanel";
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
-import { CockpitCompanyFeedPanel } from "./CockpitCompanyFeedPanel";
+import { CompanyFeedPanel as CockpitCompanyFeedPanel } from "../Spolka/panels/CompanyFeedPanel";
 import { InspectorPanel } from "./InspectorPanel";
 import { WatchlistsScreen } from "../Watchlists/WatchlistsScreen";
 import { ResearchScreen } from "../Research/ResearchScreen";
@@ -35,14 +35,14 @@ import {
   type DockPanelSpec,
 } from "./DockLayout";
 import {
-  CockpitFundamentalsPanel,
-  CockpitCompanyNotebookPanel,
-  CockpitShortPositionsPanel,
-  CockpitRedFlagsPanel,
-  CockpitAnalystRecommendationsPanel,
-  CockpitDecisionJournalPanel,
-} from "./companyPanels";
-import { DecisionJournalGlobalPanel } from "./DecisionJournalGlobalPanel";
+  FundamentalsPanel as CockpitFundamentalsPanel,
+  CompanyNotebookPanel as CockpitCompanyNotebookPanel,
+  ShortPositionsPanel as CockpitShortPositionsPanel,
+  RedFlagsPanel as CockpitRedFlagsPanel,
+  AnalystRecommendationsPanel as CockpitAnalystRecommendationsPanel,
+  DecisionJournalPanel as CockpitDecisionJournalPanel,
+} from "../Spolka/panels/companyPanels";
+import { DecisionJournalGlobalPanel } from "../Spolka/panels/DecisionJournalGlobalPanel";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
 import { CommandPalette, type PaletteCommand } from "../../shared/components/CommandPalette";
 import { useCommandPaletteCommands } from "../../app/commandPalette";
@@ -1003,6 +1003,6 @@ function FeedPanel({
   );
 }
 
-// The Cockpit*Panel wrappers (Fundamentals, Notebook, ShortPositions, RedFlags,
-// AnalystRecommendations, DecisionJournal) live in `./companyPanels` — shared
-// verbatim with the Spółka workshop's `toolRegistry` (F3a S2, ADR 0107).
+// The Fundamentals/Notebook/ShortPositions/RedFlags/AnalystRecommendations/
+// DecisionJournal panel wrappers live in `../Spolka/panels/companyPanels`
+// (ADR 0108 S2) — shared verbatim with the Spółka `toolRegistry` (ADR 0107).

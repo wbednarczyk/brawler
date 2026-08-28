@@ -1,14 +1,14 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Plus, Save, X } from "lucide-react";
-import type { Company } from "../../api/types";
-import type { ResearchEvidenceItem } from "../../api/researchTypes";
-import type { DecisionEntry } from "../../api/decisionJournal";
-import type { DecisionEntryForm } from "./useCockpitDecisionJournal";
-import { TickerLabel } from "../../shared/components/TickerLabel";
-import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
-import { NotebookDateField } from "../../shared/components/NotebookDateField";
-import { useLocale } from "../../shared/locale";
-import { pluralNoun } from "../../shared/locale/plural";
+import type { Company } from "../../../api/types";
+import type { ResearchEvidenceItem } from "../../../api/researchTypes";
+import type { DecisionEntry } from "../../../api/decisionJournal";
+import type { DecisionEntryForm } from "./useDecisionJournalPanel";
+import { TickerLabel } from "../../../shared/components/TickerLabel";
+import { MarkdownNoteBody } from "../../../shared/components/MarkdownNoteBody";
+import { NotebookDateField } from "../../../shared/components/NotebookDateField";
+import { useLocale } from "../../../shared/locale";
+import { pluralNoun } from "../../../shared/locale/plural";
 import {
   Button,
   EmptyState,
@@ -19,8 +19,8 @@ import {
   StatusChip,
   StatusPill,
   TextareaField,
-} from "../../ui";
-import { EvidenceRow } from "../Research/EvidenceRow";
+} from "../../../ui";
+import { EvidenceRow } from "../../Research/EvidenceRow";
 
 // The four recorded judgments (ADR 0071) — actions/judgments the investor took,
 // never advice the app gives. Their labels are shared with the global panel.
