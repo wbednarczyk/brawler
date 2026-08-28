@@ -15,8 +15,7 @@ use serde_json::{json, Map, Value};
 use super::*;
 use crate::mcp::lifecycle::McpLifecycle;
 use crate::storage::{
-    NewCockpitLayout, NewCompany, NewFrameworkCriterion, NewQualityFramework, NewWatchlist,
-    WatchlistUpdate,
+    NewCompany, NewFrameworkCriterion, NewQualityFramework, NewWatchlist, WatchlistUpdate,
 };
 
 // Path resolved by build.rs into BRAWLER_FIDELITY_CORPUS (derived from
@@ -313,16 +312,6 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
-        "save_cockpit_layout" => {
-            let new: NewCockpitLayout = serde_json::from_value(inner).expect("NewCockpitLayout");
-            serde_json::to_value(
-                state
-                    .cockpit_layouts()
-                    .save_cockpit_layout(new)
-                    .expect("save_cockpit_layout"),
-            )
-            .unwrap()
-        }
         "write_export_file" => {
             // The command body minus the tauri async runtime: same path policy,
             // same write, same scalar return (commands/import_export.rs).
@@ -333,32 +322,6 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             std::fs::write(&target, request.contents.as_bytes()).expect("write_export_file");
             Value::String(target.to_string_lossy().into_owned())
         }
-        "rename_cockpit_layout" => {
-            let layout_id = inner["layoutId"].as_str().expect("layoutId");
-            let name = inner["name"].as_str().expect("name");
-            serde_json::to_value(
-                state
-                    .cockpit_layouts()
-                    .rename_cockpit_layout(layout_id, name)
-                    .expect("rename_cockpit_layout"),
-            )
-            .unwrap()
-        }
-        "delete_cockpit_layout" => {
-            let id = input["layoutId"].as_str().expect("layoutId");
-            state
-                .cockpit_layouts()
-                .delete_cockpit_layout(id)
-                .expect("delete_cockpit_layout");
-            Value::Null
-        }
-        "list_cockpit_layouts" => serde_json::to_value(
-            state
-                .cockpit_layouts()
-                .list_cockpit_layouts()
-                .expect("list_cockpit_layouts"),
-        )
-        .unwrap(),
         "set_company_autopilot" => {
             let company_id = inner["companyId"].as_str().expect("companyId");
             let mode = inner["mode"].as_str().expect("mode");

@@ -1503,65 +1503,6 @@ function buildHandlers(): Record<string, Handler> {
       );
       return overview;
     },
-    list_cockpit_layouts: (d) => d.cockpitLayouts,
-    save_cockpit_layout: (d, a, ctx) => {
-      const input = unwrap(a);
-      const name = (str(input.name) ?? "").trim();
-      const existing = d.cockpitLayouts.find((l) => l.name === name);
-      if (existing) {
-        const { next, updated } = mapReplace(
-          d.cockpitLayouts,
-          (l) => l.id === existing.id,
-          (l) => ({
-            ...l,
-            panelsJson: str(input.panelsJson) ?? l.panelsJson,
-            layoutJson: str(input.layoutJson),
-            dockviewVersion: str(input.dockviewVersion),
-            updatedAt: SAMPLE_NOW,
-          }),
-        );
-        d.cockpitLayouts = next;
-        return updated;
-      }
-      const layout = {
-        id: ctx.nextId("layout"),
-        name,
-        ordinal: d.cockpitLayouts.length,
-        panelsJson: str(input.panelsJson) ?? "{}",
-        layoutJson: str(input.layoutJson),
-        dockviewVersion: str(input.dockviewVersion),
-        createdAt: SAMPLE_NOW,
-        updatedAt: SAMPLE_NOW,
-      };
-      d.cockpitLayouts = [...d.cockpitLayouts, layout];
-      return layout;
-    },
-    delete_cockpit_layout: (d, a) => {
-      const layoutId = str(unwrap(a).layoutId);
-      d.cockpitLayouts = d.cockpitLayouts.filter((l) => l.id !== layoutId);
-      return undefined;
-    },
-    // Backend parity (storage/cockpit_layouts.rs rename_cockpit_layout, issue
-    // #89): in-place rename keeping id/ordinal; empty → invalid name, another
-    // layout with the target name → duplicate, unknown id → not found.
-    rename_cockpit_layout: (d, a) => {
-      const input = unwrap(a);
-      const layoutId = str(input.layoutId) ?? "";
-      const name = (str(input.name) ?? "").trim();
-      if (!name) throw new Error("invalid_cockpit_layout_name");
-      const existing = d.cockpitLayouts.find((l) => l.id === layoutId);
-      if (!existing) throw new Error("cockpit_layout_not_found");
-      const clash = d.cockpitLayouts.find((l) => l.name === name && l.id !== layoutId);
-      if (clash) throw new Error("duplicate_cockpit_layout_name");
-      const { next, updated } = mapReplace(
-        d.cockpitLayouts,
-        (l) => l.id === layoutId,
-        (l) => ({ ...l, name, updatedAt: SAMPLE_NOW }),
-      );
-      d.cockpitLayouts = next;
-      return updated;
-    },
-
     // --- Autopilot (autonomous report pipeline, ADR 0055) ---
     get_company_autopilot: (d, a) => {
       const companyId = str(unwrap(a).companyId) ?? "";

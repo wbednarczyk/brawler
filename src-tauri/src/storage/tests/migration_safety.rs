@@ -6084,3 +6084,68 @@ mod migration_0144 {
         assert_eq!(measure_window_of(&connection, "f_agg"), "point_in_time");
     }
 }
+
+#[test]
+fn migration_0152_drops_cockpit_layouts_on_a_fresh_database() {
+    // ADR 0108: the docking engine (dockview + the freeform cockpit) is
+    // retired, and `cockpit_layouts` was its only persisted state. A fresh
+    // database must never see the table or either of its indexes.
+    let connection = open_in_memory_database().expect("database should initialize");
+
+    let table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+              WHERE type = 'table' AND name = 'cockpit_layouts')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("table existence check");
+    assert!(!table_exists, "cockpit_layouts must not exist");
+
+    let index_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+              WHERE type = 'index' AND tbl_name = 'cockpit_layouts'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("index count");
+    assert_eq!(index_count, 0, "no index may reference cockpit_layouts");
+}
+
+#[test]
+fn migration_0152_drops_cockpit_layouts_carrying_a_legacy_row() {
+    // Legacy upgrade path: a real pre-0152 database can hold a saved layout
+    // row (or, per the owner's real DB, an auto-generated `dashboard:*` one).
+    // The drop must apply cleanly and lose nothing else.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 151).expect("apply schema through 0151");
+
+    connection
+        .execute(
+            "INSERT INTO cockpit_layouts (id, name, panels_json)
+             VALUES ('layout_dashboard_1', 'dashboard:1', '[]')",
+            [],
+        )
+        .expect("seed a legacy cockpit layout row");
+
+    apply_migrations(&mut connection).expect("upgrade to the latest schema");
+
+    let table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+              WHERE type = 'table' AND name = 'cockpit_layouts')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("table existence check");
+    assert!(!table_exists, "cockpit_layouts must be dropped");
+
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        crate::storage::migrations::expected_migration_count(),
+    );
+
+    // Re-run is a safe no-op (self-heal / idempotence on an already-clean DB).
+    apply_migrations(&mut connection).expect("re-run is safe");
+}

@@ -77,12 +77,6 @@ pub enum StorageError {
     NotATemplate { id: String },
     #[error("classification error: {0}")]
     Classification(String),
-    #[error("cockpit layout not found: {id}")]
-    CockpitLayoutNotFound { id: String },
-    #[error("invalid cockpit layout name: {name}")]
-    InvalidCockpitLayoutName { name: String },
-    #[error("a cockpit layout named {name} already exists")]
-    DuplicateCockpitLayoutName { name: String },
     #[error("invalid alert rule value for {key}: {value}")]
     InvalidAlertRuleValue { key: &'static str, value: String },
     #[error("alert rule not found: {id}")]

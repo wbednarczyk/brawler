@@ -5,5 +5,5 @@ expression: json
 ---
 {
   "code": "not_found",
-  "message": "cockpit layout not found: layout_demo"
+  "message": "alert rule not found: layout_demo"
 }
