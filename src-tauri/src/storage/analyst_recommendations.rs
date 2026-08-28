@@ -54,7 +54,7 @@ pub struct AnalystRecommendationEntry {
     pub report_url: Option<String>,
 }
 
-/// One stored recommendation, newest-first, for the cockpit panel (slice A3).
+/// One stored recommendation, newest-first, for the Spółka recommendations tool (slice A3).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(

@@ -34,7 +34,7 @@ const FEED_ITEM_TYPE: &str = "Official report";
 /// Float tolerance below which two percentages are treated as unchanged.
 const PCT_EPSILON: f64 = 1e-9;
 
-/// Per-company short-selling read model (v0.55 T4b) — the cockpit
+/// Per-company short-selling read model (v0.55 T4b) — the Spółka ownership tool
 /// "Krótka sprzedaż (KNF)" panel. Current active positions, the change history,
 /// the last remembered exit (empty-state "Ostatnia obecność"), the aggregate net
 /// short %, and the 30-day change in pp.
@@ -759,7 +759,7 @@ impl ShortPositionStore {
         ingest_knf_short_positions(&mut connection, entries)
     }
 
-    /// The per-company cockpit read model (v0.55 T4b). The 30-day window is
+    /// The per-company Spółka read model (v0.55 T4b). The 30-day window is
     /// anchored to the real UTC date.
     pub fn short_positions_view(&self, company_id: &str) -> StorageResult<ShortPositionsView> {
         let connection = self.db.checkout()?;

@@ -55,11 +55,7 @@ export function DecisionJournalGlobalPanel({ companies }: { companies: Company[]
 
   return (
     <div className="feed-panel decision-journal-global-panel" aria-label={text("Decision journal")}>
-      {/* `paneLead` (ADR 0076 D6) is currently inert (its compact-header CSS
-          rule was scoped to the retired `.cockpit-pane` host, ADR 0108, with
-          no replacement yet) — kept for consistency with the tool-hosted
-          panels sharing this component. The entry count lives in the meta
-          slot regardless, ahead of a re-scoped rule. */}
+      {/* `paneLead` (ADR 0076 D6): compact inside a Spółka tool frame, full header on the standalone Journal route. */}
       <SectionHeader
         level="h3"
         paneLead

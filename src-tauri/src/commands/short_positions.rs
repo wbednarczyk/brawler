@@ -7,7 +7,7 @@ use crate::app_state;
 use crate::commands::error::{CommandError, CommandErrorCode};
 use crate::storage;
 
-/// The per-company short-selling cockpit view: active positions, change history,
+/// The per-company short-selling view (Spółka ownership tool): active positions, change history,
 /// the last remembered exit, the aggregate net short %, and the 30-day pp change.
 #[tauri::command]
 pub async fn list_short_positions(

@@ -2236,7 +2236,7 @@ fn metric_histories_equals_n_single_metric_history_reads() {
     assert_eq!(batched.get("revenue"), Some(&Vec::new()));
 }
 
-/// Owner-dogfooding catch (2026-07-22): the cockpit loads definitions with
+/// Owner-dogfooding catch (2026-07-22): the company view loads definitions with
 /// `{ companyId }` and no scope — that call MUST return the canonical catalog
 /// PLUS the company's own definitions, never company-scoped rows only. The old
 /// `company_id = ?` filter excluded every canonical row (company_id NULL), so

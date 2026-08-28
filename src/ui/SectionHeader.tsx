@@ -13,14 +13,10 @@ export type SectionHeaderProps = {
   level?: "h2" | "h3" | "h4";
   meta?: ReactNode;
   /** Marks this as the panel's leading title header — tags `.ui-pane-lead-header`
-   *  for a shared compact-header rule (ADR 0076 Decision 6, K3 double panel
-   *  chrome) that visually hid the title (kept in the accessible tree —
-   *  clip-path, not removal) and dropped the subtitle when a dock tab already
-   *  showed the name. Currently inert everywhere: the rule was scoped to the
-   *  retired `.cockpit-pane` host (ADR 0108) and has no replacement yet —
-   *  the Spółka workshop tool header (`.spolka-tool-header`) duplicates this
-   *  title today. Kept on the prop for the existing call sites; re-scope or
-   *  drop as a follow-up. */
+   *  so the shared compact-header rule (ADR 0076 Decision 6, K3 double panel
+   *  chrome; `src/styles/ui.css`, scoped to `.spolka-tool`) visually hides the
+   *  title (kept in the accessible tree — clip-path, not removal) and drops the
+   *  subtitle when the workshop tool frame already shows the name. */
   paneLead?: boolean;
   title: ReactNode;
   titleId?: string;

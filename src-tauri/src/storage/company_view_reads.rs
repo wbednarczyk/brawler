@@ -52,7 +52,7 @@ pub(crate) fn open_claims(
     super::management_claims::list_management_claims(connection, company_id)
 }
 
-/// The per-company short-selling cockpit view (counters § shorts).
+/// The per-company short-selling view (counters § shorts).
 pub(crate) fn short_positions(
     connection: &Connection,
     company_id: &str,

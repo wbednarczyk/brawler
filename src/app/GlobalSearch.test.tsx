@@ -180,7 +180,7 @@ describe("Global search", () => {
   });
 
   // ADR 0108: with the docking engine gone, a companyless research brief/
-  // digest result has no cockpit dashboard to open — it lands on the
+  // digest result has no company to open — it lands on the
   // standalone Research screen instead.
   it("a companyless research brief result opens the Research screen", async () => {
     const user = userEvent.setup();

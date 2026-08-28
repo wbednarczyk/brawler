@@ -1,6 +1,6 @@
 //! Analyst-recommendations read model (ADR 0073, plan v0.58 A3).
 //!
-//! Feeds the "Rekomendacje analityków" pinned cockpit panel
+//! Feeds the "Rekomendacje analityków" Spółka workshop tool
 //! (`src/shared/components/AnalystRecommendationsSection.tsx`) and the attributed
 //! "vs target" readout in Price context. A thin read over the append-only
 //! `analyst_recommendations` store (slice A1): the per-company history
