@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.75.0 - 2026-08-28
+
+
+### Bug Fixes
+
+- **spolka**: F3a dogfooding wave — layout, counters, labels, picker, typography, get_company_view latency, tezy vocabulary, watchlist rows open Spółka (#437)
+
 ## v0.74.0 - 2026-08-26
 
 
