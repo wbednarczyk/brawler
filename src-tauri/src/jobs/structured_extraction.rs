@@ -470,7 +470,7 @@ pub const EXTRACTION_PIPELINE_VERSION: u32 = 3;
 /// derivation returns. [`crate::report_diff::classify`] only ever yields these
 /// four labels (`to_period`), plus ESEF's `FY`. An unrecognised cached label
 /// (never written by the current code) yields `None`, forcing a safe re-derive.
-fn intern_period_type(period_type: &str) -> Option<&'static str> {
+pub(crate) fn intern_period_type(period_type: &str) -> Option<&'static str> {
     Some(match period_type {
         "Q1" => "Q1",
         "H1" => "H1",
@@ -555,7 +555,7 @@ pub fn derive_report_period(
 ///   fiscal year (index 1→`Q1`/`-03-31`, 2→`H1`/`-06-30`, 3→`Q3`/`-09-30`,
 ///   4→`FY`/`-12-31`). An unparseable or ambiguous intra-year period (index `0`)
 ///   is not guessed.
-fn derive_report_period_uncached(
+pub(crate) fn derive_report_period_uncached(
     state: &AppState,
     document: &crate::storage::ReportDocument,
 ) -> Option<(i64, &'static str, String)> {

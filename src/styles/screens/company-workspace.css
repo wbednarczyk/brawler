@@ -147,7 +147,8 @@
    opportunities (F3a study mechanical defect #3). */
 .quality-history-when {
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono);
+  /* ADR 0104 dec. 2 amendment (2026-08-27): dates render in the UI face. */
+  font-family: var(--font-ui);
   white-space: nowrap;
 }
 

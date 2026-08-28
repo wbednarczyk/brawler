@@ -141,7 +141,7 @@ describe("CompanyClaimsPanel", () => {
   });
 
   // U7-C density contract (ADR 0076 D6): at the S width tier the composer hides
-  // behind a "Dodaj obietnicę" (Add claim) disclosure. jsdom has no container
+  // behind a "Dodaj tezę" (Add claim) disclosure. jsdom has no container
   // queries, so we assert the disclosure STATE (aria-expanded + the data flag the
   // S-tier CSS keys off); the tier switch itself is browser-tested.
   it("exposes the composer behind an Add claim disclosure toggle", async () => {

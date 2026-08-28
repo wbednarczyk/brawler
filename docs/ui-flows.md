@@ -90,7 +90,7 @@ Flow:
 2. Feed shows newest items first, with a typed-signal badge on classified official filings (e.g. insider transaction, dividend, profit warning).
 3. User filters by watchlist, company, item type, signal type, unread, saved, and significance when available.
 4. User opens an item in the detail pane.
-5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) — no AI analysis panel ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5: stored AI analysis was dropped by migration `0102`).
+5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and the typed signal(s) — no AI analysis panel ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5: stored AI analysis was dropped by migration `0102`). The item's own body leads the pane; company context (latest facts, upcoming events, notebook, claims due) sits below it collapsed behind a disclosure with a one-line teaser ("N fresh facts · N upcoming events"), expanded on demand — the item's own content stays the primary read regardless of `presentationKind` (owner dogfooding finding, 2026-08-27).
 6. User marks item read, saves it, opens the original source, or creates a note from it.
 7. Signals are typed by the deterministic rule classifier only ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); an unclassifiable filing simply carries no typed signal.
 

@@ -15,7 +15,7 @@ export type AutopilotRunSummarySource = Pick<
 
 const CLAIM_FORMS: PluralForms = {
   en: ["claim", "claims"],
-  pl: ["obietnica", "obietnice", "obietnic"],
+  pl: ["teza", "tezy", "tez"],
 };
 
 // Folds noun + adjective agreement into one three-form set (like `FACT_FORMS` +

@@ -14,6 +14,7 @@ import {
 } from "./scenarios/legacyMinimal";
 import { createMockRuntime } from "./scenarios/runtime";
 import type { ScenarioName, ScenarioSpec } from "./scenarios/scenarios";
+import { __resetCompanyContextExpandedForTests } from "../shared/components/feedDetail/CompanyContextSection";
 
 export { currentWeekTestDate };
 
@@ -222,6 +223,10 @@ export function renderAppDefaultShell() {
 // them per test and re-points invoke at the runtime router.
 beforeEach(() => {
   resetAppTestState();
+  // Company-context disclosure state is a module-level session flag by design
+  // (wave 2, owner note 2026-08-27), not React state — reset it per test the
+  // same way the rest of this harness resets shared runtime state.
+  __resetCompanyContextExpandedForTests();
   vi.mocked(invoke).mockClear();
   vi.mocked(downloadDir).mockClear();
   vi.mocked(join).mockClear();

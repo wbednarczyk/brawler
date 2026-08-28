@@ -67,15 +67,20 @@ function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
   const { text } = useLocale();
   return (
     <div role="group" aria-label={text("Workshop tool")} data-tool={tool.t} className="spolka-tool">
-      <SectionHeader
-        level="h2"
-        title={text(TOOL_TITLES[tool.t])}
-        actions={
-          <Button variant="icon" aria-label={text("Close tool")} onClick={ctx.onCloseTool}>
-            <X size={16} aria-hidden="true" />
-          </Button>
-        }
-      />
+      <div className="spolka-tool-header">
+        {/* No leading back button: the workshop bar's Overview tab is the way
+            back (owner dogfooding v0.74 wave 3); ✕ stays for close. */}
+        <SectionHeader
+          level="h2"
+          eyebrow={text("Workshop")}
+          title={text(TOOL_TITLES[tool.t])}
+          actions={
+            <Button variant="icon" aria-label={text("Close tool")} onClick={ctx.onCloseTool}>
+              <X size={16} aria-hidden="true" />
+            </Button>
+          }
+        />
+      </div>
       <div className="spolka-tool-body">{renderToolBody(tool, ctx)}</div>
     </div>
   );
@@ -92,11 +97,15 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
         />
       );
     case "feedItem":
+      // The selected item's detail leads, the list stays reachable below it
+      // (owner dogfooding v0.74, item 7) — opened from the Inbox "Otwórz
+      // spółkę", the item could sit anywhere in a 30+-row feed.
       return (
         <CockpitCompanyFeedPanel
           company={ctx.company}
           feedItems={ctx.feedItems}
           initialSelectedFeedItemId={tool.feedItemId}
+          leadWithDetail
         />
       );
     case "dokumenty":

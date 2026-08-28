@@ -67,6 +67,7 @@ const researchViewModelStub: ResearchScreenProps = {
   setSelectedCompanyId: () => {},
   setSelectedWatchlistId: () => {},
   setSelectedWatchlistCompanyId: () => {},
+  openCompanyWorkspaceById: () => {},
   setSelectedQuestionId: () => {},
   setQuestionTitle: () => {},
   setQuestionBody: () => {},
@@ -178,6 +179,15 @@ beforeEach(() => {
     }
     if (command === "get_analyst_recommendations") {
       return Promise.resolve({ companyId: company.id, entries: [] });
+    }
+    if (command === "get_company_context") {
+      return Promise.resolve({
+        companyId: company.id,
+        latestPeriodFacts: null,
+        upcomingEvents: [],
+        notebook: { count: 0, latestAt: null },
+        claimsDue: { due: 0, overdue: 0 },
+      });
     }
     // Finding 9 fixtures: non-empty so both tools' second form/action
     // becomes reachable (see comment above).

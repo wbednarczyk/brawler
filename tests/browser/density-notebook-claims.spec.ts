@@ -7,7 +7,7 @@ import type { Locator, Page } from "@playwright/test";
 // panel rows verbatim from docs/ui-authoring.md:
 //   Notebook — S: single column (list OR detail, toggled) · short: list only,
 //              editor on select.
-//   Claims   — S: list only, composer behind "Dodaj obietnicę" button ·
+//   Claims   — S: list only, composer behind "Dodaj tezę" button ·
 //              M: list + inline composer · L: + verdict detail column ·
 //              short: queue counts + top 3 due.
 // The tier switch itself is CSS-only (container queries), so — like the shared
@@ -44,7 +44,7 @@ async function box(locator: Locator): Promise<Box> {
 test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, () => {
   test("company Notebook — S width tier toggles list ↔ detail", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open notebook", ".notebook-workspace");
+    const pane = await openCompanyTool(page, "Notebook", ".notebook-workspace");
     const workspace = pane.locator(".notebook-workspace");
 
     await setPaneSize(page, { width: 380, height: 700, pane });
@@ -69,7 +69,7 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
 
   test("company Notebook — short height tier folds to list, editor on select", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open notebook", ".notebook-workspace");
+    const pane = await openCompanyTool(page, "Notebook", ".notebook-workspace");
 
     await setPaneSize(page, { width: 900, height: 440, pane });
     // Short: list only — the empty detail folds so the list owns the height.
@@ -139,7 +139,7 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
 
   test("company Claims — S / M / L / short tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open claims", ".company-claims-panel");
+    const pane = await openCompanyTool(page, "Claims", ".company-claims-panel");
 
     // L: list ∥ verdict detail column; composer inline.
     await setPaneSize(page, { width: 900, height: 700, pane });

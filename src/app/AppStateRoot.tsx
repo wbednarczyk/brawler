@@ -42,6 +42,7 @@ import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
 import { buildTodayScreenProps, useRefreshCompletionSignal } from "./useTodayScreenWiring";
 import { useTranscriptController } from "./useTranscriptController";
+import { buildWatchlistsScreenProps } from "./useWatchlistsScreenWiring";
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
 import {
   resolveAppShortcutReferenceItems,
@@ -62,7 +63,6 @@ import { SpolkaScreenHost, useSpolkaToolHost } from "./useSpolkaScreenWiring";
 import { buildLegacyDashboardRows } from "./SidebarViewsGroup";
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import { useSpolkaNavigate } from "./useSpolkaNavigate";
-import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
 import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
@@ -1533,28 +1533,6 @@ export function AppStateRoot({
   // the Research cockpit (which hosts these screens as panels, ADR 0053 phase 4c)
   // share one source of truth. Lifting these providers to also wrap the cockpit
   // is the decoupling the cockpit-as-host end state (phase 6) needs.
-  const watchlistsViewModel = {
-    companies,
-    watchlists,
-    watchlistMemberships,
-    watchlistsError,
-    selectedWatchlistId: selectedManagedWatchlistId,
-    setSelectedWatchlistId: setSelectedManagedWatchlistId,
-    createWatchlist,
-    renameWatchlist,
-    deleteWatchlist,
-    addCompanyToWatchlist,
-    removeCompanyFromWatchlist,
-  };
-  // The tab now reaches its Spółka tool (F3a S3, plan "Mapowanie WSZYSTKICH
-  // intencji") — no longer discarded here. Wrapped (not passed directly) so
-  // the reference stays lazy: `openCompanyWorkspaceById` is declared later in
-  // this component.
-  const reportSeasonViewModel = {
-    watchlists,
-    openCompanyWorkspace: (companyId: string, tab: CompanyWorkspaceTab) =>
-      openCompanyWorkspaceById(companyId, tab),
-  };
   const researchViewModel: ResearchScreenProps = {
     companies,
     watchlists,
@@ -1582,6 +1560,7 @@ export function AppStateRoot({
     setSelectedCompanyId: setSelectedResearchCompanyId,
     setSelectedWatchlistId: setSelectedResearchWatchlistId,
     setSelectedWatchlistCompanyId: setSelectedResearchWatchlistCompanyId,
+    openCompanyWorkspaceById: (companyId: string) => openCompanyWorkspaceById(companyId),
     setSelectedQuestionId: setSelectedResearchQuestionId,
     setQuestionTitle: setResearchQuestionTitle,
     setQuestionBody: setResearchQuestionBody,
@@ -1778,6 +1757,20 @@ export function AppStateRoot({
       setCockpitInitialCompanyId,
       navigate,
     });
+  const { watchlistsViewModel, reportSeasonViewModel } = buildWatchlistsScreenProps({
+    companies,
+    watchlists,
+    watchlistMemberships,
+    watchlistsError,
+    selectedWatchlistId: selectedManagedWatchlistId,
+    setSelectedWatchlistId: setSelectedManagedWatchlistId,
+    createWatchlist,
+    renameWatchlist,
+    deleteWatchlist,
+    addCompanyToWatchlist,
+    removeCompanyFromWatchlist,
+    openCompanyWorkspaceById,
+  });
 
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
@@ -1933,9 +1926,8 @@ export function AppStateRoot({
               ) : null}
               {activeSection === "Spolka" ? (
                 // The `research` workshop tool hosts the real, context-driven
-                // ResearchScreen (F3a S2 — it has no company-scope prop of its
-                // own yet), so this branch needs the same provider Cockpit
-                // wraps it in.
+                // ResearchScreen (F3a S2 — no company-scope prop of its own
+                // yet), so this branch needs the same provider Cockpit wraps it in.
                 <ResearchProvider value={researchViewModel}>
                   <SpolkaScreenHost
                     companies={companies}
@@ -1944,6 +1936,7 @@ export function AppStateRoot({
                     feedItems={feedState}
                     rootHighlightClaimId={highlightClaimId}
                     openInboxItem={openInboxItem}
+                    onSwitchCompany={(companyId) => navigate({ companyId, section: "Spolka" })}
                     refreshCompletionCount={refreshCompletionCount}
                   />
                 </ResearchProvider>

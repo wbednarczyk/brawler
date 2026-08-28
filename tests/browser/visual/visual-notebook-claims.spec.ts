@@ -26,7 +26,7 @@ async function openCompanyTool(page: Page, toolButton: string, rootSelector: str
 test.describe("visual — notebook + claims", () => {
   test("Notebook (company) across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open notebook", ".notebook-workspace");
+    const pane = await openCompanyTool(page, "Notebook", ".notebook-workspace");
     await expect(pane.locator(".notebook-list")).toBeVisible();
     await shootPanel(page, pane, "notebook-company");
   });
@@ -44,7 +44,7 @@ test.describe("visual — notebook + claims", () => {
 
   test("Claims across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open claims", ".company-claims-panel");
+    const pane = await openCompanyTool(page, "Claims", ".company-claims-panel");
     // The claims body folds behind the queue summary at the default short pane;
     // shootPanel resizes to a tall S/M/L pane first, so assert the panel root here
     // (the list visibility is a per-tier concern the density spec already covers).

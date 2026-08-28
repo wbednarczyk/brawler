@@ -27,19 +27,19 @@ use crate::fundamentals::metrics::QuoteFacts;
 /// Trailing window read for the 52-week high/low/percentile plus the chart —
 /// a bit more than 52 weeks of slack so a session gap never drops the true
 /// 52-week boundary bar.
-const HISTORY_WINDOW_DAYS: i64 = 371;
+pub(crate) const HISTORY_WINDOW_DAYS: i64 = 371;
 
 /// GPW is the only market a v1 quote provider is mapped to (ADR 0082, T1):
 /// the `yahoo-eod` registry entry declares `markets: GPW`.
 /// A company on any other exchange has no path to a quote yet.
-const MAPPED_EXCHANGE: &str = "GPW";
+pub(crate) const MAPPED_EXCHANGE: &str = "GPW";
 
 /// Currency for every quote in this store: v1 covers GPW only, and GPW quotes
 /// are PLN-denominated (Yahoo's own chart `meta.currency` for every `.WA`
 /// ticker, `source_adapters::yahoo_eod`). `daily_quotes` does not persist a
 /// per-bar currency column (ADR 0067 migration 0071), so this is a documented
 /// v1 assumption, not a per-row read; revisit when a non-PLN market is added.
-const QUOTE_CURRENCY: &str = "PLN";
+pub(crate) const QUOTE_CURRENCY: &str = "PLN";
 
 // ============================================================================
 // DTOs (ts-rs export → ../../src/api/generated/; MUST match the frontend's
@@ -153,7 +153,7 @@ fn empty_price_context(reason: &str) -> PriceContext {
 /// than panicking on an out-of-range result. Falls back to the epoch (the
 /// widest possible window — never a panic, never a narrower-than-intended
 /// read) when `date` fails to parse.
-fn shift_iso_date_back(date: &str, delta_days: i64) -> String {
+pub(crate) fn shift_iso_date_back(date: &str, delta_days: i64) -> String {
     let format = format_description!("[year]-[month]-[day]");
     let Ok(parsed) = Date::parse(date, &format) else {
         return "0000-01-01".to_owned();

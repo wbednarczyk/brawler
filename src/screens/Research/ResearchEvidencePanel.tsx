@@ -1,4 +1,5 @@
 import type { KeyboardEvent, PointerEvent } from "react";
+import { Building2 } from "lucide-react";
 import type { Company } from "../../api/types";
 import type {
   ResearchEvidenceItem,
@@ -6,7 +7,7 @@ import type {
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
 import { TickerLabel } from "../../shared/components/TickerLabel";
-import { EmptyState, SectionHeader } from "../../ui";
+import { ActionRow, Button, EmptyState, SectionHeader } from "../../ui";
 import { EvidenceRow } from "./EvidenceRow";
 
 type CompanySummary = {
@@ -24,6 +25,7 @@ type ResearchEvidencePanelProps = {
   selectedQuestion: ResearchQuestion | null;
   linkedEvidenceKeys: Set<string>;
   setSelectedWatchlistCompanyId: (companyId: string | null) => void;
+  openCompanyWorkspaceById: (companyId: string) => void;
   resizeResearchPanelWithKeyboard: (
     handle: "watchlistQueue",
     event: KeyboardEvent<HTMLDivElement>,
@@ -49,6 +51,7 @@ export function ResearchEvidencePanel({
   selectedQuestion,
   linkedEvidenceKeys,
   setSelectedWatchlistCompanyId,
+  openCompanyWorkspaceById,
   resizeResearchPanelWithKeyboard,
   startResearchResize,
   resizeResearchPanels,
@@ -69,21 +72,35 @@ export function ResearchEvidencePanel({
               const isSelected = selectedWatchlistCompanyId === company.id;
 
               return (
-                <button
+                // Outer container is a non-interactive div (not a <button>) so
+                // the "Open company" secondary action can sit alongside the
+                // primary select button without nesting interactives
+                // (ADR 0076 D9, same pattern as CompaniesScreen's company-row).
+                <div
                   className={isSelected ? "research-company-queue-row selected" : "research-company-queue-row"}
                   key={company.id}
-                  type="button"
-                  onClick={() => setSelectedWatchlistCompanyId(company.id)}
                 >
-                  <span>
-                    <TickerLabel value={company.qualifiedTicker} />
-                    <strong>{company.displayName}</strong>
-                  </span>
-                  <span>
-                    {summary?.changedSinceReview ? <strong>{summary.changedSinceReview}</strong> : <strong>0</strong>}
-                    {text("Changed")}
-                  </span>
-                </button>
+                  <button
+                    className="research-company-queue-select"
+                    type="button"
+                    onClick={() => setSelectedWatchlistCompanyId(company.id)}
+                  >
+                    <span>
+                      <TickerLabel value={company.qualifiedTicker} />
+                      <strong>{company.displayName}</strong>
+                    </span>
+                    <span>
+                      {summary?.changedSinceReview ? <strong>{summary.changedSinceReview}</strong> : <strong>0</strong>}
+                      {text("Changed")}
+                    </span>
+                  </button>
+                  <ActionRow className="research-company-queue-actions">
+                    <Button onClick={() => openCompanyWorkspaceById(company.id)} type="button" variant="ghost">
+                      <Building2 size={14} />
+                      {text("Open company")}
+                    </Button>
+                  </ActionRow>
+                </div>
               );
             })}
             {watchlistCompanies.length === 0 ? (

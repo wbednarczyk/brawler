@@ -1,30 +1,67 @@
 /* Spółka screen (F3a S1, ADR 0107): glance bar + core grid + workshop bar.
    Screen root is `.feed-panel` (shared chrome); this file owns only the
-   screen-specific layout inside `.spolka-layout` (ui-authoring's screen
-   scaffold: a padded, independently-scrolling body). */
+   screen-specific layout inside `.spolka-layout`.
+
+   Layout (owner dogfooding v0.74, 2026-08-27 — P1): the screen fills the
+   panel height with NO outer scroll. `.spolka-layout` itself never scrolls —
+   the glance bar and workshop bar are fixed flex children; only
+   `.spolka-body-scroll` (glance's sibling, wraps the core/tool zone) may
+   scroll, and only below the 1100px breakpoint. At >=1100px width each core
+   card scrolls its OWN overflow instead (`min-height: 0; overflow-y: auto`
+   on the card), so the workshop bar can never scroll out of view. */
 
 .spolka-layout {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   /* Named size container for the panel density contracts (ADR 0076 D6, F3a
      S3): every hosted panel's `@container pane (…)` rule — including a tool's
      — resolves against this scroll region, mirroring `.cockpit-pane`/
-     `.workspace`. Safe here despite `overflow: auto`: the box's own size
-     comes from the flex layout (`flex: 1; min-height: 0` inside a
-     height-bound screen), not from its content, so `contain: size` cannot
-     collapse it. */
+     `.workspace`. */
   container: pane / size;
 }
 
-.spolka-glance {
+.spolka-body-scroll {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  /* Scrolls only when the cards\' floors exceed the panel (short windows); the
+     workshop bar sits outside this region and never scrolls away. */
+  overflow-y: auto;
+  /* Never a horizontal scroller: hosted tools wrap or scroll their own
+     inner containers (DoD §B inner-container rule). */
+  overflow-x: hidden;
+}
+
+/* `hidden` must beat the flex display while a tool occupies the zone (owner
+   dogfooding 2026-08-27: the core painted under the tool header). */
+.spolka-core-wrap[hidden] {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .spolka-body-scroll {
+    overflow-y: auto;
+  }
+}
+
+.spolka-core-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+}
+
+.spolka-glance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
+  flex: 0 0 auto;
 }
 
 .spolka-glance-counter {
@@ -33,6 +70,54 @@
   align-items: flex-start;
   gap: var(--space-0);
   min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  white-space: normal;
+}
+
+/* Quiet tinted tone per counter tile (owner dogfooding v0.74 wave 2, item 4):
+   status tones (caution/negative) are semantics, exempt from the accent
+   budget; "official" is provenance's quiet-cyan form (ADR 0104 dec. 1) —
+   the claims tile always carries it, the "tezy do rozliczenia" reading is
+   itself a provenance-adjacent obligation. */
+.spolka-glance-counter[data-tone="caution"] {
+  border-color: color-mix(in srgb, var(--tone-caution) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone-caution) 8%, var(--surface-raised));
+}
+
+.spolka-glance-counter[data-tone="official"] {
+  border-color: color-mix(in srgb, var(--tone-official) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone-official) 8%, var(--surface-raised));
+}
+
+.spolka-glance-counter[data-tone="negative"] {
+  border-color: color-mix(in srgb, var(--tone-negative) 40%, var(--border));
+  background: color-mix(in srgb, var(--tone-negative) 8%, var(--surface-raised));
+}
+
+.spolka-glance-counter[data-tone="caution"] .spolka-glance-figure {
+  color: var(--tone-caution);
+}
+
+.spolka-glance-counter[data-tone="official"] .spolka-glance-figure {
+  color: var(--tone-official);
+}
+
+.spolka-glance-counter[data-tone="negative"] .spolka-glance-figure {
+  color: var(--tone-negative);
+}
+
+.spolka-glance-figure {
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+
+.spolka-glance-label {
+  color: var(--muted);
+  font-size: var(--font-sm);
 }
 
 .spolka-glance-sub {
@@ -43,24 +128,47 @@
 .spolka-core {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* Each card keeps a usable floor; the body scrolls instead of collapsing cards
+     to their headers on a 768px-tall window. */
+  grid-template-rows: auto minmax(200px, 1fr) minmax(200px, 1fr);
   gap: var(--space-3);
+  /* Content-sized, never height-constrained: a constrained grid squeezes
+     `auto` rows to 0 and clips card actions (owner dogfooding wave 2). The
+     body-scroll region scrolls instead. */
+  flex: none;
 }
 
 .spolka-core > * {
   min-width: 0;
+  min-height: 0;
 }
 
 .spolka-kpi {
   grid-column: 1 / -1;
 }
 
+.spolka-section,
+.spolka-kpi {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 @media (max-width: 1100px) {
   .spolka-core {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(200px, auto);
   }
 
   .spolka-kpi {
     grid-column: auto;
+  }
+
+  .spolka-section,
+  .spolka-kpi {
+    /* The body-scroll wrapper scrolls as a whole below the breakpoint — a
+       stacked single column of independently-scrolling cards is unusable. */
+    overflow-y: visible;
   }
 }
 
@@ -91,11 +199,41 @@
   text-align: left;
 }
 
+/* The provenance thread (ADR 0104 dec. 7): the newest KPI cell — the one the
+   footer ticket points at — sits on a dotted underline in the quiet-cyan
+   provenance tone, never the plain border every other cell gets. */
+.spolka-kpi-thread {
+  border-bottom: 1px dotted var(--tone-official);
+  padding-bottom: var(--space-0);
+}
+
 .spolka-kpi-footer {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* Quiet-cyan provenance ticket (ADR 0104 dec. 1/7): the ONE sanctioned quiet
+   form of the interface's cyan accent, mono, small, tinted — never the
+   filled interaction form a primary action uses. */
+.spolka-provenance-ticket {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--tone-official);
+  background: color-mix(in srgb, var(--tone-official) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone-official) 28%, transparent);
+  border-radius: 4px;
+  padding: var(--space-0) var(--space-2);
+  min-height: 0;
+}
+
+/* Same light-theme contrast fix as .ui-toast-action (feedback.css) /
+   .ui-provenance-figure-ticket (ui.css): small text in --tone-official
+   (= --primary) fails WCAG AA on a light surface (axe color-contrast,
+   caught in the wave-2 dogfooding gate). */
+:root[data-theme="light"] .spolka-provenance-ticket {
+  color: var(--primary-strong);
 }
 
 .spolka-kpi-hint {
@@ -104,7 +242,6 @@
 }
 
 .spolka-feed-rows,
-.spolka-coverage-rows,
 .spolka-recommendations-rows {
   list-style: none;
   margin: 0;
@@ -114,6 +251,28 @@
   gap: var(--space-1);
 }
 
+.spolka-coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.spolka-coverage-table th,
+.spolka-coverage-table td {
+  text-align: right;
+  padding: var(--space-1) var(--space-2);
+}
+
+.spolka-coverage-table th:first-child,
+.spolka-coverage-table td:first-child {
+  text-align: left;
+}
+
+/* Period id — an identifier, mono per ADR 0104 dec. 2. */
+.spolka-coverage-period {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+}
+
 .spolka-price-headline {
   display: flex;
   flex-wrap: wrap;
@@ -121,8 +280,16 @@
   gap: var(--space-2);
 }
 
+/* Price headline leads the card (owner dogfooding v0.74 wave 2, item 4) —
+   the as-of date stays muted, never competing for the same weight. */
+.spolka-price-value {
+  font-size: var(--font-xl);
+  font-weight: 700;
+}
+
 .spolka-price-asof {
   color: var(--muted);
+  font-size: var(--font-sm);
 }
 
 .spolka-price-caption {
@@ -131,9 +298,33 @@
 }
 
 .spolka-workshop {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* Fifteen entries must fit one row at ~1440px: compact tabs. */
+.spolka-workshop .ghost-button {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-sm);
+}
+
+.spolka-workshop-eyebrow {
+  margin-right: var(--space-1);
+}
+
+/* The active tab (Overview or a tool) is unmistakable — filled cyan, the
+   sanctioned SELECTION form of the interaction accent (ADR 0104 dec. 1),
+   never just a subtle border. Scoped to the workshop bar so it never bleeds
+   into every other `aria-pressed` ghost button in the app. */
+.spolka-workshop .ghost-button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 22%, var(--surface-raised));
+  color: var(--text);
 }
 
 .spolka-core-strip {
@@ -143,15 +334,45 @@
   gap: var(--space-3);
 }
 
+.spolka-core-strip-ticker {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.spolka-core-strip-ticker:hover {
+  color: var(--primary);
+}
+
 .spolka-tool {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+.spolka-tool-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.spolka-tool-header > .ui-section-header {
+  flex: 1;
+  min-width: 0;
 }
 
 .spolka-tool-body {
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .spolka-tool-akcjonariat {

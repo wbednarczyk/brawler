@@ -1179,12 +1179,17 @@ via `sectionErrors`. Generated DTOs: `src/api/generated/CompanyView*.ts`.
   `{t:"feed"}` workshop tool.
 - `price?` — `{ candles[{date,open,high,low,close}], lastClose, asOf,
   delta1mPct?, deltaYtdPct?, currency, emptyReason? }`: the last 66 sessions
-  present in the data (sliced from the `compute_price_context` series); `delta1mPct`
-  = last close vs the close 21 sessions back (needs ≥ 22 sessions); `deltaYtdPct`
-  = vs the last session of the prior calendar year (missing → undefined, never
-  0); `asOf` = last session date; `emptyReason` mirrors `get_price_context`.
-  Rendered on a LOG axis (house standard, ADR 0107 decision 4).
-- `coverage[]` — `CoveragePeriodRow` (the fundamentals-coverage read model, as-is).
+  present in the data (read directly over `get_company_view`'s one pooled
+  connection, bounded to the same `HISTORY_WINDOW_DAYS` window
+  `compute_price_context` uses — not through that read model, which also
+  builds the derived-metrics engine's market-ratio context this section
+  never renders); `delta1mPct` = last close vs the close 21 sessions back
+  (needs ≥ 22 sessions); `deltaYtdPct` = vs the last session of the prior
+  calendar year (missing → undefined, never 0); `asOf` = last session date;
+  `emptyReason` mirrors `get_price_context`. Rendered on a LOG axis (house
+  standard, ADR 0107 decision 4).
+- `coverage[]` — `CoveragePeriodRow` (the fundamentals-coverage read model, as-is);
+  the core card displays the newest 8 (full list behind `{t:"pokrycie"}`).
 - `recommendations[]` — `AnalystRecommendationRow`, newest first (full history
   behind `{t:"rekomendacje"}`).
 - `sectionErrors: { counters?, kpi?, feed?, price?, coverage?, recommendations? }`

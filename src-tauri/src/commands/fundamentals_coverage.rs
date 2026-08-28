@@ -130,7 +130,7 @@ pub struct CoverageReviewCell {
 /// Period index in the `report_diff::classify::period_sort_key` shape:
 /// `Q1=1, H1=2, Q3=3, FY=4`. The inverse maps a canonical-report period index
 /// back to its `period_type` label.
-fn period_type_for_index(index: u8) -> Option<&'static str> {
+pub(crate) fn period_type_for_index(index: u8) -> Option<&'static str> {
     match index {
         1 => Some("Q1"),
         2 => Some("H1"),
@@ -146,7 +146,7 @@ fn period_type_for_index(index: u8) -> Option<&'static str> {
 /// two rows. Uppercase everything and alias `ANNUAL` to `FY` (the only
 /// observed legacy synonym; data-model.md's label set is the spec). Cells
 /// merged under one canonical key are summed by the callers.
-fn canonical_period_label(raw: &str) -> String {
+pub(crate) fn canonical_period_label(raw: &str) -> String {
     let upper = raw.trim().to_uppercase();
     if upper == "ANNUAL" {
         return "FY".to_owned();
@@ -158,7 +158,7 @@ fn canonical_period_label(raw: &str) -> String {
 /// reads newest-period-first within a year. The four canonical labels follow the
 /// ADR 0077 period index; other stored labels (`Q2`, `H2`, `9M`, …) fall on a
 /// reasonable neighbour so they never collapse into `FY`.
-fn period_sort_index(period_type: &str) -> u8 {
+pub(crate) fn period_sort_index(period_type: &str) -> u8 {
     match period_type {
         "Q1" => 1,
         "Q2" | "H1" => 2,

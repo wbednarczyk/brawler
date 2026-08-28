@@ -36,7 +36,7 @@ export function FilingRow({ item, onOpen }: { item: FilingItem; onOpen: () => vo
         </StatusChip>
       }
       title={statement ?? item.title}
-      meta={filename}
+      meta={filename ? <span className="dayq-row-meta-mono">{filename}</span> : null}
       actionLabel={isReport ? text("Read report") : text("Open filing")}
       onAction={onOpen}
       emphasis={isReport}

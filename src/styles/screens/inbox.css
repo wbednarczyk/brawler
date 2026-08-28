@@ -83,7 +83,11 @@
   margin-top: var(--space-2);
   overflow: auto;
   color: var(--text);
-  font-size: var(--font-base);
+  /* Item content is the pane's primary, readable block (wave 2, owner
+     dogfooding note 2026-08-27) — reads at --font-md, not the smaller --font-base
+     most metadata/chrome uses, so it stays the clear visual lead over the
+     now-collapsed company-context teaser. */
+  font-size: var(--font-md);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -734,7 +738,10 @@ summary.feed-body-heading::before {
 .feed-detail-excerpt {
   margin: 0;
   color: var(--text);
-  font-size: var(--font-base);
+  /* Primary content read size (see .detail-pane .feed-detail-body above);
+     no max-width — the pane's full width is the "generous width" the owner's
+     dogfooding note asked for. */
+  font-size: var(--font-md);
   line-height: 1.5;
 }
 
@@ -814,10 +821,45 @@ summary.feed-body-heading::before {
   gap: var(--space-3);
 }
 
+/* The disclosure row (wave 2, owner dogfooding note 2026-08-27): collapsed by
+   default so the company-context block reads as secondary to the item body
+   above it — title + one-line teaser, no bigger than any other detail
+   metadata row until expanded. */
+.feed-context-toggle-row {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-raised) 58%, transparent);
+}
+
+.feed-context-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.feed-context-toggle-title {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.feed-context-toggle-teaser {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .feed-context-body {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  margin-top: var(--space-3);
 }
 
 .feed-context-block {

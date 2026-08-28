@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { updateFeedItemState as persistFeedItemState } from "../../api/feed";
 import type { Company, FeedItem } from "../../api/types";
 
@@ -28,8 +28,17 @@ export function useCockpitCompanyFeed(
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedFeedItemId ?? null);
 
   // Drop overrides + selection that no longer match the company's items (e.g. the
-  // pinned company changed) so stale state never leaks across companies.
+  // pinned company changed) so stale state never leaks across companies. Only
+  // on an ACTUAL company change — every effect fires once on mount too, which
+  // was silently wiping `initialSelectedFeedItemId`'s pre-selection right
+  // after it seeded `selectedId` (bug found fixing owner dogfooding v0.74
+  // item 7: the `feedItem` tool never actually pre-selected anything).
+  const mountedRef = useRef(false);
   useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
     setOverrides({});
     setSelectedId(null);
   }, [company.id]);

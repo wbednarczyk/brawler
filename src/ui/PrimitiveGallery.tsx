@@ -96,6 +96,7 @@ export function PrimitiveGallery() {
       <section aria-labelledby="g-headers">
         <SectionHeader title="SectionHeader (h2, default)" titleId="g-headers" />
         <SectionHeader title="SectionHeader (h3)" level="h3" description="With a description line." />
+        <SectionHeader title="SectionHeader (eyebrow)" level="h3" eyebrow="PLN million · consolidated" />
         <SectionHeader
           title="SectionHeader (h4, accent, meta + actions)"
           level="h4"

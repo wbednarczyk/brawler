@@ -123,6 +123,7 @@ Detail pane should show:
 - original excerpt/body when available
 - AI summary/significance when available
 - actions: mark read/unread, save/unsave, open matched company workspace, open source, create note
+- company context (latest facts, upcoming events, notebook, claims due) — secondary to the item's own body, collapsed behind a disclosure with a one-line teaser by default, expanded on demand (owner dogfooding finding, 2026-08-27; same collapse for every `presentationKind`)
 
 Empty states:
 

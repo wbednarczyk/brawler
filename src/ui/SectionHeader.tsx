@@ -4,6 +4,11 @@ export type SectionHeaderProps = {
   actions?: ReactNode;
   className?: string;
   description?: ReactNode;
+  /** Small mono/uppercase label above the title (ADR 0104 dec. 2 — the
+   *  established eyebrow recipe already used by `DeltaHeader`/`FocusOverlay`),
+   *  e.g. a unit qualifier or a context tag. Omit when nothing non-redundant
+   *  with the title exists — an eyebrow that repeats the title is noise. */
+  eyebrow?: ReactNode;
   /** Heading level for the title. Defaults to h2; use h3/h4 for nested sections to preserve document outline. */
   level?: "h2" | "h3" | "h4";
   meta?: ReactNode;
@@ -22,6 +27,7 @@ export function SectionHeader({
   actions,
   className,
   description,
+  eyebrow,
   level: Heading = "h2",
   meta,
   paneLead = false,
@@ -41,6 +47,7 @@ export function SectionHeader({
         .join(" ")}
     >
       <div className="ui-section-title">
+        {eyebrow ? <span className="ui-section-eyebrow">{eyebrow}</span> : null}
         <Heading id={titleId}>{title}</Heading>
         {description ? <p>{description}</p> : null}
       </div>

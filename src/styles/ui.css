@@ -92,6 +92,18 @@
   min-width: 0;
 }
 
+/* The established eyebrow recipe (ADR 0104 dec. 2 — mono is reserved for
+   identifiers/keys/period ids/eyebrows/filenames), mirrored from
+   `.dayq-delta-eyebrow`/`FocusOverlay`'s `.eyebrow`: a small muted mono
+   label above the title, never a restatement of it. */
+.ui-section-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
 .ui-section-title p {
   margin: 0;
   color: var(--muted);

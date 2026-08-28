@@ -148,7 +148,7 @@ fn latest_quote(connection: &Connection, company_id: &str) -> StorageResult<Opti
     Ok(bar)
 }
 
-fn quotes_since(
+pub(super) fn quotes_since(
     connection: &Connection,
     company_id: &str,
     from_date: &str,

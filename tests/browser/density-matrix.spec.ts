@@ -63,7 +63,7 @@ async function openCompanyNotebook(page: Page): Promise<PaneLocator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.getByRole("button", { name: "Open GPW:CDR" }).click();
   await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
-  await page.getByRole("button", { name: "Open notebook", exact: true }).click();
+  await page.getByRole("button", { name: "Notebook", exact: true }).click();
   const pane = page.locator(".spolka-layout");
   await expect(pane).toBeVisible();
   await expect(pane.locator(".notebook-workspace")).toBeVisible();

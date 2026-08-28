@@ -118,3 +118,17 @@ export const CALENDAR_EVENT_FORMS: PluralForms = {
   en: ["event", "events"],
   pl: ["wydarzenie", "wydarzenia", "wydarzeń"],
 };
+
+// Inbox/Spółka company-context collapse teaser (wave 2, owner note
+// 2026-08-27): "fresh facts"/"upcoming events" combine adjective + noun since
+// Polish adjective agreement tracks the same one/few/many category as the
+// noun (mirrors the AWAITS_NAMING_FORMS/UNSEEN_FORMS precedent above).
+export const FRESH_FACT_FORMS: PluralForms = {
+  en: ["fresh fact", "fresh facts"],
+  pl: ["świeży fakt", "świeże fakty", "świeżych faktów"],
+};
+
+export const UPCOMING_EVENT_FORMS: PluralForms = {
+  en: ["upcoming event", "upcoming events"],
+  pl: ["nadchodzące wydarzenie", "nadchodzące wydarzenia", "nadchodzących wydarzeń"],
+};

@@ -175,3 +175,15 @@ function formatFallback(value: FormattableValue, locale: LocaleCode): string {
 export function formatFinancialValue(value: FormattableValue, locale: LocaleCode = "en"): string {
   return formatAsReported(value) ?? formatFallback(value, locale);
 }
+
+/**
+ * The CSS class for a signed delta/percentage figure (ADR 0104 visual
+ * hierarchy amendment, owner dogfooding v0.74 wave 2): positive → the
+ * `--tone-positive` text color, negative → `--tone-negative`, zero/undefined
+ * → no tone (the neutral figure color). Shared by every r/r, YTD, and 1M
+ * delta figure so the sign convention never drifts panel to panel.
+ */
+export function deltaToneClass(value: number | null | undefined): string {
+  if (value === null || value === undefined || value === 0) return "";
+  return value > 0 ? "num-tone-positive" : "num-tone-negative";
+}

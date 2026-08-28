@@ -297,26 +297,46 @@
 }
 
 .research-company-queue-row {
-  display: grid;
-  gap: var(--space-0);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   border-radius: 6px;
   padding: var(--space-1) var(--space-2);
   color: var(--text);
-  text-align: left;
   background: color-mix(in srgb, var(--surface-raised) 82%, var(--surface));
-  cursor: pointer;
 }
 
 .research-company-queue-row:hover,
-.research-company-queue-row:focus-visible,
+.research-company-queue-row:focus-within,
 .research-company-queue-row.selected {
   border-color: color-mix(in srgb, var(--primary) 72%, var(--border));
   background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
 }
 
-.research-company-queue-row > span {
+/* The primary select button — resets to a plain full-width block so it reads
+   as the original row (ADR 0076 D9: the box chrome moved to the now-static
+   outer row so the "Open company" secondary action can sit beside it). */
+.research-company-queue-select {
+  display: grid;
+  gap: var(--space-0);
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.research-company-queue-actions {
+  justify-content: flex-end;
+}
+
+.research-company-queue-select > span {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -327,14 +347,14 @@
   line-height: 1.15;
 }
 
-.research-company-queue-row > span:first-child {
+.research-company-queue-select > span:first-child {
   align-items: flex-start;
   flex-direction: column;
   gap: var(--space-0);
   color: var(--text);
 }
 
-.research-company-queue-row strong {
+.research-company-queue-select strong {
   display: -webkit-box;
   overflow: hidden;
   color: var(--text);
