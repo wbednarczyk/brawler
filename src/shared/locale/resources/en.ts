@@ -60,7 +60,7 @@ export const en = {
   "companies.title": "Companies",
   "companies.description": "Companies tracked in your workspace.",
   "watchlists.title": "Watchlists",
-  "watchlists.description": "Manage company groups used across filters.",
+  "watchlists.description": "Groups of companies you filter Today, Inbox and Report Season by. A company can be on several lists.",
   "alerts.title": "Alerts",
   "alerts.description": "Rules for what to be told about, and the alerts they've fired.",
   "notebooks.title": "Notebooks",

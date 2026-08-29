@@ -1,14 +1,30 @@
-import { Building2, Check, Edit3, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
+import { formatCount } from "../../shared/format/financialValue";
 import { useLocale } from "../../shared/locale";
-import { pluralNoun } from "../../shared/locale/plural";
+import { COMPANY_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import { useWatchlistsViewModel } from "../../app/state/screenViewModels";
-import { ActionRow, Button, DenseRow, EmptyState, ErrorText, InlineConfirm, PanelHeader, SearchField, SectionHeader, TextField } from "../../ui";
+import {
+  ActionButton,
+  ActionRow,
+  DenseRow,
+  EmptyState,
+  ErrorText,
+  Figure,
+  InlineConfirm,
+  PanelHeader,
+  SearchField,
+  SectionHeader,
+  TextField,
+} from "../../ui";
 
-// Polish needs three plural forms; "{n} companies" must read "18 spółek", not "18 spółki".
-const COMPANY_FORMS = { en: ["company", "companies"], pl: ["spółka", "spółki", "spółek"] } as const;
+// "N tracked" adjective agreement for the 0-members invitation's library-size
+// hint (F4a S3 redesign) — Polish needs the three-category form the other
+// PluralForms constants use (mirrors UNSEEN_FORMS' adjective precedent in
+// shared/locale/plural.ts; kept local since only this screen needs it).
+const TRACKED_FORMS: PluralForms = { en: ["tracked", "tracked"], pl: ["śledzona", "śledzone", "śledzonych"] };
 
 export type WatchlistsScreenProps = {
   companies: Company[];
@@ -25,6 +41,14 @@ export type WatchlistsScreenProps = {
   openCompanyWorkspaceById: (companyId: string) => void;
 };
 
+/**
+ * Library screen "Watchlists" (F4a S3 redesign, docs/plans/frontend-v2-f4a.md
+ * § Watchlists; approved mockup docs/mockups/frontend-v2-f4/watchlists.html):
+ * two panes — watchlist names + counts, and the selected list's members — with
+ * exactly one filled action at rest ("Add companies"). Member rows carry no
+ * action column: a real "Open company" destination plus a ghost "Remove"
+ * action, both real focusable buttons (ADR 0104 dec. 3 amendment).
+ */
 export function WatchlistsScreen() {
   const {
     companies,
@@ -41,6 +65,7 @@ export function WatchlistsScreen() {
     openCompanyWorkspaceById,
   } = useWatchlistsViewModel();
   const { t, text, locale } = useLocale();
+  const nameFieldRef = useRef<HTMLInputElement>(null);
   const [watchlistName, setWatchlistName] = useState("");
   const [watchlistRenameDraft, setWatchlistRenameDraft] = useState("");
   // Cascading (ADR 0076 D5): confirm a watchlist delete in place.
@@ -61,6 +86,10 @@ export function WatchlistsScreen() {
       ),
     [normalizedWatchlistSearch, watchlists],
   );
+  // A search that excludes every list takes over the sidebar with the
+  // "no watchlist by that name" invitation and hides the (now stale) detail
+  // pane, keeping exactly one filled action on screen (state matrix, F4a S3).
+  const searchHasNoMatch = watchlists.length > 0 && normalizedWatchlistSearch !== "" && filteredWatchlists.length === 0;
   const selectedMemberships = useMemo(
     () =>
       selectedWatchlist
@@ -76,14 +105,14 @@ export function WatchlistsScreen() {
     () => companies.filter((company) => selectedCompanyIds.has(company.id)),
     [companies, selectedCompanyIds],
   );
+  // The add-companies picker shows the WHOLE library (not just what's
+  // missing): a company already on the list renders as a disabled,
+  // "already on the list" row instead of disappearing, so the picker reads as
+  // "everything you track" rather than a shrinking list (F4a S3 redesign).
   const normalizedSearch = watchlistCompanySearch.trim().toLowerCase();
-  const availableCompanies = useMemo(
+  const filteredLibraryCompanies = useMemo(
     () =>
       companies.filter((company) => {
-        if (selectedCompanyIds.has(company.id)) {
-          return false;
-        }
-
         if (!normalizedSearch) {
           return true;
         }
@@ -94,7 +123,7 @@ export function WatchlistsScreen() {
           company.isin?.toLowerCase().includes(normalizedSearch)
         );
       }),
-    [companies, normalizedSearch, selectedCompanyIds],
+    [companies, normalizedSearch],
   );
 
   useEffect(() => {
@@ -152,6 +181,15 @@ export function WatchlistsScreen() {
     setWatchlistCompanySearch("");
   }
 
+  const addSelectedLabel =
+    selectedAddCompanyIds.size > 0 ? (
+      <>
+        {text("Add selected")} · <Figure value={selectedAddCompanyIds.size} />
+      </>
+    ) : (
+      text("Add selected")
+    );
+
   return (
     <section className="feed-panel" aria-labelledby="watchlists-title">
       <PanelHeader
@@ -162,62 +200,89 @@ export function WatchlistsScreen() {
         actions={
           <form className="watchlist-form" onSubmit={submitCreate}>
             <TextField
+              ref={nameFieldRef}
               aria-label={text("Watchlist name")}
               placeholder="Main GPW"
               value={watchlistName}
               onChange={(event) => setWatchlistName(event.target.value)}
               required
             />
-            <Button type="submit" variant="primary">
-              <Plus size={16} />
+            <ActionButton verb="create" type="submit" variant="secondary">
               {text("Create")}
-            </Button>
+            </ActionButton>
           </form>
         }
       />
 
-      <div className="watchlists-workspace">
-        <div className="watchlists-sidebar">
-          <SearchField
-            ariaLabel={text("Search watchlists")}
-            className="registry-search-field"
-            clearLabel={text("Clear watchlist search")}
-            onChange={setWatchlistSearch}
-            onClear={() => setWatchlistSearch("")}
-            placeholder={text("Search watchlists")}
-            type="text"
-            value={watchlistSearch}
-          />
-          <div className="watchlist-list" aria-label={text("Watchlists")}>
-            {filteredWatchlists.map((watchlist) => (
-              <button
-                className={
-                  selectedWatchlist?.id === watchlist.id
-                    ? "watchlist-row watchlist-row-selected"
-                    : "watchlist-row"
-                }
-                key={watchlist.id}
-                data-watchlist-id={watchlist.id}
-                onClick={() => selectWatchlist(watchlist)}
-                type="button"
-              >
-                <span>{watchlist.name}</span>
-                <strong>{watchlist.companyCount}</strong>
-              </button>
-            ))}
-            {watchlists.length === 0 ? (
-              <EmptyState>{text("No watchlists yet.")}</EmptyState>
-            ) : null}
-            {watchlists.length > 0 && filteredWatchlists.length === 0 ? (
-              <EmptyState>{text("No watchlists match this search.")}</EmptyState>
-            ) : null}
+      {watchlists.length === 0 ? (
+        <EmptyState
+          kind="invitation"
+          title={text("No watchlists yet.")}
+          source={text(
+            "A watchlist is a group of companies from your library. Today, Inbox and Report Season will only show what's on it.",
+          )}
+          action={
+            <ActionButton
+              verb="create"
+              variant="primary"
+              data-ux-primary-action="true"
+              onClick={() => nameFieldRef.current?.focus()}
+            >
+              {text("Create your first watchlist")}
+            </ActionButton>
+          }
+        />
+      ) : (
+        <div className="watchlists-workspace">
+          <div className="watchlists-sidebar">
+            <SearchField
+              ariaLabel={text("Search watchlists")}
+              className="registry-search-field"
+              clearLabel={text("Clear watchlist search")}
+              onChange={setWatchlistSearch}
+              onClear={() => setWatchlistSearch("")}
+              placeholder={text("Search watchlists")}
+              type="text"
+              value={watchlistSearch}
+            />
+            <div className="watchlist-list" aria-label={text("Watchlists")}>
+              {filteredWatchlists.map((watchlist) => (
+                <DenseRow
+                  as="button"
+                  className="watchlist-row"
+                  data-action-kind="destination"
+                  data-watchlist-id={watchlist.id}
+                  key={watchlist.id}
+                  onClick={() => selectWatchlist(watchlist)}
+                  selected={selectedWatchlist?.id === watchlist.id}
+                >
+                  <span>{watchlist.name}</span>
+                  <Figure value={watchlist.companyCount} />
+                </DenseRow>
+              ))}
+              {searchHasNoMatch ? (
+                <EmptyState
+                  kind="invitation"
+                  title={text("No watchlists match this search.")}
+                  source={text("Check the spelling, or create a new watchlist with this name.")}
+                  action={
+                    <ActionButton
+                      verb="create"
+                      variant="primary"
+                      data-ux-primary-action="true"
+                      onClick={() => createWatchlist(watchlistSearch.trim())}
+                    >
+                      {text("Create watchlist \"{name}\"").replace("{name}", watchlistSearch.trim())}
+                    </ActionButton>
+                  }
+                />
+              ) : null}
+            </div>
           </div>
-        </div>
 
-        <div className="watchlist-detail" aria-label={text("Selected watchlist")}>
-          {selectedWatchlist ? (
-            <>
-              <div className="watchlist-detail-header">
+          <div className="watchlist-detail" aria-label={text("Selected watchlist")}>
+            {searchHasNoMatch ? null : selectedWatchlist ? (
+              <>
                 {isRenameOpen ? (
                   <form className="watchlist-rename-form" onSubmit={submitRename}>
                     <TextField
@@ -226,173 +291,215 @@ export function WatchlistsScreen() {
                       required
                       value={watchlistRenameDraft}
                     />
-                    <Button type="submit" variant="secondary">
-                      <Check size={14} />
+                    <ActionButton verb="save" type="submit" variant="secondary">
                       {text("Save")}
-                    </Button>
-                    <Button onClick={() => setRenameOpen(false)} type="button" variant="ghost">
-                      <X size={14} />
-                    </Button>
+                    </ActionButton>
+                    <ActionButton kind="control" onClick={() => setRenameOpen(false)} type="button" variant="ghost">
+                      {text("Cancel")}
+                    </ActionButton>
                   </form>
                 ) : (
-                  <div>
-                    <span className="eyebrow">{text("Selected watchlist")}</span>
-                    <h3>{selectedWatchlist.name}</h3>
-                    <p>
-                      {memberCompanies.length}{" "}
-                      {pluralNoun(locale, memberCompanies.length, COMPANY_FORMS)}
-                    </p>
-                  </div>
-                )}
-                {!isRenameOpen ? (
-                  <ActionRow className="watchlist-detail-actions">
-                    <Button onClick={() => setAddOpen((current) => !current)} type="button" variant="primary">
-                      <Plus size={14} />
-                      {text("Add companies")}
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setWatchlistRenameDraft(selectedWatchlist.name);
-                        setRenameOpen(true);
-                      }}
-                      type="button"
-                      variant="secondary"
-                    >
-                      <Edit3 size={14} />
-                      {text("Rename")}
-                    </Button>
-                    {confirmDeleteWatchlist ? (
-                      <InlineConfirm
-                        cancelLabel={text("Cancel")}
-                        confirmLabel={text("Delete")}
-                        onCancel={() => setConfirmDeleteWatchlist(false)}
-                        onConfirm={() => {
-                          setConfirmDeleteWatchlist(false);
-                          deleteWatchlist(selectedWatchlist);
-                        }}
-                      >
-                        {`${text("Delete")} ${selectedWatchlist.name}?`}
-                      </InlineConfirm>
-                    ) : (
-                      <Button
-                        onClick={() => setConfirmDeleteWatchlist(true)}
-                        type="button"
-                        variant="danger"
-                      >
-                        <Trash2 size={14} />
-                        {text("Delete")}
-                      </Button>
-                    )}
-                  </ActionRow>
-                ) : null}
-              </div>
-
-              {isAddOpen ? (
-                <section className="watchlist-add-panel" aria-label={text("Add companies")}>
                   <SectionHeader
-                    className="watchlist-add-panel-header"
+                    className="watchlist-detail-header"
                     level="h4"
-                    title={text("Add companies")}
-                    actions={
+                    eyebrow={text("Selected list")}
+                    title={selectedWatchlist.name}
+                    meta={
                       <>
-                        <Button
-                          disabled={selectedAddCompanyIds.size === 0}
-                          onClick={addSelectedCompanies}
-                          type="button"
-                          variant="primary"
-                        >
-                          <Check size={14} />
-                          {text("Add selected")}
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setAddOpen(false);
-                            setSelectedAddCompanyIds(new Set());
-                          }}
-                          type="button"
-                          variant="ghost"
-                        >
-                          <X size={14} />
-                        </Button>
+                        <Figure value={memberCompanies.length} /> {pluralNoun(locale, memberCompanies.length, COMPANY_FORMS)} ·{" "}
+                        {text("used by Today, Inbox and Report Season")}
                       </>
                     }
-                  />
-                  <SearchField
-                    ariaLabel={text("Search tracked companies to add")}
-                    className="registry-search-field"
-                    clearLabel={text("Clear company search")}
-                    onChange={setWatchlistCompanySearch}
-                    onClear={() => setWatchlistCompanySearch("")}
-                    placeholder={text("Search tracked companies")}
-                    type="text"
-                    value={watchlistCompanySearch}
-                  />
-                  <div className="watchlist-picker-list">
-                    {availableCompanies.map((company) => (
-                      <button
-                        aria-pressed={selectedAddCompanyIds.has(company.id)}
-                        className={
-                          selectedAddCompanyIds.has(company.id)
-                            ? "watchlist-picker-row watchlist-picker-row-selected"
-                            : "watchlist-picker-row"
-                        }
-                        key={company.id}
-                        onClick={() => toggleAddCompany(company.id)}
-                        type="button"
-                      >
-                        <TickerLabel value={company.qualifiedTicker} />
-                        <span>{company.displayName}</span>
-                        {selectedAddCompanyIds.has(company.id) ? <Check size={14} /> : <Plus size={14} />}
-                      </button>
-                    ))}
-                    {availableCompanies.length === 0 ? (
-                      <EmptyState>{text("No tracked companies to add.")}</EmptyState>
-                    ) : null}
-                  </div>
-                </section>
-              ) : null}
-
-              <section className="watchlist-members-section" aria-label={text("Companies in watchlist")}>
-                <SectionHeader
-                  className="watchlist-table-header"
-                  level="h4"
-                  title={text("In this watchlist")}
-                  meta={
-                    <>
-                      {memberCompanies.length}{" "}
-                      {pluralNoun(locale, memberCompanies.length, COMPANY_FORMS)}
-                    </>
-                  }
-                />
-                <div className="watchlist-member-table">
-                  {memberCompanies.map((company) => (
-                    <DenseRow className="watchlist-member-row" interactive={false} key={company.id}>
-                      <TickerLabel value={company.qualifiedTicker} />
-                      <span>{company.displayName}</span>
-                      <span>{company.isin ?? text("No ISIN")}</span>
-                      <ActionRow className="watchlist-member-actions">
-                        <Button onClick={() => openCompanyWorkspaceById(company.id)} type="button" variant="ghost">
-                          <Building2 size={14} />
-                          {text("Open company")}
-                        </Button>
-                        <Button onClick={() => removeCompanyFromWatchlist(selectedWatchlist, company)} type="button" variant="ghost">
-                          <X size={14} />
-                          {text("Remove")}
-                        </Button>
+                    actions={
+                      <ActionRow className="watchlist-detail-actions">
+                        <ActionButton
+                          verb="rename"
+                          variant="secondary"
+                          onClick={() => {
+                            setWatchlistRenameDraft(selectedWatchlist.name);
+                            setRenameOpen(true);
+                          }}
+                        >
+                          {text("Rename")}
+                        </ActionButton>
+                        {confirmDeleteWatchlist ? (
+                          <InlineConfirm
+                            cancelLabel={text("Cancel")}
+                            confirmLabel={text("Remove")}
+                            onCancel={() => setConfirmDeleteWatchlist(false)}
+                            onConfirm={() => {
+                              setConfirmDeleteWatchlist(false);
+                              deleteWatchlist(selectedWatchlist);
+                            }}
+                          >
+                            {`${text("Remove")} ${selectedWatchlist.name}?`}
+                          </InlineConfirm>
+                        ) : (
+                          <ActionButton verb="remove" variant="danger" onClick={() => setConfirmDeleteWatchlist(true)}>
+                            {text("Remove")}
+                          </ActionButton>
+                        )}
+                        {memberCompanies.length > 0 && !isAddOpen ? (
+                          <ActionButton
+                            verb="add"
+                            variant="primary"
+                            data-ux-primary-action="true"
+                            onClick={() => setAddOpen(true)}
+                          >
+                            {text("Add companies")}
+                          </ActionButton>
+                        ) : null}
                       </ActionRow>
-                    </DenseRow>
-                  ))}
-                  {memberCompanies.length === 0 ? (
-                    <EmptyState>{text("No companies in this watchlist.")}</EmptyState>
-                  ) : null}
-                </div>
-              </section>
-            </>
-          ) : (
-            <EmptyState>{text("Select or create a watchlist.")}</EmptyState>
-          )}
+                    }
+                  />
+                )}
+
+                {isAddOpen ? (
+                  <section className="watchlist-add-panel" aria-label={text("Add companies")}>
+                    <SectionHeader
+                      className="watchlist-add-panel-header"
+                      level="h4"
+                      title={text("Add companies")}
+                      actions={
+                        <>
+                          <ActionButton
+                            verb="add"
+                            variant="primary"
+                            data-ux-primary-action="true"
+                            disabled={selectedAddCompanyIds.size === 0}
+                            onClick={addSelectedCompanies}
+                          >
+                            {addSelectedLabel}
+                          </ActionButton>
+                          <ActionButton
+                            kind="control"
+                            variant="ghost"
+                            onClick={() => {
+                              setAddOpen(false);
+                              setSelectedAddCompanyIds(new Set());
+                            }}
+                          >
+                            {text("Cancel")}
+                          </ActionButton>
+                        </>
+                      }
+                    />
+                    <SearchField
+                      ariaLabel={text("Search tracked companies to add")}
+                      className="registry-search-field"
+                      clearLabel={text("Clear company search")}
+                      onChange={setWatchlistCompanySearch}
+                      onClear={() => setWatchlistCompanySearch("")}
+                      placeholder={`${text("Search the library")} (${formatCount(companies.length)})`}
+                      type="text"
+                      value={watchlistCompanySearch}
+                    />
+                    <div className="watchlist-picker-list">
+                      {filteredLibraryCompanies.map((company) => {
+                        const isMember = selectedCompanyIds.has(company.id);
+                        return (
+                          <label
+                            className={
+                              isMember ? "watchlist-picker-row watchlist-picker-row-disabled" : "watchlist-picker-row"
+                            }
+                            key={company.id}
+                          >
+                            <input
+                              checked={isMember || selectedAddCompanyIds.has(company.id)}
+                              disabled={isMember}
+                              onChange={() => toggleAddCompany(company.id)}
+                              type="checkbox"
+                            />
+                            <TickerLabel value={company.qualifiedTicker} />
+                            <span>
+                              {company.displayName}
+                              {isMember ? ` · ${text("already on the list")}` : ""}
+                            </span>
+                          </label>
+                        );
+                      })}
+                      {filteredLibraryCompanies.length === 0 ? (
+                        <EmptyState>{text("No tracked companies to add.")}</EmptyState>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
+
+                <section className="watchlist-members-section" aria-label={text("Companies in watchlist")}>
+                  {memberCompanies.length > 0 ? (
+                    <>
+                      <SectionHeader
+                        className="watchlist-table-header"
+                        level="h4"
+                        title={text("In this watchlist")}
+                        meta={
+                          <>
+                            {memberCompanies.length} {pluralNoun(locale, memberCompanies.length, COMPANY_FORMS)}
+                          </>
+                        }
+                      />
+                      <div className="watchlist-member-table">
+                        {memberCompanies.map((company) => (
+                          <DenseRow className="watchlist-member-row" interactive={false} key={company.id}>
+                            <TickerLabel value={company.qualifiedTicker} />
+                            <span className="watchlist-member-name">
+                              <span className="watchlist-member-name-text">{company.displayName}</span>
+                              {company.isin ? (
+                                <span className="watchlist-member-isin">{company.isin}</span>
+                              ) : null}
+                            </span>
+                            <ActionRow className="watchlist-member-actions">
+                              <ActionButton
+                                kind="destination"
+                                variant="secondary"
+                                onClick={() => openCompanyWorkspaceById(company.id)}
+                              >
+                                {text("Open company")}
+                              </ActionButton>
+                              <ActionButton
+                                verb="remove"
+                                variant="ghost"
+                                aria-label={text("Remove from list")}
+                                title={text("Remove from list")}
+                                onClick={() => removeCompanyFromWatchlist(selectedWatchlist, company)}
+                              >
+                                <X aria-hidden="true" size={14} />
+                                <span className="watchlist-member-remove-label">{text("Remove from list")}</span>
+                              </ActionButton>
+                            </ActionRow>
+                          </DenseRow>
+                        ))}
+                      </div>
+                    </>
+                  ) : isAddOpen ? null : (
+                    <EmptyState
+                      kind="invitation"
+                      title={text("No companies in this watchlist.")}
+                      source={text(
+                        "Add companies from your library ({count} {tracked}). A company can be on several watchlists.",
+                      )
+                        .replace("{count}", formatCount(companies.length))
+                        .replace("{tracked}", pluralNoun(locale, companies.length, TRACKED_FORMS))}
+                      action={
+                        <ActionButton
+                          verb="add"
+                          variant="primary"
+                          data-ux-primary-action="true"
+                          onClick={() => setAddOpen(true)}
+                        >
+                          {text("Add companies")}
+                        </ActionButton>
+                      }
+                    />
+                  )}
+                </section>
+              </>
+            ) : (
+              <EmptyState>{text("Select or create a watchlist.")}</EmptyState>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {watchlistsError ? (
         <ErrorText>{text("Watchlist command failed")}: {watchlistsError}</ErrorText>
