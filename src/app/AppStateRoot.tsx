@@ -33,6 +33,7 @@ import * as signalsApi from "../api/signals";
 import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAttentionController } from "./useAttentionController";
+import { AlertsScreenHost } from "./useAlertsScreenWiring";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
 import { useLicenseController } from "./useLicenseController";
@@ -63,7 +64,6 @@ import type { EventsScreenProps } from "../screens/Events/eventTypes";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
 import { ReportSeasonScreen } from "../screens/ReportSeason/ReportSeasonScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
-import { AlertsScreen } from "../screens/Alerts/AlertsScreen";
 import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
 import type { NotebooksScreenProps } from "../screens/Notebooks/notebookTypes";
 import {
@@ -1898,13 +1898,10 @@ export function AppStateRoot({
                   <WatchlistsScreen />
                 </WatchlistsProvider>
               ) : null}
-              {activeSection === "Alerts" ? <AlertsScreen attention={attention} /> : null}
-              {/* The standalone Research screen is retired as a *nav destination*
-              (epic c793ca1): no sidebar entry, and user-facing callers
-              (openResearchEvidence, brief/digest search) redirect into the
-              Dashboard "evidence" preset. The `activeSection === "Research"`
-              render is kept for programmatic/deep-link navigation, consistent
-              with the sibling panel-hosted sections (Notebooks/Events/ReportSeason). */}
+              {activeSection === "Alerts" ? (
+                <AlertsScreenHost attention={attention} openCompanyWorkspaceById={openCompanyWorkspaceById} setActiveSection={setActiveSection} />
+              ) : null}
+              {/* Research: palette/deep-link route until F4c adds its nav entry (#94). */}
               {activeSection === "Research" ? (
                 <ResearchProvider value={researchViewModel}>
                   <ResearchScreen />

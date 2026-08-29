@@ -1,6 +1,11 @@
 // The palette verb dictionary (ADR 0104 dec. 3, F3a S3): every palette command
 // label starts with one of these verbs. Enforced by the copy gate
 // (src/app/paletteCopy.test.ts). See docs/ui-authoring.md § i18n.
+//
+// F4a S1 (ADR 0104 dec. 3 amendment, 2026-08-28): five verbs added for the
+// Library screens' action inventories (`ActionButton`, F4a contract) —
+// `create`/`rename`/`pause`/`resume`, plus `remove` as the ONLY
+// collection-removal verb (the legacy screen-copy key `Delete` is retired).
 export type Verb =
   | "open"
   | "apply"
@@ -10,7 +15,11 @@ export type Verb =
   | "refresh"
   | "markAs"
   | "add"
-  | "remove";
+  | "remove"
+  | "create"
+  | "rename"
+  | "pause"
+  | "resume";
 
 export const VERB_LABELS: Record<Verb, { en: string; pl: string }> = {
   open: { en: "Open", pl: "Otwórz" },
@@ -22,4 +31,8 @@ export const VERB_LABELS: Record<Verb, { en: string; pl: string }> = {
   markAs: { en: "Mark as", pl: "Oznacz jako" },
   add: { en: "Add", pl: "Dodaj" },
   remove: { en: "Remove", pl: "Usuń" },
+  create: { en: "Create", pl: "Utwórz" },
+  rename: { en: "Rename", pl: "Zmień nazwę" },
+  pause: { en: "Pause", pl: "Wstrzymaj" },
+  resume: { en: "Resume", pl: "Wznów" },
 };

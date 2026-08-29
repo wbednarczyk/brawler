@@ -36,6 +36,12 @@ import {
 export type AttentionController = {
   /** Active (non-dismissed) events, newest-first — the backend list order. */
   events: AttentionEvent[];
+  /**
+   * Active alert rules, backend order — the Alerts screen's rules section
+   * reads this directly instead of re-fetching its own copy (ADR 0097
+   * dec. 6: one owner; ).
+   */
+  rules: AlertRule[];
   /** `ruleId -> rule`, so rows can show the owning rule's trigger context. */
   rulesById: Map<string, AlertRule>;
   loading: boolean;
@@ -257,6 +263,7 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
   return useMemo(
     () => ({
       events,
+      rules,
       rulesById,
       loading,
       hydrated,
@@ -269,6 +276,7 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
     }),
     [
       events,
+      rules,
       rulesById,
       loading,
       hydrated,

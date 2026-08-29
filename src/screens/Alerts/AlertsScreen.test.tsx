@@ -121,15 +121,14 @@ describe("Alerts screen — rules manager (T3, ADR 0068; relocated v0.54)", () =
     );
   });
 
-  it("disables a rule through its enable toggle", async () => {
+  it("pauses a rule through its Pause action", async () => {
     const user = userEvent.setup();
     renderApp();
     const region = await openAlertsScreen(user);
 
     // The minimal scenario seeds one enabled rule.
-    const toggle = await within(region).findByRole("switch", { name: /enabled/i });
-    expect(toggle).toBeChecked();
-    await user.click(toggle);
+    const pause = await within(region).findByRole("button", { name: "Pause" });
+    await user.click(pause);
 
     expect(invoke).toHaveBeenCalledWith(
       "set_alert_rule_enabled",
@@ -137,13 +136,13 @@ describe("Alerts screen — rules manager (T3, ADR 0068; relocated v0.54)", () =
     );
   });
 
-  it("deletes a rule with an undo toast", async () => {
+  it("removes a rule with an undo toast", async () => {
     const user = userEvent.setup();
     renderApp();
     const region = await openAlertsScreen(user);
 
     const rule = await within(region).findByRole("listitem", { name: /alert rule/i });
-    await user.click(within(rule).getByRole("button", { name: "Delete" }));
+    await user.click(within(rule).getByRole("button", { name: "Remove" }));
 
     expect(invoke).toHaveBeenCalledWith(
       "delete_alert_rule",
@@ -195,7 +194,7 @@ describe("Alerts screen — rules manager (T3, ADR 0068; relocated v0.54)", () =
     expect(
       await within(region).findByText(/identical alert rule already exists/i),
     ).toBeInTheDocument();
-    expect(within(region).getAllByRole("button", { name: "Delete" })).toHaveLength(2);
+    expect(within(region).getAllByRole("button", { name: "Remove" })).toHaveLength(2);
   });
 
   it("has no accessibility violations", async () => {

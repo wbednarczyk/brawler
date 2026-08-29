@@ -1,29 +1,14 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { BarChart3, Bot, Coins, FileWarning, TrendingDown, Trash2, Users, X, type LucideIcon } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { RefreshCw } from "lucide-react";
 
-import {
-  createAlertRule,
-  deleteAlertRule,
-  listAlertRules,
-  setAlertRuleEnabled,
-  updateAlertRule,
-  type AlertRule,
-  type AttentionEvent,
-  type NewAlertRule,
-} from "../../api/attention";
+import { type AlertRule, type AlertRuleUpdate, type AttentionEvent, type NewAlertRule } from "../../api/attention";
 import type { AttentionController } from "../../app/useAttentionController";
-import { listCompanies } from "../../api/companies";
-import { listWatchlists } from "../../api/watchlists";
-import type { Company, Watchlist } from "../../api/types";
+import { openExternalUrl } from "../../app/openExternalUrl";
 import { TickerLabel } from "../../shared/components/TickerLabel";
-import { formatListTimestamp } from "../../shared/format/datetime";
-import { formatSignalCategoryDisplayName } from "../../shared/formatting/labels";
 import { useLocale } from "../../shared/locale";
-import { pluralNoun } from "../../shared/locale/plural";
 import {
-  Button,
+  ActionButton,
   ChipList,
-  EmptyState,
   ErrorText,
   FieldRow,
   Hint,
@@ -32,92 +17,94 @@ import {
   SegmentedControl,
   SegmentedControlOption,
   SelectField,
-  StatusChip,
+  Skeleton,
   TextField,
   useUndoableDelete,
 } from "../../ui";
+import { AlertRulesSection } from "./AlertRulesSection";
+import { FiredAlertsSection } from "./FiredAlertsSection";
+import { useAlertsQuery } from "./useAlertsQuery";
+import { PRESETS, type ScopeType, parsePrice, priceText } from "./alertLabels";
 
-type ScopeType = AlertRule["scopeType"];
-type TriggerType = AlertRule["triggerType"];
-type IconComponent = LucideIcon;
-
-// Preset rule chips (ADR 0068 T3, visual-first per docs/ui-authoring.md): a click
-// pre-fills the trigger (and its signal category) so the user only picks a scope.
-// The lucide icon rides through to the matching rule row's leading tile so the
-// creation choice and the resulting rule read as the same thing.
-type Preset = {
-  key: string;
-  label: string;
-  triggerType: TriggerType;
-  signalCategory: string | null;
-  icon: IconComponent;
-};
-
-const PRESETS: readonly Preset[] = [
-  { key: "profit_warning", label: "Profit warning", triggerType: "signal_category", signalCategory: "profit_warning", icon: TrendingDown },
-  { key: "insider", label: "Insider transactions", triggerType: "signal_category", signalCategory: "insider_transaction", icon: Users },
-  { key: "auditor_opinion", label: "Auditor opinion", triggerType: "signal_category", signalCategory: "auditor_opinion", icon: FileWarning },
-  { key: "short_position", label: "Short position", triggerType: "signal_category", signalCategory: "short_position_change", icon: TrendingDown },
-  { key: "recommendation", label: "Analyst recommendation", triggerType: "signal_category", signalCategory: "recommendation_change", icon: FileWarning },
-  { key: "week52_low", label: "52-week low", triggerType: "price_week52_low", signalCategory: null, icon: BarChart3 },
-  { key: "price_range", label: "Price range", triggerType: "price_enters_range", signalCategory: null, icon: Coins },
-  { key: "autopilot", label: "Autopilot finished", triggerType: "autopilot_run_completed", signalCategory: null, icon: Bot },
-];
-
-const RULE_FORMS = { en: ["rule", "rules"], pl: ["reguła", "reguły", "reguł"] } as const;
-const NEW_FORMS = { en: ["new", "new"], pl: ["nowa", "nowe", "nowych"] } as const;
-
-function parsePrice(value: string): number | null {
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function priceText(value: number | null): string {
-  return value === null ? "?" : String(value);
-}
-
-// Leading tile / preset icon for a rule's trigger (mirrors the PRESETS icons so a
-// created rule keeps the glyph of the choice that made it).
-function triggerIcon(triggerType: TriggerType, signalCategory: string | null): IconComponent {
-  switch (triggerType) {
-    case "signal_category":
-      return signalCategory === "insider_transaction"
-        ? Users
-        : signalCategory === "auditor_opinion"
-          ? FileWarning
-          : TrendingDown; // profit_warning + short_position_change share the glyph
-    case "price_enters_range":
-      return Coins;
-    case "price_week52_low":
-      return BarChart3;
-    case "autopilot_run_completed":
-      return Bot;
-    default:
-      return TrendingDown;
-  }
+// U7-E2 S-tier detection (mirrors Today's `useNarrowPane` / Events'
+// `usePaneCompact` — one local copy per screen is the house pattern, same
+// 420px S-tier boundary): the composer folds behind `Dodaj alert` only at
+// the S tier — M already renders it open (M's own field-wrapping lives in
+// `alerts.css`'s separate 640px `@container` rule). jsdom has no
+// `ResizeObserver` → stays `false`, i.e. the composer always renders open in
+// component tests; the real fold is proven by
+// `tests/browser/density-utility.spec.ts`.
+function useNarrowPane(ref: RefObject<HTMLElement | null>): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const host = ref.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const pane = (host.closest(".workspace") as HTMLElement | null) ?? host;
+    const measure = () => {
+      const width = pane.clientWidth;
+      setNarrow(width > 0 && width < 420);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [ref]);
+  return narrow;
 }
 
 /**
  * Library screen "Alerts" (ADR 0068 T3; relocated from Settings 2026-07-15, owner
  * decision, v0.54; visual redesign v0.54 to docs/mockups/alerts-library-view.html).
- * The alert-rules manager and fired-alert review, laid out as three cards — create,
- * your rules, fired alerts — with a live plain-language preview of the draft rule.
- * A reference surface like Sources/Watchlists (its own sidebar destination) so it
- * gets the Library `feed-panel` + `PanelHeader` chrome. Stays self-contained: it
- * drives the rule commands (`api/attention`) directly and re-reads on each
- * mutation; fired events come from the app-level attention controller (ADR 0097
- * dec. 6) shared with Today and the sidebar badge.
+ * The fired-alert review, the alert-rules manager, and the composer, laid out
+ * fired-first (contract § Alerts information hierarchy: fired alerts are the
+ * must-see reason the screen exists day to day) with a live plain-language
+ * preview of the draft rule.
+ *
+ * F4a S4a (ADR 0106): split into this composer/composition + `AlertRulesSection` +
+ * `FiredAlertsSection`, data loaded through `useAlertsQuery` (rules/companies/
+ * watchlists via `useCommandQuery`; fired events still the shared
+ * `AttentionController`, ADR 0097 dec. 6). F4a S4b: reordered to fired-first,
+ * dictionary verbs (pause/resume/remove), invitation/quiet empty states,
+ * per-section partial strips, a dense fired-events cap, and destination
+ * navigation for a fired row (mirrors Today's `openAttentionRowAction`).
+ * Pure label/formatting helpers live in `alertLabels.ts`.
  */
-export function AlertsScreen({ attention }: { attention: AttentionController }) {
-  const { t, text, locale } = useLocale();
+export function AlertsScreen({
+  attention,
+  openCompanyWorkspaceById,
+  openInbox,
+}: {
+  attention: AttentionController;
+  /** Fired row destination (F4a S4b): the ONE company deep-dive surface
+   * since the docking engine's removal (ADR 0108). */
+  openCompanyWorkspaceById: (companyId: string) => void;
+  /** Fired row fallback destination for a company-less SYSTEM event. */
+  openInbox: () => void;
+}) {
+  const { t, text } = useLocale();
   const runUndoableDelete = useUndoableDelete();
+  const alerts = useAlertsQuery(attention);
 
-  const [rules, setRules] = useState<AlertRule[]>([]);
-  const events = attention.events;
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const rootRef = useRef<HTMLElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const narrow = useNarrowPane(rootRef);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const showComposer = !narrow || composerOpen;
+
+  // Invitation empty state's action + the collapsed S-tier toggle both land
+  // here: open the composer and move focus into its first control, so
+  // "Dodaj alert" always lands the user somewhere they can act (contract §
+  // Alerts, state matrix "Empty (no rules)": "focus composer").
+  function focusComposer() {
+    setComposerOpen(true);
+    requestAnimationFrame(() => {
+      composerRef.current?.scrollIntoView({ block: "nearest" });
+      composerRef.current?.querySelector<HTMLElement>("button, input")?.focus();
+    });
+  }
 
   // Error state stores the raw backend message; known typed errors are mapped
   // to a plain translated sentence at RENDER time (`friendlyError` below), so
@@ -134,59 +121,43 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
   const [priceMin, setPriceMin] = useState<string>("");
   const [priceMax, setPriceMax] = useState<string>("");
 
-  const preset = useMemo(
-    () => PRESETS.find((p) => p.key === presetKey) ?? PRESETS[0],
-    [presetKey],
-  );
+  const preset = useMemo(() => PRESETS.find((p) => p.key === presetKey) ?? PRESETS[0], [presetKey]);
   const companyName = useMemo(
-    () => new Map(companies.map((c) => [c.id, c.qualifiedTicker])),
-    [companies],
+    () => new Map(alerts.companies.map((c) => [c.id, c.qualifiedTicker])),
+    [alerts.companies],
   );
-  const watchlistName = useMemo(() => new Map(watchlists.map((w) => [w.id, w.name])), [watchlists]);
+  const watchlistName = useMemo(() => new Map(alerts.watchlists.map((w) => [w.id, w.name])), [alerts.watchlists]);
 
-  function refresh() {
-    // Rule CRUD also refreshes the shared controller so Today's rule labels and
-    // the fired list stay in sync (one state, ADR 0097 dec. 6).
-    attention.refresh();
-    listAlertRules()
-      .then(setRules)
-      .catch((reason) => setError(String(reason)));
-  }
-
+  // Seed the scope target with a sensible default, once, as soon as the
+  // library data first arrives — mirrors the previous mount-effect's seeding,
+  // now reacting to `useAlertsQuery`'s data instead of owning its own fetch.
+  const seededRef = useRef(false);
   useEffect(() => {
-    let active = true;
-    Promise.all([listAlertRules(), listCompanies(), listWatchlists()])
-      .then(([nextRules, nextCompanies, nextWatchlists]) => {
-        if (!active) return;
-        setRules(nextRules);
-        setCompanies(nextCompanies);
-        setWatchlists(nextWatchlists);
-        // Seed the scope target with a sensible default so the form is usable.
-        if (nextWatchlists[0]) {
-          setScopeType("watchlist");
-          setScopeRef(nextWatchlists[0].id);
-        } else if (nextCompanies[0]) {
-          setScopeType("company");
-          setScopeRef(nextCompanies[0].id);
-        }
-      })
-      .catch((reason) => {
-        if (active) setError(String(reason));
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+    if (seededRef.current) return;
+    if (alerts.watchlists.length === 0 && alerts.companies.length === 0) return;
+    seededRef.current = true;
+    if (alerts.watchlists[0]) {
+      setScopeType("watchlist");
+      setScopeRef(alerts.watchlists[0].id);
+    } else if (alerts.companies[0]) {
+      setScopeType("company");
+      setScopeRef(alerts.companies[0].id);
+    }
+  }, [alerts.watchlists, alerts.companies]);
 
-  const scopeOptions = scopeType === "watchlist" ? watchlists : companies;
+  const scopeOptions = scopeType === "watchlist" ? alerts.watchlists : alerts.companies;
   // When the scope type flips, keep the selection valid.
   useEffect(() => {
-    const options = scopeType === "watchlist" ? watchlists : companies;
+    const options = scopeType === "watchlist" ? alerts.watchlists : alerts.companies;
     if (!options.some((option) => option.id === scopeRef)) {
       setScopeRef(options[0]?.id ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeType]);
+
+  // which "Add alert" button is the one filled element at
+  // rest (see the composer's `variant`/`data-ux-primary-action` below).
+  const hasRules = alerts.rules.length > 0;
 
   const isPriceRange = preset.triggerType === "price_enters_range";
   const priceMinNum = parsePrice(priceMin);
@@ -205,13 +176,11 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
     };
     setBusy(true);
     setError(null);
-    createAlertRule(input)
-      .then((rule) => {
-        setRules((current) => [...current, rule]);
+    alerts
+      .createRule(input)
+      .then(() => {
         setPriceMin("");
         setPriceMax("");
-        // Keep the shared controller's rules in sync (Today's rule labels).
-        attention.refresh();
       })
       .catch((reason) => setError(String(reason)))
       .finally(() => setBusy(false));
@@ -219,19 +188,14 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
 
   function toggleRule(rule: AlertRule, enabled: boolean) {
     setError(null);
-    setAlertRuleEnabled(rule.id, enabled)
-      .then((updated) => {
-        setRules((current) => current.map((r) => (r.id === rule.id ? updated : r)));
-        attention.refresh();
-      })
-      .catch((reason) => setError(String(reason)));
+    alerts.setRuleEnabled(rule.id, enabled).catch((reason) => setError(String(reason)));
   }
 
   function removeRule(rule: AlertRule) {
     runUndoableDelete({
-      perform: () => deleteAlertRule(rule.id),
+      perform: () => alerts.removeRule(rule.id),
       restore: () =>
-        createAlertRule({
+        alerts.createRule({
           triggerType: rule.triggerType,
           signalCategory: rule.signalCategory,
           priceMin: rule.priceMin,
@@ -241,112 +205,42 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
         }),
       message: text("Alert rule deleted"),
       undoLabel: text("Undo"),
-      onPerformed: () => {
-        setRules((current) => current.filter((r) => r.id !== rule.id));
-        // The delete CASCADEs the rule's events in the backend — resync the
-        // shared controller so they leave Today/Alerts/the badge too.
-        attention.refresh();
-      },
-      onRestored: refresh,
       onError: (reason) => setError(String(reason)),
     });
   }
 
-  // Two-way price editing on an existing range rule (docs/ui-authoring.md): the
-  // input drives local state immediately and commits through update_alert_rule.
-  function editRulePrice(rule: AlertRule, which: "priceMin" | "priceMax", raw: string) {
-    const next = parsePrice(raw);
-    setRules((current) => current.map((r) => (r.id === rule.id ? { ...r, [which]: next } : r)));
-  }
-
-  function commitRulePrice(rule: AlertRule) {
+  function commitPrice(input: AlertRuleUpdate) {
     setError(null);
-    updateAlertRule({ id: rule.id, priceMin: rule.priceMin ?? undefined, priceMax: rule.priceMax ?? undefined })
-      .then((updated) => {
-        setRules((current) => current.map((r) => (r.id === rule.id ? updated : r)));
-        attention.refresh();
-      })
-      .catch((reason) => {
-        setError(String(reason));
-        // The local edit was optimistic — re-read so the row shows the value
-        // the backend actually holds, not the rejected draft.
-        refresh();
-      });
+    alerts.updateRulePrice(input).catch((reason) => {
+      setError(String(reason));
+      // The row's edit was local-only until commit; re-read so it shows the
+      // value the backend actually holds, not the rejected draft.
+      alerts.refetch();
+    });
   }
 
   // The controller re-syncs on a failed mutation; this screen also surfaces it.
   function dismissEvent(event: AttentionEvent) {
     setError(null);
-    attention.dismiss(event.id).catch((reason) => setError(String(reason)));
+    alerts.dismissEvent(event.id).catch((reason) => setError(String(reason)));
   }
 
-  function markSeen(event: AttentionEvent) {
-    attention.markSeen(event.id).catch((reason) => setError(String(reason)));
+  // Fired row destination (F4a S4b, contract § Alerts exit path): marks the
+  // event seen, then lands on its target surface — mirrors Today's
+  // `openAttentionRowAction` (`src/screens/Today/TodayScreen.tsx`). Folds the
+  // old separate "Review"/mark-seen button into the one destination click.
+  function openFiredEvent(event: AttentionEvent) {
+    void alerts.markEventSeen(event.id).catch(() => {});
+    if (event.triggerType === "source_reconciliation" && event.witnessUrl) {
+      openExternalUrl(event.witnessUrl);
+      return;
+    }
+    if (event.companyId) {
+      openCompanyWorkspaceById(event.companyId);
+      return;
+    }
+    openInbox();
   }
-
-  // Short, human title for a rule's trigger (the rule row's bold first line).
-  const ruleTitle = (rule: AlertRule): string => {
-    switch (rule.triggerType) {
-      case "signal_category":
-        // Issue #71 (the D3 raw-enum class): resolve EVERY category through
-        // the shared display-name map (mirrors signal_categories.display_name)
-        // — a hand-rolled subset leaks raw enum codes for the rest.
-        return rule.signalCategory
-          ? text(formatSignalCategoryDisplayName(rule.signalCategory))
-          : text("Signal");
-      case "autopilot_run_completed":
-        return text("Autopilot finished");
-      case "price_enters_range":
-        return text("Price range");
-      case "price_week52_low":
-        return text("52-week low");
-      default:
-        return rule.triggerType;
-    }
-  };
-
-  const triggerLabel = (rule: AlertRule): string => {
-    if (rule.triggerType === "price_enters_range") {
-      return `${text("Price range")} ${rule.priceMin ?? "?"}–${rule.priceMax ?? "?"}`;
-    }
-    return ruleTitle(rule);
-  };
-
-  const scopeName = (scope: ScopeType, ref: string): string =>
-    scope === "watchlist" ? watchlistName.get(ref) ?? ref : companyName.get(ref) ?? ref;
-
-  const ruleDescription = (rule: AlertRule): string =>
-    `${triggerLabel(rule)} · ${scopeName(rule.scopeType, rule.scopeRef)}`;
-
-  // Fired-event "what" line, from the trigger type joined onto the event.
-  const eventWhat = (event: AttentionEvent): string => {
-    switch (event.triggerType) {
-      case "signal_category":
-        return text("Signal");
-      case "autopilot_run_completed":
-        return text("Autopilot finished");
-      case "price_enters_range":
-        return text("Price range");
-      case "price_week52_low":
-        return text("52-week low");
-      default:
-        return event.triggerType;
-    }
-  };
-
-  // A system event may carry no company at all (a failed workspace-wide job,
-  // ADR 0091 dec. 2) — it is scoped to the workspace, not to an issuer.
-  const eventScope = (event: AttentionEvent): string =>
-    (event.companyId ? companyName.get(event.companyId) : null) ??
-    event.companyId ??
-    text("System");
-
-  const eventDescription = (event: AttentionEvent): string =>
-    `${eventScope(event)} · ${event.evidenceType}`;
-
-  // Fired-at renders like every other list timestamp in the app ("today 09:12",
-  // "yesterday 14:03", …) — via the shared format layer, per its contract test.
-  const formatFiredAt = (iso: string): string => formatListTimestamp(iso, locale, iso);
 
   // Live preview: a plain-language sentence for the draft rule, with the target
   // and the trigger bolded. Templates carry {target}/{trigger} placeholders so
@@ -404,8 +298,7 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
     }
   };
 
-  const previewTargetTicker =
-    scopeType === "company" ? companyName.get(scopeRef) ?? null : null;
+  const previewTargetTicker = scopeType === "company" ? companyName.get(scopeRef) ?? null : null;
   const previewTargetName =
     scopeType === "watchlist"
       ? watchlistName.get(scopeRef) ?? text("your watchlist")
@@ -426,258 +319,195 @@ export function AlertsScreen({ attention }: { attention: AttentionController }) 
     });
   };
 
-  const unseenCount = events.filter((event) => !event.seen).length;
+  const composer = (
+    <div className="alerts-card" ref={composerRef}>
+      <SectionHeader className="alerts-card-header" level="h2" title={text("New alert")} />
+
+      <p className="alerts-step">{text("1 · What to watch for")}</p>
+      <ChipList ariaLabel={text("Alert presets")} className="alerts-trigger-chips">
+        {PRESETS.map((option) => {
+          const Icon = option.icon;
+          const active = option.key === presetKey;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              aria-pressed={active}
+              data-action-kind="control"
+              className={["alerts-trigger-chip", active ? "alerts-trigger-chip-active" : ""]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => setPresetKey(option.key)}
+            >
+              <Icon size={15} aria-hidden={true} />
+              {text(option.label)}
+            </button>
+          );
+        })}
+      </ChipList>
+
+      <p className="alerts-step">{text("2 · Where it applies")}</p>
+      <FieldRow className="alerts-where-row">
+        <div className="alerts-field-group">
+          <span className="alerts-field-group-label">{text("Scope")}</span>
+          <SegmentedControl ariaLabel={text("Alert scope")}>
+            <SegmentedControlOption
+              active={scopeType === "watchlist"}
+              data-action-kind="control"
+              onClick={() => setScopeType("watchlist")}
+            >
+              {text("Watchlist")}
+            </SegmentedControlOption>
+            <SegmentedControlOption
+              active={scopeType === "company"}
+              data-action-kind="control"
+              onClick={() => setScopeType("company")}
+            >
+              {text("Company")}
+            </SegmentedControlOption>
+          </SegmentedControl>
+        </div>
+        <SelectField
+          aria-label={text("Alert scope target")}
+          label={text("Target")}
+          value={scopeRef}
+          onChange={(event) => setScopeRef(event.target.value)}
+        >
+          {scopeOptions.length === 0 ? <option value="">{text("None available")}</option> : null}
+          {scopeType === "watchlist"
+            ? alerts.watchlists.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))
+            : alerts.companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.qualifiedTicker}
+                </option>
+              ))}
+        </SelectField>
+        {isPriceRange ? (
+          <>
+            <TextField
+              aria-label={text("Minimum price")}
+              label={text("Minimum price")}
+              type="number"
+              inputMode="decimal"
+              value={priceMin}
+              onChange={(event) => setPriceMin(event.target.value)}
+            />
+            <TextField
+              aria-label={text("Maximum price")}
+              label={text("Maximum price")}
+              type="number"
+              inputMode="decimal"
+              value={priceMax}
+              onChange={(event) => setPriceMax(event.target.value)}
+            />
+          </>
+        ) : null}
+      </FieldRow>
+      {isPriceRange && !priceRangeValid ? (
+        <Hint>{text("Enter a minimum and maximum price, with the minimum no higher than the maximum.")}</Hint>
+      ) : null}
+
+      <div className="alerts-preview" role="note" aria-label={text("Alert preview")}>
+        <p className="alerts-preview-text">{renderPreview()}</p>
+        <ActionButton
+          verb="add"
+          className="alerts-preview-add"
+          // (ADR 0104 dec. 1, one filled element at rest):
+          // with no rules yet, `AlertRulesSection`'s invitation renders its
+          // own filled "Add alert" that focuses this composer — this button
+          // goes quiet in that state so the two never both render filled at
+          // once. Once a rule exists the invitation is gone and this is
+          // again the screen's one primary action.
+          variant={hasRules ? "primary" : "secondary"}
+          disabled={!canAdd}
+          onClick={addRule}
+          data-ux-primary-action={hasRules ? "true" : undefined}
+        >
+          {text("Add alert")}
+        </ActionButton>
+      </div>
+    </div>
+  );
 
   return (
-    <section className="feed-panel" aria-labelledby="alerts-title">
+    <section className="feed-panel" aria-labelledby="alerts-title" ref={rootRef}>
       <PanelHeader
         title={t("alerts.title")}
         description={t("alerts.description")}
         titleId="alerts-title"
       />
 
-      <div className="alerts-layout">
-        {/* Card 1 — create a rule: trigger preset → scope → live preview + add. */}
-        <div className="alerts-card">
-          <SectionHeader className="alerts-card-header" level="h2" title={text("New alert")} />
-
-          <p className="alerts-step">{text("1 · What to watch for")}</p>
-          <ChipList ariaLabel={text("Alert presets")} className="alerts-trigger-chips">
-            {PRESETS.map((option) => {
-              const Icon = option.icon;
-              const active = option.key === presetKey;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  aria-pressed={active}
-                  className={["alerts-trigger-chip", active ? "alerts-trigger-chip-active" : ""]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={() => setPresetKey(option.key)}
-                >
-                  <Icon size={15} aria-hidden={true} />
-                  {text(option.label)}
-                </button>
-              );
-            })}
-          </ChipList>
-
-          <p className="alerts-step">{text("2 · Where it applies")}</p>
-          <FieldRow className="alerts-where-row">
-            <div className="alerts-field-group">
-              <span className="alerts-field-group-label">{text("Scope")}</span>
-              <SegmentedControl ariaLabel={text("Alert scope")}>
-                <SegmentedControlOption active={scopeType === "watchlist"} onClick={() => setScopeType("watchlist")}>
-                  {text("Watchlist")}
-                </SegmentedControlOption>
-                <SegmentedControlOption active={scopeType === "company"} onClick={() => setScopeType("company")}>
-                  {text("Company")}
-                </SegmentedControlOption>
-              </SegmentedControl>
-            </div>
-            <SelectField
-              aria-label={text("Alert scope target")}
-              label={text("Target")}
-              value={scopeRef}
-              onChange={(event) => setScopeRef(event.target.value)}
-            >
-              {scopeOptions.length === 0 ? <option value="">{text("None available")}</option> : null}
-              {scopeType === "watchlist"
-                ? watchlists.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))
-                : companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.qualifiedTicker}
-                    </option>
-                  ))}
-            </SelectField>
-            {isPriceRange ? (
-              <>
-                <TextField
-                  aria-label={text("Minimum price")}
-                  label={text("Minimum price")}
-                  type="number"
-                  inputMode="decimal"
-                  value={priceMin}
-                  onChange={(event) => setPriceMin(event.target.value)}
-                />
-                <TextField
-                  aria-label={text("Maximum price")}
-                  label={text("Maximum price")}
-                  type="number"
-                  inputMode="decimal"
-                  value={priceMax}
-                  onChange={(event) => setPriceMax(event.target.value)}
-                />
-              </>
-            ) : null}
-          </FieldRow>
-          {isPriceRange && !priceRangeValid ? (
-            <Hint>{text("Enter a minimum and maximum price, with the minimum no higher than the maximum.")}</Hint>
-          ) : null}
-
-          <div className="alerts-preview" role="note" aria-label={text("Alert preview")}>
-            <p className="alerts-preview-text">{renderPreview()}</p>
-            <Button
-              className="alerts-preview-add"
-              variant="primary"
-              disabled={!canAdd}
-              onClick={addRule}
-              data-ux-primary-action="true"
-            >
-              {text("Add alert")}
-            </Button>
+      {alerts.status === "loading" ? (
+        <div className="alerts-layout">
+          <Skeleton variant="list-row" count={3} label={text("Loading alerts…")} />
+        </div>
+      ) : alerts.status === "error" ? (
+        <div className="alerts-layout">
+          <div className="alerts-error-strip" role="alert">
+            <ErrorText>{text("Couldn't load alerts.")}</ErrorText>
+            <ActionButton kind="control" onClick={alerts.refetch} variant="ghost">
+              <RefreshCw aria-hidden="true" size={13} />
+              {text("Try again")}
+            </ActionButton>
           </div>
         </div>
-
-        {/* Card 2 — existing rules. */}
-        <div className="alerts-card">
-          <SectionHeader
-            className="alerts-card-header"
-            level="h2"
-            title={text("Your alerts")}
-            meta={`${rules.length} ${pluralNoun(locale, rules.length, RULE_FORMS)}`}
+      ) : (
+        <div className="alerts-layout">
+          <FiredAlertsSection
+            events={alerts.events}
+            rules={alerts.rules}
+            companyName={companyName}
+            eventsError={alerts.eventsError}
+            onRetry={() => attention.refresh()}
+            onOpen={openFiredEvent}
+            onDismiss={dismissEvent}
           />
-          {rules.length === 0 ? (
-            <EmptyState>{text("No alerts yet — pick what to watch for above.")}</EmptyState>
-          ) : (
-            <ul className="alerts-list" aria-label={text("Alert rules")}>
-              {rules.map((rule) => {
-                const description = ruleDescription(rule);
-                const Icon = triggerIcon(rule.triggerType, rule.signalCategory);
-                return (
-                  <li key={rule.id} aria-label={`${text("Alert rule")}: ${description}`} className="alerts-row">
-                    <span className="alerts-row-icon" aria-hidden="true">
-                      <Icon size={16} />
-                    </span>
-                    <div className="alerts-row-main">
-                      <div className="alerts-row-title">{ruleTitle(rule)}</div>
-                      <div className="alerts-row-sub">
-                        <StatusChip>
-                          {rule.scopeType === "watchlist" ? text("List") : text("Company")}
-                          {" · "}
-                          {rule.scopeType === "company" && companyName.get(rule.scopeRef) ? (
-                            <TickerLabel value={companyName.get(rule.scopeRef)!} />
-                          ) : (
-                            scopeName(rule.scopeType, rule.scopeRef)
-                          )}
-                        </StatusChip>
-                        {rule.triggerType === "price_enters_range" ? (
-                          <span className="alerts-row-prices">
-                            <TextField
-                              aria-label={`${text("Minimum price")} — ${description}`}
-                              type="number"
-                              inputMode="decimal"
-                              value={rule.priceMin ?? ""}
-                              onChange={(event) => editRulePrice(rule, "priceMin", event.target.value)}
-                              onBlur={() => commitRulePrice(rule)}
-                            />
-                            <TextField
-                              aria-label={`${text("Maximum price")} — ${description}`}
-                              type="number"
-                              inputMode="decimal"
-                              value={rule.priceMax ?? ""}
-                              onChange={(event) => editRulePrice(rule, "priceMax", event.target.value)}
-                              onBlur={() => commitRulePrice(rule)}
-                            />
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="alerts-row-slots">
-                      <label className="alerts-enable-control">
-                        <input
-                          aria-label={`${text("Enabled")} — ${description}`}
-                          checked={rule.enabled}
-                          onChange={(event) => toggleRule(rule, event.target.checked)}
-                          role="switch"
-                          type="checkbox"
-                        />
-                        <span aria-hidden="true" className="alerts-enable-track">
-                          <span />
-                        </span>
-                      </label>
-                      <Button onClick={() => removeRule(rule)} variant="ghost">
-                        <Trash2 size={14} />
-                        {text("Delete")}
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
 
-        {/* Card 3 — fired alerts (review), reading the shared attention controller. */}
-        <div className="alerts-card">
-          <SectionHeader
-            className="alerts-card-header"
-            level="h2"
-            title={text("Fired alerts")}
-            meta={unseenCount > 0 ? `${unseenCount} ${pluralNoun(locale, unseenCount, NEW_FORMS)}` : undefined}
+          <AlertRulesSection
+            rules={alerts.rules}
+            companyName={companyName}
+            watchlistName={watchlistName}
+            rulesError={Boolean(alerts.sectionErrors.rules)}
+            onRetry={() => attention.refresh()}
+            onToggle={toggleRule}
+            onCommitPrice={commitPrice}
+            onRemove={removeRule}
+            onAddAlert={focusComposer}
           />
-          {/* A failed attention read must never look quiet (ADR 0097 dec. 6):
-              last-known-good events stay listed below the strip. */}
-          {attention.error ? (
-            <div className="alerts-attention-error">
-              <ErrorText>{text("Couldn't load attention events.")}</ErrorText>
-              <Button onClick={() => attention.refresh()} variant="ghost">
+
+          {alerts.sectionErrors.scope ? (
+            <div className="alerts-attention-error" role="status">
+              <ErrorText>{text("Couldn't load company and list names. Rules and alerts are up to date.")}</ErrorText>
+              <ActionButton kind="control" onClick={alerts.refetch} variant="ghost">
                 {text("Try again")}
-              </Button>
+              </ActionButton>
             </div>
           ) : null}
-          {events.length === 0 && attention.error ? null : events.length === 0 ? (
-            <EmptyState>{text("All quiet — nothing has fired. That's the point.")}</EmptyState>
-          ) : (
-            <ul className="alerts-list" aria-label={text("Fired alerts")}>
-              {events.map((event) => {
-                const description = eventDescription(event);
-                const ruleForEvent = rules.find((r) => r.id === event.ruleId);
-                const ticker = eventScope(event);
-                return (
-                  <li key={event.id} aria-label={`${text("Fired alert")}: ${description}`} className="alerts-row alerts-fired">
-                    <span
-                      aria-hidden="true"
-                      className={["alerts-fired-dot", event.seen ? "alerts-fired-dot-seen" : ""]
-                        .filter(Boolean)
-                        .join(" ")}
-                    />
-                    <TickerLabel value={ticker} className="alerts-fired-ticker" />
-                    <div className="alerts-row-main">
-                      <div className="alerts-row-title">{eventWhat(event)}</div>
-                      <div className="alerts-row-sub alerts-fired-meta">
-                        {formatFiredAt(event.firedAt)}
-                        {ruleForEvent ? ` · ${text("Rule")}: ${triggerLabel(ruleForEvent)}` : ""}
-                      </div>
-                    </div>
-                    <div className="alerts-row-slots">
-                      {event.seen ? null : (
-                        <Button onClick={() => markSeen(event)} variant="ghost">
-                          {text("Review")}
-                        </Button>
-                      )}
-                      <Button aria-label={text("Dismiss")} onClick={() => dismissEvent(event)} variant="ghost">
-                        <X size={14} aria-hidden={true} />
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
 
-        {error ? (
-          <ErrorText>
-            {text("Alert command failed")}: {friendlyError(error)}
-          </ErrorText>
-        ) : null}
-      </div>
+          {/* Secondary in the hierarchy (contract § Alerts § 5): folds behind
+              its own primary at the S tier so fired alerts + rules stay the
+              must-see content above the fold. */}
+          {showComposer ? (
+            composer
+          ) : (
+            <div className="alerts-card alerts-composer-collapsed">
+              <ActionButton kind="control" variant="secondary" onClick={() => setComposerOpen(true)}>
+                {text("Add alert")}
+              </ActionButton>
+            </div>
+          )}
+
+          {error ? (
+            <ErrorText>
+              {text("Alert command failed")}: {friendlyError(error)}
+            </ErrorText>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }

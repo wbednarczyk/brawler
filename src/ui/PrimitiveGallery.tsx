@@ -1,8 +1,10 @@
 import { Plus } from "lucide-react";
 import { useEffect } from "react";
 
+import { ActionButton } from "./ActionButton";
 import { ActionRow } from "./ActionRow";
 import { Button, type ButtonVariant } from "./Button";
+import { Figure } from "./Figure";
 import { CandlestickChart } from "./CandlestickChart";
 import { Checkbox } from "./Checkbox";
 import { ChipList } from "./ChipList";
@@ -127,6 +129,29 @@ export function PrimitiveGallery() {
         </ActionRow>
       </section>
 
+      <section aria-labelledby="g-action-button">
+        <SectionHeader
+          title="ActionButton (ADR 0104 dec. 3 amendment, F4a S1)"
+          titleId="g-action-button"
+          level="h3"
+          description="Wraps Button with the verb-dictionary / destination-or-control classification the per-screen action-inventory contract test reads (data-action-kind, data-action-verb)."
+        />
+        <ActionRow ariaLabel="ActionButton examples">
+          <ActionButton verb="add" variant="primary">
+            Add companies
+          </ActionButton>
+          <ActionButton verb="remove" variant="danger">
+            Remove
+          </ActionButton>
+          <ActionButton kind="destination" variant="ghost">
+            Open company
+          </ActionButton>
+          <ActionButton kind="control" variant="secondary">
+            Search
+          </ActionButton>
+        </ActionRow>
+      </section>
+
       <section aria-labelledby="g-status">
         <SectionHeader title="StatusChip (quiet) / StatusPill (bold)" titleId="g-status" level="h3" />
         <ChipList ariaLabel="Status chips">
@@ -187,7 +212,35 @@ export function PrimitiveGallery() {
           Inline: <ErrorText as="span">span error</ErrorText>
         </p>
         <Hint>Muted helper / hint text.</Hint>
-        <EmptyState>Nothing here yet.</EmptyState>
+        <EmptyState>Nothing here yet. (legacy)</EmptyState>
+        <EmptyState
+          kind="invitation"
+          title="No watchlists yet"
+          source="Group companies you follow together."
+          action={
+            <Button variant="primary" icon={<Plus size={14} />}>
+              Create your first list
+            </Button>
+          }
+        />
+        <EmptyState kind="quiet" reason="All quiet — nothing has fired. That's the point." />
+      </section>
+
+      <section aria-labelledby="g-figure">
+        <SectionHeader
+          title="Figure (ADR 0104 dec. 2 amendment, F4a S1)"
+          titleId="g-figure"
+          level="h3"
+          description="A figure/date/percent value, always UI-face lining numerals — never mono."
+        />
+        <ActionRow ariaLabel="Figure kinds">
+          <Figure value={7} kind="count" />
+          <Figure value={142} kind="count" />
+          <Figure value={12.5} kind="percent" />
+          <Figure value={1250000} kind="money" />
+          <Figure value="2026-06-18" kind="date" />
+          <Figure value="2026-06-18T09:12:00" kind="datetime" />
+        </ActionRow>
       </section>
 
       <section aria-labelledby="g-toast">

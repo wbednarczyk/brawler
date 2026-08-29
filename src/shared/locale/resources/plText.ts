@@ -77,8 +77,12 @@ export const plText: Record<string, string> = {
     "Podaj cenę minimalną i maksymalną, przy czym minimalna nie może być wyższa od maksymalnej.",
   "Add alert": "Dodaj alert",
   "Your alerts": "Twoje alerty",
-  "No alerts yet — pick what to watch for above.":
-    "Brak alertów — wybierz powyżej, na co zwracać uwagę.",
+  // F4a S4b (language pass — invitation empty state replaces the single
+  // legacy sentence "No alerts yet — pick what to watch for above.", ADR
+  // 0104 dec. 4).
+  "You don't have any alerts yet": "Nie masz jeszcze alertów",
+  "A rule says what you want to be told about — for a company or a list.":
+    "Reguła mówi, o czym chcesz być powiadamiany — dla spółki albo listy.",
   "Alert rules": "Reguły alertów",
   "Alert rule": "Reguła alertu",
   "Fired alerts": "Uruchomione alerty",
@@ -94,8 +98,14 @@ export const plText: Record<string, string> = {
   "1 · What to watch for": "1 · Na co zwracać uwagę",
   "2 · Where it applies": "2 · Gdzie obowiązuje",
   "Rule": "Reguła",
+  // F4a S4b: PL copy reworded to the contract's exact wording (state matrix
+  // "quiet" row) — the EN string is unchanged, only the translation moves.
   "All quiet — nothing has fired. That's the point.":
-    "Cisza — nic się nie uruchomiło. Tak ma być.",
+    "Cisza — nic nie zadziałało. O to chodzi.",
+  "Pause": "Wstrzymaj",
+  "Resume": "Wznów",
+  "Show older": "Pokaż starsze",
+  "Open report": "Otwórz raport",
   "your watchlist": "Twojej listy",
   "this company": "tej spółki",
   "a profit warning": "ostrzeżenie o wynikach",
@@ -142,6 +152,14 @@ export const plText: Record<string, string> = {
   "Notable": "Uwaga",
   "Couldn't load claims to verify.": "Nie udało się pobrać tez do weryfikacji.",
   "Couldn't load attention events.": "Nie udało się pobrać zdarzeń uwagi.",
+  "Couldn't load the rules. The rest of the view is up to date.":
+    "Nie udało się odczytać reguł. Reszta widoku jest aktualna.",
+  "Couldn't load the fired alerts. The rest of the view is up to date.":
+    "Nie udało się odczytać uruchomionych alertów. Reszta widoku jest aktualna.",
+  "Couldn't load company and list names. Rules and alerts are up to date.":
+    "Nie udało się odczytać nazw spółek i list. Reguły i alerty są aktualne.",
+  "Couldn't load alerts.": "Nie udało się wczytać alertów.",
+  "Loading alerts…": "Wczytywanie alertów…",
   "Couldn't load upcoming reports.": "Nie udało się pobrać nadchodzących raportów.",
   "Composing the review…": "Składam przegląd…",
   "Expand": "Rozwiń",
@@ -613,22 +631,36 @@ export const plText: Record<string, string> = {
   "Watchlist name": "Nazwa listy obserwowanej",
   "Create": "Utwórz",
   "Watchlist chips": "Etykiety list obserwowanych",
-  "No watchlists yet.": "Brak list obserwowanych.",
+  "No watchlists yet.": "Nie masz jeszcze żadnej listy",
   "Watchlist command failed": "Polecenie list obserwowanych nie powiodło się",
   "Selected watchlist": "Wybrana lista obserwowana",
+  "Selected list": "Wybrana lista",
+  "Back to lists": "Wróć do list",
   "Search watchlists": "Szukaj list obserwowanych",
   "Clear watchlist search": "Wyczyść wyszukiwanie list",
-  "No watchlists match this search.": "Brak list pasujących do wyszukiwania.",
+  "No watchlists match this search.": "Nie ma listy o tej nazwie",
+  "Check the spelling, or create a new watchlist with this name.":
+    "Sprawdź pisownię albo utwórz nową listę o tej nazwie.",
+  "Create watchlist \"{name}\"": "Utwórz listę „{name}”",
   "Rename watchlist": "Zmień nazwę listy obserwowanej",
   "Rename": "Zmień nazwę",
   "In this watchlist": "Na tej liście",
-  "No companies in this watchlist.": "Brak spółek na tej liście.",
+  "No companies in this watchlist.": "Ta lista jest pusta",
+  "A watchlist is a group of companies from your library. Today, Inbox and Report Season will only show what's on it.":
+    "Lista to grupa spółek z Twojej biblioteki. Dziś, Inbox i Sezon raportów pokażą tylko to, co na niej jest.",
+  "Create your first watchlist": "Utwórz pierwszą listę",
+  "Add companies from your library ({count} {tracked}). A company can be on several watchlists.":
+    "Dodaj spółki z biblioteki ({count} {tracked}). Spółka może być na kilku listach.",
+  "used by Today, Inbox and Report Season": "używana przez Dziś, Inbox i Sezon raportów",
   "Add companies": "Dodaj spółki",
   "Add selected": "Dodaj wybrane",
   "Add tracked companies": "Dodaj obserwowane spółki",
   "Search tracked companies to add": "Szukaj obserwowanych spółek do dodania",
+  "Search the library": "Szukaj w bibliotece",
+  "already on the list": "już na liście",
   "No tracked companies to add.": "Brak obserwowanych spółek do dodania.",
   "Select or create a watchlist.": "Wybierz albo utwórz listę obserwowaną.",
+  "Remove from list": "Usuń z listy",
   "Exchange": "Giełda",
   "Ticker": "Ticker",
   "Name": "Nazwa",
@@ -671,6 +703,17 @@ export const plText: Record<string, string> = {
   "No companies yet.": "Brak spółek.",
   "No companies match this search.": "Brak spółek pasujących do wyszukiwania.",
   "No companies match these filters.": "Brak spółek pasujących do tych filtrów.",
+  // F4a S2 (ADR 0104 dec. 4, § Companies library): the three invitation empty
+  // states — no companies yet, no filter match, and no registry match.
+  "No companies in your library yet": "Brak spółek w bibliotece",
+  "Add a company from the GPW/NewConnect registry — search by ticker or name.":
+    "Dodaj spółkę z rejestru GPW/NewConnect — wyszukaj po tickerze lub nazwie.",
+  "Add your first company": "Dodaj pierwszą spółkę",
+  "No companies match your filters": "Brak spółek pasujących do filtrów",
+  "No match in the registry": "Nie znaleziono w rejestrze",
+  "The registry covers GPW and NewConnect; you can add a company from elsewhere manually.":
+    "Rejestr obejmuje GPW i NewConnect; spółkę spoza tych rynków możesz dodać ręcznie.",
+  "Add manually": "Dodaj ręcznie",
   "Companies command failed": "Polecenie spółek nie powiodło się",
   "Looking up company directory...": "Wyszukiwanie w katalogu spółek...",
   "No company directory match.": "Brak dopasowania w katalogu spółek.",

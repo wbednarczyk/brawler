@@ -525,6 +525,22 @@
   gap: var(--space-2);
 }
 
+/* The invitation empty state (ADR 0104 dec. 4, F4a S1): three beats stacked —
+   what this is -> where it comes from -> one action — vs the legacy row
+   layout above (text + trailing actions). Final per-screen visual polish
+   lands with the mockup in F4a S2-S4; this is the structural default. */
+.empty-state[data-empty-kind="invitation"] {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.empty-state-invitation-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .ui-status-chip-accent {
   border-color: color-mix(in srgb, var(--tone-agent) 42%, var(--border));
   color: var(--tone-agent);

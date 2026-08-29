@@ -139,9 +139,13 @@
   white-space: nowrap;
 }
 
-/* Attention-read failure strip (ADR 0097: last-known-good events stay listed
-   below it — an errored read must never look quiet). */
-.alerts-attention-error {
+/* Partial-read failure strip, per section (F4a S4b): a failed rules/events
+   read must never look quiet — the strip names the section and offers a
+   retry, the rest of the screen stays usable. Also doubles as the full-read
+   failure strip (`.alerts-error-strip`, both sections down) — same shape as
+   Today's `.today-error-strip`. */
+.alerts-attention-error,
+.alerts-error-strip {
   align-items: center;
   display: flex;
   gap: var(--space-2);
@@ -225,64 +229,6 @@
   flex: 0 0 auto;
 }
 
-/* Toggle switch (mirrors .source-enable-control): the real checkbox is an
-   invisible overlay covering the whole control so a point-dispatched click —
-   user or test — always lands on the input. */
-.alerts-enable-control {
-  display: inline-flex;
-  align-items: center;
-  position: relative;
-  min-height: 20px;
-  cursor: pointer;
-}
-
-.alerts-enable-control input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  padding: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.alerts-enable-control:focus-within {
-  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-.alerts-enable-track {
-  display: inline-flex;
-  align-items: center;
-  width: 32px;
-  height: 18px;
-  padding: var(--space-0);
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-raised) 76%, var(--surface));
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.alerts-enable-track span {
-  display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 78%, var(--text));
-  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
-  transition: transform 120ms ease, background 120ms ease;
-}
-
-.alerts-enable-control input:checked + .alerts-enable-track {
-  border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
-  background: color-mix(in srgb, var(--primary) 28%, var(--surface-raised));
-}
-
-.alerts-enable-control input:checked + .alerts-enable-track span {
-  transform: translateX(14px);
-  background: var(--primary);
-}
-
 /* Fired-alert row specifics: status dot + bold ticker. */
 .alerts-fired-dot {
   flex: 0 0 auto;
@@ -304,6 +250,19 @@
 .alerts-fired-meta {
   color: var(--muted);
   font-size: var(--font-sm);
+}
+
+/* S-tier composer fold (contract § Alerts § 5/10, F4a S4b): below the
+   composer's own 640px breakpoint the whole card collapses behind one
+   full-width `Dodaj alert` control — fired alerts + rules stay the must-see
+   content above the fold, JS-gated (see `useNarrowPane` in AlertsScreen.tsx)
+   so the collapsed state actually unmounts the primary, not just hides it. */
+.alerts-composer-collapsed {
+  align-items: stretch;
+}
+
+.alerts-composer-collapsed button {
+  width: 100%;
 }
 
 /* Narrow pane (~480px, quarter ultrawide): rows and preview stack, action

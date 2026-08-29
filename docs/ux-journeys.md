@@ -63,7 +63,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J7 — Weekly review
 
 - **Trigger:** weekend / recurring ritual.
-- **Steps:** `Otwórz ekran: Events` (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: heatmap + leaderboard) → `Otwórz ekran: Research` (review queue + gaps) → Spółka (deepening, via the review queue row's own "Open company" action — owner decision 2026-08-26, ADR 0107) → plan the week.
+- **Steps:** `Otwórz ekran: Events` (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: lists with member counts, the selected list's members) → `Otwórz ekran: Research` (review queue + gaps) → Spółka (deepening, via the review queue row's own "Open company" action — owner decision 2026-08-26, ADR 0107) → plan the week.
 - **Screens:** Events, Watchlists, Research, Spółka.
 - **Budget:** floor re-based 2026-08-26 at first measurement +1 (consent 5, ADR 0107) — the view-creation leg the old ≤9 measured was frozen, then retired ([ADR 0108](adr/0108-retire-docking-engine.md)); all four task legs stay, now entered through their own screens. Re-measured 2026-08-27: the deepening leg's row-level "Open company" action (watchlist and research rows, owner decision 2026-08-26) replaced the ⌘K palette round-trip, dropping a modal open; floor tightened to the new measurement +1.
 - **Done well:** next week's dates are known; the backlog of research debts is explicit, not vague guilt.
@@ -71,3 +71,5 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## Journey-independent utilities
 
 Settings, Diagnostics, Sources administration, import/export, the **MCP server** section (ADR 0078 — enable/port/token + connection snippets), and global search serve all journeys; capabilities there are declared `utility` in the DoD check rather than forced into a journey.
+
+**Alerts** (F4a, contract `docs/plans/frontend-v2-f4a.md` § Alerts) joins this list: deciding what to be told about and reviewing what fired isn't tied to one journey's steps — it feeds J1 (Today attention) whenever a rule fires. Named spec: `tests/browser/alerts.spec.ts`.

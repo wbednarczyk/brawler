@@ -19,6 +19,13 @@ const RAW_CATALOG = [
   { screen: "basic-info", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "fundamentals", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "company-feed", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  {
+    screen: "companies-library",
+    spec: "visual-companies.spec.ts",
+    states: ["default"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 2 },
+  },
   { screen: "inbox", spec: "visual-inbox-sources.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "sources", spec: "visual-inbox-sources.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "notebook-company", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },
@@ -51,7 +58,20 @@ const RAW_CATALOG = [
   { screen: "today", spec: "visual-shell-today.spec.ts", states: ["default"], tiers: M_ONLY },
   { screen: "spolka-rest", spec: "visual-spolka.spec.ts", states: ["default"], tiers: M_ONLY },
   { screen: "spolka-tool-claims", spec: "visual-spolka.spec.ts", states: ["default"], tiers: M_ONLY },
-  { screen: "watchlists", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  {
+    screen: "watchlists",
+    spec: "visual-utility.spec.ts",
+    states: ["default"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 4 },
+  },
+  {
+    screen: "alerts",
+    spec: "visual-utility.spec.ts",
+    states: ["default"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 2 },
+  },
   { screen: "transcripts", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "settings", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
 ];
@@ -72,6 +92,13 @@ export function validateCatalog(list) {
     }
     if (!entry.states || entry.states.length === 0) {
       throw new Error(`catalog entry "${entry.screen}" has no supported states`);
+    }
+    // Optional visual figure proof (ADR 0104 dec. 2 amendment, F4a S1): a cell
+    // may declare a minimum count of `[data-figure]` (or another selector)
+    // elements the shot must contain — `helpers.ts` asserts it before
+    // capturing evidence (set on the F4a Library cells).
+    if (entry.figures && (!entry.figures.selector || !(entry.figures.min > 0))) {
+      throw new Error(`catalog entry "${entry.screen}" has a malformed figures block (needs selector + min > 0)`);
     }
   }
   return list;

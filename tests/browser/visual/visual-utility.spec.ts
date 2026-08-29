@@ -50,6 +50,16 @@ test.describe("visual — utility screens", () => {
     await shootPanel(page, page.locator(".workspace"), "transcripts");
   });
 
+  // F4a S4b: default smoke boot already seeds a fired event + a rule (the
+  // "rich" default, `browserSmokeRuntime.ts`) — no seeding needed here.
+  test("Alerts across pane tiers", async ({ page }) => {
+    await openApp(page);
+    await nav(page).getByRole("button", { name: "Alerts" }).click();
+    await expect(page.getByRole("region", { name: "Alerts" })).toBeVisible();
+
+    await shootPanel(page, page.locator(".workspace"), "alerts");
+  });
+
   test("Settings across pane tiers", async ({ page }) => {
     await openApp(page);
     await nav(page).getByRole("button", { name: "Settings" }).click();

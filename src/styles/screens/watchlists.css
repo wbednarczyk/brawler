@@ -27,13 +27,16 @@
 }
 
 .watchlist-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
   min-height: 42px;
-  padding: 0 var(--space-3);
 }
 
-.watchlist-row span {
+.watchlist-row span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -48,26 +51,23 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
   overflow: hidden;
+  /* The member row folds by the DETAIL pane's own width (it shares the
+     workspace with the names sidebar, so the `pane` container overstates the
+     room a row actually has — F4a S3, 1000-px owner tier). */
+  container: watchlist-detail / inline-size;
 }
 
+/* SectionHeader already lays the row out (title | meta | actions); this just
+   lets it wrap at narrow panes (mockup M frame). */
 .watchlist-detail-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
 }
 
-.watchlist-detail-header h3,
-.watchlist-detail-header p,
+.watchlist-detail-header h4,
 .watchlist-add-panel h4,
 .watchlist-table-header h4 {
   margin: 0;
-}
-
-.watchlist-detail-header p {
-  margin-top: var(--space-1);
-  color: var(--muted);
-  font-size: var(--font-sm);
 }
 
 .watchlist-detail-actions,
@@ -131,79 +131,167 @@
 }
 
 .watchlist-picker-list {
-  max-height: 180px;
+  max-height: 220px;
 }
 
-.watchlist-picker-row,
-.watchlist-member-row {
-  display: grid;
-  align-items: center;
-  min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 65%, transparent);
-}
-
+/* The add-companies picker row is a native <label>+checkbox (a "selectable
+   row with a checkbox" is a documented bespoke shape, Checkbox.tsx) so an
+   already-tracked company can render disabled with a "already on the list"
+   note instead of disappearing (F4a S3 redesign). */
 .watchlist-picker-row {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
   min-height: 36px;
   padding: 0 var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
   color: var(--text);
-  text-align: left;
+  cursor: pointer;
 }
 
 .watchlist-picker-row:hover,
-.watchlist-picker-row:focus-visible,
-.watchlist-picker-row-selected {
+.watchlist-picker-row:focus-within {
   border-color: color-mix(in srgb, var(--primary) 54%, var(--border));
   background: color-mix(in srgb, var(--primary) 9%, var(--surface));
 }
 
-.watchlist-member-table {
-  grid-auto-rows: minmax(42px, auto);
+.watchlist-picker-row-disabled {
+  color: var(--muted);
+  cursor: default;
 }
 
-.watchlist-member-row {
-  grid-template-columns: auto minmax(0, 1fr) minmax(110px, 0.45fr) auto;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-2);
+.watchlist-picker-row-disabled:hover {
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
 }
 
-.watchlist-member-row span:not(.ticker-exchange):not(.ticker-symbol),
-.watchlist-picker-row span:not(.ticker-exchange):not(.ticker-symbol) {
+.watchlist-picker-row .ticker-label {
+  flex-shrink: 0;
+}
+
+/* The picker row's plain name span isn't individually classed (unlike the
+   member row's dedicated .watchlist-member-name-text) — ellipsis it directly,
+   excluding TickerLabel's own span so `overflow:hidden` never lands on it (a
+   grid/flex item with overflow other than visible gets an automatic minimum
+   size of 0, which let the ticker chip collapse and overlap its neighbor
+   before this was scoped, F4a S3). */
+.watchlist-picker-row span:not(.ticker-label):not(.ticker-exchange):not(.ticker-separator):not(.ticker-symbol) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.watchlist-member-row > span:nth-child(3) {
+/* Rows size to their content: a `minmax(42px, auto)` track keeps its 42px
+   base when the scroller is shorter than its content (no free space to grow
+   into), so a two-line row would be clipped (F4a S3, 1000-px tier). */
+.watchlist-member-table {
+  grid-auto-rows: auto;
+}
+
+/* Member row: ticker | name (+ ISIN meta) | actions — no action column
+   (F4a S3 redesign; ADR 0104 dec. 3 amendment). */
+.watchlist-member-row {
+  display: grid;
+  /* `max-content`, not `auto`, for the ticker + actions columns: an `auto`
+     track stretches into leftover space (same rule that lets `auto` grid
+     tracks fill a container with no `fr` track), which starved the `1fr` name
+     column down to 0px even on a wide (1000px) pane — `max-content` opts both
+     out of that stretch. TickerLabel also sets its own `min-width: 0` (for
+     flex contexts elsewhere), which under `auto` track sizing let the ticker
+     column's automatic minimum collapse to 0 and the exchange/symbol chips
+     overlap; `max-content` sizes the track from the item's content directly,
+     bypassing that too (F4a S3; the ticker identity column is never
+     truncated, mirrors the pre-redesign comment this replaces). */
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
+}
+
+.watchlist-member-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.watchlist-member-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchlist-member-isin {
+  flex-shrink: 0;
   color: var(--muted);
   font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Watchlists density contract (U7-E2 / ADR 0076 Decision 6)                  */
-/* Rides the named `pane` size container (.workspace). Base                   */
-/* above is the L tier: names sidebar ∥ detail with the full company table     */
-/* (ticker · name · ISIN · remove).                                           */
+/* Rides the named `pane` size container (.workspace). Base above is the L    */
+/* tier: names sidebar ∥ detail with the full member row (ticker · name ·     */
+/* ISIN · Open · Remove).                                                     */
 /* -------------------------------------------------------------------------- */
 
-/* Below L (M + S, <760px): the decorative ISIN column folds; the ticker
-   identity column is never truncated, so the membership editor keeps its
-   ticker + name + remove action. */
+/* Below L (pane <760px): the decorative ISIN meta folds (density contract:
+   the company table gains ISIN only at L). */
 @container pane (max-width: 759px) {
-  .watchlist-member-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .watchlist-member-row > span:nth-child(3) {
+  .watchlist-member-isin {
     display: none;
   }
 }
 
-/* S (<420px) + short (<480px tall): only the watchlist names + counts show; the
-   detail (membership editor + company table) folds until the pane widens. */
+/* Narrow detail pane (<640px of the detail itself): the Remove action's
+   visible label folds to icon-only (its aria-label + title carry the name
+   regardless of tier, so the accessible name never changes); the ticker,
+   name and Open action are never truncated away. */
+@container watchlist-detail (max-width: 640px) {
+  .watchlist-member-remove-label {
+    display: none;
+  }
+}
+
+/* Tight detail pane (<520px): the actions drop under the name so the name
+   keeps a readable column instead of a two-digit sliver. */
+@container watchlist-detail (max-width: 519px) {
+  .watchlist-member-row {
+    grid-template-columns: max-content minmax(0, 1fr);
+    row-gap: var(--space-1);
+  }
+
+  .watchlist-member-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
+/* Mid pane (<900px): the names sidebar narrows so the detail keeps a one-line
+   member row (ticker · name · Open · ✕) — owner tier 1000×900. */
+@container pane (max-width: 899px) {
+  .watchlists-workspace {
+    grid-template-columns: minmax(170px, 190px) minmax(0, 1fr);
+  }
+}
+
+/* The "Back to lists" control only exists to return from the S/short stacked
+   detail view (below) — hidden everywhere else so it never renders as a
+   stray control at M/L, where both panes always show side by side. */
+.watchlist-back-to-lists {
+  display: none;
+}
+
+/* S (<420px) + short (<480px tall): default is names + counts only, the
+   detail (membership editor + company table) folds. Activating a list (`detailOpenAtS`) swaps that for a full-width detail with a
+   `Back to lists` control at its top — the detail is never permanently
+   hidden, just stacked in place of the names list; the tier switch itself
+   stays CSS-only. */
 @container pane (max-width: 419px) {
   .watchlists-workspace {
     grid-template-columns: minmax(0, 1fr);
@@ -211,6 +299,18 @@
 
   .watchlist-detail {
     display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlists-sidebar {
+    display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-detail {
+    display: flex;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-back-to-lists {
+    display: inline-flex;
   }
 }
 
@@ -221,5 +321,17 @@
 
   .watchlist-detail {
     display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlists-sidebar {
+    display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-detail {
+    display: flex;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-back-to-lists {
+    display: inline-flex;
   }
 }

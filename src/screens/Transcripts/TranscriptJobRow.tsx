@@ -199,6 +199,7 @@ export function TranscriptJobRow({
           ) : null}
           {confirmDelete ? (
             <InlineConfirm
+                            verb="remove"
               cancelLabel={text("Cancel")}
               confirmLabel={text("Delete")}
               disabled={transcriptDeleteInFlight === job.id}

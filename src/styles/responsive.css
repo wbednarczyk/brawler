@@ -8,19 +8,6 @@
     grid-template-columns: 1fr;
   }
 
-  /* The company row's context column has a 420px minimum that does not fit the
-     narrowed company-list panel, so it overflowed and the watchlist chips spilled
-     over the row's primary click target (opening a company hit a chip instead).
-     Stack the row: main on top, watchlist chips beneath, full-width click target. */
-  .company-row {
-    grid-template-columns: 1fr;
-    gap: var(--space-2);
-  }
-
-  .company-row-context {
-    grid-template-columns: 1fr;
-  }
-
   /* The Inbox filter toolbar has six controls (search + five selects). At this
      narrow panel width each select drops to its own row, so the toolbar grows
      very tall (~425px). The scrollable feed list was the only flex child able to
@@ -99,10 +86,6 @@
     justify-content: space-between;
   }
 
-  .company-form {
-    grid-template-columns: 1fr;
-  }
-
   .subsection-header,
   .watchlist-form,
   .watchlist-detail-header,
@@ -119,27 +102,6 @@
   }
 
   .watchlists-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .watchlist-member-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .watchlist-member-row > span:nth-child(3) {
-    display: none;
-  }
-
-  .company-list-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .company-row {
-    grid-template-columns: 1fr;
-  }
-
-  .company-row-context {
-    justify-self: stretch;
     grid-template-columns: 1fr;
   }
 

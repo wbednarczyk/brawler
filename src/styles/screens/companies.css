@@ -1624,3 +1624,51 @@
     flex-direction: column;
   }
 }
+
+/* Library tiers — kept LAST so these pane rules win over the base rules above at equal specificity. */
+/* The lookup form wraps to two rows in a narrow pane so `Add` never leaves the
+   painted extent (owner tier 1024×1152 clipped it; DoD § B inner-container rule). */
+@container pane (max-width: 1120px) {
+  .company-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+  }
+
+  .company-form input,
+  .company-form button {
+    min-width: 0;
+  }
+
+  /* The row's context column has a 420px minimum: stack the row (main on top,
+     watchlist chips beneath) by the PANE width — the same rule used to live in
+     responsive.css as a viewport media query and never fired in a narrow pane. */
+  .company-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .company-row-context {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container pane (max-width: 560px) {
+  .company-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* The list toolbar and the company rows stack by the PANE, not the viewport
+     (ui-authoring: container queries, never media queries — the media block in
+     responsive.css never fired for a narrow pane in a wide window). */
+  .company-list-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .company-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .company-row-context {
+    justify-self: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

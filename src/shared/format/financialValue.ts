@@ -54,6 +54,14 @@ export function localeTag(locale: LocaleCode): string {
   return LOCALE_TAGS[locale] ?? LOCALE_TAGS.en;
 }
 
+// Badge-style count formatting shared by `src/ui/Figure.tsx` (F4a S1): a
+// triple-digit count would blow out a fixed-width chip, so it reads "99+"
+// past the cap — the exact figure lives one click away (Spółka glance-bar
+// convention, plan §8 "9 sygnałów"/mockup Wasko.dc.html).
+export function formatCount(n: number): string {
+  return n > 99 ? "99+" : String(n);
+}
+
 export function groupFormat(value: number, locale: LocaleCode, maximumFractionDigits: number): string {
   return new Intl.NumberFormat(localeTag(locale), {
     minimumFractionDigits: 0,

@@ -33,6 +33,15 @@ export interface CatalogEntry {
    * spolka-tool-claims) is M-only.
    */
   tiers: Tier[];
+  /**
+   * Visual figure proof (ADR 0104 dec. 2 amendment, F4a S1): when set,
+   * `helpers.ts` asserts the shot locator contains at least `min` elements
+   * matching `selector` (normally `"[data-figure]"`) before capturing
+   * evidence — a screen that should render figures through the shared
+   * `Figure` primitive can't silently regress to ad-hoc formatting. Optional;
+   * no cell sets it yet (S5 wires it per screen).
+   */
+  figures?: { selector: string; min: number };
 }
 
 export interface ChangedResolution {

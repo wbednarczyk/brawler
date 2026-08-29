@@ -169,44 +169,29 @@ Company metadata detail (display name, exchange, ticker, ISIN, CIK, LEI, aliases
 
 ## Watchlists Screen
 
-Purpose: manage user-owned company groups used by filters across the app.
+Purpose: groups of companies that Today, Inbox and Report Season filter by — the user's own curation ([F4a, ADR 0104](adr/0104-frontend-v2-design-language.md)).
 
-Main regions:
+Main regions (M/L: two panes; S / short: names + counts, and activating a list opens its detail as a stacked view with `Back to lists` — density contract in [ui-authoring](ui-authoring.md)):
 
-- watchlist create control
-- watchlist selector/list
-- selected-watchlist member companies
-- searchable list of already-tracked companies available to add
+- header: title, one-line purpose subtitle, the create form (name field + quiet `Create`)
+- names pane: search + rows (name · member count as a `Figure`); the selected row carries the accent inset bar
+- selected list: eyebrow + name, meta ("N companies · used by Today, Inbox and Report Season"), quiet `Rename` / `Remove` (inline confirm), the single filled action `Add companies` (`data-ux-primary-action`)
+- member rows (non-interactive `DenseRow`): ticker · name (+ ISIN meta at L) · a real `Open company` button (destination) · ghost `Remove from list` (icon + label; icon-only with its accessible name in a narrow detail pane). No action column; the list scrolls internally under a pinned header
+- add-companies picker (behind `Add companies`): library search, checkbox rows (already-listed companies disabled with a note), `Cancel` + `Add selected · n`
 
-Actions:
-
-- create, rename, and delete watchlists
-- add already-tracked companies to the selected watchlist
-- remove companies from the selected watchlist
-
-The Watchlists screen is a dedicated navigation section. It should use a watchlist-first dual-pane workflow: select a watchlist, then manage that watchlist's member companies. Renaming a watchlist should preserve the watchlist's stable internal id. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies. If a deleted watchlist is active in a view filter, that filter should reset to `All`.
-
-Clicking a company row (or pressing Enter/Space on it) opens the **Spółka workshop** scoped to that company ([ADR 0107](adr/0107-company-view-paradigm.md)). Up and Down arrows move the highlighted row within the library without navigating away.
+Actions (dictionary verbs only, `ActionButton`): create, rename, remove a list; add companies; remove a company from the list; open a company (→ the Spółka screen, [ADR 0107](adr/0107-company-view-paradigm.md)). Empty states are invitations (no lists → `Create the first list`; empty list → `Add companies`; no search match → create with the typed name). Keyboard: Tab order row → Open → Remove; Enter on Open navigates.
 
 ## Alerts Screen
 
-Purpose: manage alert rules — what to be told about — and review fired alerts ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) T3). A dedicated **Library** sidebar destination (owner decision 2026-07-15, v0.54; relocated out of Settings — a reference surface like Sources/Watchlists, not a preference).
+Purpose: decide what deserves an interruption and see what fired ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) T3; F4a language pass). A **Library** sidebar destination.
 
-Main regions:
+Main regions, in this order (fired alerts are why the screen exists day to day):
 
-- rule builder: preset rule chips (signal category / autopilot run completed / price enters range / 52-week low), a scope picker (company or watchlist), and two-way-bound price min/max for range rules
-- your alerts: the rule list, each with its description, per-rule enable/disable toggle, in-place price edit for range rules, and delete (undoable)
-- fired alerts: a review list with mark-seen and dismiss
+- **fired alerts** — newest first (50, then `Show older`), each row: ticker, what fired, when (`Figure`), the rule; actions `Open …` (destination — the company, the Inbox item or the report) and `Dismiss`
+- **your alerts** — the rule list: description, scope chip, `Pause` / `Resume`, in-place price bounds for range rules, `Remove` (undoable)
+- **new alert** — the composer: preset chips (what to watch for) → scope (company or list) → the preview sentence → the single filled action `Add alert` (`data-ux-primary-action`). At S the composer folds behind `Add alert`
 
-Actions:
-
-- create a rule from a preset + scope
-- edit a range rule's min/max in place (commits on blur)
-- enable/disable a rule
-- delete a rule (undoable delete, ADR 0076 D5)
-- mark a fired alert seen, or dismiss it
-
-The grouped Today attention list lives on Today/Pulse (see the Today section above); this screen owns rule authoring and the raw fired-event list, reading the same app-level attention state as Today and the sidebar badge ([ADR 0097](adr/0097-toasts-are-action-feedback-only.md) dec. 6).
+States: no rules → invitation (`Add alert`); nothing fired → the quiet state (no action — quiet is the goal); a section read failing → its own strip + `Try again` while the rest stays live (`useAlertsQuery` on `useCommandQuery`, [ADR 0106](adr/0106-screen-data-layer-posture.md)). The grouped Today attention list lives on Today (see above); this screen reads the same app-level attention state as Today and the sidebar badge ([ADR 0097](adr/0097-toasts-are-action-feedback-only.md) dec. 6). Browser proof: `tests/browser/alerts.spec.ts`.
 
 ## Company panels (Spółka workshop)
 
