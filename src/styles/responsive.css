@@ -99,10 +99,6 @@
     justify-content: space-between;
   }
 
-  .company-form {
-    grid-template-columns: 1fr;
-  }
-
   .subsection-header,
   .watchlist-form,
   .watchlist-detail-header,
@@ -119,19 +115,6 @@
   }
 
   .watchlists-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .company-list-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .company-row {
-    grid-template-columns: 1fr;
-  }
-
-  .company-row-context {
-    justify-self: stretch;
     grid-template-columns: 1fr;
   }
 
