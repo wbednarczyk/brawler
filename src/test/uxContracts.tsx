@@ -9,17 +9,14 @@ import { localeTag } from "../shared/format/financialValue";
 // `data-ux-primary-action`, `data-empty-kind`) the F4a primitives emit
 // (`ActionButton`, `Button`, `EmptyState`).
 
+import { computeAccessibleName } from "dom-accessibility-api";
+
 export type ActionInventoryEntry = { name: string; kind: string };
 
-// The accessible name a screen-test author would read off the row: an
-// explicit `aria-label` first (icon-only actions), falling back to the
-// rendered text content. Not a full ARIA accessible-name computation (no
-// aria-labelledby/title chaining) — the F4a screens don't need it, and a
-// heavier computation would hide a missing label rather than flag it.
+// The real ARIA accessible name (what a screen reader announces and what
+// `getByRole(..., { name })` matches).
 function accessibleName(node: Element): string {
-  const ariaLabel = node.getAttribute("aria-label")?.trim();
-  if (ariaLabel) return ariaLabel;
-  return (node.textContent ?? "").trim();
+  return computeAccessibleName(node).trim();
 }
 
 /**

@@ -8,7 +8,7 @@ import { makeAlertRule } from "../../test/scenarios/entities";
 // the generated bindings (`src/api/generated/AlertRule.ts`,
 // `src/api/generated/AttentionEvent.ts`) — not a hand-picked subset, so a
 // future backend addition red-lines here instead of shipping a raw enum
-// token to the DOM (fixA finding 4, mirrors issue #71's D3 class).
+// token to the DOM mirrors issue #71's D3 class).
 const ALL_RULE_TRIGGER_TYPES: AlertRule["triggerType"][] = [
   "signal_category",
   "autopilot_run_completed",
@@ -52,7 +52,7 @@ function attentionEvent(triggerType: AttentionEvent["triggerType"]): AttentionEv
 // if it were already a human label (issue #71).
 const SNAKE_CASE = /[a-z]+_[a-z]+/;
 
-describe("alertLabels — no raw backend enum ever reaches the DOM (fixA finding 4)", () => {
+describe("alertLabels — no raw backend enum ever reaches the DOM )", () => {
   it.each(ALL_RULE_TRIGGER_TYPES)("ruleTitle never leaks the raw triggerType (%s)", (triggerType) => {
     const rule = makeAlertRule("rule-1", triggerType, "company-1");
     const label = ruleTitle(rule, text);

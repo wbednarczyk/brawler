@@ -506,7 +506,7 @@ describe("EmptyState kinds (ADR 0104 dec. 4, F4a S1)", () => {
     expect(node?.querySelector("button")).toBeNull();
   });
 
-  it("flags an action slot rendering more than one focusable control (Fix-C guardrail 1)", () => {
+  it("flags an action slot rendering more than one focusable control ()", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       render(
@@ -553,7 +553,7 @@ describe("EmptyState kinds (ADR 0104 dec. 4, F4a S1)", () => {
   });
 });
 
-describe("Figure (ADR 0104 dec. 2 amendment, F4a S1; count/badge split, Fix-C guardrail 4)", () => {
+describe("Figure (ADR 0104 dec. 2 amendment, F4a S1; count/badge split, )", () => {
   it("renders the exact, locale-grouped number for kind=count (no 99+ cap) and the num-tabular UI-face class", () => {
     const { rerender } = render(<Figure value={7} />);
     expect(screen.getByText("7")).toHaveClass("num-tabular");
@@ -588,7 +588,7 @@ describe("Figure (ADR 0104 dec. 2 amendment, F4a S1; count/badge split, Fix-C gu
   });
 });
 
-describe("SegmentedControlOption (Fix-C guardrail 5, sol F4a R1 finding 6)", () => {
+describe("SegmentedControlOption (, sol )", () => {
   it("the controlled aria-pressed/type/onClick win over anything a caller spreads through rest", () => {
     const onClick = vi.fn();
     render(

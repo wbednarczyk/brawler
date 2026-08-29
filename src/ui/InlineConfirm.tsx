@@ -9,11 +9,8 @@ export type InlineConfirmProps = {
   disabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
-  /** Fix-C guardrail 2 (sol F4a R1 finding 2): the dictionary verb the
-   * Confirm affordance carries in the per-screen action inventory — most
-   * `InlineConfirm` call sites guard a removal, so `remove` is the default;
-   * pass a different verb (e.g. `restore`-shaped custom copy) when the
-   * confirmed action is something else. */
+  /** The dictionary verb the Confirm affordance carries in the action
+   * inventory (e.g. `remove`); without one it is classified as a control. */
   verb?: Verb;
 };
 
@@ -24,20 +21,20 @@ export function InlineConfirm({
   disabled,
   onCancel,
   onConfirm,
-  verb = "remove",
+  verb,
 }: InlineConfirmProps) {
   return (
     <div className="inline-confirm" role="group">
       <span>{children}</span>
-      <ActionButton
-        className="compact-button"
-        disabled={disabled}
-        onClick={onConfirm}
-        variant="primary"
-        verb={verb}
-      >
-        {confirmLabel}
-      </ActionButton>
+      {verb ? (
+        <ActionButton className="compact-button" disabled={disabled} onClick={onConfirm} variant="primary" verb={verb}>
+          {confirmLabel}
+        </ActionButton>
+      ) : (
+        <ActionButton className="compact-button" disabled={disabled} kind="control" onClick={onConfirm} variant="primary">
+          {confirmLabel}
+        </ActionButton>
+      )}
       <ActionButton className="compact-button" kind="control" onClick={onCancel}>
         {cancelLabel}
       </ActionButton>

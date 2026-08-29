@@ -288,8 +288,7 @@
 }
 
 /* S (<420px) + short (<480px tall): default is names + counts only, the
-   detail (membership editor + company table) folds. Activating a list (F4a
-   Fix-B, `detailOpenAtS`) swaps that for a full-width detail with a
+   detail (membership editor + company table) folds. Activating a list (`detailOpenAtS`) swaps that for a full-width detail with a
    `Back to lists` control at its top — the detail is never permanently
    hidden, just stacked in place of the names list; the tier switch itself
    stays CSS-only. */

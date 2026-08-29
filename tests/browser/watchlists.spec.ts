@@ -107,7 +107,7 @@ test.describe("watchlists", { tag: "@clickable" }, () => {
     await expectPrimaryActionCount(region, { max: 1 });
   });
 
-  // Fix-B keyboard proof (F4a R1 findings 4/5): real Tab traversal — not
+  // Keyboard proof: real Tab traversal — not
   // `.focus()` straight onto the target — from a control the contract names
   // as an anchor (the previous row's Remove, alongside the list search
   // field), through the row's own Open->Remove order and back, ending with
@@ -138,7 +138,7 @@ test.describe("watchlists", { tag: "@clickable" }, () => {
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
   });
 
-  // Fix-B picker proof: picker rows are labelled checkboxes, so an
+  // Picker proof: picker rows are labelled checkboxes, so an
   // already-listed company can be asserted disabled by its accessible name
   // (never `.locator(".watchlist-picker-row").first()`), and selection goes
   // through the checkbox role rather than a class-selector click.

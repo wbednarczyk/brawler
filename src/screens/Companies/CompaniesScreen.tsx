@@ -357,6 +357,7 @@ export function CompaniesScreen() {
                       <span>{company.isin ?? text("No ISIN")}</span>
                       {confirmDeleteCompanyId === company.id ? (
                         <InlineConfirm
+                            verb="remove"
                           cancelLabel={text("Cancel")}
                           confirmLabel={text("Remove")}
                           onCancel={() => setConfirmDeleteCompanyId(null)}

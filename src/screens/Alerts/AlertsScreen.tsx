@@ -155,7 +155,7 @@ export function AlertsScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeType]);
 
-  // Fix-C guardrail 8: which "Add alert" button is the one filled element at
+  // which "Add alert" button is the one filled element at
   // rest (see the composer's `variant`/`data-ux-primary-action` below).
   const hasRules = alerts.rules.length > 0;
 
@@ -416,7 +416,7 @@ export function AlertsScreen({
         <ActionButton
           verb="add"
           className="alerts-preview-add"
-          // Fix-C guardrail 8 (sol F4a R1, "one filled element at rest"):
+          // (ADR 0104 dec. 1, one filled element at rest):
           // with no rules yet, `AlertRulesSection`'s invitation renders its
           // own filled "Add alert" that focuses this composer — this button
           // goes quiet in that state so the two never both render filled at
@@ -472,12 +472,21 @@ export function AlertsScreen({
             companyName={companyName}
             watchlistName={watchlistName}
             rulesError={Boolean(alerts.sectionErrors.rules)}
-            onRetry={alerts.refetch}
+            onRetry={() => attention.refresh()}
             onToggle={toggleRule}
             onCommitPrice={commitPrice}
             onRemove={removeRule}
             onAddAlert={focusComposer}
           />
+
+          {alerts.sectionErrors.scope ? (
+            <div className="alerts-attention-error" role="status">
+              <ErrorText>{text("Couldn't load company and list names. Rules and alerts are up to date.")}</ErrorText>
+              <ActionButton kind="control" onClick={alerts.refetch} variant="ghost">
+                {text("Try again")}
+              </ActionButton>
+            </div>
+          ) : null}
 
           {/* Secondary in the hierarchy (contract § Alerts § 5): folds behind
               its own primary at the S tier so fired alerts + rules stay the

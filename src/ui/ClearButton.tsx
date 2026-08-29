@@ -1,6 +1,5 @@
 import { X } from "lucide-react";
 import type { MouseEventHandler } from "react";
-import { ActionButton } from "./ActionButton";
 
 export type ClearButtonProps = {
   label: string;
@@ -9,22 +8,21 @@ export type ClearButtonProps = {
   title?: string;
 };
 
-// Fix-C guardrail 2 (sol F4a R1 finding 2): a field's clear affordance is a
-// filter reset, not a command — renders through `ActionButton` with
-// `kind="control"` so it carries `data-action-kind` like every other dynamic
-// button (the per-screen action-inventory contract, `src/test/uxContracts.tsx`
-// `collectActionInventory`, would otherwise see it as `"unclassified"`).
+// A field's clear affordance is a filter reset (`data-action-kind="control"`
+// for the action-inventory guard); it keeps its own compact styling rather
+// than a `Button` variant.
 export function ClearButton({ label, onClick, onMouseDown, title }: ClearButtonProps) {
   return (
-    <ActionButton
+    <button
       aria-label={label}
       className="field-clear-button"
-      kind="control"
+      data-action-kind="control"
       onClick={onClick}
       onMouseDown={onMouseDown ?? ((event) => event.preventDefault())}
       title={title ?? label}
+      type="button"
     >
       <X size={13} />
-    </ActionButton>
+    </button>
   );
 }

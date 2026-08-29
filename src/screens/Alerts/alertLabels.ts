@@ -82,7 +82,7 @@ export function ruleTitle(rule: AlertRule, text: Translate): string {
       return text("52-week low");
     default:
       // Every AlertRule.triggerType member is handled above; this backstops
-      // a future backend addition (fixA finding 4: never a raw enum token).
+      // a future backend addition : never a raw enum token).
       return text("Signal");
   }
 }
@@ -113,7 +113,7 @@ export function ruleDescription(
 }
 
 // Fired-event "what" line, from the trigger type joined onto the event.
-// Covers EVERY `AttentionEvent.triggerType` member (fixA finding 4): unlike
+// Covers EVERY `AttentionEvent.triggerType` member ): unlike
 // `AlertRule.triggerType`, an event can also be a system trigger raised with
 // no user rule (`source_reconciliation`, `job_failed` — ADR 0069/0091), so
 // those two need their own cases or they fall through to the raw enum token.
@@ -149,7 +149,7 @@ export function eventDescription(
   text: Translate,
   companyName: Map<string, string>,
 ): string {
-  // `eventWhat` (fixA finding 4), never the raw `evidenceType` enum code.
+  // `eventWhat` ), never the raw `evidenceType` enum code.
   return `${eventScope(event, companyName, text)} · ${eventWhat(event, text)}`;
 }
 

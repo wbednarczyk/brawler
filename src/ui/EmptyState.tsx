@@ -11,7 +11,7 @@ import { Children, useEffect, useRef, type ReactElement, type ReactNode } from "
 // typing `action` as a single `ReactElement` (not `ReactNode`, which would
 // also accept an array/fragment of several controls); a caller that defeats
 // TS (an `any`-cast fragment of two buttons) is still caught at runtime — see
-// `InvitationAction` below (Fix-C guardrail 1, sol F4a R1 finding 1).
+// `InvitationAction` below (, sol ).
 export type EmptyStateInvitationProps = {
   kind: "invitation";
   title: ReactNode;
@@ -56,7 +56,7 @@ function InvitationAction({ action }: { action: ReactElement }) {
     if (!node) return;
     const focusable = node.querySelectorAll(FOCUSABLE_SELECTOR).length;
     if (focusable !== 1) {
-      // Dev-time contract diagnostic (ADR 0104 dec. 4 / Fix-C guardrail 1).
+      // Dev-time contract diagnostic (ADR 0104 dec. 4 / ).
       console.error(
         `EmptyState kind="invitation": action slot must render exactly one focusable control, found ${focusable}.`,
       );

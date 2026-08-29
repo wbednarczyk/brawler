@@ -227,7 +227,7 @@ test.describe("Companies library density (companies-library cell)", { tag: "@cli
       await expect(list).toBeVisible();
       await expectNoOverlap(form, list, "company add form and company list");
       await expectNoPageOverflow(page);
-      // Fix-C guardrail 6 (shared guardrail table, "one filled element at
+      // (shared guardrail table, "one filled element at
       // rest"): at every tier, exactly one variant="primary" button renders.
       await expectFilledAtRest(pane, { max: 1 });
       // The `Add` action must stay inside the pane's painted extent — the

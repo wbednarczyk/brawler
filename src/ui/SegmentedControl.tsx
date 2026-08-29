@@ -28,7 +28,7 @@ export function SegmentedControl({ ariaLabel, children, className }: SegmentedCo
 export function SegmentedControlOption({ active = false, children, onClick, ...rest }: SegmentedControlOptionProps) {
   return (
     <button
-      // `...rest` spreads FIRST (Fix-C guardrail 5, sol F4a R1 finding 6): a
+      // `...rest` spreads FIRST (, sol ): a
       // caller-supplied `aria-pressed` must never win over the controlled
       // state below it, and `type`/`onClick` stay this primitive's own even
       // though TS already excludes them from `rest`'s type.

@@ -156,6 +156,8 @@ export const plText: Record<string, string> = {
     "Nie udało się odczytać reguł. Reszta widoku jest aktualna.",
   "Couldn't load the fired alerts. The rest of the view is up to date.":
     "Nie udało się odczytać uruchomionych alertów. Reszta widoku jest aktualna.",
+  "Couldn't load company and list names. Rules and alerts are up to date.":
+    "Nie udało się odczytać nazw spółek i list. Reguły i alerty są aktualne.",
   "Couldn't load alerts.": "Nie udało się wczytać alertów.",
   "Loading alerts…": "Wczytywanie alertów…",
   "Couldn't load upcoming reports.": "Nie udało się pobrać nadchodzących raportów.",

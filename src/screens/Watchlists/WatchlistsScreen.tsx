@@ -75,7 +75,7 @@ export function WatchlistsScreen() {
   const [isAddOpen, setAddOpen] = useState(false);
   const [isRenameOpen, setRenameOpen] = useState(false);
   // S (<420px pane) / short (<480px tall): activating a list opens the detail
-  // AS a stacked view in place of the names list (F4a Fix-B). The tier switch
+  // AS a stacked view in place of the names list. The tier switch
   // itself is CSS-only (container queries on `.watchlists-workspace-detail-open`,
   // see watchlists.css) — this flag only tracks whether the user asked to see
   // the detail; on M/L it renders unused (both panes always show there).
@@ -259,6 +259,7 @@ export function WatchlistsScreen() {
             <div className="watchlist-list" aria-label={text("Watchlists")}>
               {filteredWatchlists.map((watchlist) => (
                 <DenseRow
+                  aria-label={watchlist.name}
                   as="button"
                   className="watchlist-row"
                   data-action-kind="destination"
@@ -345,6 +346,7 @@ export function WatchlistsScreen() {
                         </ActionButton>
                         {confirmDeleteWatchlist ? (
                           <InlineConfirm
+                            verb="remove"
                             cancelLabel={text("Cancel")}
                             confirmLabel={text("Remove")}
                             onCancel={() => setConfirmDeleteWatchlist(false)}

@@ -2,6 +2,15 @@ import { describe, it } from "vitest";
 import { appTestState, expect, renderApp, screen, userEvent, within } from "../../test/appWorkflowHarness";
 import { collectActionInventory, collectEmptyStates, expectSinglePrimary } from "../../test/uxContracts";
 import type { ActionInventoryEntry } from "../../test/uxContracts";
+import { plText } from "../../shared/locale/resources/plText";
+const LOCALES = ["en", "pl"] as const;
+type Locale = (typeof LOCALES)[number];
+/** The rendered label for an EN copy key in `locale` (PL via plText, exactly what `text()` renders). */
+function L(locale: Locale, en: string, vars: Record<string, string> = {}): string {
+  const base = locale === "pl" ? (plText[en] ?? en) : en;
+  return Object.entries(vars).reduce((s, [k, v]) => s.replace(`{${k}}`, v), base);
+}
+
 
 // F4a S2 contract harness for the Companies library language pass
 // (docs/plans/frontend-v2-f4a.md § Companies library — contract-exempt: no
@@ -10,7 +19,7 @@ import type { ActionInventoryEntry } from "../../test/uxContracts";
 // already matched, `it.fails`/`it.todo` naming the gaps); S2 built the
 // missing behavior and flips every row to `it`.
 //
-// Fix-C guardrail 3 (sol F4a R1 finding 3): the per-state action inventory is
+// the per-state action inventory is
 // now asserted as a FULL sorted array (`toEqual`, duplicates visible) instead
 // of a `Map` lookup of a few named entries — an extra, missing, or
 // misclassified button now reddens even if it isn't one of the names this
@@ -88,60 +97,60 @@ describe("Companies action inventory (F4a contract § Companies library)", () =>
 });
 
 describe("Companies empty states are invitations (F4a contract § Companies library)", () => {
-  it("Empty (no companies): the full inventory is just Lookup + Add + Manage settings + the invitation action, all classified", async () => {
+  it.each(LOCALES)("Empty (no companies): Lookup + Add + Manage settings + the invitation action, all classified (%s)", async (locale) => {
     appTestState.companiesResponse = [];
     appTestState.watchlistMembershipsResponse = [];
-    const region = await openCompanies("en");
-    await within(region).findByText("No companies in your library yet");
+    const region = await openCompanies(locale);
+    await within(region).findByText(L(locale, "No companies in your library yet"));
     expect(collectEmptyStates(region)).toContain("invitation");
-    expect(collectActionInventory(region, "en")).toEqual(
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        { name: "Add", kind: "add" },
-        { name: "Add your first company", kind: "control" },
-        { name: "Lookup", kind: "control" },
-        { name: "Manage settings", kind: "destination" },
+        { name: L(locale, "Add"), kind: "add" },
+        { name: L(locale, "Add your first company"), kind: "control" },
+        { name: L(locale, "Lookup"), kind: "control" },
+        { name: L(locale, "Manage settings"), kind: "destination" },
       ]),
     );
 
     const user = userEvent.setup();
-    await user.click(within(region).getByRole("button", { name: "Add your first company" }));
-    expect(within(region).getByLabelText("Ticker")).toHaveFocus();
+    await user.click(within(region).getByRole("button", { name: L(locale, "Add your first company") }));
+    expect(within(region).getByLabelText(L(locale, "Ticker"))).toHaveFocus();
   });
 
-  it("Empty (no filter match): the full inventory is Lookup + Add + Manage settings + both clear actions, all classified", async () => {
-    const region = await openCompanies("en");
+  it.each(LOCALES)("Empty (no filter match): Lookup + Add + Manage settings + both clear actions, all classified (%s)", async (locale) => {
+    const region = await openCompanies(locale);
     const user = userEvent.setup();
-    await user.type(within(region).getByLabelText("Search tracked companies"), "zzz-no-match-zzz");
+    await user.type(within(region).getByLabelText(L(locale, "Search tracked companies")), "zzz-no-match-zzz");
 
-    await within(region).findByText("No companies match your filters");
+    await within(region).findByText(L(locale, "No companies match your filters"));
     expect(collectEmptyStates(region)).toContain("invitation");
-    expect(collectActionInventory(region, "en")).toEqual(
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        { name: "Add", kind: "add" },
-        { name: "Clear company search", kind: "control" },
-        { name: "Clear filters", kind: "control" },
-        { name: "Lookup", kind: "control" },
-        { name: "Manage settings", kind: "destination" },
+        { name: L(locale, "Add"), kind: "add" },
+        { name: L(locale, "Clear company search"), kind: "control" },
+        { name: L(locale, "Clear filters"), kind: "control" },
+        { name: L(locale, "Lookup"), kind: "control" },
+        { name: L(locale, "Manage settings"), kind: "destination" },
       ]),
     );
 
-    await user.click(within(region).getByRole("button", { name: "Clear filters" }));
-    expect(within(region).getByLabelText("Search tracked companies")).toHaveValue("");
+    await user.click(within(region).getByRole("button", { name: L(locale, "Clear filters") }));
+    expect(within(region).getByLabelText(L(locale, "Search tracked companies"))).toHaveValue("");
   });
 
-  it("Empty (registry no-match): the invitation's 'Add manually' is classified and the rest of the inventory is unchanged", async () => {
-    const region = await openCompanies("en");
+  it.each(LOCALES)("Empty (registry no-match): the invitation's Add manually is classified and the rest of the inventory is unchanged (%s)", async (locale) => {
+    const region = await openCompanies(locale);
     const user = userEvent.setup();
-    await user.clear(within(region).getByLabelText("Name"));
-    await user.type(within(region).getByLabelText("Name"), "Definitely Not In The Registry Zzz");
+    await user.clear(within(region).getByLabelText(L(locale, "Name")));
+    await user.type(within(region).getByLabelText(L(locale, "Name")), "Definitely Not In The Registry Zzz");
 
-    await within(region).findByText("No match in the registry");
+    await within(region).findByText(L(locale, "No match in the registry"));
     expect(collectEmptyStates(region)).toContain("invitation");
-    expect(collectActionInventory(region, "en")).toEqual(
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        ...defaultInventory("en"),
-        { name: "Add manually", kind: "control" },
-        { name: "Clear name", kind: "control" },
+        ...defaultInventory(locale),
+        { name: L(locale, "Add manually"), kind: "control" },
+        { name: L(locale, "Clear name"), kind: "control" },
       ]),
     );
   });

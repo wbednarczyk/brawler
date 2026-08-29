@@ -171,7 +171,7 @@ Company metadata detail (display name, exchange, ticker, ISIN, CIK, LEI, aliases
 
 Purpose: groups of companies that Today, Inbox and Report Season filter by — the user's own curation ([F4a, ADR 0104](adr/0104-frontend-v2-design-language.md)).
 
-Main regions (M/L: two panes; S / short: names + counts only, the detail folds — density contract in [ui-authoring](ui-authoring.md)):
+Main regions (M/L: two panes; S / short: names + counts, and activating a list opens its detail as a stacked view with `Back to lists` — density contract in [ui-authoring](ui-authoring.md)):
 
 - header: title, one-line purpose subtitle, the create form (name field + quiet `Create`)
 - names pane: search + rows (name · member count as a `Figure`); the selected row carries the accent inset bar

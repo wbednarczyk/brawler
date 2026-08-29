@@ -15,8 +15,8 @@ import type { Company } from "../../api/types";
 import type { AttentionController } from "../../app/useAttentionController";
 import { COMPANY_SPECS, makeAlertRule, makeAttentionEvent, makeCompany } from "../../test/scenarios/entities";
 
-// `listAlertRules` stays mocked here even though `useAlertsQuery` no longer
-// imports it (fixA finding 1) — the spy-zero assertion below needs it.
+// `listAlertRules` stays mocked even though `useAlertsQuery` no longer
+// imports it — the spy-zero assertion below needs it.
 vi.mock("../../api/attention", () => ({
   createAlertRule: vi.fn(),
   deleteAlertRule: vi.fn(),
@@ -62,7 +62,7 @@ describe("useAlertsQuery", () => {
     vi.clearAllMocks();
   });
 
-  // fixA finding 1 (ADR 0097 dec. 6): rules have exactly one owner — the
+  // (ADR 0097 dec. 6): rules have exactly one owner — the
   // shared AttentionController. A second `listAlertRules` fetch here would
   // let this screen's copy drift from Today's/the badge's.
   it("never calls listAlertRules itself — rules come from the attention controller", async () => {
@@ -128,7 +128,7 @@ describe("useAlertsQuery", () => {
 
       expect(refresh).toHaveBeenCalledTimes(1);
 
-      // Convergence (fixA finding 1): the hook reads `attention.rules`
+      // Convergence ): the hook reads `attention.rules`
       // directly — once the controller's next value lands, the rendered
       // list reflects it with no second, local refetch.
       rerender({ attention: makeAttention([rule], { refresh }) });
@@ -200,11 +200,33 @@ describe("useAlertsQuery", () => {
     const { result } = renderHook(() => useAlertsQuery(attention));
 
     await waitFor(() => expect(result.current.status).toBe("partial"));
-    expect(result.current.sectionErrors).toEqual({ events: "unavailable" });
+    expect(result.current.sectionErrors).toEqual({ rules: "unavailable", events: "unavailable" });
     // Rules come straight off the controller, unaffected by the library's
     // own status; the controller's last-known-good events still pass through
     // (ADR 0097 dec. 6).
     expect(result.current.rules).toEqual([rule]);
     expect(result.current.events).toEqual([firedEvent]);
+  });
+
+  it("a failed first attention read is the error state with Retry, never an endless skeleton", async () => {
+    listCompaniesMock.mockResolvedValue([]);
+    listWatchlistsMock.mockResolvedValue([]);
+    const attention = makeAttention([], { hydrated: false, loading: false, error: "attention read failed" });
+    const { result } = renderHook(() => useAlertsQuery(attention));
+
+    await waitFor(() => expect(result.current.status).not.toBe("loading"));
+    expect(result.current.status).toBe("partial");
+    expect(result.current.sectionErrors).toEqual({ rules: "unavailable", events: "unavailable" });
+  });
+
+  it("a failed company/list read flags the scope names only — the controller's rules stay rendered", async () => {
+    listCompaniesMock.mockRejectedValue(new Error("companies unavailable"));
+    listWatchlistsMock.mockResolvedValue([]);
+    const attention = makeAttention([rule]);
+    const { result } = renderHook(() => useAlertsQuery(attention));
+
+    await waitFor(() => expect(result.current.status).toBe("partial"));
+    expect(result.current.sectionErrors).toEqual({ scope: "unavailable" });
+    expect(result.current.rules).toEqual([rule]);
   });
 });

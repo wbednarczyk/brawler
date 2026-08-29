@@ -59,7 +59,7 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     const detail = page.getByLabel("Selected watchlist");
     await detail.getByRole("button", { name: "Add companies" }).click();
     const picker = page.getByLabel("Add companies", { exact: true });
-    // Fix-C guardrail 6: the add-companies picker is also a "one filled
+    // the add-companies picker is also a "one filled
     // element at rest" surface ("Add selected" primary, "Cancel" quiet).
     await expectFilledAtRest(picker, { max: 1 });
     await picker.locator(".watchlist-picker-row").first().click();
@@ -93,7 +93,7 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
 
     // S (<420): the list was already activated above (the initial
     // `row.click()`) — the detail stays open, stacked in place of the names
-    // list (F4a Fix-B); `Back to lists` returns to the names list, which is
+    // list; `Back to lists` returns to the names list, which is
     // never permanently hidden.
     await sizeTo(page, "S", pane);
     await expect(detail).toBeVisible();

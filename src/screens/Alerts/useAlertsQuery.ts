@@ -28,15 +28,17 @@ function fetchAlertsLibrary(): Promise<AlertsLibraryData> {
 }
 
 export type AlertsSectionErrors = {
+  /** Rules and events share the attention controller: one read, one failure. */
   rules?: "unavailable";
   events?: "unavailable";
+  /** Company/watchlist names for the scope picker and labels (this hook's own read). */
+  scope?: "unavailable";
 };
 
 export type AlertsQueryStatus = "loading" | "success" | "partial" | "error";
 
 /**
- * Alerts screen data layer (F4a S4a, ADR 0106 dec. 2/4; fixA finding 3, ADR
- * 0097 dec. 6). Rules are owned by the shared `AttentionController` — the
+ * Alerts screen data layer (ADR 0106 dec. 2/4; ADR 0097 dec. 6). Rules are owned by the shared `AttentionController` — the
  * SAME single fetch Today and the sidebar badge read, never a second
  * `listAlertRules` copy that could drift. This hook fetches only what the
  * controller does not own: companies/watchlists, needed for the composer's
@@ -62,18 +64,23 @@ export function useAlertsQuery(attention: AttentionController) {
   }, []);
 
   const sectionErrors: AlertsSectionErrors = {};
-  if (library.status === "error") sectionErrors.rules = "unavailable";
-  if (attention.error !== null) sectionErrors.events = "unavailable";
+  if (library.status === "error") sectionErrors.scope = "unavailable";
+  if (attention.error !== null) {
+    sectionErrors.rules = "unavailable";
+    sectionErrors.events = "unavailable";
+  }
 
   // Never `success` (or, downstream, the quiet empty state) before the
-  // controller has hydrated at least once — an unhydrated read must never
-  // look quiet (ADR 0097 dec. 6 / the false-quiet ban).
+  // controller has hydrated once (ADR 0097 dec. 6, the false-quiet ban). A
+  // failed first read leaves the controller unhydrated WITH an error — that
+  // is the error state with Retry, never an endless skeleton.
+  const attentionPending = attention.loading || (!attention.hydrated && attention.error === null);
   const status: AlertsQueryStatus =
-    !attention.hydrated || attention.loading || library.status === "loading"
+    attentionPending || library.status === "loading"
       ? "loading"
-      : sectionErrors.rules && sectionErrors.events
+      : sectionErrors.rules && sectionErrors.events && sectionErrors.scope
         ? "error"
-        : sectionErrors.rules || sectionErrors.events
+        : sectionErrors.rules || sectionErrors.events || sectionErrors.scope
           ? "partial"
           : "success";
 

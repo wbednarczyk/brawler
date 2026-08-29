@@ -82,6 +82,7 @@ export function ResearchQuestionsPanel({
             </button>
             {confirmDeleteQuestionId === question.id ? (
               <InlineConfirm
+                            verb="remove"
                 cancelLabel={text("Cancel")}
                 confirmLabel={text("Delete")}
                 disabled={questionInFlight}

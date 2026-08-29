@@ -2,13 +2,22 @@ import { describe, it } from "vitest";
 import { appTestState, expect, renderApp, screen, within } from "../../test/appWorkflowHarness";
 import { collectActionInventory, collectEmptyStates, expectSinglePrimary } from "../../test/uxContracts";
 import type { ActionInventoryEntry } from "../../test/uxContracts";
+import { plText } from "../../shared/locale/resources/plText";
+const LOCALES = ["en", "pl"] as const;
+type Locale = (typeof LOCALES)[number];
+/** The rendered label for an EN copy key in `locale` (PL via plText, exactly what `text()` renders). */
+function L(locale: Locale, en: string, vars: Record<string, string> = {}): string {
+  const base = locale === "pl" ? (plText[en] ?? en) : en;
+  return Object.entries(vars).reduce((s, [k, v]) => s.replace(`{${k}}`, v), base);
+}
+
 
 // F4a S1 contract harness for the Alerts changed workflow
 // (docs/plans/frontend-v2-f4a.md § Alerts). S4a/S4b implement the workflow +
 // language changes; this file exercises today's screen against the
 // contract's action-inventory / primary-action / empty-state rows.
 //
-// Fix-C guardrail 3 (sol F4a R1 finding 3): every state below asserts the
+// every state below asserts the
 // FULL sorted action inventory (`toEqual`), not a `Map` lookup of a few
 // names. Two entries sharing a name (e.g. "Add alert" appears TWICE in the
 // no-rules state — the composer's own quiet button plus the invitation's
@@ -76,6 +85,8 @@ const DEFAULT_PL: ActionInventoryEntry[] = sorted([
   { name: "Zakres ceny", kind: "control" },
 ]);
 
+const DEFAULT = { en: DEFAULT_EN, pl: DEFAULT_PL } as const;
+
 describe("Alerts action inventory (F4a contract § Alerts, Action inventory)", () => {
   it("the full sorted action inventory matches the contract table (EN)", async () => {
     const region = await openAlerts("en");
@@ -122,7 +133,7 @@ describe("Alerts primary action per state (F4a contract § Alerts, State matrix)
     expectSinglePrimary(region, 1);
   });
 
-  it("Empty (no rules): the composer's own Add alert goes quiet — only ONE filled (variant=primary) button renders (Fix-C guardrail 8)", async () => {
+  it("Empty (no rules): the composer's own Add alert goes quiet — only ONE filled (variant=primary) button renders ()", async () => {
     appTestState.alertRulesResponse = [];
     const region = await openAlerts("en");
     await within(region).findByText("You don't have any alerts yet");
@@ -134,29 +145,32 @@ describe("Alerts primary action per state (F4a contract § Alerts, State matrix)
 });
 
 describe("Alerts empty states (F4a contract § Alerts, State matrix)", () => {
-  it("Empty (no rules): full inventory drops Pause/Remove, gains a SECOND (quiet) Add alert — duplicates visible", async () => {
+  it.each(LOCALES)("Empty (no rules): full inventory drops Pause/Remove, gains a SECOND (quiet) Add alert — duplicates visible (%s)", async (locale) => {
     appTestState.alertRulesResponse = [];
-    const region = await openAlerts("en");
-    await within(region).findByText("You don't have any alerts yet");
+    const region = await openAlerts(locale);
+    await within(region).findByText(L(locale, "You don't have any alerts yet"));
     expect(collectEmptyStates(region)).toContain("invitation");
-    // The composer's own "Add alert" (now quiet) plus the invitation's
-    // "Add alert" (filled) — both carry kind="add" regardless of which one
-    // is visually filled, so the array legitimately holds the name TWICE.
-    expect(collectActionInventory(region, "en")).toEqual(
+    // The composer's own "Add alert" (quiet) plus the invitation's (filled) —
+    // both carry kind="add", so the array legitimately holds the name twice.
+    const pause = L(locale, "Pause");
+    const remove = L(locale, "Remove");
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        ...DEFAULT_EN.filter((entry) => entry.name !== "Pause" && entry.name !== "Remove"),
-        { name: "Add alert", kind: "add" },
+        ...DEFAULT[locale].filter((entry) => entry.name !== pause && entry.name !== remove),
+        { name: L(locale, "Add alert"), kind: "add" },
       ]),
     );
   });
 
-  it("Empty (nothing fired): full inventory drops Dismiss/Open company, renders the quiet kind", async () => {
+  it.each(LOCALES)("Empty (nothing fired): full inventory drops Dismiss/Open company, renders the quiet kind (%s)", async (locale) => {
     appTestState.attentionEventsResponse = [];
-    const region = await openAlerts("en");
-    await within(region).findByText("All quiet — nothing has fired. That's the point.");
+    const region = await openAlerts(locale);
+    await within(region).findByText(L(locale, "All quiet — nothing has fired. That's the point."));
     expect(collectEmptyStates(region)).toContain("quiet");
-    expect(collectActionInventory(region, "en")).toEqual(
-      sorted(DEFAULT_EN.filter((entry) => entry.name !== "Dismiss" && entry.name !== "Open company")),
+    const dismiss = L(locale, "Dismiss");
+    const open = L(locale, "Open company");
+    expect(collectActionInventory(region, locale)).toEqual(
+      sorted(DEFAULT[locale].filter((entry) => entry.name !== dismiss && entry.name !== open)),
     );
   });
 });

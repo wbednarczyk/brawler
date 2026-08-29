@@ -34,8 +34,7 @@ function formatFigureValue(value: number | string, kind: FigureKind, locale: Loc
     case "datetime":
       return formatDetailTimestamp(String(value));
     // A fixed-width chip (badge) caps at "99+" so a triple-digit count never
-    // blows out its layout — the exact figure lives one click away (Fix-C
-    // guardrail 4, sol F4a R1 finding 4). A prose/table count (the default)
+    // blows out its layout — the exact figure lives one click away. A prose/table count (the default)
     // has no such constraint and always renders the real, locale-grouped
     // number — capping a "18 members"/"342 companies" figure at "99+" would
     // just be wrong.

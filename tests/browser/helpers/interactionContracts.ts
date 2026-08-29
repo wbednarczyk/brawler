@@ -136,7 +136,7 @@ export async function expectNextStepVisible(locator: Locator): Promise<void> {
 /**
  * Asserts `root` renders at most `max` VISIBLE filled elements — a `Button`
  * styled `variant="primary"` (`data-ui-button-variant="primary"`, see
- * `src/ui/Button.tsx`) — at rest (Fix-C guardrail 6, sol F4a R1 finding 7a).
+ * `src/ui/Button.tsx`) — at rest (, sol a).
  * Counts only visible ones: a fold that keeps a primary-styled button
  * mounted-but-hidden behind a disclosure (e.g. Alerts' S-tier composer fold)
  * must not read as a second filled element. This is the "one filled element
@@ -145,7 +145,7 @@ export async function expectNextStepVisible(locator: Locator): Promise<void> {
  * `data-ux-primary-action` marker; both should normally agree, and a
  * mismatch between them is itself the class of bug this helper exists to
  * catch (a screen where the styled-filled button and the marked-primary
- * button drift apart, e.g. Alerts before Fix-C guardrail 8).
+ * button drift apart, e.g. Alerts before ).
  */
 export async function expectFilledAtRest(root: Locator, { max = 1 }: { max?: number } = {}): Promise<void> {
   const filled = root.locator('[data-ui-button-variant="primary"]');

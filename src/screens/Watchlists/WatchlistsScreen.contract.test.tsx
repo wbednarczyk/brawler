@@ -9,13 +9,22 @@ import {
 } from "../../test/appWorkflowHarness";
 import { collectActionInventory, collectEmptyStates, expectSinglePrimary } from "../../test/uxContracts";
 import type { ActionInventoryEntry } from "../../test/uxContracts";
+import { plText } from "../../shared/locale/resources/plText";
+const LOCALES = ["en", "pl"] as const;
+type Locale = (typeof LOCALES)[number];
+/** The rendered label for an EN copy key in `locale` (PL via plText, exactly what `text()` renders). */
+function L(locale: Locale, en: string, vars: Record<string, string> = {}): string {
+  const base = locale === "pl" ? (plText[en] ?? en) : en;
+  return Object.entries(vars).reduce((s, [k, v]) => s.replace(`{${k}}`, v), base);
+}
+
 
 // F4a S1 contract harness for the Watchlists redesign
 // (docs/plans/frontend-v2-f4a.md § Watchlists). Watchlists is a REDESIGN wave
 // (S3 implements it); this file exercises today's screen against the
 // contract's action inventory / primary-action / empty-state rows.
 //
-// Fix-C guardrail 3 (sol F4a R1 finding 3): every state below asserts the
+// every state below asserts the
 // FULL sorted action inventory (`toEqual`), not a `Map` lookup of a handful
 // of names — a stray/misclassified/duplicated button now reddens even when
 // it isn't one of the specific names a narrower assertion would have
@@ -25,14 +34,11 @@ import type { ActionInventoryEntry } from "../../test/uxContracts";
 //
 // The default ("minimal") scenario seeds one watchlist ("Main GPW",
 // `src/test/scenarios/legacyMinimal.ts`) with one member (CD PROJEKT, ticker
-// CDR) — the harness auto-selects it on mount. Note: the watchlist ROW's
-// accessible name is its raw textContent (name + Figure count concatenated,
-// no separating space, e.g. "Main GPW1") — a pre-existing quirk of
-// `collectActionInventory`'s simplified name algorithm (no aria-label on the
-// row), not something this guardrail wave changes.
+// CDR) — the harness auto-selects it on mount. A list row's accessible name
+// is the list name (the member count is visible, not part of the name).
 
 const REGION_NAME = { en: "Watchlists", pl: "Listy obserwowane" } as const;
-const ROW_NAME = "Main GPW1";
+const ROW_NAME = "Main GPW";
 
 async function openWatchlists(locale: "en" | "pl") {
   appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
@@ -149,50 +155,48 @@ describe("Watchlists primary action per state (F4a contract § Watchlists, State
 });
 
 describe("Watchlists empty states (F4a contract § Watchlists, State matrix)", () => {
-  it("Empty (no lists): full inventory is just the header Create form + the invitation's Create, both classified", async () => {
+  it.each(LOCALES)("Empty (no lists): the header Create form + the invitation's Create, both classified (%s)", async (locale) => {
     appTestState.watchlistsResponse = [];
     appTestState.watchlistMembershipsResponse = [];
-    const region = await openWatchlists("en");
-    await within(region).findByText("No watchlists yet.");
+    const region = await openWatchlists(locale);
+    await within(region).findByText(L(locale, "No watchlists yet."));
     expect(collectEmptyStates(region)).toContain("invitation");
-    expect(collectActionInventory(region, "en")).toEqual(
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        { name: "Create", kind: "create" },
-        { name: "Create your first watchlist", kind: "create" },
+        { name: L(locale, "Create"), kind: "create" },
+        { name: L(locale, "Create your first watchlist"), kind: "create" },
       ]),
     );
   });
 
-  it("Empty (search no match): full inventory is the header Create form + clear search + the invitation's Create, all classified", async () => {
+  it.each(LOCALES)("Empty (search no match): the header Create form + clear search + the invitation's Create, all classified (%s)", async (locale) => {
     const user = userEvent.setup();
-    const region = await openWatchlists("en");
-    const search = await within(region).findByLabelText("Search watchlists");
+    const region = await openWatchlists(locale);
+    const search = await within(region).findByLabelText(L(locale, "Search watchlists"));
     await user.type(search, "zzz-no-such-list");
-    await within(region).findByText("No watchlists match this search.");
+    await within(region).findByText(L(locale, "No watchlists match this search."));
     expect(collectEmptyStates(region)).toContain("invitation");
-    expect(collectActionInventory(region, "en")).toEqual(
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        { name: "Clear watchlist search", kind: "control" },
-        { name: "Create", kind: "create" },
-        { name: 'Create watchlist "zzz-no-such-list"', kind: "create" },
+        { name: L(locale, "Clear watchlist search"), kind: "control" },
+        { name: L(locale, "Create"), kind: "create" },
+        { name: L(locale, 'Create watchlist "{name}"', { name: "zzz-no-such-list" }), kind: "create" },
       ]),
     );
   });
 
-  it("Empty (selected list has 0 members): full inventory drops the member row + Open company, keeps the rest classified", async () => {
-    // Remove the seeded member so the members table is empty while a list
-    // stays selected.
+  it.each(LOCALES)("Empty (selected list has 0 members): inventory drops the member row + Open company, keeps the rest classified (%s)", async (locale) => {
     appTestState.watchlistMembershipsResponse = [];
-    const region = await openWatchlists("en");
-    await within(region).findByText("No companies in this watchlist.");
+    const region = await openWatchlists(locale);
+    await within(region).findByText(L(locale, "No companies in this watchlist."));
     expect(collectEmptyStates(region)).toContain("invitation");
-    expect(collectActionInventory(region, "en")).toEqual(
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        { name: "Add companies", kind: "add" },
-        { name: "Create", kind: "create" },
+        { name: L(locale, "Add companies"), kind: "add" },
+        { name: L(locale, "Create"), kind: "create" },
         { name: ROW_NAME, kind: "destination" },
-        { name: "Remove", kind: "remove" },
-        { name: "Rename", kind: "rename" },
+        { name: L(locale, "Remove"), kind: "remove" },
+        { name: L(locale, "Rename"), kind: "rename" },
       ]),
     );
   });

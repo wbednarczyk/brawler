@@ -39,7 +39,7 @@ export type AttentionController = {
   /**
    * Active alert rules, backend order — the Alerts screen's rules section
    * reads this directly instead of re-fetching its own copy (ADR 0097
-   * dec. 6: one owner; fixA finding 3).
+   * dec. 6: one owner; ).
    */
   rules: AlertRule[];
   /** `ruleId -> rule`, so rows can show the owning rule's trigger context. */

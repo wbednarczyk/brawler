@@ -752,6 +752,7 @@ export function FundamentalsPanel({
               </ActionRow>
             ) : confirmDeleteFact ? (
               <InlineConfirm
+                            verb="remove"
                 cancelLabel={text("Cancel")}
                 confirmLabel={text("Remove")}
                 onCancel={() => setConfirmDeleteFact(false)}
