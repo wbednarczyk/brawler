@@ -133,7 +133,7 @@ describe("Alerts primary action per state (F4a contract § Alerts, State matrix)
     expectSinglePrimary(region, 1);
   });
 
-  it("Empty (no rules): the composer's own Add alert goes quiet — only ONE filled (variant=primary) button renders ()", async () => {
+  it("Empty (no rules): the composer's own Add alert goes quiet — only ONE filled (variant=primary) button renders", async () => {
     appTestState.alertRulesResponse = [];
     const region = await openAlerts("en");
     await within(region).findByText("You don't have any alerts yet");

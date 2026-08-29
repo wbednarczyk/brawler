@@ -72,6 +72,8 @@ const DEFAULT_PL: ActionInventoryEntry[] = sorted([
   { name: "Zmień nazwę", kind: "rename" },
 ]);
 
+const DEFAULT = { en: DEFAULT_EN, pl: DEFAULT_PL } as const;
+
 describe("Watchlists action inventory (F4a contract § Watchlists, Action inventory)", () => {
   it("the full sorted action inventory matches the contract table (EN)", async () => {
     const region = await openWatchlists("en");
@@ -85,39 +87,51 @@ describe("Watchlists action inventory (F4a contract § Watchlists, Action invent
     expect(collectActionInventory(region, "pl")).toEqual(DEFAULT_PL);
   });
 
-  it("the add-companies picker's Add selected / Cancel join the inventory, classified, everything else unchanged", async () => {
+  it.each(LOCALES)("the add-companies picker's Add selected / Cancel join the inventory, classified, everything else unchanged (%s)", async (locale) => {
     const user = userEvent.setup();
-    const region = await openWatchlists("en");
-    await user.click(await within(region).findByRole("button", { name: "Add companies" }));
+    const region = await openWatchlists(locale);
+    await user.click(await within(region).findByRole("button", { name: L(locale, "Add companies") }));
 
     // "Add companies" folds away while the picker is open (mutually exclusive
     // with "Add selected"/"Cancel") — everything else in the default
     // inventory stays.
-    expect(collectActionInventory(region, "en")).toEqual(
+    const addCompanies = L(locale, "Add companies");
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        ...DEFAULT_EN.filter((entry) => entry.name !== "Add companies"),
-        { name: "Add selected", kind: "add" },
-        { name: "Cancel", kind: "control" },
+        ...DEFAULT[locale].filter((entry) => entry.name !== addCompanies),
+        { name: L(locale, "Add selected"), kind: "add" },
+        { name: L(locale, "Cancel"), kind: "control" },
       ]),
     );
   });
 
-  it("the rename form's Save / Cancel join the inventory in place of Rename/Add companies/Remove", async () => {
+  it.each(LOCALES)("the rename form's Save / Cancel join the inventory in place of Rename/Add companies/Remove (%s)", async (locale) => {
     const user = userEvent.setup();
-    const region = await openWatchlists("en");
+    const region = await openWatchlists(locale);
     await within(region).findByText("CD PROJEKT S.A.");
-    await user.click(within(region).getByRole("button", { name: "Rename" }));
+    await user.click(within(region).getByRole("button", { name: L(locale, "Rename") }));
 
-    expect(collectActionInventory(region, "en")).toEqual(
+    expect(collectActionInventory(region, locale)).toEqual(
       sorted([
-        { name: "Cancel", kind: "control" },
-        { name: "Create", kind: "create" },
+        { name: L(locale, "Cancel"), kind: "control" },
+        { name: L(locale, "Create"), kind: "create" },
         { name: ROW_NAME, kind: "destination" },
-        { name: "Open company", kind: "destination" },
-        { name: "Remove from list", kind: "remove" },
-        { name: "Save", kind: "save" },
+        { name: L(locale, "Open company"), kind: "destination" },
+        { name: L(locale, "Remove from list"), kind: "remove" },
+        { name: L(locale, "Save"), kind: "save" },
       ]),
     );
+  });
+
+  it.each(LOCALES)("the remove-list confirmation's Confirm / Cancel are classified (%s)", async (locale) => {
+    const user = userEvent.setup();
+    const region = await openWatchlists(locale);
+    await within(region).findByText("CD PROJEKT S.A.");
+    await user.click(within(region).getByRole("button", { name: L(locale, "Remove") }));
+    const inventory = collectActionInventory(region, locale);
+    expect(inventory.filter((entry) => entry.kind === "unclassified")).toEqual([]);
+    expect(inventory.some((entry) => entry.name === L(locale, "Cancel") && entry.kind === "control")).toBe(true);
+    expect(inventory.filter((entry) => entry.kind === "remove").length).toBeGreaterThanOrEqual(2);
   });
 
   it("no button in the screen root is left unclassified (default state)", async () => {

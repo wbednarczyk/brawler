@@ -4,26 +4,26 @@ import type { AlertRule, AttentionEvent } from "../../api/attention";
 import { eventDescription, eventWhat, ruleTitle } from "./alertLabels";
 import { makeAlertRule } from "../../test/scenarios/entities";
 
-// Every `AlertRule.triggerType` and `AttentionEvent.triggerType` member, from
-// the generated bindings (`src/api/generated/AlertRule.ts`,
-// `src/api/generated/AttentionEvent.ts`) — not a hand-picked subset, so a
-// future backend addition red-lines here instead of shipping a raw enum
-// token to the DOM mirrors issue #71's D3 class).
-const ALL_RULE_TRIGGER_TYPES: AlertRule["triggerType"][] = [
-  "signal_category",
-  "autopilot_run_completed",
-  "price_enters_range",
-  "price_week52_low",
-];
+// Every `AlertRule.triggerType` / `AttentionEvent.triggerType` member: the
+// `satisfies Record<…, true>` objects fail to compile when the generated
+// bindings gain a member this list does not name.
+const RULE_TRIGGER_TYPES = {
+  "signal_category": true,
+  "autopilot_run_completed": true,
+  "price_enters_range": true,
+  "price_week52_low": true,
+} satisfies Record<AlertRule["triggerType"], true>;
+const ALL_RULE_TRIGGER_TYPES = Object.keys(RULE_TRIGGER_TYPES) as AlertRule["triggerType"][];
 
-const ALL_EVENT_TRIGGER_TYPES: AttentionEvent["triggerType"][] = [
-  "signal_category",
-  "autopilot_run_completed",
-  "price_enters_range",
-  "price_week52_low",
-  "source_reconciliation",
-  "job_failed",
-];
+const EVENT_TRIGGER_TYPES = {
+  "signal_category": true,
+  "autopilot_run_completed": true,
+  "price_enters_range": true,
+  "price_week52_low": true,
+  "source_reconciliation": true,
+  "job_failed": true,
+} satisfies Record<AttentionEvent["triggerType"], true>;
+const ALL_EVENT_TRIGGER_TYPES = Object.keys(EVENT_TRIGGER_TYPES) as AttentionEvent["triggerType"][];
 
 // A stand-in `text()`: returns the key untouched (same identity every real
 // locale resolves a KNOWN key through) so the assertion below is exactly

@@ -113,7 +113,7 @@ export function ruleDescription(
 }
 
 // Fired-event "what" line, from the trigger type joined onto the event.
-// Covers EVERY `AttentionEvent.triggerType` member ): unlike
+// Covers every `AttentionEvent.triggerType` member: unlike
 // `AlertRule.triggerType`, an event can also be a system trigger raised with
 // no user rule (`source_reconciliation`, `job_failed` — ADR 0069/0091), so
 // those two need their own cases or they fall through to the raw enum token.
@@ -132,7 +132,7 @@ export function eventWhat(event: AttentionEvent, text: Translate): string {
     case "job_failed":
       return text("Background task");
     default:
-      return text("Signal");
+      return assertNever(event.triggerType);
   }
 }
 
@@ -163,4 +163,10 @@ export function eventDestinationLabel(event: AttentionEvent, text: Translate): s
   if (event.triggerType === "source_reconciliation" && event.witnessUrl) return text("Open report");
   if (event.companyId) return text("Open company");
   return text("Open Inbox");
+}
+
+// A new backend trigger type must get its own translated label — the
+// compiler flags it here instead of a raw enum token reaching the DOM.
+function assertNever(value: never): never {
+  throw new Error(`Unhandled trigger type: ${String(value)}`);
 }

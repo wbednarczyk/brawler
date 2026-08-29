@@ -12,12 +12,9 @@ function L(locale: Locale, en: string, vars: Record<string, string> = {}): strin
 }
 
 
-// F4a S2 contract harness for the Companies library language pass
-// (docs/plans/frontend-v2-f4a.md § Companies library — contract-exempt: no
-// storyboard/state-matrix, but the action inventory + empty-state-as-invitation
-// rules still apply). Originally an S1 red harness (`it` where the screen
-// already matched, `it.fails`/`it.todo` naming the gaps); S2 built the
-// missing behavior and flips every row to `it`.
+// Contract harness for the Companies library (docs/plans/frontend-v2-f4a.md
+// § Companies library — contract-exempt: no storyboard/state matrix, but the
+// action inventory and the empty-state-as-invitation rules apply).
 //
 // the per-state action inventory is
 // now asserted as a FULL sorted array (`toEqual`, duplicates visible) instead

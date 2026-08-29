@@ -128,7 +128,7 @@ describe("useAlertsQuery", () => {
 
       expect(refresh).toHaveBeenCalledTimes(1);
 
-      // Convergence ): the hook reads `attention.rules`
+      // Convergence: the hook reads `attention.rules`
       // directly — once the controller's next value lands, the rendered
       // list reflects it with no second, local refetch.
       rerender({ attention: makeAttention([rule], { refresh }) });
