@@ -113,6 +113,14 @@
   align-items: end;
 }
 
+/* The lookup form wraps to two rows in a narrow pane so `Add` never leaves the
+   painted extent (owner tier 1024×1152 clipped it; DoD § B inner-container rule). */
+@container pane (max-width: 1120px) {
+  .company-form {
+    grid-template-columns: minmax(100px, 1fr) minmax(100px, 1fr) minmax(0, 2fr);
+  }
+}
+
 .company-form label {
   display: grid;
   gap: var(--space-2);
