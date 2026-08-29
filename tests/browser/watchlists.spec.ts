@@ -106,4 +106,66 @@ test.describe("watchlists", { tag: "@clickable" }, () => {
 
     await expectPrimaryActionCount(region, { max: 1 });
   });
+
+  // Fix-B keyboard proof (F4a R1 findings 4/5): real Tab traversal — not
+  // `.focus()` straight onto the target — from a control the contract names
+  // as an anchor (the previous row's Remove, alongside the list search
+  // field), through the row's own Open->Remove order and back, ending with
+  // Enter on Open triggering the same navigation a click would.
+  test("keyboard: Tab reaches a member row's Open from the previous row's Remove, moves Open<->Remove, and Enter on Open navigates", async ({
+    page,
+  }) => {
+    await openApp(page);
+    await navTo(page, "Watchlists").click();
+
+    const rows = page.getByLabel("Companies in watchlist").locator(".watchlist-member-row");
+    await expect(rows.nth(1)).toBeVisible();
+
+    const firstRemove = rows.nth(0).getByRole("button", { name: "Remove from list" });
+    const secondOpen = rows.nth(1).getByRole("button", { name: "Open company" });
+    const secondRemove = rows.nth(1).getByRole("button", { name: "Remove from list" });
+
+    await firstRemove.focus();
+    await page.keyboard.press("Tab");
+    await expect(secondOpen).toBeFocused();
+
+    await page.keyboard.press("Tab");
+    await expect(secondRemove).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(secondOpen).toBeFocused();
+
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
+  });
+
+  // Fix-B picker proof: picker rows are labelled checkboxes, so an
+  // already-listed company can be asserted disabled by its accessible name
+  // (never `.locator(".watchlist-picker-row").first()`), and selection goes
+  // through the checkbox role rather than a class-selector click.
+  test("picker rows are labelled checkboxes: an already-listed company is disabled with a note; selection uses the checkbox role", async ({
+    page,
+  }) => {
+    await openApp(page);
+    await navTo(page, "Watchlists").click();
+
+    const detail = page.getByLabel("Selected watchlist");
+    await detail.getByRole("button", { name: "Add companies" }).click();
+    const picker = page.getByLabel("Add companies", { exact: true });
+
+    // CDR is already a member of the default-selected list (seed data) — its
+    // row stays visible, disabled, with the "already on the list" note,
+    // instead of disappearing (F4a S3 redesign).
+    const cdrCheckbox = picker.getByRole("checkbox", { name: /GPW:CDR/ });
+    await expect(cdrCheckbox).toBeDisabled();
+    const cdrRow = cdrCheckbox.locator("xpath=..");
+    await expect(cdrRow).toContainText("already on the list");
+
+    // An available company (not yet a member) selects via the checkbox role.
+    const availableCheckbox = picker.getByRole("checkbox", { name: /GPW:T07/ });
+    await expect(availableCheckbox).toBeEnabled();
+    await availableCheckbox.check();
+    await picker.getByRole("button", { name: "Add selected" }).click();
+
+    await expect(page.getByLabel("Companies in watchlist").locator(".watchlist-member-row")).toHaveCount(17);
+  });
 });

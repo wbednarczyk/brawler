@@ -12,7 +12,8 @@ care about this quarter". A company can be on several lists.
   windows), **Open company** (takes you to the company's Spółka screen) and
   **Remove from list** (an ✕ with its label; in a narrow window the label hides
   but the button keeps its name for screen readers).
-- On a narrow window only the names and counts show; tap a list to open it.
+- On a narrow window only the names and counts show; tap a list to open it as
+  its own view, with `Back to lists` at the top to return.
 
 ## Everyday moves
 
