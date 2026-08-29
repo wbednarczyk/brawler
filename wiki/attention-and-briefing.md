@@ -63,9 +63,13 @@ over MCP is the briefing's consumer now, not the Today screen.
 An **alert rule** says *what you want to be told about*. Set them up in
 **Alerts** (left sidebar, Library group): a **trigger** (a signal category, an
 autopilot run completing, a price entering your range or hitting a 52-week
-low), a **scope** (company or watchlist), and an on/off switch. Preset chips
-cover the common cases. A rule never fires twice for the same thing and alerts
-at most once a day.
+low), a **scope** (company or watchlist), and **Pause**/**Resume** in place of
+an on/off switch. Preset chips cover the common cases. A rule never fires
+twice for the same thing and alerts at most once a day. **Fired alerts come
+first** on the screen — they're why you open it day to day; your rules and the
+composer that creates a new one follow. A fired row's **Open …** action names
+its destination (the company, or Inbox for a workspace-wide event) and marks
+it seen; **Dismiss** moves it to the Archive without opening it.
 
 ## When Brawler's own work fails
 

@@ -77,8 +77,12 @@ export const plText: Record<string, string> = {
     "Podaj cenę minimalną i maksymalną, przy czym minimalna nie może być wyższa od maksymalnej.",
   "Add alert": "Dodaj alert",
   "Your alerts": "Twoje alerty",
-  "No alerts yet — pick what to watch for above.":
-    "Brak alertów — wybierz powyżej, na co zwracać uwagę.",
+  // F4a S4b (language pass — invitation empty state replaces the single
+  // legacy sentence "No alerts yet — pick what to watch for above.", ADR
+  // 0104 dec. 4).
+  "You don't have any alerts yet": "Nie masz jeszcze alertów",
+  "A rule says what you want to be told about — for a company or a list.":
+    "Reguła mówi, o czym chcesz być powiadamiany — dla spółki albo listy.",
   "Alert rules": "Reguły alertów",
   "Alert rule": "Reguła alertu",
   "Fired alerts": "Uruchomione alerty",
@@ -94,8 +98,14 @@ export const plText: Record<string, string> = {
   "1 · What to watch for": "1 · Na co zwracać uwagę",
   "2 · Where it applies": "2 · Gdzie obowiązuje",
   "Rule": "Reguła",
+  // F4a S4b: PL copy reworded to the contract's exact wording (state matrix
+  // "quiet" row) — the EN string is unchanged, only the translation moves.
   "All quiet — nothing has fired. That's the point.":
-    "Cisza — nic się nie uruchomiło. Tak ma być.",
+    "Cisza — nic nie zadziałało. O to chodzi.",
+  "Pause": "Wstrzymaj",
+  "Resume": "Wznów",
+  "Show older": "Pokaż starsze",
+  "Open report": "Otwórz raport",
   "your watchlist": "Twojej listy",
   "this company": "tej spółki",
   "a profit warning": "ostrzeżenie o wynikach",
@@ -142,6 +152,12 @@ export const plText: Record<string, string> = {
   "Notable": "Uwaga",
   "Couldn't load claims to verify.": "Nie udało się pobrać tez do weryfikacji.",
   "Couldn't load attention events.": "Nie udało się pobrać zdarzeń uwagi.",
+  "Couldn't load the rules. The rest of the view is up to date.":
+    "Nie udało się odczytać reguł. Reszta widoku jest aktualna.",
+  "Couldn't load the fired alerts. The rest of the view is up to date.":
+    "Nie udało się odczytać uruchomionych alertów. Reszta widoku jest aktualna.",
+  "Couldn't load alerts.": "Nie udało się wczytać alertów.",
+  "Loading alerts…": "Wczytywanie alertów…",
   "Couldn't load upcoming reports.": "Nie udało się pobrać nadchodzących raportów.",
   "Composing the review…": "Składam przegląd…",
   "Expand": "Rozwiń",

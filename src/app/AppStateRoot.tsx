@@ -33,6 +33,7 @@ import * as signalsApi from "../api/signals";
 import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAttentionController } from "./useAttentionController";
+import { buildAlertsScreenProps } from "./useAlertsScreenWiring";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
 import { useLicenseController } from "./useLicenseController";
@@ -1898,7 +1899,9 @@ export function AppStateRoot({
                   <WatchlistsScreen />
                 </WatchlistsProvider>
               ) : null}
-              {activeSection === "Alerts" ? <AlertsScreen attention={attention} /> : null}
+              {activeSection === "Alerts" ? (
+                <AlertsScreen {...buildAlertsScreenProps({ attention, openCompanyWorkspaceById, setActiveSection })} />
+              ) : null}
               {/* The standalone Research screen is retired as a *nav destination*
               (epic c793ca1): no sidebar entry, and user-facing callers
               (openResearchEvidence, brief/digest search) redirect into the

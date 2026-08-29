@@ -1,34 +1,45 @@
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
 
 import type { AlertRule, AlertRuleUpdate } from "../../api/attention";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { pluralNoun } from "../../shared/locale/plural";
-import { Button, EmptyState, SectionHeader, StatusChip, TextField } from "../../ui";
+import { ActionButton, EmptyState, ErrorText, Figure, SectionHeader, StatusChip, TextField } from "../../ui";
 import { RULE_FORMS, parsePrice, ruleDescription, ruleTitle, scopeName, triggerIcon } from "./alertLabels";
 
 export type AlertRulesSectionProps = {
   rules: AlertRule[];
   companyName: Map<string, string>;
   watchlistName: Map<string, string>;
+  /** `sectionErrors.rules === "unavailable"` (F4a S4b Partial state): the
+   * rules read failed while the rest of the screen may still be fine — an
+   * empty `rules` array here must never be read as "no rules exist". */
+  rulesError: boolean;
+  onRetry: () => void;
   onToggle: (rule: AlertRule, enabled: boolean) => void;
   onCommitPrice: (input: AlertRuleUpdate) => void;
   onRemove: (rule: AlertRule) => void;
+  /** Invitation empty state's action (F4a S4b, contract § Alerts action
+   * inventory): opens/focuses the composer rather than duplicating its
+   * primary marker — the composer's own `Add alert` stays the ONE primary. */
+  onAddAlert: () => void;
 };
 
 /**
- * Alerts screen card 2 — the rule list (extracted from `AlertsScreen.tsx`,
- * F4a S4a). Rendered DOM/accessible names unchanged; data now comes from
+ * Alerts screen card — the rule list (extracted from `AlertsScreen.tsx`,
+ * F4a S4a; language pass + dictionary verbs, F4a S4b). Data comes from
  * `useAlertsQuery` (ADR 0106) instead of a local effect.
  */
 export function AlertRulesSection({
   rules,
   companyName,
   watchlistName,
+  rulesError,
+  onRetry,
   onToggle,
   onCommitPrice,
   onRemove,
+  onAddAlert,
 }: AlertRulesSectionProps) {
   const { text, locale } = useLocale();
 
@@ -38,10 +49,30 @@ export function AlertRulesSection({
         className="alerts-card-header"
         level="h2"
         title={text("Your alerts")}
-        meta={`${rules.length} ${pluralNoun(locale, rules.length, RULE_FORMS)}`}
+        meta={
+          <>
+            <Figure value={rules.length} /> {pluralNoun(locale, rules.length, RULE_FORMS)}
+          </>
+        }
       />
-      {rules.length === 0 ? (
-        <EmptyState>{text("No alerts yet — pick what to watch for above.")}</EmptyState>
+      {rulesError ? (
+        <div className="alerts-attention-error">
+          <ErrorText>{text("Couldn't load the rules. The rest of the view is up to date.")}</ErrorText>
+          <ActionButton kind="control" onClick={onRetry} variant="ghost">
+            {text("Try again")}
+          </ActionButton>
+        </div>
+      ) : rules.length === 0 ? (
+        <EmptyState
+          kind="invitation"
+          title={text("You don't have any alerts yet")}
+          source={text("A rule says what you want to be told about — for a company or a list.")}
+          action={
+            <ActionButton verb="add" variant="primary" onClick={onAddAlert}>
+              {text("Add alert")}
+            </ActionButton>
+          }
+        />
       ) : (
         <ul className="alerts-list" aria-label={text("Alert rules")}>
           {rules.map((rule) => (
@@ -136,22 +167,18 @@ function AlertRuleRow({ rule, companyName, watchlistName, onToggle, onCommitPric
         </div>
       </div>
       <div className="alerts-row-slots">
-        <label className="alerts-enable-control">
-          <input
-            aria-label={`${text("Enabled")} — ${description}`}
-            checked={rule.enabled}
-            onChange={(event) => onToggle(event.target.checked)}
-            role="switch"
-            type="checkbox"
-          />
-          <span aria-hidden="true" className="alerts-enable-track">
-            <span />
-          </span>
-        </label>
-        <Button onClick={onRemove} variant="ghost">
-          <Trash2 size={14} />
-          {text("Delete")}
-        </Button>
+        {rule.enabled ? (
+          <ActionButton verb="pause" variant="ghost" onClick={() => onToggle(false)}>
+            {text("Pause")}
+          </ActionButton>
+        ) : (
+          <ActionButton verb="resume" variant="ghost" onClick={() => onToggle(true)}>
+            {text("Resume")}
+          </ActionButton>
+        )}
+        <ActionButton verb="remove" variant="ghost" onClick={onRemove}>
+          {text("Remove")}
+        </ActionButton>
       </div>
     </li>
   );

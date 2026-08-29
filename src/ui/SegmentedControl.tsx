@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export type SegmentedControlProps = {
   ariaLabel: string;
@@ -10,7 +10,7 @@ export type SegmentedControlOptionProps = {
   active?: boolean;
   children: ReactNode;
   onClick: () => void;
-};
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className" | "onClick" | "type">;
 
 export function SegmentedControl({ ariaLabel, children, className }: SegmentedControlProps) {
   return (
@@ -20,7 +20,12 @@ export function SegmentedControl({ ariaLabel, children, className }: SegmentedCo
   );
 }
 
-export function SegmentedControlOption({ active = false, children, onClick }: SegmentedControlOptionProps) {
+// `...rest` forwards e.g. `data-action-kind` (ADR 0104 dec. 3 amendment: a
+// segment toggle is a filter/selection, never a command — a caller marks it
+// `data-action-kind="control"` per the per-screen action-inventory contract,
+// `src/test/uxContracts.tsx` `collectActionInventory`) without every
+// consumer re-implementing this button.
+export function SegmentedControlOption({ active = false, children, onClick, ...rest }: SegmentedControlOptionProps) {
   return (
     <button
       className={active ? "segment-active" : undefined}
@@ -29,6 +34,7 @@ export function SegmentedControlOption({ active = false, children, onClick }: Se
       aria-pressed={active}
       onClick={onClick}
       type="button"
+      {...rest}
     >
       {children}
     </button>

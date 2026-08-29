@@ -124,6 +124,47 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expectNoPageOverflow(page);
   });
 
+  // F4a S4b (contract § Alerts § 5/10): the composer is secondary — it folds
+  // behind its own `Add alert` disclosure below the composer's 640px
+  // breakpoint (`useNarrowPane` in AlertsScreen.tsx), while fired alerts +
+  // rules (the must-see content) stay visible and simply stack.
+  test("Alerts folds the composer behind Add alert at S, fired alerts + rules stay visible", async ({ page }) => {
+    await openApp(page);
+    await nav(page).getByRole("button", { name: "Alerts" }).click();
+    const region = page.getByRole("region", { name: "Alerts" });
+    const pane = page.locator(".workspace");
+    const chips = region.getByRole("button", { name: "Profit warning" });
+    const composerToggle = region.locator(".alerts-composer-collapsed");
+    const firedCard = region.getByRole("heading", { name: "Fired alerts" });
+    const rulesCard = region.getByRole("heading", { name: "Your alerts" });
+
+    // L/M: the composer renders open (no fold toggle); fired + rules visible.
+    await sizeTo(page, "L", pane);
+    await expect(chips).toBeVisible();
+    await expect(composerToggle).toHaveCount(0);
+    await expect(firedCard).toBeVisible();
+    await expect(rulesCard).toBeVisible();
+    await expectNoPageOverflow(page);
+
+    await sizeTo(page, "M", pane);
+    await expect(chips).toBeVisible();
+    await expect(composerToggle).toHaveCount(0);
+    await expectNoPageOverflow(page);
+
+    // S: the composer folds behind the toggle; fired + rules still stack above it.
+    await sizeTo(page, "S", pane);
+    await expect(composerToggle).toBeVisible();
+    await expect(chips).toHaveCount(0);
+    await expect(firedCard).toBeVisible();
+    await expect(rulesCard).toBeVisible();
+    await expectNoPageOverflow(page);
+
+    // Opening the fold reveals the composer and its primary action.
+    await composerToggle.getByRole("button", { name: "Add alert" }).click();
+    await expect(chips).toBeVisible();
+    await expectNoPageOverflow(page);
+  });
+
   test("Transcripts folds the segment review behind a disclosure at S/short", async ({ page }) => {
     await openApp(page);
     await nav(page).getByRole("button", { name: "Transcripts" }).click();
