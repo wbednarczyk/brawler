@@ -59,7 +59,7 @@ styleguide mockup: `docs/mockups/frontend-v2-styleguide/` (canvas + five artboar
 
 ### Amendment (2026-08-28, F4a S1)
 
-- **Decision 3 — five verbs added for the Library screens.** `create` (Create/Utwórz), `rename` (Rename/Zmień nazwę), `pause`/`resume` (Pause/Wstrzymaj, Resume/Wznów) join the dictionary (`src/shared/verbs.ts`). `remove` (Remove/Usuń) is the **only** collection-removal verb across screen copy — the legacy EN key `Delete` is retired from screen copy (destructive confirms keep their own irreversibility framing per ADR 0076 D5, but the button/action label reads "Remove"). `ActionButton` (`src/ui/ActionButton.tsx`) carries `verb: Verb` or `kind: "destination" | "control"` and emits `data-action-kind`/`data-action-verb` so a screen's rendered action inventory is mechanically checkable (F4a contract, `docs/plans/frontend-v2-f4a.md`).
+- **Decision 3 — four verbs added for the Library screens.** `create` (Create/Utwórz), `rename` (Rename/Zmień nazwę), `pause`/`resume` (Pause/Wstrzymaj, Resume/Wznów) join the dictionary (`src/shared/verbs.ts`). `remove` (Remove/Usuń) is the **only** collection-removal verb across screen copy — the legacy EN key `Delete` is retired from screen copy (destructive confirms keep their own irreversibility framing per ADR 0076 D5, but the button/action label reads "Remove"). `ActionButton` (`src/ui/ActionButton.tsx`) carries `verb: Verb` or `kind: "destination" | "control"` and emits `data-action-kind`/`data-action-verb` so a screen's rendered action inventory is mechanically checkable (F4a contract, `docs/plans/frontend-v2-f4a.md`).
 
 ## Foundations review (question-everything doctrine, owner 2026-08-19)
 

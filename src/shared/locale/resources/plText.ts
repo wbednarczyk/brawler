@@ -709,7 +709,7 @@ export const plText: Record<string, string> = {
   "No companies match your filters": "Brak spółek pasujących do filtrów",
   "No match in the registry": "Nie znaleziono w rejestrze",
   "The registry covers GPW and NewConnect; you can add a company from elsewhere manually.":
-    "Rejestr obejmuje GPW i NewConnect; spółkę spoza możesz dodać ręcznie.",
+    "Rejestr obejmuje GPW i NewConnect; spółkę spoza tych rynków możesz dodać ręcznie.",
   "Add manually": "Dodaj ręcznie",
   "Companies command failed": "Polecenie spółek nie powiodło się",
   "Looking up company directory...": "Wyszukiwanie w katalogu spółek...",
