@@ -33,28 +33,28 @@ describe("Alerts action inventory (F4a contract § Alerts, Action inventory)", (
     expect(addAlert).toHaveAttribute("data-ux-primary-action", "true");
   });
 
-  it.fails("Add alert carries kind=add (dictionary classification not yet applied)", async () => {
+  it("Add alert carries kind=add", async () => {
     const region = await openAlerts("en");
     const inventory = collectActionInventory(region, "en");
     const addAlert = inventory.find((entry) => entry.name === "Add alert");
     expect(addAlert?.kind).toBe("add");
   });
 
-  it.fails("Dodaj alert carries kind=add (PL, dictionary classification not yet applied)", async () => {
+  it("Dodaj alert carries kind=add (PL)", async () => {
     const region = await openAlerts("pl");
     const inventory = collectActionInventory(region, "pl");
     const addAlert = inventory.find((entry) => entry.name === "Dodaj alert");
     expect(addAlert?.kind).toBe("add");
   });
 
-  it.fails("today's rule row shows Remove, not Delete (dec. 3 amendment: remove is the only collection-removal verb)", async () => {
+  it("today's rule row shows Remove, not Delete (dec. 3 amendment: remove is the only collection-removal verb)", async () => {
     const region = await openAlerts("en");
     await within(region).findByRole("listitem", { name: /alert rule/i });
     expect(within(region).queryByRole("button", { name: "Remove" })).not.toBeNull();
     expect(within(region).queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
-  it.fails("today's rule row offers Pause/Resume, not an Enabled checkbox", async () => {
+  it("today's rule row offers Pause/Resume, not an Enabled checkbox", async () => {
     const region = await openAlerts("en");
     await within(region).findByRole("listitem", { name: /alert rule/i });
     expect(within(region).queryByRole("switch", { name: /enabled/i })).toBeNull();
@@ -64,13 +64,13 @@ describe("Alerts action inventory (F4a contract § Alerts, Action inventory)", (
     ).not.toBeNull();
   });
 
-  it.fails("a fired alert row offers an Open destination (first red journey test target)", async () => {
+  it("a fired alert row offers an Open destination (first red journey test target)", async () => {
     const region = await openAlerts("en");
     const firedRow = await within(region).findByRole("listitem", { name: /fired alert/i });
     expect(within(firedRow).queryByRole("button", { name: /^Open/ })).not.toBeNull();
   });
 
-  it.fails("no button in the screen root is left unclassified", async () => {
+  it("no button in the screen root is left unclassified", async () => {
     const region = await openAlerts("en");
     await within(region).findByRole("listitem", { name: /alert rule/i });
     const unclassified = collectActionInventory(region, "en").filter((entry) => entry.kind === "unclassified");
@@ -87,20 +87,20 @@ describe("Alerts primary action per state (F4a contract § Alerts, State matrix)
   it("Empty (no rules): Add alert is still the one filled action", async () => {
     appTestState.alertRulesResponse = [];
     const region = await openAlerts("en");
-    await within(region).findByText("No alerts yet — pick what to watch for above.");
+    await within(region).findByText("You don't have any alerts yet");
     expectSinglePrimary(region, 1);
   });
 });
 
 describe("Alerts empty states (F4a contract § Alerts, State matrix)", () => {
-  it.fails("Empty (no rules) renders the invitation kind, not the legacy shape", async () => {
+  it("Empty (no rules) renders the invitation kind, not the legacy shape", async () => {
     appTestState.alertRulesResponse = [];
     const region = await openAlerts("en");
-    await within(region).findByText("No alerts yet — pick what to watch for above.");
+    await within(region).findByText("You don't have any alerts yet");
     expect(collectEmptyStates(region)).toContain("invitation");
   });
 
-  it.fails("Empty (nothing fired) renders the quiet kind, not the legacy shape", async () => {
+  it("Empty (nothing fired) renders the quiet kind, not the legacy shape", async () => {
     appTestState.attentionEventsResponse = [];
     const region = await openAlerts("en");
     await within(region).findByText("All quiet — nothing has fired. That's the point.");

@@ -53,6 +53,7 @@ const RAW_CATALOG = [
   { screen: "spolka-rest", spec: "visual-spolka.spec.ts", states: ["default"], tiers: M_ONLY },
   { screen: "spolka-tool-claims", spec: "visual-spolka.spec.ts", states: ["default"], tiers: M_ONLY },
   { screen: "watchlists", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  { screen: "alerts", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "transcripts", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "settings", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
 ];

@@ -141,3 +141,15 @@ export function eventDescription(
 ): string {
   return `${eventScope(event, companyName, text)} · ${event.evidenceType}`;
 }
+
+// The fired row's destination action name (F4a S4b, contract § Alerts action
+// inventory: "the label names the target surface"). Mirrors Today's
+// `openAttentionRowAction` routing (`src/screens/Today/TodayScreen.tsx`): a
+// missed-report event with its own witness URL opens that report; a
+// company-scoped event opens the company; anything else (a workspace-wide
+// SYSTEM event) falls back to the Inbox.
+export function eventDestinationLabel(event: AttentionEvent, text: Translate): string {
+  if (event.triggerType === "source_reconciliation" && event.witnessUrl) return text("Open report");
+  if (event.companyId) return text("Open company");
+  return text("Open Inbox");
+}

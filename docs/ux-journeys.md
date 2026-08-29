@@ -71,3 +71,5 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## Journey-independent utilities
 
 Settings, Diagnostics, Sources administration, import/export, the **MCP server** section (ADR 0078 — enable/port/token + connection snippets), and global search serve all journeys; capabilities there are declared `utility` in the DoD check rather than forced into a journey.
+
+**Alerts** (F4a, contract `docs/plans/frontend-v2-f4a.md` § Alerts) joins this list: deciding what to be told about and reviewing what fired isn't tied to one journey's steps — it feeds J1 (Today attention) whenever a rule fires. Named spec: `tests/browser/alerts.spec.ts`.
