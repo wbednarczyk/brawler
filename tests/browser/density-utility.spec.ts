@@ -62,7 +62,9 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(page.locator(".watchlist-member-row")).toHaveCount(1);
 
     const pane = page.locator(".workspace");
-    const isinCell = page.locator(".watchlist-member-row > span:nth-child(3)").first();
+    // The ISIN renders as a meta span nested inside the name cell, not its own
+    // grid column (F4a S3 redesign: ticker | name (+ ISIN) | actions).
+    const isinCell = page.locator(".watchlist-member-row .watchlist-member-isin").first();
 
     // L (>760): detail visible + full company table (ISIN column shown).
     await sizeTo(page, "L", pane);

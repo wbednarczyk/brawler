@@ -279,8 +279,13 @@ describe("Companies screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
     await user.click(await screen.findByRole("button", { name: /Growth GPW/ }));
     await user.click(screen.getByRole("button", { name: "Add companies" }));
-    await user.click(within(screen.getByLabelText("Add companies")).getByRole("button", { name: /GPW:CDR/ }));
-    await user.click(screen.getByRole("button", { name: "Add selected" }));
+    // The add-companies picker is a checkbox row, not a button (F4a S3
+    // Watchlists redesign — already-tracked companies render disabled with
+    // an "already on the list" note rather than disappearing).
+    await user.click(within(screen.getByLabelText("Add companies")).getByRole("checkbox", { name: /GPW:CDR/ }));
+    // Name carries a live "· n" selection count (F4a S3 redesign) — match by
+    // prefix rather than the exact "Add selected" resting label.
+    await user.click(screen.getByRole("button", { name: /^Add selected/ }));
 
     expect(await within(screen.getByLabelText("Companies in watchlist")).findByText("GPW:CDR")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Companies" }));
@@ -350,9 +355,11 @@ describe("Companies screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Watchlists" }));
     // In-place confirm (ADR 0076 D5): open then confirm to run the delete.
+    // "Remove" is the only collection-removal verb on Watchlists (ADR 0104
+    // dec. 3 amendment, F4a S3) — "Delete" is retired from this screen.
     const selected = () => within(screen.getByLabelText("Selected watchlist"));
-    await user.click(selected().getByRole("button", { name: "Delete" }));
-    await user.click(selected().getByRole("button", { name: "Delete" }));
+    await user.click(selected().getByRole("button", { name: "Remove" }));
+    await user.click(selected().getByRole("button", { name: "Remove" }));
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
     await waitFor(() =>

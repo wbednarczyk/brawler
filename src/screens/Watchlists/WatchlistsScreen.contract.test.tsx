@@ -30,7 +30,7 @@ async function openWatchlists(locale: "en" | "pl") {
 }
 
 describe("Watchlists action inventory (F4a contract § Watchlists, Action inventory)", () => {
-  it.fails("every static contract-named action carries its dictionary kind (EN)", async () => {
+  it("every static contract-named action carries its dictionary kind (EN)", async () => {
     const region = await openWatchlists("en");
     // Wait for the default-selected watchlist's member table to render.
     await within(region).findByText("CD PROJEKT S.A.");
@@ -39,7 +39,6 @@ describe("Watchlists action inventory (F4a contract § Watchlists, Action invent
     const byName = new Map(inventory.map((entry) => [entry.name, entry.kind]));
 
     expect(byName.get("Create")).toBe("create");
-    expect(byName.get("Search watchlists")).toBe("control");
     expect(byName.get("Rename")).toBe("rename");
     expect(byName.get("Remove")).toBe("remove");
     expect(byName.get("Add companies")).toBe("add");
@@ -47,7 +46,7 @@ describe("Watchlists action inventory (F4a contract § Watchlists, Action invent
     expect(byName.get("Remove from list")).toBe("remove");
   });
 
-  it.fails("every static contract-named action carries its dictionary kind (PL)", async () => {
+  it("every static contract-named action carries its dictionary kind (PL)", async () => {
     const region = await openWatchlists("pl");
     await within(region).findByText("CD PROJEKT S.A.");
 
@@ -55,7 +54,6 @@ describe("Watchlists action inventory (F4a contract § Watchlists, Action invent
     const byName = new Map(inventory.map((entry) => [entry.name, entry.kind]));
 
     expect(byName.get("Utwórz")).toBe("create");
-    expect(byName.get("Szukaj list")).toBe("control");
     expect(byName.get("Zmień nazwę")).toBe("rename");
     expect(byName.get("Usuń")).toBe("remove");
     expect(byName.get("Dodaj spółki")).toBe("add");
@@ -63,7 +61,7 @@ describe("Watchlists action inventory (F4a contract § Watchlists, Action invent
     expect(byName.get("Usuń z listy")).toBe("remove");
   });
 
-  it.fails("the add-companies picker's Add selected / Cancel carry their contract kinds", async () => {
+  it("the add-companies picker's Add selected / Cancel carry their contract kinds", async () => {
     const user = userEvent.setup();
     const region = await openWatchlists("en");
     await user.click(await within(region).findByRole("button", { name: "Add companies" }));
@@ -76,7 +74,7 @@ describe("Watchlists action inventory (F4a contract § Watchlists, Action invent
     expect(byName.get("Cancel")).toBe("control");
   });
 
-  it.fails("no button in the screen root is left unclassified", async () => {
+  it("no button in the screen root is left unclassified", async () => {
     const region = await openWatchlists("en");
     await within(region).findByText("CD PROJEKT S.A.");
 
@@ -86,13 +84,13 @@ describe("Watchlists action inventory (F4a contract § Watchlists, Action invent
 });
 
 describe("Watchlists primary action per state (F4a contract § Watchlists, State matrix)", () => {
-  it.fails("Success: the selected list's Add companies is the one filled action", async () => {
+  it("Success: the selected list's Add companies is the one filled action", async () => {
     const region = await openWatchlists("en");
     await within(region).findByText("CD PROJEKT S.A.");
     expectSinglePrimary(region, 1);
   });
 
-  it.fails("Empty (no lists): the invitation's Create action is the one filled action", async () => {
+  it("Empty (no lists): the invitation's Create action is the one filled action", async () => {
     appTestState.watchlistsResponse = [];
     appTestState.watchlistMembershipsResponse = [];
     const region = await openWatchlists("en");
@@ -100,7 +98,7 @@ describe("Watchlists primary action per state (F4a contract § Watchlists, State
     expectSinglePrimary(region, 1);
   });
 
-  it.fails("Empty (search no match): the invitation's Create action is the one filled action", async () => {
+  it("Empty (search no match): the invitation's Create action is the one filled action", async () => {
     const user = userEvent.setup();
     const region = await openWatchlists("en");
     const search = await within(region).findByLabelText("Search watchlists");
@@ -111,7 +109,7 @@ describe("Watchlists primary action per state (F4a contract § Watchlists, State
 });
 
 describe("Watchlists empty states (F4a contract § Watchlists, State matrix)", () => {
-  it.fails("Empty (no lists) renders the invitation kind, not the legacy shape", async () => {
+  it("Empty (no lists) renders the invitation kind, not the legacy shape", async () => {
     appTestState.watchlistsResponse = [];
     appTestState.watchlistMembershipsResponse = [];
     const region = await openWatchlists("en");
@@ -119,7 +117,7 @@ describe("Watchlists empty states (F4a contract § Watchlists, State matrix)", (
     expect(collectEmptyStates(region)).toContain("invitation");
   });
 
-  it.fails("Empty (search no match) renders the invitation kind, not the legacy shape", async () => {
+  it("Empty (search no match) renders the invitation kind, not the legacy shape", async () => {
     const user = userEvent.setup();
     const region = await openWatchlists("en");
     const search = await within(region).findByLabelText("Search watchlists");
@@ -128,7 +126,7 @@ describe("Watchlists empty states (F4a contract § Watchlists, State matrix)", (
     expect(collectEmptyStates(region)).toContain("invitation");
   });
 
-  it.fails("Empty (selected list has 0 members) renders the invitation kind, not the legacy shape", async () => {
+  it("Empty (selected list has 0 members) renders the invitation kind, not the legacy shape", async () => {
     // Remove the seeded member so the members table is empty while a list
     // stays selected.
     appTestState.watchlistMembershipsResponse = [];

@@ -62,7 +62,7 @@ export const pl: LocaleResources = {
   "companies.title": "Spółki",
   "companies.description": "Spółki obserwowane w Twoim obszarze pracy.",
   "watchlists.title": "Listy obserwowane",
-  "watchlists.description": "Zarządzanie grupami spółek używanymi w filtrach.",
+  "watchlists.description": "Grupy spółek, po których filtrujesz Dziś, Inbox i Sezon raportów. Spółka może być na kilku listach.",
   "alerts.title": "Alerty",
   "alerts.description": "Reguły tego, o czym chcesz wiedzieć, oraz alerty, które już się uruchomiły.",
   "notebooks.title": "Notatniki",

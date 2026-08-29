@@ -122,14 +122,6 @@
     grid-template-columns: 1fr;
   }
 
-  .watchlist-member-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .watchlist-member-row > span:nth-child(3) {
-    display: none;
-  }
-
   .company-list-toolbar {
     grid-template-columns: 1fr;
   }
