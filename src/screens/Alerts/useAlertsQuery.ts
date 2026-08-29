@@ -3,7 +3,6 @@ import { useCallback } from "react";
 import {
   createAlertRule,
   deleteAlertRule,
-  listAlertRules,
   setAlertRuleEnabled,
   updateAlertRule,
   type AlertRule,
@@ -17,15 +16,15 @@ import type { AttentionController } from "../../app/useAttentionController";
 import { useCommandQuery } from "../../shared/state/useCommandQuery";
 
 export type AlertsLibraryData = {
-  rules: AlertRule[];
   companies: Company[];
   watchlists: Watchlist[];
 };
 
 function fetchAlertsLibrary(): Promise<AlertsLibraryData> {
-  return Promise.all([listAlertRules(), listCompanies(), listWatchlists()]).then(
-    ([rules, companies, watchlists]) => ({ rules, companies, watchlists }),
-  );
+  return Promise.all([listCompanies(), listWatchlists()]).then(([companies, watchlists]) => ({
+    companies,
+    watchlists,
+  }));
 }
 
 export type AlertsSectionErrors = {
@@ -36,18 +35,19 @@ export type AlertsSectionErrors = {
 export type AlertsQueryStatus = "loading" | "success" | "partial" | "error";
 
 /**
- * Alerts screen data layer (F4a S4a, ADR 0106 dec. 2/4): the rule +
- * company/watchlist read goes through `useCommandQuery` (fetch-on-mount,
- * stale-response discard, explicit `refetch`, no cache-patching). Fired
- * events stay owned by the shared `AttentionController` (ADR 0097 dec. 6,
- * `src/app/useAttentionController.ts`) — merged in here as a second,
- * independent section instead of re-fetched, so Today/Alerts/the sidebar
- * badge keep exactly one event fetch. `status`/`sectionErrors` combine both
- * sections' outcomes (contract: `docs/plans/frontend-v2-f4a.md` § Alerts,
- * state row Partial). Mutation helpers await the command then refetch both
- * sections a rule change can affect (a rule's own list, and — because
- * `AttentionController` also holds `rulesById` and can cascade-drop the
- * rule's events — the attention controller too).
+ * Alerts screen data layer (F4a S4a, ADR 0106 dec. 2/4; fixA finding 3, ADR
+ * 0097 dec. 6). Rules are owned by the shared `AttentionController` — the
+ * SAME single fetch Today and the sidebar badge read, never a second
+ * `listAlertRules` copy that could drift. This hook fetches only what the
+ * controller does not own: companies/watchlists, needed for the composer's
+ * scope picker and for resolving a rule's/event's scope name. `status`
+ * combines both sections' outcomes and never reports `success` before the
+ * controller has hydrated (contract: `docs/plans/frontend-v2-f4a.md` §
+ * Alerts state row Partial; ADR 0097's false-quiet ban — the "All quiet"
+ * empty state must never render pre-hydration). Mutation helpers await the
+ * command then call `attention.refresh()` — one owner, one refetch; the
+ * rendered rule list converges because it reads `attention.rules` directly,
+ * not a local copy.
  */
 export function useAlertsQuery(attention: AttentionController) {
   const library = useCommandQuery(["alertsLibrary"], fetchAlertsLibrary);
@@ -65,8 +65,11 @@ export function useAlertsQuery(attention: AttentionController) {
   if (library.status === "error") sectionErrors.rules = "unavailable";
   if (attention.error !== null) sectionErrors.events = "unavailable";
 
+  // Never `success` (or, downstream, the quiet empty state) before the
+  // controller has hydrated at least once — an unhydrated read must never
+  // look quiet (ADR 0097 dec. 6 / the false-quiet ban).
   const status: AlertsQueryStatus =
-    library.status === "loading"
+    !attention.hydrated || attention.loading || library.status === "loading"
       ? "loading"
       : sectionErrors.rules && sectionErrors.events
         ? "error"
@@ -74,36 +77,38 @@ export function useAlertsQuery(attention: AttentionController) {
           ? "partial"
           : "success";
 
+  const { refresh: refreshAttention } = attention;
+
   const createRule = useCallback(
     (input: NewAlertRule): Promise<AlertRule> =>
       createAlertRule(input).then((rule) => {
-        refetch();
+        refreshAttention();
         return rule;
       }),
-    [refetch],
+    [refreshAttention],
   );
 
   const updateRulePrice = useCallback(
     (input: AlertRuleUpdate): Promise<AlertRule> =>
       updateAlertRule(input).then((rule) => {
-        refetch();
+        refreshAttention();
         return rule;
       }),
-    [refetch],
+    [refreshAttention],
   );
 
   const setRuleEnabled = useCallback(
     (id: string, enabled: boolean): Promise<AlertRule> =>
       setAlertRuleEnabled(id, enabled).then((rule) => {
-        refetch();
+        refreshAttention();
         return rule;
       }),
-    [refetch],
+    [refreshAttention],
   );
 
   const removeRule = useCallback(
-    (id: string): Promise<void> => deleteAlertRule(id).then(() => refetch()),
-    [refetch],
+    (id: string): Promise<void> => deleteAlertRule(id).then(() => refreshAttention()),
+    [refreshAttention],
   );
 
   const { dismiss, markSeen } = attention;
@@ -111,7 +116,7 @@ export function useAlertsQuery(attention: AttentionController) {
   const markEventSeen = useCallback((id: string): Promise<void> => markSeen(id), [markSeen]);
 
   return {
-    rules: library.data?.rules ?? [],
+    rules: attention.rules,
     companies: library.data?.companies ?? [],
     watchlists: library.data?.watchlists ?? [],
     events: attention.events,
