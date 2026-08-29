@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Children, useEffect, useRef, type ReactElement, type ReactNode } from "react";
 
 // F4a S1 (ADR 0104 dec. 4 — "an empty state is an invitation"): `kind`
 // discriminates the three-beats invitation shape (what this is → where it
@@ -8,12 +8,15 @@ import type { ReactNode } from "react";
 // waves migrate their screens one at a time; `data-empty-kind` lets the
 // per-screen contract test (`collectEmptyStates`) assert the migration
 // happened. TS enforces "exactly one action" for the invitation shape by
-// making it a required singular prop, not an array.
+// typing `action` as a single `ReactElement` (not `ReactNode`, which would
+// also accept an array/fragment of several controls); a caller that defeats
+// TS (an `any`-cast fragment of two buttons) is still caught at runtime — see
+// `InvitationAction` below (Fix-C guardrail 1, sol F4a R1 finding 1).
 export type EmptyStateInvitationProps = {
   kind: "invitation";
   title: ReactNode;
   source: ReactNode;
-  action: ReactNode;
+  action: ReactElement;
   className?: string;
 };
 
@@ -33,15 +36,52 @@ export type EmptyStateLegacyProps = {
 
 export type EmptyStateProps = EmptyStateInvitationProps | EmptyStateQuietProps | EmptyStateLegacyProps;
 
+// Focusable-control selector shared with the DOM check below — same set the
+// browser-level icon-action/focus-order helpers treat as "an action"
+// (tests/browser/helpers/interactionContracts.ts).
+const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+// The invitation's action slot renders through this wrapper so a runtime DOM
+// check can enforce "exactly one action" even when a caller defeats the TS
+// `ReactElement` typing (e.g. a `fragment as any` holding two buttons) —
+// `Children.only` alone would NOT catch that case: a `<>{a}{b}</>` fragment is
+// itself one valid React element, so it satisfies `Children.only` while still
+// rendering two focusable controls. A dev-time `console.error` (not a throw)
+// so a misconfigured empty state degrades to a loud warning rather than
+// crashing the screen it appears on.
+function InvitationAction({ action }: { action: ReactElement }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const focusable = node.querySelectorAll(FOCUSABLE_SELECTOR).length;
+    if (focusable !== 1) {
+      // Dev-time contract diagnostic (ADR 0104 dec. 4 / Fix-C guardrail 1).
+      console.error(
+        `EmptyState kind="invitation": action slot must render exactly one focusable control, found ${focusable}.`,
+      );
+    }
+  });
+  return (
+    <span className="empty-state-invitation-action" ref={ref}>
+      {action}
+    </span>
+  );
+}
+
 export function EmptyState(props: EmptyStateProps) {
   const className = ["empty-state", props.className].filter(Boolean).join(" ");
 
   if (props.kind === "invitation") {
+    // Defense-in-depth against a non-element value slipping past TS (a
+    // `null`/array `action` from an `any`-cast caller) — throws immediately
+    // rather than rendering nothing.
+    Children.only(props.action);
     return (
       <div className={className} data-empty-kind="invitation">
         <span className="empty-state-invitation-title">{props.title}</span>
         <span className="empty-state-invitation-source">{props.source}</span>
-        {props.action}
+        <InvitationAction action={props.action} />
       </div>
     );
   }

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { createRef } from "react";
+import { createRef, type ReactElement } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { ActionButton, Button, CandlestickChart, Checkbox, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { ActionButton, Button, CandlestickChart, Checkbox, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, SegmentedControl, SegmentedControlOption, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
@@ -505,15 +505,72 @@ describe("EmptyState kinds (ADR 0104 dec. 4, F4a S1)", () => {
     expect(node).toHaveAttribute("data-empty-kind", "quiet");
     expect(node?.querySelector("button")).toBeNull();
   });
+
+  it("flags an action slot rendering more than one focusable control (Fix-C guardrail 1)", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(
+        <EmptyState
+          kind="invitation"
+          title="No watchlists yet"
+          source="Group companies you follow together."
+          // `Children.only` sees ONE fragment element here, so it does not
+          // catch this — only the DOM focusable-count check does. Cast past
+          // the `ReactElement` typing the same way a defeating caller would.
+          action={
+            (
+              <>
+                <Button variant="primary">Create</Button>
+                <Button variant="secondary">Import</Button>
+              </>
+            ) as unknown as ReactElement
+          }
+        />,
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("action slot must render exactly one focusable control, found 2"),
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("does not flag a single-action invitation", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(
+        <EmptyState
+          kind="invitation"
+          title="No watchlists yet"
+          source="Group companies you follow together."
+          action={<Button variant="primary">Create</Button>}
+        />,
+      );
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
 
-describe("Figure (ADR 0104 dec. 2 amendment, F4a S1)", () => {
-  it("renders a count with the 99+ cap and the num-tabular UI-face class", () => {
+describe("Figure (ADR 0104 dec. 2 amendment, F4a S1; count/badge split, Fix-C guardrail 4)", () => {
+  it("renders the exact, locale-grouped number for kind=count (no 99+ cap) and the num-tabular UI-face class", () => {
     const { rerender } = render(<Figure value={7} />);
     expect(screen.getByText("7")).toHaveClass("num-tabular");
     expect(screen.getByText("7")).toHaveAttribute("data-figure", "count");
 
     rerender(<Figure value={142} kind="count" />);
+    expect(screen.getByText("142")).toBeInTheDocument();
+
+    rerender(<Figure value={1234} kind="count" />);
+    expect(screen.getByText("1,234")).toBeInTheDocument();
+  });
+
+  it("renders the 99+ cap for kind=badge, exact below the cap", () => {
+    const { rerender } = render(<Figure value={7} kind="badge" />);
+    expect(screen.getByText("7")).toHaveAttribute("data-figure", "badge");
+
+    rerender(<Figure value={142} kind="badge" />);
     expect(screen.getByText("99+")).toBeInTheDocument();
   });
 
@@ -528,6 +585,34 @@ describe("Figure (ADR 0104 dec. 2 amendment, F4a S1)", () => {
     expect(screen.getByText("12.50%")).toBeInTheDocument();
     expect(screen.getByText("18.06.2026")).toBeInTheDocument();
     expect(screen.getByText("2026-06-18 09:12")).toBeInTheDocument();
+  });
+});
+
+describe("SegmentedControlOption (Fix-C guardrail 5, sol F4a R1 finding 6)", () => {
+  it("the controlled aria-pressed/type/onClick win over anything a caller spreads through rest", () => {
+    const onClick = vi.fn();
+    render(
+      <SegmentedControl ariaLabel="View mode">
+        <SegmentedControlOption
+          active
+          onClick={onClick}
+          // A caller cannot pass these directly (TS `Omit`s them from
+          // `SegmentedControlOptionProps`), but `data-action-kind` and a
+          // forced `aria-pressed` value ARE passable — the primitive must
+          // still win on the controlled ones.
+          data-action-kind="control"
+          aria-pressed="false"
+        >
+          Week
+        </SegmentedControlOption>
+      </SegmentedControl>,
+    );
+    const option = screen.getByRole("button", { name: "Week" });
+    expect(option).toHaveAttribute("aria-pressed", "true");
+    expect(option).toHaveAttribute("type", "button");
+    expect(option).toHaveAttribute("data-action-kind", "control");
+    option.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
 

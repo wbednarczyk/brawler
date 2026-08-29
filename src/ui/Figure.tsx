@@ -1,8 +1,8 @@
 import { useLocale, type LocaleCode } from "../shared/locale";
-import { formatCount, formatFinancialValue, formatFixedPercent } from "../shared/format/financialValue";
+import { formatCount, formatFinancialValue, formatFixedPercent, groupFormat } from "../shared/format/financialValue";
 import { formatDetailTimestamp, formatLocalIsoDate } from "../shared/format/datetime";
 
-export type FigureKind = "count" | "percent" | "date" | "datetime" | "money";
+export type FigureKind = "count" | "percent" | "date" | "datetime" | "money" | "badge";
 
 export type FigureProps = {
   value: number | string;
@@ -33,8 +33,16 @@ function formatFigureValue(value: number | string, kind: FigureKind, locale: Loc
       return formatLocalIsoDate(String(value));
     case "datetime":
       return formatDetailTimestamp(String(value));
+    // A fixed-width chip (badge) caps at "99+" so a triple-digit count never
+    // blows out its layout — the exact figure lives one click away (Fix-C
+    // guardrail 4, sol F4a R1 finding 4). A prose/table count (the default)
+    // has no such constraint and always renders the real, locale-grouped
+    // number — capping a "18 members"/"342 companies" figure at "99+" would
+    // just be wrong.
+    case "badge":
+      return formatCount(Number(value));
     case "count":
     default:
-      return formatCount(Number(value));
+      return groupFormat(Number(value), locale, 0);
   }
 }

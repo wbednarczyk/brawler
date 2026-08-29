@@ -8,6 +8,7 @@ import {
   expectNoPageOverflow,
   expectNoOverlap,
 } from "./helpers/harness";
+import { expectFilledAtRest } from "./helpers/interactionContracts";
 import type { Locator, Page } from "@playwright/test";
 
 // U7-E2 density contracts (ADR 0076 D6): Watchlists · Transcripts · Settings ·
@@ -58,6 +59,9 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     const detail = page.getByLabel("Selected watchlist");
     await detail.getByRole("button", { name: "Add companies" }).click();
     const picker = page.getByLabel("Add companies", { exact: true });
+    // Fix-C guardrail 6: the add-companies picker is also a "one filled
+    // element at rest" surface ("Add selected" primary, "Cancel" quiet).
+    await expectFilledAtRest(picker, { max: 1 });
     await picker.locator(".watchlist-picker-row").first().click();
     await picker.getByRole("button", { name: "Add selected" }).click();
     await expect(page.locator(".watchlist-member-row")).toHaveCount(1);
@@ -76,6 +80,7 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(isinCell).toBeVisible();
     await expectNoOverlap(list, detail, "L names list vs detail");
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     // M (420–760): both panes visible; the decorative ISIN column folds
     // while the ticker identity stays.
@@ -84,6 +89,7 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(isinCell).toBeHidden();
     await expectNoOverlap(list, detail, "M names list vs detail");
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     // S (<420): the list was already activated above (the initial
     // `row.click()`) — the detail stays open, stacked in place of the names
@@ -98,6 +104,7 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     // short (<480h tall): names + counts is the default again after "Back to
     // lists" above; activating the row re-opens the detail the same way.
@@ -105,11 +112,13 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     await row.click();
     await expect(detail).toBeVisible();
     await expect(list).toBeHidden();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
   });
 
   // The cockpit-hosted "Watchlists" global panel (opened via the retired
@@ -130,20 +139,24 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await sizeTo(page, "L", pane);
     await expect(detail).toBeVisible();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     await sizeTo(page, "M", pane);
     await expect(detail).toBeVisible();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     await sizeTo(page, "S", pane);
     await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     await sizeTo(page, "short", pane);
     await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
   });
 
   // F4a S4b (contract § Alerts § 5/10): the composer is secondary — it folds
@@ -167,11 +180,13 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(firedCard).toBeVisible();
     await expect(rulesCard).toBeVisible();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     await sizeTo(page, "M", pane);
     await expect(chips).toBeVisible();
     await expect(composerToggle).toHaveCount(0);
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     // S: the composer folds behind the toggle; fired + rules still stack above it.
     await sizeTo(page, "S", pane);
@@ -180,11 +195,13 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(firedCard).toBeVisible();
     await expect(rulesCard).toBeVisible();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
 
     // Opening the fold reveals the composer and its primary action.
     await composerToggle.getByRole("button", { name: "Add alert" }).click();
     await expect(chips).toBeVisible();
     await expectNoPageOverflow(page);
+    await expectFilledAtRest(pane, { max: 1 });
   });
 
   test("Transcripts folds the segment review behind a disclosure at S/short", async ({ page }) => {
