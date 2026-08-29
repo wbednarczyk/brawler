@@ -17,11 +17,20 @@ test.afterAll(async () => {
   await connection.browser.close();
 });
 
-const NAV = /^(Spółki|Companies|Listy obserwowane|Watchlists|Alerty|Alerts)$/;
+const SHOTS = "test-results/live-f4a";
 
+// The sidebar renders short Polish labels ("Listy", "Alerty"); match the
+// first sidebar button by name like the other live specs do.
 async function openLibrary(page: LiveConnection["page"], name: RegExp) {
-  const nav = page.getByRole("navigation").first();
-  await nav.getByRole("button", { name }).first().click();
+  await page.getByRole("button", { name }).first().click();
+}
+
+async function shoot(page: LiveConnection["page"], name: string, testInfo: { attach: (n: string, o: { body: Buffer; contentType: string }) => Promise<unknown> }) {
+  const body = await page.screenshot({ fullPage: false });
+  await testInfo.attach(name, { body, contentType: "image/png" });
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(SHOTS, { recursive: true });
+  await fs.writeFile(`${SHOTS}/${name}.png`, body);
 }
 
 test("Companies library renders every tracked company with one filled action", async ({}, testInfo) => {
@@ -33,13 +42,13 @@ test("Companies library renders every tracked company with one filled action", a
   const rows = list.locator("[data-company-row]");
   expect(await rows.count()).toBeGreaterThan(20);
   await expect(page.locator('[data-ux-primary-action="true"]:visible')).toHaveCount(1);
-  await testInfo.attach("companies", { body: await page.screenshot({ fullPage: false }), contentType: "image/png" });
+  await shoot(page, "companies", testInfo);
 });
 
 test("Watchlists shows the real list with member rows carrying Open and Remove", async ({}, testInfo) => {
   const { page } = connection;
   test.setTimeout(120_000);
-  await openLibrary(page, /^(Listy obserwowane|Watchlists)$/);
+  await openLibrary(page, /^(Listy|Listy obserwowane|Watchlists)$/);
   const lists = page.getByLabel(/^(Watchlists|Listy obserwowane)$/).first();
   await expect(lists).toBeVisible({ timeout: 15_000 });
   await lists.getByRole("button").first().click();
@@ -50,7 +59,7 @@ test("Watchlists shows the real list with member rows carrying Open and Remove",
   await expect(member.getByRole("button", { name: /Open company|Otwórz spółkę/ })).toBeVisible();
   await expect(member.getByRole("button", { name: /Remove from list|Usuń z listy/ })).toBeVisible();
   await expect(page.locator('[data-ux-primary-action="true"]:visible')).toHaveCount(1);
-  await testInfo.attach("watchlists", { body: await page.screenshot({ fullPage: false }), contentType: "image/png" });
+  await shoot(page, "watchlists", testInfo);
 });
 
 test("Alerts lists fired alerts first with the real rules below", async ({}, testInfo) => {
@@ -66,5 +75,5 @@ test("Alerts lists fired alerts first with the real rules below", async ({}, tes
     expect(firedBox.y).toBeLessThan(rulesBox.y);
   }
   await expect(page.locator('[data-ux-primary-action="true"]:visible')).toHaveCount(1);
-  await testInfo.attach("alerts", { body: await page.screenshot({ fullPage: false }), contentType: "image/png" });
+  await shoot(page, "alerts", testInfo);
 });
