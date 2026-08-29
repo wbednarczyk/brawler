@@ -20,8 +20,9 @@ export type AlertRulesSectionProps = {
   onCommitPrice: (input: AlertRuleUpdate) => void;
   onRemove: (rule: AlertRule) => void;
   /** Invitation empty state's action (F4a S4b, contract § Alerts action
-   * inventory): opens/focuses the composer rather than duplicating its
-   * primary marker — the composer's own `Add alert` stays the ONE primary. */
+   * inventory): opens/focuses the composer. Fix-C guardrail 8: with no rules
+   * the composer's own `Add alert` is quiet (AlertsScreen.tsx), so this
+   * invitation action is the ONE filled/primary element at rest. */
   onAddAlert: () => void;
 };
 
@@ -68,7 +69,11 @@ export function AlertRulesSection({
           title={text("You don't have any alerts yet")}
           source={text("A rule says what you want to be told about — for a company or a list.")}
           action={
-            <ActionButton verb="add" variant="primary" onClick={onAddAlert}>
+            // Fix-C guardrail 8 (sol F4a R1): with no rules, the composer's
+            // own "Add alert" goes quiet (AlertsScreen.tsx) so THIS is the
+            // one filled element at rest — it still just focuses the
+            // composer, it does not duplicate the composer's submit.
+            <ActionButton verb="add" variant="primary" data-ux-primary-action="true" onClick={onAddAlert}>
               {text("Add alert")}
             </ActionButton>
           }

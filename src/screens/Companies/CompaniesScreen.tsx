@@ -233,19 +233,19 @@ export function CompaniesScreen() {
                 <span>{text("Registry matches")}</span>
                 <div>
                   {companyFormRegistryMatches.map((entry) => (
-                    <button
+                    <ActionButton
+                      kind="control"
                       className="company-registry-suggestion"
                       key={entry.qualifiedTicker}
                       onClick={() => applyRegistryEntryToCompanyForm(entry)}
                       onMouseDown={(event) => event.preventDefault()}
                       title={`${text("Use")} ${entry.qualifiedTicker}`}
-                      type="button"
                     >
                       <strong><TickerLabel value={entry.qualifiedTicker} /></strong>
                       <span>{entry.displayName}</span>
                       <small>{entry.isin ?? text("No ISIN")}</small>
                       {entry.tracked ? <em>{text("Added")}</em> : null}
-                    </button>
+                    </ActionButton>
                   ))}
                 </div>
               </div>
@@ -370,6 +370,7 @@ export function CompaniesScreen() {
                       ) : (
                         <ActionButton
                           verb="remove"
+                          aria-label={`${text("Remove")} ${company.qualifiedTicker}`}
                           className="danger-button"
                           onClick={() => setConfirmDeleteCompanyId(company.id)}
                           title={`${text("Remove")} ${company.qualifiedTicker}`}

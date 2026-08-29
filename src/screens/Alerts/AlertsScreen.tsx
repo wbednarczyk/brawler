@@ -155,6 +155,10 @@ export function AlertsScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeType]);
 
+  // Fix-C guardrail 8: which "Add alert" button is the one filled element at
+  // rest (see the composer's `variant`/`data-ux-primary-action` below).
+  const hasRules = alerts.rules.length > 0;
+
   const isPriceRange = preset.triggerType === "price_enters_range";
   const priceMinNum = parsePrice(priceMin);
   const priceMaxNum = parsePrice(priceMax);
@@ -412,10 +416,16 @@ export function AlertsScreen({
         <ActionButton
           verb="add"
           className="alerts-preview-add"
-          variant="primary"
+          // Fix-C guardrail 8 (sol F4a R1, "one filled element at rest"):
+          // with no rules yet, `AlertRulesSection`'s invitation renders its
+          // own filled "Add alert" that focuses this composer — this button
+          // goes quiet in that state so the two never both render filled at
+          // once. Once a rule exists the invitation is gone and this is
+          // again the screen's one primary action.
+          variant={hasRules ? "primary" : "secondary"}
           disabled={!canAdd}
           onClick={addRule}
-          data-ux-primary-action="true"
+          data-ux-primary-action={hasRules ? "true" : undefined}
         >
           {text("Add alert")}
         </ActionButton>
