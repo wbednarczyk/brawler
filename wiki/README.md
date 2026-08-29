@@ -37,6 +37,8 @@ per feature.
   classification with confirm-only AI, the BiznesRadar witness, the **Insiders**
   block (MAR art. 19 transactions, management holdings, skin-in-the-game badge),
   and how unreadable shareholder tables surface as honest gaps.
+- **[Watchlists](watchlists.md)** — groups of companies that Today, Inbox and
+  Report Season filter by: create, add companies, open a member, remove.
 - **[Per-company settings](company-settings.md)** — quick single-company
   controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
   surface for changing several companies, or a whole watchlist, at once.
