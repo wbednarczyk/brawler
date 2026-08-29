@@ -671,6 +671,17 @@ export const plText: Record<string, string> = {
   "No companies yet.": "Brak spółek.",
   "No companies match this search.": "Brak spółek pasujących do wyszukiwania.",
   "No companies match these filters.": "Brak spółek pasujących do tych filtrów.",
+  // F4a S2 (ADR 0104 dec. 4, § Companies library): the three invitation empty
+  // states — no companies yet, no filter match, and no registry match.
+  "No companies in your library yet": "Brak spółek w bibliotece",
+  "Add a company from the GPW/NewConnect registry — search by ticker or name.":
+    "Dodaj spółkę z rejestru GPW/NewConnect — wyszukaj po tickerze lub nazwie.",
+  "Add your first company": "Dodaj pierwszą spółkę",
+  "No companies match your filters": "Brak spółek pasujących do filtrów",
+  "No match in the registry": "Nie znaleziono w rejestrze",
+  "The registry covers GPW and NewConnect; you can add a company from elsewhere manually.":
+    "Rejestr obejmuje GPW i NewConnect; spółkę spoza możesz dodać ręcznie.",
+  "Add manually": "Dodaj ręcznie",
   "Companies command failed": "Polecenie spółek nie powiodło się",
   "Looking up company directory...": "Wyszukiwanie w katalogu spółek...",
   "No company directory match.": "Brak dopasowania w katalogu spółek.",

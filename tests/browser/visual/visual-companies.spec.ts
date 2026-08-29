@@ -49,4 +49,15 @@ test.describe("visual — company dashboard panels", () => {
     await expect(pane.locator(".company-feed-detail")).toBeVisible();
     await shootPanel(page, pane, "company-feed");
   });
+
+  // F4a S2 — Companies library language pass (docs/plans/frontend-v2-f4a.md §
+  // Companies library): the library screen itself (add form + toolbar + row
+  // list), not a Spółka workshop tool — sized on `.workspace` like the other
+  // sidebar screens (visual-utility.spec.ts's Watchlists/Transcripts baselines).
+  test("Companies library across pane tiers", async ({ page }) => {
+    await openApp(page);
+    await nav(page).getByRole("button", { name: "Companies" }).click();
+    await expect(page.getByLabel("Companies list")).toBeVisible();
+    await shootPanel(page, page.locator(".workspace"), "companies-library");
+  });
 });

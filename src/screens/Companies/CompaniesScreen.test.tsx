@@ -191,12 +191,12 @@ describe("Companies screen workflows", () => {
 
     expect(within(companyList).queryByText("GPW:CDR")).not.toBeInTheDocument();
     expect(within(companyList).getByText("GPW:PZU")).toBeInTheDocument();
-    expect(screen.getByText("1/4 companies")).toBeInTheDocument();
+    expect(document.querySelector(".company-list-count")?.textContent).toBe("1/4 companies");
 
     await user.click(screen.getByRole("button", { name: "Clear company search" }));
 
     expect(within(companyList).getByText("GPW:CDR")).toBeInTheDocument();
-    expect(screen.getByText("4/4 companies")).toBeInTheDocument();
+    expect(document.querySelector(".company-list-count")?.textContent).toBe("4/4 companies");
   });
 
   it("filters the tracked companies list by watchlist", async () => {
@@ -215,7 +215,7 @@ describe("Companies screen workflows", () => {
 
     expect(within(companyList).getByText("GPW:CDR")).toBeInTheDocument();
     expect(within(companyList).queryByText("GPW:PZU")).not.toBeInTheDocument();
-    expect(screen.getByText("1/4 companies")).toBeInTheDocument();
+    expect(document.querySelector(".company-list-count")?.textContent).toBe("1/4 companies");
   });
 
   it("opens the matching Watchlists panel from a company watchlist pill", async () => {
@@ -226,7 +226,7 @@ describe("Companies screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Companies" }));
     await user.click(
       within(await screen.findByLabelText("Watchlist memberships for GPW:CDR")).getByRole("button", {
-        name: "Main GPW",
+        name: "Open watchlist Main GPW",
       }),
     );
 
@@ -242,12 +242,12 @@ describe("Companies screen workflows", () => {
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
-    await user.click(await screen.findByTitle("Delete GPW:CDR"));
+    await user.click(await screen.findByTitle("Remove GPW:CDR"));
 
     // Irreversible/cascading (ADR 0076 D5): an in-place InlineConfirm, not a
     // native dialog. The delete fires only after confirming.
-    expect(screen.getByText("Delete GPW:CDR from tracked companies?")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByText("Remove GPW:CDR from tracked companies?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_company", { companyId: "company_gpw_cdr" });
@@ -346,7 +346,7 @@ describe("Companies screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Companies" }));
     await user.selectOptions(screen.getByLabelText("Company watchlist filter"), "watchlist_main_gpw");
 
-    expect(screen.getByText("1/4 companies")).toBeInTheDocument();
+    expect(document.querySelector(".company-list-count")?.textContent).toBe("1/4 companies");
 
     await user.click(screen.getByRole("button", { name: "Watchlists" }));
     // In-place confirm (ADR 0076 D5): open then confirm to run the delete.
@@ -355,7 +355,9 @@ describe("Companies screen workflows", () => {
     await user.click(selected().getByRole("button", { name: "Delete" }));
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
-    expect(await screen.findByText("4/4 companies")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelector(".company-list-count")?.textContent).toBe("4/4 companies"),
+    );
     expect(screen.getByLabelText("Company watchlist filter")).toHaveValue("all");
     expect(invoke).toHaveBeenCalledWith("delete_watchlist", {
       watchlistId: "watchlist_main_gpw",

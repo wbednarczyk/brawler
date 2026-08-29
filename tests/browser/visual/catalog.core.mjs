@@ -19,6 +19,7 @@ const RAW_CATALOG = [
   { screen: "basic-info", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "fundamentals", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "company-feed", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  { screen: "companies-library", spec: "visual-companies.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "inbox", spec: "visual-inbox-sources.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "sources", spec: "visual-inbox-sources.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "notebook-company", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },

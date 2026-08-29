@@ -4,7 +4,7 @@ import { listCompanyAutopilotModes, setCompaniesAutopilot, type AutopilotMode } 
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Checkbox, EmptyState, ErrorText, SearchField, SectionHeader, SelectField } from "../../ui";
+import { Checkbox, EmptyState, ErrorText, Figure, SearchField, SectionHeader, SelectField } from "../../ui";
 
 export type CompanySettingsManagerProps = {
   companies: Company[];
@@ -177,7 +177,16 @@ export function CompanySettingsManager({
           title={text("Settings")}
           actions={
             <span className="company-settings-count">
-              {text("{n} selected").replace("{n}", String(selectedIds.length))}
+              {(() => {
+                const [prefix, suffix] = text("{n} selected").split("{n}");
+                return (
+                  <>
+                    {prefix}
+                    <Figure value={selectedIds.length} kind="count" />
+                    {suffix}
+                  </>
+                );
+              })()}
             </span>
           }
         />

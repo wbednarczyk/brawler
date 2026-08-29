@@ -26,6 +26,14 @@ function rowFor(companyName: string): HTMLElement {
   return screen.getByText(companyName).closest("li") as HTMLElement;
 }
 
+// F4a S2: the count now renders through `Figure` (a nested `<span>`), so
+// `getByText` (which only reads an element's own direct text nodes) can no
+// longer find the whole "N selected" sentence on one element — read the
+// count container's full text content instead.
+function selectedCountText(): string | null {
+  return document.querySelector(".company-settings-count")?.textContent ?? null;
+}
+
 describe("CompanySettingsManager workflows (ADR 0056)", () => {
   it("enters settings mode from the Companies screen toggle and leaves it again", async () => {
     const user = userEvent.setup();
@@ -51,18 +59,18 @@ describe("CompanySettingsManager workflows (ADR 0056)", () => {
     await openSettingsMode(user);
 
     await user.click(within(rowFor("CD PROJEKT S.A.")).getByRole("checkbox"));
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(selectedCountText()).toBe("1 selected");
 
     await user.click(within(rowFor("ORLEN S.A.")).getByRole("checkbox"));
-    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    expect(selectedCountText()).toBe("2 selected");
 
     await user.click(screen.getByLabelText("Select all"));
-    expect(screen.getByText("4 selected")).toBeInTheDocument();
+    expect(selectedCountText()).toBe("4 selected");
     expect(within(rowFor("PZU S.A.")).getByRole("checkbox")).toBeChecked();
 
     // Unchecking "select all" clears the whole selection, back to the empty state.
     await user.click(screen.getByLabelText("Select all"));
-    expect(screen.getByText("0 selected")).toBeInTheDocument();
+    expect(selectedCountText()).toBe("0 selected");
     expect(
       screen.getByText("Select companies on the left to edit their settings."),
     ).toBeInTheDocument();
@@ -76,7 +84,7 @@ describe("CompanySettingsManager workflows (ADR 0056)", () => {
     // Fixture: "Main GPW" contains only CD PROJEKT among the four tracked companies.
     await user.selectOptions(screen.getByLabelText("By watchlist"), "watchlist_main_gpw");
 
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(selectedCountText()).toBe("1 selected");
     expect(within(rowFor("CD PROJEKT S.A.")).getByRole("checkbox")).toBeChecked();
     expect(within(rowFor("ORLEN S.A.")).getByRole("checkbox")).not.toBeChecked();
   });
