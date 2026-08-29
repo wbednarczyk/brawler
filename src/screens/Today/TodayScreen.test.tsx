@@ -50,6 +50,7 @@ function emptyView(overrides: Partial<TodayView> = {}): TodayView {
 function fakeAttention(overrides: Partial<AttentionController> = {}): AttentionController {
   return {
     events: [],
+    rules: [],
     rulesById: new Map(),
     loading: false,
     hydrated: true,

@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 import { useAttentionController } from "./useAttentionController";
 import type { AttentionEvent } from "../api/attention";
+import { makeAlertRule } from "../test/scenarios/entities";
 
 // Controlled-promise seams: each api call resolves only when the test says so,
 // so the request/mutation races the controller must survive are deterministic.
@@ -69,6 +70,19 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
     await waitFor(() => expect(result.current.hydrated).toBe(true));
     expect(result.current.unseenCount).toBe(1);
     expect(result.current.loading).toBe(false);
+  });
+
+  // fixA finding 3 (ADR 0097 dec. 6): the Alerts screen's rules section reads
+  // this array directly instead of re-fetching its own `listAlertRules` copy —
+  // the controller must expose the fetched rules, not just the id-keyed map.
+  it("exposes the fetched rules as an array, in sync with rulesById", async () => {
+    const rule = makeAlertRule("rule_a", "signal_category", "company_1");
+    vi.mocked(listAlertRules).mockResolvedValue([rule]);
+    const { result } = renderHook(() => useAttentionController(true));
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+
+    expect(result.current.rules).toEqual([rule]);
+    expect(result.current.rulesById.get("rule_a")).toEqual(rule);
   });
 
   it("a response that raced past a mutation is discarded, then a re-fetch converges and loading settles", async () => {
