@@ -226,6 +226,14 @@ test.describe("Companies library density (companies-library cell)", { tag: "@cli
       await expect(list).toBeVisible();
       await expectNoOverlap(form, list, "company add form and company list");
       await expectNoPageOverflow(page);
+      // The `Add` action must stay inside the pane's painted extent — the
+      // layout hides overflow, so a clipped button reads clean to the
+      // scrollbar-based guard (owner tier 1024×1152 clipped it, F4a S2).
+      const add = form.getByRole("button", { name: "Add", exact: true });
+      const addBox = await add.boundingBox();
+      const paneBox = await pane.boundingBox();
+      expect(addBox, "Add button has a box").not.toBeNull();
+      expect(addBox!.x + addBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 1);
       await resetPaneSize(page, pane);
     }
   });
