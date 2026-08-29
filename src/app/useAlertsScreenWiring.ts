@@ -1,4 +1,5 @@
-import type { Dispatch, SetStateAction } from "react";
+import { createElement, type Dispatch, type SetStateAction } from "react";
+import { AlertsScreen } from "../screens/Alerts/AlertsScreen";
 
 import type { AttentionController } from "./useAttentionController";
 import type { Section } from "./navigation";
@@ -23,4 +24,9 @@ export function buildAlertsScreenProps(input: AlertsScreenWiringInput) {
     openCompanyWorkspaceById: input.openCompanyWorkspaceById,
     openInbox: () => input.setActiveSection("Inbox"),
   };
+}
+
+/** Mounts the Alerts screen from the root's attention controller + navigation. */
+export function AlertsScreenHost(input: AlertsScreenWiringInput) {
+  return createElement(AlertsScreen, buildAlertsScreenProps(input));
 }
