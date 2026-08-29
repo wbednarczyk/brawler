@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { expect, resetPaneSize, setPaneSize, test, type Locator, type Page } from "../helpers/harness";
-import { assertCataloged, type Tier } from "./catalog";
+import { assertCataloged, findCatalogEntry, type Tier } from "./catalog";
 
 // Shared shooting helpers for the all-panels visual baseline (ADR 0076 D7 / U11).
 //
@@ -46,6 +46,21 @@ async function settle(page: Page): Promise<void> {
 }
 
 type ShootOptions = { mask?: Locator[]; state?: string };
+
+// Visual figure proof (ADR 0104 dec. 2 amendment, F4a S1): when the catalog
+// cell declares a `figures` minimum, assert it BEFORE capturing evidence —
+// same spirit as the density spec's own content assertion, but for the
+// shared `Figure` primitive's `[data-figure]` marker specifically. A no-op
+// for the many cells that don't declare one yet.
+async function assertFigureMinimum(root: Locator, screen: string): Promise<void> {
+  const figures = findCatalogEntry(screen)?.figures;
+  if (!figures) return;
+  const count = await root.locator(figures.selector).count();
+  expect(
+    count,
+    `${screen}: expected at least ${figures.min} "${figures.selector}" figure(s), found ${count}`,
+  ).toBeGreaterThanOrEqual(figures.min);
+}
 
 function screenshotOptions(opts: ShootOptions): { mask?: Locator[] } {
   return opts.mask ? { mask: opts.mask } : {};
@@ -114,6 +129,7 @@ export async function shootPanel(
   for (const tier of tiers) {
     await setPaneSize(page, { width: TIER_WIDTH[tier], height: TIER_HEIGHT, pane });
     await settle(page);
+    await assertFigureMinimum(pane, name);
     await writeContactSheetEvidence(page, pane, { screen: name, state, tier });
     await expect(pane).toHaveScreenshot(`${name}-${tier}.png`, screenshotOptions(opts));
     await resetPaneSize(page, pane);
@@ -139,6 +155,7 @@ export async function shootRegion(
   await setPaneSize(page, { width: TIER_WIDTH.M, height: TIER_HEIGHT, pane });
   await region.scrollIntoViewIfNeeded();
   await settle(page);
+  await assertFigureMinimum(region, name);
   await writeContactSheetEvidence(page, region, { screen: name, state, tier: "M" });
   await expect(region).toHaveScreenshot(`${name}-M.png`, screenshotOptions(opts));
   await resetPaneSize(page, pane);
@@ -158,6 +175,7 @@ export async function shootScreen(
   const state = opts.state ?? "default";
 
   await settle(page);
+  await assertFigureMinimum(workspace, name);
   await writeContactSheetEvidence(page, workspace, { screen: name, state, tier: "M" });
   await expect(workspace).toHaveScreenshot(`${name}-M.png`, shot);
   if (lightPass()) return;

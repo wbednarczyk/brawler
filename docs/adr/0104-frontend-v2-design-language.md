@@ -57,6 +57,10 @@ styleguide mockup: `docs/mockups/frontend-v2-styleguide/` (canvas + five artboar
 - **Decision 2 — figures/dates/percentages render in the UI face, not mono.** JetBrains Mono spaces punctuation ("15 , 2 mld PLN", "27 . 08 . 2026"), which reads as broken. Every figure/date/percent context uses Schibsted Grotesk with `font-variant-numeric: lining-nums` (the `.num-tabular` class now sets this explicitly); mono stays reserved for identifiers, keys, period ids, eyebrows, and filenames. Proportional lining figures, not tabular: Schibsted's tabular set widens "."/"," to a full digit cell ("1 . 1 B PLN"); right-aligned numeric cells still line up at their end.
 - **Decision 3 — destination labels are nouns, not verbs.** The workshop bar and core-card buttons that open a tool (`Tezy`/`Claims`, `Fundamenty`/`Fundamentals`, …) are **destinations**, styled like nav items — noun only, no leading "Otwórz"/"Open". The verb-prefixed form stays exclusively for the ⌘K palette's command entries (`SPOLKA_TOOL_COMMANDS`), where "Otwórz X" names the ACTION a command performs. A destination button and a palette command for the same tool may legitimately carry different labels.
 
+### Amendment (2026-08-28, F4a S1)
+
+- **Decision 3 — five verbs added for the Library screens.** `create` (Create/Utwórz), `rename` (Rename/Zmień nazwę), `pause`/`resume` (Pause/Wstrzymaj, Resume/Wznów) join the dictionary (`src/shared/verbs.ts`). `remove` (Remove/Usuń) is the **only** collection-removal verb across screen copy — the legacy EN key `Delete` is retired from screen copy (destructive confirms keep their own irreversibility framing per ADR 0076 D5, but the button/action label reads "Remove"). `ActionButton` (`src/ui/ActionButton.tsx`) carries `verb: Verb` or `kind: "destination" | "control"` and emits `data-action-kind`/`data-action-verb` so a screen's rendered action inventory is mechanically checkable (F4a contract, `docs/plans/frontend-v2-f4a.md`).
+
 ## Foundations review (question-everything doctrine, owner 2026-08-19)
 
 Every foundation gets an explicit verdict; "keep" also needs evidence. Gated studies block their

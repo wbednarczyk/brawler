@@ -73,6 +73,13 @@ export function validateCatalog(list) {
     if (!entry.states || entry.states.length === 0) {
       throw new Error(`catalog entry "${entry.screen}" has no supported states`);
     }
+    // Optional visual figure proof (ADR 0104 dec. 2 amendment, F4a S1): a cell
+    // may declare a minimum count of `[data-figure]` (or another selector)
+    // elements the shot must contain — `helpers.ts` asserts it before
+    // capturing evidence. No cell uses it yet (S5 sets it per screen).
+    if (entry.figures && (!entry.figures.selector || !(entry.figures.min > 0))) {
+      throw new Error(`catalog entry "${entry.screen}" has a malformed figures block (needs selector + min > 0)`);
+    }
   }
   return list;
 }

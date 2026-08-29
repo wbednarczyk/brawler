@@ -58,7 +58,7 @@ reddens `make check-frontend-static`):
 | Layer | May import | Must never import |
 | --- | --- | --- |
 | `src/api` | its own modules, generated DTOs, the Tauri API | `app/`, `screens/`, `shared/`, `ui/` |
-| `src/ui` | sibling primitives, `shared/locale`, `shared/format` (sanctioned display leaves) | `app/`, `screens/`, `api/`, any other `shared/` subtree |
+| `src/ui` | sibling primitives, `shared/locale`, `shared/format`, `shared/verbs` (sanctioned display leaves — `shared/verbs` widened 2026-08-28, F4a S1, for `ActionButton`'s `Verb` type) | `app/`, `screens/`, `api/`, any other `shared/` subtree |
 | `src/shared` | `api/`, `ui/`, other `shared/` modules | `app/`, `screens/` (the composition roots — pass data/handlers via props or a composer-provided context) |
 | `src/app`, `src/screens` | anything below | — |
 

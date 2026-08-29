@@ -1,3 +1,5 @@
+export { ActionButton } from "./ActionButton";
+export type { ActionButtonProps } from "./ActionButton";
 export { ActionRow } from "./ActionRow";
 export type { ActionRowProps } from "./ActionRow";
 export { Button } from "./Button";
@@ -23,6 +25,8 @@ export { ListRow } from "./ListRow";
 export type { ListRowProps } from "./ListRow";
 export { ExpandableRow } from "./ExpandableRow";
 export type { ExpandableRowProps } from "./ExpandableRow";
+export { Figure } from "./Figure";
+export type { FigureKind, FigureProps } from "./Figure";
 export { FilterToolbar } from "./FilterToolbar";
 export type { FilterToolbarProps } from "./FilterToolbar";
 export { FieldRow, SelectField } from "./Fields";

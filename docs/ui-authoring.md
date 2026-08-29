@@ -106,6 +106,7 @@ Guarded by `src/screens/Spolka/paneLandmarks.test.tsx`, which opens every Spół
 | A search box | `SearchField` — **always pass a styling `className`** (base: `search-box`); the primitive carries structure, not skin, so a bare call site renders an unstyled native input (owner dogfooding, v0.52) — unless a container styles it contextually (e.g. inside `FilterToolbar`) | input + clear button assembled by hand; `<SearchField>` with no `className` outside `FilterToolbar` |
 | A clear/reset affordance | `ClearButton` | a bare `<button>×</button>` |
 | A button | `Button` (`variant`) | `<button className="compact-button">` |
+| A screen action needing a verb-dictionary/destination/control classification for the per-screen action-inventory contract (ADR 0081, ADR 0104 dec. 3 amendment) | `ActionButton` (`verb: Verb` **or** `kind: "destination" \| "control"`) — wraps `Button`, adds no styling of its own | a bare `Button` with no `data-action-kind`, or a hand-rolled `data-action-kind` attribute |
 | A **low-emphasis** tone-carrying status/metadata label (quiet, sits inline) | `StatusChip` | `<span className="…-status">` |
 | A **high-emphasis** state badge, or a solid keyword **tag** (bold; tags go in `ChipList`) | `StatusPill` | bespoke tag/status spans |
 | An inline error line | `ErrorText` | `<p className="error-text">` |
@@ -113,7 +114,8 @@ Guarded by `src/screens/Spolka/paneLandmarks.test.tsx`, which opens every Spół
 | A media/list row (icon + truncating title/link + trailing meta/badge/action) | `ListRow` | `<li>` + manual flex + manual truncation |
 | A selectable dense row | `DenseRow` | bespoke selectable rows |
 | A row that expands in place | `ExpandableRow` | manual open/close row markup |
-| Empty state | `EmptyState` | `<p>Nothing here</p>` |
+| Empty state | `EmptyState` — `kind="invitation"` (title + source + exactly one action, ADR 0104 dec. 4's three beats) or `kind="quiet"` (a good/expected empty, `reason` only, no action); `kind` omitted keeps the legacy children-only shape for screens not yet migrated | `<p>Nothing here</p>` |
+| A figure/date/percent/money value | `Figure` (`kind="count" \| "percent" \| "date" \| "datetime" \| "money"`) — always the UI face via `.num-tabular`, never mono (ADR 0104 dec. 2 amendment) | hand-formatting a number/date inline, or wrapping it in mono |
 | Key/value metadata block | `InfoGrid` | ad-hoc definition grids |
 | Inline confirm (delete etc.) | `InlineConfirm` | bespoke confirm toggles |
 | A dialog | `Modal` | a hand-built overlay |
@@ -185,7 +187,7 @@ Every user-visible string is `text("English text")` from `useLocale()`. The loca
 
 **Backend-composed user-visible strings are forbidden — the backend writes typed codes, the frontend translates.** A persisted or wire-carried field the UI renders (a briefing item's `title`/`detail`, an attention label, a run summary) must hold verbatim source data or a typed code/token, never an English sentence the Rust side composed. The frontend maps the code to localized copy through `text()`, tolerating legacy prose rows verbatim. Precedent: the morning-briefing seam (`briefingItemText.ts` over `compose_briefing`, [ADR 0087](adr/0087-today-attention-home-v2.md) dec. 4). Any new backend-composed user-visible string is a defect of this class.
 
-**Palette command labels start with a dictionary verb** (`src/shared/verbs.ts`, ADR 0104 dec. 3): Open/Otwórz, Apply/Zastosuj, Save/Zapisz, Fetch/Pobierz, Read/Przeczytaj, Refresh/Odśwież, Mark as/Oznacz jako, Add/Dodaj, Remove/Usuń — never a full sentence, never two verbs sharing one `actionKey`. Enforced by the copy gate `src/app/paletteCopy.test.ts`. **A destination button (workshop bar, core-card "open this tool" button, nav item) is a noun, not a verb** (ADR 0104 dec. 3 amendment, owner dogfooding 2026-08-27) — "Tezy"/"Claims", not "Otwórz tezy"/"Open claims"; the verb-prefixed form is reserved for the palette command that performs the SAME open as an action. The two may legitimately carry different labels for the same tool.
+**Palette command labels start with a dictionary verb** (`src/shared/verbs.ts`, ADR 0104 dec. 3, amended 2026-08-28 F4a S1): Open/Otwórz, Apply/Zastosuj, Save/Zapisz, Fetch/Pobierz, Read/Przeczytaj, Refresh/Odśwież, Mark as/Oznacz jako, Add/Dodaj, Remove/Usuń, Create/Utwórz, Rename/Zmień nazwę, Pause/Wstrzymaj, Resume/Wznów — never a full sentence, never two verbs sharing one `actionKey`. `Remove`/`Usuń` is the only collection-removal verb across screen copy — the legacy EN key `Delete` is retired. Enforced by the copy gate `src/app/paletteCopy.test.ts`. **A destination button (workshop bar, core-card "open this tool" button, nav item) is a noun, not a verb** (ADR 0104 dec. 3 amendment, owner dogfooding 2026-08-27) — "Tezy"/"Claims", not "Otwórz tezy"/"Open claims"; the verb-prefixed form is reserved for the palette command that performs the SAME open as an action. The two may legitimately carry different labels for the same tool.
 
 ## Panel density contracts (ADR 0076 Decision 6)
 

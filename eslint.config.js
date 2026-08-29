@@ -93,7 +93,10 @@ const DOCKVIEW_RESTRICTION = {
 // - src/shared is reusable across screens: it never imports app/ or screens/
 //   (the composition roots).
 // - src/ui primitives are presentation-only: no app state, screens, or IPC;
-//   the only sanctioned shared leaves are locale + format (display helpers).
+//   the only sanctioned shared leaves are locale + format (display helpers)
+//   + verbs (the ADR 0104 dec. 3 verb dictionary, F4a S1 — `ActionButton`'s
+//   `Verb` type; a single dependency-free display-string table, same category
+//   as locale/format).
 // src/ui is a flat directory, so its cross-layer imports are exactly one
 // `../<layer>/…` hop — anchored patterns, immune to npm-specifier collisions
 // (e.g. "@tauri-apps/api/…" must NOT match an "api" layer ban).
@@ -105,11 +108,11 @@ const UI_LAYER_RESTRICTIONS = [
   },
   {
     // Everything under ../shared/ EXCEPT the sanctioned display leaves
-    // shared/locale and shared/format (negated `group` globs do not compose
-    // with the `../` prefix, hence the regex form).
-    regex: "^\\.\\./shared/(?!locale($|/)|format/)",
+    // shared/locale, shared/format, and shared/verbs (negated `group` globs
+    // do not compose with the `../` prefix, hence the regex form).
+    regex: "^\\.\\./shared/(?!locale($|/)|format/|verbs$)",
     message:
-      "src/ui may reach only the sanctioned shared leaves: shared/locale and shared/format (display helpers). Anything else belongs above the primitive layer (docs/modularization-design.md § Frontend layer contract).",
+      "src/ui may reach only the sanctioned shared leaves: shared/locale, shared/format (display helpers), and shared/verbs (the verb dictionary). Anything else belongs above the primitive layer (docs/modularization-design.md § Frontend layer contract).",
   },
 ];
 

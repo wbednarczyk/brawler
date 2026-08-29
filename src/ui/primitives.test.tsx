@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { Button, CandlestickChart, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { ActionButton, Button, CandlestickChart, Checkbox, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
@@ -447,6 +447,87 @@ describe("CandlestickChart a11y", () => {
 
     const log = render(<CandlestickChart ariaLabel="Price history (log)" points={points} scale="log" />);
     expect(log.getByRole("img", { name: "Price history (log)" })).toBeInTheDocument();
+  });
+});
+
+describe("ActionButton (ADR 0104 dec. 3 amendment, F4a S1)", () => {
+  it("emits data-action-kind and data-action-verb for a dictionary verb", () => {
+    render(<ActionButton verb="remove">Remove</ActionButton>);
+    const node = screen.getByRole("button", { name: "Remove" });
+    expect(node).toHaveAttribute("data-action-kind", "remove");
+    expect(node).toHaveAttribute("data-action-verb", "remove");
+  });
+
+  it("emits data-action-kind with no data-action-verb for a destination/control kind", () => {
+    render(<ActionButton kind="destination">Open company</ActionButton>);
+    const node = screen.getByRole("button", { name: "Open company" });
+    expect(node).toHaveAttribute("data-action-kind", "destination");
+    expect(node).not.toHaveAttribute("data-action-verb");
+  });
+
+  it("still renders as a Button (variant class, forwarded ref)", () => {
+    const ref = createRef<HTMLButtonElement>();
+    render(
+      <ActionButton ref={ref} kind="control" variant="secondary">
+        Search
+      </ActionButton>,
+    );
+    expect(ref.current).toBe(screen.getByRole("button", { name: "Search" }));
+    expect(ref.current).toHaveAttribute("data-ui-button-variant", "secondary");
+  });
+});
+
+describe("EmptyState kinds (ADR 0104 dec. 4, F4a S1)", () => {
+  it("renders the legacy children-only form when kind is omitted", () => {
+    render(<EmptyState>Nothing here yet.</EmptyState>);
+    const node = screen.getByText("Nothing here yet.").closest(".empty-state");
+    expect(node).toHaveAttribute("data-empty-kind", "legacy");
+  });
+
+  it("renders the invitation shape with title, source, and exactly one action", () => {
+    render(
+      <EmptyState
+        kind="invitation"
+        title="No watchlists yet"
+        source="Group companies you follow together."
+        action={<Button variant="primary">Create your first list</Button>}
+      />,
+    );
+    expect(screen.getByText("No watchlists yet")).toBeInTheDocument();
+    expect(screen.getByText("Group companies you follow together.")).toBeInTheDocument();
+    const action = screen.getByRole("button", { name: "Create your first list" });
+    expect(action.closest('[data-empty-kind="invitation"]')).not.toBeNull();
+  });
+
+  it("renders the quiet shape with a reason and no action", () => {
+    render(<EmptyState kind="quiet" reason="All quiet — nothing has fired." />);
+    const node = screen.getByText("All quiet — nothing has fired.").closest(".empty-state");
+    expect(node).toHaveAttribute("data-empty-kind", "quiet");
+    expect(node?.querySelector("button")).toBeNull();
+  });
+});
+
+describe("Figure (ADR 0104 dec. 2 amendment, F4a S1)", () => {
+  it("renders a count with the 99+ cap and the num-tabular UI-face class", () => {
+    const { rerender } = render(<Figure value={7} />);
+    expect(screen.getByText("7")).toHaveClass("num-tabular");
+    expect(screen.getByText("7")).toHaveAttribute("data-figure", "count");
+
+    rerender(<Figure value={142} kind="count" />);
+    expect(screen.getByText("99+")).toBeInTheDocument();
+  });
+
+  it("renders a percent, a date, and a datetime through the shared format helpers", () => {
+    render(
+      <>
+        <Figure value={12.5} kind="percent" />
+        <Figure value="2026-06-18" kind="date" />
+        <Figure value="2026-06-18T09:12:00" kind="datetime" />
+      </>,
+    );
+    expect(screen.getByText("12.50%")).toBeInTheDocument();
+    expect(screen.getByText("18.06.2026")).toBeInTheDocument();
+    expect(screen.getByText("2026-06-18 09:12")).toBeInTheDocument();
   });
 });
 
