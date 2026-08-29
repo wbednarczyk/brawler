@@ -6,6 +6,7 @@ import {
   setPaneSize,
   resetPaneSize,
   expectNoPageOverflow,
+  expectNoOverlap,
 } from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
@@ -62,33 +63,52 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expect(page.locator(".watchlist-member-row")).toHaveCount(1);
 
     const pane = page.locator(".workspace");
+    const list = page.locator(".watchlist-list");
     // The ISIN renders as a meta span nested inside the name cell, not its own
     // grid column (F4a S3 redesign: ticker | name (+ ISIN) | actions).
     const isinCell = page.locator(".watchlist-member-row .watchlist-member-isin").first();
+    const backToLists = page.getByRole("button", { name: "Back to lists" });
 
-    // L (>760): detail visible + full company table (ISIN column shown).
+    // L (>760): both panes visible side by side, full company table (ISIN
+    // column shown).
     await sizeTo(page, "L", pane);
     await expect(detail).toBeVisible();
     await expect(isinCell).toBeVisible();
+    await expectNoOverlap(list, detail, "L names list vs detail");
     await expectNoPageOverflow(page);
 
-    // M (420–760): detail (membership editor) visible; the decorative ISIN
-    // column folds while the ticker identity stays.
+    // M (420–760): both panes visible; the decorative ISIN column folds
+    // while the ticker identity stays.
     await sizeTo(page, "M", pane);
     await expect(detail).toBeVisible();
     await expect(isinCell).toBeHidden();
+    await expectNoOverlap(list, detail, "M names list vs detail");
     await expectNoPageOverflow(page);
 
-    // S (<420): names + counts only — the detail folds.
+    // S (<420): the list was already activated above (the initial
+    // `row.click()`) — the detail stays open, stacked in place of the names
+    // list (F4a Fix-B); `Back to lists` returns to the names list, which is
+    // never permanently hidden.
     await sizeTo(page, "S", pane);
-    await expect(page.locator(".watchlist-list")).toBeVisible();
+    await expect(detail).toBeVisible();
+    await expect(list).toBeHidden();
+    await expectNoPageOverflow(page);
+
+    await backToLists.click();
+    await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
     await expectNoPageOverflow(page);
 
-    // short (<480h): names + counts only.
+    // short (<480h tall): names + counts is the default again after "Back to
+    // lists" above; activating the row re-opens the detail the same way.
     await sizeTo(page, "short", pane);
-    await expect(page.locator(".watchlist-list")).toBeVisible();
+    await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
+    await expectNoPageOverflow(page);
+
+    await row.click();
+    await expect(detail).toBeVisible();
+    await expect(list).toBeHidden();
     await expectNoPageOverflow(page);
   });
 

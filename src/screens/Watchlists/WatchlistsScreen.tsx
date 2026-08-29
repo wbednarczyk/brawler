@@ -74,6 +74,12 @@ export function WatchlistsScreen() {
   const [watchlistCompanySearch, setWatchlistCompanySearch] = useState("");
   const [isAddOpen, setAddOpen] = useState(false);
   const [isRenameOpen, setRenameOpen] = useState(false);
+  // S (<420px pane) / short (<480px tall): activating a list opens the detail
+  // AS a stacked view in place of the names list (F4a Fix-B). The tier switch
+  // itself is CSS-only (container queries on `.watchlists-workspace-detail-open`,
+  // see watchlists.css) — this flag only tracks whether the user asked to see
+  // the detail; on M/L it renders unused (both panes always show there).
+  const [detailOpenAtS, setDetailOpenAtS] = useState(false);
   const [selectedAddCompanyIds, setSelectedAddCompanyIds] = useState<Set<string>>(() => new Set());
   const selectedWatchlist = watchlists.find((watchlist) => watchlist.id === selectedWatchlistId) ?? null;
   const normalizedWatchlistSearch = watchlistSearch.trim().toLowerCase();
@@ -147,6 +153,7 @@ export function WatchlistsScreen() {
     setRenameOpen(false);
     setAddOpen(false);
     setSelectedAddCompanyIds(new Set());
+    setDetailOpenAtS(true);
   }
 
   function submitRename(event: React.FormEvent<HTMLFormElement>) {
@@ -233,7 +240,11 @@ export function WatchlistsScreen() {
           }
         />
       ) : (
-        <div className="watchlists-workspace">
+        <div
+          className={
+            detailOpenAtS ? "watchlists-workspace watchlists-workspace-detail-open" : "watchlists-workspace"
+          }
+        >
           <div className="watchlists-sidebar">
             <SearchField
               ariaLabel={text("Search watchlists")}
@@ -281,6 +292,16 @@ export function WatchlistsScreen() {
           </div>
 
           <div className="watchlist-detail" aria-label={text("Selected watchlist")}>
+            {detailOpenAtS ? (
+              <ActionButton
+                className="watchlist-back-to-lists"
+                kind="control"
+                variant="ghost"
+                onClick={() => setDetailOpenAtS(false)}
+              >
+                {text("Back to lists")}
+              </ActionButton>
+            ) : null}
             {searchHasNoMatch ? null : selectedWatchlist ? (
               <>
                 {isRenameOpen ? (

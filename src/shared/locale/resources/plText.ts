@@ -633,6 +633,7 @@ export const plText: Record<string, string> = {
   "Watchlist command failed": "Polecenie list obserwowanych nie powiodło się",
   "Selected watchlist": "Wybrana lista obserwowana",
   "Selected list": "Wybrana lista",
+  "Back to lists": "Wróć do list",
   "Search watchlists": "Szukaj list obserwowanych",
   "Clear watchlist search": "Wyczyść wyszukiwanie list",
   "No watchlists match this search.": "Nie ma listy o tej nazwie",

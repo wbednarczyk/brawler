@@ -280,8 +280,19 @@
   }
 }
 
-/* S (<420px) + short (<480px tall): only the watchlist names + counts show; the
-   detail (membership editor + company table) folds until the pane widens. */
+/* The "Back to lists" control only exists to return from the S/short stacked
+   detail view (below) — hidden everywhere else so it never renders as a
+   stray control at M/L, where both panes always show side by side. */
+.watchlist-back-to-lists {
+  display: none;
+}
+
+/* S (<420px) + short (<480px tall): default is names + counts only, the
+   detail (membership editor + company table) folds. Activating a list (F4a
+   Fix-B, `detailOpenAtS`) swaps that for a full-width detail with a
+   `Back to lists` control at its top — the detail is never permanently
+   hidden, just stacked in place of the names list; the tier switch itself
+   stays CSS-only. */
 @container pane (max-width: 419px) {
   .watchlists-workspace {
     grid-template-columns: minmax(0, 1fr);
@@ -289,6 +300,18 @@
 
   .watchlist-detail {
     display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlists-sidebar {
+    display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-detail {
+    display: flex;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-back-to-lists {
+    display: inline-flex;
   }
 }
 
@@ -299,5 +322,17 @@
 
   .watchlist-detail {
     display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlists-sidebar {
+    display: none;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-detail {
+    display: flex;
+  }
+
+  .watchlists-workspace-detail-open .watchlist-back-to-lists {
+    display: inline-flex;
   }
 }
