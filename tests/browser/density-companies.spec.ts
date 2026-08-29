@@ -1,4 +1,12 @@
-import { test, expect, openApp, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import {
+  test,
+  expect,
+  openApp,
+  setPaneSize,
+  resetPaneSize,
+  expectNoPageOverflow,
+  expectNoOverlap,
+} from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
 // U7 cluster A — density contracts for two Spółka workshop tools (Fundamentals
@@ -191,5 +199,34 @@ test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, ()
     ).toBeLessThanOrEqual(paneBox.clientWidth + 1);
 
     await resetPaneSize(page, pane);
+  });
+});
+
+// F4a S2 — Companies library density cell (docs/plans/frontend-v2-f4a.md §
+// Companies library, shared guardrail table). This is a LANGUAGE pass, not a
+// redesign: no new fold/collapse tiers ship here — the test proves the
+// existing library layout (add form + toolbar + row list) holds together
+// (no sibling overlap, no page/pane horizontal overflow) across the pane
+// width tiers, on the "rich" default seed (28 companies — the default
+// smoke-runtime scenario, the densest of the three named scenarios; see
+// src/test/scenarios/scenarios.ts).
+test.describe("Companies library density (companies-library cell)", { tag: "@clickable" }, () => {
+  test("the add form and the company list never overlap or overflow at S/M/L", async ({ page }) => {
+    await openApp(page);
+    await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
+    await expect(page.getByLabel("Companies list")).toBeVisible();
+
+    const pane = page.locator(".workspace");
+    const form = page.locator(".company-form");
+    const list = page.getByLabel("Companies list");
+
+    for (const tier of ["S", "M", "L"] as const) {
+      await setPaneSize(page, { ...TIER_SIZE[tier], pane });
+      await expect(form).toBeVisible();
+      await expect(list).toBeVisible();
+      await expectNoOverlap(form, list, "company add form and company list");
+      await expectNoPageOverflow(page);
+      await resetPaneSize(page, pane);
+    }
   });
 });
