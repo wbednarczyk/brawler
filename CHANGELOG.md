@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.77.0 - 2026-08-29
+
+
+### Features
+
+- **library**: F4a — Companies, Watchlists, Alerts onto the design language (ADR 0104) (#439)
+
 ## v0.76.0 - 2026-08-28
 
 
