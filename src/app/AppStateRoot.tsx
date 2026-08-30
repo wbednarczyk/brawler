@@ -89,13 +89,11 @@ import {
   parseLocalDate,
 } from "../shared/format/datetime";
 import {
-  formatAiProvider,
   formatCompanyEventSourceType,
   formatCompanyEventStatus,
   formatCompanyEventType,
   formatCredentialConfigured,
   formatCredentialKind,
-  formatEnumLabel,
   formatGeminiModel,
 } from "../shared/formatting/labels";
 import {
@@ -919,11 +917,13 @@ export function AppStateRoot({
     linkTranscriptJobCompany,
     openTranscriptNoteDraft,
     refreshTranscriptJobs,
+    retryTranscriptSegments,
     runTranscriptJob,
     selectTranscriptCompany,
     toggleTranscriptJob,
     toggleTranscriptJobFromKeyboard,
     toggleTranscriptSegment,
+    transcriptsLoading,
     updateTranscriptJobDescription,
     updateTranscriptLinkQuery,
     updateTranscriptNoteForm,
@@ -1926,10 +1926,10 @@ export function AppStateRoot({
                 <TranscriptsProvider
                   value={{
                     companies,
-                    settings,
                     geminiCredentialStatus,
                     transcriptJobs,
                     transcriptJobsError,
+                    transcriptsLoading,
                     transcriptJobForm,
                     transcriptJobCreateError,
                     transcriptJobCreateState,
@@ -1958,6 +1958,7 @@ export function AppStateRoot({
                     setTranscriptSegmentSearchByJobId,
                     setTranscriptDescriptionDraftByJobId,
                     refreshTranscriptJobs,
+                    retryTranscriptSegments,
                     createTranscriptJob,
                     toggleTranscriptJob,
                     toggleTranscriptJobFromKeyboard,
@@ -1972,10 +1973,8 @@ export function AppStateRoot({
                     discardTranscriptNoteDraft,
                     updateTranscriptNoteForm,
                     selectTranscriptCompany,
-                    formatAiProvider,
-                    formatGeminiModel,
-                    formatCredentialConfigured,
-                    formatEnumLabel,
+                    openCompanyWorkspaceById,
+                    openSettings: () => setActiveSection("Settings"),
                   }}
                 >
                   <TranscriptsScreen />

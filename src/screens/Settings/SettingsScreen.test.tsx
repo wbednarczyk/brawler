@@ -212,7 +212,10 @@ describe("Settings screen workflows", () => {
 
     await user.click(within(primaryNavigation).getByRole("button", { name: "Transkrypcje" }));
     expect(await screen.findByRole("heading", { name: "Transkrypcje" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Odśwież zadania" })).toBeInTheDocument();
+    // The seeded transcript keeps the list reachable even with the Gemini key
+    // just cleared above (F4b S2: the key-missing invitation only replaces
+    // the whole screen when there is nothing to show yet).
+    expect(screen.getByRole("button", { name: "Odśwież transkrypcje" })).toBeInTheDocument();
   }, 20_000);
 
   it("previews and applies import/export workflows", async () => {

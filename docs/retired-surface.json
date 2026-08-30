@@ -334,6 +334,10 @@
     {
       "token": "Open view:",
       "adr": "ADR 0108"
+    },
+    {
+      "token": "TranscriptRuntimeStrip",
+      "adr": "ADR 0104"
     }
   ]
 }

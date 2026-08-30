@@ -52,7 +52,10 @@ type ShootOptions = { mask?: Locator[]; state?: string };
 // same spirit as the density spec's own content assertion, but for the
 // shared `Figure` primitive's `[data-figure]` marker specifically. A no-op
 // for the many cells that don't declare one yet.
-async function assertFigureMinimum(root: Locator, screen: string): Promise<void> {
+async function assertFigureMinimum(root: Locator, screen: string, state: string): Promise<void> {
+  // F4b S2: an "empty"/invitation state has no data to render as a figure by
+  // definition — the minimum is a "default" (content-bearing) state proof.
+  if (state !== "default") return;
   const figures = findCatalogEntry(screen)?.figures;
   if (!figures) return;
   const count = await root.locator(figures.selector).count();
@@ -64,6 +67,14 @@ async function assertFigureMinimum(root: Locator, screen: string): Promise<void>
 
 function screenshotOptions(opts: ShootOptions): { mask?: Locator[] } {
   return opts.mask ? { mask: opts.mask } : {};
+}
+
+// F4b S2: a non-"default" state gets its own baseline filename — otherwise a
+// screen with two shot states (e.g. Transcripts default + empty) would
+// silently overwrite one baseline with the other (both call sites shared the
+// same `${name}-${tier}.png` leaf before this).
+function snapshotName(name: string, state: string, tier: string): string {
+  return state === "default" ? `${name}-${tier}.png` : `${name}-${state}-${tier}.png`;
 }
 
 // Contact-sheet evidence (ADR 0081 plan Q5). When BRAWLER_CONTACT_SHEET_DIR is
@@ -129,9 +140,9 @@ export async function shootPanel(
   for (const tier of tiers) {
     await setPaneSize(page, { width: TIER_WIDTH[tier], height: TIER_HEIGHT, pane });
     await settle(page);
-    await assertFigureMinimum(pane, name);
+    await assertFigureMinimum(pane, name, state);
     await writeContactSheetEvidence(page, pane, { screen: name, state, tier });
-    await expect(pane).toHaveScreenshot(`${name}-${tier}.png`, screenshotOptions(opts));
+    await expect(pane).toHaveScreenshot(snapshotName(name, state, tier), screenshotOptions(opts));
     await resetPaneSize(page, pane);
   }
 }
@@ -155,9 +166,9 @@ export async function shootRegion(
   await setPaneSize(page, { width: TIER_WIDTH.M, height: TIER_HEIGHT, pane });
   await region.scrollIntoViewIfNeeded();
   await settle(page);
-  await assertFigureMinimum(region, name);
+  await assertFigureMinimum(region, name, state);
   await writeContactSheetEvidence(page, region, { screen: name, state, tier: "M" });
-  await expect(region).toHaveScreenshot(`${name}-M.png`, screenshotOptions(opts));
+  await expect(region).toHaveScreenshot(snapshotName(name, state, "M"), screenshotOptions(opts));
   await resetPaneSize(page, pane);
 }
 
@@ -175,16 +186,16 @@ export async function shootScreen(
   const state = opts.state ?? "default";
 
   await settle(page);
-  await assertFigureMinimum(workspace, name);
+  await assertFigureMinimum(workspace, name, state);
   await writeContactSheetEvidence(page, workspace, { screen: name, state, tier: "M" });
-  await expect(workspace).toHaveScreenshot(`${name}-M.png`, shot);
+  await expect(workspace).toHaveScreenshot(snapshotName(name, state, "M"), shot);
   if (lightPass()) return;
 
   for (const tier of opts.forced ?? []) {
     await setPaneSize(page, { width: TIER_WIDTH[tier], height: TIER_HEIGHT, pane: workspace });
     await settle(page);
     await writeContactSheetEvidence(page, workspace, { screen: name, state, tier });
-    await expect(workspace).toHaveScreenshot(`${name}-${tier}.png`, shot);
+    await expect(workspace).toHaveScreenshot(snapshotName(name, state, tier), shot);
     await resetPaneSize(page, workspace);
   }
 }

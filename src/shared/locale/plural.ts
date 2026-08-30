@@ -132,3 +132,10 @@ export const UPCOMING_EVENT_FORMS: PluralForms = {
   en: ["upcoming event", "upcoming events"],
   pl: ["nadchodzące wydarzenie", "nadchodzące wydarzenia", "nadchodzących wydarzeń"],
 };
+
+// F4b S2 (Transcripts redesign): the segment-count figure under a
+// completed/expanded transcript row ("42 segments" / "42 fragmenty").
+export const SEGMENT_FORMS: PluralForms = {
+  en: ["segment", "segments"],
+  pl: ["fragment", "fragmenty", "fragmentów"],
+};

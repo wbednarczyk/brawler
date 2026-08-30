@@ -96,10 +96,14 @@ const RAW_CATALOG = [
   {
     screen: "transcripts",
     spec: "visual-utility.spec.ts",
-    // "empty" lands with the S2 redesign (TODO(F4b S2) in the spec, not here).
     states: ["default", "empty"],
     tiers: FULL_TIERS,
-    figures: { selector: "[data-figure]", min: 2 },
+    // F4b S2: min 1, not 2 — `browserSmokeRuntime.ts` deliberately seeds zero
+    // transcript jobs for every scenario (segments only exist for a job the
+    // Gemini flow actually transcribes, which the smoke mock cannot fabricate
+    // on create), so the default-state shot's one created+completed row
+    // carries exactly one Figure (its fetched-at date).
+    figures: { selector: "[data-figure]", min: 1 },
   },
   { screen: "settings", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
 ];
