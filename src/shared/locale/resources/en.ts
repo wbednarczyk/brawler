@@ -78,8 +78,6 @@ export const en = {
   "action.refreshSources": "Refresh sources",
   "action.refreshing": "Refreshing",
   "action.addEvent": "Add event",
-  "events.action.refreshSources": "Refresh event sources",
-  "events.action.refreshing": "Refreshing",
   "settings.sources.title": "Sources",
   "settings.importExport.title": "Import And Export",
   "settings.credentials.title": "Credentials",

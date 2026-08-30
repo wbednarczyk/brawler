@@ -1,5 +1,13 @@
 import { describe, it } from "vitest";
-import { appTestState, expect, renderApp, screen, within } from "../../test/appWorkflowHarness";
+import {
+  appTestState,
+  expect,
+  renderApp,
+  screen,
+  seedScenario,
+  userEvent,
+  within,
+} from "../../test/appWorkflowHarness";
 import {
   collectActionInventory,
   collectEmptyStates,
@@ -8,6 +16,8 @@ import {
 } from "../../test/uxContracts";
 import type { ActionInventoryEntry } from "../../test/uxContracts";
 import { plText } from "../../shared/locale/resources/plText";
+import type { CompanyEvent } from "../../api/types";
+import { addLocalDays, formatLocalDate } from "../../shared/format/datetime";
 
 const LOCALES = ["en", "pl"] as const;
 type Locale = (typeof LOCALES)[number];
@@ -21,37 +31,40 @@ function sorted(entries: ActionInventoryEntry[]): ActionInventoryEntry[] {
   );
 }
 
-// F4b S1 red contract skeleton for the Events redesign
-// (docs/plans/frontend-v2-f4b.md § Events, Action inventory). S3 implements
-// the redesign; today's screen has no `ActionButton`/`data-action-kind`
-// anywhere, so `collectActionInventory` reports every button as
-// "unclassified" and every assertion below is expected red — do NOT make
-// these green (S3 does).
-//
-// Default seed: Week view, current-week range, no active filters — one
-// event ("Main Market - Corporate actions - Equity - CDR", company CDR).
+// F4b S3 contract test for the Events redesign (docs/plans/frontend-v2-f4b.md
+// § Events, Action inventory + State matrix). Default seed (legacyMinimal):
+// week view, current-week range, no active filters — two events this week
+// ("Main Market - Corporate actions - Equity - CDR", company CDR, today; and
+// the PZU market-making event two days later) — both are visible cards.
 
 const REGION_NAME = { en: "Events", pl: "Wydarzenia" } as const;
-const EVENT_TITLE = "Main Market - Corporate actions - Equity - CDR";
+const CDR_TITLE = "Main Market - Corporate actions - Equity - CDR";
+const PZU_TITLE = "Main Market - End of market making activities - Equity - PZU";
 
 async function openEvents(locale: Locale) {
   appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
   renderApp({ section: "Events" });
   const region = await screen.findByRole("region", { name: REGION_NAME[locale] });
-  await within(region).findByText(EVENT_TITLE);
+  // Wait for the seeded week data to land (the accessible name carries the
+  // raw title; the redesigned card shows the human type label instead —
+  // #431/#417).
+  await within(region).findByRole("button", { name: `${L(locale, "Open event")}: ${CDR_TITLE}` });
   return region;
 }
 
 function defaultInventory(locale: Locale): ActionInventoryEntry[] {
   return sorted([
-    { name: L(locale, "Add event"), kind: "add" },
+    { name: locale === "pl" ? "Dodaj wydarzenie" : "Add event", kind: "add" },
     { name: L(locale, "Refresh calendar"), kind: "refresh" },
     { name: L(locale, "Week"), kind: "control" },
     { name: L(locale, "List"), kind: "control" },
     { name: L(locale, "Previous week"), kind: "control" },
     { name: L(locale, "Next week"), kind: "control" },
     { name: L(locale, "Current week"), kind: "control" },
-    { name: `${L(locale, "Open event")}: ${EVENT_TITLE}`, kind: "control" },
+    { name: L(locale, "Filters"), kind: "control" },
+    { name: L(locale, "Clear filters"), kind: "control" },
+    { name: `${L(locale, "Open event")}: ${CDR_TITLE}`, kind: "control" },
+    { name: `${L(locale, "Open event")}: ${PZU_TITLE}`, kind: "control" },
   ]);
 }
 
@@ -77,27 +90,118 @@ describe("Events primary action per state (F4b contract § Events, decision 5)",
     const region = await openEvents("en");
     expectSinglePrimary(region, 1);
     expectPrimaryMarkerMatchesVariant(region);
+    expect(within(region).getByRole("button", { name: "Add event" }).getAttribute("data-ux-primary-action")).toBe(
+      "true",
+    );
+  });
+
+  it("Success (proposed event expanded, list mode): `confirmProposed` is the one filled action", async () => {
+    seedScenario("rich");
+    renderApp({ section: "Events" });
+    const region = await screen.findByRole("region", { name: "Events" });
+    await userEvent.click(within(region).getByRole("button", { name: "List" }));
+    const proposedCard = await within(region).findByRole("button", {
+      name: /dividend date \(derived, unconfirmed\)/i,
+    });
+    await userEvent.click(proposedCard);
+    expectSinglePrimary(region, 1);
+    expectPrimaryMarkerMatchesVariant(region);
+    const confirmButton = within(region).getByRole("button", { name: "Confirm" });
+    expect(confirmButton.getAttribute("data-ux-primary-action")).toBe("true");
   });
 });
 
 describe("Events empty states (F4b contract § Events, State matrix)", () => {
-  it.each(LOCALES)("Empty (week has no events, a later match exists): invitation with `Show next week with events` (%s)", async (locale) => {
-    appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
+  it.each(LOCALES)(
+    "Empty (week has no events, a later match exists): invitation with `Show next week with events` (%s)",
+    async (locale) => {
+      appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
+      const futureDate = formatLocalDate(addLocalDays(new Date(), 21));
+      const futureEvent: CompanyEvent = {
+        id: "event_future_match",
+        companyId: "company_gpw_cdr",
+        company: "GPW:CDR",
+        companyName: "CD PROJEKT S.A.",
+        eventType: "periodic_report",
+        title: "Raport za I kwartał",
+        eventDate: futureDate,
+        eventTime: null,
+        status: "confirmed",
+        sourceType: "official_calendar",
+        sourceAdapterId: "gpw-market-events-rss",
+        sourceEventKey: "future-match",
+        sourceUrl: null,
+        attribution: "GPW",
+        fetchedAt: "2026-06-01T08:00:00Z",
+        manual: false,
+        createdAt: "2026-06-01T08:00:00Z",
+        updatedAt: "2026-06-01T08:00:00Z",
+      };
+      appTestState.companyEventsResponse = [futureEvent];
+      renderApp({ section: "Events" });
+      const region = await screen.findByRole("region", { name: REGION_NAME[locale] });
+      await screen.findByText(L(locale, "Show next week with events"));
+      expect(collectEmptyStates(region)).toContain("invitation");
+      expect(collectActionInventory(region, locale)).toEqual(
+        sorted([
+          { name: locale === "pl" ? "Dodaj wydarzenie" : "Add event", kind: "add" },
+          { name: L(locale, "Refresh calendar"), kind: "refresh" },
+          { name: L(locale, "Week"), kind: "control" },
+          { name: L(locale, "List"), kind: "control" },
+          { name: L(locale, "Previous week"), kind: "control" },
+          { name: L(locale, "Next week"), kind: "control" },
+          { name: L(locale, "Current week"), kind: "control" },
+          { name: L(locale, "Filters"), kind: "control" },
+          { name: L(locale, "Clear filters"), kind: "control" },
+          { name: L(locale, "Show next week with events"), kind: "control" },
+        ]),
+      );
+      expectSinglePrimary(region, 1);
+    },
+  );
+
+  it("Empty (week empty, active filters, no later match): quiet, `Wyczyść filtry` a control, no primary", async () => {
     appTestState.companyEventsResponse = [];
     renderApp({ section: "Events" });
-    const region = await screen.findByRole("region", { name: REGION_NAME[locale] });
-    expect(collectEmptyStates(region)).toContain("invitation");
-    expect(collectActionInventory(region, locale)).toEqual(
-      sorted([
-        { name: L(locale, "Add event"), kind: "add" },
-        { name: L(locale, "Refresh calendar"), kind: "refresh" },
-        { name: L(locale, "Week"), kind: "control" },
-        { name: L(locale, "List"), kind: "control" },
-        { name: L(locale, "Previous week"), kind: "control" },
-        { name: L(locale, "Next week"), kind: "control" },
-        { name: L(locale, "Current week"), kind: "control" },
-        { name: L(locale, "Show next week with events"), kind: "control" },
-      ]),
+    const region = await screen.findByRole("region", { name: "Events" });
+    // No events at all means the Type/Status filters have no options to pick
+    // from (they're derived from the loaded events) — the Company filter's
+    // options come from the always-populated company list instead.
+    const companyFilter = screen.getByLabelText("Event company filter") as HTMLSelectElement;
+    await userEvent.selectOptions(companyFilter, companyFilter.options[1].value);
+    await screen.findByText("Later there are no events matching the filters");
+    expect(collectEmptyStates(region)).toContain("quiet");
+    expectSinglePrimary(region, 0);
+    expect(within(region).getAllByRole("button", { name: "Clear filters" }).length).toBeGreaterThan(0);
+  });
+
+  it("Empty (week empty, no active filters, already refreshed): the invitation's own `Add event` carries the primary — the header's goes quiet", async () => {
+    appTestState.companyEventsResponse = [];
+    // legacyMinimal's adapters all carry `lastSuccessAt: null` (the
+    // "never refreshed" branch) — force one calendar adapter's success
+    // timestamp so this test reaches the "already refreshed, no later
+    // match, no filters" branch instead (decision 4).
+    appTestState.sourceAdaptersResponse = appTestState.sourceAdaptersResponse.map((adapter) =>
+      adapter.sourceType === "official_calendar" || adapter.sourceType === "public_calendar"
+        ? { ...adapter, lastSuccessAt: "2026-06-05T09:00:00Z" }
+        : adapter,
     );
+    renderApp({ section: "Events" });
+    const region = await screen.findByRole("region", { name: "Events" });
+    const invitation = await screen.findByText("Bankier and GPW calendars have no later dates for the companies on your lists.");
+    const panel = invitation.closest(".event-week-empty-panel") as HTMLElement;
+    expect(panel).toBeTruthy();
+
+    expectSinglePrimary(region, 1);
+    expectPrimaryMarkerMatchesVariant(region);
+    const invitationAddEvent = within(panel).getByRole("button", { name: "Add event" });
+    expect(invitationAddEvent.getAttribute("data-ux-primary-action")).toBe("true");
+
+    // The header's own "Add event" (outside the invitation panel) must be
+    // the ONLY other button with this name, and must NOT be the primary one.
+    const allAddEventButtons = within(region).getAllByRole("button", { name: "Add event" });
+    expect(allAddEventButtons).toHaveLength(2);
+    const headerAddEvent = allAddEventButtons.find((button) => button !== invitationAddEvent);
+    expect(headerAddEvent?.getAttribute("data-ux-primary-action")).toBeNull();
   });
 });

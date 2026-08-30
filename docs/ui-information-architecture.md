@@ -315,6 +315,8 @@ The first implementation may use test-sample-backed events. The UX should still 
 
 ### Investor week view (layers)
 
+**Status: not built** ([ADR 0058](adr/0058-investor-week-calendar.md)) — the Events screen's week view (F4b S3) ships the plain working-week calendar only; none of the scope/layer toggles below exist in the code or the screen's props/controller.
+
 The Events screen also offers a **weekly working-day view** (Mon–Fri columns; a weekend column only when populated) — the investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.67.0`), inspired by the Koomberg weekly digest. It composes opt-in **layers** over the same data, with our own UI:
 
 - **Scope toggle** — watchlist (default) ↔ **whole market** (untracked GPW tickers via the opt-in relaxed Bankier ingest).

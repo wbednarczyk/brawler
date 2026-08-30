@@ -4,7 +4,6 @@
   "Channel",
   "Collected",
   "Companies in watchlist",
-  "Confirm derived event",
   "Copy logs",
   "Copy summary",
   "Current file",
@@ -75,7 +74,6 @@
   "Samples",
   "Severity",
   "Structured developer-mode module events.",
-  "This date was derived from a filing. Confirm to add it to the calendar.",
   "diagnostic events cleared",
   "diagnostic events copied",
   "log entries copied"

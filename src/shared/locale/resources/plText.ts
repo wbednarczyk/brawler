@@ -2201,4 +2201,28 @@ export const plText: Record<string, string> = {
   "Report upcoming": "Nadchodzący",
   "Report prepared": "Przygotowany",
   "Report reviewed": "Przejrzany",
+  // F4b S3 — Events
+  "Add event": "Dodaj wydarzenie",
+  "Awaiting confirmation": "Do potwierdzenia",
+  "Bankier and GPW calendars have no later dates for the companies on your lists.":
+    "Kalendaria Bankier i GPW nie mają późniejszych terminów dla spółek z Twoich list.",
+  "Bankier and GPW calendars · refreshed {time}": "Kalendaria Bankier i GPW · odświeżone {time}",
+  "Bankier · calendar": "Bankier · kalendarium",
+  "Confirm derived event": "Potwierdź wyprowadzone wydarzenie",
+  "Ex-dividend day": "Dzień bez dywidendy",
+  "Extraordinary shareholder meeting": "Nadzwyczajne walne zgromadzenie",
+  "Failed to load events": "Nie udało się wczytać wydarzeń",
+  "Later there are no events matching the filters": "Później nie ma wydarzeń pasujących do filtrów",
+  "Loading events…": "Wczytywanie wydarzeń…",
+  "Next date: {date} — {company}, {type}": "Najbliższy termin: {date} — {company}, {type}",
+  "No event matches the filters": "Żadne wydarzenie nie pasuje do filtrów",
+  "No events in this range.": "Brak wydarzeń w tym zakresie.",
+  "Nothing this week": "Nic w tym tygodniu",
+  "Past": "Minione",
+  "Refresh calendar": "Odśwież kalendarz",
+  "Show next week with events": "Pokaż następny tydzień z wydarzeniami",
+  "The calendar has not been refreshed yet.": "Kalendarz nie był jeszcze odświeżony.",
+  "This date comes from a filing. Confirm to add it to the calendar for good, or reject it.":
+    "Ta data pochodzi z raportu. Potwierdź, żeby trafiła do kalendarza jako pewna, albo odrzuć.",
+  "◔ from a filing · awaiting confirmation": "◔ z raportu · do potwierdzenia",
 };

@@ -80,8 +80,6 @@ export const pl: LocaleResources = {
   "action.refreshSources": "Odśwież źródła",
   "action.refreshing": "Odświeżanie",
   "action.addEvent": "Dodaj wydarzenie",
-  "events.action.refreshSources": "Odśwież źródła wydarzeń",
-  "events.action.refreshing": "Odświeżanie",
   "settings.sources.title": "Źródła",
   "settings.importExport.title": "Import i eksport",
   "settings.credentials.title": "Poświadczenia",

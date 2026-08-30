@@ -39,6 +39,10 @@ per feature.
   and how unreadable shareholder tables surface as honest gaps.
 - **[Watchlists](watchlists.md)** — groups of companies that Today, Inbox and
   Report Season filter by: create, add companies, open a member, remove.
+- **[Events](events.md)** — the weekly calendar of report publications,
+  ex-dividend days, and general meetings for the companies on your lists,
+  with source attribution on every date, confirm/reject for dates derived
+  from a filing, and a one-click jump when a week is empty.
 - **[Per-company settings](company-settings.md)** — quick single-company
   controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
   surface for changing several companies, or a whole watchlist, at once.
