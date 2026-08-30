@@ -155,4 +155,7 @@ export const pl: LocaleResources = {
   "Period": "Okres",
   "Value": "Wartość",
   "Not set": "Nie ustawiono",
+  "reportSeason.status.upcoming": "Nadchodzący",
+  "reportSeason.status.prepared": "Przygotowany",
+  "reportSeason.status.reviewed": "Przejrzany",
 };

@@ -35,7 +35,7 @@ const ALL_SCOPE = "all";
 
 export function ReportSeasonScreen() {
   const { watchlists, openCompanyWorkspace } = useReportSeasonViewModel();
-  const { text } = useLocale();
+  const { t, text } = useLocale();
   const [scope, setScope] = useState<string>(ALL_SCOPE);
   const {
     season,
@@ -63,18 +63,19 @@ export function ReportSeasonScreen() {
   const [composerOpenKey, setComposerOpenKey] = useState<string | null>(null);
 
   function preparationChip(status: ReportSeasonEntry["preparationStatus"]) {
-    // Distinct EN keys from the generic "Upcoming"/"Prepared" words used
-    // elsewhere on this same screen (claim counts) — those need the
-    // adjective's neuter/plural PL form ("Nadchodzące"), this chip needs the
-    // masculine form agreeing with "raport" (contract § Report Season: chips
-    // Nadchodzący/Przygotowany/Przejrzany).
+    // Keyed t() entries (fix wave, integrator review): the free-text
+    // `text()` map is a single flat EN→PL dictionary, so a bare "Upcoming"/
+    // "Prepared" here would collide with the claim-counts' plural/neuter PL
+    // form on this same screen — keyed lookups don't share that namespace,
+    // so both languages read as the plain masculine adjective (contract §
+    // Report Season: chips Nadchodzący/Przygotowany/Przejrzany).
     if (status === "processed") {
-      return <StatusChip tone="ok">{text("Report reviewed")}</StatusChip>;
+      return <StatusChip tone="ok">{t("reportSeason.status.reviewed")}</StatusChip>;
     }
     if (status === "prepared") {
-      return <StatusChip tone="accent">{text("Report prepared")}</StatusChip>;
+      return <StatusChip tone="accent">{t("reportSeason.status.prepared")}</StatusChip>;
     }
-    return <StatusChip tone="neutral">{text("Report upcoming")}</StatusChip>;
+    return <StatusChip tone="neutral">{t("reportSeason.status.upcoming")}</StatusChip>;
   }
 
   function renderEntry(entry: ReportSeasonEntry, expandable: boolean) {

@@ -153,6 +153,9 @@ export const en = {
   "Period": "Period",
   "Value": "Value",
   "Not set": "Not set",
+  "reportSeason.status.upcoming": "Upcoming",
+  "reportSeason.status.prepared": "Prepared",
+  "reportSeason.status.reviewed": "Reviewed",
 } as const;
 
 export type LocaleResources = Record<keyof typeof en, string>;
