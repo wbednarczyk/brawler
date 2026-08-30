@@ -87,6 +87,7 @@ import {
   makeAnalystRecommendationsView,
   makeRecommendationSignal,
   companyId,
+  SAMPLE_NOW,
   makeReportDocument,
   makeReportPreparation,
   makeReportSeasonEntry,
@@ -383,6 +384,39 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
   const attentionEvents: AttentionEvent[] = companies[0]
     ? [makeAttentionEvent("attn_sample_1", "alert_rule_sample_1", companies[0].id)]
     : [];
+
+  // F4b S1 (mock/backend vocabulary guardrail): one `derived_signal` `proposed`
+  // event — a date extracted from a dividend filing awaiting confirmation onto
+  // the calendar (ADR 0036) — dated the next real-world Monday so J7's week
+  // view exercises the `confirmProposed` primary state without a frozen clock
+  // (mirrors `currentWeekTestDate`'s real-`Date` approach, legacyMinimal.ts).
+  if (companies[0]) {
+    const today = new Date();
+    const daysUntilNextMonday = ((1 - today.getDay() + 7) % 7) || 7;
+    const nextMonday = new Date(today);
+    nextMonday.setDate(today.getDate() + daysUntilNextMonday);
+    const nextMondayIso = nextMonday.toISOString().slice(0, 10);
+    events.push({
+      id: "event_sample_derived_dividend",
+      companyId: companies[0].id,
+      company: companies[0].qualifiedTicker,
+      companyName: companies[0].displayName,
+      eventType: "dividend",
+      title: `${companies[0].displayName} dividend date (derived, unconfirmed)`,
+      eventDate: nextMondayIso,
+      eventTime: null,
+      status: "proposed",
+      sourceType: "derived_signal",
+      sourceAdapterId: null,
+      sourceEventKey: null,
+      sourceUrl: null,
+      attribution: "Derived from filing",
+      fetchedAt: SAMPLE_NOW,
+      manual: false,
+      createdAt: SAMPLE_NOW,
+      updatedAt: SAMPLE_NOW,
+    });
+  }
 
   return {
     companies,

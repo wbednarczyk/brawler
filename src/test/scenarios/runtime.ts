@@ -1786,7 +1786,25 @@ function buildHandlers(): Record<string, Handler> {
       d.signals = d.signals.filter((s) => s.id !== id);
       return undefined;
     },
-    confirm_derived_event: ok,
+    // F4b S1: parity with the Rust command (`{eventId, action: "confirm" |
+    // "reject"}`, src-tauri/src/commands/signals.rs) — confirm moves the
+    // `proposed` event to `confirmed` on the calendar; reject discards it.
+    confirm_derived_event: (d, a) => {
+      const input = unwrap(a);
+      const eventId = str(input.eventId);
+      const action = str(input.action);
+      if (action === "reject") {
+        d.events = d.events.filter((event) => event.id !== eventId);
+        return undefined;
+      }
+      const { next } = mapReplace(
+        d.events,
+        (event) => event.id === eventId,
+        (event) => ({ ...event, status: "confirmed" as const }),
+      );
+      d.events = next;
+      return undefined;
+    },
     list_alert_rules: (d) => d.alertRules,
     create_alert_rule: (d, a, ctx) => {
       const input = unwrap(a);
@@ -2154,10 +2172,10 @@ function buildHandlers(): Record<string, Handler> {
         company: company?.qualifiedTicker ?? null,
         companyName: company?.displayName ?? null,
         providerId: str(input.providerId) ?? "provider_gemini",
-        sourceType: "youtube",
+        sourceType: "youtube_url",
         sourceUrl: str(input.sourceUrl) ?? "",
         sourceLabel: str(input.sourceLabel),
-        companyResolutionStatus: companyId ? "resolved" : "pending",
+        companyResolutionStatus: companyId ? "provided" : "unresolved",
         recognizedCompanyCandidates: [],
         status: "queued",
         errorCode: null,
@@ -2221,7 +2239,7 @@ function buildHandlers(): Record<string, Handler> {
           companyId: companyId ?? job.companyId,
           company: company?.qualifiedTicker ?? job.company,
           companyName: company?.displayName ?? job.companyName,
-          companyResolutionStatus: "resolved",
+          companyResolutionStatus: "provided",
         };
         return updated;
       });

@@ -140,7 +140,7 @@ export function ReportSeasonScreen() {
                 </Button>
               </ActionRow>
 
-              <SectionHeader level="h4" title={text("Open research questions")} />
+              <SectionHeader level="h3" title={text("Open research questions")} />
               {card.openQuestions.length > 0 ? (
                 <ul className="report-season-list">
                   {card.openQuestions.map((question) => (
@@ -151,7 +151,7 @@ export function ReportSeasonScreen() {
                 <Hint>{text("None yet")}</Hint>
               )}
 
-              <SectionHeader level="h4" title={text("Unresolved claims")} />
+              <SectionHeader level="h3" title={text("Unresolved claims")} />
               <div className="report-season-claim-counts">
                 <StatusChip tone="danger">{`${text("Due")}: ${card.unresolvedClaims.due.length}`}</StatusChip>
                 <StatusChip tone="warn">{`${text("Overdue")}: ${card.unresolvedClaims.overdue.length}`}</StatusChip>
@@ -169,7 +169,7 @@ export function ReportSeasonScreen() {
             </div>
 
             <div className="report-season-card-extended">
-              <SectionHeader level="h4" title={text("Last-period KPIs")} />
+              <SectionHeader level="h3" title={text("Last-period KPIs")} />
               {card.lastPeriodKpis.length > 0 ? (
                 <InfoGrid
                   ariaLabel={text("Last-period KPIs")}
@@ -182,7 +182,7 @@ export function ReportSeasonScreen() {
                 <Hint>{text("No KPIs from the last reported period.")}</Hint>
               )}
 
-              <SectionHeader level="h4" title={text("Recent evidence")} />
+              <SectionHeader level="h3" title={text("Recent evidence")} />
               {card.recentEvidence.length > 0 ? (
                 <ul className="ui-list-rows">
                   {card.recentEvidence.map((item) => (
@@ -259,7 +259,7 @@ export function ReportSeasonScreen() {
 
         <section className="report-season-section" aria-label={text("Upcoming reports")}>
           <SectionHeader
-            level="h3"
+            level="h2"
             variant="accent"
             title={text("Upcoming reports")}
             meta={String(upcoming.length)}
@@ -279,7 +279,7 @@ export function ReportSeasonScreen() {
 
         {past.length > 0 ? (
           <section className="report-season-section" aria-label={text("Past reports")}>
-            <SectionHeader level="h3" variant="accent" title={text("Past reports")} meta={String(past.length)} />
+            <SectionHeader level="h2" variant="accent" title={text("Past reports")} meta={String(past.length)} />
             <div className="report-season-rows">
               {past.map((entry) => renderEntry(entry, false))}
             </div>

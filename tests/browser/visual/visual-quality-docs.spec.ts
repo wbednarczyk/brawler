@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "../helpers/harness";
+import { test, expect, openApp, setPaneSize, expectTextFits } from "../helpers/harness";
 import { shootPanel, shootRegion } from "./helpers";
 import type { Locator, Page } from "@playwright/test";
 
@@ -91,5 +91,21 @@ test.describe("visual — quality + report documents", () => {
     const list = capture.locator(".coverage-uncrosswalked-concepts");
     await expect(list).toBeVisible();
     await shootRegion(page, pane, list, "coverage-unnamed-positions");
+
+    // #417 class: the title, the positions counter and the `Show in
+    // Fundamentals` action must never clip mid-word ("2 posi…", "Show in
+    // Fundamen…"). Ellipsis is tolerated only on the title; the counter and
+    // the action label must actually fit. 260px is the pane width at which
+    // this panel's own content column (not the pane itself) narrows enough
+    // to squeeze the title below its natural width — the real trigger for
+    // the #417 mid-word-clip class (root cause: `.ui-section-title`, a
+    // shared `src/ui` primitive, had no explicit grid track, so its `h3`
+    // child ignored the shrunk flex-item box around it).
+    await setPaneSize(page, { width: 260, height: 900, pane });
+    await expect(list.locator("h3 [data-ux-text-fit]")).toBeVisible();
+    await expectTextFits(list.locator("h3 [data-ux-text-fit]"), { allowEllipsis: true });
+    await expectTextFits(
+      list.locator(".ui-section-header-meta [data-ux-text-fit], .coverage-uncrosswalked-list [data-ux-text-fit]"),
+    );
   });
 });

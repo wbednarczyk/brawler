@@ -55,3 +55,21 @@ export function collectEmptyStates(root: HTMLElement): string[] {
     (node) => node.getAttribute("data-empty-kind") ?? "",
   );
 }
+
+/**
+ * F4b S1 (decision 5): a demoted button loses `data-ux-primary-action` AND
+ * `variant="primary"` TOGETHER — the browser helpers (`interactionContracts.ts`)
+ * count the two markers independently, so nothing there catches them landing
+ * on two different elements. Asserts every `data-ux-primary-action="true"`
+ * element also carries `data-ui-button-variant="primary"`, and vice versa.
+ */
+export function expectPrimaryMarkerMatchesVariant(root: HTMLElement): void {
+  const marked = Array.from(root.querySelectorAll('[data-ux-primary-action="true"]'));
+  for (const node of marked) {
+    expect(node.getAttribute("data-ui-button-variant")).toBe("primary");
+  }
+  const primaryVariant = Array.from(root.querySelectorAll('[data-ui-button-variant="primary"]'));
+  for (const node of primaryVariant) {
+    expect(node.getAttribute("data-ux-primary-action")).toBe("true");
+  }
+}

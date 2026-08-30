@@ -169,6 +169,7 @@ export function CoverageUncrosswalkedConcepts({ companyId, reloadKey = 0 }: Prop
                     disabled={busy}
                     onClick={() => promote(row)}
                     aria-label={`${text("Show in Fundamentals")} — ${row.humanLabel}`}
+                    data-ux-text-fit="true"
                   >
                     {busy ? text("Adding…") : text("Show in Fundamentals")}
                   </Button>
@@ -191,11 +192,11 @@ export function CoverageUncrosswalkedConcepts({ companyId, reloadKey = 0 }: Prop
     >
       <SectionHeader
         level="h3"
-        title={text("Positions the program doesn't know yet")}
+        title={<span data-ux-text-fit="true">{text("Positions the program doesn't know yet")}</span>}
         meta={
-          count === undefined
-            ? undefined
-            : `${count} ${pluralNoun(locale, count, CONCEPT_FORMS)}`
+          count === undefined ? undefined : (
+            <span data-ux-text-fit="true">{`${count} ${pluralNoun(locale, count, CONCEPT_FORMS)}`}</span>
+          )
         }
       />
       <Hint>
