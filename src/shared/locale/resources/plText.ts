@@ -2179,7 +2179,4 @@ export const plText: Record<string, string> = {
   "Show all watchlists": "Pokaż wszystkie listy",
   "No upcoming reports": "Brak nadchodzących raportów",
   "No past reports yet": "Brak minionych raportów",
-  "Report upcoming": "Nadchodzący",
-  "Report prepared": "Przygotowany",
-  "Report reviewed": "Przejrzany",
 };

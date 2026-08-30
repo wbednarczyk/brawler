@@ -78,7 +78,7 @@ test.describe("J4 — report-season preparation", { tag: "@journey" }, () => {
 
     // Mark as prepared — the done-well end state for a near-report company.
     await j.click(card.getByRole("button", { name: "Mark as prepared" }));
-    await expect(layout.getByText("Report prepared", { exact: true }).first()).toBeVisible();
+    await expect(layout.getByText("Prepared", { exact: true }).first()).toBeVisible();
     await expectNoPageOverflow(page);
 
     await j.assertBudget();
