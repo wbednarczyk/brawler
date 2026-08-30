@@ -55,10 +55,9 @@ test.describe("visual — research / events / report season", () => {
 
   // F4b S3: the empty-week invitation (decision 4) — navigate two weeks
   // ahead of the seeded data so the displayed week has no events, matching
-  // the state the redesign's empty-state panel actually renders. A distinct
-  // screenshot name (`events-empty`, not `events`) avoids colliding with the
-  // populated baseline above — Playwright's default snapshot naming has no
-  // room for a `state` segment (`{arg}-{tier}-{project}-{platform}.png`).
+  // the state the redesign's empty-state panel actually renders. Shot as the
+  // catalog's `events` cell in state `empty` (the helper names the baseline
+  // `events-empty-<tier>`), so the visual-catalog guard sees one screen.
   test("Events empty week across pane tiers", async ({ page }) => {
     await openApp(page);
     const pane = await openEvents(page);
@@ -66,7 +65,7 @@ test.describe("visual — research / events / report season", () => {
     await nextWeek.click();
     await nextWeek.click();
     await expect(pane.locator(".event-week-empty-panel")).toBeVisible();
-    await shootPanel(page, pane, "events-empty", { state: "empty" });
+    await shootPanel(page, pane, "events", { state: "empty" });
   });
 
   test("Report Season across pane tiers", async ({ page }) => {
