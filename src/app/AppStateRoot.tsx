@@ -141,7 +141,6 @@ import type {
   Theme,
   TranscriptJob,
   TranscriptSegment,
-  UnmatchedSourceItem,
   UserSettings,
   Watchlist,
   WatchlistMembership,
@@ -403,15 +402,6 @@ export function AppStateRoot({
   const [nextRegistryRefreshAt, setNextRegistryRefreshAt] = useState<
     number | null
   >(null);
-  const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<
-    Record<string, UnmatchedSourceItem[]>
-  >({});
-  const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<
-    string | null
-  >(null);
-  const [expandedUnmatchedAdapters, setExpandedUnmatchedAdapters] = useState<
-    Record<string, boolean>
-  >({});
   const [companyRegistryEntries, setCompanyRegistryEntries] = useState<
     CompanyRegistryEntry[]
   >([]);
@@ -642,7 +632,6 @@ export function AppStateRoot({
     refreshSettings,
     refreshSignals,
     refreshSourceAdapters,
-    refreshUnmatchedSourceItems,
     refreshWatchlistMemberships,
     refreshWatchlists,
   } = useAppDataController({
@@ -670,8 +659,6 @@ export function AppStateRoot({
     setSourceAdapters,
     setSourceAdaptersError,
     setTheme,
-    setUnmatchedSourceItems,
-    setUnmatchedSourceItemsError,
     setWatchlistMemberships,
     setWatchlists,
     setWatchlistsError,
@@ -702,7 +689,6 @@ export function AppStateRoot({
     refreshFeedItems,
     refreshSignals,
     refreshSourceAdapters,
-    refreshUnmatchedSourceItems,
     onManualRefreshSuccess: () =>
       toast.show({ message: text("Sources refreshed"), tone: "positive" }),
     scheduledSourceAdapters,
@@ -1085,15 +1071,12 @@ export function AppStateRoot({
     toggleCompanyRegistryList,
     toggleSourceAdapter,
     toggleSourceAdapterFromKeyboard,
-    toggleUnmatchedSourceItems,
   } = useSourceDisplayController({
     nextRegistryRefreshAt,
     nextSourceRefreshAtByAdapterId,
     refreshCompanyRegistryEntries,
-    refreshUnmatchedSourceItems,
     setActiveSection,
     setCompanyRegistryListExpanded,
-    setExpandedUnmatchedAdapters,
     setSelectedSourceAdapterId,
     settings,
     sourceAdapters,
@@ -2000,16 +1983,12 @@ export function AppStateRoot({
                     isCompanyRegistryListExpanded,
                     companyRegistrySearch,
                     addingRegistryTicker,
-                    unmatchedSourceItems,
-                    unmatchedSourceItemsError,
-                    expandedUnmatchedAdapters,
                     refreshSources,
                     refreshCompanyRegistry,
                     setSourceEnabled,
                     toggleSourceAdapter,
                     toggleSourceAdapterFromKeyboard,
                     toggleCompanyRegistryList,
-                    toggleUnmatchedSourceItems,
                     setCompanyRegistrySearch,
                     addCompanyFromRegistry,
                     openExternalUrl,

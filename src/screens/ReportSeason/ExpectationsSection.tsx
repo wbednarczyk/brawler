@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Check, Pencil, PenLine, Plus, X } from "lucide-react";
 import { useLocale } from "../../shared/locale";
+import { localizedKpiLabelForKey } from "../../shared/locale/kpiLabels";
 import {
+  ActionButton,
   ActionRow,
-  Button,
+  EmptyState,
   ErrorText,
-  Hint,
   SectionHeader,
   SelectField,
   StatusChip,
@@ -44,6 +45,13 @@ type ExpectationsSectionProps = {
   kpis: PreReportKpi[];
   state: ExpectationEntryState | undefined;
   busy: boolean;
+  /** F4b S4 (contract § Report Season): the card-level primary choreography
+   * lives in `ReportSeasonScreen` (it also marks `Mark as prepared`) — this
+   * section only renders what it's told is primary in this state. */
+  addPrimary: boolean;
+  saveVerdictPrimary: boolean;
+  composerOpen: boolean;
+  onComposerOpenChange: (open: boolean) => void;
   onWrite: (draft: ExpectationDraft) => Promise<void>;
   onResolve: (note: string) => Promise<void>;
 };
@@ -57,9 +65,14 @@ export function ExpectationsSection({
   kpis,
   state,
   busy,
+  addPrimary,
+  saveVerdictPrimary,
+  composerOpen,
+  onComposerOpenChange,
   onWrite,
   onResolve,
 }: ExpectationsSectionProps) {
+  const { locale } = useLocale();
   const expectation = state?.expectation ?? null;
   const review = state?.review ?? null;
   const frozen = review?.factsAvailable ?? false;
@@ -69,8 +82,9 @@ export function ExpectationsSection({
       <ReviewSurface
         review={review}
         busy={busy}
+        primary={saveVerdictPrimary}
+        locale={locale}
         onResolve={onResolve}
-        comparatorSymbol={comparatorSymbol}
       />
     );
   }
@@ -81,6 +95,9 @@ export function ExpectationsSection({
       kpis={kpis}
       expectation={expectation}
       busy={busy}
+      addPrimary={addPrimary}
+      open={composerOpen}
+      onOpenChange={onComposerOpenChange}
       onWrite={onWrite}
     />
   );
@@ -93,16 +110,21 @@ function ExpectationEditor({
   kpis,
   expectation,
   busy,
+  addPrimary,
+  open,
+  onOpenChange,
   onWrite,
 }: {
   entry: ReportSeasonEntry;
   kpis: PreReportKpi[];
   expectation: ReportExpectation | null;
   busy: boolean;
+  addPrimary: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onWrite: (draft: ExpectationDraft) => Promise<void>;
 }) {
-  const { text } = useLocale();
-  const [open, setOpen] = useState(false);
+  const { locale, text } = useLocale();
   const defaultYear = useMemo(() => {
     const parsed = Number.parseInt(entry.eventDate.slice(0, 4), 10);
     return Number.isFinite(parsed) ? String(parsed) : "";
@@ -128,7 +150,7 @@ function ExpectationEditor({
         : [],
     );
     setFormError(null);
-    setOpen(true);
+    onOpenChange(true);
   }
 
   const yearValid = /^\d{4}$/.test(fiscalYear.trim());
@@ -155,7 +177,7 @@ function ExpectationEditor({
         stanceMd: stanceMd.trim(),
         metrics,
       });
-      setOpen(false);
+      onOpenChange(false);
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -176,33 +198,39 @@ function ExpectationEditor({
               <ul className="report-season-expectation-metrics">
                 {expectation.metrics.map((metric) => (
                   <li key={metric.id}>
-                    {metric.metricKey} {comparatorSymbol(metric.comparator)} {metric.expectedValue}
+                    {localizedKpiLabelForKey(metric.metricKey, locale)} {comparatorSymbol(metric.comparator)}{" "}
+                    {metric.expectedValue}
                     {metric.unit ? ` ${metric.unit}` : ""}
                   </li>
                 ))}
               </ul>
             ) : null}
             <ActionRow>
-              <Button variant="secondary" onClick={openComposer}>
+              <ActionButton verb="edit" variant="secondary" onClick={openComposer}>
                 <Pencil size={14} />
                 {text("Edit expectations")}
-              </Button>
+              </ActionButton>
             </ActionRow>
           </>
         ) : (
-          <>
-            <Hint>
-              {text(
-                "Record what you expect before the report lands — it freezes once the results are in.",
-              )}
-            </Hint>
-            <ActionRow>
-              <Button variant="primary" onClick={openComposer}>
+          <EmptyState
+            kind="invitation"
+            title={text("No expectations yet")}
+            source={text(
+              "Record what you expect before the report lands — it freezes once the results are in.",
+            )}
+            action={
+              <ActionButton
+                verb="add"
+                variant={addPrimary ? "primary" : "secondary"}
+                data-ux-primary-action={addPrimary ? "true" : undefined}
+                onClick={openComposer}
+              >
                 <PenLine size={14} />
-                {text("Write expectations")}
-              </Button>
-            </ActionRow>
-          </>
+                {text("Add expectations")}
+              </ActionButton>
+            }
+          />
         )}
       </div>
     );
@@ -264,7 +292,7 @@ function ExpectationEditor({
               ))}
             </SelectField>
             <SelectField
-              label={text("Comparator")}
+              label={text("Direction")}
               value={row.comparator}
               onChange={(event) =>
                 setRows((current) =>
@@ -292,38 +320,46 @@ function ExpectationEditor({
                 )
               }
             />
-            <Button
+            <ActionButton
+              verb="remove"
               variant="icon"
               aria-label={text("Remove metric")}
               onClick={() => setRows((current) => current.filter((_, i) => i !== index))}
             >
               <X size={14} />
-            </Button>
+            </ActionButton>
           </div>
         ))}
 
         <ActionRow>
-          <Button
+          <ActionButton
+            verb="add"
             variant="minimal"
             onClick={() =>
               setRows((current) => [...current, { metricKey: "", comparator: "gte", expectedValue: "" }])
             }
           >
             <Plus size={14} />
-            {text("Add metric expectation")}
-          </Button>
+            {text("Add metric")}
+          </ActionButton>
         </ActionRow>
 
         {formError ? <ErrorText>{formError}</ErrorText> : null}
 
         <ActionRow>
-          <Button variant="primary" disabled={!canSave} onClick={() => void submit()}>
+          <ActionButton
+            verb="save"
+            variant="primary"
+            data-ux-primary-action="true"
+            disabled={!canSave}
+            onClick={() => void submit()}
+          >
             <Check size={14} />
-            {text("Save expectations")}
-          </Button>
-          <Button variant="minimal" onClick={() => setOpen(false)}>
+            {text("Save")}
+          </ActionButton>
+          <ActionButton kind="control" variant="minimal" onClick={() => onOpenChange(false)}>
             {text("Cancel")}
-          </Button>
+          </ActionButton>
         </ActionRow>
       </div>
     </div>
@@ -335,13 +371,15 @@ function ExpectationEditor({
 function ReviewSurface({
   review,
   busy,
+  primary,
+  locale,
   onResolve,
-  comparatorSymbol: symbol,
 }: {
   review: ExpectationReview;
   busy: boolean;
+  primary: boolean;
+  locale: "en" | "pl";
   onResolve: (note: string) => Promise<void>;
-  comparatorSymbol: (comparator: string) => string;
 }) {
   const { text } = useLocale();
   const [note, setNote] = useState("");
@@ -372,7 +410,7 @@ function ReviewSurface({
       <SectionHeader
         level="h3"
         title={text("Expectations vs actuals")}
-        meta={text("Frozen — the report has landed")}
+        meta={text("Locked — the report is in")}
       />
       <MarkdownNoteBody body={review.stanceMd} ariaLabel={text("Your stance")} />
 
@@ -391,9 +429,9 @@ function ReviewSurface({
           </div>
           {review.metrics.map((metric, index) => (
             <div className="report-season-expectation-review-row" role="row" key={`${metric.metricKey}-${index}`}>
-              <span role="cell">{metric.metricKey}</span>
+              <span role="cell">{localizedKpiLabelForKey(metric.metricKey, locale)}</span>
               <span role="cell">
-                {symbol(metric.comparator)} {metric.expectedValue}
+                {comparatorSymbol(metric.comparator)} {metric.expectedValue}
                 {metric.unit ? ` ${metric.unit}` : ""}
               </span>
               <span role="cell">
@@ -425,14 +463,16 @@ function ReviewSurface({
           />
           {formError ? <ErrorText>{formError}</ErrorText> : null}
           <ActionRow>
-            <Button
-              variant="primary"
+            <ActionButton
+              verb="save"
+              variant={primary ? "primary" : "secondary"}
+              data-ux-primary-action={primary ? "true" : undefined}
               disabled={note.trim() === "" || busy}
               onClick={() => void submit()}
             >
               <Check size={14} />
               {text("Save verdict")}
-            </Button>
+            </ActionButton>
           </ActionRow>
         </>
       )}

@@ -1,4 +1,5 @@
 import { test, expect, openApp, openScreen, setPaneSize, resetPaneSize, expectNoPageOverflow, expectNoOverlap } from "./helpers/harness";
+import { expectFilledAtRest } from "./helpers/interactionContracts";
 import type { Locator, Page } from "@playwright/test";
 
 // U7-D panel density contracts (ADR 0076 D6): Research, Events, Report Season.
@@ -235,9 +236,9 @@ test.describe("panel density — Research / Events / Report Season", { tag: "@cl
     const pane = await openReportSeason(page);
     await setPaneSize(page, { ...TIER_SIZE.M, pane });
 
-    await pane.getByRole("button", { name: /Write expectations/ }).click();
+    await pane.getByRole("button", { name: /Add expectations/ }).click();
     await expect(pane.locator(".report-season-expectation-composer")).toBeVisible();
-    await pane.getByRole("button", { name: /Add metric expectation/ }).click();
+    await pane.getByRole("button", { name: /Add metric/ }).click();
     await expect(pane.locator(".report-season-metric-row")).toBeVisible();
 
     // The pre-report card scrolls internally; assert its own scroll container plus
@@ -249,5 +250,27 @@ test.describe("panel density — Research / Events / Report Season", { tag: "@cl
     );
     expect(overflow).toBeLessThanOrEqual(1);
     await expectNoPageOverflow(page);
+  });
+
+  // F4b S4 (contract § Report Season, shared guardrail table): the Upcoming
+  // and Past sections never overlap, and exactly one primary action renders
+  // (the expanded card's own choreography — no expectation yet ⇒ `Add
+  // expectations` — contract § Report Season decision 5-style card
+  // primary), across S/M/L.
+  test("Upcoming and Past sections never overlap, and exactly one primary renders, at S/M/L", async ({ page }) => {
+    await openApp(page);
+    const pane = await openReportSeason(page);
+    const sections = pane.locator(".report-season-section");
+
+    for (const tier of ["S", "M", "L"] as const) {
+      await setPaneSize(page, { ...TIER_SIZE[tier], pane });
+      const sectionCount = await sections.count();
+      if (sectionCount > 1) {
+        await expectNoOverlap(sections.nth(0), sections.nth(1), `Upcoming vs Past reports at ${tier}`);
+      }
+      await expectNoPageOverflow(page);
+      await expectFilledAtRest(pane, { max: 1 });
+      await resetPaneSize(page, pane);
+    }
   });
 });

@@ -1,16 +1,15 @@
 import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import type { SourceAdapter, UserSettings } from "../api/types";
 import { formatPollInterval } from "../shared/format/datetime";
+import { useLocale } from "../shared/locale";
 import type { Section } from "./navigation";
 
 type SourceDisplayControllerInput = {
   nextRegistryRefreshAt: number | null;
   nextSourceRefreshAtByAdapterId: Record<string, number>;
   refreshCompanyRegistryEntries: () => Promise<void>;
-  refreshUnmatchedSourceItems: (adapterId: string) => Promise<void>;
   setActiveSection: Dispatch<SetStateAction<Section>>;
   setCompanyRegistryListExpanded: Dispatch<SetStateAction<boolean>>;
-  setExpandedUnmatchedAdapters: Dispatch<SetStateAction<Record<string, boolean>>>;
   setSelectedSourceAdapterId: Dispatch<SetStateAction<string | null>>;
   settings: UserSettings | null;
   sourceAdapters: SourceAdapter[];
@@ -21,15 +20,15 @@ export function useSourceDisplayController({
   nextRegistryRefreshAt,
   nextSourceRefreshAtByAdapterId,
   refreshCompanyRegistryEntries,
-  refreshUnmatchedSourceItems,
   setActiveSection,
   setCompanyRegistryListExpanded,
-  setExpandedUnmatchedAdapters,
   setSelectedSourceAdapterId,
   settings,
   sourceAdapters,
   sourceRefreshFailureCount,
 }: SourceDisplayControllerInput) {
+  const { text } = useLocale();
+
   function isCompanyDirectorySource(adapter: SourceAdapter) {
     return adapter.sourceType === "company_registry";
   }
@@ -40,14 +39,6 @@ export function useSourceDisplayController({
     if (adapter && isCompanyDirectorySource(adapter)) {
       refreshCompanyRegistryEntries();
     }
-  }
-
-  function toggleUnmatchedSourceItems(adapterId: string) {
-    setExpandedUnmatchedAdapters((current) => ({
-      ...current,
-      [adapterId]: !current[adapterId],
-    }));
-    refreshUnmatchedSourceItems(adapterId);
   }
 
   function toggleCompanyRegistryList() {
@@ -79,28 +70,33 @@ export function useSourceDisplayController({
     }
   }
 
+  // F4b S4 (contract § Sources telemetry pass): the cadence line interpolates
+  // a formatted interval, so the composed sentence can never round-trip
+  // through the flat `text()` string map at the call site — only the static
+  // words are translated here, the dynamic pieces are concatenated after.
+  // "backoff" retires in favor of naming the retry (dev-vocabulary guardrail).
   function formatSourceScheduler(adapter: SourceAdapter) {
     if (!adapter.enabled) {
-      return "Off";
+      return text("Off");
     }
 
     if (isCompanyDirectorySource(adapter)) {
       return adapter.defaultPollIntervalSeconds > 0
-        ? `In-app · ${formatPollInterval(adapter.defaultPollIntervalSeconds)}`
-        : "Off";
+        ? `${text("Automatically every")} ${formatPollInterval(adapter.defaultPollIntervalSeconds)}`
+        : text("Off");
     }
 
     if (!settings || settings.pollIntervalSeconds <= 0) {
-      return "Off";
+      return text("Off");
     }
 
     if (sourceRefreshFailureCount >= 2) {
-      return `In-app · ${formatPollInterval(settings.pollIntervalSeconds)} · backoff ${formatPollInterval(
-        Math.min(settings.pollIntervalSeconds * 2, 3600),
-      )}`;
+      return `${text("Automatically every")} ${formatPollInterval(settings.pollIntervalSeconds)} · ${text(
+        "retry in",
+      )} ${formatPollInterval(Math.min(settings.pollIntervalSeconds * 2, 3600))}`;
     }
 
-    return `In-app · ${formatPollInterval(settings.pollIntervalSeconds)}`;
+    return `${text("Automatically every")} ${formatPollInterval(settings.pollIntervalSeconds)}`;
   }
 
   function formatSourceTrigger(adapter: SourceAdapter) {
@@ -117,18 +113,18 @@ export function useSourceDisplayController({
 
   function formatNextRefresh(adapter: SourceAdapter) {
     if (!adapter.enabled) {
-      return "Off";
+      return text("Off");
     }
 
     const nextRefreshAt =
       isCompanyDirectorySource(adapter) ? nextRegistryRefreshAt : nextSourceRefreshAtByAdapterId[adapter.id];
 
     if (!nextRefreshAt) {
-      return "Off";
+      return text("Off");
     }
 
     const seconds = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
-    return `In ${formatPollInterval(seconds)}`;
+    return `${text("next in")} ${formatPollInterval(seconds)}`;
   }
 
   return {
@@ -139,6 +135,5 @@ export function useSourceDisplayController({
     toggleCompanyRegistryList,
     toggleSourceAdapter,
     toggleSourceAdapterFromKeyboard,
-    toggleUnmatchedSourceItems,
   };
 }

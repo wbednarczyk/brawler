@@ -17,7 +17,6 @@ type RefreshCallbacks = {
   refreshFeedItems: () => Promise<void>;
   refreshSignals: () => Promise<void>;
   refreshSourceAdapters: () => Promise<void>;
-  refreshUnmatchedSourceItems: (adapterId: string) => Promise<void>;
   /**
    * Refetch the app-level attention state (ADR 0097 dec. 6) — a source refresh
    * can raise attention events (reconciliation, fired alerts), so the shared
@@ -109,7 +108,6 @@ export function useSourceRefreshController({
   refreshFeedItems,
   refreshSignals,
   refreshSourceAdapters,
-  refreshUnmatchedSourceItems,
   refreshAttention,
   onRefreshCompletion,
   onManualRefreshSuccess,
@@ -142,7 +140,7 @@ export function useSourceRefreshController({
     refreshSourceAdapters();
   }
 
-  function refreshViewsAfterSourceRefresh(adapterId: string, includeFeed: boolean) {
+  function refreshViewsAfterSourceRefresh(includeFeed: boolean) {
     return Promise.all([
       // Official-report ingestion classifies filings into signals, so reload
       // signals whenever the feed is reloaded — otherwise badges only appear
@@ -151,7 +149,6 @@ export function useSourceRefreshController({
       refreshCompanyEvents(),
       refreshSourceAdapters(),
       refreshDatabaseStatus(),
-      refreshUnmatchedSourceItems(adapterId),
       // Attention events ride every ingestion (reconciliation, fired alerts) —
       // reload the app-level state so the Today badge/stream stay current.
       Promise.resolve(refreshAttention()),
@@ -195,7 +192,7 @@ export function useSourceRefreshController({
         setSourceRefreshResult(response);
         setSourceRefreshFailureCount(0);
         setSelectedSourceAdapterId(response.adapterId);
-        return refreshViewsAfterSourceRefresh(response.adapterId, true);
+        return refreshViewsAfterSourceRefresh(true);
       })
       .then(() => {
         finishSourceRefresh();
@@ -260,7 +257,7 @@ export function useSourceRefreshController({
         setSourceRefreshResult(response);
         setSourceRefreshFailureCount(0);
         setSelectedSourceAdapterId(response.adapterId);
-        return refreshViewsAfterSourceRefresh(response.adapterId, true);
+        return refreshViewsAfterSourceRefresh(true);
       })
       .then(finishSourceRefresh)
       .catch(failSourceRefresh)
@@ -297,7 +294,7 @@ export function useSourceRefreshController({
         setSourceRefreshResult(summary);
         setSourceRefreshFailureCount(0);
         setSelectedSourceAdapterId("bankier-kalendarium-html");
-        return refreshViewsAfterSourceRefresh("bankier-kalendarium-html", false);
+        return refreshViewsAfterSourceRefresh(false);
       })
       .then(finishSourceRefresh)
       .catch(failSourceRefresh)
@@ -326,7 +323,7 @@ export function useSourceRefreshController({
         setSourceRefreshResult(response);
         setSourceRefreshFailureCount(0);
         setSelectedSourceAdapterId(response.adapterId);
-        return refreshViewsAfterSourceRefresh(response.adapterId, false);
+        return refreshViewsAfterSourceRefresh(false);
       })
       .then(finishSourceRefresh)
       .catch(failSourceRefresh)
@@ -358,7 +355,7 @@ export function useSourceRefreshController({
       .then((response) => {
         setSourceRefreshResult(response);
         setSourceRefreshFailureCount(0);
-        return refreshViewsAfterSourceRefresh(response.adapterId, true);
+        return refreshViewsAfterSourceRefresh(true);
       })
       .then(finishSourceRefresh)
       .catch(failSourceRefresh)

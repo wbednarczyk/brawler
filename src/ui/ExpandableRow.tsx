@@ -43,6 +43,11 @@ export function ExpandableRow({
       aria-expanded={isExpanded}
       aria-label={label}
       className={rowClassName}
+      // Every consumer is a disclosure toggle (ADR 0104 dec 3: an
+      // expand/collapse affordance is a filter-like control, never a
+      // dictionary-verb command) — classified once here rather than at each
+      // call site (F4b S4, Report Season row toggle).
+      data-action-kind="control"
       onClick={onToggle}
       type="button"
     >

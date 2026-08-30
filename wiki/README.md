@@ -85,6 +85,13 @@ per feature.
   the ESPI witness that audits your official-report feed and warns when the
   primary source missed a disclosure; the KNF short-selling register as a
   signal + dashboard panel; and the auditor-opinion red-flag signal.
+- **[Sources](sources.md)** — the source status/diagnostics screen: what
+  every official-report, calendar, media, and company-directory feed is,
+  its health, its schedule, and its last-run result; refresh one or all,
+  add companies from a directory source.
+- **[Report Season](report-season.md)** — a per-company checklist for the
+  run-up to each report: prepared/reviewed status, open research questions
+  and unresolved claims, last-period KPIs, and pre-report expectations.
 - **[The MCP server](mcp-server.md)** — let an AI assistant (Claude Code,
   Claude Desktop, …) work with your research through a localhost-only connector:
   read the whole workspace, and — when you allow writes — record notes, claims,

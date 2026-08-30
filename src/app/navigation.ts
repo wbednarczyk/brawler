@@ -3,6 +3,8 @@ import {
   BellRing,
   Bug,
   Building2,
+  CalendarClock,
+  CalendarDays,
   Home,
   Inbox,
   LayoutPanelTop,
@@ -12,10 +14,11 @@ import {
 } from "lucide-react";
 import type { LocaleKey } from "../shared/locale";
 
-// The full set of app sections. ReportSeason, Research, Notebooks, and Events
-// are not top-level nav destinations — they are reached via the palette or
-// deep links, but remain valid `activeSection` values because AppStateRoot
-// still renders them.
+// The full set of app sections. Research and Notebooks are not top-level nav
+// destinations — they are reached via the palette or deep links, but remain
+// valid `activeSection` values because AppStateRoot still renders them.
+// Events and ReportSeason joined the Library nav in F4b S4 (contract §
+// Decisions #1).
 export type Section =
   | "Today"
   | "Inbox"
@@ -56,7 +59,7 @@ export type NavGroup = {
 //   • Modes — the investor's jobs as top-level destinations: Today, Inbox,
 //     Spółka (opens the last-viewed company).
 //   • Library — the named reference surfaces the modes draw on (Companies,
-//     Watchlists, Alerts, Transcripts, Sources).
+//     Watchlists, Alerts, Events, Report Season, Transcripts, Sources).
 //   • Utilities — Settings + Diagnostics (developer-gated).
 // Pinned/favorite companies render as a data-driven group between Modes
 // and Library (built at runtime from `UserSettings.pinnedCompanyIds`).
@@ -82,6 +85,11 @@ export const navGroups: NavGroup[] = [
       // Alerts (ADR 0068 T3): a Library destination — the alert-rule manager +
       // fired-alerts review are a reference surface, not a preference.
       { label: "Alerts", icon: BellRing, localeKey: "nav.alerts" },
+      // Events + ReportSeason (F4b S4, contract § Decisions #1): join the
+      // Library nav; their palette `Open screen: …` entries stay (J4/J7 entry
+      // paths, AppShell.tsx SCREEN_PALETTE_ENTRIES).
+      { label: "Events", icon: CalendarDays, localeKey: "nav.events" },
+      { label: "ReportSeason", icon: CalendarClock, localeKey: "nav.reportSeason" },
       { label: "Transcripts", icon: Video, localeKey: "nav.transcripts" },
       { label: "Sources", icon: Activity, localeKey: "nav.sources" },
     ],

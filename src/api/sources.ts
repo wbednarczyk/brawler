@@ -6,7 +6,6 @@ import type {
   SourceAdapter,
   SourceIngestionResult,
   SourceRefreshTrigger,
-  UnmatchedSourceItem,
 } from "./types";
 
 // Input types GENERATED from src-tauri/src/commands/sources.rs via ts-rs (ADR 0048).
@@ -37,10 +36,6 @@ export function listSourceAdapters(input?: ListSourceAdaptersInput) {
 
 export function setSourceAdapterEnabled(input: SetSourceEnabledInput) {
   return callCommand<SourceAdapter>("set_source_adapter_enabled", { input });
-}
-
-export function listUnmatchedSourceItems(adapterId: string) {
-  return callCommand<UnmatchedSourceItem[]>("list_unmatched_source_items", { adapterId });
 }
 
 export function listCompanyRegistryEntries() {

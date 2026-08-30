@@ -82,29 +82,10 @@ function compareSourceAdapters(left: SourceAdapter, right: SourceAdapter) {
   return left.displayName.localeCompare(right.displayName);
 }
 
-export function formatSourceLastResult(adapter: SourceAdapter) {
-  if (adapter.lastItemsFetched === null) {
-    return "None";
-  }
-
-  if (adapter.sourceType === "company_registry") {
-    return `${adapter.lastItemsFetched} directory entries · ${
-      adapter.lastItemsCreated ?? 0
-    } refreshed or updated`;
-  }
-
-  const listingResult = `${adapter.lastItemsFetched} fetched · ${adapter.lastItemsCreated ?? 0} created · ${
-    adapter.lastItemsMatched ?? 0
-  } matched · ${adapter.lastItemsUnmatched ?? 0} unmatched`;
-
-  if (adapter.lastDetailItemsAttempted === null) {
-    return listingResult;
-  }
-
-  return `${listingResult} · details ${adapter.lastDetailItemsStored ?? 0}/${
-    adapter.lastDetailItemsAttempted
-  } stored · ${adapter.lastDetailItemsFailed ?? 0} failed`;
-}
+// The plain-string sentence formerly built here now renders as
+// `SourceLastResultText` (`SourceAdapterRow.tsx`, F4b S4 contract § Sources
+// telemetry pass) — one `Figure kind="count"` per number instead of an
+// interpolated string `text()` can never round-trip.
 
 export function formatSourceType(value: string) {
   const labels: Record<string, string> = {
@@ -125,11 +106,11 @@ export function formatFetchMode(value: string) {
   const labels: Record<string, string> = {
     public_page: "Public Page",
     rss: "RSS",
-    public_json: "Public JSON",
+    public_json: "Public data",
     api: "API",
     manual: "Manual",
     authenticated: "Authenticated",
-    paywalled: "Paywalled",
+    paywalled: "Subscription",
   };
 
   return labels[value] ?? formatEnumLabel(value);
