@@ -48,6 +48,8 @@ test.describe("visual — utility screens", () => {
     await page.locator(".transcript-row").first().click();
 
     await shootPanel(page, page.locator(".workspace"), "transcripts");
+    // TODO(F4b S2): shoot the "empty" state (catalog.core.mjs already
+    // declares it) once the redesign's empty-invitation seeding lands.
   });
 
   // F4a S4b: default smoke boot already seeds a fired event + a rule (the

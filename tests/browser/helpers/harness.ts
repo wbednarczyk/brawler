@@ -255,4 +255,46 @@ export async function resetPaneSize(page: Page, pane?: Locator) {
   });
 }
 
+// #417 class: a tagged text element (title/counter/action label) must fit its
+// own box — never clip mid-word ("2 posi…", "Show in Fundamen…"). Opt-in
+// (never a root-wide leaf scan — that would flag sr-only text, icon buttons,
+// legitimate scrollers): apply only to elements tagged `data-ux-text-fit`.
+// Checks BOTH axes because a wrapped word that fits its width can still grow
+// past its box's height (`overflow-wrap: anywhere` cases). `allowEllipsis`
+// tolerates WIDTH overflow only when the element's computed `text-overflow`
+// is actually `ellipsis` — height still asserted either way.
+export async function expectTextFits(locator: Locator, opts: { allowEllipsis?: boolean } = {}) {
+  const { allowEllipsis = false } = opts;
+  const elements = await locator.all();
+  const offenders: string[] = [];
+  for (const element of elements) {
+    if (!(await element.isVisible())) continue;
+    const metrics = await element.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        text: (el.textContent ?? "").trim().slice(0, 60),
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        textOverflow: style.textOverflow,
+      };
+    });
+    const widthOverflow = metrics.scrollWidth - metrics.clientWidth;
+    const heightOverflow = metrics.scrollHeight - metrics.clientHeight;
+    const widthOk = widthOverflow <= 1 || (allowEllipsis && metrics.textOverflow === "ellipsis");
+    if (!widthOk) {
+      offenders.push(
+        `"${metrics.text}": width overflow ${widthOverflow}px (scrollWidth ${metrics.scrollWidth} > clientWidth ${metrics.clientWidth})`,
+      );
+    }
+    if (heightOverflow > 1) {
+      offenders.push(
+        `"${metrics.text}": height overflow ${heightOverflow}px (scrollHeight ${metrics.scrollHeight} > clientHeight ${metrics.clientHeight})`,
+      );
+    }
+  }
+  expect(offenders, `Text does not fit its box:\n${offenders.join("\n")}`).toEqual([]);
+}
+
 // Journey interaction/friction wrapper: see ./journey.ts (re-exported above).

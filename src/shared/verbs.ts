@@ -6,6 +6,9 @@
 // Library screens' action inventories (`ActionButton`, F4a contract) —
 // `create`/`rename`/`pause`/`resume`, plus `remove` as the ONLY
 // collection-removal verb (the legacy screen-copy key `Delete` is retired).
+// F4b S1 (ADR 0104 dec. 3 amendment, 2026-08-30): `edit` (enter edit mode of
+// an existing record, persisted by a later `save`), `confirm`/`reject`
+// (accept/decline a proposed record — proposals only) join the dictionary.
 export type Verb =
   | "open"
   | "apply"
@@ -19,7 +22,10 @@ export type Verb =
   | "create"
   | "rename"
   | "pause"
-  | "resume";
+  | "resume"
+  | "edit"
+  | "confirm"
+  | "reject";
 
 export const VERB_LABELS: Record<Verb, { en: string; pl: string }> = {
   open: { en: "Open", pl: "Otwórz" },
@@ -35,4 +41,7 @@ export const VERB_LABELS: Record<Verb, { en: string; pl: string }> = {
   rename: { en: "Rename", pl: "Zmień nazwę" },
   pause: { en: "Pause", pl: "Wstrzymaj" },
   resume: { en: "Resume", pl: "Wznów" },
+  edit: { en: "Edit", pl: "Zmień" },
+  confirm: { en: "Confirm", pl: "Potwierdź" },
+  reject: { en: "Reject", pl: "Odrzuć" },
 };

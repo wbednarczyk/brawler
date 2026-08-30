@@ -165,7 +165,7 @@ function ExpectationEditor({
     return (
       <div className="report-season-expectations">
         <SectionHeader
-          level="h4"
+          level="h3"
           title={text("Expectations")}
           meta={expectation ? text("Editable until the report lands") : undefined}
         />
@@ -210,7 +210,7 @@ function ExpectationEditor({
 
   return (
     <div className="report-season-expectations">
-      <SectionHeader level="h4" title={text("Expectations")} />
+      <SectionHeader level="h3" title={text("Expectations")} />
       <div className="report-season-expectation-composer">
         <div className="report-season-expectation-period">
           <TextField
@@ -370,7 +370,7 @@ function ReviewSurface({
   return (
     <div className="report-season-expectations">
       <SectionHeader
-        level="h4"
+        level="h3"
         title={text("Expectations vs actuals")}
         meta={text("Frozen — the report has landed")}
       />

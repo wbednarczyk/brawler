@@ -19,6 +19,11 @@ const LOADING = { status: "loading", data: null, error: null } as const;
  * values (e.g. `[companyId]`), not functions/class instances/undefined-y
  * shapes that don't round-trip through JSON.
  *
+ * `refetch()` returns a `Promise<void>` that resolves once its own response
+ * has been processed (state committed on success, or discarded as stale by
+ * the request-seq gate) — F4b S1, so mutation call sites can
+ * `await refetch()` before reading the reloaded state.
+ *
  * Lives under `src/shared/state` (moved from `src/app/state` in F1 S4): it
  * has no AppStateRoot/composition-root coupling — a plain React hook over a
  * fetcher callback — and `src/shared/components` consumers (this hook's
@@ -29,32 +34,30 @@ const LOADING = { status: "loading", data: null, error: null } as const;
 export function useCommandQuery<T>(
   key: readonly unknown[],
   fetcher: () => Promise<T>,
-): CommandQueryState<T> & { refetch: () => void } {
+): CommandQueryState<T> & { refetch: () => Promise<void> } {
   const [state, setState] = useState<CommandQueryState<T>>(LOADING);
   const requestSeqRef = useRef(0);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const keyJson = JSON.stringify(key);
 
-  const run = useCallback(() => {
+  const run = useCallback(async () => {
     const requestSeq = (requestSeqRef.current += 1);
     setState(LOADING);
-    fetcherRef
-      .current()
-      .then((data) => {
-        if (requestSeqRef.current === requestSeq) {
-          setState({ status: "success", data, error: null });
-        }
-      })
-      .catch((error: unknown) => {
-        if (requestSeqRef.current === requestSeq) {
-          setState({ status: "error", data: null, error });
-        }
-      });
+    try {
+      const data = await fetcherRef.current();
+      if (requestSeqRef.current === requestSeq) {
+        setState({ status: "success", data, error: null });
+      }
+    } catch (error: unknown) {
+      if (requestSeqRef.current === requestSeq) {
+        setState({ status: "error", data: null, error });
+      }
+    }
   }, []);
 
   useEffect(() => {
-    run();
+    void run();
     // No cleanup on purpose: every `run()` bumps the seq, so any earlier
     // in-flight response is already discarded observably, and React 18+
     // silently no-ops a setState that lands after unmount — an unmount

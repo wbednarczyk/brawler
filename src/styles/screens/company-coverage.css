@@ -388,6 +388,24 @@
   min-width: 0;
 }
 
+/* F4b S1 (#417 class): a bare inline `<span>` reports scrollWidth/clientWidth
+   as 0 (no box of its own to measure), so `expectTextFits` needs a genuine
+   box — `inline-block` gives it one, capped to the available column so a
+   real overflow is measurable/ellipsizable instead of silently passing. */
+.coverage-uncrosswalked-concepts [data-ux-text-fit] {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+/* The title alone may ellipsize (allowEllipsis); the positions counter and
+   the row action must actually fit — never truncated. */
+.coverage-uncrosswalked-concepts h3 [data-ux-text-fit] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Only the failure block start-aligns (its Retry button must not stretch). The
    list itself must fill the column: `justify-items: start` sized the <ul> to
    max-content, so the widest concept name pushed the action button past the

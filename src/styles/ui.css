@@ -88,6 +88,12 @@
 
 .ui-section-title {
   display: grid;
+  /* F4b S1 (#417 class): without an explicit track, an implicit auto column
+     sizes to its content's max-content width and the title silently
+     overflows this box once a flex/grid ancestor shrinks it below that
+     width (`min-width: 0` below only removes ITS OWN floor — it does
+     nothing for an undeclared child track). */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-0);
   min-width: 0;
 }
