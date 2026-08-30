@@ -276,14 +276,11 @@
   box-shadow: inset 3px 0 0 var(--warning);
 }
 
-/* De-emphasize a past date without failing WCAG contrast: the redesign's
-   plain-text card lines (type/company/source) sit directly on the card
-   background, so the OLD 0.74 opacity (calibrated for the chip-badge
-   treatment it replaced) pushed already-muted text below 4.5:1 — axe
-   flagged this on J7 (color-contrast). 0.86 keeps the de-emphasis visible
-   while staying accessible. */
+/* Past cards stay fully legible: any opacity on the card pushes the muted
+   type/company/source text under 4.5:1 on the light theme (compact-light
+   axe, F4b integration). De-emphasis comes from the border only. */
 .event-due-past {
-  opacity: 0.86;
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
 }
 
 .event-week-card:focus-visible {
