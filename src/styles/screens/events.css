@@ -346,7 +346,6 @@
   white-space: nowrap;
 }
 
-.event-week-card-topline em,
 .event-date-box em {
   display: inline-flex;
   align-items: center;
@@ -364,17 +363,28 @@
   text-align: left;
 }
 
-.event-due-today .event-week-card-topline em,
 .event-due-today .event-date-box em {
   border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
   background: color-mix(in srgb, var(--primary) 15%, var(--surface));
 }
 
-.event-due-past .event-week-card-topline em,
 .event-due-past .event-date-box em {
   border-color: color-mix(in srgb, var(--border) 72%, transparent);
   color: var(--muted);
   background: color-mix(in srgb, var(--surface) 56%, transparent);
+}
+
+/* Fix wave: the due label only carries information for today/tomorrow/soon
+   (never "Past" — a week already dimmed via .event-due-past, mockup has no
+   such chip) and reads as quiet text, not the list mode's amber chip. */
+.event-week-card-due {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.event-due-today .event-week-card-due {
+  color: var(--primary);
 }
 
 /* Card body text lines (F4b S3 contract § Events point 2): plain text,
