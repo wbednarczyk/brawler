@@ -76,7 +76,9 @@ export function WeekEventsView({
         >
           <div className="event-week-card-topline">
             <strong><TickerLabel value={event.company} /></strong>
-            {dueLabel ? <em>{dueLabel}</em> : null}
+            {dueClass !== "event-due-past" && dueLabel ? (
+              <span className="event-week-card-due">{dueLabel}</span>
+            ) : null}
           </div>
           <span className="event-week-card-type">{eventTypeLabel(event, text, locale)}</span>
           <span className="event-week-card-company">{event.companyName}</span>
