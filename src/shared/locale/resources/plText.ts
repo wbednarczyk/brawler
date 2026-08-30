@@ -2132,6 +2132,7 @@ export const plText: Record<string, string> = {
   // F4b S2 — Transcripts (docs/plans/f4b-contracts/s2-transcripts.md)
   "New transcript": "Nowa transkrypcja",
   "Recording link": "Link do nagrania",
+  "Transcript title": "Tytuł transkrypcji",
   "Company (optional)": "Spółka (opcjonalnie)",
   "Fetch transcript": "Pobierz transkrypcję",
   "Fetching…": "Pobieranie…",

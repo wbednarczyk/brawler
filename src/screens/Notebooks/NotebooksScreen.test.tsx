@@ -197,6 +197,8 @@ describe("Notebook and transcript workflows", () => {
     expect(within(transcriptJobsRegion).getByText("—")).toBeInTheDocument();
     expect(within(transcriptJobsRegion).getByRole("button", { name: "Add to notebook" })).toBeDisabled();
 
+    // Fix wave (integrator review): the picker opens on demand from "Link company".
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Link company" }));
     await user.type(screen.getByLabelText("Transcript link company lookup"), "CDR");
     const transcriptLinkSuggestions = await screen.findByLabelText("Transcript link company suggestions");
     await user.click(within(transcriptLinkSuggestions).getByRole("button", { name: /GPW:CDR/ }));

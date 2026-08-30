@@ -81,6 +81,7 @@ export function TranscriptJobComposer({
         }
       />
       <ActionButton
+        className="transcript-fetch-button"
         verb="fetch"
         type="submit"
         variant={primary === "fetch" ? "primary" : "secondary"}
@@ -94,19 +95,9 @@ export function TranscriptJobComposer({
           <span className="transcript-source-dot" aria-hidden="true" />
           {text("Gemini · key configured")}
           {" · "}
-          {/* A quiet in-line navigation link, not a screen action: not in the
-              composer's action inventory (docs/plans/frontend-v2-f4b.md §
-              Transcripts, Action inventory) — Settings stays reachable via
-              the sidebar regardless. */}
-          <a
-            href="#"
-            onClick={(event) => {
-              event.preventDefault();
-              openSettings();
-            }}
-          >
+          <ActionButton kind="destination" onClick={openSettings} variant="minimal">
             {text("Settings")}
-          </a>
+          </ActionButton>
         </p>
       ) : null}
       {transcriptJobForm.companyQuery || transcriptJobForm.companyId ? (
