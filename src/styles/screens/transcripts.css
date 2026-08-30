@@ -18,6 +18,14 @@
   background: transparent;
 }
 
+/* The one-primary-at-rest button (decision 6): a disabled state (empty URL)
+   must still read as filled — the global `button:disabled { opacity: 0.55 }`
+   (tokens.css) washes primary and secondary out to near-identical fills,
+   which is right for a quiet action but wrong for the screen's one primary. */
+.transcript-fetch-button:disabled {
+  opacity: 1;
+}
+
 .transcript-composer-url input {
   font-family: var(--font-mono, ui-monospace, monospace);
 }
@@ -80,9 +88,10 @@
 
 .transcript-row-button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px minmax(0, 190px) minmax(0, 150px);
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: var(--space-3);
+  width: 100%;
   min-width: 0;
   padding: var(--space-3) var(--space-4);
   border: 0;
@@ -156,6 +165,7 @@
   flex-direction: column;
   gap: var(--space-0);
   min-width: 0;
+  max-width: 190px;
 }
 
 .transcript-row-kv-label {
@@ -243,6 +253,23 @@
   }
 }
 
+/* Row actions (Rename/Link company/Fetch again/Remove — up to 3–4 buttons)
+   never fit alongside a readable title in an `auto` grid column below L: an
+   `auto` track claims its pre-wrap max-content width regardless of
+   `flex-wrap` on the child, which is what squeezed the title to nothing (M)
+   or overlapped it outright (S) before. Below L, actions drop to their own
+   full-width, wrapping row instead of sharing the line with the button. */
+@container pane (max-width: 759px) {
+  .transcript-row-line {
+    grid-template-columns: 1fr;
+  }
+
+  .transcript-row-actions {
+    flex-wrap: wrap;
+    padding: 0 var(--space-4) var(--space-3);
+  }
+}
+
 @container pane (max-width: 419px) {
   .transcript-segments-toggle {
     display: inline-flex;
@@ -252,8 +279,16 @@
     display: none;
   }
 
+  /* Two-row layout: title/URL row, then the status chip on its own row —
+     the fixed-width kv columns (company/figures) fold away. */
   .transcript-row-button {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    row-gap: var(--space-1);
+  }
+
+  .transcript-row-status {
+    justify-self: start;
   }
 
   .transcript-row-company,

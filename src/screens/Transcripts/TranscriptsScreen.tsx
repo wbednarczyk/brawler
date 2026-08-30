@@ -39,12 +39,16 @@ export function TranscriptsScreen() {
     transcriptLinkErrorByJobId,
     transcriptLinkInFlight,
     transcriptDeleteInFlight,
+    transcriptDescriptionDraftByJobId,
+    transcriptDescriptionErrorByJobId,
+    transcriptDescriptionSaveInFlight,
     transcriptCompanySuggestions,
     NotebookDateField,
     NotebookQuarterField,
     setTranscriptJobForm,
     setTranscriptJobCreateError,
     setTranscriptSegmentSearchByJobId,
+    setTranscriptDescriptionDraftByJobId,
     refreshTranscriptJobs,
     retryTranscriptSegments,
     createTranscriptJob,
@@ -52,6 +56,7 @@ export function TranscriptsScreen() {
     toggleTranscriptJobFromKeyboard,
     runTranscriptJob,
     deleteTranscriptJob,
+    updateTranscriptJobDescription,
     updateTranscriptLinkQuery,
     linkTranscriptJobCompany,
     toggleTranscriptSegment,
@@ -192,6 +197,7 @@ export function TranscriptsScreen() {
           }
           action={
             <ActionButton
+              className="transcript-fetch-button"
               data-ux-primary-action="true"
               disabled={transcriptJobCreateState === "refreshing" || !transcriptJobForm.url.trim()}
               form={EMPTY_COMPOSER_FORM_ID}
@@ -227,13 +233,18 @@ export function TranscriptsScreen() {
                 transcriptLinkErrorByJobId={transcriptLinkErrorByJobId}
                 transcriptLinkInFlight={transcriptLinkInFlight}
                 transcriptDeleteInFlight={transcriptDeleteInFlight}
+                transcriptDescriptionDraftByJobId={transcriptDescriptionDraftByJobId}
+                transcriptDescriptionErrorByJobId={transcriptDescriptionErrorByJobId}
+                transcriptDescriptionSaveInFlight={transcriptDescriptionSaveInFlight}
                 NotebookDateField={NotebookDateField}
                 NotebookQuarterField={NotebookQuarterField}
                 setTranscriptSegmentSearchByJobId={setTranscriptSegmentSearchByJobId}
+                setTranscriptDescriptionDraftByJobId={setTranscriptDescriptionDraftByJobId}
                 toggleTranscriptJob={toggleTranscriptJob}
                 toggleTranscriptJobFromKeyboard={toggleTranscriptJobFromKeyboard}
                 runTranscriptJob={runTranscriptJob}
                 deleteTranscriptJob={deleteTranscriptJob}
+                updateTranscriptJobDescription={updateTranscriptJobDescription}
                 updateTranscriptLinkQuery={updateTranscriptLinkQuery}
                 linkTranscriptJobCompany={linkTranscriptJobCompany}
                 toggleTranscriptSegment={toggleTranscriptSegment}

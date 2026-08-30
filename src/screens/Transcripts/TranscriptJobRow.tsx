@@ -28,13 +28,18 @@ type TranscriptJobRowProps = Pick<
   | "transcriptLinkErrorByJobId"
   | "transcriptLinkInFlight"
   | "transcriptDeleteInFlight"
+  | "transcriptDescriptionDraftByJobId"
+  | "transcriptDescriptionErrorByJobId"
+  | "transcriptDescriptionSaveInFlight"
   | "NotebookDateField"
   | "NotebookQuarterField"
   | "setTranscriptSegmentSearchByJobId"
+  | "setTranscriptDescriptionDraftByJobId"
   | "toggleTranscriptJob"
   | "toggleTranscriptJobFromKeyboard"
   | "runTranscriptJob"
   | "deleteTranscriptJob"
+  | "updateTranscriptJobDescription"
   | "updateTranscriptLinkQuery"
   | "linkTranscriptJobCompany"
   | "toggleTranscriptSegment"
@@ -72,13 +77,18 @@ export function TranscriptJobRow({
   transcriptLinkErrorByJobId,
   transcriptLinkInFlight,
   transcriptDeleteInFlight,
+  transcriptDescriptionDraftByJobId,
+  transcriptDescriptionErrorByJobId,
+  transcriptDescriptionSaveInFlight,
   NotebookDateField,
   NotebookQuarterField,
   setTranscriptSegmentSearchByJobId,
+  setTranscriptDescriptionDraftByJobId,
   toggleTranscriptJob,
   toggleTranscriptJobFromKeyboard,
   runTranscriptJob,
   deleteTranscriptJob,
+  updateTranscriptJobDescription,
   updateTranscriptLinkQuery,
   linkTranscriptJobCompany,
   toggleTranscriptSegment,
@@ -96,6 +106,12 @@ export function TranscriptJobRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   // U7-E2 density (ADR 0076 D6): segments fold behind a disclosure at S/short.
   const [segmentsExpanded, setSegmentsExpanded] = useState(false);
+  // Fix wave (integrator review): the company picker opens on demand from
+  // `Link company` — not unconditionally whenever the row is expanded.
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  // Rename (fix wave, deviation #1 rejected): a quiet inline title edit,
+  // reusing the existing `updateTranscriptJobDescription` (sourceLabel) path.
+  const [renameOpen, setRenameOpen] = useState(false);
   // Success strip (item 3): "just saved" is a transient, row-local flag — the
   // controller clears the draft on both save and discard, so this component
   // tells them apart itself (discard flips `discardedRef` first).
@@ -114,6 +130,8 @@ export function TranscriptJobRow({
   const linkError = transcriptLinkErrorByJobId[job.id] ?? null;
   const draftOpen = transcriptNoteDraftJobId === job.id;
   const title = transcriptJobTitle(job.sourceLabel);
+  const renameDraft = transcriptDescriptionDraftByJobId[job.id] ?? job.sourceLabel ?? "";
+  const renameError = transcriptDescriptionErrorByJobId[job.id] ?? null;
 
   useEffect(() => {
     if (wasDraftOpenRef.current && !draftOpen) {
@@ -131,6 +149,14 @@ export function TranscriptJobRow({
       setJustSavedCompanyName(null);
     }
   }, [isSelected]);
+
+  // The picker closes itself once the link lands (job.companyId set) or the
+  // row collapses — never lingers open for a job that no longer needs it.
+  useEffect(() => {
+    if (!isSelected || job.companyId) {
+      setLinkPickerOpen(false);
+    }
+  }, [isSelected, job.companyId]);
 
   const linkSuggestions = linkQuery.trim()
     ? companies
@@ -196,8 +222,58 @@ export function TranscriptJobRow({
           </span>
         </button>
         <span className="transcript-row-actions">
+          {renameOpen ? (
+            <>
+              <TextField
+                aria-label={text("Transcript title")}
+                value={renameDraft}
+                onChange={(event) =>
+                  setTranscriptDescriptionDraftByJobId((current) => ({
+                    ...current,
+                    [job.id]: event.target.value,
+                  }))
+                }
+              />
+              <ActionButton
+                disabled={transcriptDescriptionSaveInFlight === job.id}
+                onClick={() => {
+                  updateTranscriptJobDescription(job);
+                  setRenameOpen(false);
+                }}
+                variant="ghost"
+                verb="save"
+              >
+                {text("Save")}
+              </ActionButton>
+              <ActionButton kind="control" onClick={() => setRenameOpen(false)} variant="ghost">
+                {text("Cancel")}
+              </ActionButton>
+              {renameError ? <ErrorText>{renameError}</ErrorText> : null}
+            </>
+          ) : (
+            <ActionButton
+              onClick={() => {
+                setTranscriptDescriptionDraftByJobId((current) => ({
+                  ...current,
+                  [job.id]: job.sourceLabel ?? "",
+                }));
+                setRenameOpen(true);
+              }}
+              variant="ghost"
+              verb="rename"
+            >
+              {text("Rename")}
+            </ActionButton>
+          )}
           {!job.companyId ? (
-            <ActionButton kind="control" onClick={() => toggleTranscriptJob(job)} variant="ghost">
+            <ActionButton
+              kind="control"
+              onClick={() => {
+                if (!isSelected) toggleTranscriptJob(job);
+                setLinkPickerOpen(true);
+              }}
+              variant="ghost"
+            >
               {text("Link company")}
             </ActionButton>
           ) : null}
@@ -245,7 +321,7 @@ export function TranscriptJobRow({
 
       {isSelected ? (
         <div className="transcript-detail-panel" aria-label={`${text("Transcript details")}: ${title}`}>
-          {!job.companyId ? (
+          {!job.companyId && linkPickerOpen ? (
             <div className="transcript-link-panel" aria-label={text("Link transcript company")}>
               <TextField
                 label={text("Company or ticker")}
@@ -276,6 +352,9 @@ export function TranscriptJobRow({
                 </div>
               ) : null}
               {linkError ? <ErrorText>{linkError}</ErrorText> : null}
+              <ActionButton kind="control" onClick={() => setLinkPickerOpen(false)} variant="ghost">
+                {text("Cancel")}
+              </ActionButton>
             </div>
           ) : null}
           {justSavedCompanyName ? (

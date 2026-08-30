@@ -63,7 +63,9 @@ function defaultInventory(locale: Locale): ActionInventoryEntry[] {
   return sorted([
     { name: L(locale, "Fetch transcript"), kind: "fetch" },
     { name: L(locale, "Refresh transcripts"), kind: "refresh" },
+    { name: L(locale, "Settings"), kind: "destination" },
     { name: `${L(locale, "Open transcript")}: ${JOB_TITLE}`, kind: "control" },
+    { name: L(locale, "Rename"), kind: "rename" },
     { name: L(locale, "Link company"), kind: "control" },
     { name: L(locale, "Fetch again"), kind: "fetch" },
     { name: L(locale, "Remove"), kind: "remove" },
