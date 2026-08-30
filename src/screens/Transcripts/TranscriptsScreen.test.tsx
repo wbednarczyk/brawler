@@ -25,13 +25,12 @@ describe("Transcripts screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));
 
-    const transcriptJobsRegion = await screen.findByLabelText("Transcript jobs");
+    const transcriptJobsRegion = await screen.findByRole("region", { name: "Transcripts" });
 
     expect(screen.getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
     expect(within(transcriptJobsRegion).getByText("Q2 conference")).toBeInTheDocument();
-    expect(screen.getByText("Configured")).toBeInTheDocument();
 
-    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Retry" }));
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Fetch again" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("run_video_transcript_job", {
@@ -44,7 +43,7 @@ describe("Transcripts screen workflows", () => {
 
     await user.click(
       within(transcriptJobsRegion).getByRole("button", {
-        name: "Open transcript job: https://www.youtube.com/watch?v=conference",
+        name: "Open transcript: Q2 conference",
       }),
     );
 
@@ -54,7 +53,8 @@ describe("Transcripts screen workflows", () => {
 
     await user.type(screen.getByLabelText("Search transcript segments"), "margin");
 
-    expect(screen.getByText("1/2")).toBeInTheDocument();
+    // F4b S2: the header counter tracks selection, not the search-match count.
+    expect(document.querySelector(".transcript-search-count")?.textContent).toBe("0 selected of 2");
     expect(within(transcriptSegments).getByText("margin").tagName).toBe("MARK");
   });
 
@@ -76,11 +76,11 @@ describe("Transcripts screen workflows", () => {
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));
-    const transcriptJobsRegion = await screen.findByLabelText("Transcript jobs");
+    const transcriptJobsRegion = await screen.findByRole("region", { name: "Transcripts" });
 
     // Run the job so it completes with stored segments (matches the review flow),
     // then open it to reach the segment disclosure.
-    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Retry" }));
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Fetch again" }));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("run_video_transcript_job", {
         input: {
@@ -92,11 +92,11 @@ describe("Transcripts screen workflows", () => {
 
     await user.click(
       within(transcriptJobsRegion).getByRole("button", {
-        name: "Open transcript job: https://www.youtube.com/watch?v=conference",
+        name: "Open transcript: Q2 conference",
       }),
     );
 
-    const segmentsToggle = await screen.findByRole("button", { name: "Segments" });
+    const segmentsToggle = await screen.findByRole("button", { name: "Show segments" });
     expect(segmentsToggle).toHaveAttribute("aria-expanded", "false");
     // The segment review stays in the DOM — the fold is reachable, never lost.
     expect(await screen.findByLabelText("Transcript segments")).toBeInTheDocument();

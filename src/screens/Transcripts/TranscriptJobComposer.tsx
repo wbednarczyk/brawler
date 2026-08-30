@@ -1,9 +1,9 @@
-import { CheckCircle2, Plus } from "lucide-react";
 import type { Company } from "../../api/types";
-import { Button, ErrorText, SectionHeader, TextField } from "../../ui";
+import { ActionButton, ErrorText, TextField } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { transcriptUrlValidationMessage } from "./transcriptHelpers";
+import type { TranscriptPrimary } from "./transcriptPrimary";
 import type { TranscriptsScreenProps } from "./transcriptTypes";
 
 type TranscriptJobComposerProps = Pick<
@@ -16,8 +16,20 @@ type TranscriptJobComposerProps = Pick<
   | "transcriptJobCreateError"
   | "transcriptJobCreateState"
   | "transcriptJobForm"
->;
+  | "openSettings"
+> & {
+  primary: TranscriptPrimary;
+  geminiConfigured: boolean;
+};
 
+// F4b S2 (#430a, mockup docs/mockups/frontend-v2-f4/transcripts.html plansza
+// 1/2/4): the composer's OWN grid (`.transcript-composer` in transcripts.css)
+// — never `.event-composer-grid` — three columns at L/M
+// (`minmax(0,1fr) minmax(200px,280px) auto`), one column ≤ 640px. Two fields
+// only (recording link, optional company) — the legacy "Description" field
+// (the source of a transcript's manual title) is retired from this composer
+// per the mockup; `updateTranscriptJobDescription` stays wired for later
+// reuse (deviation noted in the S2 handover report).
 export function TranscriptJobComposer({
   createTranscriptJob,
   selectTranscriptCompany,
@@ -27,75 +39,76 @@ export function TranscriptJobComposer({
   transcriptJobCreateError,
   transcriptJobCreateState,
   transcriptJobForm,
+  openSettings,
+  primary,
+  geminiConfigured,
 }: TranscriptJobComposerProps) {
   const { text } = useLocale();
+  const fetching = transcriptJobCreateState === "refreshing";
 
   return (
-    <form className="event-composer" onSubmit={createTranscriptJob} aria-label={text("Create transcript job")}>
-      <SectionHeader
-        title={text("New transcript job")}
-        description={text("URL is required. Description and company are optional.")}
-        actions={
-          <Button
-            className="compact-button"
-            disabled={transcriptJobCreateState === "refreshing" || !transcriptJobForm.url.trim()}
-            title={transcriptJobForm.url.trim() ? text("Create transcript job") : text("URL is required")}
-            type="submit"
-            variant="primary"
-          >
-            {transcriptJobCreateState === "done" ? <CheckCircle2 size={15} /> : <Plus size={15} />}
-            {transcriptJobCreateState === "refreshing" ? text("Creating") : text("Create job")}
-          </Button>
+    <form className="transcript-composer" onSubmit={createTranscriptJob} aria-label={text("New transcript")}>
+      <TextField
+        className="transcript-composer-url"
+        label={text("Recording link")}
+        aria-label={text("Recording link")}
+        placeholder="https://www.youtube.com/watch?v=…"
+        value={transcriptJobForm.url}
+        onChange={(event) =>
+          setTranscriptJobForm((current) => ({
+            ...current,
+            url: event.target.value,
+          }))
+        }
+        onBlur={() => {
+          if (transcriptJobForm.url.trim()) {
+            const validationMessage = transcriptUrlValidationMessage(transcriptJobForm.url);
+            setTranscriptJobCreateError(validationMessage ? text(validationMessage) : null);
+          }
+        }}
+      />
+      <TextField
+        label={text("Company (optional)")}
+        aria-label={text("Company (optional)")}
+        placeholder={text("Optional, e.g. GPW:CDR, CDR, CD PROJEKT")}
+        value={transcriptJobForm.companyQuery}
+        onChange={(event) =>
+          setTranscriptJobForm((current) => ({
+            ...current,
+            companyId: "",
+            companyQuery: event.target.value,
+          }))
         }
       />
-      <div className="event-composer-grid">
-        <TextField
-          className="event-composer-title"
-          label={text("URL")}
-          aria-label={text("Transcript URL")}
-          placeholder="https://www.youtube.com/watch?v=..."
-          value={transcriptJobForm.url}
-          onChange={(event) =>
-            setTranscriptJobForm((current) => ({
-              ...current,
-              url: event.target.value,
-            }))
-          }
-          onBlur={() => {
-            if (transcriptJobForm.url.trim()) {
-              const validationMessage = transcriptUrlValidationMessage(transcriptJobForm.url);
-              setTranscriptJobCreateError(validationMessage ? text(validationMessage) : null);
-            }
-          }}
-        />
-        <TextField
-          className="event-composer-title"
-          label={text("Description")}
-          aria-label={text("Transcript description")}
-          placeholder={text("Optional, e.g. CDR Q2 investor conference")}
-          value={transcriptJobForm.label}
-          onChange={(event) =>
-            setTranscriptJobForm((current) => ({
-              ...current,
-              label: event.target.value,
-            }))
-          }
-        />
-        <TextField
-          className="event-composer-title"
-          label={text("Company or ticker")}
-          aria-label={text("Transcript company lookup")}
-          placeholder={text("Optional, e.g. GPW:CDR, CDR, CD PROJEKT")}
-          value={transcriptJobForm.companyQuery}
-          onChange={(event) =>
-            setTranscriptJobForm((current) => ({
-              ...current,
-              companyId: "",
-              companyQuery: event.target.value,
-            }))
-          }
-        />
-      </div>
+      <ActionButton
+        verb="fetch"
+        type="submit"
+        variant={primary === "fetch" ? "primary" : "secondary"}
+        data-ux-primary-action={primary === "fetch" ? "true" : undefined}
+        disabled={fetching || !transcriptJobForm.url.trim()}
+      >
+        {fetching ? text("Fetching…") : text("Fetch transcript")}
+      </ActionButton>
+      {geminiConfigured ? (
+        <p className="transcript-source-line">
+          <span className="transcript-source-dot" aria-hidden="true" />
+          {text("Gemini · key configured")}
+          {" · "}
+          {/* A quiet in-line navigation link, not a screen action: not in the
+              composer's action inventory (docs/plans/frontend-v2-f4b.md §
+              Transcripts, Action inventory) — Settings stays reachable via
+              the sidebar regardless. */}
+          <a
+            href="#"
+            onClick={(event) => {
+              event.preventDefault();
+              openSettings();
+            }}
+          >
+            {text("Settings")}
+          </a>
+        </p>
+      ) : null}
       {transcriptJobForm.companyQuery || transcriptJobForm.companyId ? (
         <TranscriptCompanySuggestions
           selectedCompanyId={transcriptJobForm.companyId}
@@ -122,7 +135,7 @@ function TranscriptCompanySuggestions({
   const { text } = useLocale();
 
   return (
-    <div className="company-registry-suggestions" aria-label={text("Transcript company suggestions")}>
+    <div className="company-registry-suggestions transcript-composer-suggestions" aria-label={text("Transcript company suggestions")}>
       {suggestions.length > 0 ? (
         suggestions.map((company) => (
           <div key={company.id}>

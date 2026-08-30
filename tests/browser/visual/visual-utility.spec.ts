@@ -38,18 +38,32 @@ test.describe("visual — utility screens", () => {
   test("Transcripts across pane tiers", async ({ page }) => {
     await openApp(page);
     await nav(page).getByRole("button", { name: "Transcripts" }).click();
-    await expect(page.getByLabel("Transcript jobs")).toBeVisible();
+    const region = page.getByRole("region", { name: "Transcripts" });
+    await expect(region).toBeVisible();
 
-    // The smoke runtime seeds no transcript jobs; create one so the list + detail
-    // have content, then expand it.
-    await page.getByLabel("Transcript URL").fill("https://www.youtube.com/watch?v=densitycheck");
-    await page.getByRole("button", { name: "Create job" }).click();
-    await expect(page.locator(".transcript-row")).toHaveCount(1);
-    await page.locator(".transcript-row").first().click();
+    // The smoke runtime seeds no transcript jobs for any scenario (segments
+    // only exist for a job Gemini actually transcribed, which the mock
+    // cannot fabricate on create) — create one so the list + detail have
+    // content, then expand it.
+    await page.getByLabel("Recording link").fill("https://www.youtube.com/watch?v=densitycheck");
+    await page.getByRole("button", { name: "Fetch transcript" }).click();
+    await expect(page.locator(".transcript-row-block")).toHaveCount(1);
+    await page.locator(".transcript-row-button").first().click();
 
     await shootPanel(page, page.locator(".workspace"), "transcripts");
-    // TODO(F4b S2): shoot the "empty" state (catalog.core.mjs already
-    // declares it) once the redesign's empty-invitation seeding lands.
+  });
+
+  // F4b S2 (#430): the empty (no transcripts) invitation IS the composer
+  // (docs/mockups/frontend-v2-f4/transcripts.html plansza 1) — no figures yet,
+  // so `assertFigureMinimum` skips non-default states (helpers.ts). The smoke
+  // runtime already seeds zero transcript jobs, so no priming is needed.
+  test("Transcripts (empty) across pane tiers", async ({ page }) => {
+    await openApp(page);
+    await nav(page).getByRole("button", { name: "Transcripts" }).click();
+    await expect(page.getByRole("region", { name: "Transcripts" })).toBeVisible();
+    await expect(page.locator(".empty-state[data-empty-kind='invitation']")).toBeVisible();
+
+    await shootPanel(page, page.locator(".workspace"), "transcripts", { state: "empty" });
   });
 
   // F4a S4b: default smoke boot already seeds a fired event + a rule (the

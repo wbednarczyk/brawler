@@ -1,7 +1,7 @@
-import { X } from "lucide-react";
 import type { TranscriptJob, TranscriptSegment } from "../../api/types";
-import { Button, EmptyState, ErrorText } from "../../ui";
+import { ActionButton, EmptyState, ErrorText, Figure, SearchField } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import type { TranscriptPrimary } from "./transcriptPrimary";
 import {
   highlightSearchMatch,
   transcriptSegmentMatchesQuery,
@@ -11,85 +11,92 @@ import type { TranscriptsScreenProps } from "./transcriptTypes";
 
 type TranscriptSegmentReviewProps = Pick<
   TranscriptsScreenProps,
-  | "setTranscriptSegmentSearchByJobId"
-  | "toggleTranscriptSegment"
+  "setTranscriptSegmentSearchByJobId" | "toggleTranscriptSegment" | "retryTranscriptSegments" | "openTranscriptNoteDraft"
 > & {
   job: TranscriptJob;
   transcriptSegments: TranscriptSegment[];
   transcriptSegmentsError: string | null | undefined;
   transcriptSegmentSearch: string;
   selectedTranscriptSegmentIds: string[];
+  selectedSegments: TranscriptSegment[];
+  primary: TranscriptPrimary;
+  draftOpen: boolean;
+  noteError: string | null;
 };
 
+// F4b S2 (item 3): search + counter + "Dodaj do notatnika" (the ONLY primary
+// candidate this component can carry — the screen-level `primary` enum names
+// it explicitly rather than this component guessing from local selection
+// state alone, since the draft-open state lives one level up).
 export function TranscriptSegmentReview({
   job,
   transcriptSegments,
   transcriptSegmentsError,
   transcriptSegmentSearch,
   selectedTranscriptSegmentIds,
+  selectedSegments,
   setTranscriptSegmentSearchByJobId,
   toggleTranscriptSegment,
+  retryTranscriptSegments,
+  openTranscriptNoteDraft,
+  primary,
+  draftOpen,
+  noteError,
 }: TranscriptSegmentReviewProps) {
   const { text } = useLocale();
-  const filteredTranscriptSegments = transcriptSegments.filter((segment) =>
+  const filteredSegments = transcriptSegments.filter((segment) =>
     transcriptSegmentMatchesQuery(segment, transcriptSegmentSearch),
   );
+  const setSearch = (value: string) =>
+    setTranscriptSegmentSearchByJobId((current) => ({ ...current, [job.id]: value }));
 
   return (
     <>
       {job.status !== "completed" ? (
-        <p className="muted-text">{text("Transcript segments will be available after the job completes.")}</p>
+        <p className="muted-text">{text("Segments will be available once the transcript is ready.")}</p>
       ) : null}
       {transcriptSegmentsError ? (
-        <ErrorText>{text("Transcript segments unavailable")}: {transcriptSegmentsError}</ErrorText>
+        <ErrorText>
+          {text("Transcript segments unavailable")}: {transcriptSegmentsError}{" "}
+          <ActionButton onClick={() => retryTranscriptSegments(job.id)} variant="ghost" verb="fetch">
+            {text("Fetch segments again")}
+          </ActionButton>
+        </ErrorText>
       ) : null}
       {job.status === "completed" && transcriptSegments.length === 0 && !transcriptSegmentsError ? (
-        <EmptyState>{text("No transcript segments stored for this job.")}</EmptyState>
+        <EmptyState>{text("No transcript segments stored.")}</EmptyState>
       ) : null}
       {transcriptSegments.length > 0 ? (
         <div className="transcript-search-panel">
-          <label>
-            {text("Search transcript")}
-            <span className="transcript-search-input-row">
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke search panel: 2-column input+clear grid paired with an external result-count; SearchField's icon/clear layout does not compose here */}
-              <input
-                aria-label={text("Search transcript segments")}
-                placeholder={text("Search text, speaker, language, timestamp")}
-                value={transcriptSegmentSearch}
-                onChange={(event) =>
-                  setTranscriptSegmentSearchByJobId((current) => ({
-                    ...current,
-                    [job.id]: event.target.value,
-                  }))
-                }
-              />
-              {transcriptSegmentSearch ? (
-                <Button
-                  aria-label={text("Clear transcript search")}
-                  className="transcript-search-clear"
-                  onClick={() =>
-                    setTranscriptSegmentSearchByJobId((current) => ({
-                      ...current,
-                      [job.id]: "",
-                    }))
-                  }
-                  title={text("Clear transcript search")}
-                  variant="icon"
-                >
-                  <X size={13} />
-                </Button>
-              ) : null}
-            </span>
-          </label>
+          <SearchField
+            ariaLabel={text("Search transcript segments")}
+            className="transcript-search-field"
+            clearLabel={text("Clear search")}
+            onChange={setSearch}
+            onClear={() => setSearch("")}
+            placeholder={text("Search text, speaker, language, timestamp")}
+            value={transcriptSegmentSearch}
+          />
           <span className="transcript-search-count">
-            {filteredTranscriptSegments.length}/{transcriptSegments.length}
+            <Figure kind="count" value={selectedTranscriptSegmentIds.length} /> {text("selected of")}{" "}
+            <Figure kind="count" value={transcriptSegments.length} />
           </span>
+          <ActionButton
+            data-ux-primary-action={primary === "addToNotebook" ? "true" : undefined}
+            disabled={!job.companyId || selectedTranscriptSegmentIds.length === 0 || draftOpen}
+            onClick={() => openTranscriptNoteDraft(job, selectedSegments)}
+            variant={primary === "addToNotebook" ? "primary" : "secondary"}
+            verb="add"
+          >
+            {text("Add to notebook")}
+          </ActionButton>
+          {noteError ? <ErrorText>{noteError}</ErrorText> : null}
         </div>
       ) : null}
       {transcriptSegments.length > 0 ? (
         <div className="transcript-segment-list" aria-label={text("Transcript segments")}>
-          {filteredTranscriptSegments.length > 0 ? (
-            filteredTranscriptSegments.map((segment) => (
+          {filteredSegments.length > 0 ? (
+            filteredSegments.map((segment) => (
               <label className="transcript-segment-row" key={segment.id}>
                 <input
                   aria-label={`${text("Select transcript segment")} ${text(transcriptSegmentTimestamp(segment))}`}
@@ -104,7 +111,7 @@ export function TranscriptSegmentReview({
               </label>
             ))
           ) : (
-            <EmptyState>{text("No transcript segments match this search.")}</EmptyState>
+            <EmptyState kind="quiet" reason={text('No segment contains "{query}"').replace("{query}", transcriptSegmentSearch)} />
           )}
         </div>
       ) : null}

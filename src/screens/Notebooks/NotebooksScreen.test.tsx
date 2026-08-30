@@ -112,7 +112,7 @@ describe("Notebook and transcript workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));
 
-    const transcriptJobsRegion = await screen.findByLabelText("Transcript jobs");
+    const transcriptJobsRegion = await screen.findByRole("region", { name: "Transcripts" });
 
     expect(screen.getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("list_video_transcript_jobs", {
@@ -120,12 +120,8 @@ describe("Notebook and transcript workflows", () => {
     });
     expect(within(transcriptJobsRegion).getByText("Q2 conference")).toBeInTheDocument();
     expect(within(transcriptJobsRegion).getByText("Queued")).toBeInTheDocument();
-    expect(screen.getByText("Credentials")).toBeInTheDocument();
-    expect(screen.getByText("Configured")).toBeInTheDocument();
-    expect(screen.getByText("Timeout")).toBeInTheDocument();
-    expect(screen.getByText("300s")).toBeInTheDocument();
 
-    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Retry" }));
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Fetch again" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("run_video_transcript_job", {
@@ -135,30 +131,15 @@ describe("Notebook and transcript workflows", () => {
         },
       });
     });
-    expect(await within(transcriptJobsRegion).findByText("Completed")).toBeInTheDocument();
+    expect(await within(transcriptJobsRegion).findByText("Ready")).toBeInTheDocument();
 
     await user.click(
       within(transcriptJobsRegion).getByRole("button", {
-        name: "Open transcript job: https://www.youtube.com/watch?v=conference",
+        name: "Open transcript: Q2 conference",
       }),
     );
 
     const transcriptSegments = await screen.findByLabelText("Transcript segments");
-    const transcriptDescriptionEditor = await screen.findByLabelText("Transcript description editor");
-
-    await user.clear(within(transcriptDescriptionEditor).getByLabelText("Edit transcript description"));
-    await user.type(within(transcriptDescriptionEditor).getByLabelText("Edit transcript description"), "CDR strategy call");
-    await user.click(within(transcriptDescriptionEditor).getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("update_video_transcript_job", {
-        input: {
-          jobId: "transcript_job_unresolved_conference",
-          sourceLabel: "CDR strategy call",
-        },
-      });
-    });
-    expect(await within(transcriptJobsRegion).findByText("CDR strategy call")).toBeInTheDocument();
 
     expect(
       within(transcriptSegments).getByText(
@@ -183,12 +164,14 @@ describe("Notebook and transcript workflows", () => {
       ),
     ).toBeInTheDocument();
     expect(within(transcriptSegments).getByText("margin").tagName).toBe("MARK");
-    expect(screen.getByText("1/2")).toBeInTheDocument();
+    // F4b S2: the header counter now tracks SELECTION ("N selected of M",
+    // contract item 3), not the search-match count — nothing is selected yet.
+    expect(document.querySelector(".transcript-search-count")?.textContent).toBe("0 selected of 2");
 
-    await user.click(screen.getByRole("button", { name: "Clear transcript search" }));
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
 
     expect(screen.getByLabelText("Search transcript segments")).toHaveValue("");
-    expect(screen.getByText("2/2")).toBeInTheDocument();
+    expect(document.querySelector(".transcript-search-count")?.textContent).toBe("0 selected of 2");
     expect(
       within(transcriptSegments).getByText(
         "We expect the second half to be stronger after the release window stabilizes.",
@@ -206,13 +189,13 @@ describe("Notebook and transcript workflows", () => {
       }),
     );
 
-    expect(within(transcriptJobsRegion).getByText("2")).toBeInTheDocument();
+    expect(document.querySelector(".transcript-search-count")?.textContent).toBe("2 selected of 2");
     expect(invoke).toHaveBeenCalledWith("list_transcript_segments", {
       transcriptJobId: "transcript_job_unresolved_conference",
     });
 
-    expect(within(transcriptJobsRegion).getByText("Unlinked")).toBeInTheDocument();
-    expect(within(transcriptJobsRegion).getByRole("button", { name: "Create company note draft" })).toBeDisabled();
+    expect(within(transcriptJobsRegion).getByText("—")).toBeInTheDocument();
+    expect(within(transcriptJobsRegion).getByRole("button", { name: "Add to notebook" })).toBeDisabled();
 
     await user.type(screen.getByLabelText("Transcript link company lookup"), "CDR");
     const transcriptLinkSuggestions = await screen.findByLabelText("Transcript link company suggestions");
@@ -229,9 +212,9 @@ describe("Notebook and transcript workflows", () => {
 
     expect(await within(transcriptJobsRegion).findByText("GPW:CDR")).toBeInTheDocument();
 
-    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Create company note draft" }));
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Add to notebook" }));
 
-    const transcriptNoteDraft = await screen.findByLabelText("Transcript note draft");
+    const transcriptNoteDraft = await screen.findByLabelText("Notebook note draft");
 
     expect(within(transcriptNoteDraft).getByLabelText("Transcript note body")).toHaveValue(
       "> We expect the second half to be stronger after the release window stabilizes.\n\n> Gross margin should normalize over the next two quarters.",
@@ -243,7 +226,7 @@ describe("Notebook and transcript workflows", () => {
     await user.selectOptions(within(transcriptNoteDraft).getByLabelText("Transcript note status"), "open");
     await user.clear(within(transcriptNoteDraft).getByLabelText("Transcript note tags"));
     await user.type(within(transcriptNoteDraft).getByLabelText("Transcript note tags"), "conference, management-guidance");
-    await user.click(within(transcriptNoteDraft).getByRole("button", { name: "Save" }));
+    await user.click(within(transcriptNoteDraft).getByRole("button", { name: "Save note" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("create_note_from_transcript_selection", {
@@ -264,11 +247,13 @@ describe("Notebook and transcript workflows", () => {
       });
     });
 
-    await user.type(screen.getByLabelText("Transcript URL"), "https://www.youtube.com/watch?v=newjob");
-    await user.type(screen.getByLabelText("Transcript description"), "New job conference");
-    await user.type(screen.getByLabelText("Transcript company lookup"), "CDR");
+    // F4b S2: the composer no longer collects a manual title/description
+    // (mockup docs/mockups/frontend-v2-f4/transcripts.html plansza 1/2) — a
+    // transcript created here falls back to the generic recording title.
+    await user.type(screen.getByLabelText("Recording link"), "https://www.youtube.com/watch?v=newjob");
+    await user.type(screen.getByLabelText("Company (optional)"), "CDR");
     await user.click(await screen.findByRole("button", { name: /GPW:CDR/ }));
-    await user.click(screen.getByRole("button", { name: "Create job" }));
+    await user.click(screen.getByRole("button", { name: "Fetch transcript" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("create_video_transcript_job", {
@@ -276,12 +261,12 @@ describe("Notebook and transcript workflows", () => {
           sourceUrl: "https://www.youtube.com/watch?v=newjob",
           companyId: "company_gpw_cdr",
           providerId: "provider_gemini",
-          sourceLabel: "New job conference",
+          sourceLabel: null,
           recognizedCompanyCandidates: null,
         },
       });
     });
-    expect(await within(transcriptJobsRegion).findByText("New job conference")).toBeInTheDocument();
+    expect(await within(transcriptJobsRegion).findByText("Recording from YouTube")).toBeInTheDocument();
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("run_video_transcript_job", {
         input: {
@@ -291,26 +276,27 @@ describe("Notebook and transcript workflows", () => {
       });
     });
 
-    await user.type(screen.getByLabelText("Transcript URL"), "https://www.youtube.com/watch?v=newjob");
-    await user.type(screen.getByLabelText("Transcript company lookup"), "CDR");
+    await user.type(screen.getByLabelText("Recording link"), "https://www.youtube.com/watch?v=newjob");
+    await user.type(screen.getByLabelText("Company (optional)"), "CDR");
     await user.click(await screen.findByRole("button", { name: /GPW:CDR/ }));
-    await user.click(screen.getByRole("button", { name: "Create job" }));
+    await user.click(screen.getByRole("button", { name: "Fetch transcript" }));
 
     await waitFor(() => {
       expect(
         within(transcriptJobsRegion).getAllByRole("button", {
-          name: "Open transcript job: https://www.youtube.com/watch?v=newjob",
+          name: "Open transcript: Recording from YouTube",
         }),
       ).toHaveLength(1);
     });
 
-    // Cascading (ADR 0076 D5): confirm in place, then the delete fires.
-    await user.click(
-      within(transcriptJobsRegion).getByRole("button", {
-        name: "Delete transcript job New job conference",
-      }),
-    );
-    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Delete" }));
+    // Cascading (ADR 0076 D5): confirm in place, then the delete fires — the
+    // "Remove" trigger is scoped to this specific row (the accessible name is
+    // the same "Remove" across every row per the F4b action inventory).
+    const newJobRowBlock = within(transcriptJobsRegion)
+      .getByRole("button", { name: "Open transcript: Recording from YouTube" })
+      .closest(".transcript-row-block") as HTMLElement;
+    await user.click(within(newJobRowBlock).getByRole("button", { name: "Remove" }));
+    await user.click(within(newJobRowBlock).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_video_transcript_job", {
@@ -319,7 +305,7 @@ describe("Notebook and transcript workflows", () => {
     });
     expect(
       within(transcriptJobsRegion).queryByRole("button", {
-        name: "Open transcript job: https://www.youtube.com/watch?v=newjob",
+        name: "Open transcript: Recording from YouTube",
       }),
     ).not.toBeInTheDocument();
   });
@@ -490,21 +476,14 @@ describe("Notebook and transcript workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));
 
-    const transcriptJobsRegion = await screen.findByLabelText("Transcript jobs");
+    const transcriptJobsRegion = await screen.findByRole("region", { name: "Transcripts" });
 
-    expect(await within(transcriptJobsRegion).findByText("Failed")).toBeInTheDocument();
-
-    await user.click(
-      within(transcriptJobsRegion).getByRole("button", {
-        name: "Open transcript job: https://www.youtube.com/watch?v=conference",
-      }),
-    );
-
-    const errorPanel = await screen.findByLabelText("Transcript job error");
-
-    expect(within(errorPanel).getByText("Provider Not Configured")).toBeInTheDocument();
-    expect(within(errorPanel).getByText("Gemini transcription provider is not configured.")).toBeInTheDocument();
-    const runButton = within(transcriptJobsRegion).getByRole("button", { name: "Retry" });
+    expect(await within(transcriptJobsRegion).findByText("Transcript failed")).toBeInTheDocument();
+    // F4b S2 (#430b): the failure reason is a coded-dictionary line inline in
+    // the (still collapsed) row itself — no separate error panel, and no raw
+    // provider-error text (deviation from the legacy behavior, see report).
+    expect(within(transcriptJobsRegion).getByText("Gemini is not configured")).toBeInTheDocument();
+    const runButton = within(transcriptJobsRegion).getByRole("button", { name: "Fetch again" });
     expect(runButton).toBeDisabled();
     expect(runButton).toHaveAttribute(
       "title",
@@ -519,15 +498,15 @@ describe("Notebook and transcript workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));
 
-    expect(await screen.findByRole("button", { name: "Create job" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Fetch transcript" })).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Transcript URL"), "https://example.com/video");
+    await user.type(screen.getByLabelText("Recording link"), "https://example.com/video");
     await user.tab();
 
     expect(screen.getByText("Use a YouTube URL from youtube.com or youtu.be.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create job" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Fetch transcript" })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: "Create job" }));
+    await user.click(screen.getByRole("button", { name: "Fetch transcript" }));
 
     expect(invoke).not.toHaveBeenCalledWith("create_video_transcript_job", expect.anything());
   });

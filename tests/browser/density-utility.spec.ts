@@ -204,39 +204,53 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
     await expectFilledAtRest(pane, { max: 1 });
   });
 
-  test("Transcripts folds the segment review behind a disclosure at S/short", async ({ page }) => {
+  test("Transcripts: composer fits its card and the segment review folds behind a disclosure at S/short", async ({ page }) => {
     await openApp(page);
     await nav(page).getByRole("button", { name: "Transcripts" }).click();
-    await expect(page.getByLabel("Transcript jobs")).toBeVisible();
+    const region = page.getByRole("region", { name: "Transcripts" });
+    await expect(region).toBeVisible();
 
     // The smoke runtime seeds no transcript jobs, so create one (the stateful
     // create reflects into the list), then expand it to reveal the detail — the
     // segments disclosure lives there regardless of whether segments loaded.
-    await page.getByLabel("Transcript URL").fill("https://www.youtube.com/watch?v=densitycheck");
-    await page.getByRole("button", { name: "Create job" }).click();
-    await expect(page.locator(".transcript-row")).toHaveCount(1);
-    await page.locator(".transcript-row").first().click();
-    const segmentsToggle = page.getByRole("button", { name: "Segments" });
+    await page.getByLabel("Recording link").fill("https://www.youtube.com/watch?v=densitycheck");
+    await page.getByRole("button", { name: "Fetch transcript" }).click();
+    await expect(page.locator(".transcript-row-block")).toHaveCount(1);
+    await page.locator(".transcript-row-button").first().click();
+    const segmentsToggle = page.getByRole("button", { name: "Show segments" });
     const pane = page.locator(".workspace");
+    const composer = page.locator(".transcript-composer").first();
+    const list = page.locator(".transcript-list");
+
+    // L/M/S/short: one filled action at rest (the composer's Fetch transcript,
+    // demoted once a transcript's addToNotebook/saveNote state takes over —
+    // here nothing is selected yet, so it stays primary), no overlap/overflow.
+    for (const tier of ["L", "M", "S", "short"] as const) {
+      await sizeTo(page, tier, pane);
+      await expectNoOverlap(composer, list, "composer/list");
+      await expectNoPageOverflow(page);
+      await expectFilledAtRest(pane, { max: 1 });
+    }
 
     // M/L: segments render inline; the disclosure toggle is hidden.
     await sizeTo(page, "L", pane);
     await expect(segmentsToggle).toBeHidden();
-    await expectNoPageOverflow(page);
 
     await sizeTo(page, "M", pane);
     await expect(segmentsToggle).toBeHidden();
-    await expectNoPageOverflow(page);
 
-    // S: the segment review folds behind the "Segments" disclosure.
+    // S: the segment review folds behind the "Show segments" disclosure.
     await sizeTo(page, "S", pane);
     await expect(segmentsToggle).toBeVisible();
-    await expectNoPageOverflow(page);
 
     // short: list only — the disclosure gates the segments here too.
     await sizeTo(page, "short", pane);
     await expect(segmentsToggle).toBeVisible();
-    await expectNoPageOverflow(page);
+
+    // #430a: the composer's inner container never outgrows its card at S.
+    await sizeTo(page, "S", pane);
+    const box = await composer.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+    expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth + 1);
   });
 
   test("Settings collapses its section tab list to a select at S", async ({ page }) => {
