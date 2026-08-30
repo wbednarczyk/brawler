@@ -12,6 +12,15 @@ import {
   within,
 } from "../../test/appWorkflowHarness";
 
+// F4b S4: the telemetry sentences now interleave `Figure` spans with plain
+// text nodes (SourceAdapterRow.tsx `SourceLastResultText`) — RTL's default
+// string matcher can't join text split across sibling elements, so these
+// assertions match on the normalized textContent of the containing node.
+function exactJoinedText(expected: string) {
+  return (_content: string, node: Element | null) =>
+    (node?.textContent ?? "").replace(/\s+/g, " ").trim() === expected;
+}
+
 describe("Sources screen workflows", () => {
   it("refreshes source-backed feed items from the topbar", async () => {
     const user = userEvent.setup();
@@ -103,7 +112,9 @@ describe("Sources screen workflows", () => {
     await user.click(await screen.findByRole("button", { name: "Open source: Bankier Giełda RSS" }));
 
     expect(
-      within(await screen.findByLabelText("Source details")).getByText("In-app · 15 min · backoff 30 min"),
+      within(await screen.findByLabelText("Source details")).getByText(
+        "Automatically every 15 min · retry in 30 min",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -164,14 +175,14 @@ describe("Sources screen workflows", () => {
         name: "Open source: Bankier Company Komunikaty",
       }));
       const bankierCompanyNextPoll =
-        within(await screen.findByLabelText("Source details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
+        within(await screen.findByLabelText("Source details")).getByText(/^next in 15 min \d+s$|^next in 16 min$/)
           .textContent;
 
       await user.click(within(sourcesRegion).getByRole("button", {
         name: "Open source: Bankier Giełda RSS",
       }));
       const bankierNextPoll =
-        within(await screen.findByLabelText("Source details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
+        within(await screen.findByLabelText("Source details")).getByText(/^next in 15 min \d+s$|^next in 16 min$/)
           .textContent;
 
       expect(bankierNextPoll).not.toEqual(bankierCompanyNextPoll);
@@ -236,14 +247,14 @@ describe("Sources screen workflows", () => {
 
     expect(sourceRow).toHaveClass("source-row-selected");
     const sourceDetails = await screen.findByLabelText("Source details");
-    expect(within(sourceDetails).getByText("Next poll")).toBeInTheDocument();
+    expect(within(sourceDetails).getByText("Next refresh")).toBeInTheDocument();
     expect(
       within(await screen.findByLabelText("Source details")).getByText(
-        "2 fetched · 1 created · 1 matched · 0 unmatched",
+        exactJoinedText("Fetched 2 · created 1 · matched 1 · unmatched 0"),
       ),
     ).toBeInTheDocument();
     const sourcePageButton = within(await screen.findByLabelText("Source details")).getByRole("button", {
-      name: "Open source page for Bankier Company Komunikaty",
+      name: "Open source page",
     });
     await user.click(sourcePageButton);
     expect(openUrl).toHaveBeenCalledWith("https://www.bankier.pl/gielda/notowania/akcje/{TICKER}/komunikaty");
@@ -377,10 +388,12 @@ describe("Sources screen workflows", () => {
 
     await user.click(registryRow);
     const registryDetails = await screen.findByLabelText("Source details");
-    expect(within(registryDetails).getByText("Next poll")).toBeInTheDocument();
-    expect(within(registryDetails).getByText(/In 23h|In 1 day/)).toBeInTheDocument();
+    expect(within(registryDetails).getByText("Next refresh")).toBeInTheDocument();
+    expect(within(registryDetails).getByText(/next in 23h|next in 1 day/)).toBeInTheDocument();
     expect(within(registryDetails).getByText("Directory result")).toBeInTheDocument();
-    expect(within(registryDetails).getByText("400 directory entries · 400 refreshed or updated")).toBeInTheDocument();
+    expect(
+      within(registryDetails).getByText(exactJoinedText("400 directory entries · 400 refreshed or updated")),
+    ).toBeInTheDocument();
     expect(within(registryDetails).queryByText("Detail warning")).not.toBeInTheDocument();
     await user.click(within(await screen.findByLabelText("Company directory refresh")).getByRole("button", {
       name: "Refresh company directory",
@@ -391,7 +404,7 @@ describe("Sources screen workflows", () => {
         input: { trigger: "manual" },
       }),
     );
-    expect(await screen.findByText("750/750 saved entries")).toBeInTheDocument();
+    expect(await screen.findByText(exactJoinedText("750/750 saved entries"))).toBeInTheDocument();
   });
 
   it("keeps company directory lists separated by source and adds companies from each", async () => {
@@ -435,7 +448,13 @@ describe("Sources screen workflows", () => {
         },
       }),
     );
-    expect(await within(registryPanel).findByTitle("GPW:DNP already added")).toBeDisabled();
+    // F4b S4 (contract § Sources): the tracked entry becomes a non-button
+    // "Added" chip, not a disabled button.
+    const addedChip = await within(registryPanel).findByTitle("GPW:DNP already added");
+    expect(addedChip.tagName).not.toBe("BUTTON");
+    expect(within(registryPanel).getByText("DINO POLSKA S.A.").closest(".source-registry-row")).toHaveTextContent(
+      "Added",
+    );
 
     await user.click(within(sourcesRegion).getByRole("button", {
       name: "Open source: NewConnect Company Directory",

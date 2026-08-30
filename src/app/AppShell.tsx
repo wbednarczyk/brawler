@@ -92,7 +92,11 @@ const ATTENTION_BADGE_FORMS: PluralForms = {
 };
 
 // Global-surface palette entries (F3a S3, plan "Trasy powierzchni globalnych"
-// po F3a): screens with no top-level nav item still need an entry point.
+// po F3a): entries for screens that also have a nav item keep the palette
+// path used by J4/J7 (F4b S4, contract § Decisions #1 — Events and Report
+// Season joined the Library nav but their `Open screen: …` command stays);
+// the rest still have no top-level nav item and need this as their only
+// entry point.
 const SCREEN_PALETTE_ENTRIES: ReadonlyArray<{ section: Section; labelText: string; actionKey: string }> = [
   { section: "Research", labelText: "Research", actionKey: "screen.open.research" },
   { section: "Events", labelText: "Events", actionKey: "screen.open.events" },

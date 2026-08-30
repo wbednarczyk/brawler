@@ -102,3 +102,20 @@ describe("AppShell — exactly one aria-current across modes and pinned rows", (
     expect(current[0]).toHaveAccessibleName("Companies");
   });
 });
+
+// F4b S4 (contract § Decisions #1): Events and Report Season join the
+// Library nav — seven destinations in the documented order, both locales.
+describe("AppShell — Library group lists seven destinations in order, both locales", () => {
+  const LIBRARY_ORDER = {
+    en: ["Companies", "Watchlists", "Alerts", "Events", "Report Season", "Transcripts", "Sources"],
+    pl: ["Spółki", "Listy", "Alerty", "Wydarzenia", "Sezon raportów", "Transkrypcje", "Źródła"],
+  } as const;
+
+  it.each(["en", "pl"] as const)("%s", (locale) => {
+    renderShell({ locale });
+    const group = screen.getByText(locale === "pl" ? "Biblioteka" : "Library").closest(".nav-group");
+    if (!group) throw new Error("Library nav group not found");
+    const items = Array.from(group.querySelectorAll(".nav-item")).map((node) => node.textContent);
+    expect(items).toEqual(LIBRARY_ORDER[locale]);
+  });
+});

@@ -5,7 +5,6 @@ import type {
   SourceAdapter,
   SourceIngestionResult,
   SourceRefreshTrigger,
-  UnmatchedSourceItem,
 } from "../../api/types";
 
 export type SourcesScreenProps = {
@@ -25,9 +24,6 @@ export type SourcesScreenProps = {
   isCompanyRegistryListExpanded: boolean;
   companyRegistrySearch: string;
   addingRegistryTicker: string | null;
-  unmatchedSourceItems: Record<string, UnmatchedSourceItem[]>;
-  unmatchedSourceItemsError: string | null;
-  expandedUnmatchedAdapters: Record<string, boolean>;
   refreshSources: (trigger: SourceRefreshTrigger) => void;
   refreshCompanyRegistry: (trigger: SourceRefreshTrigger) => void;
   setSourceEnabled: (adapter: SourceAdapter, enabled: boolean) => void;
@@ -37,7 +33,6 @@ export type SourcesScreenProps = {
     adapterId: string,
   ) => void;
   toggleCompanyRegistryList: () => void;
-  toggleUnmatchedSourceItems: (adapterId: string) => void;
   setCompanyRegistrySearch: (value: string) => void;
   addCompanyFromRegistry: (entry: CompanyRegistryEntry) => void;
   openExternalUrl: (url: string) => void;

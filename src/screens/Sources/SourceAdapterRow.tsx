@@ -1,15 +1,70 @@
 import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw } from "lucide-react";
-import type { CompanyRegistryEntry, SourceAdapter, SourceRefreshTrigger, UnmatchedSourceItem } from "../../api/types";
+import type { CompanyRegistryEntry, SourceAdapter, SourceRefreshTrigger } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, ChipList, DenseRow, ErrorText, InfoGrid, SearchField, StatusChip, StatusPill } from "../../ui";
+import {
+  ActionButton,
+  ActionRow,
+  ChipList,
+  DenseRow,
+  EmptyState,
+  ErrorText,
+  Figure,
+  InfoGrid,
+  SearchField,
+  StatusChip,
+  StatusPill,
+} from "../../ui";
 import {
   formatSourceHealth,
-  formatSourceLastResult,
   formatSourceSubtitle,
   formatSourceTrigger,
   sourceLastResultLabel,
 } from "./sourceHelpers";
+
+// F4b S4 (contract § Sources telemetry pass): the fetch-result sentence
+// interpolates several counts, so each one renders through `Figure
+// kind="count"` instead of the plain string `formatSourceLastResult` used to
+// build (retired — text() can't round-trip an interpolated string, and a raw
+// number loses the num-tabular UI face, ADR 0104 dec. 2 amendment).
+function SourceLastResultText({ adapter }: { adapter: SourceAdapter }) {
+  const { text } = useLocale();
+  if (adapter.lastItemsFetched === null) {
+    return <>{text("None")}</>;
+  }
+  if (adapter.sourceType === "company_registry") {
+    return (
+      <>
+        <Figure value={adapter.lastItemsFetched} /> {text("directory entries")} ·{" "}
+        <Figure value={adapter.lastItemsCreated ?? 0} /> {text("refreshed or updated")}
+      </>
+    );
+  }
+  return (
+    <>
+      {text("Fetched")} <Figure value={adapter.lastItemsFetched} /> · {text("created")}{" "}
+      <Figure value={adapter.lastItemsCreated ?? 0} /> · {text("matched")}{" "}
+      <Figure value={adapter.lastItemsMatched ?? 0} /> · {text("unmatched")}{" "}
+      <Figure value={adapter.lastItemsUnmatched ?? 0} />
+      {adapter.lastDetailItemsAttempted !== null ? (
+        <>
+          {" "}
+          · {text("details")} <Figure value={adapter.lastDetailItemsStored ?? 0} />/
+          <Figure value={adapter.lastDetailItemsAttempted} /> {text("saved")} ·{" "}
+          <Figure value={adapter.lastDetailItemsFailed ?? 0} /> {text("failed")}
+        </>
+      ) : null}
+    </>
+  );
+}
+
+// A nullable timestamp as a `Figure kind="datetime"` (contract: "timestamps →
+// Figure datetime") without threading a new formatter prop through
+// AppStateRoot (out of this slice's allowed diff there, F4b S4 contract note)
+// — the row already has the raw ISO value on `adapter`.
+function TimestampFigure({ value, emptyLabel }: { value: string | null; emptyLabel: string }) {
+  return value ? <Figure kind="datetime" value={value} /> : <>{emptyLabel}</>;
+}
 
 type SourceAdapterRowProps = {
   adapter: SourceAdapter;
@@ -17,7 +72,6 @@ type SourceAdapterRowProps = {
   companyRegistryEntries: CompanyRegistryEntry[];
   companyRegistryEntriesError: string | null;
   companyRegistrySearch: string;
-  expandedUnmatchedAdapters: Record<string, boolean>;
   filteredCompanyRegistryEntries: CompanyRegistryEntry[];
   isCompanyRegistryListExpanded: boolean;
   registryRefreshError: string | null;
@@ -26,18 +80,15 @@ type SourceAdapterRowProps = {
   selected: boolean;
   sourceAdapterRefreshInFlight: string | null;
   sourceRefreshError: string | null;
-  unmatchedSourceItems: Record<string, UnmatchedSourceItem[]>;
   addCompanyFromRegistry: (entry: CompanyRegistryEntry) => void;
   formatNextRefresh: (adapter: SourceAdapter) => string;
   formatSourceScheduler: (adapter: SourceAdapter) => string;
-  formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   openExternalUrl: (url: string) => void;
   refreshCompanyRegistry: (trigger: SourceRefreshTrigger) => void;
   setSourceEnabled: (adapter: SourceAdapter, enabled: boolean) => void;
   setCompanyRegistrySearch: (value: string) => void;
   toggleCompanyRegistryList: () => void;
   toggleSourceAdapter: (adapterId: string) => void;
-  toggleUnmatchedSourceItems: (adapterId: string) => void;
 };
 
 export function SourceAdapterRow({
@@ -57,7 +108,6 @@ export function SourceAdapterRow({
   addCompanyFromRegistry,
   formatNextRefresh,
   formatSourceScheduler,
-  formatTimestamp,
   openExternalUrl,
   refreshCompanyRegistry,
   setSourceEnabled,
@@ -85,6 +135,7 @@ export function SourceAdapterRow({
           type="button"
           aria-label={`${text("Open source")}: ${adapter.displayName}`}
           className="source-row-main"
+          data-action-kind="control"
           onClick={() => toggleSourceAdapter(adapter.id)}
           title={`${text("Open")} ${adapter.displayName} ${text("details")}`}
         >
@@ -106,7 +157,7 @@ export function SourceAdapterRow({
               <StatusPill key={market}>{market}</StatusPill>
             ))}
             {adapter.markets.length === 0 ? (
-              <span className="membership-empty">{text("No markets")}</span>
+              <EmptyState kind="quiet" className="membership-empty" reason={text("No markets")} />
             ) : null}
           </ChipList>
         </button>
@@ -136,13 +187,15 @@ export function SourceAdapterRow({
             (sources.css) — the detail values remain available in the expanded
             detail panel below. */}
         <div className="source-row-schedule" aria-label={text("Schedule")}>
-          <span className="source-row-meta-value">{text(formatSourceScheduler(adapter))}</span>
+          <span className="source-row-meta-value">{formatSourceScheduler(adapter)}</span>
           <span className="source-row-meta-value source-row-meta-muted">{formatNextRefresh(adapter)}</span>
         </div>
         <div className="source-row-diagnostics" aria-label={text("Last fetch")}>
-          <span className="source-row-meta-value">{formatTimestamp(adapter.lastAttemptAt, text("Never"))}</span>
+          <span className="source-row-meta-value">
+            <TimestampFigure value={adapter.lastAttemptAt} emptyLabel={text("Never")} />
+          </span>
           <span className="source-row-meta-value source-row-meta-muted">
-            {text(formatSourceLastResult(adapter))}
+            <SourceLastResultText adapter={adapter} />
           </span>
         </div>
       </DenseRow>
@@ -154,13 +207,22 @@ export function SourceAdapterRow({
           <InfoGrid
             className="source-status-grid source-status-detail"
             items={[
-              { label: text("Scheduler"), value: text(formatSourceScheduler(adapter)) },
-              { label: text("Next poll"), value: formatNextRefresh(adapter) },
-              { label: text("Last attempt"), value: formatTimestamp(adapter.lastAttemptAt, text("Never")) },
-              { label: text("Last trigger"), value: text(formatSourceTrigger(adapter)) },
-              { label: text("Last success"), value: formatTimestamp(adapter.lastSuccessAt, text("Never")) },
-              { label: text("Last error"), value: formatTimestamp(adapter.lastErrorAt, text("None")) },
-              { label: text(sourceLastResultLabel(adapter)), value: text(formatSourceLastResult(adapter)) },
+              { label: text("Refreshing"), value: formatSourceScheduler(adapter) },
+              { label: text("Next refresh"), value: formatNextRefresh(adapter) },
+              {
+                label: text("Last attempt"),
+                value: <TimestampFigure value={adapter.lastAttemptAt} emptyLabel={text("Never")} />,
+              },
+              { label: text("Last run by"), value: text(formatSourceTrigger(adapter)) },
+              {
+                label: text("Last success"),
+                value: <TimestampFigure value={adapter.lastSuccessAt} emptyLabel={text("Never")} />,
+              },
+              {
+                label: text("Last error"),
+                value: <TimestampFigure value={adapter.lastErrorAt} emptyLabel={text("None")} />,
+              },
+              { label: text(sourceLastResultLabel(adapter)), value: <SourceLastResultText adapter={adapter} /> },
               ...(isCompanyDirectorySource
                 ? []
                 : [{ label: text("Detail warning"), value: adapter.lastDetailWarning ?? text("None") }]),
@@ -168,15 +230,15 @@ export function SourceAdapterRow({
               {
                 label: text("Source page"),
                 value: (
-                  <Button
-                    aria-label={`${text("Open source page for")} ${adapter.displayName}`}
+                  <ActionButton
+                    verb="open"
                     className="source-page-link"
                     onClick={() => openExternalUrl(adapter.sourceUrl)}
                     variant="minimal"
                   >
                     <ExternalLink size={14} />
                     {text("Open source page")}
-                  </Button>
+                  </ActionButton>
                 ),
               },
             ]}
@@ -241,17 +303,19 @@ function RegistrySourcePanel({
   return (
     <>
       <ActionRow className="source-registry-actions" ariaLabel={text("Company directory refresh")}>
-        <Button
+        <ActionButton
+          verb="refresh"
           className="compact-button"
           disabled={registryRefreshState === "refreshing"}
           onClick={() => refreshCompanyRegistry("manual")}
         >
           {registryRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
           {registryRefreshState === "refreshing" ? text("Refreshing") : text("Refresh company directory")}
-        </Button>
+        </ActionButton>
         {registryRefreshResult ? (
           <span>
-            {registryRefreshResult.entriesUpserted}/{registryRefreshResult.entriesFetched} {text("saved entries")}
+            <Figure value={registryRefreshResult.entriesUpserted} />/
+            <Figure value={registryRefreshResult.entriesFetched} /> {text("saved entries")}
           </span>
         ) : null}
         {registryRefreshError ? (
@@ -261,13 +325,15 @@ function RegistrySourcePanel({
       <div className="source-collapsible-panel" aria-label={text("Company directory entries")}>
         <button
           aria-expanded={isCompanyRegistryListExpanded}
+          aria-label={text("Companies")}
           className="source-collapsible-header"
+          data-action-kind="control"
           onClick={toggleCompanyRegistryList}
           type="button"
         >
           <span>{text("Companies")}</span>
           <span className="source-collapsible-header-meta">
-            <strong>{companyRegistryEntries.length}</strong>
+            <strong><Figure value={companyRegistryEntries.length} /></strong>
             <ChevronDown className={isCompanyRegistryListExpanded ? "chevron-open" : ""} size={15} />
           </span>
         </button>
@@ -283,29 +349,49 @@ function RegistrySourcePanel({
               value={companyRegistrySearch}
             />
             <span className="source-registry-count">
-              {filteredCompanyRegistryEntries.length}/{companyRegistryEntries.length} {text("companies")}
+              <Figure value={filteredCompanyRegistryEntries.length} />/
+              <Figure value={companyRegistryEntries.length} /> {text("companies")}
             </span>
             {filteredCompanyRegistryEntries.map((entry) => (
               <div className="source-registry-row" key={entry.qualifiedTicker}>
                 <span><TickerLabel value={entry.qualifiedTicker} /></span>
                 <strong title={entry.displayName}>{entry.displayName}</strong>
                 <small>{entry.isin ?? text("No ISIN")}</small>
-                <Button
-                  className="compact-button"
-                  disabled={entry.tracked || addingRegistryTicker === entry.qualifiedTicker}
-                  onClick={() => addCompanyFromRegistry(entry)}
-                  title={entry.tracked ? `${entry.qualifiedTicker} ${text("already added")}` : `${text("Add")} ${entry.qualifiedTicker}`}
-                >
-                  {entry.tracked ? <CheckCircle2 size={14} /> : <Plus size={14} />}
-                  {entry.tracked ? text("Added") : text("Add")}
-                </Button>
+                {entry.tracked ? (
+                  <span
+                    className="compact-button source-registry-added-chip"
+                    title={`${entry.qualifiedTicker} ${text("already added")}`}
+                  >
+                    <CheckCircle2 size={14} />
+                    {text("Added")}
+                  </span>
+                ) : (
+                  <ActionButton
+                    verb="add"
+                    className="compact-button"
+                    disabled={addingRegistryTicker === entry.qualifiedTicker}
+                    onClick={() => addCompanyFromRegistry(entry)}
+                    title={`${text("Add")} ${entry.qualifiedTicker}`}
+                  >
+                    <Plus size={14} />
+                    {text("Add")}
+                  </ActionButton>
+                )}
               </div>
             ))}
             {companyRegistryEntries.length === 0 ? (
-              <span className="membership-empty">{text("No companies available yet. Refresh the company directory first.")}</span>
+              <EmptyState
+                kind="quiet"
+                className="membership-empty"
+                reason={text("No companies available yet. Refresh the company directory first.")}
+              />
             ) : null}
             {companyRegistryEntries.length > 0 && filteredCompanyRegistryEntries.length === 0 ? (
-              <span className="membership-empty">{text("No company directory entries match this search.")}</span>
+              <EmptyState
+                kind="quiet"
+                className="membership-empty"
+                reason={text("No company directory entries match this search.")}
+              />
             ) : null}
             {companyRegistryEntriesError ? (
               <ErrorText as="span">{text("Company directory list failed")}: {companyRegistryEntriesError}</ErrorText>

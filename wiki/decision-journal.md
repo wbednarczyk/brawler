@@ -33,8 +33,9 @@ journal you can quietly rewrite is worthless for judging your own judgment.
 Before a company reports, write down what you expect — then let the actual
 numbers answer.
 
-**Where:** the **Report Season** screen (command palette → **Open screen:
-Report Season**) → a company's upcoming-report card → **Write expectations**.
+**Where:** the **Report Season** screen (Library nav, or command palette →
+**Open screen: Report Season**) → a company's upcoming-report card →
+**Add expectations**.
 
 1. Record your overall **stance** for the report (a short free-text take).
 2. Optionally add **metric rows** — revenue, net profit, or any tracked KPI —

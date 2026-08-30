@@ -2,7 +2,7 @@ import { CheckCircle2, RefreshCw } from "lucide-react";
 import { useLocale } from "../../shared/locale";
 import { useDeveloperMode } from "../../app/state/SettingsContext";
 import { useSourcesViewModel } from "../../app/state/SourcesContext";
-import { Button, EmptyState, ErrorText, InfoGrid, PanelHeader, SectionHeader } from "../../ui";
+import { ActionButton, EmptyState, ErrorText, Figure, InfoGrid, PanelHeader, SectionHeader } from "../../ui";
 import { groupSourceAdapters } from "./sourceHelpers";
 import { SourceAdapterRow } from "./SourceAdapterRow";
 
@@ -24,21 +24,16 @@ export function SourcesScreen() {
     isCompanyRegistryListExpanded,
     companyRegistrySearch,
     addingRegistryTicker,
-    unmatchedSourceItems,
-    unmatchedSourceItemsError,
-    expandedUnmatchedAdapters,
     refreshSources,
     refreshCompanyRegistry,
     setSourceEnabled,
     toggleSourceAdapter,
     toggleCompanyRegistryList,
-    toggleUnmatchedSourceItems,
     setCompanyRegistrySearch,
     addCompanyFromRegistry,
     openExternalUrl,
     formatSourceScheduler,
     formatNextRefresh,
-    formatTimestamp,
   } = useSourcesViewModel();
   const { t, text } = useLocale();
   const developerMode = useDeveloperMode();
@@ -51,14 +46,15 @@ export function SourcesScreen() {
         description={t("sources.description")}
         titleId="sources-title"
         actions={
-          <Button
+          <ActionButton
+            verb="refresh"
             className="compact-button"
             disabled={sourceRefreshState === "refreshing"}
             onClick={() => refreshSources("manual")}
           >
             {sourceRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
             {sourceRefreshState === "refreshing" ? t("action.refreshing") : t("action.refreshSources")}
-          </Button>
+          </ActionButton>
         }
       />
 
@@ -69,7 +65,7 @@ export function SourcesScreen() {
               className="source-group-header"
               title={text(group.label)}
               description={text(group.description)}
-              meta={group.adapters.length}
+              meta={<Figure value={group.adapters.length} />}
             />
             <div className="source-group-list">
               {group.adapters.map((adapter) => (
@@ -83,7 +79,6 @@ export function SourcesScreen() {
                   }
                   companyRegistryEntriesError={companyRegistryEntriesError}
                   companyRegistrySearch={companyRegistrySearch}
-                  expandedUnmatchedAdapters={expandedUnmatchedAdapters}
                   filteredCompanyRegistryEntries={
                     adapter.sourceType === "company_registry"
                       ? filteredCompanyRegistryEntries.filter((entry) => entry.sourceAdapterId === adapter.id)
@@ -97,29 +92,38 @@ export function SourcesScreen() {
                   selected={selectedSourceAdapterId === adapter.id}
                   sourceAdapterRefreshInFlight={sourceAdapterRefreshInFlight}
                   sourceRefreshError={sourceRefreshError}
-                  unmatchedSourceItems={unmatchedSourceItems}
                   addCompanyFromRegistry={addCompanyFromRegistry}
                   formatNextRefresh={formatNextRefresh}
                   formatSourceScheduler={formatSourceScheduler}
-                  formatTimestamp={formatTimestamp}
                   openExternalUrl={openExternalUrl}
                   refreshCompanyRegistry={refreshCompanyRegistry}
                   setSourceEnabled={setSourceEnabled}
                   setCompanyRegistrySearch={setCompanyRegistrySearch}
                   toggleCompanyRegistryList={toggleCompanyRegistryList}
                   toggleSourceAdapter={toggleSourceAdapter}
-                  toggleUnmatchedSourceItems={toggleUnmatchedSourceItems}
                 />
               ))}
             </div>
           </section>
         ))}
-        {sourceAdapters.length === 0 ? <EmptyState>{t("empty.noSourceAdapters")}</EmptyState> : null}
+        {sourceAdapters.length === 0 ? (
+          <EmptyState
+            kind="invitation"
+            title={text("No sources")}
+            source={t("empty.noSourceAdapters")}
+            action={
+              <ActionButton
+                verb="refresh"
+                disabled={sourceRefreshState === "refreshing"}
+                onClick={() => refreshSources("manual")}
+              >
+                {t("action.refreshSources")}
+              </ActionButton>
+            }
+          />
+        ) : null}
         {sourceAdaptersError ? <ErrorText>{t("error.sourceCommandFailed")}: {sourceAdaptersError}</ErrorText> : null}
         {sourceRefreshError ? <ErrorText>{t("error.sourceRefreshFailed")}: {sourceRefreshError}</ErrorText> : null}
-        {unmatchedSourceItemsError ? (
-          <ErrorText>{t("error.unmatchedSourceDiagnosticsFailed")}: {unmatchedSourceItemsError}</ErrorText>
-        ) : null}
         {developerMode && sourceRefreshResult ? (
           <section className="source-developer-summary" aria-label={text("Developer source refresh summary")}>
             <SectionHeader

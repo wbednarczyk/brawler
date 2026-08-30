@@ -11,6 +11,14 @@ import { ReportSeasonProvider } from "../../app/state/screenViewModels";
 vi.mock("../../api/reportSeason");
 vi.mock("../../api/reportExpectations");
 
+// F4b S4: KPI values render as `Figure kind="money"` (a formatted span) plus
+// a separate unit text node — RTL's default string matcher can't join text
+// split across sibling elements, so this asserts on normalized textContent.
+function exactJoinedText(expected: string) {
+  return (_content: string, node: Element | null) =>
+    (node?.textContent ?? "").replace(/\s+/g, " ").trim() === expected;
+}
+
 const watchlists: Watchlist[] = [
   { id: "watchlist_main", name: "Main GPW", description: null, companyCount: 1 },
 ];
@@ -141,8 +149,51 @@ describe("Report-season expectations (J4)", () => {
 
     await user.click(await screen.findByText("CD Projekt"));
     expect(
-      await screen.findByRole("button", { name: /Write expectations/ }),
+      await screen.findByRole("button", { name: /Add expectations/ }),
     ).toBeInTheDocument();
+  });
+
+  // F4b S4 (contract § Report Season, decision 5-style card choreography):
+  // one filled action per expanded card, coordinated across the prep
+  // checklist AND the expectations section.
+  it("card primary choreography: no expectation → `Add expectations`; an expectation exists → `Mark as prepared`; composer open → `Save`", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+    await screen.findByRole("button", { name: /Add expectations/ });
+    let primaries = document.querySelectorAll('[data-ux-primary-action="true"]');
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]).toHaveTextContent("Add expectations");
+
+    // Opening the composer demotes it: `Save` becomes the sole primary.
+    await user.click(screen.getByRole("button", { name: /Add expectations/ }));
+    await screen.findByRole("button", { name: "Save" });
+    primaries = document.querySelectorAll('[data-ux-primary-action="true"]');
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]).toHaveTextContent("Save");
+  });
+
+  it("card primary choreography: an expectation exists → `Mark as prepared` is the one filled action", async () => {
+    vi.mocked(expectationsApi.listReportExpectations).mockResolvedValue([sampleExpectation()]);
+
+    const user = userEvent.setup();
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+    await screen.findByRole("button", { name: /Edit expectations/ });
+
+    const primaries = document.querySelectorAll('[data-ux-primary-action="true"]');
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]).toHaveTextContent("Mark as prepared");
   });
 
   it("writes a stance-only expectation for the occurrence", async () => {
@@ -154,10 +205,10 @@ describe("Report-season expectations (J4)", () => {
     );
 
     await user.click(await screen.findByText("CD Projekt"));
-    await user.click(await screen.findByRole("button", { name: /Write expectations/ }));
+    await user.click(await screen.findByRole("button", { name: /Add expectations/ }));
     await user.selectOptions(await screen.findByLabelText("Period type"), "H1");
     await user.type(screen.getByLabelText("Your stance"), "Margin recovery on the launch.");
-    await user.click(screen.getByRole("button", { name: /Save expectations/ }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(expectationsApi.createReportExpectation).toHaveBeenCalledWith(
@@ -182,14 +233,14 @@ describe("Report-season expectations (J4)", () => {
     );
 
     await user.click(await screen.findByText("CD Projekt"));
-    await user.click(await screen.findByRole("button", { name: /Write expectations/ }));
+    await user.click(await screen.findByRole("button", { name: /Add expectations/ }));
     await user.selectOptions(await screen.findByLabelText("Period type"), "H1");
     await user.type(screen.getByLabelText("Your stance"), "Revenue above a billion.");
-    await user.click(screen.getByRole("button", { name: /Add metric expectation/ }));
+    await user.click(screen.getByRole("button", { name: /Add metric/ }));
     await user.selectOptions(screen.getByLabelText("Metric"), "net_revenue");
-    await user.selectOptions(screen.getByLabelText("Comparator"), "gte");
+    await user.selectOptions(screen.getByLabelText("Direction"), "gte");
     await user.type(screen.getByLabelText("Expected value"), "1000000000");
-    await user.click(screen.getByRole("button", { name: /Save expectations/ }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(expectationsApi.createReportExpectation).toHaveBeenCalledWith(
@@ -241,7 +292,7 @@ describe("Report-season expectations (J4)", () => {
 
     // Frozen → read-only review, no composer trigger.
     expect(await screen.findByText(/Expectations vs actuals/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Write expectations/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add expectations/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Edit expectations/ })).toBeNull();
     // Expected vs actual side by side, plus the factual outcome.
     expect(screen.getByText(/1200000000/)).toBeInTheDocument();
@@ -282,12 +333,12 @@ describe("Report-season expectations (J4)", () => {
     await user.click(await screen.findByRole("button", { name: /Edit expectations/ }));
     await user.clear(screen.getByLabelText("Your stance"));
     await user.type(screen.getByLabelText("Your stance"), "Hindsight rewrite");
-    await user.click(screen.getByRole("button", { name: /Save expectations/ }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     // The conflict envelope reloads the review, which is now frozen → read-only:
     // the composer's save action is gone.
     expect(await screen.findByText(/Expectations vs actuals/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Save expectations/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   });
 });
 
@@ -306,7 +357,7 @@ describe("Report-season cockpit", () => {
 
     expect(await screen.findByText("Czy marża brutto się utrzyma?")).toBeInTheDocument();
     expect(screen.getByText("Net Revenue")).toBeInTheDocument();
-    expect(screen.getByText("950000000 PLN")).toBeInTheDocument();
+    expect(screen.getByText(exactJoinedText("950 M PLN"))).toBeInTheDocument();
     expect(reportSeasonApi.getPreReportCard).toHaveBeenCalledWith({
       companyId: "company_gpw_cdr",
       eventKey: "evt-upcoming",
@@ -339,7 +390,7 @@ describe("Report-season cockpit", () => {
     );
 
     await user.click(await screen.findByText("CD Projekt"));
-    await user.click(await screen.findByRole("button", { name: /Mark prepared/ }));
+    await user.click(await screen.findByRole("button", { name: /Mark as prepared/ }));
 
     await waitFor(() =>
       expect(reportSeasonApi.markReportPrepared).toHaveBeenCalledWith({
@@ -367,10 +418,10 @@ describe("Report-season cockpit", () => {
     );
 
     await user.click(await screen.findByText("CD Projekt"));
-    await user.click(await screen.findByRole("button", { name: "Open workspace" }));
+    await user.click(await screen.findByRole("button", { name: "Company" }));
     expect(openCompanyWorkspace).toHaveBeenCalledWith("company_gpw_cdr", "Feed");
 
-    await user.click(screen.getByRole("button", { name: "Open claims" }));
+    await user.click(screen.getByRole("button", { name: "Claims" }));
     expect(openCompanyWorkspace).toHaveBeenCalledWith("company_gpw_cdr", "Claims");
   });
 
