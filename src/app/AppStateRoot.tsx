@@ -41,6 +41,7 @@ import { useResearchController } from "./useResearchController";
 import { useSettingsController } from "./useSettingsController";
 import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
+import { buildEventsScreenProps } from "./useEventsScreenWiring";
 import { buildTodayScreenProps, useRefreshCompletionSignal } from "./useTodayScreenWiring";
 import { useTranscriptController } from "./useTranscriptController";
 import { buildWatchlistsScreenProps } from "./useWatchlistsScreenWiring";
@@ -60,7 +61,6 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
 import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
 import { EventsScreen } from "../screens/Events/EventsScreen";
-import type { EventsScreenProps } from "../screens/Events/eventTypes";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
 import { ReportSeasonScreen } from "../screens/ReportSeason/ReportSeasonScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
@@ -90,7 +90,6 @@ import {
 } from "../shared/format/datetime";
 import {
   formatAiProvider,
-  formatCompanyEventSourceType,
   formatCompanyEventStatus,
   formatCompanyEventType,
   formatCredentialConfigured,
@@ -601,7 +600,9 @@ export function AppStateRoot({
 
   const {
     clearCompanyEventFilters,
+    companyEventsLoading,
     createCompanyEvent,
+    findNextWeekWithEvents,
     openCompanyEventComposer,
     refreshCompanyEvents,
   } = useCompanyEventsController({
@@ -1583,67 +1584,6 @@ export function AppStateRoot({
     MarkdownNoteBody,
     renderNotebookOrigins,
   };
-  const eventsViewModel: EventsScreenProps = {
-    companies,
-    watchlists,
-    companyEvents,
-    companyEventsError,
-    selectedCompanyEventId,
-    sourceRefreshState,
-    selectedSourceAdapterId,
-    sourceAdapterRefreshInFlight,
-    companyEventViewMode,
-    companyEventMode,
-    companyEventWeekRange,
-    companyEventWorkingWeekDays,
-    companyEventWeekendDays,
-    companyEventWeekendEvents,
-    companyEventsByDate,
-    companyEventWatchlistFilter,
-    companyEventCompanyFilter,
-    companyEventTypeFilter,
-    companyEventStatusFilter,
-    companyEventDateFrom,
-    companyEventDateTo,
-    companyEventTypes,
-    companyEventStatuses,
-    isCompanyEventComposerOpen,
-    companyEventForm,
-    companyEventCreateError,
-    companyEventTypeOptions,
-    companyEventStatusOptions,
-    refreshEventSources,
-    confirmDerivedEvent,
-    openCompanyEventComposer,
-    setCompanyEventViewMode,
-    setCompanyEventMode,
-    setCompanyEventWeekAnchorDate,
-    setCompanyEventWatchlistFilter,
-    setCompanyEventCompanyFilter,
-    setCompanyEventTypeFilter,
-    setCompanyEventStatusFilter,
-    setCompanyEventDateFrom,
-    setCompanyEventDateTo,
-    setCompanyEventComposerOpen,
-    setCompanyEventCreateError,
-    setCompanyEventForm,
-    setSelectedCompanyEventId,
-    clearCompanyEventFilters,
-    createCompanyEvent,
-    NotebookDateField,
-    formatLocalDate,
-    parseLocalDate,
-    addLocalDays,
-    formatWeekRange,
-    formatTimestamp,
-    formatCompanyEventType,
-    formatCompanyEventStatus,
-    formatCompanyEventSourceType,
-    companyEventDueLabel: companyEventDueLabelLocalized,
-    companyEventDueClass,
-    openExternalUrl,
-  };
-
   // Pinned-company spine (ADR 0054). Resolve persisted IDs against the live
   // company list, dropping any that no longer exist, and preserve pin order.
   const pinnedCompanyIds = settings?.pinnedCompanyIds ?? [];
@@ -1697,7 +1637,67 @@ export function AppStateRoot({
     removeCompanyFromWatchlist,
     openCompanyWorkspaceById,
   });
-
+  const eventsViewModel = buildEventsScreenProps({
+    companies,
+    watchlists,
+    companyEvents,
+    companyEventsError,
+    companyEventsLoading,
+    selectedCompanyEventId,
+    sourceRefreshState,
+    sourceAdapterRefreshInFlight,
+    sourceAdapters,
+    findNextWeekWithEvents,
+    openCompanyWorkspaceById,
+    companyEventViewMode,
+    companyEventMode,
+    companyEventWeekRange,
+    companyEventWorkingWeekDays,
+    companyEventWeekendDays,
+    companyEventWeekendEvents,
+    companyEventsByDate,
+    companyEventWatchlistFilter,
+    companyEventCompanyFilter,
+    companyEventTypeFilter,
+    companyEventStatusFilter,
+    companyEventDateFrom,
+    companyEventDateTo,
+    companyEventTypes,
+    companyEventStatuses,
+    isCompanyEventComposerOpen,
+    companyEventForm,
+    companyEventCreateError,
+    companyEventTypeOptions,
+    companyEventStatusOptions,
+    refreshEventSources,
+    openCompanyEventComposer,
+    setCompanyEventViewMode,
+    setCompanyEventMode,
+    setCompanyEventWeekAnchorDate,
+    setCompanyEventWatchlistFilter,
+    setCompanyEventCompanyFilter,
+    setCompanyEventTypeFilter,
+    setCompanyEventStatusFilter,
+    setCompanyEventDateFrom,
+    setCompanyEventDateTo,
+    setCompanyEventComposerOpen,
+    setCompanyEventCreateError,
+    setCompanyEventForm,
+    setSelectedCompanyEventId,
+    clearCompanyEventFilters,
+    createCompanyEvent,
+    NotebookDateField,
+    formatLocalDate,
+    parseLocalDate,
+    addLocalDays,
+    formatWeekRange,
+    formatCompanyEventType,
+    formatCompanyEventStatus,
+    companyEventDueLabel: companyEventDueLabelLocalized,
+    companyEventDueClass,
+    openExternalUrl,
+    confirmDerivedEvent,
+  });
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
       <SettingsProvider value={settings ?? null}>

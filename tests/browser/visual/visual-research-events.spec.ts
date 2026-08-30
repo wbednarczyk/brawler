@@ -51,8 +51,22 @@ test.describe("visual — research / events / report season", () => {
     const pane = await openEvents(page);
     await expect(pane.locator(".events-layout")).toBeVisible();
     await shootPanel(page, pane, "events");
-    // TODO(F4b S3): shoot the "empty" state (catalog.core.mjs already
-    // declares it) once the redesign's empty-week invitation seeding lands.
+  });
+
+  // F4b S3: the empty-week invitation (decision 4) — navigate two weeks
+  // ahead of the seeded data so the displayed week has no events, matching
+  // the state the redesign's empty-state panel actually renders. A distinct
+  // screenshot name (`events-empty`, not `events`) avoids colliding with the
+  // populated baseline above — Playwright's default snapshot naming has no
+  // room for a `state` segment (`{arg}-{tier}-{project}-{platform}.png`).
+  test("Events empty week across pane tiers", async ({ page }) => {
+    await openApp(page);
+    const pane = await openEvents(page);
+    const nextWeek = pane.getByRole("button", { name: "Next week" });
+    await nextWeek.click();
+    await nextWeek.click();
+    await expect(pane.locator(".event-week-empty-panel")).toBeVisible();
+    await shootPanel(page, pane, "events-empty", { state: "empty" });
   });
 
   test("Report Season across pane tiers", async ({ page }) => {

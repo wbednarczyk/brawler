@@ -359,28 +359,51 @@ const notebookEntries: NotebookEntry[] = companies.flatMap((entry, index) =>
   ),
 );
 
+// Dated relative to the real clock (F4b S3), not a fixed past month: the
+// Events week grid's default anchor is `new Date()`, so a fixed date drifts
+// out of the "current week" the day it's authored and silently empties the
+// screen for every browser run after that. Monday of THIS week + an offset
+// keeps four events inside the default working-week view regardless of when
+// the suite runs.
+function thisWeekMonday(): Date {
+  const now = new Date();
+  const day = now.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + mondayOffset);
+  return monday;
+}
+
+function isoDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 const companyEvents: CompanyEvent[] = companies
-  .slice(0, 4)
-  .map((entry, index) => ({
-    id: `event_${entry.id}`,
-    companyId: entry.id,
-    company: entry.qualifiedTicker,
-    companyName: entry.displayName,
-    eventType: "periodic_report",
-    title: `${entry.ticker} periodic report`,
-    eventDate: `2026-06-${String(10 + index).padStart(2, "0")}`,
-    eventTime: null,
-    status: "scheduled",
-    sourceType: "official_calendar",
-    sourceAdapterId: "gpw-market-events-rss",
-    sourceEventKey: `event:${entry.id}`,
-    sourceUrl: "https://example.test/event",
-    attribution: "Sample",
-    fetchedAt: "2026-06-05T09:00:00Z",
-    manual: false,
-    createdAt: "2026-06-05T09:00:00Z",
-    updatedAt: "2026-06-05T09:00:00Z",
-  }));
+  .slice(0, 5)
+  .map((entry, index) => {
+    const eventDate = new Date(thisWeekMonday());
+    eventDate.setDate(eventDate.getDate() + index);
+    return {
+      id: `event_${entry.id}`,
+      companyId: entry.id,
+      company: entry.qualifiedTicker,
+      companyName: entry.displayName,
+      eventType: "periodic_report",
+      title: `${entry.ticker} raport za I kwartał`,
+      eventDate: isoDate(eventDate),
+      eventTime: null,
+      status: "scheduled",
+      sourceType: "official_calendar",
+      sourceAdapterId: "gpw-market-events-rss",
+      sourceEventKey: `event:${entry.id}`,
+      sourceUrl: "https://example.test/event",
+      attribution: "Sample",
+      fetchedAt: "2026-06-05T09:00:00Z",
+      manual: false,
+      createdAt: "2026-06-05T09:00:00Z",
+      updatedAt: "2026-06-05T09:00:00Z",
+    };
+  });
 
 // KNF short-selling register (v0.55 T4b). CD PROJEKT carries active positions +
 // change history (populated panel); ORLEN carries only a remembered exit (the

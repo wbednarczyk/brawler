@@ -23,6 +23,13 @@ export type EmptyStateInvitationProps = {
 export type EmptyStateQuietProps = {
   kind: "quiet";
   reason: string;
+  /**
+   * Optional low-emphasis recovery control (F4b S3, Events "no later match
+   * under active filters" — a `Wyczyść filtry` control, never a primary
+   * call-to-action; that shape stays "invitation"). Omitted for the plain
+   * "nothing here, nothing to do" reading (Alerts' "nothing fired").
+   */
+  action?: ReactElement;
   className?: string;
 };
 
@@ -90,6 +97,7 @@ export function EmptyState(props: EmptyStateProps) {
     return (
       <div className={className} data-empty-kind="quiet">
         <span>{props.reason}</span>
+        {props.action ? <span className="empty-state-quiet-action">{props.action}</span> : null}
       </div>
     );
   }

@@ -1,8 +1,8 @@
 import { useLocale, type LocaleCode } from "../shared/locale";
 import { formatCount, formatFinancialValue, formatFixedPercent, groupFormat } from "../shared/format/financialValue";
-import { formatDetailTimestamp, formatLocalIsoDate } from "../shared/format/datetime";
+import { formatDetailTimestamp, formatLocalIsoDate, formatShortLocalDate } from "../shared/format/datetime";
 
-export type FigureKind = "count" | "percent" | "date" | "datetime" | "money" | "badge";
+export type FigureKind = "count" | "percent" | "date" | "date-short" | "datetime" | "money" | "badge";
 
 export type FigureProps = {
   value: number | string;
@@ -31,6 +31,8 @@ function formatFigureValue(value: number | string, kind: FigureKind, locale: Loc
       return formatFinancialValue({ valueNumeric: String(value), valueKind: "monetary" }, locale);
     case "date":
       return formatLocalIsoDate(String(value));
+    case "date-short":
+      return formatShortLocalDate(String(value));
     case "datetime":
       return formatDetailTimestamp(String(value));
     // A fixed-width chip (badge) caps at "99+" so a triple-digit count never

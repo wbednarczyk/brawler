@@ -40,6 +40,7 @@ export function FilterToolbar({ ariaLabel, children, className, search }: Filter
       <button
         type="button"
         className="filter-toolbar-disclosure"
+        data-action-kind="control"
         aria-expanded={expanded}
         onClick={() => setExpanded((open) => !open)}
       >
