@@ -73,16 +73,23 @@ test("Wydarzenia: an empty week offers the jump to the next week with events", a
   test.setTimeout(120_000);
   await openLibrary(page, /^(Wydarzenia|Events)$/);
   const next = page.getByRole("button", { name: /Następny tydzień|Next week/ });
-  // Walk forward until a week without events (the real calendar has one within ~6 weeks).
+  const pendingLine = page.getByText(/Sprawdzam kolejne tygodnie|Checking later weeks/);
+  // Walk forward until a week without events (the real calendar has one within
+  // ~6 weeks). Sol R3: the lookup-pending state is itself a quiet empty state,
+  // so wait it out — only a TERMINAL state (jump or no-later-match) counts.
   for (let i = 0; i < 8; i += 1) {
     const invitation = page.locator('[data-empty-kind="invitation"], [data-empty-kind="quiet"]');
-    if (await invitation.isVisible()) break;
+    if (await invitation.isVisible()) {
+      await expect(pendingLine).toBeHidden({ timeout: 15_000 });
+      break;
+    }
     await next.click();
     await page.waitForTimeout(400);
   }
   const jump = page.getByRole("button", { name: /Pokaż następny tydzień z wydarzeniami|Show next week with events/ });
   const quiet = page.locator('[data-empty-kind="quiet"]');
   await expect(jump.or(quiet)).toBeVisible({ timeout: 15_000 });
+  await expect(pendingLine).toBeHidden({ timeout: 15_000 });
   await shoot(page, "events-empty-week", testInfo);
   // Sol R2: the quiet branch may pass ONLY as the documented no-later-match
   // state — with no filters active the invitation with the jump is required

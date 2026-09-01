@@ -276,4 +276,49 @@ describe("Events empty states (F4b contract § Events, State matrix)", () => {
     expectSinglePrimary(region, 0);
     resolveLookup?.();
   });
+
+  // F4b sol R3 (medium): the error state's `Refresh calendar` must actually
+  // re-run the lookup — a failed first read followed by a retry click ends in
+  // the jump invitation, not a stuck error.
+  it("Empty (lookup failed, then retried): `Refresh calendar` re-runs the lookup and recovers to the jump invitation", async () => {
+    const user = userEvent.setup();
+    const futureDate = formatLocalDate(addLocalDays(new Date(), 21));
+    const futureEvent: CompanyEvent = {
+      id: "event_future_match",
+      companyId: "company_gpw_cdr",
+      company: "GPW:CDR",
+      companyName: "CD PROJEKT S.A.",
+      eventType: "periodic_report",
+      title: "Raport za I kwartał",
+      eventDate: futureDate,
+      eventTime: null,
+      status: "confirmed",
+      sourceType: "official_calendar",
+      sourceAdapterId: "gpw-market-events-rss",
+      sourceEventKey: "future-match",
+      sourceUrl: null,
+      attribution: "GPW",
+      fetchedAt: "2026-06-01T08:00:00Z",
+      manual: false,
+      createdAt: "2026-06-01T08:00:00Z",
+      updatedAt: "2026-06-01T08:00:00Z",
+    };
+    appTestState.companyEventsResponse = [futureEvent];
+    let failedOnce = false;
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      const input = (args as { input?: { mode?: string } } | undefined)?.input;
+      if (command === "list_company_events" && input?.mode === "upcoming" && !failedOnce) {
+        failedOnce = true;
+        return Promise.reject(new Error("network unreachable"));
+      }
+      return handleAppCommand(command, args);
+    });
+    renderApp({ section: "Events" });
+    const region = await screen.findByRole("region", { name: "Events" });
+    const errorLine = await within(region).findByText("Failed to check later weeks");
+    const strip = errorLine.closest(".event-week-empty-panel") as HTMLElement;
+    await user.click(within(strip).getByRole("button", { name: "Refresh calendar" }));
+    await within(region).findByText("Show next week with events");
+    expectSinglePrimary(region, 1);
+  });
 });
