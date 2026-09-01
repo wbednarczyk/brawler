@@ -2,6 +2,14 @@ import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type ExpandableRowProps = {
+  // Rendered inside a real <button> (see below) — HTML only permits
+  // PHRASING content there (spans, text, inline elements). Never a <ul>/
+  // <li>/<div>/<p>/table or another block-level element: browsers and
+  // assistive tech disagree on how to recover from that, and it silently
+  // passes in jsdom (sol R1 finding — Report Season once nested a ListRow's
+  // <li> here). Build a row summary from <span>s (see ReportSeasonScreen.tsx
+  // for the pattern); reserve <ul>/<li> markup for a row NOT hosted in a
+  // button. Guarded by `primitives.test.tsx`'s ExpandableRow block/list case.
   children: ReactNode;
   className?: string;
   detail?: ReactNode;

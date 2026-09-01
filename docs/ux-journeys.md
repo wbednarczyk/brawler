@@ -63,7 +63,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J7 — Weekly review
 
 - **Trigger:** weekend / recurring ritual.
-- **Steps:** `Otwórz ekran: Events` (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: lists with member counts, the selected list's members) → `Otwórz ekran: Research` (review queue + gaps) → Spółka (deepening, via the review queue row's own "Open company" action — owner decision 2026-08-26, ADR 0107) → plan the week.
+- **Steps:** Library nav → Events (or `Otwórz ekran: Events`; F4b S4 — Events joined the Library nav, ADR 0104 dec. 1 amendment) (week calendar — what's coming) → `Otwórz ekran: Watchlists` (overview: lists with member counts, the selected list's members) → `Otwórz ekran: Research` (review queue + gaps) → Spółka (deepening, via the review queue row's own "Open company" action — owner decision 2026-08-26, ADR 0107) → plan the week.
 - **Screens:** Events, Watchlists, Research, Spółka.
 - **Budget:** floor re-based 2026-08-26 at first measurement +1 (consent 5, ADR 0107) — the view-creation leg the old ≤9 measured was frozen, then retired ([ADR 0108](adr/0108-retire-docking-engine.md)); all four task legs stay, now entered through their own screens. Re-measured 2026-08-27: the deepening leg's row-level "Open company" action (watchlist and research rows, owner decision 2026-08-26) replaced the ⌘K palette round-trip, dropping a modal open; floor tightened to the new measurement +1.
 - **Done well:** next week's dates are known; the backlog of research debts is explicit, not vague guilt.
@@ -75,3 +75,5 @@ Settings, Diagnostics, Sources administration, import/export, the **MCP server**
 **Alerts** (F4a, contract `docs/plans/frontend-v2-f4a.md` § Alerts) joins this list: deciding what to be told about and reviewing what fired isn't tied to one journey's steps — it feeds J1 (Today attention) whenever a rule fires. Named spec: `tests/browser/alerts.spec.ts`.
 
 **Sources** (F4b, contract `docs/plans/frontend-v2-f4b.md` § Sources) is named explicitly: source health/schedule/last-result status and the company-directory add flow feed every journey's data without being a step in any one of them. Named spec: `tests/browser/sources.spec.ts`.
+
+**Transcripts** (F4b, contract `docs/plans/frontend-v2-f4b.md` § Transcripts) also joins this list: fetching a YouTube transcript and pulling segments into a company note isn't tied to one journey's steps — it feeds whichever company notebook the user links it to. Named spec: `tests/browser/transcripts.spec.ts`.

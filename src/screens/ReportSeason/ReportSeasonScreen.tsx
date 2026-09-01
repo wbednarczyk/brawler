@@ -104,30 +104,32 @@ export function ReportSeasonScreen() {
     // On past rows a default "upcoming" preparation is noise; only surface a
     // chip there when the user actually prepared or processed the report.
     const showChip = expandable || entry.preparationStatus !== "upcoming";
-    const row = (
-      <ListRow
-        title={
-          <span className="report-season-row-title">
-            <TickerLabel value={entry.qualifiedTicker} />
-            <span className="report-season-company">{entry.displayName}</span>
-          </span>
-        }
-        titleAttr={`${entry.qualifiedTicker} · ${entry.displayName}`}
-        meta={
-          <span className="report-season-row-meta">
-            <Figure kind="date" value={entry.eventDate} />
-            {entry.eventTime ? ` · ${entry.eventTime}` : ""}
-          </span>
-        }
-        trailing={showChip ? preparationChip(entry.preparationStatus) : undefined}
-      />
+    const titleNode = (
+      <span className="report-season-row-title">
+        <TickerLabel value={entry.qualifiedTicker} />
+        <span className="report-season-company">{entry.displayName}</span>
+      </span>
     );
+    const metaNode = (
+      <span className="report-season-row-meta">
+        <Figure kind="date" value={entry.eventDate} />
+        {entry.eventTime ? ` · ${entry.eventTime}` : ""}
+      </span>
+    );
+    const titleAttr = `${entry.qualifiedTicker} · ${entry.displayName}`;
 
     if (!expandable) {
       return (
         <div key={key} className="report-season-row-static">
           {/* ListRow renders an <li>; a lone <li> needs a list parent (axe listitem). */}
-          <ul className="ui-list-rows">{row}</ul>
+          <ul className="ui-list-rows">
+            <ListRow
+              title={titleNode}
+              titleAttr={titleAttr}
+              meta={metaNode}
+              trailing={showChip ? preparationChip(entry.preparationStatus) : undefined}
+            />
+          </ul>
         </div>
       );
     }
@@ -277,8 +279,17 @@ export function ReportSeasonScreen() {
         onToggle={() => toggleExpanded(entry)}
         detail={detail}
       >
-        {/* ListRow renders an <li>; a lone <li> needs a list parent (axe listitem). */}
-        <ul className="ui-list-rows">{row}</ul>
+        {/* sol R1: a <button> only permits phrasing content — ListRow's <li>
+            (and a <ul> around it) is flow content and invalid here. This is
+            the same visual row, built from spans (reusing ListRow's own
+            classes so rows.css needs no change) instead of ListRow itself. */}
+        <span className="ui-list-row" title={titleAttr}>
+          <span className="ui-list-row-main">
+            <span className="ui-list-row-title">{titleNode}</span>
+          </span>
+          <span className="ui-list-row-meta">{metaNode}</span>
+          {showChip ? preparationChip(entry.preparationStatus) : null}
+        </span>
       </ExpandableRow>
     );
   }

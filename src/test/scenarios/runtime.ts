@@ -102,6 +102,15 @@ interface RuntimeContext {
 export interface MockRuntime {
   /** The live store. Tests may read/seed it directly. */
   data: ScenarioData;
+  /**
+   * F4b sol R1: `create/update/list_report_expectations` and
+   * `expectation_review` mutate a router-internal store, not `data`
+   * (`ScenarioData`) — this exposes it the same read/write way so a test can
+   * seed an expectation (and, once frozen via matching `financialPeriods`/
+   * `financialFacts` in `data`, a frozen-unresolved review) before
+   * `renderApp`, instead of skipping that state.
+   */
+  reportExpectations: Record<string, unknown>[];
   /** Route one command. Resolves with the command's contract return shape. */
   invoke(command: string, args?: Args): Promise<unknown>;
   /** Replace the store with a fresh scenario (per-test isolation). */
@@ -4472,6 +4481,12 @@ export function createMockRuntime(
     },
     set data(next: ScenarioData) {
       data = next;
+    },
+    get reportExpectations() {
+      return ctx.reportExpectations;
+    },
+    set reportExpectations(next: Record<string, unknown>[]) {
+      ctx.reportExpectations = next;
     },
     scenario,
     failNext,

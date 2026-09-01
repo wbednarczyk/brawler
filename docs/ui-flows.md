@@ -18,23 +18,9 @@ The default screen is the investor inbox. The second most important surface is t
 
 ## Primary Navigation
 
-V1 navigation should use persistent desktop app regions:
+Retired: the top navigation bar this section described ([ADR 0047](adr/0047-top-navigation-bar.md)) was superseded by the left-sidebar IA spine ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md), [ADR 0107](adr/0107-company-view-paradigm.md)) — canonical shell/nav description: [ui-information-architecture.md § App Shell](ui-information-architecture.md#app-shell).
 
-- top toolbar for the brand, search, refresh, and source status
-- top navigation bar (directly beneath the toolbar) for the primary sections; it wraps to a second line on narrow windows rather than scrolling or hiding items
-- central list or workspace for the current task, full-width beneath the chrome
-- right detail pane when reviewing a feed item, company, note, or transcript segment
-
-The Inbox workspace splits the feed list and detail pane 50/50 by default; the divider is draggable between 25% and 75% of the row. See [ADR 0047](adr/0047-top-navigation-bar.md) for the navigation-region decision.
-
-Primary sections:
-
-- Inbox
-- Companies
-- Notebooks
-- Transcripts
-- Sources
-- Settings
+The Inbox workspace splits the feed list and detail pane 50/50 by default; the divider is draggable between 25% and 75% of the row.
 
 ## Journey: First Run
 
@@ -254,7 +240,7 @@ Intent: arrive at each tracked company's report date already knowing what to che
 
 Flow:
 
-1. The user opens **Report Season** (next to Inbox). The cockpit lists upcoming report dates across the watchlists, ordered by date; a stale-calendar indicator shows when the calendar is out of date.
+1. The user opens **Report Season** (Library nav, or the command palette's `Open screen: Report Season`). The cockpit lists upcoming report dates across the watchlists, ordered by date; a stale-calendar indicator shows when the calendar is out of date.
 2. Each upcoming report shows a pre-report card composed from the company's open research questions, unresolved claims (due / overdue / upcoming), last-period confirmed KPIs, and recent evidence.
 3. From the card the user can **write expectations** for the occurrence (ADR 0071): a free-text stance plus optional per-metric expectations (a metric picked from the card's last-period KPIs, a comparator, and an expected value); the user picks the fiscal period the report covers. Expectations stay editable — and re-openable via **Edit expectations** — until the period's facts land, when they freeze.
 4. The user reviews a card and marks the company **prepared**; from the card they can drill into the company workspace, its research questions, or its claims-review queue.
@@ -278,11 +264,11 @@ Flow:
 1. User opens Transcripts or a company workspace.
 2. User enters a YouTube video link in a field labeled `URL`.
 3. User may optionally provide the target company/ticker before transcription.
-4. App creates a Gemini-backed transcript job.
+4. App starts a Gemini-backed transcription.
 5. If no company was provided, app attempts to recognize the company from the video/transcript result.
 6. If recognition fails, the transcript remains available as an unlinked transcript.
 7. User can optionally link the transcript to a company through the same local lookup used by Companies.
-8. User sees job status while processing.
+8. User sees the transcript's status while processing.
 9. Transcript segments appear with timestamps when available.
 10. User reviews transcript segments.
 11. User selects one or more whole transcript segments.
@@ -296,7 +282,7 @@ Acceptance criteria:
 - Unlinked transcripts remain valid and viewable.
 - Company selection uses the same cached company lookup/autocomplete behavior as Companies when the user wants a company notebook note.
 - User confirms note content before saving.
-- Saved notes link to transcript segment IDs, original YouTube URL, provider/job context, and timestamp ranges when available.
+- Saved notes link to transcript segment IDs, original YouTube URL, provider context, and timestamp ranges when available.
 - Provider limits and privacy implications are visible before sending video data to the provider.
 - Transcript segments are immutable source output and are not edited directly; only note drafts created from them are editable ([ADR 0064](adr/0064-resolved-v1-ux-decisions.md)).
 
