@@ -1,6 +1,6 @@
 import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import type { SourceAdapter, UserSettings } from "../api/types";
-import { useLocale, type LocaleCode } from "../shared/locale";
+import { makeTextTranslator, type LocaleCode } from "../shared/locale";
 import { pluralNoun, type PluralForms } from "../shared/locale/plural";
 import type { Section } from "./navigation";
 
@@ -46,6 +46,10 @@ type SourceDisplayControllerInput = {
   settings: UserSettings | null;
   sourceAdapters: SourceAdapter[];
   sourceRefreshFailureCount: number;
+  // The app locale, passed by AppStateRoot: this hook runs ABOVE the
+  // LocaleContext.Provider AppStateRoot renders, so useLocale() here would
+  // silently read the default (English) context — the F4b live-check bug.
+  locale: LocaleCode;
 };
 
 export function useSourceDisplayController({
@@ -58,8 +62,9 @@ export function useSourceDisplayController({
   settings,
   sourceAdapters,
   sourceRefreshFailureCount,
+  locale,
 }: SourceDisplayControllerInput) {
-  const { locale, text } = useLocale();
+  const text = makeTextTranslator(locale);
 
   function isCompanyDirectorySource(adapter: SourceAdapter) {
     return adapter.sourceType === "company_registry";

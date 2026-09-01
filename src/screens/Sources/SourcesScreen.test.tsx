@@ -118,6 +118,19 @@ describe("Sources screen workflows", () => {
     ).toBeInTheDocument();
   });
 
+  // Regression (F4b live check on PR #447): the controller used to call
+  // useLocale() ABOVE the LocaleContext.Provider that AppStateRoot renders,
+  // silently falling back to English — the Polish app showed "Automatically
+  // every 15 min". Rendering the REAL app in pl must produce the Polish
+  // sentence (a provider-wrapped hook test cannot catch this class).
+  it("renders the scheduler sentence in Polish when the app locale is pl", async () => {
+    appTestState.settingsResponse = { ...appTestState.settingsResponse, locale: "pl" };
+    renderApp({ section: "Sources" });
+    const region = await screen.findByRole("region", { name: "Źródła" });
+    await within(region).findAllByText(/Automatycznie co 15 min/);
+    expect(within(region).queryByText(/Automatically every/)).not.toBeInTheDocument();
+  });
+
   it("refreshes source-backed feed items from the Sources screen", async () => {
     const user = userEvent.setup();
 

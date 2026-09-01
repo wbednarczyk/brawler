@@ -179,6 +179,13 @@ A bare numeric/text field alone is the **fallback**, for values with no meaningf
 
 ## i18n
 
+**App-level controller hooks take `locale`/`text` as inputs.** A hook called from
+`AppStateRoot` runs ABOVE the `LocaleContext.Provider` it renders, so `useLocale()`
+there silently reads the default (English) context — the Polish UI then shows
+English copy with no test failing (F4b harvest, PR #447 live check). Pass the
+locale in via the hook's input, and prove locale-sensitive controller copy with a
+`renderApp`-level `pl` assertion — a provider-wrapped `renderHook` cannot catch it.
+
 Every user-visible string is `text("English text")` from `useLocale()`. The locale resources are typed: add the key to **both** `src/shared/locale/resources/en.ts` and `pl.ts`, or the build fails. See the en/pl maps and [ADR-tracked locale model]. Do not concatenate translated fragments where a single key reads better.
 
 **KPI display names always go through `localizedKpiLabel` (`src/shared/locale/kpiLabels.ts`), never raw `def.label`.** Canonical KPI definitions are seeded with English labels; rendering `def.label` directly ships the English name into a Polish UI (the "Current assets" bug, card 5b2222d). Every place a metric name is shown — picker options, table row/column heads, section titles, chart aria — maps through `localizedKpiLabel(def, locale)` / `localizedKpiLabelForKey(key, locale)`. Guarded by pl-locale render tests over the consuming panels (e.g. `FundamentalsPanel`).

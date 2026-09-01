@@ -1073,6 +1073,7 @@ export function AppStateRoot({
     toggleSourceAdapter,
     toggleSourceAdapterFromKeyboard,
   } = useSourceDisplayController({
+    locale,
     nextRegistryRefreshAt,
     nextSourceRefreshAtByAdapterId,
     refreshCompanyRegistryEntries,

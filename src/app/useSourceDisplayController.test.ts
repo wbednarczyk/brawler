@@ -72,6 +72,7 @@ function setup(
         setActiveSection: vi.fn(),
         setCompanyRegistryListExpanded: vi.fn(),
         setSelectedSourceAdapterId: vi.fn(),
+        locale,
         settings,
         sourceAdapters: [],
         sourceRefreshFailureCount,
