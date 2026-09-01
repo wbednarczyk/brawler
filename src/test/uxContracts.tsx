@@ -78,7 +78,11 @@ export function expectPrimaryMarkerMatchesVariant(root: HTMLElement): void {
  * `<button>`, so its summary must stay phrasing content. Call from the
  * screen contract test of every ExpandableRow consumer. */
 export function expectPhrasingOnlyExpandableRows(root: HTMLElement): void {
-  for (const row of Array.from(root.querySelectorAll<HTMLElement>("button.expandable-row"))) {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>("button.expandable-row"));
+  if (rows.length === 0) {
+    throw new Error("expectPhrasingOnlyExpandableRows: no rendered ExpandableRow found — the guard would pass vacuously");
+  }
+  for (const row of rows) {
     const offender = row.querySelector("ul, ol, li, p, div, h1, h2, h3, h4, h5, h6, table");
     if (offender) {
       throw new Error(
