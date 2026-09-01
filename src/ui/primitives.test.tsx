@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createRef, type ReactElement } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { ActionButton, Button, CandlestickChart, Checkbox, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, SegmentedControl, SegmentedControlOption, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
@@ -291,16 +292,22 @@ describe("ExpandableRow", () => {
     expect(openArticle).toHaveClass("expandable-row-open");
   });
 
-  it("toggles from keyboard without the chevron stealing the accessible name", () => {
+  it("toggles from keyboard without the chevron stealing the accessible name", async () => {
+    // F4b S1: a real `<button>` (was `<article role="button">`, invalid
+    // ARIA) — keyboard (Enter/Space) activation is native platform behavior,
+    // so `userEvent` (which emulates it) is the correct tool, not a raw
+    // `fireEvent.keyDown` (jsdom does not wire keydown to click itself).
+    const user = userEvent.setup();
     const onToggle = vi.fn();
     render(
       <ExpandableRow label="Keyboard row" isExpanded={false} onToggle={onToggle}>
         <span>header</span>
       </ExpandableRow>,
     );
-    const article = screen.getByRole("button", { name: "Keyboard row" });
-    fireEvent.keyDown(article, { key: "Enter" });
-    fireEvent.keyDown(article, { key: " " });
+    const row = screen.getByRole("button", { name: "Keyboard row" });
+    expect(row.tagName).toBe("BUTTON");
+    row.focus();
+    await user.keyboard("{Enter} ");
     expect(onToggle).toHaveBeenCalledTimes(2);
   });
 
@@ -321,6 +328,22 @@ describe("ExpandableRow", () => {
     const article = screen.getByRole("button", { name: "Row with actions" });
     const deleteButton = screen.getByRole("button", { name: "Delete" });
     expect(article.contains(deleteButton)).toBe(false);
+  });
+
+  // sol R1: a <button> only permits phrasing content (spec: no <ul>/<li>/
+  // <div>/<p>/table — flow/list markup is invalid inside it, browsers/AT
+  // disagree on how to recover). A consumer that reaches for a block/list
+  // element here (Report Season's row once did — ExpandableRow.tsx's own
+  // comment names the constraint) regresses silently in jsdom; this asserts
+  // the canonical gallery children (spans) stay block/list-free.
+  it("children render as phrasing content only — no block/list element lands inside the button", () => {
+    render(
+      <ExpandableRow label="Row" isExpanded={false} onToggle={() => {}} detail={<p>body</p>}>
+        <span>header</span>
+      </ExpandableRow>,
+    );
+    const article = screen.getByRole("button", { name: "Row" });
+    expect(article.querySelector("ul, ol, li, div, p, table, section, article")).toBeNull();
   });
 });
 

@@ -1,43 +1,43 @@
-import { CalendarDays, Check, ExternalLink, X } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
-import { Button, EmptyState, ErrorText, Hint, InfoGrid } from "../../ui";
+import { ActionButton, EmptyState, Figure } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { EventDetail } from "./EventDetail";
+import { eventSourceLine, eventTypeLabel } from "./eventLabels";
+import type { EventsPrimaryState } from "./eventsPrimary";
 import type { EventsScreenProps } from "./eventTypes";
 
 type EventListViewProps = Pick<
   EventsScreenProps,
   | "companyEvents"
-  | "companyEventMode"
-  | "companyEventsError"
   | "selectedCompanyEventId"
   | "setSelectedCompanyEventId"
-  | "formatTimestamp"
-  | "formatCompanyEventType"
-  | "formatCompanyEventStatus"
-  | "formatCompanyEventSourceType"
   | "companyEventDueLabel"
   | "companyEventDueClass"
   | "openExternalUrl"
+  | "openCompanyEventCompanyWorkspace"
   | "confirmDerivedEvent"
->;
+> & {
+  primary: EventsPrimaryState;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
+};
 
 export function EventListView({
   companyEvents,
-  companyEventMode,
-  companyEventsError,
   selectedCompanyEventId,
   setSelectedCompanyEventId,
-  formatTimestamp,
-  formatCompanyEventType,
-  formatCompanyEventStatus,
-  formatCompanyEventSourceType,
   companyEventDueLabel,
   companyEventDueClass,
   openExternalUrl,
+  openCompanyEventCompanyWorkspace,
   confirmDerivedEvent,
+  primary,
+  hasActiveFilters,
+  onClearFilters,
 }: EventListViewProps) {
-  const { text } = useLocale();
+  const { locale, text } = useLocale();
 
   function toggleEvent(event: CompanyEvent) {
     setSelectedCompanyEventId((current) => (current === event.id ? null : event.id));
@@ -49,6 +49,7 @@ export function EventListView({
         const dueLabel = companyEventDueLabel(event.eventDate);
         const dueClass = companyEventDueClass(event.eventDate);
         const isSelected = selectedCompanyEventId === event.id;
+        const source = eventSourceLine(event, text);
 
         return (
           <div className="event-row-block" key={event.id} data-event-id={event.id}>
@@ -56,6 +57,7 @@ export function EventListView({
               type="button"
               aria-label={`${text("Open event")}: ${event.title}`}
               aria-pressed={isSelected}
+              data-action-kind="control"
               className={[
                 "event-row",
                 event.manual ? "event-manual" : "",
@@ -68,80 +70,50 @@ export function EventListView({
             >
               <div className="event-date-box">
                 <CalendarDays size={16} aria-hidden="true" />
-                <strong>{event.eventDate}</strong>
+                <Figure value={event.eventDate} kind="date" />
                 {event.eventTime ? <span>{event.eventTime}</span> : null}
                 {dueLabel ? <em>{dueLabel}</em> : null}
               </div>
               <div className="event-row-main">
                 <div className="event-title-line">
                   <h2>{event.title}</h2>
-                  <span>{formatCompanyEventType(event.eventType)}</span>
+                  <span>{eventTypeLabel(event, text, locale)}</span>
                 </div>
                 <p>
                   <strong><TickerLabel value={event.company} /></strong> · {event.companyName}
                 </p>
               </div>
               <div className="event-row-status">
-                <span>{formatCompanyEventStatus(event.status)}</span>
-                <small>{event.manual ? text("Manual") : formatCompanyEventSourceType(event.sourceType)}</small>
+                <span className={source.proposed ? "event-row-source-proposed" : undefined}>{source.label}</span>
               </div>
             </button>
 
             {isSelected ? (
-              <div className="event-detail-panel" aria-label={text("Event details")}>
-                <InfoGrid
-                  className="metadata-grid"
-                  items={[
-                    { label: text("Company"), value: <TickerLabel value={event.company} /> },
-                    { label: text("Type"), value: formatCompanyEventType(event.eventType) },
-                    { label: text("Status"), value: formatCompanyEventStatus(event.status) },
-                    { label: text("Source"), value: formatCompanyEventSourceType(event.sourceType) },
-                    { label: text("Attribution"), value: event.attribution ?? text("Not set") },
-                    { label: text("Fetched"), value: formatTimestamp(event.fetchedAt, text("Not fetched")) },
-                  ]}
-                />
-                {event.status === "proposed" && event.sourceType === "derived_signal" ? (
-                  <div className="derived-event-actions" aria-label={text("Confirm derived event")}>
-                    <Hint className="derived-event-hint">
-                      {text("This date was derived from a filing. Confirm to add it to the calendar.")}
-                    </Hint>
-                    <div className="derived-event-buttons">
-                      <Button
-                        className="compact-button"
-                        variant="primary"
-                        onClick={() => confirmDerivedEvent(event.id, "confirm")}
-                      >
-                        <Check size={15} />
-                        {text("Confirm")}
-                      </Button>
-                      <Button
-                        className="compact-button"
-                        onClick={() => confirmDerivedEvent(event.id, "reject")}
-                      >
-                        <X size={15} />
-                        {text("Reject")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-                {event.sourceUrl ? (
-                  <Button
-                    className="compact-button"
-                    onClick={() => openExternalUrl(event.sourceUrl as string)}
-                  >
-                    <ExternalLink size={15} />
-                    {text("Open source")}
-                  </Button>
-                ) : null}
-              </div>
+              <EventDetail
+                event={event}
+                openExternalUrl={openExternalUrl}
+                openCompanyEventCompanyWorkspace={openCompanyEventCompanyWorkspace}
+                confirmDerivedEvent={confirmDerivedEvent}
+                confirmIsPrimary={primary === "confirmProposed"}
+              />
             ) : null}
           </div>
         );
       })}
-      {companyEvents.length === 0 ? (
-        <EmptyState>{companyEventMode === "upcoming" ? text("No upcoming events.") : text("No events.")}</EmptyState>
+      {companyEvents.length === 0 && hasActiveFilters ? (
+        <EmptyState
+          kind="quiet"
+          reason={text("No event matches the filters")}
+          action={
+            <ActionButton kind="control" onClick={onClearFilters}>
+              {text("Clear filters")}
+            </ActionButton>
+          }
+        />
       ) : null}
-      {companyEventsError ? <ErrorText>{text("Events command failed")}: {companyEventsError}</ErrorText> : null}
+      {companyEvents.length === 0 && !hasActiveFilters ? (
+        <EmptyState kind="quiet" reason={text("No events in this range.")} />
+      ) : null}
     </>
   );
 }

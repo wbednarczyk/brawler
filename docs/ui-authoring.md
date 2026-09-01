@@ -12,7 +12,7 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Modularization
 
 ## Frontend v2 design language ([ADR 0104](adr/0104-frontend-v2-design-language.md) — normative)
 
-Every screen touched from v0.72 on follows ADR 0104; approved visual reference: `docs/mockups/frontend-v2-styleguide/`. The daily checklist: **color is meaning** (cyan = the one interface accent — filled form = interaction, quiet chip/thread form = official provenance; magenta only `--tone-media`, violet only `--tone-agent`, both always quiet; at most one FILLED element per screen at rest); **verb dictionary** — labels start with one of: Otwórz · Zastosuj · Zapisz · Pobierz · Przeczytaj · Odśwież · Oznacz jako… · Dodaj/Usuń, never a full sentence, never two verbs for one action, never an unlabeled icon; **empty state = three beats** (what → where from → one action button); **detail shrinks to its content** and never repeats the list row; **human title first**, filename as mono metadata; figures in the UI face (`Figure`, lining numerals — ADR 0104 dec. 2 amendment 2026-08-27); period ids and eyebrows in mono. The signature **provenance thread** goes only under thesis figures/claims and must navigate to its source.
+Every screen touched from v0.72 on follows ADR 0104; approved visual reference: `docs/mockups/frontend-v2-styleguide/`. The daily checklist: **color is meaning** (cyan = the one interface accent — filled form = interaction, quiet chip/thread form = official provenance; magenta only `--tone-media`, violet only `--tone-agent`, both always quiet; at most one FILLED element per screen at rest); **verb dictionary** — labels start with one of: Otwórz · Zastosuj · Zapisz · Pobierz · Przeczytaj · Odśwież · Oznacz jako… · Dodaj/Usuń · Utwórz · Zmień nazwę · Wstrzymaj/Wznów · Zmień · Potwierdź/Odrzuć (`src/shared/verbs.ts` is the source of truth), never a full sentence, never two verbs for one action, never an unlabeled icon; **empty state = three beats** (what → where from → one action button); **detail shrinks to its content** and never repeats the list row; **human title first**, filename as mono metadata; figures in the UI face (`Figure`, lining numerals — ADR 0104 dec. 2 amendment 2026-08-27); period ids and eyebrows in mono. The signature **provenance thread** goes only under thesis figures/claims and must navigate to its source.
 
 ## Mockup-first and no-spec-no-design (v0.50 U12, ADR 0045 harvest)
 
@@ -115,7 +115,7 @@ Guarded by `src/screens/Spolka/paneLandmarks.test.tsx`, which opens every Spół
 | A selectable dense row | `DenseRow` | bespoke selectable rows |
 | A row that expands in place | `ExpandableRow` | manual open/close row markup |
 | Empty state | `EmptyState` — `kind="invitation"` (title + source + exactly one action, ADR 0104 dec. 4's three beats) or `kind="quiet"` (a good/expected empty, `reason` only, no action); `kind` omitted keeps the legacy children-only shape for screens not yet migrated | `<p>Nothing here</p>` |
-| A figure/date/percent/money value | `Figure` (`kind="count" \| "percent" \| "date" \| "datetime" \| "money"`) — always the UI face via `.num-tabular`, never mono (ADR 0104 dec. 2 amendment) | hand-formatting a number/date inline, or wrapping it in mono |
+| A figure/date/percent/money/badge value | `Figure` (`kind="count" \| "percent" \| "date" \| "datetime" \| "money" \| "badge"`) — always the UI face via `.num-tabular`, never mono (ADR 0104 dec. 2 amendment); `badge` caps at "99+" for fixed-width chips, `count` never caps | hand-formatting a number/date inline, or wrapping it in mono |
 | Key/value metadata block | `InfoGrid` | ad-hoc definition grids |
 | Inline confirm (delete etc.) | `InlineConfirm` | bespoke confirm toggles |
 | A dialog | `Modal` | a hand-built overlay |
@@ -178,6 +178,13 @@ A bare numeric/text field alone is the **fallback**, for values with no meaningf
   - **Pane-width responsiveness uses container queries, not media queries.** A Spółka tool pane can be narrow while the window is wide, so `@media` cannot stack a pane's columns — set `container-type: inline-size` on the hosting panel and `@container (max-width: …)` to stack (see `.notebook-panel`/`.notebook-workspace`).
 
 ## i18n
+
+**App-level controller hooks take `locale`/`text` as inputs.** A hook called from
+`AppStateRoot` runs ABOVE the `LocaleContext.Provider` it renders, so `useLocale()`
+there silently reads the default (English) context — the Polish UI then shows
+English copy with no test failing (F4b harvest, PR #447 live check). Pass the
+locale in via the hook's input, and prove locale-sensitive controller copy with a
+`renderApp`-level `pl` assertion — a provider-wrapped `renderHook` cannot catch it.
 
 Every user-visible string is `text("English text")` from `useLocale()`. The locale resources are typed: add the key to **both** `src/shared/locale/resources/en.ts` and `pl.ts`, or the build fails. See the en/pl maps and [ADR-tracked locale model]. Do not concatenate translated fragments where a single key reads better.
 

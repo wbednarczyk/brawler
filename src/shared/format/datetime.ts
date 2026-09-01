@@ -139,6 +139,17 @@ export function formatLocalIsoDate(value: string | null | undefined): string {
   return year && month && day ? `${day}.${month}.${year}` : trimmed;
 }
 
+/**
+ * Same reading as `formatLocalIsoDate` but without the year (`DD.MM`) — the
+ * Events week-grid day header (F4b S3, #431/#417): five narrow columns have
+ * no room for a full date, and the year is redundant inside "this week".
+ */
+export function formatShortLocalDate(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  const [, month, day] = trimmed.slice(0, 10).split("-");
+  return month && day ? `${day}.${month}` : trimmed;
+}
+
 /** Localized weekday-range label for the Dziś v2 "Wcześniej" rollup (F2 S5,
  * Delta.dc.html "pn–wt"): one weekday abbreviation, or two joined by an en
  * dash. Safe within the read model's 7-day fetch window (`get_today_view`

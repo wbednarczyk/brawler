@@ -38,7 +38,7 @@ The feed detail pane is a fixed-width side rail and is treated as a containment 
 
 Milestone 3 introduces the company workspace as the second primary research surface after the Inbox. Opening a company from the Companies screen should show one ticker-focused page with Feed, Notebook, Claims, Transcripts, and Metadata tabs. The first implemented tab is Feed, backed by the same stored feed item model as the Inbox and filtered by the company's exchange-qualified ticker. Notebook, Claims, and Transcripts tabs may begin as placeholders until their dedicated milestones, but the navigation shape should be stable.
 
-The global Notebooks and Transcripts navigation entries may begin as explicit placeholder screens during Milestone 3. They should not be blank dead ends; they should state the planned milestone and scope without pretending the workflows are implemented.
+Notebooks and Transcripts are implemented Library-nav screens, not placeholders (Milestone 3 scaffolding retired) — see [ui-information-architecture.md § App Shell](ui-information-architecture.md#app-shell) for the current nav spine.
 
 Desktop notifications are out of scope for v1. Portfolio positions, cost basis, and trading workflows are out of scope.
 
@@ -278,12 +278,12 @@ Transcription is data acquisition (speech→text), not interpretation, so it sta
 
 The video transcription workflow should support:
 
-- entering a YouTube press conference URL in a field labeled `URL`
+- entering a YouTube press conference URL in a field labeled `Recording link`
 - optionally providing the ticker/company before transcription
 - reserving space for future company recognition from the video/transcript when the user does not provide one upfront
 - allowing transcripts to remain unlinked to any company, including general market videos
 - offering optional company linking after transcription, using the same local company lookup as Companies
-- running a transcription or transcript-like extraction job
+- running a transcription or transcript-like extraction
 - surfacing Gemini rejection/error causes when a direct YouTube URL cannot be processed
 - reviewing transcript segments
 - selecting whole transcript segments to add to a specific company's notebook when the transcript is linked to a company

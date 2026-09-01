@@ -41,6 +41,7 @@ import { useResearchController } from "./useResearchController";
 import { useSettingsController } from "./useSettingsController";
 import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
+import { buildEventsScreenProps } from "./useEventsScreenWiring";
 import { buildTodayScreenProps, useRefreshCompletionSignal } from "./useTodayScreenWiring";
 import { useTranscriptController } from "./useTranscriptController";
 import { buildWatchlistsScreenProps } from "./useWatchlistsScreenWiring";
@@ -60,7 +61,6 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
 import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
 import { EventsScreen } from "../screens/Events/EventsScreen";
-import type { EventsScreenProps } from "../screens/Events/eventTypes";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
 import { ReportSeasonScreen } from "../screens/ReportSeason/ReportSeasonScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
@@ -89,13 +89,10 @@ import {
   parseLocalDate,
 } from "../shared/format/datetime";
 import {
-  formatAiProvider,
-  formatCompanyEventSourceType,
   formatCompanyEventStatus,
   formatCompanyEventType,
   formatCredentialConfigured,
   formatCredentialKind,
-  formatEnumLabel,
   formatGeminiModel,
 } from "../shared/formatting/labels";
 import {
@@ -141,7 +138,6 @@ import type {
   Theme,
   TranscriptJob,
   TranscriptSegment,
-  UnmatchedSourceItem,
   UserSettings,
   Watchlist,
   WatchlistMembership,
@@ -403,15 +399,6 @@ export function AppStateRoot({
   const [nextRegistryRefreshAt, setNextRegistryRefreshAt] = useState<
     number | null
   >(null);
-  const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<
-    Record<string, UnmatchedSourceItem[]>
-  >({});
-  const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<
-    string | null
-  >(null);
-  const [expandedUnmatchedAdapters, setExpandedUnmatchedAdapters] = useState<
-    Record<string, boolean>
-  >({});
   const [companyRegistryEntries, setCompanyRegistryEntries] = useState<
     CompanyRegistryEntry[]
   >([]);
@@ -601,7 +588,9 @@ export function AppStateRoot({
 
   const {
     clearCompanyEventFilters,
+    companyEventsLoading,
     createCompanyEvent,
+    findNextWeekWithEvents,
     openCompanyEventComposer,
     refreshCompanyEvents,
   } = useCompanyEventsController({
@@ -642,7 +631,6 @@ export function AppStateRoot({
     refreshSettings,
     refreshSignals,
     refreshSourceAdapters,
-    refreshUnmatchedSourceItems,
     refreshWatchlistMemberships,
     refreshWatchlists,
   } = useAppDataController({
@@ -670,8 +658,6 @@ export function AppStateRoot({
     setSourceAdapters,
     setSourceAdaptersError,
     setTheme,
-    setUnmatchedSourceItems,
-    setUnmatchedSourceItemsError,
     setWatchlistMemberships,
     setWatchlists,
     setWatchlistsError,
@@ -702,7 +688,6 @@ export function AppStateRoot({
     refreshFeedItems,
     refreshSignals,
     refreshSourceAdapters,
-    refreshUnmatchedSourceItems,
     onManualRefreshSuccess: () =>
       toast.show({ message: text("Sources refreshed"), tone: "positive" }),
     scheduledSourceAdapters,
@@ -919,11 +904,13 @@ export function AppStateRoot({
     linkTranscriptJobCompany,
     openTranscriptNoteDraft,
     refreshTranscriptJobs,
+    retryTranscriptSegments,
     runTranscriptJob,
     selectTranscriptCompany,
     toggleTranscriptJob,
     toggleTranscriptJobFromKeyboard,
     toggleTranscriptSegment,
+    transcriptsLoading,
     updateTranscriptJobDescription,
     updateTranscriptLinkQuery,
     updateTranscriptNoteForm,
@@ -1085,15 +1072,13 @@ export function AppStateRoot({
     toggleCompanyRegistryList,
     toggleSourceAdapter,
     toggleSourceAdapterFromKeyboard,
-    toggleUnmatchedSourceItems,
   } = useSourceDisplayController({
+    locale,
     nextRegistryRefreshAt,
     nextSourceRefreshAtByAdapterId,
     refreshCompanyRegistryEntries,
-    refreshUnmatchedSourceItems,
     setActiveSection,
     setCompanyRegistryListExpanded,
-    setExpandedUnmatchedAdapters,
     setSelectedSourceAdapterId,
     settings,
     sourceAdapters,
@@ -1583,67 +1568,6 @@ export function AppStateRoot({
     MarkdownNoteBody,
     renderNotebookOrigins,
   };
-  const eventsViewModel: EventsScreenProps = {
-    companies,
-    watchlists,
-    companyEvents,
-    companyEventsError,
-    selectedCompanyEventId,
-    sourceRefreshState,
-    selectedSourceAdapterId,
-    sourceAdapterRefreshInFlight,
-    companyEventViewMode,
-    companyEventMode,
-    companyEventWeekRange,
-    companyEventWorkingWeekDays,
-    companyEventWeekendDays,
-    companyEventWeekendEvents,
-    companyEventsByDate,
-    companyEventWatchlistFilter,
-    companyEventCompanyFilter,
-    companyEventTypeFilter,
-    companyEventStatusFilter,
-    companyEventDateFrom,
-    companyEventDateTo,
-    companyEventTypes,
-    companyEventStatuses,
-    isCompanyEventComposerOpen,
-    companyEventForm,
-    companyEventCreateError,
-    companyEventTypeOptions,
-    companyEventStatusOptions,
-    refreshEventSources,
-    confirmDerivedEvent,
-    openCompanyEventComposer,
-    setCompanyEventViewMode,
-    setCompanyEventMode,
-    setCompanyEventWeekAnchorDate,
-    setCompanyEventWatchlistFilter,
-    setCompanyEventCompanyFilter,
-    setCompanyEventTypeFilter,
-    setCompanyEventStatusFilter,
-    setCompanyEventDateFrom,
-    setCompanyEventDateTo,
-    setCompanyEventComposerOpen,
-    setCompanyEventCreateError,
-    setCompanyEventForm,
-    setSelectedCompanyEventId,
-    clearCompanyEventFilters,
-    createCompanyEvent,
-    NotebookDateField,
-    formatLocalDate,
-    parseLocalDate,
-    addLocalDays,
-    formatWeekRange,
-    formatTimestamp,
-    formatCompanyEventType,
-    formatCompanyEventStatus,
-    formatCompanyEventSourceType,
-    companyEventDueLabel: companyEventDueLabelLocalized,
-    companyEventDueClass,
-    openExternalUrl,
-  };
-
   // Pinned-company spine (ADR 0054). Resolve persisted IDs against the live
   // company list, dropping any that no longer exist, and preserve pin order.
   const pinnedCompanyIds = settings?.pinnedCompanyIds ?? [];
@@ -1697,7 +1621,67 @@ export function AppStateRoot({
     removeCompanyFromWatchlist,
     openCompanyWorkspaceById,
   });
-
+  const eventsViewModel = buildEventsScreenProps({
+    companies,
+    watchlists,
+    companyEvents,
+    companyEventsError,
+    companyEventsLoading,
+    selectedCompanyEventId,
+    sourceRefreshState,
+    sourceAdapterRefreshInFlight,
+    sourceAdapters,
+    findNextWeekWithEvents,
+    openCompanyWorkspaceById,
+    companyEventViewMode,
+    companyEventMode,
+    companyEventWeekRange,
+    companyEventWorkingWeekDays,
+    companyEventWeekendDays,
+    companyEventWeekendEvents,
+    companyEventsByDate,
+    companyEventWatchlistFilter,
+    companyEventCompanyFilter,
+    companyEventTypeFilter,
+    companyEventStatusFilter,
+    companyEventDateFrom,
+    companyEventDateTo,
+    companyEventTypes,
+    companyEventStatuses,
+    isCompanyEventComposerOpen,
+    companyEventForm,
+    companyEventCreateError,
+    companyEventTypeOptions,
+    companyEventStatusOptions,
+    refreshEventSources,
+    openCompanyEventComposer,
+    setCompanyEventViewMode,
+    setCompanyEventMode,
+    setCompanyEventWeekAnchorDate,
+    setCompanyEventWatchlistFilter,
+    setCompanyEventCompanyFilter,
+    setCompanyEventTypeFilter,
+    setCompanyEventStatusFilter,
+    setCompanyEventDateFrom,
+    setCompanyEventDateTo,
+    setCompanyEventComposerOpen,
+    setCompanyEventCreateError,
+    setCompanyEventForm,
+    setSelectedCompanyEventId,
+    clearCompanyEventFilters,
+    createCompanyEvent,
+    NotebookDateField,
+    formatLocalDate,
+    parseLocalDate,
+    addLocalDays,
+    formatWeekRange,
+    formatCompanyEventType,
+    formatCompanyEventStatus,
+    companyEventDueLabel: companyEventDueLabelLocalized,
+    companyEventDueClass,
+    openExternalUrl,
+    confirmDerivedEvent,
+  });
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
       <SettingsProvider value={settings ?? null}>
@@ -1926,10 +1910,10 @@ export function AppStateRoot({
                 <TranscriptsProvider
                   value={{
                     companies,
-                    settings,
                     geminiCredentialStatus,
                     transcriptJobs,
                     transcriptJobsError,
+                    transcriptsLoading,
                     transcriptJobForm,
                     transcriptJobCreateError,
                     transcriptJobCreateState,
@@ -1958,6 +1942,7 @@ export function AppStateRoot({
                     setTranscriptSegmentSearchByJobId,
                     setTranscriptDescriptionDraftByJobId,
                     refreshTranscriptJobs,
+                    retryTranscriptSegments,
                     createTranscriptJob,
                     toggleTranscriptJob,
                     toggleTranscriptJobFromKeyboard,
@@ -1972,10 +1957,8 @@ export function AppStateRoot({
                     discardTranscriptNoteDraft,
                     updateTranscriptNoteForm,
                     selectTranscriptCompany,
-                    formatAiProvider,
-                    formatGeminiModel,
-                    formatCredentialConfigured,
-                    formatEnumLabel,
+                    openCompanyWorkspaceById,
+                    openSettings: () => setActiveSection("Settings"),
                   }}
                 >
                   <TranscriptsScreen />
@@ -2000,16 +1983,12 @@ export function AppStateRoot({
                     isCompanyRegistryListExpanded,
                     companyRegistrySearch,
                     addingRegistryTicker,
-                    unmatchedSourceItems,
-                    unmatchedSourceItemsError,
-                    expandedUnmatchedAdapters,
                     refreshSources,
                     refreshCompanyRegistry,
                     setSourceEnabled,
                     toggleSourceAdapter,
                     toggleSourceAdapterFromKeyboard,
                     toggleCompanyRegistryList,
-                    toggleUnmatchedSourceItems,
                     setCompanyRegistrySearch,
                     addCompanyFromRegistry,
                     openExternalUrl,

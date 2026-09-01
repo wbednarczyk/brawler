@@ -102,6 +102,15 @@ interface RuntimeContext {
 export interface MockRuntime {
   /** The live store. Tests may read/seed it directly. */
   data: ScenarioData;
+  /**
+   * F4b sol R1: `create/update/list_report_expectations` and
+   * `expectation_review` mutate a router-internal store, not `data`
+   * (`ScenarioData`) — this exposes it the same read/write way so a test can
+   * seed an expectation (and, once frozen via matching `financialPeriods`/
+   * `financialFacts` in `data`, a frozen-unresolved review) before
+   * `renderApp`, instead of skipping that state.
+   */
+  reportExpectations: Record<string, unknown>[];
   /** Route one command. Resolves with the command's contract return shape. */
   invoke(command: string, args?: Args): Promise<unknown>;
   /** Replace the store with a fresh scenario (per-test isolation). */
@@ -1786,7 +1795,25 @@ function buildHandlers(): Record<string, Handler> {
       d.signals = d.signals.filter((s) => s.id !== id);
       return undefined;
     },
-    confirm_derived_event: ok,
+    // F4b S1: parity with the Rust command (`{eventId, action: "confirm" |
+    // "reject"}`, src-tauri/src/commands/signals.rs) — confirm moves the
+    // `proposed` event to `confirmed` on the calendar; reject discards it.
+    confirm_derived_event: (d, a) => {
+      const input = unwrap(a);
+      const eventId = str(input.eventId);
+      const action = str(input.action);
+      if (action === "reject") {
+        d.events = d.events.filter((event) => event.id !== eventId);
+        return undefined;
+      }
+      const { next } = mapReplace(
+        d.events,
+        (event) => event.id === eventId,
+        (event) => ({ ...event, status: "confirmed" as const }),
+      );
+      d.events = next;
+      return undefined;
+    },
     list_alert_rules: (d) => d.alertRules,
     create_alert_rule: (d, a, ctx) => {
       const input = unwrap(a);
@@ -2154,10 +2181,10 @@ function buildHandlers(): Record<string, Handler> {
         company: company?.qualifiedTicker ?? null,
         companyName: company?.displayName ?? null,
         providerId: str(input.providerId) ?? "provider_gemini",
-        sourceType: "youtube",
+        sourceType: "youtube_url",
         sourceUrl: str(input.sourceUrl) ?? "",
         sourceLabel: str(input.sourceLabel),
-        companyResolutionStatus: companyId ? "resolved" : "pending",
+        companyResolutionStatus: companyId ? "provided" : "unresolved",
         recognizedCompanyCandidates: [],
         status: "queued",
         errorCode: null,
@@ -2169,7 +2196,7 @@ function buildHandlers(): Record<string, Handler> {
       d.transcriptJobs = [...d.transcriptJobs, job];
       return job;
     },
-    run_video_transcript_job: (d, a) => {
+    run_video_transcript_job: (d, a, ctx) => {
       const input = unwrap(a);
       const id = str(input.jobId) ?? str(input.id);
       let updated: ScenarioData["transcriptJobs"][number] | undefined;
@@ -2183,6 +2210,32 @@ function buildHandlers(): Record<string, Handler> {
         };
         return updated;
       });
+      // Sol R1 finding 3: a completed transcript needs real segments — the
+      // visual/density figures proof (segment-count `Figure`) has nothing to
+      // count otherwise. Seed once per job (repeat runs, e.g. "Fetch again",
+      // must not duplicate).
+      if (updated && !d.transcriptSegments.some((segment) => segment.transcriptJobId === id)) {
+        const speakers = ["CEO", "CFO", "CEO"];
+        const texts = [
+          "Thank you for joining today's call — let's start with the headline results.",
+          "Revenue grew in line with guidance and margins held steady quarter over quarter.",
+          "We'll take questions after the outlook section, starting with the sell side.",
+        ];
+        d.transcriptSegments = [
+          ...d.transcriptSegments,
+          ...texts.map((text, index) => ({
+            id: ctx.nextId(`${id}_segment`),
+            transcriptJobId: id ?? "",
+            companyId: updated?.companyId ?? null,
+            startSeconds: index * 45,
+            endSeconds: index * 45 + 40,
+            speaker: speakers[index],
+            text,
+            language: "en",
+            createdAt: SAMPLE_NOW,
+          })),
+        ];
+      }
       return updated ?? d.transcriptJobs[0];
     },
     update_video_transcript_job: (d, a) => {
@@ -2221,7 +2274,7 @@ function buildHandlers(): Record<string, Handler> {
           companyId: companyId ?? job.companyId,
           company: company?.qualifiedTicker ?? job.company,
           companyName: company?.displayName ?? job.companyName,
-          companyResolutionStatus: "resolved",
+          companyResolutionStatus: "provided",
         };
         return updated;
       });
@@ -4454,6 +4507,12 @@ export function createMockRuntime(
     },
     set data(next: ScenarioData) {
       data = next;
+    },
+    get reportExpectations() {
+      return ctx.reportExpectations;
+    },
+    set reportExpectations(next: Record<string, unknown>[]) {
+      ctx.reportExpectations = next;
     },
     scenario,
     failNext,

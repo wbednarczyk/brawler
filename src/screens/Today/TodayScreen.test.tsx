@@ -240,8 +240,14 @@ describe("TodayScreen", () => {
     );
     render(<TodayScreen {...baseProps()} />);
 
-    await screen.findByText("Today", { exact: true });
-    expect(screen.getByText("Yesterday", { exact: true })).toBeInTheDocument();
+    // Anchor on the DATA-DRIVEN day label, not "Today": the panel header's
+    // H1 is also "Today" and renders before the view loads, so the old
+    // findByText("Today") passed on the skeleton and the next getByText
+    // flaked under slow (coverage/CI) runs — 2× on PR #447's CI.
+    await screen.findByText("Yesterday", { exact: true });
+    // Two "Today" texts once loaded: the header H1 plus the day-section
+    // label — assert the section label specifically via getAllByText.
+    expect(screen.getAllByText("Today", { exact: true }).length).toBeGreaterThanOrEqual(2);
 
     // The two older days (2026-08-19, 2026-08-18) collapse into ONE rollup
     // line — neither renders its own day section yet.

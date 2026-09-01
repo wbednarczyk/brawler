@@ -17,6 +17,10 @@ const SCREENS = [
   "Companies",
   "Sources",
   "Events",
+  // F4b S1: joins the Library nav in S4 (decision 1); reachable today via the
+  // palette / deep link, so the guard applies now.
+  "ReportSeason",
+  "Transcripts",
   // Decision journal, all companies (F3a S3, ADR 0107) — a standalone screen
   // route, no top-level nav item.
   "Journal",

@@ -1,5 +1,4 @@
 import {
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   LocateFixed,
@@ -9,8 +8,8 @@ import {
   X,
 } from "lucide-react";
 import {
+  ActionButton,
   ActionRow,
-  Button,
   ErrorText,
   FilterToolbar,
   PanelHeader,
@@ -18,6 +17,7 @@ import {
   SegmentedControl,
   SegmentedControlOption,
   SelectField,
+  Skeleton,
   TextField,
 } from "../../ui";
 import { useEffect, useRef, useState, type RefObject } from "react";
@@ -26,6 +26,8 @@ import { useEventsViewModel } from "../../app/state/screenViewModels";
 import { EventListView } from "./EventListView";
 import { WeekEventsView } from "./WeekEventsView";
 import { resolveEventViewMode } from "./eventTypes";
+import type { EventsWeekEmptyState, NextWeekLookup } from "./eventTypes";
+import { derivePrimary } from "./eventsPrimary";
 
 // U7-D density (ADR 0076 D6): the Events week grid can't collapse purely in CSS —
 // week vs list are distinct component trees — so the tier is measured on the
@@ -63,10 +65,13 @@ export function EventsScreen() {
   watchlists,
   companyEvents,
   companyEventsError,
+  companyEventsLoading,
   selectedCompanyEventId,
   sourceRefreshState,
-  selectedSourceAdapterId,
   sourceAdapterRefreshInFlight,
+  calendarLastSuccessAt,
+  findNextWeekWithEvents,
+  openCompanyEventCompanyWorkspace,
   companyEventViewMode,
   companyEventMode,
   companyEventWeekRange,
@@ -109,10 +114,8 @@ export function EventsScreen() {
   parseLocalDate,
   addLocalDays,
   formatWeekRange,
-  formatTimestamp,
   formatCompanyEventType,
   formatCompanyEventStatus,
-  formatCompanyEventSourceType,
   companyEventDueLabel,
   companyEventDueClass,
   openExternalUrl,
@@ -124,6 +127,110 @@ export function EventsScreen() {
   // Presentation-only override; the persisted `companyEventViewMode` is untouched.
   const effectiveViewMode = resolveEventViewMode(companyEventViewMode, compact);
   const layoutModes = compact ? (["list"] as const) : (["week", "list"] as const);
+  const isWeekMode = effectiveViewMode === "week";
+
+  const hasActiveEventFilters =
+    companyEventWatchlistFilter !== "all" ||
+    companyEventCompanyFilter !== "all" ||
+    companyEventTypeFilter !== "all" ||
+    companyEventStatusFilter !== "all";
+
+  const weekIsEmpty =
+    isWeekMode &&
+    companyEventWorkingWeekDays.every((day) => (companyEventsByDate[day.date] ?? []).length === 0) &&
+    companyEventWeekendEvents.length === 0;
+
+  // The empty-week jump target (F4b contract § Events point 4 / decision 4;
+  // pending/error modeled explicitly per F4b sol R1): one `list_company_events`
+  // read, only while the displayed week is genuinely empty. `idle` = week has
+  // events, no lookup running. A rejected read lands in `error`, never a false
+  // "no match" — `findNextWeekWithEvents` no longer swallows failures.
+  const [lookup, setLookup] = useState<NextWeekLookup>({ status: "idle" });
+  // Sol R2: the error state's retry must re-run THIS lookup, not only the
+  // calendar refresh — the effect below keys on the nonce.
+  const [lookupRetryNonce, setLookupRetryNonce] = useState(0);
+
+  useEffect(() => {
+    if (!weekIsEmpty) {
+      setLookup({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setLookup({ status: "pending" });
+    findNextWeekWithEvents()
+      .then((event) => {
+        if (!cancelled) setLookup({ status: "match", event });
+      })
+      .catch(() => {
+        if (!cancelled) setLookup({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-check when the empty week or any active filter changes; findNextWeekWithEvents' identity is intentionally excluded
+  }, [
+    weekIsEmpty,
+    companyEventWeekRange.end,
+    companyEventWatchlistFilter,
+    companyEventCompanyFilter,
+    companyEventTypeFilter,
+    companyEventStatusFilter,
+    lookupRetryNonce,
+  ]);
+
+  const weekEmptyState: EventsWeekEmptyState | null = !weekIsEmpty
+    ? null
+    : lookup.status === "pending"
+      ? { kind: "pending" }
+      : lookup.status === "error"
+        ? { kind: "error" }
+        : lookup.status === "match" && lookup.event
+          ? { kind: "jump", match: lookup.event, calendarLastSuccessAt }
+          : hasActiveEventFilters
+            ? { kind: "noMatchFilters" }
+            : calendarLastSuccessAt === null
+              ? { kind: "neverRefreshed" }
+              : { kind: "addEvent" };
+
+  const selectedEvent =
+    [...companyEvents, ...Object.values(companyEventsByDate).flat(), ...companyEventWeekendEvents].find(
+      (event) => event.id === selectedCompanyEventId,
+    ) ?? null;
+
+  const primary = derivePrimary({
+    loading: companyEventsLoading,
+    error: Boolean(companyEventsError),
+    composerOpen: isCompanyEventComposerOpen,
+    selectedEventStatus: selectedEvent?.status ?? null,
+    weekMode: isWeekMode,
+    weekIsEmpty,
+    nextWeekLookupPending: lookup.status === "pending",
+    nextWeekLookupError: lookup.status === "error",
+    hasNextMatch: lookup.status === "match" && Boolean(lookup.event),
+    hasActiveFilters: hasActiveEventFilters,
+  });
+
+  // The empty-week "addEvent" invitation carries its own primary "Add event"
+  // (mirrors AlertRulesSection's "no rules yet" invitation) — the header
+  // button goes quiet in that one state so the two never both render filled.
+  const addEventPrimaryOnHeader = primary === "addEvent" && weekEmptyState?.kind !== "addEvent";
+
+  function handleRefreshCalendar() {
+    refreshEventSources("manual", companyEventWeekRange.start);
+  }
+
+  function handleRetryNextWeekLookup() {
+    setLookupRetryNonce((nonce) => nonce + 1);
+    handleRefreshCalendar();
+  }
+
+  function handleJumpToNextWeek() {
+    if (lookup.status === "match" && lookup.event) {
+      setCompanyEventWeekAnchorDate(lookup.event.eventDate);
+    }
+  }
+
+  const refreshing = sourceRefreshState === "refreshing" && sourceAdapterRefreshInFlight === "events";
 
   return (
     <section className="feed-panel" aria-labelledby="events-title" data-events-compact={compact || undefined} ref={panelRef}>
@@ -134,24 +241,27 @@ export function EventsScreen() {
         titleId="events-title"
         actions={
           <>
-            <Button
-              className="compact-button"
-              disabled={sourceRefreshState === "refreshing"}
-              onClick={() => refreshEventSources("manual", companyEventWeekRange.start)}
+            <ActionButton
+              verb="refresh"
+              className={refreshing ? "compact-button icon-button-spinning" : "compact-button"}
+              disabled={refreshing}
+              onClick={handleRefreshCalendar}
             >
-              {sourceRefreshState === "done" && selectedSourceAdapterId === "bankier-kalendarium-html" ? (
-                <CheckCircle2 size={15} />
-              ) : (
-                <RefreshCw size={15} />
-              )}
-              {sourceRefreshState === "refreshing" && sourceAdapterRefreshInFlight === "events"
-                ? t("events.action.refreshing")
-                : t("events.action.refreshSources")}
-            </Button>
-            <Button className="compact-button" onClick={openCompanyEventComposer} variant="primary">
-              <Plus size={15} />
-              {t("action.addEvent")}
-            </Button>
+              <RefreshCw size={15} />
+              {text("Refresh calendar")}
+            </ActionButton>
+            {isCompanyEventComposerOpen ? null : (
+              <ActionButton
+                verb="add"
+                className="compact-button"
+                variant={addEventPrimaryOnHeader ? "primary" : "secondary"}
+                data-ux-primary-action={addEventPrimaryOnHeader ? "true" : undefined}
+                onClick={openCompanyEventComposer}
+              >
+                <Plus size={15} />
+                {t("action.addEvent")}
+              </ActionButton>
+            )}
           </>
         }
       />
@@ -161,6 +271,7 @@ export function EventsScreen() {
           {layoutModes.map((viewMode) => (
             <SegmentedControlOption
               active={effectiveViewMode === viewMode}
+              data-action-kind="control"
               key={viewMode}
               onClick={() => setCompanyEventViewMode(viewMode)}
             >
@@ -168,9 +279,10 @@ export function EventsScreen() {
             </SegmentedControlOption>
           ))}
         </SegmentedControl>
-        {effectiveViewMode === "week" ? (
+        {isWeekMode ? (
           <div className="week-toolbar" aria-label={text("Week navigation")}>
-            <Button
+            <ActionButton
+              kind="control"
               className="compact-button icon-only-button"
               onClick={() => {
                 setCompanyEventWeekAnchorDate((current) =>
@@ -180,9 +292,10 @@ export function EventsScreen() {
               aria-label={text("Previous week")}
             >
               <ChevronLeft size={15} />
-            </Button>
+            </ActionButton>
             <span>{formatWeekRange(companyEventWeekRange.start, companyEventWeekRange.end)}</span>
-            <Button
+            <ActionButton
+              kind="control"
               className="compact-button icon-only-button"
               onClick={() => {
                 setCompanyEventWeekAnchorDate((current) =>
@@ -192,24 +305,26 @@ export function EventsScreen() {
               aria-label={text("Next week")}
             >
               <ChevronRight size={15} />
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
+              kind="control"
               className="compact-button"
               onClick={() => setCompanyEventWeekAnchorDate(formatLocalDate(new Date()))}
             >
               <LocateFixed size={15} />
               {text("Current week")}
-            </Button>
+            </ActionButton>
           </div>
         ) : (
           <SegmentedControl ariaLabel={text("Event date range")}>
             {(["upcoming", "historical", "all"] as const).map((mode) => (
               <SegmentedControlOption
                 active={companyEventMode === mode}
+                data-action-kind="control"
                 key={mode}
                 onClick={() => setCompanyEventMode(mode)}
               >
-                {mode === "upcoming" ? text("Upcoming") : mode === "historical" ? text("History") : text("All")}
+                {mode === "upcoming" ? text("Upcoming") : mode === "historical" ? text("Past") : text("All")}
               </SegmentedControlOption>
             ))}
           </SegmentedControl>
@@ -266,7 +381,7 @@ export function EventsScreen() {
             </option>
           ))}
         </SelectField>
-        {effectiveViewMode === "list" ? (
+        {isWeekMode ? null : (
           <>
             <NotebookDateField
               ariaLabel={text("Event date from filter")}
@@ -281,8 +396,9 @@ export function EventsScreen() {
               onChange={setCompanyEventDateTo}
             />
           </>
-        ) : null}
-        <Button
+        )}
+        <ActionButton
+          kind="control"
           className="compact-button"
           disabled={
             companyEventWatchlistFilter === "all" &&
@@ -296,7 +412,7 @@ export function EventsScreen() {
         >
           <X size={15} />
           {text("Clear filters")}
-        </Button>
+        </ActionButton>
       </FilterToolbar>
 
       {isCompanyEventComposerOpen ? (
@@ -306,7 +422,8 @@ export function EventsScreen() {
             title={text("Manual event")}
             description={text("Add a missing date for one tracked company.")}
             actions={
-              <Button
+              <ActionButton
+                kind="control"
                 className="compact-button"
                 onClick={() => {
                   setCompanyEventComposerOpen(false);
@@ -315,7 +432,7 @@ export function EventsScreen() {
               >
                 <X size={15} />
                 {text("Discard")}
-              </Button>
+              </ActionButton>
             }
           />
           <div className="event-composer-grid">
@@ -411,46 +528,68 @@ export function EventsScreen() {
           </div>
           <ActionRow className="event-composer-actions">
             {companyEventCreateError ? <ErrorText>{text(companyEventCreateError)}</ErrorText> : null}
-            <Button className="compact-button" onClick={createCompanyEvent} variant="primary">
+            <ActionButton
+              verb="save"
+              className="compact-button"
+              variant={primary === "saveComposer" ? "primary" : "secondary"}
+              data-ux-primary-action={primary === "saveComposer" ? "true" : undefined}
+              onClick={createCompanyEvent}
+            >
               <Save size={15} />
               {text("Save")}
-            </Button>
+            </ActionButton>
           </ActionRow>
         </div>
       ) : null}
 
       <div className="events-layout" aria-label={text("Company events")}>
-        {effectiveViewMode === "week" ? (
+        {companyEventsLoading ? (
+          <Skeleton variant="list-row" count={5} label={text("Loading events…")} />
+        ) : companyEventsError ? (
+          <div className="events-error-strip">
+            <ErrorText>{text("Failed to load events")}</ErrorText>
+            <ActionButton verb="refresh" onClick={handleRefreshCalendar}>
+              {text("Refresh calendar")}
+            </ActionButton>
+          </div>
+        ) : isWeekMode ? (
           <WeekEventsView
             companyEventWorkingWeekDays={companyEventWorkingWeekDays}
             companyEventWeekendDays={companyEventWeekendDays}
             companyEventWeekendEvents={companyEventWeekendEvents}
             companyEventsByDate={companyEventsByDate}
-            companyEventsError={companyEventsError}
             selectedCompanyEventId={selectedCompanyEventId}
             setSelectedCompanyEventId={setSelectedCompanyEventId}
-            formatCompanyEventType={formatCompanyEventType}
-            formatCompanyEventStatus={formatCompanyEventStatus}
-            formatCompanyEventSourceType={formatCompanyEventSourceType}
             companyEventDueLabel={companyEventDueLabel}
             companyEventDueClass={companyEventDueClass}
             openExternalUrl={openExternalUrl}
+            openCompanyEventCompanyWorkspace={openCompanyEventCompanyWorkspace}
+            confirmDerivedEvent={confirmDerivedEvent}
+            primary={primary}
+            emptyState={weekEmptyState}
+            onJumpToNextWeek={handleJumpToNextWeek}
+            onClearFilters={clearCompanyEventFilters}
+            onAddEvent={openCompanyEventComposer}
+            onRefreshCalendar={handleRefreshCalendar}
+          onRetryLookup={handleRetryNextWeekLookup}
           />
         ) : (
           <EventListView
             companyEvents={companyEvents}
-            companyEventMode={companyEventMode}
-            companyEventsError={companyEventsError}
             selectedCompanyEventId={selectedCompanyEventId}
             setSelectedCompanyEventId={setSelectedCompanyEventId}
-            formatTimestamp={formatTimestamp}
-            formatCompanyEventType={formatCompanyEventType}
-            formatCompanyEventStatus={formatCompanyEventStatus}
-            formatCompanyEventSourceType={formatCompanyEventSourceType}
             companyEventDueLabel={companyEventDueLabel}
             companyEventDueClass={companyEventDueClass}
             openExternalUrl={openExternalUrl}
+            openCompanyEventCompanyWorkspace={openCompanyEventCompanyWorkspace}
             confirmDerivedEvent={confirmDerivedEvent}
+            primary={primary}
+            hasActiveFilters={
+              hasActiveEventFilters ||
+              companyEventDateFrom.trim().length > 0 ||
+              companyEventDateTo.trim().length > 0
+            }
+            onClearFilters={clearCompanyEventFilters}
           />
         )}
       </div>

@@ -1,7 +1,7 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import * as eventsApi from "../api/events";
 import type { Company, CompanyEvent } from "../api/types";
-import { formatLocalDate } from "../shared/format/datetime";
+import { addLocalDays, formatLocalDate, parseLocalDate } from "../shared/format/datetime";
 import type { CompanyEventForm, CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import { emptyCompanyEventForm } from "./eventForms";
 
@@ -58,21 +58,39 @@ export function useCompanyEventsController({
   setCompanyEventWatchlistFilter,
   setSelectedCompanyEventId,
 }: CompanyEventsControllerInput) {
-  function refreshCompanyEvents(mode: CompanyEventMode = companyEventMode) {
-    const isWeekView = companyEventViewMode === "week";
+  const [companyEventsLoading, setCompanyEventsLoading] = useState(false);
+  // Request-sequence (last-intent) guard (F4b S3 contract § Events point 7):
+  // an older read resolving after a newer week/filter change must not
+  // clobber the newer one's result — every call bumps this counter and only
+  // applies its outcome if it is still the latest when it resolves.
+  const requestSequenceRef = useRef(0);
 
-    return eventsApi.listCompanyEvents({
-      mode: isWeekView ? "all" : mode,
+  function activeFilters() {
+    return {
       companyId: companyEventCompanyFilter === "all" ? null : companyEventCompanyFilter,
       watchlistId: companyEventWatchlistFilter === "all" ? null : companyEventWatchlistFilter,
       eventType: companyEventTypeFilter === "all" ? null : companyEventTypeFilter,
       status: companyEventStatusFilter === "all" ? null : companyEventStatusFilter,
-      dateFrom: isWeekView ? companyEventWeekRange.start : companyEventDateFrom.trim() || null,
-      dateTo: isWeekView ? companyEventWeekRange.end : companyEventDateTo.trim() || null,
-    })
+    };
+  }
+
+  function refreshCompanyEvents(mode: CompanyEventMode = companyEventMode) {
+    const isWeekView = companyEventViewMode === "week";
+    const sequence = ++requestSequenceRef.current;
+    setCompanyEventsLoading(true);
+
+    return eventsApi
+      .listCompanyEvents({
+        mode: isWeekView ? "all" : mode,
+        ...activeFilters(),
+        dateFrom: isWeekView ? companyEventWeekRange.start : companyEventDateFrom.trim() || null,
+        dateTo: isWeekView ? companyEventWeekRange.end : companyEventDateTo.trim() || null,
+      })
       .then((response) => {
+        if (sequence !== requestSequenceRef.current) return;
         setCompanyEvents(response);
         setCompanyEventsError(null);
+        setCompanyEventsLoading(false);
         setSelectedCompanyEventId((current) => {
           if (current && response.some((event) => event.id === current)) {
             return current;
@@ -82,9 +100,29 @@ export function useCompanyEventsController({
         });
       })
       .catch((error) => {
+        if (sequence !== requestSequenceRef.current) return;
         setCompanyEvents([]);
         setCompanyEventsError(String(error));
+        setCompanyEventsLoading(false);
       });
+  }
+
+  // The empty-week jump target (F4b contract § Events point 4 / decision 4):
+  // one read starting the day after the displayed week, every active filter
+  // retained, returning the first (soonest) match or `null`. A failed read
+  // REJECTS (F4b sol R1) — the caller must tell "nothing later" apart from
+  // "couldn't check", never fold a read failure into a false empty state.
+  function findNextWeekWithEvents(): Promise<CompanyEvent | null> {
+    const dateFrom = formatLocalDate(addLocalDays(parseLocalDate(companyEventWeekRange.end), 1));
+
+    return eventsApi
+      .listCompanyEvents({
+        mode: "upcoming",
+        ...activeFilters(),
+        dateFrom,
+        dateTo: null,
+      })
+      .then((response) => response[0] ?? null);
   }
 
   function clearCompanyEventFilters() {
@@ -147,7 +185,9 @@ export function useCompanyEventsController({
 
   return {
     clearCompanyEventFilters,
+    companyEventsLoading,
     createCompanyEvent,
+    findNextWeekWithEvents,
     openCompanyEventComposer,
     refreshCompanyEvents,
   };

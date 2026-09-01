@@ -10,8 +10,8 @@ import type {
   CredentialStatus,
   TranscriptJob,
   TranscriptSegment,
-  UserSettings,
 } from "../../api/types";
+import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { NotebookDateLikeFieldProps, NotebookForm } from "../../shared/types/notebook";
 
 export type TranscriptJobForm = {
@@ -25,10 +25,11 @@ export type TranscriptNoteForm = NotebookForm;
 
 export type TranscriptsScreenProps = {
   companies: Company[];
-  settings: UserSettings | null;
   geminiCredentialStatus: CredentialStatus | null;
   transcriptJobs: TranscriptJob[];
   transcriptJobsError: string | null;
+  /** True while the list request is in flight (F4b S2 — new controller state). */
+  transcriptsLoading: boolean;
   transcriptJobForm: TranscriptJobForm;
   transcriptJobCreateError: string | null;
   transcriptJobCreateState: string;
@@ -57,6 +58,8 @@ export type TranscriptsScreenProps = {
   setTranscriptSegmentSearchByJobId: Dispatch<SetStateAction<Record<string, string>>>;
   setTranscriptDescriptionDraftByJobId: Dispatch<SetStateAction<Record<string, string>>>;
   refreshTranscriptJobs: () => Promise<void> | Promise<unknown>;
+  /** Re-reads one job's segments after a failed read (item 3 — the row error's `Fetch segments again`). */
+  retryTranscriptSegments: (jobId: string) => Promise<void> | Promise<unknown>;
   createTranscriptJob: (event: FormEvent<HTMLFormElement>) => void;
   toggleTranscriptJob: (job: TranscriptJob) => void;
   toggleTranscriptJobFromKeyboard: (
@@ -77,8 +80,8 @@ export type TranscriptsScreenProps = {
   discardTranscriptNoteDraft: () => void;
   updateTranscriptNoteForm: (field: keyof TranscriptNoteForm, value: string) => void;
   selectTranscriptCompany: (company: Company) => void;
-  formatAiProvider: (value: string | null | undefined) => string;
-  formatGeminiModel: (value: string | null | undefined) => string;
-  formatCredentialConfigured: (status: CredentialStatus | null) => string;
-  formatEnumLabel: (value: string) => string;
+  /** Success strip's "Open notebook" destination (item 3). */
+  openCompanyWorkspaceById: (companyId: string, tab?: CompanyWorkspaceTab) => void;
+  /** The composer's/empty-state's "Open settings" destination (missing Gemini key). */
+  openSettings: () => void;
 };

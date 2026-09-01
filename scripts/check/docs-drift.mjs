@@ -63,11 +63,10 @@ const errors = [];
 // A screen documented under a different label than its nav `Section` value.
 // Structural patterns only (never a per-name silencer for a genuinely missing
 // screen) — see ADR 0065 Decision 3.
-// Empty since F2 renamed the IA bullet to "Today / Dziś" — the plain
-// destination name now word-boundary-matches directly. (An alias ending in a
-// non-ASCII letter would break here: JS `\b` is ASCII-only, so `Dziś\b` can
-// never match.)
-const STRUCTURAL_MAPPINGS = {};
+// `ReportSeason` (F4b S4, ADR 0104 dec. 1 amendment — joined the Library
+// nav): the IA doc spells it "Report Season" (a space), which the plain
+// nav destination name would never word-boundary-match.
+const STRUCTURAL_MAPPINGS = { ReportSeason: "Report Season" };
 
 // ---------------------------------------------------------------------------
 // Helpers

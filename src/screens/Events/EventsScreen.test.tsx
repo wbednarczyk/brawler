@@ -36,10 +36,7 @@ describe("Events screen workflows", () => {
 
     expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Week" })).toHaveClass("segment-active");
-    expect(
-      await screen.findByText("Main Market - Corporate actions - Equity - CDR"),
-    ).toBeInTheDocument();
-    const cdrEventRow = screen.getByRole("button", {
+    const cdrEventRow = await screen.findByRole("button", {
       name: "Open event: Main Market - Corporate actions - Equity - CDR",
     });
     expect(within(cdrEventRow).getByText("Corporate Action")).toBeInTheDocument();

@@ -1,60 +1,212 @@
-.source-row {
+/* F4b S2 (#430a/#430b, docs/mockups/frontend-v2-f4/transcripts.html): the
+   Transcripts screen's OWN composer grid — never `.event-composer-grid`. */
+.transcript-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.75fr);
-  align-items: center;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 280px) auto;
+  align-items: end;
+  gap: var(--space-3);
+  min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-raised);
+}
+
+.transcript-composer-empty {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* The one-primary-at-rest button (decision 6): a disabled state (empty URL)
+   must still read as filled — the global `button:disabled { opacity: 0.55 }`
+   (tokens.css) washes primary and secondary out to near-identical fills,
+   which is right for a quiet action but wrong for the screen's one primary. */
+.transcript-fetch-button:disabled {
+  opacity: 1;
+}
+
+.transcript-composer-url input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.transcript-source-line {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.transcript-source-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success, var(--primary));
+}
+
+.transcript-composer-suggestions {
+  grid-column: 1 / -1;
+}
+
+@container pane (max-width: 640px) {
+  .transcript-composer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rows (#430b): a real button (`.transcript-row-button`) + sibling actions —  */
+/* nested-interactive-free.                                                   */
+/* -------------------------------------------------------------------------- */
+
+.transcript-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.transcript-row-block + .transcript-row-block {
+  border-top: 1px solid var(--border);
+}
+
+.transcript-row-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.transcript-row-line-selected {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.transcript-row-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.transcript-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  cursor: pointer;
+.transcript-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.transcript-row-title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcript-row-url {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcript-row-reason {
+  overflow: hidden;
+  color: var(--danger);
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcript-row-status {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-0) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+}
+
+.transcript-row-status[data-transcript-status="completed"] {
+  border-color: color-mix(in srgb, var(--success) 44%, var(--border));
+  color: var(--success);
+}
+
+.transcript-row-status[data-transcript-status="running"] {
+  border-color: color-mix(in srgb, var(--primary) 44%, var(--border));
+  color: var(--primary);
+}
+
+.transcript-row-status[data-transcript-status="failed"] {
+  border-color: color-mix(in srgb, var(--danger) 44%, var(--border));
+  color: var(--danger);
+}
+
+.transcript-row-company,
+.transcript-row-figures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+  max-width: 190px;
+}
+
+.transcript-row-kv-label {
+  color: var(--muted);
+  font-size: var(--font-2xs);
+}
+
+.transcript-row-kv-value {
+  overflow: hidden;
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcript-row-unlinked {
+  color: var(--muted);
+}
+
+.transcript-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
 }
 
 .transcript-detail-panel {
   display: grid;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
-.transcript-description-editor {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--space-2);
-}
-
-.transcript-description-editor label {
-  display: grid;
-  gap: var(--space-1);
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-.transcript-description-editor input {
-  width: 100%;
-  min-height: 32px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border);
+.transcript-note-saved-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--success) 44%, var(--border));
   border-radius: 8px;
-  color: var(--text);
-  background: var(--surface-raised);
-}
-
-.transcript-description-editor .error-text {
-  grid-column: 1 / -1;
-  margin: 0;
+  color: var(--success);
 }
 
 .transcript-segment-list {
@@ -65,9 +217,7 @@
 }
 
 /* -------------------------------------------------------------------------- */
-/* Transcripts density contract (U7-E2 / ADR 0076 Decision 6)                 */
-/* Rides the named `pane` size container (.workspace). Base is                */
-/* the M tier: list + segments stacked in the expanded job detail.            */
+/* Segments density (U7-E2 / ADR 0076 D6) — rides the `pane` size container.  */
 /* -------------------------------------------------------------------------- */
 
 .transcript-review-columns {
@@ -76,8 +226,6 @@
   min-width: 0;
 }
 
-/* Segments disclosure — hidden above S (segments render inline); flipped on by
-   the S/short container queries below. */
 .transcript-segments-toggle {
   display: none;
   align-items: center;
@@ -92,24 +240,12 @@
   cursor: pointer;
 }
 
-.transcript-segments-chevron {
-  display: inline-flex;
-  color: var(--muted);
-  transition: transform 120ms ease;
-}
-
-.transcript-segments-open .transcript-segments-chevron {
-  transform: rotate(90deg);
-}
-
 .transcript-segments-body {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
 }
 
-/* L (>760px): segments sit beside the note draft once it is open (list ∥
-   segments ∥ note). Without an open draft the review stays single column. */
 @container pane (min-width: 760px) {
   .transcript-review-columns:has(.transcript-note-draft) {
     grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
@@ -117,15 +253,46 @@
   }
 }
 
-/* S (<420px) + short (<480px tall): the segment review folds behind the
-   disclosure; only the list + description stay by default. Reachable — never
-   removed from the DOM. */
+/* Row actions (Rename/Link company/Fetch again/Remove — up to 3–4 buttons)
+   never fit alongside a readable title in an `auto` grid column below L: an
+   `auto` track claims its pre-wrap max-content width regardless of
+   `flex-wrap` on the child, which is what squeezed the title to nothing (M)
+   or overlapped it outright (S) before. Below L, actions drop to their own
+   full-width, wrapping row instead of sharing the line with the button. */
+@container pane (max-width: 759px) {
+  .transcript-row-line {
+    grid-template-columns: 1fr;
+  }
+
+  .transcript-row-actions {
+    flex-wrap: wrap;
+    padding: 0 var(--space-4) var(--space-3);
+  }
+}
+
 @container pane (max-width: 419px) {
   .transcript-segments-toggle {
     display: inline-flex;
   }
 
   .transcript-segments:not(.transcript-segments-open) .transcript-segments-body {
+    display: none;
+  }
+
+  /* Two-row layout: title/URL row, then the status chip on its own row —
+     the fixed-width kv columns (company/figures) fold away. */
+  .transcript-row-button {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    row-gap: var(--space-1);
+  }
+
+  .transcript-row-status {
+    justify-self: start;
+  }
+
+  .transcript-row-company,
+  .transcript-row-figures {
     display: none;
   }
 }
@@ -142,23 +309,18 @@
 
 .transcript-search-panel {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-3);
 }
 
-.transcript-search-panel label {
-  display: grid;
+.transcript-search-field {
   flex: 1;
-  gap: var(--space-1);
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-.transcript-search-panel input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 200px;
   min-height: 34px;
-  width: 100%;
-  min-width: 0;
   padding: 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -166,30 +328,21 @@
   background: var(--surface-raised);
 }
 
-.transcript-search-input-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  gap: var(--space-1);
-}
-
-.transcript-search-clear {
-  width: 28px;
-  min-height: 34px;
-  color: var(--muted);
-  background: var(--surface-raised);
-}
-
-.transcript-search-clear:hover,
-.transcript-search-clear:focus-visible {
-  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
-  color: var(--primary);
+.transcript-search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
 }
 
 .transcript-search-count {
-  min-height: 34px;
   display: inline-flex;
   align-items: center;
+  gap: var(--space-1);
   padding: 0 var(--space-3);
+  min-height: 34px;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--muted);
@@ -226,17 +379,6 @@
   line-height: 1.4;
 }
 
-.transcript-note-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.transcript-note-actions .error-text {
-  margin: 0;
-}
-
 .transcript-link-panel {
   display: grid;
   gap: var(--space-2);
@@ -246,35 +388,8 @@
   background: color-mix(in srgb, var(--surface-raised) 64%, transparent);
 }
 
-.transcript-link-panel label {
-  display: grid;
-  gap: var(--space-1);
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
 .transcript-link-panel .company-registry-suggestions {
   margin-top: 0;
-}
-
-.transcript-error-panel {
-  display: grid;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--danger) 44%, var(--border));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--danger) 12%, var(--surface-raised));
-}
-
-.transcript-error-panel strong {
-  color: var(--text);
-  font-size: var(--font-base);
-}
-
-.transcript-error-panel p {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--font-base);
 }
 
 .transcript-note-draft {
@@ -284,6 +399,16 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+}
+
+.transcript-note-draft-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.transcript-note-draft-actions {
+  justify-content: flex-end;
 }
 
 .muted-text {

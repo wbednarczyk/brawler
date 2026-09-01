@@ -17,16 +17,17 @@ import type { Page } from "@playwright/test";
 // (plan "Trasy powierzchni globalnych po F3a") — the screen is a full route,
 // not a cockpit-hosted panel. Path: open the screen → open a company's
 // pre-report card (open questions, unresolved claims, last KPIs, evidence) →
-// write expectations (ADR 0071) → mark it prepared.
+// add expectations (ADR 0071) → mark it as prepared.
 //
 // Budget: re-baselined at this redefinition's first honest measurement + 1
 // (consent 5, ADR 0107) — see budgets.json.
 //
 // Mock note: the browser seed pre-marks upcoming entries `prepared`, so the
-// mark-prepared click cannot be observed flipping "Upcoming" → "Prepared"; the
-// journey asserts the reviewed card and the prepared end-state instead. The
-// seed has no recorded expectation for the occurrence, so the composer opens
-// in the unfrozen "Write expectations" state.
+// mark-as-prepared click cannot be observed flipping "Nadchodzący" →
+// "Przygotowany"; the journey asserts the reviewed card and the prepared
+// end-state instead. The seed has no recorded expectation for the
+// occurrence, so the composer opens in the unfrozen "Add expectations"
+// state (F4b S4 label pass).
 
 async function openScreenViaJourney(j: Journey, page: Page, label: string): Promise<void> {
   await j.press(page, "Control+K");
@@ -60,22 +61,23 @@ test.describe("J4 — report-season preparation", { tag: "@journey" }, () => {
     // ListRow list-semantics class from regressing on this screen.
     await expectNoA11yViolations(page, "Report-season pre-report card");
 
-    // Write expectations (v0.52, ADR 0071): open the composer, record a stance
-    // and the period the upcoming report covers, and save. This is the
-    // recorded "what I expect before results land" — the done-well end state.
-    await j.click(card.getByRole("button", { name: "Write expectations" }));
+    // Add expectations (v0.52, ADR 0071; F4b S4 label pass): open the
+    // composer, record a stance and the period the upcoming report covers,
+    // and save. This is the recorded "what I expect before results land" —
+    // the done-well end state.
+    await j.click(card.getByRole("button", { name: "Add expectations" }));
     await expect(card.getByLabel("Your stance")).toBeVisible();
     await expectNoA11yViolations(page, "Report-season expectations composer");
     await j.fill(card.getByLabel("Your stance"), "Expecting revenue to keep its double-digit growth.");
     await j.selectOption(card.getByLabel("Period type"), "Q4");
-    await j.click(card.getByRole("button", { name: "Save expectations" }));
+    await j.click(card.getByRole("button", { name: "Save", exact: true }));
     // Saved: the composer collapses to the recorded-stance summary with an
     // edit affordance (the expectation is now editable until the report lands).
     await expect(card.getByRole("button", { name: "Edit expectations" })).toBeVisible();
     await expectNoPageOverflow(page);
 
-    // Mark prepared — the done-well end state for a near-report company.
-    await j.click(card.getByRole("button", { name: "Mark prepared" }));
+    // Mark as prepared — the done-well end state for a near-report company.
+    await j.click(card.getByRole("button", { name: "Mark as prepared" }));
     await expect(layout.getByText("Prepared", { exact: true }).first()).toBeVisible();
     await expectNoPageOverflow(page);
 

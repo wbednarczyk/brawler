@@ -19,9 +19,14 @@ import {
   type ReportExpectation,
 } from "../../api/reportExpectations";
 import { CommandInvocationError } from "../../api/tauri";
+import { useCommandQuery } from "../../shared/state/useCommandQuery";
 
 export function entryKey(entry: Pick<ReportSeasonEntry, "companyId" | "eventKey">) {
   return `${entry.companyId}::${entry.eventKey}`;
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /** The recorded expectation (if any) for an occurrence plus its review read model. */
@@ -41,7 +46,10 @@ export type ExpectationDraft = {
 export type UseReportSeasonResult = {
   season: ReportSeasonResult | null;
   loading: boolean;
+  /** The season-scope read failure only (F4b S4: split from per-card failures below). */
   error: string | null;
+  /** Per-card load/action failure, keyed by `entryKey` — `Refresh card` retries just that card. */
+  cardErrors: Record<string, string>;
   expandedKey: string | null;
   cards: Record<string, PreReportCard>;
   cardLoadingKey: string | null;
@@ -49,6 +57,8 @@ export type UseReportSeasonResult = {
   expectations: Record<string, ExpectationEntryState>;
   expectationBusyKey: string | null;
   toggleExpanded: (entry: ReportSeasonEntry) => void;
+  /** `Refresh card` (F4b S4) — re-reads one card + its expectation after a load failure. */
+  reloadCard: (entry: ReportSeasonEntry) => void;
   prepare: (entry: ReportSeasonEntry) => void;
   process: (entry: ReportSeasonEntry) => void;
   writeExpectation: (entry: ReportSeasonEntry, draft: ExpectationDraft) => Promise<void>;
@@ -57,36 +67,44 @@ export type UseReportSeasonResult = {
   reload: () => void;
 };
 
+/**
+ * F4b S4 (contract § Report Season data layer): `season`/`loading`/`error`
+ * now come from `useCommandQuery` — one shared self-fetch seam instead of a
+ * hand-rolled effect, with `refetch` awaitable so mutations can `await
+ * refetch()` before reloading the expanded card (today's ordering kept:
+ * mutate → refetch season → reload the expanded card). Per-card/expectation
+ * load AND action failures land in `cardErrors[key]`, keyed by occurrence —
+ * the season-level `error` is now the read failure only.
+ */
 export function useReportSeason(watchlistId: string | null): UseReportSeasonResult {
-  const [season, setSeason] = useState<ReportSeasonResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const season = useCommandQuery([watchlistId], () => listReportSeason({ watchlistId }));
+
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [cards, setCards] = useState<Record<string, PreReportCard>>({});
   const [cardLoadingKey, setCardLoadingKey] = useState<string | null>(null);
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [actionInFlightKey, setActionInFlightKey] = useState<string | null>(null);
   const [expectations, setExpectations] = useState<Record<string, ExpectationEntryState>>({});
   const [expectationBusyKey, setExpectationBusyKey] = useState<string | null>(null);
-
-  const refreshSeason = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await listReportSeason({ watchlistId });
-      setSeason(result);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [watchlistId]);
 
   useEffect(() => {
     // Reset expansion when the scope changes; cards are scope-independent but
     // the visible set is not.
     setExpandedKey(null);
-    void refreshSeason();
-  }, [refreshSeason]);
+  }, [watchlistId]);
+
+  function setCardError(key: string, cause: unknown) {
+    setCardErrors((current) => ({ ...current, [key]: errorMessage(cause) }));
+  }
+
+  function clearCardError(key: string) {
+    setCardErrors((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
 
   // The occurrence's recorded expectation + review. Fetched via the J2 commands
   // rather than baked into the pre-report card read model: the card is loaded
@@ -102,7 +120,7 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
         : null;
       setExpectations((current) => ({ ...current, [key]: { expectation, review } }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setCardError(key, cause);
     }
   }, []);
 
@@ -110,6 +128,7 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
     async (entry: ReportSeasonEntry) => {
       const key = entryKey(entry);
       setCardLoadingKey(key);
+      clearCardError(key);
       try {
         const card = await getPreReportCard({
           companyId: entry.companyId,
@@ -118,12 +137,19 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
         setCards((current) => ({ ...current, [key]: card }));
         await loadExpectation(entry);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setCardError(key, cause);
       } finally {
         setCardLoadingKey((current) => (current === key ? null : current));
       }
     },
     [loadExpectation],
+  );
+
+  const reloadCard = useCallback(
+    (entry: ReportSeasonEntry) => {
+      void loadCard(entry);
+    },
+    [loadCard],
   );
 
   const toggleExpanded = useCallback(
@@ -146,20 +172,24 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
     async (entry: ReportSeasonEntry, action: (entry: ReportSeasonEntry) => Promise<unknown>) => {
       const key = entryKey(entry);
       setActionInFlightKey(key);
-      setError(null);
+      clearCardError(key);
       try {
         await action(entry);
-        await refreshSeason();
+        await season.refetch();
         if (expandedKey === key) {
           await loadCard(entry);
         }
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setCardError(key, cause);
       } finally {
         setActionInFlightKey((current) => (current === key ? null : current));
       }
     },
-    [expandedKey, loadCard, refreshSeason],
+    // season.refetch is stable (useCommandQuery's own useCallback, empty
+    // deps) — omitted from deps to avoid re-creating this on every season
+    // state change for no behavioral gain (mirrors useAlertsQuery.refetch).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [expandedKey, loadCard, season.refetch],
   );
 
   const prepare = useCallback(
@@ -189,7 +219,6 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
       const key = entryKey(entry);
       const existing = expectations[key]?.expectation ?? null;
       setExpectationBusyKey(key);
-      setError(null);
       try {
         if (existing) {
           await updateReportExpectation({
@@ -210,26 +239,26 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
         }
         await loadExpectation(entry);
       } catch (cause) {
-        // The freeze race: facts landed between opening the composer and saving.
-        // Reload so the UI flips to the read-only review state (ADR 0071).
+        // The freeze race: facts landed between opening the composer and
+        // saving. Reload the whole card (not just the expectation) so the UI
+        // flips to the read-only review state with fresh data (ADR 0071;
+        // F4b S4 contract § Report Season data layer).
         if (cause instanceof CommandInvocationError && cause.code === "conflict") {
-          await loadExpectation(entry);
+          await loadCard(entry);
           return;
         }
-        setError(cause instanceof Error ? cause.message : String(cause));
         throw cause;
       } finally {
         setExpectationBusyKey((current) => (current === key ? null : current));
       }
     },
-    [expectations, loadExpectation],
+    [expectations, loadCard, loadExpectation],
   );
 
   const resolveExpectation = useCallback(
     async (entry: ReportSeasonEntry, note: string) => {
       const key = entryKey(entry);
       setExpectationBusyKey(key);
-      setError(null);
       try {
         await recordExpectationResolution({
           companyId: entry.companyId,
@@ -237,9 +266,6 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
           resolutionNoteMd: note,
         });
         await loadExpectation(entry);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-        throw cause;
       } finally {
         setExpectationBusyKey((current) => (current === key ? null : current));
       }
@@ -247,11 +273,14 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
     [loadExpectation],
   );
 
+  const error = season.status === "error" ? errorMessage(season.error) : null;
+
   return useMemo(
     () => ({
-      season,
-      loading,
+      season: season.data,
+      loading: season.status === "loading",
       error,
+      cardErrors,
       expandedKey,
       cards,
       cardLoadingKey,
@@ -259,16 +288,22 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
       expectations,
       expectationBusyKey,
       toggleExpanded,
+      reloadCard,
       prepare,
       process,
       writeExpectation,
       resolveExpectation,
-      reload: () => void refreshSeason(),
+      reload: () => void season.refetch(),
     }),
+    // season.data/status/refetch (not the whole `season` object, a new
+    // identity every render) are the pieces this memo actually reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      season,
-      loading,
+      season.data,
+      season.status,
+      season.refetch,
       error,
+      cardErrors,
       expandedKey,
       cards,
       cardLoadingKey,
@@ -276,11 +311,11 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
       expectations,
       expectationBusyKey,
       toggleExpanded,
+      reloadCard,
       prepare,
       process,
       writeExpectation,
       resolveExpectation,
-      refreshSeason,
     ],
   );
 }

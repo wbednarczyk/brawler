@@ -27,7 +27,13 @@ const RAW_CATALOG = [
     figures: { selector: "[data-figure]", min: 2 },
   },
   { screen: "inbox", spec: "visual-inbox-sources.spec.ts", states: ["default"], tiers: FULL_TIERS },
-  { screen: "sources", spec: "visual-inbox-sources.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  {
+    screen: "sources",
+    spec: "visual-inbox-sources.spec.ts",
+    states: ["default"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 3 },
+  },
   { screen: "notebook-company", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "notebooks-global", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "claims", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },
@@ -53,8 +59,23 @@ const RAW_CATALOG = [
     tiers: M_ONLY,
   },
   { screen: "research", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
-  { screen: "events", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
-  { screen: "report-season", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  {
+    screen: "events",
+    spec: "visual-research-events.spec.ts",
+    // "empty" lands with the S3 redesign (TODO(F4b S3) in the spec, not here —
+    // the catalog is the target shape; the spec is free to not shoot a cell
+    // it doesn't support yet).
+    states: ["default", "empty"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 5 },
+  },
+  {
+    screen: "report-season",
+    spec: "visual-research-events.spec.ts",
+    states: ["default"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 3 },
+  },
   { screen: "today", spec: "visual-shell-today.spec.ts", states: ["default"], tiers: M_ONLY },
   { screen: "spolka-rest", spec: "visual-spolka.spec.ts", states: ["default"], tiers: M_ONLY },
   { screen: "spolka-tool-claims", spec: "visual-spolka.spec.ts", states: ["default"], tiers: M_ONLY },
@@ -72,7 +93,16 @@ const RAW_CATALOG = [
     tiers: FULL_TIERS,
     figures: { selector: "[data-figure]", min: 2 },
   },
-  { screen: "transcripts", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  {
+    screen: "transcripts",
+    spec: "visual-utility.spec.ts",
+    states: ["default", "empty"],
+    tiers: FULL_TIERS,
+    // The mock seeds 3 realistic segments once a transcript completes (sol
+    // R1 finding 3) — the default-state row carries its fetched-at date PLUS
+    // its segment count once expanded.
+    figures: { selector: "[data-figure]", min: 2 },
+  },
   { screen: "settings", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
 ];
 

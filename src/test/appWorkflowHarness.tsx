@@ -80,8 +80,16 @@ export interface AppTestState {
   autopilotRunsResponse: Data["autopilotRuns"];
   companyAutopilotModesResponse: Data["autopilotModes"];
   financialFactsResponse: Data["financialFacts"];
+  financialPeriodsResponse: Data["financialPeriods"];
   claimsToVerifyResponse: Data["claimsToVerify"];
   reportSeasonUpcomingResponse: Data["reportSeasonUpcoming"];
+  // sol R1 (F4b fix wave): Report Season's expectation states (has an
+  // expectation / frozen-unresolved review) need `list_report_expectations`/
+  // `expectation_review` seeded, not just the season list itself — added
+  // here rather than working around the harness. Lives on the runtime's own
+  // `reportExpectations` accessor, not `Data`/`ScenarioData` (router-internal
+  // state, see MockRuntime.reportExpectations).
+  reportExpectationsResponse: Record<string, unknown>[];
   attentionEventsResponse: Data["attentionEvents"];
   reconciliationResultsResponse: Data["reconciliationResults"];
   alertRulesResponse: Data["alertRules"];
@@ -118,8 +126,16 @@ export const appTestState = Object.defineProperties(
     autopilotRunsResponse: field("autopilotRuns"),
     companyAutopilotModesResponse: field("autopilotModes"),
     financialFactsResponse: field("financialFacts"),
+    financialPeriodsResponse: field("financialPeriods"),
     claimsToVerifyResponse: field("claimsToVerify"),
     reportSeasonUpcomingResponse: field("reportSeasonUpcoming"),
+    reportExpectationsResponse: {
+      get: () => runtime.reportExpectations,
+      set: (value: Record<string, unknown>[]) => {
+        runtime.reportExpectations = structuredClone(value);
+      },
+      enumerable: true,
+    },
     attentionEventsResponse: field("attentionEvents"),
     reconciliationResultsResponse: field("reconciliationResults"),
     alertRulesResponse: field("alertRules"),

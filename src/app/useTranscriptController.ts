@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import type { Dispatch, FormEvent, KeyboardEvent, SetStateAction } from "react";
 import * as transcriptsApi from "../api/transcripts";
 import type {
@@ -50,8 +51,11 @@ type TranscriptControllerInput = {
   transcriptNoteForm: NotebookForm;
 };
 
-const missingGeminiCredentialMessage =
-  "Gemini transcription credentials are not configured in this app runtime. Save the Gemini API key in Settings before running a transcript job.";
+// Sol R1 finding 1: product vocabulary, no "runtime"/"job" — this plText key
+// already exists (TranscriptJobRow's disabled "Fetch again" tooltip), reused
+// verbatim so the message renders through the SAME translated string
+// wherever a screen wraps it in `text()`.
+const missingGeminiCredentialMessage = "Configure Gemini API key in Settings before running transcription";
 
 function withoutKey<T>(record: Record<string, T>, key: string) {
   const next = { ...record };
@@ -93,9 +97,21 @@ export function useTranscriptController({
   transcriptJobForm,
   transcriptNoteForm,
 }: TranscriptControllerInput) {
+  // F4b S2 (docs/plans/f4b-contracts/s2-transcripts.md item 5, "Stale" state
+  // matrix row): a request-sequence (last-intent) guard per read — only the
+  // NEWEST list/segments response for a given key may apply, mirroring
+  // useAttentionController's `requestSeqRef` precedent. `transcriptsLoading`
+  // is new controller state (contract "Assumptions").
+  const [transcriptsLoading, setTranscriptsLoading] = useState(true);
+  const listRequestSeqRef = useRef(0);
+  const segmentsRequestSeqRef = useRef<Record<string, number>>({});
+
   function refreshTranscriptJobs(companyId: string | null = null) {
+    const requestSeq = (listRequestSeqRef.current += 1);
+    setTranscriptsLoading(true);
     return transcriptsApi.listVideoTranscriptJobs({ companyId })
       .then((response) => {
+        if (listRequestSeqRef.current !== requestSeq) return;
         setTranscriptJobs(uniqueTranscriptJobs(response));
         setTranscriptJobsError(null);
         const jobIds = new Set(response.map((job) => job.id));
@@ -111,14 +127,20 @@ export function useTranscriptController({
         setSelectedTranscriptJobId((current) => (current && jobIds.has(current) ? current : null));
       })
       .catch((error) => {
+        if (listRequestSeqRef.current !== requestSeq) return;
         setTranscriptJobs([]);
         setTranscriptJobsError(String(error));
+      })
+      .finally(() => {
+        if (listRequestSeqRef.current === requestSeq) setTranscriptsLoading(false);
       });
   }
 
   function refreshTranscriptSegments(jobId: string) {
+    const requestSeq = (segmentsRequestSeqRef.current[jobId] = (segmentsRequestSeqRef.current[jobId] ?? 0) + 1);
     return transcriptsApi.listTranscriptSegments(jobId)
       .then((response) => {
+        if (segmentsRequestSeqRef.current[jobId] !== requestSeq) return;
         setTranscriptSegmentsByJobId((current) => ({
           ...current,
           [jobId]: response,
@@ -138,6 +160,7 @@ export function useTranscriptController({
         });
       })
       .catch((error) => {
+        if (segmentsRequestSeqRef.current[jobId] !== requestSeq) return;
         setTranscriptSegmentsByJobId((current) => ({
           ...current,
           [jobId]: [],
@@ -147,6 +170,11 @@ export function useTranscriptController({
           [jobId]: String(error),
         }));
       });
+  }
+
+  /** Row error's "Fetch segments again" (item 3) — re-reads the same job's segments. */
+  function retryTranscriptSegments(jobId: string) {
+    return refreshTranscriptSegments(jobId);
   }
 
   function toggleTranscriptJob(job: TranscriptJob) {
@@ -448,6 +476,14 @@ export function useTranscriptController({
   function createTranscriptJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    // Sol R1 finding 1: check credentials BEFORE creating a backend record —
+    // the composer is disabled in this state too, but a disabled submit
+    // button is not a reliable guard against implicit form submission.
+    if (!geminiCredentialStatus?.configured) {
+      setTranscriptJobCreateError(missingGeminiCredentialMessage);
+      return;
+    }
+
     const url = transcriptJobForm.url.trim();
     const validationMessage = transcriptUrlValidationMessage(url);
 
@@ -473,13 +509,7 @@ export function useTranscriptController({
           ...current.filter((job) => job.id !== created.id),
         ]);
         setTranscriptJobCreateState("done");
-        if (geminiCredentialStatus?.configured) {
-          runTranscriptJob(created.id);
-          return Promise.resolve();
-        }
-
-        setTranscriptJobsError(missingGeminiCredentialMessage);
-        return refreshTranscriptJobs();
+        runTranscriptJob(created.id);
       })
       .catch((error) => {
         setTranscriptJobCreateError(String(error));
@@ -496,11 +526,13 @@ export function useTranscriptController({
     openTranscriptNoteDraft,
     refreshTranscriptJobs,
     refreshTranscriptSegments,
+    retryTranscriptSegments,
     runTranscriptJob,
     selectTranscriptCompany,
     toggleTranscriptJob,
     toggleTranscriptJobFromKeyboard,
     toggleTranscriptSegment,
+    transcriptsLoading,
     updateTranscriptJobDescription,
     updateTranscriptLinkQuery,
     updateTranscriptNoteForm,

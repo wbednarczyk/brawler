@@ -334,6 +334,26 @@
     {
       "token": "Open view:",
       "adr": "ADR 0108"
+    },
+    {
+      "token": "TranscriptRuntimeStrip",
+      "adr": "ADR 0104"
+    },
+    {
+      "token": "action.refreshJobs",
+      "adr": "ADR 0104"
+    },
+    {
+      "token": "empty.noTranscriptJobs",
+      "adr": "ADR 0104"
+    },
+    {
+      "token": "error.transcriptJobsUnavailable",
+      "adr": "ADR 0104"
+    },
+    {
+      "token": "event-week-empty",
+      "adr": "ADR 0104"
     }
   ]
 }

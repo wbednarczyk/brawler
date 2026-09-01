@@ -7,7 +7,11 @@ import { plText } from "./resources/plText";
 // speak the user's language, not the implementation's. "Database" leaked into
 // Settings once; this pins the class shut. Keep the list tight and justified —
 // a broad list would flag legitimate copy and erode trust in the gate.
-const FORBIDDEN = /\b(database|databases|IPC|SQL|runtime|backend|jsdom|localhost)\b/i;
+// F4b S2 (docs/plans/f4b-contracts/s2-transcripts.md item 6): `job`/`jobs`
+// added — the Transcripts redesign retires the "transcript job" vocabulary
+// ("a transcript", never "a job"); Settings/Diagnostics/KPI copy uses
+// worker/task/ingest instead, so this stays a precise addition.
+const FORBIDDEN = /\b(database|databases|IPC|SQL|runtime|backend|jsdom|localhost|jobs?)\b/i;
 
 function offenders(strings: string[], source: string, pattern: RegExp = FORBIDDEN): string[] {
   return strings.filter((value) => pattern.test(value)).map((value) => `${source}: ${value}`);

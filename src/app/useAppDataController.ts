@@ -16,7 +16,6 @@ import type {
   FeedItem,
   HealthResponse,
   SourceAdapter,
-  UnmatchedSourceItem,
   UserSettings,
   Watchlist,
   WatchlistMembership,
@@ -48,8 +47,6 @@ type AppDataControllerInput = {
   setSourceAdapters: Dispatch<SetStateAction<SourceAdapter[]>>;
   setSourceAdaptersError: Dispatch<SetStateAction<string | null>>;
   setTheme: Dispatch<SetStateAction<UserSettings["theme"]>>;
-  setUnmatchedSourceItems: Dispatch<SetStateAction<Record<string, UnmatchedSourceItem[]>>>;
-  setUnmatchedSourceItemsError: Dispatch<SetStateAction<string | null>>;
   setWatchlistMemberships: Dispatch<SetStateAction<WatchlistMembership[]>>;
   setWatchlists: Dispatch<SetStateAction<Watchlist[]>>;
   setWatchlistsError: Dispatch<SetStateAction<string | null>>;
@@ -80,8 +77,6 @@ export function useAppDataController({
   setSourceAdapters,
   setSourceAdaptersError,
   setTheme,
-  setUnmatchedSourceItems,
-  setUnmatchedSourceItemsError,
   setWatchlistMemberships,
   setWatchlists,
   setWatchlistsError,
@@ -190,24 +185,6 @@ export function useAppDataController({
       });
   }
 
-  function refreshUnmatchedSourceItems(adapterId: string) {
-    return sourcesApi.listUnmatchedSourceItems(adapterId)
-      .then((response) => {
-        setUnmatchedSourceItems((current) => ({
-          ...current,
-          [adapterId]: response,
-        }));
-        setUnmatchedSourceItemsError(null);
-      })
-      .catch((error) => {
-        setUnmatchedSourceItems((current) => ({
-          ...current,
-          [adapterId]: [],
-        }));
-        setUnmatchedSourceItemsError(String(error));
-      });
-  }
-
   function refreshCompanyRegistryEntries() {
     return sourcesApi.listCompanyRegistryEntries()
       .then((response) => {
@@ -280,7 +257,6 @@ export function useAppDataController({
     refreshHealth,
     refreshSettings,
     refreshSourceAdapters,
-    refreshUnmatchedSourceItems,
     refreshWatchlistMemberships,
     refreshWatchlists,
   };

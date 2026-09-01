@@ -8,6 +8,7 @@ import {
   expectNoHorizontalOverflow,
   expectNoOverlap,
 } from "./helpers/harness";
+import { expectFilledAtRest } from "./helpers/interactionContracts";
 import type { Locator, Page } from "@playwright/test";
 
 // Panel density matrix — U7 cluster E1 (ADR 0076 D6): Inbox + Sources. These are
@@ -232,5 +233,28 @@ test.describe("Sources density contract", { tag: "@clickable" }, () => {
     await expectNoPageOverflow(page);
 
     await resetPaneSize(page, pane);
+  });
+
+  // F4b S4 (contract § Sources, shared guardrail table): the language pass
+  // adds no new fold tiers — this proves the existing group layout holds
+  // together (no sibling-group overlap, no page overflow) and that the
+  // screen's `expectSinglePrimary(root, 0)` invariant (Sources never has a
+  // primary action) holds in the real browser too, across S/M/L.
+  test("adjacent source groups never overlap, and no primary renders, at S/M/L", async ({ page }) => {
+    await openApp(page);
+    const pane = await openSourcesScreen(page);
+    const groups = page.locator(".source-group");
+
+    for (const tier of ["S", "M", "L"] as const) {
+      await setPaneSize(page, { ...TIER_SIZE[tier], pane });
+      await expect(groups.first()).toBeVisible();
+      const groupCount = await groups.count();
+      if (groupCount > 1) {
+        await expectNoOverlap(groups.nth(0), groups.nth(1), `adjacent source groups at ${tier}`);
+      }
+      await expectNoPageOverflow(page);
+      await expectFilledAtRest(pane, { max: 0 });
+      await resetPaneSize(page, pane);
+    }
   });
 });

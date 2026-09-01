@@ -102,6 +102,26 @@ describe("useCommandQuery", () => {
   });
 
 
+  it("refetch resolves after data is committed", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce("first").mockResolvedValueOnce("second");
+    const { result } = renderHook(() => useCommandQuery(["key-a"], fetcher));
+
+    await waitFor(() => expect(result.current.data).toBe("first"));
+
+    // F4b S1: `refetch` becomes `() => Promise<void>` — today it returns
+    // `void` (the `run` callback's return value), so this call site reddens
+    // on the returned-value shape alone, independent of any microtask race.
+    const returned = result.current.refetch();
+    expect(returned).toBeInstanceOf(Promise);
+
+    await act(async () => {
+      await returned;
+    });
+
+    expect(result.current.data).toBe("second");
+    expect(result.current.status).toBe("success");
+  });
+
   it("resolves an overlapping refetch race to the NEWER request's data", async () => {
     const deferred: Array<(v: string) => void> = [];
     const fetcher = vi.fn(

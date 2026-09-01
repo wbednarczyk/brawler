@@ -39,6 +39,10 @@ per feature.
   and how unreadable shareholder tables surface as honest gaps.
 - **[Watchlists](watchlists.md)** — groups of companies that Today, Inbox and
   Report Season filter by: create, add companies, open a member, remove.
+- **[Events](events.md)** — the weekly calendar of report publications,
+  ex-dividend days, and general meetings for the companies on your lists,
+  with source attribution on every date, confirm/reject for dates derived
+  from a filing, and a one-click jump when a week is empty.
 - **[Per-company settings](company-settings.md)** — quick single-company
   controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
   surface for changing several companies, or a whole watchlist, at once.
@@ -85,6 +89,13 @@ per feature.
   the ESPI witness that audits your official-report feed and warns when the
   primary source missed a disclosure; the KNF short-selling register as a
   signal + dashboard panel; and the auditor-opinion red-flag signal.
+- **[Sources](sources.md)** — the source status/diagnostics screen: what
+  every official-report, calendar, media, and company-directory feed is,
+  its health, its schedule, and its last-run result; refresh one or all,
+  add companies from a directory source.
+- **[Report Season](report-season.md)** — a per-company checklist for the
+  run-up to each report: prepared/reviewed status, open research questions
+  and unresolved claims, last-period KPIs, and pre-report expectations.
 - **[The MCP server](mcp-server.md)** — let an AI assistant (Claude Code,
   Claude Desktop, …) work with your research through a localhost-only connector:
   read the whole workspace, and — when you allow writes — record notes, claims,

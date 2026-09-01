@@ -44,11 +44,21 @@ describe("visual-update-core", () => {
     }
   });
 
-  it("every catalog cell (86 today) has an existing baseline file", () => {
+  // Sol R1 finding 3: `allExpectedCells()` now enumerates EVERY state a
+  // catalog entry declares (not just "default") — a screen with `states:
+  // ["default", "empty"]` (transcripts, events) must have a baseline for
+  // BOTH, or a missing "empty" cell went unguarded. 86 "default"-only cells
+  // + transcripts' 4 "empty" cells (S/M/L dark + M light) + events' 4 =~ 94.
+  it("every catalog cell (94 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
-    expect(cells.length).toBe(86);
-    for (const cell of cells) {
-      expect(existsSync(cellFileName(cell))).toBe(true);
+    expect(cells.length).toBe(94);
+    // Sol R2 blocker: every cell maps to a DISTINCT file — a state-less
+    // filename would alias "empty" cells onto the default PNGs and the
+    // existence check below would prove nothing.
+    const files = cells.map((cell) => cellFileName(cell));
+    expect(new Set(files).size).toBe(files.length);
+    for (const file of files) {
+      expect(existsSync(file)).toBe(true);
     }
   });
 

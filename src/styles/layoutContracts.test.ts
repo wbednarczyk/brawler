@@ -201,6 +201,21 @@ describe("layout scroll contracts", () => {
     expect(dayBodyRule).toContain("overscroll-behavior: contain");
   });
 
+  it("drops the Events week-grid hard minimum at the L density tier (#431)", () => {
+    const marker = "@container pane (min-width: 900px)";
+    const start = eventsCss.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    // The nested rule's own closing brace, then the @container block's: the
+    // block body is short and single-rule, so the second "}" after the start
+    // closes it.
+    const firstClose = eventsCss.indexOf("}", start);
+    const secondClose = eventsCss.indexOf("}", firstClose + 1);
+    const overrideBlock = eventsCss.slice(start, secondClose + 1);
+
+    expect(overrideBlock).toContain("min-width: 0");
+    expect(overrideBlock).toContain("grid-template-columns: repeat(5, minmax(0, 1fr))");
+  });
+
   it("keeps Sources category and source rows at intrinsic content height", () => {
     const layoutRule = ruleFor(sourcesCss, ".sources-layout");
     const groupRule = ruleFor(sourcesCss, ".source-group");

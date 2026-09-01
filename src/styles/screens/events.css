@@ -22,6 +22,16 @@
   align-content: start;
 }
 
+/* The shared `{companies,events,sources,settings}-layout` rule above leaves
+   the implicit single grid column sized to its content ("auto") — list mode
+   rows (min 280px of fixed/auto grid tracks, rows.css `.event-row`) then
+   overflowed the S/short pane by a few px (density spec
+   `expectNoPageOverflow`). Scoped to Events only: an explicit `minmax(0,1fr)`
+   column caps it at the pane's own width so a row shrinks/wraps instead. */
+.events-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* Bounded scroller for the deliberately-wide week calendar: the grid scrolls
    INSIDE it instead of widening the pane (guardrail, ADR 0045; mirrors
    .facts-matrix-scroll). Inline-size containment stops the grid's min-width
@@ -40,27 +50,54 @@
   min-width: 920px;
 }
 
+/* #431: at L the pane is wide enough for five columns without the bounded
+   scroller's hard minimum — drop it so the grid fills the pane instead of
+   spilling into horizontal scroll (the M density row above keeps the
+   minimum, mirrors the bounded facts-matrix-scroll pattern). */
+@container pane (min-width: 900px) {
+  .event-week-grid {
+    min-width: 0;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
 .event-week-day {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--space-2);
   padding: var(--space-3);
+  min-width: 0;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
 }
 
+.event-week-day-quiet {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
+  background: transparent;
+}
+
 .event-week-day-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  min-width: 0;
   color: var(--muted);
   font-size: var(--font-sm);
 }
 
 .event-week-day-header strong {
+  overflow: hidden;
   color: var(--text);
   font-size: var(--font-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-week-day-header [data-figure="count"] {
+  margin-left: auto;
 }
 
 .event-week-day-body {
@@ -73,17 +110,6 @@
   overscroll-behavior: contain;
 }
 
-.event-week-empty {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  padding: 0 var(--space-3);
-  border: 1px dashed color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
 .event-composer {
   display: grid;
   gap: var(--space-3);
@@ -94,39 +120,20 @@
   background: color-mix(in srgb, var(--primary) 7%, var(--surface-raised));
 }
 
-.transcript-runtime-strip {
+/* The read-error strip (F4b S3 contract § Events point 7) replaces the grid
+   area — the toolbar above it stays put (mockup Plansza 5). */
+.events-error-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: var(--space-3) var(--space-5) 0;
-}
-
-.transcript-runtime-strip div {
-  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: 26px;
-  min-width: 0;
-  padding: 0 var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--surface-raised) 58%, transparent);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
 }
 
-.transcript-runtime-strip dt {
-  color: var(--muted);
-  font-size: var(--font-xs);
-}
-
-.transcript-runtime-strip dd {
-  margin: 0;
-  color: var(--text);
-  font-size: var(--font-sm);
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.transcript-runtime-strip + .event-composer {
+.event-week-empty-panel {
   margin-top: var(--space-2);
 }
 
@@ -179,6 +186,54 @@
   border-color: color-mix(in srgb, var(--success) 42%, var(--border));
 }
 
+/* .event-row/.event-row-block/.event-date-box/.event-row-main/
+   .event-title-line/.event-row-status/.event-detail-panel are shared list-row
+   primitives already defined in `rows.css` (a proper grid:
+   `150px minmax(0,1fr) minmax(130px,0.24fr)`) — Events' list mode already
+   used them before this redesign. Only the amber "proposed" override is new. */
+.event-row-source-proposed {
+  color: var(--warning);
+}
+
+/* rows.css's `.event-row-block` has no `min-width: 0` — as the single
+   implicit-grid child of `.events-layout` it defaulted to its content's
+   auto min-width, leaving list mode a few px too wide for the S/short pane
+   (density spec `expectNoPageOverflow`). */
+.events-layout > .event-row-block {
+  min-width: 0;
+}
+
+/* rows.css's `.event-row` grid (`150px minmax(0,1fr) minmax(130px,0.24fr)`)
+   has a 280px hard floor before its middle (title) column even starts —
+   Events is the one row consumer the S/short density tier forces into list
+   mode at a 380px pane, where that floor plus padding/gaps left the title
+   column 0px wide (#417-class collapse, found via the density spec). Below
+   420px, stack date+status on one line and let the title/company line use
+   the row's full width on its own line instead. */
+@container pane (max-width: 419px) {
+  /* `.events-layout` (not bare `.event-row`) — `rows.css` loads AFTER this
+     file (`src/styles.css`), so a same-specificity `.event-row` rule here
+     would lose the cascade to its plain (unconditional) one regardless of
+     this @container matching. The extra class wins on specificity instead
+     of depending on import order. */
+  .events-layout .event-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "date status" "main main";
+  }
+
+  .events-layout .event-date-box {
+    grid-area: date;
+  }
+
+  .events-layout .event-row-status {
+    grid-area: status;
+  }
+
+  .events-layout .event-row-main {
+    grid-area: main;
+  }
+}
+
 .event-week-card-block {
   display: grid;
   gap: 0;
@@ -221,8 +276,11 @@
   box-shadow: inset 3px 0 0 var(--warning);
 }
 
+/* Past cards stay fully legible: any opacity on the card pushes the muted
+   type/company/source text under 4.5:1 on the light theme (compact-light
+   axe, F4b integration). De-emphasis comes from the border only. */
 .event-due-past {
-  opacity: 0.74;
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
 }
 
 .event-week-card:focus-visible {
@@ -230,8 +288,7 @@
   outline-offset: 2px;
 }
 
-.event-week-card-topline,
-.event-week-card-meta {
+.event-week-card-topline {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -250,30 +307,6 @@
   white-space: nowrap;
 }
 
-.event-week-card-topline > div {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.event-week-card h2 {
-  display: -webkit-box;
-  min-height: 34px;
-  overflow: hidden;
-  color: var(--text);
-  font-size: var(--font-base);
-  line-height: 1.3;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.event-week-card-topline span,
-.event-week-card-topline em,
-.event-week-card-meta span,
 .event-date-box em {
   display: inline-flex;
   align-items: center;
@@ -281,89 +314,116 @@
   min-height: 21px;
   min-width: 0;
   padding: 0 var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
   border-radius: 7px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
   font-size: var(--font-xs);
+  font-style: normal;
   line-height: 1.25;
-  overflow-wrap: anywhere;
   text-align: left;
 }
 
-.event-week-card-topline em,
-.event-date-box em {
-  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
-  color: var(--text);
-  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
-  font-style: normal;
-}
-
-.event-due-today .event-week-card-topline em,
 .event-due-today .event-date-box em {
   border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
   background: color-mix(in srgb, var(--primary) 15%, var(--surface));
 }
 
-.event-due-past .event-week-card-topline em,
 .event-due-past .event-date-box em {
   border-color: color-mix(in srgb, var(--border) 72%, transparent);
   color: var(--muted);
   background: color-mix(in srgb, var(--surface) 56%, transparent);
 }
 
-.event-week-card-meta span {
-  flex: 1 1 auto;
+/* Fix wave: the due label only carries information for today/tomorrow/soon
+   (never "Past" — a week already dimmed via .event-due-past, mockup has no
+   such chip) and reads as quiet text, not the list mode's amber chip. Always
+   the same muted tone — a --primary tint on .event-due-today's light card
+   background failed contrast (4.32:1, axe on chromium-compact-light). */
+.event-week-card-due {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
 }
 
-.event-week-card-meta span:first-child {
+/* Card body text lines (F4b S3 contract § Events point 2): plain text,
+   ellipsized — never a badge/chip (that treatment stays on the due label
+   above). The ticker itself (rendered via TickerLabel, not these classes)
+   never ellipsizes. */
+.event-week-card-type,
+.event-week-card-company,
+.event-week-card-source {
+  display: block;
   overflow: hidden;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.event-week-card-detail {
-  display: grid;
+.event-week-card-company {
+  font-size: var(--font-xs);
+}
+
+.event-week-card-source {
+  color: var(--tone-agent, var(--primary));
+  font-size: var(--font-xs);
+}
+
+.event-week-card-source-proposed {
+  color: var(--warning);
+}
+
+/* `.event-detail-panel` (box) already lives in rows.css — EventDetail.tsx
+   (F4b S3, shared by week AND list mode) reuses it unchanged. */
+.event-detail-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-}
-
-.event-week-card-full-title {
-  display: grid;
-  gap: var(--space-1);
   min-width: 0;
 }
 
-.event-week-card-full-title span {
-  color: var(--muted);
-  font-size: var(--font-xs);
-}
-
-.event-week-card-full-title strong {
+.event-detail-title strong {
   color: var(--text);
-  font-size: var(--font-base);
-  line-height: 1.35;
+  font-size: var(--font-lg);
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
-.event-week-card-detail dl {
-  display: grid;
-  gap: var(--space-2);
+.event-detail-title span {
+  color: var(--muted);
+  font-size: var(--font-sm);
 }
 
-.event-week-card-detail dt {
+.metadata-grid dt {
   color: var(--muted);
   font-size: var(--font-xs);
 }
 
-.event-week-card-detail dd {
+.metadata-grid dd {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
   font-size: var(--font-sm);
+}
+
+.derived-event-actions {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+
+.derived-event-buttons,
+.event-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
 }
 
 .event-weekend-row {

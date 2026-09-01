@@ -1,7 +1,7 @@
-import { Save, X } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
-import { ActionRow, Button, SectionHeader, SelectField, TextField, TextareaField } from "../../ui";
+import { ActionButton, ActionRow, SectionHeader, SelectField, TextField, TextareaField } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import type { TranscriptPrimary } from "./transcriptPrimary";
 import type { TranscriptsScreenProps } from "./transcriptTypes";
 
 type TranscriptNoteDraftProps = Pick<
@@ -11,10 +11,11 @@ type TranscriptNoteDraftProps = Pick<
   | "NotebookDateField"
   | "NotebookQuarterField"
   | "createTranscriptNotebookEntry"
-  | "discardTranscriptNoteDraft"
   | "updateTranscriptNoteForm"
 > & {
   job: TranscriptJob;
+  discardTranscriptNoteDraft: () => void;
+  primary: TranscriptPrimary;
 };
 
 export function TranscriptNoteDraft({
@@ -26,6 +27,7 @@ export function TranscriptNoteDraft({
   createTranscriptNotebookEntry,
   discardTranscriptNoteDraft,
   updateTranscriptNoteForm,
+  primary,
 }: TranscriptNoteDraftProps) {
   const { text } = useLocale();
 
@@ -33,21 +35,19 @@ export function TranscriptNoteDraft({
     <form
       className="transcript-note-draft"
       onSubmit={(event) => createTranscriptNotebookEntry(job, event)}
-      aria-label={text("Transcript note draft")}
+      aria-label={text("Notebook note draft")}
     >
       <SectionHeader
         title={text("Notebook note draft")}
         description={text("Edit the note before saving it to the company notebook.")}
         actions={
-          <Button className="compact-button" onClick={discardTranscriptNoteDraft}>
-            <X size={15} />
+          <ActionButton kind="control" onClick={discardTranscriptNoteDraft} type="button" variant="ghost">
             {text("Discard")}
-          </Button>
+          </ActionButton>
         }
       />
-      <div className="event-composer-grid">
+      <div className="transcript-note-draft-grid">
         <TextField
-          className="event-composer-title"
           label={text("Title")}
           aria-label={text("Transcript note title")}
           value={transcriptNoteForm.title}
@@ -111,11 +111,16 @@ export function TranscriptNoteDraft({
         value={transcriptNoteForm.body}
         onChange={(event) => updateTranscriptNoteForm("body", event.target.value)}
       />
-      <ActionRow className="event-composer-actions">
-        <Button className="compact-button" disabled={transcriptNoteSaveInFlight === job.id} type="submit" variant="primary">
-          <Save size={15} />
-          {transcriptNoteSaveInFlight === job.id ? text("Saving") : text("Save")}
-        </Button>
+      <ActionRow className="transcript-note-draft-actions">
+        <ActionButton
+          data-ux-primary-action={primary === "saveNote" ? "true" : undefined}
+          disabled={transcriptNoteSaveInFlight === job.id}
+          type="submit"
+          variant={primary === "saveNote" ? "primary" : "secondary"}
+          verb="save"
+        >
+          {transcriptNoteSaveInFlight === job.id ? text("Saving") : text("Save note")}
+        </ActionButton>
       </ActionRow>
     </form>
   );

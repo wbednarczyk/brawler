@@ -5,11 +5,12 @@ import { useReportSeasonViewModel } from "../../app/state/screenViewModels";
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { ReportSeasonEntry } from "../../api/reportSeason";
 import {
+  ActionButton,
   ActionRow,
-  Button,
   EmptyState,
   ErrorText,
   ExpandableRow,
+  Figure,
   FieldRow,
   Hint,
   InfoGrid,
@@ -34,12 +35,13 @@ const ALL_SCOPE = "all";
 
 export function ReportSeasonScreen() {
   const { watchlists, openCompanyWorkspace } = useReportSeasonViewModel();
-  const { text } = useLocale();
+  const { t, text } = useLocale();
   const [scope, setScope] = useState<string>(ALL_SCOPE);
   const {
     season,
     loading,
     error,
+    cardErrors,
     expandedKey,
     cards,
     cardLoadingKey,
@@ -47,20 +49,33 @@ export function ReportSeasonScreen() {
     expectations,
     expectationBusyKey,
     toggleExpanded,
+    reloadCard,
     prepare,
     process,
     writeExpectation,
     resolveExpectation,
   } = useReportSeason(scope === ALL_SCOPE ? null : scope);
+  // The card-level primary choreography (F4b S4, contract § Report Season):
+  // one filled action per expanded card, coordinated across the prep
+  // checklist AND the expectations composer/review — `composerOpenKey`
+  // tracks which card's expectation composer is open (only one at a time,
+  // mirroring `expandedKey`).
+  const [composerOpenKey, setComposerOpenKey] = useState<string | null>(null);
 
   function preparationChip(status: ReportSeasonEntry["preparationStatus"]) {
+    // Keyed t() entries (fix wave, integrator review): the free-text
+    // `text()` map is a single flat EN→PL dictionary, so a bare "Upcoming"/
+    // "Prepared" here would collide with the claim-counts' plural/neuter PL
+    // form on this same screen — keyed lookups don't share that namespace,
+    // so both languages read as the plain masculine adjective (contract §
+    // Report Season: chips Nadchodzący/Przygotowany/Przejrzany).
     if (status === "processed") {
-      return <StatusChip tone="ok">{text("Processed")}</StatusChip>;
+      return <StatusChip tone="ok">{t("reportSeason.status.reviewed")}</StatusChip>;
     }
     if (status === "prepared") {
-      return <StatusChip tone="accent">{text("Prepared")}</StatusChip>;
+      return <StatusChip tone="accent">{t("reportSeason.status.prepared")}</StatusChip>;
     }
-    return <StatusChip tone="neutral">{text("Upcoming")}</StatusChip>;
+    return <StatusChip tone="neutral">{t("reportSeason.status.upcoming")}</StatusChip>;
   }
 
   function renderEntry(entry: ReportSeasonEntry, expandable: boolean) {
@@ -68,34 +83,53 @@ export function ReportSeasonScreen() {
     const card = cards[key];
     const isExpanded = expandedKey === key;
     const actionBusy = actionInFlightKey === key;
+    const cardError = cardErrors[key];
+    const expectationState = expectations[key];
+    const hasExpectation = Boolean(expectationState?.expectation);
+    const review = expectationState?.review ?? null;
+    const frozen = review?.factsAvailable ?? false;
+    const resolved = review ? review.resolutionNoteMd !== null : false;
+    const composerOpen = composerOpenKey === key;
+    // Derived enum (decision 5 precedent, applied per-card): composer open →
+    // `save`; frozen + unresolved → `saveVerdict`; an expectation exists →
+    // `markAsPrepared`; else → `addExpectations`.
+    const cardPrimary = composerOpen
+      ? "save"
+      : frozen && !resolved
+        ? "saveVerdict"
+        : hasExpectation
+          ? "markAsPrepared"
+          : "addExpectations";
 
     // On past rows a default "upcoming" preparation is noise; only surface a
     // chip there when the user actually prepared or processed the report.
     const showChip = expandable || entry.preparationStatus !== "upcoming";
-    const row = (
-      <ListRow
-        title={
-          <span className="report-season-row-title">
-            <TickerLabel value={entry.qualifiedTicker} />
-            <span className="report-season-company">{entry.displayName}</span>
-          </span>
-        }
-        titleAttr={`${entry.qualifiedTicker} · ${entry.displayName}`}
-        meta={
-          <span className="report-season-row-meta">
-            {entry.eventDate}
-            {entry.eventTime ? ` · ${entry.eventTime}` : ""}
-          </span>
-        }
-        trailing={showChip ? preparationChip(entry.preparationStatus) : undefined}
-      />
+    const titleNode = (
+      <span className="report-season-row-title">
+        <TickerLabel value={entry.qualifiedTicker} />
+        <span className="report-season-company">{entry.displayName}</span>
+      </span>
     );
+    const metaNode = (
+      <span className="report-season-row-meta">
+        <Figure kind="date" value={entry.eventDate} />
+        {entry.eventTime ? ` · ${entry.eventTime}` : ""}
+      </span>
+    );
+    const titleAttr = `${entry.qualifiedTicker} · ${entry.displayName}`;
 
     if (!expandable) {
       return (
         <div key={key} className="report-season-row-static">
           {/* ListRow renders an <li>; a lone <li> needs a list parent (axe listitem). */}
-          <ul className="ui-list-rows">{row}</ul>
+          <ul className="ui-list-rows">
+            <ListRow
+              title={titleNode}
+              titleAttr={titleAttr}
+              meta={metaNode}
+              trailing={showChip ? preparationChip(entry.preparationStatus) : undefined}
+            />
+          </ul>
         </div>
       );
     }
@@ -117,30 +151,37 @@ export function ReportSeasonScreen() {
                 internal density instead of a separate selection pane. */}
             <div className="report-season-card-prep">
               <ActionRow>
-                <Button
-                  variant="primary"
+                <ActionButton
+                  verb="markAs"
+                  variant={cardPrimary === "markAsPrepared" ? "primary" : "secondary"}
+                  data-ux-primary-action={cardPrimary === "markAsPrepared" ? "true" : undefined}
                   disabled={actionBusy || entry.preparationStatus === "processed"}
                   onClick={() => prepare(entry)}
                 >
                   <ClipboardCheck size={15} />
-                  {text("Mark prepared")}
-                </Button>
-                <Button
-                  disabled={actionBusy}
-                  onClick={() => process(entry)}
-                >
+                  {text("Mark as prepared")}
+                </ActionButton>
+                <ActionButton verb="markAs" variant="secondary" disabled={actionBusy} onClick={() => process(entry)}>
                   <CheckCircle2 size={15} />
-                  {text("Mark processed")}
-                </Button>
-                <Button variant="minimal" onClick={() => openCompanyWorkspace(entry.companyId, "Feed")}>
-                  {text("Open workspace")}
-                </Button>
-                <Button variant="minimal" onClick={() => openCompanyWorkspace(entry.companyId, "Claims")}>
-                  {text("Open claims")}
-                </Button>
+                  {text("Mark as reviewed")}
+                </ActionButton>
+                <ActionButton
+                  kind="destination"
+                  variant="minimal"
+                  onClick={() => openCompanyWorkspace(entry.companyId, "Feed")}
+                >
+                  {text("Company")}
+                </ActionButton>
+                <ActionButton
+                  kind="destination"
+                  variant="minimal"
+                  onClick={() => openCompanyWorkspace(entry.companyId, "Claims")}
+                >
+                  {text("Claims")}
+                </ActionButton>
               </ActionRow>
 
-              <SectionHeader level="h4" title={text("Open research questions")} />
+              <SectionHeader level="h3" title={text("Open research questions")} />
               {card.openQuestions.length > 0 ? (
                 <ul className="report-season-list">
                   {card.openQuestions.map((question) => (
@@ -148,14 +189,20 @@ export function ReportSeasonScreen() {
                   ))}
                 </ul>
               ) : (
-                <Hint>{text("None yet")}</Hint>
+                <EmptyState kind="quiet" reason={text("No open questions")} />
               )}
 
-              <SectionHeader level="h4" title={text("Unresolved claims")} />
+              <SectionHeader level="h3" title={text("Unresolved claims")} />
               <div className="report-season-claim-counts">
-                <StatusChip tone="danger">{`${text("Due")}: ${card.unresolvedClaims.due.length}`}</StatusChip>
-                <StatusChip tone="warn">{`${text("Overdue")}: ${card.unresolvedClaims.overdue.length}`}</StatusChip>
-                <StatusChip tone="neutral">{`${text("Upcoming")}: ${card.unresolvedClaims.upcoming.length}`}</StatusChip>
+                <StatusChip tone="danger">
+                  {text("Due")}: <Figure value={card.unresolvedClaims.due.length} />
+                </StatusChip>
+                <StatusChip tone="warn">
+                  {text("Overdue")}: <Figure value={card.unresolvedClaims.overdue.length} />
+                </StatusChip>
+                <StatusChip tone="neutral">
+                  {text("Upcoming")}: <Figure value={card.unresolvedClaims.upcoming.length} />
+                </StatusChip>
               </div>
 
               <ExpectationsSection
@@ -163,41 +210,59 @@ export function ReportSeasonScreen() {
                 kpis={card.lastPeriodKpis}
                 state={expectations[key]}
                 busy={expectationBusyKey === key}
+                addPrimary={cardPrimary === "addExpectations"}
+                saveVerdictPrimary={cardPrimary === "saveVerdict"}
+                composerOpen={composerOpen}
+                onComposerOpenChange={(open) => setComposerOpenKey(open ? key : null)}
                 onWrite={(draft) => writeExpectation(entry, draft)}
                 onResolve={(note) => resolveExpectation(entry, note)}
               />
             </div>
 
             <div className="report-season-card-extended">
-              <SectionHeader level="h4" title={text("Last-period KPIs")} />
+              <SectionHeader level="h3" title={text("Last-period KPIs")} />
               {card.lastPeriodKpis.length > 0 ? (
                 <InfoGrid
                   ariaLabel={text("Last-period KPIs")}
                   items={card.lastPeriodKpis.map((kpi) => ({
                     label: kpi.label,
-                    value: kpi.unit ? `${kpi.valueNumeric} ${kpi.unit}` : kpi.valueNumeric,
+                    value: (
+                      <>
+                        <Figure kind="money" value={kpi.valueNumeric} />
+                        {kpi.unit ? ` ${kpi.unit}` : ""}
+                      </>
+                    ),
                   }))}
                 />
               ) : (
                 <Hint>{text("No KPIs from the last reported period.")}</Hint>
               )}
 
-              <SectionHeader level="h4" title={text("Recent evidence")} />
+              <SectionHeader level="h3" title={text("Recent evidence")} />
               {card.recentEvidence.length > 0 ? (
                 <ul className="ui-list-rows">
                   {card.recentEvidence.map((item) => (
                     <ListRow
                       key={item.id}
                       title={item.title}
-                      meta={item.occurredAt}
+                      meta={<Figure kind="datetime" value={item.occurredAt} />}
                       trailing={<StatusChip tone="neutral">{item.evidenceType}</StatusChip>}
                     />
                   ))}
                 </ul>
               ) : (
-                <Hint>{text("None yet")}</Hint>
+                <EmptyState kind="quiet" reason={text("No evidence from the last period")} />
               )}
             </div>
+          </>
+        ) : cardError ? (
+          <>
+            <ErrorText>{cardError}</ErrorText>
+            <ActionRow>
+              <ActionButton verb="refresh" variant="secondary" onClick={() => reloadCard(entry)}>
+                {text("Refresh card")}
+              </ActionButton>
+            </ActionRow>
           </>
         ) : (
           <Hint>{text("None yet")}</Hint>
@@ -209,13 +274,22 @@ export function ReportSeasonScreen() {
       <ExpandableRow
         key={key}
         className="report-season-row"
-        label={`${entry.displayName} ${entry.eventDate}`}
+        label={`${text("Open report")}: ${entry.displayName} ${entry.eventDate}`}
         isExpanded={isExpanded}
         onToggle={() => toggleExpanded(entry)}
         detail={detail}
       >
-        {/* ListRow renders an <li>; a lone <li> needs a list parent (axe listitem). */}
-        <ul className="ui-list-rows">{row}</ul>
+        {/* sol R1: a <button> only permits phrasing content — ListRow's <li>
+            (and a <ul> around it) is flow content and invalid here. This is
+            the same visual row, built from spans (reusing ListRow's own
+            classes so rows.css needs no change) instead of ListRow itself. */}
+        <span className="ui-list-row" title={titleAttr}>
+          <span className="ui-list-row-main">
+            <span className="ui-list-row-title">{titleNode}</span>
+          </span>
+          <span className="ui-list-row-meta">{metaNode}</span>
+          {showChip ? preparationChip(entry.preparationStatus) : null}
+        </span>
       </ExpandableRow>
     );
   }
@@ -259,10 +333,10 @@ export function ReportSeasonScreen() {
 
         <section className="report-season-section" aria-label={text("Upcoming reports")}>
           <SectionHeader
-            level="h3"
+            level="h2"
             variant="accent"
             title={text("Upcoming reports")}
-            meta={String(upcoming.length)}
+            meta={<Figure value={upcoming.length} />}
           />
           {loading ? (
             <Skeleton variant="list-row" count={4} label={text("Loading…")} />
@@ -271,20 +345,42 @@ export function ReportSeasonScreen() {
               {upcoming.map((entry) => renderEntry(entry, true))}
             </div>
           ) : (
-            <EmptyState>
-              {text("No upcoming reports in scope. Widen the watchlist scope to see more.")}
-            </EmptyState>
+            <EmptyState
+              kind="invitation"
+              title={text("No upcoming reports")}
+              source={text("No upcoming reports in scope. Widen the watchlist scope to see more.")}
+              action={
+                // F4b S4 deviation (see report): the contract names this a
+                // `destination` ("Otwórz listy"/"Open watchlists"), but no
+                // cross-screen navigation callback reaches this screen today
+                // and wiring one is out of this slice's AppStateRoot diff
+                // (contract note: "keep your diff to the Sources dead-prop
+                // removal and nothing else"). Implemented instead as a local
+                // `control` that widens the scope filter in place — the
+                // actual, reachable fix for "no reports in this scope".
+                <ActionButton kind="control" variant="secondary" onClick={() => setScope(ALL_SCOPE)}>
+                  {text("Show all watchlists")}
+                </ActionButton>
+              }
+            />
           )}
         </section>
 
-        {past.length > 0 ? (
-          <section className="report-season-section" aria-label={text("Past reports")}>
-            <SectionHeader level="h3" variant="accent" title={text("Past reports")} meta={String(past.length)} />
+        <section className="report-season-section" aria-label={text("Past reports")}>
+          <SectionHeader
+            level="h2"
+            variant="accent"
+            title={text("Past reports")}
+            meta={<Figure value={past.length} />}
+          />
+          {past.length > 0 ? (
             <div className="report-season-rows">
               {past.map((entry) => renderEntry(entry, false))}
             </div>
-          </section>
-        ) : null}
+          ) : (
+            <EmptyState kind="quiet" reason={text("No past reports yet")} />
+          )}
+        </section>
       </div>
     </section>
   );

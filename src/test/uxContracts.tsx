@@ -55,3 +55,39 @@ export function collectEmptyStates(root: HTMLElement): string[] {
     (node) => node.getAttribute("data-empty-kind") ?? "",
   );
 }
+
+/**
+ * F4b S1 (decision 5): a demoted button loses `data-ux-primary-action` AND
+ * `variant="primary"` TOGETHER — the browser helpers (`interactionContracts.ts`)
+ * count the two markers independently, so nothing there catches them landing
+ * on two different elements. Asserts every `data-ux-primary-action="true"`
+ * element also carries `data-ui-button-variant="primary"`, and vice versa.
+ */
+export function expectPrimaryMarkerMatchesVariant(root: HTMLElement): void {
+  const marked = Array.from(root.querySelectorAll('[data-ux-primary-action="true"]'));
+  for (const node of marked) {
+    expect(node.getAttribute("data-ui-button-variant")).toBe("primary");
+  }
+  const primaryVariant = Array.from(root.querySelectorAll('[data-ui-button-variant="primary"]'));
+  for (const node of primaryVariant) {
+    expect(node.getAttribute("data-ux-primary-action")).toBe("true");
+  }
+}
+
+/** Sol R2: a consumer guard for `ExpandableRow` — the row renders a real
+ * `<button>`, so its summary must stay phrasing content. Call from the
+ * screen contract test of every ExpandableRow consumer. */
+export function expectPhrasingOnlyExpandableRows(root: HTMLElement): void {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>("button.expandable-row"));
+  if (rows.length === 0) {
+    throw new Error("expectPhrasingOnlyExpandableRows: no rendered ExpandableRow found — the guard would pass vacuously");
+  }
+  for (const row of rows) {
+    const offender = row.querySelector("ul, ol, li, p, div, h1, h2, h3, h4, h5, h6, table");
+    if (offender) {
+      throw new Error(
+        `ExpandableRow summary contains non-phrasing <${offender.tagName.toLowerCase()}> — keep row summaries span-based`,
+      );
+    }
+  }
+}

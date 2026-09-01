@@ -1,4 +1,5 @@
-import { test, expect, openApp, openScreen, setPaneSize, resetPaneSize, expectNoPageOverflow, expectNoOverlap } from "./helpers/harness";
+import { test, expect, openApp, openScreen, setPaneSize, resetPaneSize, expectNoPageOverflow, expectNoOverlap, expectTextFits } from "./helpers/harness";
+import { expectFilledAtRest } from "./helpers/interactionContracts";
 import type { Locator, Page } from "@playwright/test";
 
 // U7-D panel density contracts (ADR 0076 D6): Research, Events, Report Season.
@@ -129,20 +130,43 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.locator(".event-week-grid")).toHaveCount(0);
         await expect(pane.getByRole("button", { name: "Week", exact: true })).toHaveCount(0);
         await expect(pane.locator(".events-layout")).toBeVisible();
+        await expectFilledAtRest(pane, { max: 1 });
       },
       // M: week grid in its bounded scroller (persisted default mode = week).
       M: async (page, pane) => {
         await expect(pane.locator(".event-week-grid")).toBeVisible();
         await expect(pane.locator(".event-week-scroll[data-hscroll]")).toBeVisible();
+        await expectFilledAtRest(pane, { max: 1 });
       },
-      // L: full week grid.
+      // L (#431): the `@container pane (min-width: 900px)` override drops the
+      // grid's hard minimum — the first and fifth weekday columns must paint
+      // fully inside the pane (no horizontal scroll) and their day headers
+      // must never wrap/clip a word (#417).
       L: async (page, pane) => {
         await expect(pane.locator(".event-week-grid")).toBeVisible();
+        const scroller = pane.locator(".event-week-scroll");
+        const scrollerOverflow = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(scrollerOverflow).toBeLessThanOrEqual(1);
+
+        const paneBox = await pane.boundingBox();
+        const days = pane.locator(".event-week-day");
+        const first = await days.first().boundingBox();
+        const last = await days.nth(4).boundingBox();
+        expect(paneBox && first && last).toBeTruthy();
+        if (paneBox && first && last) {
+          expect(first.x).toBeGreaterThanOrEqual(paneBox.x - 1);
+          expect(first.x + first.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
+          expect(last.x).toBeGreaterThanOrEqual(paneBox.x - 1);
+          expect(last.x + last.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
+        }
+        await expectTextFits(pane.locator(".event-week-day-header"));
+        await expectFilledAtRest(pane, { max: 1 });
       },
       // short: list mode forced — no clipped week grid.
       short: async (page, pane) => {
         await expect(pane.locator(".event-week-grid")).toHaveCount(0);
         await expect(pane.locator(".events-layout")).toBeVisible();
+        await expectFilledAtRest(pane, { max: 1 });
       },
     },
   },
@@ -235,9 +259,9 @@ test.describe("panel density — Research / Events / Report Season", { tag: "@cl
     const pane = await openReportSeason(page);
     await setPaneSize(page, { ...TIER_SIZE.M, pane });
 
-    await pane.getByRole("button", { name: /Write expectations/ }).click();
+    await pane.getByRole("button", { name: /Add expectations/ }).click();
     await expect(pane.locator(".report-season-expectation-composer")).toBeVisible();
-    await pane.getByRole("button", { name: /Add metric expectation/ }).click();
+    await pane.getByRole("button", { name: /Add metric/ }).click();
     await expect(pane.locator(".report-season-metric-row")).toBeVisible();
 
     // The pre-report card scrolls internally; assert its own scroll container plus
@@ -249,5 +273,27 @@ test.describe("panel density — Research / Events / Report Season", { tag: "@cl
     );
     expect(overflow).toBeLessThanOrEqual(1);
     await expectNoPageOverflow(page);
+  });
+
+  // F4b S4 (contract § Report Season, shared guardrail table): the Upcoming
+  // and Past sections never overlap, and exactly one primary action renders
+  // (the expanded card's own choreography — no expectation yet ⇒ `Add
+  // expectations` — contract § Report Season decision 5-style card
+  // primary), across S/M/L.
+  test("Upcoming and Past sections never overlap, and exactly one primary renders, at S/M/L", async ({ page }) => {
+    await openApp(page);
+    const pane = await openReportSeason(page);
+    const sections = pane.locator(".report-season-section");
+
+    for (const tier of ["S", "M", "L"] as const) {
+      await setPaneSize(page, { ...TIER_SIZE[tier], pane });
+      const sectionCount = await sections.count();
+      if (sectionCount > 1) {
+        await expectNoOverlap(sections.nth(0), sections.nth(1), `Upcoming vs Past reports at ${tier}`);
+      }
+      await expectNoPageOverflow(page);
+      await expectFilledAtRest(pane, { max: 1 });
+      await resetPaneSize(page, pane);
+    }
   });
 });
