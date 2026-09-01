@@ -42,6 +42,7 @@ export function NotebookQuarterField({ label, ariaLabel, value, onChange }: Note
         <button
           aria-label={`${label} picker`}
           className="icon-button date-picker-toggle"
+          data-action-kind="control"
           onClick={() => setOpen((current) => !current)}
           type="button"
         >

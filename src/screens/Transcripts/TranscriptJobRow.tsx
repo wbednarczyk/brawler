@@ -337,6 +337,7 @@ export function TranscriptJobRow({
                       <div key={company.id}>
                         <button
                           className="company-registry-suggestion"
+                          data-action-kind="control"
                           disabled={transcriptLinkInFlight === job.id}
                           onClick={() => linkTranscriptJobCompany(job.id, company)}
                           type="button"
@@ -370,6 +371,7 @@ export function TranscriptJobRow({
               <button
                 aria-expanded={segmentsExpanded}
                 className="transcript-segments-toggle"
+                data-action-kind="control"
                 onClick={() => setSegmentsExpanded((open) => !open)}
                 type="button"
               >

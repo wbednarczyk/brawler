@@ -2187,7 +2187,7 @@ function buildHandlers(): Record<string, Handler> {
       d.transcriptJobs = [...d.transcriptJobs, job];
       return job;
     },
-    run_video_transcript_job: (d, a) => {
+    run_video_transcript_job: (d, a, ctx) => {
       const input = unwrap(a);
       const id = str(input.jobId) ?? str(input.id);
       let updated: ScenarioData["transcriptJobs"][number] | undefined;
@@ -2201,6 +2201,32 @@ function buildHandlers(): Record<string, Handler> {
         };
         return updated;
       });
+      // Sol R1 finding 3: a completed transcript needs real segments — the
+      // visual/density figures proof (segment-count `Figure`) has nothing to
+      // count otherwise. Seed once per job (repeat runs, e.g. "Fetch again",
+      // must not duplicate).
+      if (updated && !d.transcriptSegments.some((segment) => segment.transcriptJobId === id)) {
+        const speakers = ["CEO", "CFO", "CEO"];
+        const texts = [
+          "Thank you for joining today's call — let's start with the headline results.",
+          "Revenue grew in line with guidance and margins held steady quarter over quarter.",
+          "We'll take questions after the outlook section, starting with the sell side.",
+        ];
+        d.transcriptSegments = [
+          ...d.transcriptSegments,
+          ...texts.map((text, index) => ({
+            id: ctx.nextId(`${id}_segment`),
+            transcriptJobId: id ?? "",
+            companyId: updated?.companyId ?? null,
+            startSeconds: index * 45,
+            endSeconds: index * 45 + 40,
+            speaker: speakers[index],
+            text,
+            language: "en",
+            createdAt: SAMPLE_NOW,
+          })),
+        ];
+      }
       return updated ?? d.transcriptJobs[0];
     },
     update_video_transcript_job: (d, a) => {

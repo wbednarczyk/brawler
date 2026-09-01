@@ -496,6 +496,14 @@ describe("Notebook and transcript workflows", () => {
   it("validates transcript URL before creating a job", async () => {
     const user = userEvent.setup();
 
+    // Sol R1 fix: the composer is also disabled while the Gemini key is
+    // missing (finding 1) — configure it so this test isolates URL validation.
+    appTestState.geminiCredentialStatusResponse = {
+      ...initialGeminiCredentialStatus,
+      configured: true,
+      storage: "os_keychain",
+    };
+
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));

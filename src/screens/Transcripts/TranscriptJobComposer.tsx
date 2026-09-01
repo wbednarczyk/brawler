@@ -86,7 +86,7 @@ export function TranscriptJobComposer({
         type="submit"
         variant={primary === "fetch" ? "primary" : "secondary"}
         data-ux-primary-action={primary === "fetch" ? "true" : undefined}
-        disabled={fetching || !transcriptJobForm.url.trim()}
+        disabled={fetching || !geminiConfigured || !transcriptJobForm.url.trim()}
       >
         {fetching ? text("Fetching…") : text("Fetch transcript")}
       </ActionButton>
@@ -136,6 +136,7 @@ function TranscriptCompanySuggestions({
                   ? "company-registry-suggestion company-registry-suggestion-selected"
                   : "company-registry-suggestion"
               }
+              data-action-kind="control"
               onClick={() => selectTranscriptCompany(company)}
               type="button"
             >

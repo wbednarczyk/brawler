@@ -98,9 +98,23 @@ export function TranscriptsScreen() {
   );
 
   // Missing key gates the WHOLE screen only while there is nothing to show
-  // yet (no transcripts fetched so far) — an existing list (and its own
-  // per-row retry gating) stays reachable even if the key was since cleared.
+  // yet (no transcripts fetched so far). Once rows exist they stay browsable
+  // (sol R1 finding 1) — the same invitation renders ABOVE the (disabled)
+  // composer + list instead of replacing them, so history stays reachable
+  // even if the key was since cleared.
   const showKeyMissingInvitation = !geminiConfigured && !transcriptsLoading && transcriptJobs.length === 0;
+  const keyMissingBanner = !geminiConfigured ? (
+    <EmptyState
+      kind="invitation"
+      title={text("Gemini key needed first")}
+      source={text("Gemini does the transcription (the app's only AI). The key is stored in your system's keychain.")}
+      action={
+        <ActionButton kind="destination" data-ux-primary-action="true" onClick={openSettings} variant="primary">
+          {text("Open settings")}
+        </ActionButton>
+      }
+    />
+  ) : null;
   // The header's Refresh button doubles as the list-error retry (contract §
   // Action inventory) — ONE button total. It stays hidden while either
   // invitation (missing key / no transcripts yet) is the whole screen: there
@@ -132,23 +146,14 @@ export function TranscriptsScreen() {
       {transcriptsLoading ? (
         <Skeleton variant="list-row" count={4} label={text("Loading transcripts…")} />
       ) : showKeyMissingInvitation ? (
-        <EmptyState
-          kind="invitation"
-          title={text("Gemini key needed first")}
-          source={text("Gemini does the transcription (the app's only AI). The key is stored in your system's keychain.")}
-          action={
-            <ActionButton kind="destination" data-ux-primary-action="true" onClick={openSettings} variant="primary">
-              {text("Open settings")}
-            </ActionButton>
-          }
-        />
+        keyMissingBanner
       ) : transcriptJobsError ? (
         <>
           {composer}
           <ErrorText>
             {text("Couldn't load transcripts")}
             {": "}
-            {transcriptJobsError}
+            {text(transcriptJobsError)}
           </ErrorText>
         </>
       ) : transcriptJobs.length === 0 ? (
@@ -211,6 +216,7 @@ export function TranscriptsScreen() {
         />
       ) : (
         <>
+          {keyMissingBanner}
           {composer}
           <div className="transcript-list" aria-label={t("transcripts.title")}>
             {transcriptJobs.map((job) => (
