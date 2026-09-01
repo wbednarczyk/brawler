@@ -30,7 +30,7 @@ ed25519-dalek = "2"
 # OS-entropy RNG for the MCP bearer token (ADR 0078 decision 4). Pure Rust,
 # already in the tree transitively (same 0.3.x line) — promoted to a direct
 # dependency; no new version enters the lockfile.
-getrandom = "0.3"
+getrandom = "0.4"
 # `form` is explicit since 0.13: url-encoded bodies moved behind their own
 # feature, and the GPW listing / KNF short-selling adapters POST forms. The
 # other three carry over unchanged — note `default-tls` switched to rustls in
