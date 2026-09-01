@@ -19,11 +19,22 @@ export function resolveEventViewMode(
   return compact ? "list" : stored;
 }
 
+// The next-week "later match" lookup's own state (F4b sol R1): distinct from
+// "no match" so a failed read never renders as a false "nothing later"
+// invitation, and nothing renders as primary while it's in flight.
+export type NextWeekLookup =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { status: "match"; event: CompanyEvent | null }
+  | { status: "error" };
+
 // The empty-week invitation/quiet variant (F4b S3 contract § Events point 4 /
 // decision 4) — computed once in `EventsScreen` from `weekIsEmpty` +
-// `hasActiveEventFilters` + `calendarLastSuccessAt` + the fetched next match,
-// then handed to `WeekEventsView` as a ready-made value.
+// `hasActiveEventFilters` + `calendarLastSuccessAt` + the lookup above, then
+// handed to `WeekEventsView` as a ready-made value.
 export type EventsWeekEmptyState =
+  | { kind: "pending" }
+  | { kind: "error" }
   | { kind: "jump"; match: CompanyEvent; calendarLastSuccessAt: string | null }
   | { kind: "noMatchFilters" }
   | { kind: "neverRefreshed" }

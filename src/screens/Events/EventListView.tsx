@@ -5,6 +5,7 @@ import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { EventDetail } from "./EventDetail";
 import { eventSourceLine, eventTypeLabel } from "./eventLabels";
+import type { EventsPrimaryState } from "./eventsPrimary";
 import type { EventsScreenProps } from "./eventTypes";
 
 type EventListViewProps = Pick<
@@ -18,6 +19,7 @@ type EventListViewProps = Pick<
   | "openCompanyEventCompanyWorkspace"
   | "confirmDerivedEvent"
 > & {
+  primary: EventsPrimaryState;
   hasActiveFilters: boolean;
   onClearFilters: () => void;
 };
@@ -31,6 +33,7 @@ export function EventListView({
   openExternalUrl,
   openCompanyEventCompanyWorkspace,
   confirmDerivedEvent,
+  primary,
   hasActiveFilters,
   onClearFilters,
 }: EventListViewProps) {
@@ -91,6 +94,7 @@ export function EventListView({
                 openExternalUrl={openExternalUrl}
                 openCompanyEventCompanyWorkspace={openCompanyEventCompanyWorkspace}
                 confirmDerivedEvent={confirmDerivedEvent}
+                confirmIsPrimary={primary === "confirmProposed"}
               />
             ) : null}
           </div>

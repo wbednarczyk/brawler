@@ -180,6 +180,12 @@ describe("useCompanyEventsController.findNextWeekWithEvents (F4b contract § Eve
     const match = await act(() => result.current.findNextWeekWithEvents());
     expect(match).toBeNull();
   });
+
+  it("rejects on a read failure — never folds it into a false 'no match' (F4b sol R1)", async () => {
+    vi.mocked(eventsApi.listCompanyEvents).mockRejectedValue(new Error("network"));
+    const { result } = renderHook(() => useHarness());
+    await expect(act(() => result.current.findNextWeekWithEvents())).rejects.toThrow("network");
+  });
 });
 
 describe("useCompanyEventsController.refreshCompanyEvents (F4b contract § Events point 7)", () => {

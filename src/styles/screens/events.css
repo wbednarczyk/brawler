@@ -337,15 +337,13 @@
 
 /* Fix wave: the due label only carries information for today/tomorrow/soon
    (never "Past" — a week already dimmed via .event-due-past, mockup has no
-   such chip) and reads as quiet text, not the list mode's amber chip. */
+   such chip) and reads as quiet text, not the list mode's amber chip. Always
+   the same muted tone — a --primary tint on .event-due-today's light card
+   background failed contrast (4.32:1, axe on chromium-compact-light). */
 .event-week-card-due {
   flex-shrink: 0;
   color: var(--muted);
   font-size: var(--font-xs);
-}
-
-.event-due-today .event-week-card-due {
-  color: var(--primary);
 }
 
 /* Card body text lines (F4b S3 contract § Events point 2): plain text,
