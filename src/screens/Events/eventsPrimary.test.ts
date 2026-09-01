@@ -8,6 +8,8 @@ const BASE: DerivePrimaryInput = {
   selectedEventStatus: null,
   weekMode: true,
   weekIsEmpty: false,
+  nextWeekLookupPending: false,
+  nextWeekLookupError: false,
   hasNextMatch: false,
   hasActiveFilters: false,
 };
@@ -65,5 +67,29 @@ describe("derivePrimary (F4b contract § Events, decision 5)", () => {
   it("loading/error override every other condition", () => {
     expect(derivePrimary({ ...BASE, loading: true, composerOpen: true })).toBe("none");
     expect(derivePrimary({ ...BASE, error: true, selectedEventStatus: "proposed" })).toBe("none");
+  });
+
+  it("none: week empty, the next-week lookup is still pending — never the stale addEvent", () => {
+    expect(
+      derivePrimary({ ...BASE, weekIsEmpty: true, nextWeekLookupPending: true }),
+    ).toBe("none");
+  });
+
+  it("none: week empty, the next-week lookup failed — never a false addEvent/noLaterMatch", () => {
+    expect(derivePrimary({ ...BASE, weekIsEmpty: true, nextWeekLookupError: true })).toBe("none");
+    expect(
+      derivePrimary({
+        ...BASE,
+        weekIsEmpty: true,
+        nextWeekLookupError: true,
+        hasActiveFilters: true,
+      }),
+    ).toBe("none");
+  });
+
+  it("saveComposer: composer open wins over a proposed selection (F4b sol R1 precedence)", () => {
+    expect(
+      derivePrimary({ ...BASE, composerOpen: true, selectedEventStatus: "proposed" }),
+    ).toBe("saveComposer");
   });
 });

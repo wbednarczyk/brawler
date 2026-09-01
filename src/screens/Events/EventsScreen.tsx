@@ -21,13 +21,12 @@ import {
   TextField,
 } from "../../ui";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { CompanyEvent } from "../../api/types";
 import { useLocale } from "../../shared/locale";
 import { useEventsViewModel } from "../../app/state/screenViewModels";
 import { EventListView } from "./EventListView";
 import { WeekEventsView } from "./WeekEventsView";
 import { resolveEventViewMode } from "./eventTypes";
-import type { EventsWeekEmptyState } from "./eventTypes";
+import type { EventsWeekEmptyState, NextWeekLookup } from "./eventTypes";
 import { derivePrimary } from "./eventsPrimary";
 
 // U7-D density (ADR 0076 D6): the Events week grid can't collapse purely in CSS —
@@ -141,22 +140,27 @@ export function EventsScreen() {
     companyEventWorkingWeekDays.every((day) => (companyEventsByDate[day.date] ?? []).length === 0) &&
     companyEventWeekendEvents.length === 0;
 
-  // The empty-week jump target (F4b contract § Events point 4 / decision 4):
-  // one `list_company_events` read, only while the displayed week is
-  // genuinely empty. `undefined` = not checked yet for this week/filter
-  // combination (the invitation/quiet panel waits rather than flashing).
-  const [nextMatch, setNextMatch] = useState<CompanyEvent | null | undefined>(undefined);
+  // The empty-week jump target (F4b contract § Events point 4 / decision 4;
+  // pending/error modeled explicitly per F4b sol R1): one `list_company_events`
+  // read, only while the displayed week is genuinely empty. `idle` = week has
+  // events, no lookup running. A rejected read lands in `error`, never a false
+  // "no match" — `findNextWeekWithEvents` no longer swallows failures.
+  const [lookup, setLookup] = useState<NextWeekLookup>({ status: "idle" });
 
   useEffect(() => {
     if (!weekIsEmpty) {
-      setNextMatch(undefined);
+      setLookup({ status: "idle" });
       return;
     }
     let cancelled = false;
-    setNextMatch(undefined);
-    void findNextWeekWithEvents().then((match) => {
-      if (!cancelled) setNextMatch(match);
-    });
+    setLookup({ status: "pending" });
+    findNextWeekWithEvents()
+      .then((event) => {
+        if (!cancelled) setLookup({ status: "match", event });
+      })
+      .catch(() => {
+        if (!cancelled) setLookup({ status: "error" });
+      });
     return () => {
       cancelled = true;
     };
@@ -170,15 +174,19 @@ export function EventsScreen() {
     companyEventStatusFilter,
   ]);
 
-  const weekEmptyState: EventsWeekEmptyState | null = !weekIsEmpty || nextMatch === undefined
+  const weekEmptyState: EventsWeekEmptyState | null = !weekIsEmpty
     ? null
-    : nextMatch
-      ? { kind: "jump", match: nextMatch, calendarLastSuccessAt }
-      : hasActiveEventFilters
-        ? { kind: "noMatchFilters" }
-        : calendarLastSuccessAt === null
-          ? { kind: "neverRefreshed" }
-          : { kind: "addEvent" };
+    : lookup.status === "pending"
+      ? { kind: "pending" }
+      : lookup.status === "error"
+        ? { kind: "error" }
+        : lookup.status === "match" && lookup.event
+          ? { kind: "jump", match: lookup.event, calendarLastSuccessAt }
+          : hasActiveEventFilters
+            ? { kind: "noMatchFilters" }
+            : calendarLastSuccessAt === null
+              ? { kind: "neverRefreshed" }
+              : { kind: "addEvent" };
 
   const selectedEvent =
     [...companyEvents, ...Object.values(companyEventsByDate).flat(), ...companyEventWeekendEvents].find(
@@ -192,7 +200,9 @@ export function EventsScreen() {
     selectedEventStatus: selectedEvent?.status ?? null,
     weekMode: isWeekMode,
     weekIsEmpty,
-    hasNextMatch: Boolean(nextMatch),
+    nextWeekLookupPending: lookup.status === "pending",
+    nextWeekLookupError: lookup.status === "error",
+    hasNextMatch: lookup.status === "match" && Boolean(lookup.event),
     hasActiveFilters: hasActiveEventFilters,
   });
 
@@ -206,8 +216,8 @@ export function EventsScreen() {
   }
 
   function handleJumpToNextWeek() {
-    if (nextMatch) {
-      setCompanyEventWeekAnchorDate(nextMatch.eventDate);
+    if (lookup.status === "match" && lookup.event) {
+      setCompanyEventWeekAnchorDate(lookup.event.eventDate);
     }
   }
 
@@ -512,8 +522,8 @@ export function EventsScreen() {
             <ActionButton
               verb="save"
               className="compact-button"
-              variant="primary"
-              data-ux-primary-action="true"
+              variant={primary === "saveComposer" ? "primary" : "secondary"}
+              data-ux-primary-action={primary === "saveComposer" ? "true" : undefined}
               onClick={createCompanyEvent}
             >
               <Save size={15} />
@@ -546,6 +556,7 @@ export function EventsScreen() {
             openExternalUrl={openExternalUrl}
             openCompanyEventCompanyWorkspace={openCompanyEventCompanyWorkspace}
             confirmDerivedEvent={confirmDerivedEvent}
+            primary={primary}
             emptyState={weekEmptyState}
             onJumpToNextWeek={handleJumpToNextWeek}
             onClearFilters={clearCompanyEventFilters}
@@ -562,6 +573,7 @@ export function EventsScreen() {
             openExternalUrl={openExternalUrl}
             openCompanyEventCompanyWorkspace={openCompanyEventCompanyWorkspace}
             confirmDerivedEvent={confirmDerivedEvent}
+            primary={primary}
             hasActiveFilters={
               hasActiveEventFilters ||
               companyEventDateFrom.trim().length > 0 ||

@@ -1,9 +1,11 @@
 import type { CompanyEvent } from "../../api/types";
-import { ActionButton, EmptyState, Figure } from "../../ui";
+import { ActionButton, EmptyState, ErrorText, Figure } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { formatDetailTimestamp } from "../../shared/format/datetime";
 import { EventDetail } from "./EventDetail";
 import { eventSourceLine, eventTypeLabel } from "./eventLabels";
+import type { EventsPrimaryState } from "./eventsPrimary";
 import type { EventsScreenProps, EventsWeekEmptyState } from "./eventTypes";
 
 type WeekEventsViewProps = Pick<
@@ -20,6 +22,7 @@ type WeekEventsViewProps = Pick<
   | "openCompanyEventCompanyWorkspace"
   | "confirmDerivedEvent"
 > & {
+  primary: EventsPrimaryState;
   emptyState: EventsWeekEmptyState | null;
   onJumpToNextWeek: () => void;
   onClearFilters: () => void;
@@ -39,6 +42,7 @@ export function WeekEventsView({
   openExternalUrl,
   openCompanyEventCompanyWorkspace,
   confirmDerivedEvent,
+  primary,
   emptyState,
   onJumpToNextWeek,
   onClearFilters,
@@ -93,6 +97,7 @@ export function WeekEventsView({
             openExternalUrl={openExternalUrl}
             openCompanyEventCompanyWorkspace={openCompanyEventCompanyWorkspace}
             confirmDerivedEvent={confirmDerivedEvent}
+            confirmIsPrimary={primary === "confirmProposed"}
           />
         ) : null}
       </div>
@@ -154,6 +159,7 @@ export function WeekEventsView({
         <WeekEmptyPanel
           emptyState={emptyState}
           locale={locale}
+          primary={primary}
           onJumpToNextWeek={onJumpToNextWeek}
           onClearFilters={onClearFilters}
           onAddEvent={onAddEvent}
@@ -167,6 +173,7 @@ export function WeekEventsView({
 type WeekEmptyPanelProps = {
   emptyState: EventsWeekEmptyState;
   locale: Parameters<typeof eventTypeLabel>[2];
+  primary: EventsPrimaryState;
   onJumpToNextWeek: () => void;
   onClearFilters: () => void;
   onAddEvent: () => void;
@@ -175,16 +182,41 @@ type WeekEmptyPanelProps = {
 
 // The empty-week invitation/quiet state (F4b contract § Events point 4 /
 // decision 4): the grid above stays visible (quiet dashed columns), this
-// panel renders underneath with the one action the state calls for.
+// panel renders underneath with the one action the state calls for. Every
+// primary-styled action here consults the single `primary` enum (F4b sol
+// R1) instead of assuming it whenever this branch renders — a composer
+// opened over an empty week still moves the primary to "Zapisz".
 function WeekEmptyPanel({
   emptyState,
   locale,
+  primary,
   onJumpToNextWeek,
   onClearFilters,
   onAddEvent,
   onRefreshCalendar,
 }: WeekEmptyPanelProps) {
   const { text } = useLocale();
+
+  if (emptyState.kind === "pending") {
+    return (
+      <EmptyState
+        kind="quiet"
+        className="event-week-empty-panel"
+        reason={text("Checking later weeks…")}
+      />
+    );
+  }
+
+  if (emptyState.kind === "error") {
+    return (
+      <div className="event-week-empty-panel events-error-strip">
+        <ErrorText>{text("Failed to check later weeks")}</ErrorText>
+        <ActionButton verb="refresh" onClick={onRefreshCalendar}>
+          {text("Refresh calendar")}
+        </ActionButton>
+      </div>
+    );
+  }
 
   if (emptyState.kind === "noMatchFilters") {
     return (
@@ -202,6 +234,7 @@ function WeekEmptyPanel({
   }
 
   if (emptyState.kind === "jump") {
+    const isPrimary = primary === "jumpNextWeek";
     return (
       <EmptyState
         kind="invitation"
@@ -209,10 +242,12 @@ function WeekEmptyPanel({
         title={text("Nothing this week")}
         source={
           <>
-            {text("Bankier and GPW calendars · refreshed {time}").replace(
-              "{time}",
-              emptyState.calendarLastSuccessAt ?? "",
-            )}
+            {emptyState.calendarLastSuccessAt
+              ? text("Bankier and GPW calendars · refreshed {time}").replace(
+                  "{time}",
+                  formatDetailTimestamp(emptyState.calendarLastSuccessAt),
+                )
+              : text("Bankier and GPW calendars")}
             {" "}
             {text("Next date: {date} — {company}, {type}")
               .replace("{date}", emptyState.match.eventDate)
@@ -221,13 +256,24 @@ function WeekEmptyPanel({
           </>
         }
         action={
-          <ActionButton kind="control" variant="primary" data-ux-primary-action="true" onClick={onJumpToNextWeek}>
+          <ActionButton
+            kind="control"
+            variant={isPrimary ? "primary" : "secondary"}
+            data-ux-primary-action={isPrimary ? "true" : undefined}
+            onClick={onJumpToNextWeek}
+          >
             {text("Show next week with events")}
           </ActionButton>
         }
       />
     );
   }
+
+  // "neverRefreshed" and "addEvent" both fall under the primary enum's
+  // `addEvent` bucket (decision 5's table folds them together) — a composer
+  // open at the same time still moves `primary` to "saveComposer", so both
+  // buttons below correctly go quiet instead of double-filling with Zapisz.
+  const isPrimary = primary === "addEvent";
 
   if (emptyState.kind === "neverRefreshed") {
     return (
@@ -237,7 +283,12 @@ function WeekEmptyPanel({
         title={text("Nothing this week")}
         source={text("The calendar has not been refreshed yet.")}
         action={
-          <ActionButton verb="refresh" variant="primary" data-ux-primary-action="true" onClick={onRefreshCalendar}>
+          <ActionButton
+            verb="refresh"
+            variant={isPrimary ? "primary" : "secondary"}
+            data-ux-primary-action={isPrimary ? "true" : undefined}
+            onClick={onRefreshCalendar}
+          >
             {text("Refresh calendar")}
           </ActionButton>
         }
@@ -252,7 +303,12 @@ function WeekEmptyPanel({
       title={text("Nothing this week")}
       source={text("Bankier and GPW calendars have no later dates for the companies on your lists.")}
       action={
-        <ActionButton verb="add" variant="primary" data-ux-primary-action="true" onClick={onAddEvent}>
+        <ActionButton
+          verb="add"
+          variant={isPrimary ? "primary" : "secondary"}
+          data-ux-primary-action={isPrimary ? "true" : undefined}
+          onClick={onAddEvent}
+        >
           {text("Add event")}
         </ActionButton>
       }

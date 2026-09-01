@@ -69,6 +69,17 @@ export function eventStatusLabel(status: string, text: TextFn): string {
   return status === "proposed" ? text("Awaiting confirmation") : formatCompanyEventStatus(status);
 }
 
+/** Source-type label wrapped for translation (F4b sol R1): `formatCompanyEventSourceType`
+ * stays a raw dictionary (Today/Research call it directly) — this is the
+ * Events-only `text()` seam over it, for the detail panel's Source field.
+ * `derived_signal` gets its own product-language line rather than
+ * `formatCompanyEventSourceType`'s dev-facing `formatEnumLabel` fallback
+ * ("Derived Signal") — a proposed event's Source field would otherwise leak it. */
+export function eventSourceTypeLabel(sourceType: string, text: TextFn): string {
+  if (sourceType === "derived_signal") return text("Derived from a filing");
+  return text(formatCompanyEventSourceType(sourceType));
+}
+
 export type EventSourceLine = { label: string; proposed: boolean };
 
 /**

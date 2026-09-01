@@ -22,6 +22,12 @@ export type DerivePrimaryInput = {
   weekMode: boolean;
   /** `true` when the displayed week has zero events (week mode only). */
   weekIsEmpty: boolean;
+  /** The empty-week "later match" lookup hasn't settled yet (F4b sol R1) —
+   * no primary while it's in flight, never the stale-looking "addEvent". */
+  nextWeekLookupPending: boolean;
+  /** The lookup itself failed — no primary; the screen shows an error, not
+   * an invitation claiming there is nothing later. */
+  nextWeekLookupError: boolean;
   /** `true` when a later week with a matching event exists (the jump target). */
   hasNextMatch: boolean;
   /** Any of the four Events filters (watchlist/company/type/status) ≠ "all". */
@@ -33,6 +39,7 @@ export function derivePrimary(input: DerivePrimaryInput): EventsPrimaryState {
   if (input.composerOpen) return "saveComposer";
   if (input.selectedEventStatus === "proposed") return "confirmProposed";
   if (input.weekMode && input.weekIsEmpty) {
+    if (input.nextWeekLookupPending || input.nextWeekLookupError) return "none";
     if (input.hasNextMatch) return "jumpNextWeek";
     if (input.hasActiveFilters) return "noLaterMatch";
   }

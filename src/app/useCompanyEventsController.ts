@@ -109,7 +109,9 @@ export function useCompanyEventsController({
 
   // The empty-week jump target (F4b contract § Events point 4 / decision 4):
   // one read starting the day after the displayed week, every active filter
-  // retained, returning the first (soonest) match or `null`.
+  // retained, returning the first (soonest) match or `null`. A failed read
+  // REJECTS (F4b sol R1) — the caller must tell "nothing later" apart from
+  // "couldn't check", never fold a read failure into a false empty state.
   function findNextWeekWithEvents(): Promise<CompanyEvent | null> {
     const dateFrom = formatLocalDate(addLocalDays(parseLocalDate(companyEventWeekRange.end), 1));
 
@@ -120,8 +122,7 @@ export function useCompanyEventsController({
         dateFrom,
         dateTo: null,
       })
-      .then((response) => response[0] ?? null)
-      .catch(() => null);
+      .then((response) => response[0] ?? null);
   }
 
   function clearCompanyEventFilters() {

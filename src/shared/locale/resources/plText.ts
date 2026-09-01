@@ -2206,7 +2206,6 @@ export const plText: Record<string, string> = {
     "Kalendaria Bankier i GPW nie mają późniejszych terminów dla spółek z Twoich list.",
   "Bankier and GPW calendars · refreshed {time}": "Kalendaria Bankier i GPW · odświeżone {time}",
   "Bankier · calendar": "Bankier · kalendarium",
-  "Confirm derived event": "Potwierdź wyprowadzone wydarzenie",
   "Ex-dividend day": "Dzień bez dywidendy",
   "Extraordinary shareholder meeting": "Nadzwyczajne walne zgromadzenie",
   "Failed to load events": "Nie udało się wczytać wydarzeń",
@@ -2223,4 +2222,12 @@ export const plText: Record<string, string> = {
   "This date comes from a filing. Confirm to add it to the calendar for good, or reject it.":
     "Ta data pochodzi z raportu. Potwierdź, żeby trafiła do kalendarza jako pewna, albo odrzuć.",
   "◔ from a filing · awaiting confirmation": "◔ z raportu · do potwierdzenia",
+  // F4b sol R1 — Events (adversarial review fix wave)
+  "Bankier and GPW calendars": "Kalendaria Bankier i GPW",
+  "Checking later weeks…": "Sprawdzam kolejne tygodnie…",
+  "Date from a filing": "Data z raportu",
+  "Derived from a filing": "Wyprowadzone z raportu",
+  "Failed to check later weeks": "Nie udało się sprawdzić kolejnych tygodni",
+  "Feed Item": "Wpis z kanału",
+  "Official Report": "Raport oficjalny",
 };

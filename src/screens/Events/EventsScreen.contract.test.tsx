@@ -1,7 +1,10 @@
 import { describe, it } from "vitest";
+import { vi } from "vitest";
 import {
   appTestState,
   expect,
+  handleAppCommand,
+  invoke,
   renderApp,
   screen,
   seedScenario,
@@ -109,6 +112,33 @@ describe("Events primary action per state (F4b contract § Events, decision 5)",
     const confirmButton = within(region).getByRole("button", { name: "Confirm" });
     expect(confirmButton.getAttribute("data-ux-primary-action")).toBe("true");
   });
+
+  // F4b sol R1 (blocker): a proposed event stayed selected (its detail panel
+  // stayed open, "Confirm" stayed hardcoded primary) while the composer also
+  // opened — two marked/filled buttons. The enum's own precedence
+  // (composerOpen checked before selectedEventStatus) must actually drive
+  // every candidate, not just "Add event".
+  it("Composer open while a proposed event is still selected: `saveComposer` wins, `Confirm` goes quiet", async () => {
+    seedScenario("rich");
+    renderApp({ section: "Events" });
+    const region = await screen.findByRole("region", { name: "Events" });
+    await userEvent.click(within(region).getByRole("button", { name: "List" }));
+    const proposedCard = await within(region).findByRole("button", {
+      name: /dividend date \(derived, unconfirmed\)/i,
+    });
+    await userEvent.click(proposedCard);
+    await within(region).findByRole("button", { name: "Confirm" });
+
+    await userEvent.click(within(region).getByRole("button", { name: "Add event" }));
+    await within(region).findByRole("button", { name: "Save" });
+
+    expectSinglePrimary(region, 1);
+    expectPrimaryMarkerMatchesVariant(region);
+    const saveButton = within(region).getByRole("button", { name: "Save" });
+    expect(saveButton.getAttribute("data-ux-primary-action")).toBe("true");
+    const confirmButton = within(region).getByRole("button", { name: "Confirm" });
+    expect(confirmButton.getAttribute("data-ux-primary-action")).toBeNull();
+  });
 });
 
 describe("Events empty states (F4b contract § Events, State matrix)", () => {
@@ -203,5 +233,47 @@ describe("Events empty states (F4b contract § Events, State matrix)", () => {
     expect(allAddEventButtons).toHaveLength(2);
     const headerAddEvent = allAddEventButtons.find((button) => button !== invitationAddEvent);
     expect(headerAddEvent?.getAttribute("data-ux-primary-action")).toBeNull();
+  });
+
+  // F4b sol R1 (high): a failed "later match" lookup used to fold into "no
+  // match" — the invitation claimed nothing was later when the read simply
+  // failed. It must show an error + retry instead, and mark nothing primary.
+  it("Empty (week empty, the later-match lookup fails): ErrorText + `Refresh calendar`, no primary — never the 'nothing later' invitation", async () => {
+    appTestState.companyEventsResponse = [];
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      const input = (args as { input?: { mode?: string } } | undefined)?.input;
+      if (command === "list_company_events" && input?.mode === "upcoming") {
+        return Promise.reject(new Error("network unreachable"));
+      }
+      return handleAppCommand(command, args);
+    });
+    renderApp({ section: "Events" });
+    const region = await screen.findByRole("region", { name: "Events" });
+    await within(region).findByText("Failed to check later weeks");
+    expect(
+      within(region).queryByText("Bankier and GPW calendars have no later dates for the companies on your lists."),
+    ).not.toBeInTheDocument();
+    expectSinglePrimary(region, 0);
+  });
+
+  // F4b sol R1 (high): while the lookup is still in flight, no primary
+  // should flash "addEvent" — the empty week says it's checking instead.
+  it("Empty (week empty, the later-match lookup is pending): quiet 'Checking later weeks…', no primary", async () => {
+    appTestState.companyEventsResponse = [];
+    let resolveLookup: (() => void) | undefined;
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      const input = (args as { input?: { mode?: string } } | undefined)?.input;
+      if (command === "list_company_events" && input?.mode === "upcoming") {
+        return new Promise((resolve) => {
+          resolveLookup = () => resolve([]);
+        });
+      }
+      return handleAppCommand(command, args);
+    });
+    renderApp({ section: "Events" });
+    const region = await screen.findByRole("region", { name: "Events" });
+    await within(region).findByText("Checking later weeks…");
+    expectSinglePrimary(region, 0);
+    resolveLookup?.();
   });
 });
