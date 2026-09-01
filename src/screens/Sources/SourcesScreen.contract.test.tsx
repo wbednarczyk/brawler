@@ -7,7 +7,8 @@ import {
   expectSinglePrimary,
 } from "../../test/uxContracts";
 import type { ActionInventoryEntry } from "../../test/uxContracts";
-import { makeSourceAdapters } from "../../test/scenarios/entities";
+import { COMPANY_SPECS, makeRegistryEntry, makeSourceAdapters } from "../../test/scenarios/entities";
+import type { CompanyRegistryEntry } from "../../api/types";
 
 const LOCALES = ["en", "pl"] as const;
 type Locale = (typeof LOCALES)[number];
@@ -15,7 +16,11 @@ type Locale = (typeof LOCALES)[number];
 // F4b S4 (docs/plans/frontend-v2-f4b.md § Sources, contract-exempt short
 // form): brought to the F4a full sorted-array shape per the S1 integrator
 // note — the 5-adapter mock seed (`makeSourceAdapters`) is small enough for
-// an exhaustive inventory, unlike the real DB's 19-row Dense state.
+// an exhaustive inventory, unlike the real DB's 19-row Dense state. sol R1:
+// table-drives every reachable substate (rest, one row expanded, the
+// registry row's company list open with a search match, the company list's
+// search with no match), each asserted with a full sorted inventory in both
+// locales plus `expectPrimaryMarkerMatchesVariant`.
 
 const REGION_NAME = { en: "Sources", pl: "Źródła" } as const;
 
@@ -33,6 +38,15 @@ const ADAPTER_NAMES = [
   "Bankier Giełda RSS",
   "Bankier Wiadomosci RSS",
 ] as const;
+
+// A controlled 2-entry registry seed (mirrors the adapters' own small-seed
+// pattern) — one untracked (renders `Add`), one tracked (renders the
+// `Added` non-button chip) — so a search can isolate either branch.
+const CDR = COMPANY_SPECS.find((spec) => spec.key === "cdr")!;
+const PKN = COMPANY_SPECS.find((spec) => spec.key === "pkn")!;
+function registryEntries(): CompanyRegistryEntry[] {
+  return [makeRegistryEntry(CDR, false), makeRegistryEntry(PKN, true)];
+}
 
 function sorted(entries: ActionInventoryEntry[]): ActionInventoryEntry[] {
   return [...entries].sort(
@@ -63,11 +77,25 @@ function expandedInventory(locale: Locale): ActionInventoryEntry[] {
   ]);
 }
 
-async function openSources(locale: Locale) {
+const CLEAR_SEARCH = { en: "Clear company directory search", pl: "Wyczyść wyszukiwanie katalogu spółek" } as const;
+const ADD = { en: "Add", pl: "Dodaj" } as const;
+
+async function openSources(locale: Locale, seedRegistry = false) {
   appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
   appTestState.sourceAdaptersResponse = makeSourceAdapters();
+  if (seedRegistry) appTestState.companyRegistryEntriesResponse = registryEntries();
   renderApp({ section: "Sources" });
   return screen.findByRole("region", { name: REGION_NAME[locale] });
+}
+
+async function expandRegistryRow(locale: Locale, region: HTMLElement, user: ReturnType<typeof userEvent.setup>) {
+  const openPrefix = locale === "pl" ? "Otwórz źródło" : "Open source";
+  const row = await within(region).findByRole("button", { name: `${openPrefix}: GPW Company Directory` });
+  await user.click(row);
+  await within(region).findByRole("button", { name: locale === "pl" ? "Otwórz stronę źródła" : "Open source page" });
+  const companiesButton = within(region).getByRole("button", { name: locale === "pl" ? "Spółki" : "Companies" });
+  await user.click(companiesButton);
+  await within(region).findByLabelText(locale === "pl" ? "Szukaj w katalogu spółek" : "Search company directory");
 }
 
 describe("Sources action inventory (F4b contract § Sources)", () => {
@@ -75,6 +103,7 @@ describe("Sources action inventory (F4b contract § Sources)", () => {
     const region = await openSources(locale);
     await within(region).findAllByRole("button", { name: new RegExp(locale === "pl" ? "^Otwórz źródło:" : "^Open source:") });
     expect(collectActionInventory(region, locale)).toEqual(restInventory(locale));
+    expectPrimaryMarkerMatchesVariant(region);
   });
 
   it.each(LOCALES)("the full sorted action inventory matches the contract table, one row expanded (%s)", async (locale) => {
@@ -85,7 +114,53 @@ describe("Sources action inventory (F4b contract § Sources)", () => {
     await user.click(row);
     await within(region).findByRole("button", { name: locale === "pl" ? "Otwórz stronę źródła" : "Open source page" });
     expect(collectActionInventory(region, locale)).toEqual(expandedInventory(locale));
+    expectPrimaryMarkerMatchesVariant(region);
   });
+
+  it.each(LOCALES)(
+    "the full sorted action inventory matches the contract table, registry company list open with a search match (%s)",
+    async (locale) => {
+      const user = userEvent.setup();
+      const region = await openSources(locale, true);
+      await expandRegistryRow(locale, region, user);
+
+      const search = within(region).getByLabelText(locale === "pl" ? "Szukaj w katalogu spółek" : "Search company directory");
+      await user.type(search, "CDR");
+      // CDR (untracked) stays, PKN (tracked, no match) filters out — isolates
+      // the `Add` branch (the tracked/`Added` non-button chip renders no
+      // button at all, asserted separately by the existing SourcesScreen
+      // tests, not an omission here).
+      await within(region).findByText("CD Projekt");
+
+      expect(collectActionInventory(region, locale)).toEqual(
+        sorted([...expandedInventory(locale), { name: CLEAR_SEARCH[locale], kind: "control" }, { name: ADD[locale], kind: "add" }]),
+      );
+      expectPrimaryMarkerMatchesVariant(region);
+    },
+  );
+
+  it.each(LOCALES)(
+    "the full sorted action inventory matches the contract table, directory search with no match (%s)",
+    async (locale) => {
+      const user = userEvent.setup();
+      const region = await openSources(locale, true);
+      await expandRegistryRow(locale, region, user);
+
+      const search = within(region).getByLabelText(locale === "pl" ? "Szukaj w katalogu spółek" : "Search company directory");
+      await user.type(search, "zzz-no-match");
+      await within(region).findByText(
+        locale === "pl" ? "Brak wpisów katalogu spółek pasujących do wyszukiwania." : "No company directory entries match this search.",
+      );
+
+      // No entries render at all ⇒ no `Add`/`Added` for either — only the
+      // expanded-state baseline plus the now-visible Clear search control.
+      expect(collectActionInventory(region, locale)).toEqual(
+        sorted([...expandedInventory(locale), { name: CLEAR_SEARCH[locale], kind: "control" }]),
+      );
+      expect(collectEmptyStates(region)).toContain("quiet");
+      expectPrimaryMarkerMatchesVariant(region);
+    },
+  );
 
   it("no button in the screen root is left unclassified — every action is now classified", async () => {
     const region = await openSources("en");
@@ -112,6 +187,14 @@ describe("Sources primary action per state (F4b contract § Sources: `expectSing
     expectSinglePrimary(region, 0);
     expectPrimaryMarkerMatchesVariant(region);
   });
+
+  it("still no primary with the company list open — Sources never has a filled action", async () => {
+    const user = userEvent.setup();
+    const region = await openSources("en", true);
+    await expandRegistryRow("en", region, user);
+    expectSinglePrimary(region, 0);
+    expectPrimaryMarkerMatchesVariant(region);
+  });
 });
 
 describe("Sources empty states (F4b contract § Sources, State table)", () => {
@@ -125,5 +208,6 @@ describe("Sources empty states (F4b contract § Sources, State table)", () => {
     );
     await within(region).findByText(locale === "pl" ? "Brak źródeł" : "No sources");
     expect(collectEmptyStates(region)).toContain("invitation");
+    expectPrimaryMarkerMatchesVariant(region);
   });
 });

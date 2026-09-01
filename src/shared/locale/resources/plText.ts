@@ -2175,9 +2175,9 @@ export const plText: Record<string, string> = {
   // redeclared here.
   // F4b S4 — Sources / Report Season / nav
   "No sources": "Brak źródeł",
-  "Automatically every": "Automatycznie co",
-  "retry in": "ponowna próba za",
-  "next in": "za",
+  "Automatically every {interval}": "Automatycznie co {interval}",
+  "Automatically every {interval} · retry in {retry}": "Automatycznie co {interval} · ponowna próba za {retry}",
+  "next in {time}": "za {time}",
   "created": "nowe",
   "unmatched": "niedopasowane",
   "directory entries": "pozycji katalogu",

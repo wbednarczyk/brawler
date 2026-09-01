@@ -329,6 +329,22 @@ describe("ExpandableRow", () => {
     const deleteButton = screen.getByRole("button", { name: "Delete" });
     expect(article.contains(deleteButton)).toBe(false);
   });
+
+  // sol R1: a <button> only permits phrasing content (spec: no <ul>/<li>/
+  // <div>/<p>/table — flow/list markup is invalid inside it, browsers/AT
+  // disagree on how to recover). A consumer that reaches for a block/list
+  // element here (Report Season's row once did — ExpandableRow.tsx's own
+  // comment names the constraint) regresses silently in jsdom; this asserts
+  // the canonical gallery children (spans) stay block/list-free.
+  it("children render as phrasing content only — no block/list element lands inside the button", () => {
+    render(
+      <ExpandableRow label="Row" isExpanded={false} onToggle={() => {}} detail={<p>body</p>}>
+        <span>header</span>
+      </ExpandableRow>,
+    );
+    const article = screen.getByRole("button", { name: "Row" });
+    expect(article.querySelector("ul, ol, li, div, p, table, section, article")).toBeNull();
+  });
 });
 
 describe("FilterToolbar", () => {
