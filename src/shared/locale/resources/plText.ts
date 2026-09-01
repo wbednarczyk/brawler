@@ -2176,6 +2176,11 @@ export const plText: Record<string, string> = {
   // F4b S4 — Sources / Report Season / nav
   "No sources": "Brak źródeł",
   "Automatically every {interval}": "Automatycznie co {interval}",
+  "Analyst Recommendations": "Rekomendacje analityków",
+  "Market Data": "Dane rynkowe",
+  "Disclosures": "Ujawnienia",
+  "FX Rates": "Kursy walut",
+  "Derived": "Wyprowadzone",
   "Automatically every {interval} · retry in {retry}": "Automatycznie co {interval} · ponowna próba za {retry}",
   "next in {time}": "za {time}",
   "created": "nowe",

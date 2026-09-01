@@ -97,6 +97,15 @@ export function formatSourceType(value: string) {
     analysis: "Analysis",
     authenticated_research: "Authenticated Research",
     company_registry: "Company Registry",
+    // F4b live-check leftovers: every type the real registry carries gets a
+    // dictionary label (formatEnumLabel output is untranslatable).
+    analyst_recommendation: "Analyst Recommendations",
+    market_data: "Market Data",
+    disclosure: "Disclosures",
+    ownership: "Ownership",
+    fundamentals: "Fundamentals",
+    fx_rates: "FX Rates",
+    derived: "Derived",
   };
 
   return labels[value] ?? formatEnumLabel(value);
