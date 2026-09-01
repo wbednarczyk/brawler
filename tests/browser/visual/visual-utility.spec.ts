@@ -41,14 +41,16 @@ test.describe("visual — utility screens", () => {
     const region = page.getByRole("region", { name: "Transcripts" });
     await expect(region).toBeVisible();
 
-    // The smoke runtime seeds no transcript jobs for any scenario (segments
-    // only exist for a job Gemini actually transcribed, which the mock
-    // cannot fabricate on create) — create one so the list + detail have
-    // content, then expand it.
+    // The smoke runtime seeds no transcript jobs for any scenario — create
+    // one so the list + detail have content. The mock seeds 3 realistic
+    // segments once a job completes (sol R1 finding 3), so expanding it
+    // carries two figures (fetched-at date + segment count).
     await page.getByLabel("Recording link").fill("https://www.youtube.com/watch?v=densitycheck");
     await page.getByRole("button", { name: "Fetch transcript" }).click();
     await expect(page.locator(".transcript-row-block")).toHaveCount(1);
+    await expect(page.locator("[data-transcript-status='completed']")).toBeVisible();
     await page.locator(".transcript-row-button").first().click();
+    await expect(page.locator(".transcript-segment-row").first()).toBeVisible();
 
     await shootPanel(page, page.locator(".workspace"), "transcripts");
   });

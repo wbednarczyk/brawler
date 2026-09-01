@@ -37,9 +37,14 @@ export function cellFileName(cell) {
   return join(specSnapshotDir(entry.spec), `${cell.screen}-${cell.tier}-${project}-${process.platform}.png`);
 }
 
-/** Every expected cell across the whole catalog (76 today) — the ALL-mode assertion set. */
+/** Every expected cell across the whole catalog, EVERY declared state (not
+ * just "default") — the ALL-mode assertion set. Sol R1 finding 3: a screen
+ * whose catalog entry lists e.g. `states: ["default", "empty"]` must have a
+ * baseline for both, or a missing "empty" cell goes unguarded. */
 export function allExpectedCells() {
-  return expectedCells(CATALOG.map((entry) => entry.screen));
+  return CATALOG.flatMap((entry) =>
+    entry.states.flatMap((state) => expectedCells([entry.screen], state)),
+  );
 }
 
 /**

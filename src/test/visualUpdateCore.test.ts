@@ -44,18 +44,14 @@ describe("visual-update-core", () => {
     }
   });
 
-  // F4b S1: `allExpectedCells()` enumerates the "default" state only
-  // (`expectedCells`'s state param defaults to it) — the mandatory baseline
-  // floor stays per-screen, not per-state. `transcripts`/`events` gaining a
-  // catalog "empty" state (S2/S3) does not change this count; the new
-  // `figures` minimums on `transcripts`/`events`/`report-season`/`sources`
-  // don't add cells either (figures is a per-cell validation, not a new
-  // cell) — they redden the existing "default" Playwright shots instead
-  // (helpers.ts asserts `figures` before capturing), which is the visible
-  // F4b S1 red for this item.
-  it("every catalog cell (86 today) has an existing baseline file", () => {
+  // Sol R1 finding 3: `allExpectedCells()` now enumerates EVERY state a
+  // catalog entry declares (not just "default") — a screen with `states:
+  // ["default", "empty"]` (transcripts, events) must have a baseline for
+  // BOTH, or a missing "empty" cell went unguarded. 86 "default"-only cells
+  // + transcripts' 4 "empty" cells (S/M/L dark + M light) + events' 4 =~ 94.
+  it("every catalog cell (94 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
-    expect(cells.length).toBe(86);
+    expect(cells.length).toBe(94);
     for (const cell of cells) {
       expect(existsSync(cellFileName(cell))).toBe(true);
     }

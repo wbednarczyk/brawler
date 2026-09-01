@@ -51,8 +51,11 @@ type TranscriptControllerInput = {
   transcriptNoteForm: NotebookForm;
 };
 
-const missingGeminiCredentialMessage =
-  "Gemini transcription credentials are not configured in this app runtime. Save the Gemini API key in Settings before running a transcript job.";
+// Sol R1 finding 1: product vocabulary, no "runtime"/"job" — this plText key
+// already exists (TranscriptJobRow's disabled "Fetch again" tooltip), reused
+// verbatim so the message renders through the SAME translated string
+// wherever a screen wraps it in `text()`.
+const missingGeminiCredentialMessage = "Configure Gemini API key in Settings before running transcription";
 
 function withoutKey<T>(record: Record<string, T>, key: string) {
   const next = { ...record };
@@ -473,6 +476,14 @@ export function useTranscriptController({
   function createTranscriptJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    // Sol R1 finding 1: check credentials BEFORE creating a backend record —
+    // the composer is disabled in this state too, but a disabled submit
+    // button is not a reliable guard against implicit form submission.
+    if (!geminiCredentialStatus?.configured) {
+      setTranscriptJobCreateError(missingGeminiCredentialMessage);
+      return;
+    }
+
     const url = transcriptJobForm.url.trim();
     const validationMessage = transcriptUrlValidationMessage(url);
 
@@ -498,13 +509,7 @@ export function useTranscriptController({
           ...current.filter((job) => job.id !== created.id),
         ]);
         setTranscriptJobCreateState("done");
-        if (geminiCredentialStatus?.configured) {
-          runTranscriptJob(created.id);
-          return Promise.resolve();
-        }
-
-        setTranscriptJobsError(missingGeminiCredentialMessage);
-        return refreshTranscriptJobs();
+        runTranscriptJob(created.id);
       })
       .catch((error) => {
         setTranscriptJobCreateError(String(error));

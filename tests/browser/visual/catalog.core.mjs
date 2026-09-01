@@ -98,12 +98,10 @@ const RAW_CATALOG = [
     spec: "visual-utility.spec.ts",
     states: ["default", "empty"],
     tiers: FULL_TIERS,
-    // F4b S2: min 1, not 2 — `browserSmokeRuntime.ts` deliberately seeds zero
-    // transcript jobs for every scenario (segments only exist for a job the
-    // Gemini flow actually transcribes, which the smoke mock cannot fabricate
-    // on create), so the default-state shot's one created+completed row
-    // carries exactly one Figure (its fetched-at date).
-    figures: { selector: "[data-figure]", min: 1 },
+    // The mock seeds 3 realistic segments once a transcript completes (sol
+    // R1 finding 3) — the default-state row carries its fetched-at date PLUS
+    // its segment count once expanded.
+    figures: { selector: "[data-figure]", min: 2 },
   },
   { screen: "settings", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
 ];
