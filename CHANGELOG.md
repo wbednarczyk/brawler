@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.78.0 - 2026-09-01
+
+
+### Features
+
+- **library**: F4b — Transkrypcje + Wydarzenia redesigns, Źródła + Sezon raportów language pass, Library nav (ADR 0104) (#447)
+
 ## v0.77.0 - 2026-08-29
 
 
