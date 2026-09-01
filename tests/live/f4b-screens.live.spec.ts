@@ -51,17 +51,18 @@ test("Wydarzenia shows the week grid with five weekday columns inside the pane",
   await openLibrary(page, /^(Wydarzenia|Events)$/);
   const layout = page.locator(".events-layout");
   await expect(layout).toBeVisible({ timeout: 15_000 });
+  // Sol R2: the grid is REQUIRED in week mode at this width — no conditional pass.
   const grid = page.locator(".event-week-grid");
-  if (await grid.isVisible()) {
-    const days = grid.locator(".event-week-day");
-    expect(await days.count()).toBeGreaterThanOrEqual(5);
-    const paneBox = await layout.boundingBox();
-    const firstBox = await days.first().boundingBox();
-    const fifthBox = await days.nth(4).boundingBox();
-    if (paneBox && firstBox && fifthBox) {
-      expect(firstBox.x).toBeGreaterThanOrEqual(paneBox.x - 1);
-      expect(fifthBox.x + fifthBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
-    }
+  await expect(grid).toBeVisible({ timeout: 15_000 });
+  const days = grid.locator(".event-week-day");
+  expect(await days.count()).toBeGreaterThanOrEqual(5);
+  const paneBox = await layout.boundingBox();
+  const firstBox = await days.first().boundingBox();
+  const fifthBox = await days.nth(4).boundingBox();
+  expect(paneBox && firstBox && fifthBox).toBeTruthy();
+  if (paneBox && firstBox && fifthBox) {
+    expect(firstBox.x).toBeGreaterThanOrEqual(paneBox.x - 1);
+    expect(fifthBox.x + fifthBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
   }
   await expectAtMostOneFilled(page);
   await shoot(page, "events-week", testInfo);
@@ -83,6 +84,13 @@ test("Wydarzenia: an empty week offers the jump to the next week with events", a
   const quiet = page.locator('[data-empty-kind="quiet"]');
   await expect(jump.or(quiet)).toBeVisible({ timeout: 15_000 });
   await shoot(page, "events-empty-week", testInfo);
+  // Sol R2: the quiet branch may pass ONLY as the documented no-later-match
+  // state — with no filters active the invitation with the jump is required
+  // (the owner's calendar has later events, so the jump must exist here).
+  if (!(await jump.isVisible())) {
+    await expect(quiet).toContainText(/Później nie ma wydarzeń|no later events/i);
+    throw new Error("empty week offered no jump although the calendar has later events — see the screenshot");
+  }
   if (await jump.isVisible()) {
     const before = await page.locator(".week-toolbar, .events-layout").first().innerText();
     await jump.click();

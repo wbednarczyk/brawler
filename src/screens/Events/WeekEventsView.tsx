@@ -28,6 +28,7 @@ type WeekEventsViewProps = Pick<
   onClearFilters: () => void;
   onAddEvent: () => void;
   onRefreshCalendar: () => void;
+  onRetryLookup: () => void;
 };
 
 export function WeekEventsView({
@@ -48,6 +49,7 @@ export function WeekEventsView({
   onClearFilters,
   onAddEvent,
   onRefreshCalendar,
+  onRetryLookup,
 }: WeekEventsViewProps) {
   const { locale, text } = useLocale();
 
@@ -164,6 +166,7 @@ export function WeekEventsView({
           onClearFilters={onClearFilters}
           onAddEvent={onAddEvent}
           onRefreshCalendar={onRefreshCalendar}
+        onRetryLookup={onRetryLookup}
         />
       ) : null}
     </>
@@ -178,6 +181,7 @@ type WeekEmptyPanelProps = {
   onClearFilters: () => void;
   onAddEvent: () => void;
   onRefreshCalendar: () => void;
+  onRetryLookup: () => void;
 };
 
 // The empty-week invitation/quiet state (F4b contract § Events point 4 /
@@ -194,6 +198,7 @@ function WeekEmptyPanel({
   onClearFilters,
   onAddEvent,
   onRefreshCalendar,
+  onRetryLookup,
 }: WeekEmptyPanelProps) {
   const { text } = useLocale();
 
@@ -211,7 +216,7 @@ function WeekEmptyPanel({
     return (
       <div className="event-week-empty-panel events-error-strip">
         <ErrorText>{text("Failed to check later weeks")}</ErrorText>
-        <ActionButton verb="refresh" onClick={onRefreshCalendar}>
+        <ActionButton verb="refresh" onClick={onRetryLookup}>
           {text("Refresh calendar")}
         </ActionButton>
       </div>

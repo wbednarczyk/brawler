@@ -146,6 +146,9 @@ export function EventsScreen() {
   // events, no lookup running. A rejected read lands in `error`, never a false
   // "no match" — `findNextWeekWithEvents` no longer swallows failures.
   const [lookup, setLookup] = useState<NextWeekLookup>({ status: "idle" });
+  // Sol R2: the error state's retry must re-run THIS lookup, not only the
+  // calendar refresh — the effect below keys on the nonce.
+  const [lookupRetryNonce, setLookupRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!weekIsEmpty) {
@@ -172,6 +175,7 @@ export function EventsScreen() {
     companyEventCompanyFilter,
     companyEventTypeFilter,
     companyEventStatusFilter,
+    lookupRetryNonce,
   ]);
 
   const weekEmptyState: EventsWeekEmptyState | null = !weekIsEmpty
@@ -213,6 +217,11 @@ export function EventsScreen() {
 
   function handleRefreshCalendar() {
     refreshEventSources("manual", companyEventWeekRange.start);
+  }
+
+  function handleRetryNextWeekLookup() {
+    setLookupRetryNonce((nonce) => nonce + 1);
+    handleRefreshCalendar();
   }
 
   function handleJumpToNextWeek() {
@@ -562,6 +571,7 @@ export function EventsScreen() {
             onClearFilters={clearCompanyEventFilters}
             onAddEvent={openCompanyEventComposer}
             onRefreshCalendar={handleRefreshCalendar}
+          onRetryLookup={handleRetryNextWeekLookup}
           />
         ) : (
           <EventListView

@@ -264,6 +264,25 @@ describe("Transcripts action inventory — every reachable substate (F4b sol R1 
     expectPrimaryMarkerMatchesVariant(region);
   });
 
+  it.each(LOCALES)("quarter picker open: every popover action is classified and localized (%s)", async (locale) => {
+    const region = await openTranscripts(locale);
+    const user = await runJobToCompleted(locale, region);
+    await expandRow(locale, region, user);
+    await linkCompany(locale, region, user);
+    const segments = await within(region).findByLabelText(L(locale, "Transcript segments"));
+    await user.click(within(segments).getAllByRole("checkbox")[0]);
+    await user.click(within(region).getByRole("button", { name: L(locale, "Add to notebook") }));
+    await within(region).findByLabelText(L(locale, "Notebook note draft"));
+    await user.click(within(region).getByRole("button", { name: `${L(locale, "Follow-up quarter")} picker` }));
+
+    const inventory = collectActionInventory(region, locale);
+    // Sol R2: the shared quarter picker's popover actions join the sweep —
+    // nothing unclassified, and Today/Clear render through text().
+    expect(inventory.filter((entry) => entry.kind === "unclassified")).toEqual([]);
+    expect(inventory.some((entry) => entry.name === L(locale, "Today"))).toBe(true);
+    expect(inventory.some((entry) => entry.name === L(locale, "Clear"))).toBe(true);
+  });
+
   it.each(LOCALES)("link picker open (with suggestions): the suggestion row is classified `control`, never unclassified (%s)", async (locale) => {
     const region = await openTranscripts(locale);
     const user = await runJobToCompleted(locale, region);

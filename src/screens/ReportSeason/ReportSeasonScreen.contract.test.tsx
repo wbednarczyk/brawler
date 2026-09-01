@@ -5,6 +5,7 @@ import {
   collectEmptyStates,
   expectPrimaryMarkerMatchesVariant,
   expectSinglePrimary,
+  expectPhrasingOnlyExpandableRows,
 } from "../../test/uxContracts";
 import type { ActionInventoryEntry } from "../../test/uxContracts";
 import {
@@ -230,6 +231,14 @@ describe("Report Season action inventory (F4b contract § Report Season)", () =>
     await within(region).findByRole("button", { name: rowToggleName("en") });
     const unclassified = collectActionInventory(region, "en").filter((entry) => entry.kind === "unclassified");
     expect(unclassified).toEqual([]);
+  });
+
+  // Sol R2: consumer guard — the ExpandableRow summary is a real <button>,
+  // so the rendered rows must stay phrasing-only (no <ul>/<li>/<div>).
+  it("expandable report rows contain only phrasing content", async () => {
+    const region = await openReportSeason("en");
+    await within(region).findByRole("button", { name: rowToggleName("en") });
+    expectPhrasingOnlyExpandableRows(region);
   });
 
   it.each(LOCALES)("no two buttons share an accessible name in any state (%s)", async (locale) => {

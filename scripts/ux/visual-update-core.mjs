@@ -20,7 +20,9 @@ export function resolveScreen(screenId) {
     const known = CATALOG.map((e) => e.screen).join(", ");
     throw new Error(`Unknown SCREEN "${screenId}" — valid catalog ids: ${known}`);
   }
-  return { spec: entry.spec, cells: expectedCells([screenId]) };
+  // Sol R2 blocker: enumerate EVERY declared state, not just "default" —
+  // a targeted update must (re)write the empty-state baselines too.
+  return { spec: entry.spec, cells: entry.states.flatMap((state) => expectedCells([screenId], state)) };
 }
 
 /** Snapshot directory Playwright writes/reads for a given spec file. */
@@ -34,7 +36,11 @@ export function cellFileName(cell) {
   if (!entry) throw new Error(`cellFileName: unknown screen "${cell.screen}"`);
   const project = PROJECT_BY_THEME[cell.theme];
   if (!project) throw new Error(`cellFileName: unknown theme "${cell.theme}"`);
-  return join(specSnapshotDir(entry.spec), `${cell.screen}-${cell.tier}-${project}-${process.platform}.png`);
+  // Sol R2 blocker: the filename carries the state segment exactly like
+  // tests/browser/visual/helpers.ts `snapshotName` — otherwise every
+  // non-default cell aliases to the default PNG and the guard is illusory.
+  const stem = cell.state === "default" ? cell.screen : `${cell.screen}-${cell.state}`;
+  return join(specSnapshotDir(entry.spec), `${stem}-${cell.tier}-${project}-${process.platform}.png`);
 }
 
 /** Every expected cell across the whole catalog, EVERY declared state (not

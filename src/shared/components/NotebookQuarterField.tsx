@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CalendarDays } from "lucide-react";
+import { useLocale } from "../locale";
 import type { NotebookDateLikeFieldProps } from "../types/notebook";
 
 function quarterFromDate(date: Date) {
@@ -24,6 +25,7 @@ function nearbyQuarters() {
 }
 
 export function NotebookQuarterField({ label, ariaLabel, value, onChange }: NotebookDateLikeFieldProps) {
+  const { text } = useLocale();
   const [isOpen, setOpen] = useState(false);
   const currentQuarter = quarterFromDate(new Date());
   const quarters = nearbyQuarters();
@@ -53,6 +55,7 @@ export function NotebookQuarterField({ label, ariaLabel, value, onChange }: Note
         <div className="date-picker-popover quarter-picker-popover">
           <button
             className="secondary-button compact-button"
+            data-action-kind="control"
             onClick={() => {
               onChange(currentQuarter);
               setOpen(false);
@@ -60,12 +63,13 @@ export function NotebookQuarterField({ label, ariaLabel, value, onChange }: Note
             type="button"
           >
             <CalendarDays size={15} />
-            Today
+            {text("Today")}
           </button>
           <div className="quarter-picker-options">
             {quarters.map((quarter) => (
               <button
                 className={quarter === value ? "quarter-option quarter-option-active" : "quarter-option"}
+                data-action-kind="control"
                 key={quarter}
                 onClick={() => {
                   onChange(quarter);
@@ -79,13 +83,14 @@ export function NotebookQuarterField({ label, ariaLabel, value, onChange }: Note
           </div>
           <button
             className="minimal-button"
+            data-action-kind="control"
             onClick={() => {
               onChange("");
               setOpen(false);
             }}
             type="button"
           >
-            Clear
+            {text("Clear")}
           </button>
         </div>
       ) : null}

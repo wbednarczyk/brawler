@@ -52,8 +52,13 @@ describe("visual-update-core", () => {
   it("every catalog cell (94 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
     expect(cells.length).toBe(94);
-    for (const cell of cells) {
-      expect(existsSync(cellFileName(cell))).toBe(true);
+    // Sol R2 blocker: every cell maps to a DISTINCT file — a state-less
+    // filename would alias "empty" cells onto the default PNGs and the
+    // existence check below would prove nothing.
+    const files = cells.map((cell) => cellFileName(cell));
+    expect(new Set(files).size).toBe(files.length);
+    for (const file of files) {
+      expect(existsSync(file)).toBe(true);
     }
   });
 

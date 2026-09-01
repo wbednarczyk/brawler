@@ -278,7 +278,7 @@ Transcription is data acquisition (speech→text), not interpretation, so it sta
 
 The video transcription workflow should support:
 
-- entering a YouTube press conference URL in a field labeled `Video URL`
+- entering a YouTube press conference URL in a field labeled `Recording link`
 - optionally providing the ticker/company before transcription
 - reserving space for future company recognition from the video/transcript when the user does not provide one upfront
 - allowing transcripts to remain unlinked to any company, including general market videos

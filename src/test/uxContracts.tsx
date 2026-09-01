@@ -73,3 +73,17 @@ export function expectPrimaryMarkerMatchesVariant(root: HTMLElement): void {
     expect(node.getAttribute("data-ux-primary-action")).toBe("true");
   }
 }
+
+/** Sol R2: a consumer guard for `ExpandableRow` — the row renders a real
+ * `<button>`, so its summary must stay phrasing content. Call from the
+ * screen contract test of every ExpandableRow consumer. */
+export function expectPhrasingOnlyExpandableRows(root: HTMLElement): void {
+  for (const row of Array.from(root.querySelectorAll<HTMLElement>("button.expandable-row"))) {
+    const offender = row.querySelector("ul, ol, li, p, div, h1, h2, h3, h4, h5, h6, table");
+    if (offender) {
+      throw new Error(
+        `ExpandableRow summary contains non-phrasing <${offender.tagName.toLowerCase()}> — keep row summaries span-based`,
+      );
+    }
+  }
+}

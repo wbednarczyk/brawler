@@ -262,7 +262,7 @@ Intent: capture relevant management statements from a press conference.
 Flow:
 
 1. User opens Transcripts or a company workspace.
-2. User enters a YouTube video link in a field labeled `URL`.
+2. User enters a YouTube video link in a field labeled `Recording link`.
 3. User may optionally provide the target company/ticker before transcription.
 4. App starts a Gemini-backed transcription.
 5. If no company was provided, app attempts to recognize the company from the video/transcript result.
