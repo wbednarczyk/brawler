@@ -36,7 +36,7 @@ function baseProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     sourceRefreshError: null,
     sourceRefreshResult: null,
     sourceRefreshState: "idle",
-    sourceStatusSummary: { label: "OK", title: "Sources OK", tone: "ok" },
+    sourceStatusSummary: { kind: "ok", enabled: 2, total: 2 },
     theme: "dark",
     locale: "en",
     shortcutBindings: {},

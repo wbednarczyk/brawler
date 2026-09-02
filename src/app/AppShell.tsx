@@ -27,13 +27,48 @@ import {
 } from "./commandPalette";
 import { useDeveloperMode } from "./state/SettingsContext";
 
-type SourceStatusTone = "ok" | "warn" | "danger";
+// Typed, not pre-worded: the view model reports the state, the shell words it
+// in the user's language (the "3 issues" chip read English inside the Polish
+// UI — found on the live app, F4c; ADR 0104 dec. 3).
+export type SourceStatusSummary =
+  | { kind: "error"; message: string }
+  | { kind: "none" }
+  | { kind: "issues"; count: number }
+  | { kind: "ok"; enabled: number; total: number };
 
-export type SourceStatusSummary = {
-  label: string;
-  title: string;
-  tone: SourceStatusTone;
+const SOURCE_ISSUE_FORMS: PluralForms = {
+  en: ["issue", "issues"],
+  pl: ["problem", "problemy", "problemów"],
 };
+const SOURCE_READY_FORMS: PluralForms = {
+  en: ["enabled source ready", "enabled sources ready"],
+  pl: ["włączone źródło gotowe", "włączone źródła gotowe", "włączonych źródeł gotowych"],
+};
+
+function sourceStatusPill(
+  summary: SourceStatusSummary,
+  locale: "en" | "pl",
+  text: (value: string) => string,
+): { label: string; title: string; tone: "ok" | "warn" | "danger" } {
+  switch (summary.kind) {
+    case "error":
+      return { label: text("error"), title: `${text("Source refresh failed")}: ${summary.message}`, tone: "danger" };
+    case "none":
+      return { label: text("0 sources"), title: text("No sources configured"), tone: "warn" };
+    case "issues":
+      return {
+        label: `${summary.count} ${pluralNoun(locale, summary.count, SOURCE_ISSUE_FORMS)}`,
+        title: `${summary.count} ${pluralNoun(locale, summary.count, SOURCE_ISSUE_FORMS)} — ${text("open Sources")}`,
+        tone: "danger",
+      };
+    case "ok":
+      return {
+        label: `${summary.enabled}/${summary.total}`,
+        title: `${summary.enabled} ${pluralNoun(locale, summary.enabled, SOURCE_READY_FORMS)}`,
+        tone: "ok",
+      };
+  }
+}
 
 /** A company pinned to the sidebar spine (ADR 0054). */
 export type PinnedCompany = {
@@ -179,6 +214,7 @@ export function AppShell({
   const developerMode = useDeveloperMode();
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
+  const sourcePill = sourceStatusPill(sourceStatusSummary, locale, text);
 
   // ONE coalesced POLITE announcement when the unseen-attention count INCREASES
   // after hydration (ADR 0097 dec. 4): screen-reader users learn something
@@ -470,21 +506,14 @@ export function AppShell({
             <div className="topbar-actions">
               <button
                 aria-label={t("app.sources.openStatus")}
-                className={[
-                  "source-status-pill",
-                  sourceStatusSummary.tone === "ok" ? "source-status-pill-ok" : "",
-                  sourceStatusSummary.tone === "warn" ? "source-status-pill-warn" : "",
-                  sourceStatusSummary.tone === "danger" ? "source-status-pill-danger" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
+                className={["source-status-pill", `source-status-pill-${sourcePill.tone}`].join(" ")}
                 onClick={openSourceStatus}
-                title={sourceStatusSummary.title}
+                title={sourcePill.title}
                 type="button"
               >
                 <Activity size={14} aria-hidden="true" />
                 <span>{t("app.sources.label")}</span>
-                <strong>{sourceStatusSummary.label}</strong>
+                <strong>{sourcePill.label}</strong>
               </button>
               <button
                 aria-label={sourceRefreshButtonLabel()}

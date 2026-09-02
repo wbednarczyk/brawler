@@ -2233,5 +2233,10 @@ export const plText: Record<string, string> = {
   "This license key was made for an unsupported license format.":
     "Ten klucz licencji ma nieobsługiwany format.",
   "This license key format is not recognized.": "Nie rozpoznano formatu tego klucza licencji.",
+  // Source-status pill (top bar) — worded in the shell, typed in the view model.
+  "error": "błąd",
+  "0 sources": "0 źródeł",
+  "No sources configured": "Brak skonfigurowanych źródeł",
+  "open Sources": "otwórz Źródła",
   // ---- /F4c Settings ----
 };

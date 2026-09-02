@@ -390,37 +390,14 @@ export function useAppViewModel({
     [selectedCompanyFeedItems],
   );
   const sourceStatusSummary = useMemo<SourceStatusSummary>(() => {
-    if (sourceAdaptersError) {
-      return {
-        label: "error",
-        title: `Source refresh failed: ${sourceAdaptersError}`,
-        tone: "danger",
-      };
-    }
-
-    if (sourceAdapters.length === 0) {
-      return {
-        label: "0 sources",
-        title: "No sources configured",
-        tone: "warn",
-      };
-    }
-
-    const enabledAdapters = sourceAdapters.filter((adapter) => adapter.enabled);
-    const adaptersWithErrors = sourceAdapters.filter((adapter) => adapter.lastError);
-
-    if (adaptersWithErrors.length > 0) {
-      return {
-        label: `${adaptersWithErrors.length} issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
-        title: `${adaptersWithErrors.length} source issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
-        tone: "danger",
-      };
-    }
-
+    if (sourceAdaptersError) return { kind: "error", message: sourceAdaptersError };
+    if (sourceAdapters.length === 0) return { kind: "none" };
+    const issues = sourceAdapters.filter((adapter) => adapter.lastError).length;
+    if (issues > 0) return { kind: "issues", count: issues };
     return {
-      label: `${enabledAdapters.length}/${sourceAdapters.length}`,
-      title: `${enabledAdapters.length} enabled source${enabledAdapters.length === 1 ? "" : "s"} ready`,
-      tone: "ok",
+      kind: "ok",
+      enabled: sourceAdapters.filter((adapter) => adapter.enabled).length,
+      total: sourceAdapters.length,
     };
   }, [sourceAdapters, sourceAdaptersError]);
   // Keep this axis list in sync with `clearInboxFilters` (useFeedController)
