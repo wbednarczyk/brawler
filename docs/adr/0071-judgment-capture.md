@@ -21,3 +21,7 @@ An investor's own judgment history cannot be backfilled: every decision made and
 - Report-season journey gains a "write expectations" step; the post-report journey gains expectation-vs-actual review.
 - Decision-support boundary intact: the app records the user's judgments and mirrors them back; it produces no recommendations (ADR 0042 posture).
 - ADR 0043 is amended to note the journal's early landing; its workbench design is unchanged.
+
+## Amendment (2026-09-02, #410 F4c)
+
+Decision 1's "a global chronological list" surface is retired with the global Journal route ([ADR 0108](0108-retire-docking-engine.md) amendment, same date): the per-company journal section (the Spółka `dziennik` tool) is the only in-app journal surface; the calibration-loop review across companies is an MCP read (`decision_entries` unchanged). The table, immutability, evidence links and the report-expectations leg are untouched.

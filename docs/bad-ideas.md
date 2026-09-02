@@ -19,3 +19,4 @@ rows into prose here — add the detail to the ADR instead.
 | AI-era witness seam (aggregator-as-witness) | 2026-07-21 | aggregator promoted primary, AI gap-fill retired | [0084](adr/0084-retire-in-app-ai-layer.md) |
 | App-wide docking shell (dockview cockpit, named views) | 2026-08-28 | zero named views ever; Spółka needs no engine | [0108](adr/0108-retire-docking-engine.md) |
 | Compare screen (cross-company mode) | 2026-08-10 | built v0.61, never used; MCP reads stay | [0089](adr/0089-cross-company-comparison-and-valuation-l1.md) amendment (#351) |
+| Notebooks-global + Journal-global screens | 2026-09-02 | 7 notes / 2 journal entries in 3 months; per-company Spółka tools + MCP cover the jobs | [0108](adr/0108-retire-docking-engine.md) + [0071](adr/0071-judgment-capture.md) amendments (#410 F4c) |

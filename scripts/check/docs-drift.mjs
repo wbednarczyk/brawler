@@ -63,7 +63,7 @@ const errors = [];
 // A screen documented under a different label than its nav `Section` value.
 // Structural patterns only (never a per-name silencer for a genuinely missing
 // screen) — see ADR 0065 Decision 3.
-// `ReportSeason` (F4b S4, ADR 0104 dec. 1 amendment — joined the Library
+// `ReportSeason` (F4b S4, ADR 0054 amendment 2026-09-02 — joined the Library
 // nav): the IA doc spells it "Report Season" (a space), which the plain
 // nav destination name would never word-boundary-match.
 const STRUCTURAL_MAPPINGS = { ReportSeason: "Report Season" };

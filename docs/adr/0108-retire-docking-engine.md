@@ -107,3 +107,7 @@ decide by evidence) closes on these facts:
   capability no requirement asks for.
 - **Pre-commit to "less framework" now** — building resizable splits without
   a journey that needs them repeats the cockpit's mistake.
+
+## Amendment (2026-09-02, #410 F4c S2)
+
+Decision 3's "the standalone Decision Journal route keeps its global panel" is reversed: the **global Journal route and the global Notebooks screen are retired** (owner decision 2026-09-02 on the evidence: 7 notes across 6 companies and 2 journal entries in three months — the cross-company review surfaces had nothing to review). The per-company `dziennik` and `notatnik` Spółka tools are the only note/journal surfaces; every deep link that landed on the global Notebooks screen (Inbox feed-item draft, research evidence, global search, transcript) opens the company's `notatnik` tool through a typed route intent (`{ t: "notatnik"; entryId?; draft? }`, `navigateToCompanyNotebook`). Cross-company reads stay on the MCP port. Retired tokens: `docs/retired-surface.json`; ledger row: [bad-ideas.md](../bad-ideas.md).
