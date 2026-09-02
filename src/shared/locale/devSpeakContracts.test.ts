@@ -59,12 +59,11 @@ describe("dev-speak guard over user-facing copy", () => {
   it("allowlisted Diagnostics-only keys are called from Diagnostics and nowhere else", () => {
     const files = listTextCallSiteFiles(process.cwd(), SCAN_ROOT, [], { includeDiagnostics: true });
     for (const key of DIAGNOSTICS_ONLY_KEYS) {
-      // sol fix1 item 4: match `text(` followed by ANY of the three quote
-      // styles the codebase's `text()` call sites actually use (double,
-      // single, backtick) — the old `includes('"${key}"')` check missed a
-      // key called with `text('…')`/`` text(`…`) ``, silently proving
-      // nothing for it.
-      const callSitePattern = new RegExp(`text\\(\\s*['"\`]${escapeRegExp(key)}['"\`]`);
+      // The literal itself, in any quote style and ANYWHERE in the file — not
+      // only as a direct `text(…)` argument — so an indirect call outside
+      // Diagnostics (`const label = "…"; text(label)`) cannot hide behind the
+      // allowlist (sol diff review R2).
+      const callSitePattern = new RegExp(`['"\`]${escapeRegExp(key)}['"\`]`);
       const callers = files.filter((rel) => callSitePattern.test(readFileSync(join(process.cwd(), rel), "utf8")));
       expect(callers.length, `${key}: no live call site — drop it from the table and the allowlist`).toBeGreaterThan(0);
       expect(
