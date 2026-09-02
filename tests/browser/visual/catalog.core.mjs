@@ -109,11 +109,14 @@ const RAW_CATALOG = [
     figures: { selector: "[data-figure]", min: 2 },
   },
   {
+    // No `figures` proof: the default landing tab (Appearance) carries no
+    // numeric data by design; the Logs tab's "History kept" figure is asserted
+    // by SettingsScreen.test.tsx, not by a baseline that would have to shoot a
+    // non-default tab (F4c integration).
     screen: "settings",
     spec: "visual-utility.spec.ts",
     states: ["default"],
     tiers: FULL_TIERS,
-    figures: { selector: "[data-figure]", min: 2 },
   },
 ];
 

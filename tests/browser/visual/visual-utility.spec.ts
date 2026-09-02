@@ -81,13 +81,7 @@ test.describe("visual — utility screens", () => {
   test("Settings across pane tiers", async ({ page }) => {
     await openApp(page);
     await nav(page).getByRole("button", { name: "Settings" }).click();
-    const settingsRegion = page.getByLabel("Application settings");
-    await expect(settingsRegion).toBeVisible();
-    // F4c S4: the default landing tab (Appearance) carries no numeric data —
-    // the catalog's `figures {min: 2}` proof (ADR 0104 dec. 2 amendment) needs
-    // a content-bearing state, so this baseline shoots Logs (its "History
-    // kept" figure), never Appearance. The app's own default tab is unchanged.
-    await settingsRegion.getByRole("button", { name: "Logs" }).click();
+    await expect(page.getByLabel("Application settings")).toBeVisible();
     await shootScreen(page, "settings", { forced: ["S", "L"] });
   });
 });
