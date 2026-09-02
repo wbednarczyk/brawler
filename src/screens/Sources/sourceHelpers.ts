@@ -133,7 +133,7 @@ export function formatSourceAccess(adapter: SourceAdapter) {
   const labels: Record<string, string> = {
     public_page: "Public Web Page",
     rss: "Public RSS",
-    public_json: "Public JSON",
+    public_json: "Public data",
     api: "Public API",
   manual: "Manual",
     authenticated: "Authenticated",

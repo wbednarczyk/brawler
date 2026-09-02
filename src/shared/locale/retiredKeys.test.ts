@@ -162,6 +162,38 @@ const RETIRED_PLTEXT_KEYS_F4C = [
   "Open source URL",
 ];
 
+// F4c S4 (docs/plans/f4c-contracts/s4-settings-pass-banner.md, sol R2
+// amendment): `AI workers` was a dead `plText` key — no live `text()` call
+// site (ADR 0084 already retired the AI-routing UI it once labeled) — with
+// only a negative assertion in `SettingsScreen.test.tsx` proving its absence.
+// Pinned here so it can't quietly reappear.
+const RETIRED_PLTEXT_KEYS_S4 = ["AI workers"];
+
+describe("retired 'AI workers' vocabulary stays retired (F4c S4)", () => {
+  it("is absent from the plText resource table", () => {
+    const hits = RETIRED_PLTEXT_KEYS_S4.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const needles = RETIRED_PLTEXT_KEYS_S4.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
+
 describe("retired Notebooks-global-screen + Research tooltip-only vocabulary (F4c S1)", () => {
   it("is absent from every locale resource table", () => {
     const hits = [

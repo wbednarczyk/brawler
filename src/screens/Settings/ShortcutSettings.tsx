@@ -2,7 +2,7 @@ import type { AppLocale, ShortcutBindingSetting } from "../../api/types";
 import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 import { makeTextTranslator } from "../../shared/locale";
 import { formatShortcutBinding, type ShortcutKeyBinding } from "../../shared/shortcuts";
-import { Checkbox, TextField } from "../../ui";
+import { ActionButton, Checkbox, TextField } from "../../ui";
 
 type ShortcutSettingsProps = {
   locale: AppLocale;
@@ -130,14 +130,13 @@ export function ShortcutSettings({
                             label={text(modifier)}
                           />
                         ))}
-                        <button
-                          className="secondary-button"
+                        <ActionButton
+                          kind="control"
                           disabled={!shortcut.hasCustomBinding}
                           onClick={() => resetShortcut(shortcut)}
-                          type="button"
                         >
                           {text("Reset")}
-                        </button>
+                        </ActionButton>
                       </div>
                       {hasConflict ? (
                         <p className="settings-note shortcut-conflict-note">

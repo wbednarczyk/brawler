@@ -70,16 +70,16 @@ async function openAcquisitionSession(page: Page) {
   }
   await region.getByRole("button", { name: /MCP/ }).click();
 
-  const serverToggle = region.getByRole("switch", { name: /Enable the server|Włącz serwer/ });
+  const serverToggle = region.getByRole("switch", { name: /Let assistants connect|Pozwól asystentom się łączyć/ });
   const gateToggle = region.getByRole("switch", {
-    name: /Allow acquisition access|Zezwól na dostęp akwizycyjny/,
+    name: /Allow report-data processing|Pozwól przetwarzać dane raportów/,
   });
   const serverWasOn = await serverToggle.isChecked();
   const gateWasOn = await gateToggle.isChecked();
   if (!serverWasOn) await serverToggle.click();
   if (!gateWasOn) await gateToggle.click();
 
-  const portField = region.getByLabel(/Listen port|Port nasłuchu/);
+  const portField = region.getByLabel(/^Port$/);
   const port = Number.parseInt((await portField.inputValue()) || "8317", 10);
 
   // Credential STOP branch: the OS keychain is SHARED with the real app — an
@@ -156,7 +156,7 @@ async function openAcquisitionSession(page: Page) {
 
   const close = async () => {
     const revokeButtons = region.getByRole("button", {
-      name: /Revoke acquisition token|Unieważnij token akwizycyjny/,
+      name: /Remove acquisition token|Usuń token akwizycyjny/,
     });
     await revokeButtons.first().click();
     // The second click is the confirm step — and the slot must actually read

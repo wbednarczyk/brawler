@@ -104,6 +104,10 @@ per feature.
 - **[Connecting an AI agent to Brawler](mcp-agent-guide.md)** — the hands-on
   how-to: connect Claude Code/Desktop step by step, turn on write tools, the
   per-write citation rules, the full tool catalog, and example workflows.
+- **[Settings](settings.md)** — app-wide preferences: appearance, source
+  polling and history depth, transcription, credentials, import/export,
+  keyboard shortcuts, logs, data storage and background work, the MCP
+  server, and your license.
 
 ## A note on what Brawler is — and isn't
 

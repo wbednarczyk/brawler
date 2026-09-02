@@ -41,10 +41,10 @@ test("run lifecycle over live MCP: start → status → keepalive → cancel + b
   await region.getByRole("button", { name: /MCP/ }).click();
 
   const serverToggle = region.getByRole("switch", {
-    name: /Enable the server|Włącz serwer/,
+    name: /Let assistants connect|Pozwól asystentom się łączyć/,
   });
   const gateToggle = region.getByRole("switch", {
-    name: /Allow acquisition access|Zezwól na dostęp akwizycyjny/,
+    name: /Allow report-data processing|Pozwól przetwarzać dane raportów/,
   });
   const serverWasOn = await serverToggle.isChecked();
   const gateWasOn = await gateToggle.isChecked();
@@ -55,7 +55,7 @@ test("run lifecycle over live MCP: start → status → keepalive → cancel + b
   if (!serverWasOn) await serverToggle.click();
   if (!gateWasOn) await gateToggle.click();
 
-  const portField = region.getByLabel(/Listen port|Port nasłuchu/);
+  const portField = region.getByLabel(/^Port$/);
   const port = Number.parseInt((await portField.inputValue()) || "8317", 10);
 
   // Credential pre-check (sol R2 H-1 STOP branch): the OS keychain is SHARED
@@ -172,7 +172,7 @@ test("run lifecycle over live MCP: start → status → keepalive → cancel + b
     // Restore: revoke the acquisition token (trigger + inline confirm carry
     // the same label); return the gate and server toggles to how they were.
     const revokeButtons = region.getByRole("button", {
-      name: /Revoke acquisition token|Unieważnij token akwizycyjny/,
+      name: /Remove acquisition token|Usuń token akwizycyjny/,
     });
     await revokeButtons.first().click();
     await revokeButtons.first().click();

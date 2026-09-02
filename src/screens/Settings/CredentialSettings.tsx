@@ -1,8 +1,10 @@
 import type { FormEvent } from "react";
 import { ExternalLink, Save, Trash2 } from "lucide-react";
 import type { CredentialStatus } from "../../api/types";
-import { ActionRow, Button, ErrorText, InfoGrid, TextField } from "../../ui";
+import { ActionButton, ActionRow, ErrorText, InfoGrid, TextField } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import { useDeveloperMode } from "../../app/state/SettingsContext";
+import { formatCredentialStorage } from "../../shared/formatting/labels";
 
 type CredentialSettingsProps = {
   geminiApiKeyDraft: string;
@@ -23,13 +25,13 @@ export function CredentialSettings({
   geminiCredentialInFlight,
   geminiCredentialStatus,
   formatCredentialConfigured,
-  formatCredentialKind,
   onClearGeminiApiKey,
   onGeminiApiKeyDraftChange,
   onOpenGeminiApiKeyPage,
   onSaveGeminiApiKey,
 }: CredentialSettingsProps) {
   const { t, text } = useLocale();
+  const developerMode = useDeveloperMode();
 
   return (
     <section className="settings-group" aria-labelledby="settings-credentials-title">
@@ -38,12 +40,12 @@ export function CredentialSettings({
         className="settings-grid"
         items={[
           {
-            label: text("Credential status"),
+            label: text("API key"),
             value: text(formatCredentialConfigured(geminiCredentialStatus)),
           },
           {
-            label: text("Credential kind"),
-            value: text(formatCredentialKind(geminiCredentialStatus?.secretKind)),
+            label: text("Stored in"),
+            value: text(formatCredentialStorage(geminiCredentialStatus?.storage)),
           },
         ]}
       />
@@ -58,25 +60,29 @@ export function CredentialSettings({
           onChange={(event) => onGeminiApiKeyDraftChange(event.target.value)}
         />
         <ActionRow className="credential-actions">
-          <Button
+          <ActionButton
+            verb="save"
             disabled={geminiCredentialInFlight || !geminiApiKeyDraft.trim()}
             type="submit"
-            variant="action"
+            variant="primary"
+            data-ux-primary-action="true"
           >
             <Save size={14} />
             {t("settings.credentials.save")}
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
+            verb="remove"
             disabled={geminiCredentialInFlight}
             onClick={onClearGeminiApiKey}
             variant="ghost"
           >
             <Trash2 size={14} />
             {t("settings.credentials.clear")}
-          </Button>
+          </ActionButton>
         </ActionRow>
       </form>
-      <Button
+      <ActionButton
+        verb="open"
         className="settings-link-button"
         onClick={onOpenGeminiApiKeyPage}
         title={text("Open Google AI Studio API keys page")}
@@ -84,17 +90,17 @@ export function CredentialSettings({
       >
         <ExternalLink size={14} />
         {t("settings.credentials.getGeminiKey")}
-      </Button>
-      {geminiCredentialStatus?.devFallbackAvailable ? (
+      </ActionButton>
+      {developerMode && geminiCredentialStatus?.devFallbackAvailable ? (
         <p className="settings-note">
           {text("Development fallback is active through environment configuration.")}
         </p>
       ) : null}
       {geminiCredentialStatus?.error ? (
-        <ErrorText>{text("Credential check failed")}: {geminiCredentialStatus.error}</ErrorText>
+        <ErrorText>{text("Couldn't read the saved key")}: {geminiCredentialStatus.error}</ErrorText>
       ) : null}
       {geminiCredentialError ? (
-        <ErrorText>{text("Credential command failed")}: {geminiCredentialError}</ErrorText>
+        <ErrorText>{text("Couldn't save that setting")}: {geminiCredentialError}</ErrorText>
       ) : null}
     </section>
   );

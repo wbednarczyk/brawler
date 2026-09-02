@@ -378,7 +378,8 @@ export function TodayScreen({
     }
   }
 
-  // Config-state banner conditions (source health), unchanged from v1.
+  // Config-state banner conditions (source health). F4c dec. 6: the action
+  // opens Sources — it always did, the "Diagnostics" label just misnamed it.
   const configConditions: ConfigCondition[] = useMemo(
     () =>
       sourceAdapters
@@ -386,7 +387,7 @@ export function TodayScreen({
         .map((adapter) => ({
           id: `source_attention_${adapter.id}`,
           message: `${text("Source")} ${adapter.displayName} ${text("isn't responding — signals may be delayed")}`,
-          action: { label: text("Diagnostics"), onClick: openSources },
+          action: { label: text("Sources"), onClick: openSources },
         })),
     [sourceAdapters, text, openSources],
   );

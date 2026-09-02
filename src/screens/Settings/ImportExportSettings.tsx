@@ -13,7 +13,7 @@ import {
   type ImportApplySummary,
   type ImportPreview,
 } from "../../api/importExport";
-import { ActionRow, Button, ErrorText, InfoGrid, useToast } from "../../ui";
+import { ActionButton, ActionRow, ErrorText, InfoGrid, useToast } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type ImportKind = "research" | "settings";
@@ -191,8 +191,8 @@ function WorkflowPanel({
       </div>
 
       <ActionRow className="import-export-actions">
-        <Button className="compact-button" onClick={onExport} variant="primary">{exportLabel}</Button>
-        <Button className="compact-button" onClick={() => inputRef.current?.click()}>{importLabel}</Button>
+        <ActionButton verb="fetch" className="compact-button" onClick={onExport} variant="action">{exportLabel}</ActionButton>
+        <ActionButton verb="open" className="compact-button" onClick={() => inputRef.current?.click()}>{importLabel}</ActionButton>
         <input
           ref={inputRef}
           accept={acceptedFileTypes}
@@ -213,14 +213,15 @@ function WorkflowPanel({
       ) : null}
 
       {state.preview ? (
-        <Button
+        <ActionButton
+          verb="apply"
           className="import-export-apply compact-button"
           disabled={!state.preview.valid || state.inFlight}
           onClick={onApply}
           variant="secondary"
         >
           {applyLabel}
-        </Button>
+        </ActionButton>
       ) : null}
     </section>
   );

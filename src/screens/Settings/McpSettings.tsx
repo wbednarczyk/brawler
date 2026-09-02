@@ -14,8 +14,8 @@ import {
 } from "../../api/mcp";
 import type { CredentialStatus, UserSettings } from "../../api/types";
 import {
+  ActionButton,
   ActionRow,
-  Button,
   ErrorText,
   Hint,
   InlineConfirm,
@@ -23,6 +23,7 @@ import {
   TextField,
 } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import { useDeveloperMode } from "../../app/state/SettingsContext";
 
 export type McpSettingsProps = {
   settings: UserSettings | null;
@@ -56,6 +57,7 @@ export function McpSettings({
   onKpiAcquisitionEnabledChange,
 }: McpSettingsProps) {
   const { text } = useLocale();
+  const developerMode = useDeveloperMode();
   const configuredPort = settings?.mcp.port ?? DEFAULT_PORT;
   const writesEnabled = settings?.mcp.writesEnabled ?? false;
   const kpiAcquisitionEnabled = settings?.mcp.kpiAcquisitionEnabled ?? false;
@@ -131,7 +133,7 @@ export function McpSettings({
           ? text("Acquisition access is active.")
           : running
             ? text(
-                "Configured but unavailable — the two tokens collide; rotate one of them.",
+                "Configured but unavailable — both tokens are identical; regenerate one of them.",
               )
             : text("Configured — it activates when the server starts.");
 
@@ -241,7 +243,7 @@ export function McpSettings({
       <div className="mcp-enable-row">
         <label className="settings-toggle">
           <input
-            aria-label={text("Enable the server")}
+            aria-label={text("Let assistants connect")}
             checked={running}
             disabled={busy}
             onChange={(event) => toggleEnabled(event.target.checked)}
@@ -252,10 +254,10 @@ export function McpSettings({
             <span />
           </span>
           <span className="settings-toggle-label">
-            {text("Enable the server")}
+            {text("Let assistants connect")}
           </span>
         </label>
-        <span className="mcp-status" aria-label={text("Server status")}>
+        <span className="mcp-status" aria-label={text("Status")}>
           <StatusPill tone={running ? "ok" : "neutral"}>
             {running ? text("Active") : text("Stopped")}
           </StatusPill>
@@ -269,7 +271,7 @@ export function McpSettings({
       <div className="mcp-enable-row">
         <label className="settings-toggle">
           <input
-            aria-label={text("Allow write tools")}
+            aria-label={text("Allow the assistant to write")}
             checked={writesEnabled}
             onChange={(event) => onMcpWritesEnabledChange(event.target.checked)}
             role="switch"
@@ -279,18 +281,18 @@ export function McpSettings({
             <span />
           </span>
           <span className="settings-toggle-label">
-            {text("Allow write tools")}
+            {text("Allow the assistant to write")}
           </span>
         </label>
         <span className="mcp-status">
           <StatusPill tone={writesEnabled ? "warn" : "neutral"}>
-            {writesEnabled ? text("Writes on") : text("Read-only")}
+            {writesEnabled ? text("Can write") : text("Read only")}
           </StatusPill>
         </span>
       </div>
       <Hint>
         {text(
-          "Write tools require citations; deletes and settings stay UI-only. Off by default — an assistant can never turn this on itself.",
+          "Every write needs a citation; removing things and changing settings stay in the app. Off by default — an assistant can never turn this on itself.",
         )}
       </Hint>
 
@@ -299,7 +301,7 @@ export function McpSettings({
       <div className="mcp-enable-row">
         <label className="settings-toggle">
           <input
-            aria-label={text("Allow acquisition access")}
+            aria-label={text("Allow report-data processing")}
             checked={kpiAcquisitionEnabled}
             onChange={(event) =>
               onKpiAcquisitionEnabledChange(event.target.checked)
@@ -311,7 +313,7 @@ export function McpSettings({
             <span />
           </span>
           <span className="settings-toggle-label">
-            {text("Allow acquisition access")}
+            {text("Allow report-data processing")}
           </span>
         </label>
         <span className="mcp-status">
@@ -322,16 +324,16 @@ export function McpSettings({
       </div>
       <Hint>
         {text(
-          "A separate key for a report-ingest assistant: it sees only the KPI-ingest workflow, never notes, settings or deletes. Off = the key stops working entirely. The ingest tools themselves arrive in a later update.",
+          "A separate key for a report-ingest assistant: it sees only the report-data workflow (reading captured reports into numbers), never notes, settings or deletes. Off = the key stops working entirely. The ingest tools themselves arrive in a later update.",
         )}
       </Hint>
 
-      {/* Listen port — committed on blur, clamped to [1024, 65535] */}
+      {/* Port — committed on blur, clamped to [1024, 65535] */}
       <div className="mcp-port-field">
         <TextField
-          aria-label={text("Listen port")}
+          aria-label={text("Port")}
           inputMode="numeric"
-          label={text("Listen port")}
+          label={text("Port")}
           max={MAX_PORT}
           min={MIN_PORT}
           onBlur={commitPort}
@@ -339,14 +341,15 @@ export function McpSettings({
           type="number"
           value={portDraft}
         />
-        <Button
+        <ActionButton
+          kind="control"
           className="settings-link-button"
           disabled={configuredPort === DEFAULT_PORT}
           onClick={() => onMcpPortChange(DEFAULT_PORT)}
           variant="ghost"
         >
           {text("Reset to default port")}
-        </Button>
+        </ActionButton>
       </div>
       {portHint ? (
         <Hint>
@@ -373,14 +376,15 @@ export function McpSettings({
             readOnly
             value={revealedToken}
           />
-          <Button
+          <ActionButton
+            kind="control"
             aria-label={text("Copy token")}
             onClick={() => copy(revealedToken)}
             variant="action"
           >
             <Copy size={14} />
             {copied ? text("Copied") : text("Copy token")}
-          </Button>
+          </ActionButton>
           <Hint>
             {text(
               "This token is shown once. Copy it now — after you leave this screen it can only be revoked and regenerated, never shown again.",
@@ -390,30 +394,37 @@ export function McpSettings({
       ) : null}
 
       <ActionRow className="mcp-token-actions">
-        <Button disabled={busy} onClick={generate} variant="action">
+        <ActionButton
+          verb={configured ? "refresh" : "create"}
+          disabled={busy}
+          onClick={generate}
+          variant={configured ? "secondary" : "primary"}
+          data-ux-primary-action={configured ? undefined : "true"}
+        >
           <KeyRound size={14} />
           {configured ? text("Regenerate token") : text("Generate token")}
-        </Button>
+        </ActionButton>
         {configured && !confirmingRevoke ? (
-          <Button
+          <ActionButton
+            verb="remove"
             disabled={busy}
             onClick={() => setConfirmingRevoke(true)}
             variant="ghost"
           >
             <Trash2 size={14} />
-            {text("Revoke token")}
-          </Button>
+            {text("Remove token")}
+          </ActionButton>
         ) : null}
       </ActionRow>
       {confirmingRevoke ? (
         <InlineConfirm
-          confirmLabel={text("Revoke token")}
+          confirmLabel={text("Remove token")}
           disabled={busy}
           onCancel={() => setConfirmingRevoke(false)}
           onConfirm={revoke}
         >
           {text(
-            "Revoke this token? Any assistant using it stops working until you generate a new one.",
+            "Remove this token? Any assistant using it stops working until you generate a new one.",
           )}
         </InlineConfirm>
       ) : null}
@@ -438,14 +449,15 @@ export function McpSettings({
             readOnly
             value={revealedKpiToken}
           />
-          <Button
+          <ActionButton
+            kind="control"
             aria-label={text("Copy acquisition token")}
             onClick={() => copyKpi(revealedKpiToken)}
             variant="action"
           >
             <Copy size={14} />
             {kpiCopied ? text("Copied") : text("Copy token")}
-          </Button>
+          </ActionButton>
           <Hint>
             {text(
               "This token is shown once. Copy it now — after you leave this screen it can only be revoked and regenerated, never shown again.",
@@ -455,43 +467,46 @@ export function McpSettings({
       ) : null}
 
       <ActionRow className="mcp-token-actions">
-        <Button disabled={busy} onClick={generateKpi} variant="action">
+        <ActionButton verb={kpiConfigured ? "refresh" : "create"} disabled={busy} onClick={generateKpi} variant="secondary">
           <KeyRound size={14} />
           {kpiConfigured
             ? text("Regenerate acquisition token")
             : text("Generate acquisition token")}
-        </Button>
+        </ActionButton>
         {kpiConfigured && !confirmingKpiRevoke ? (
-          <Button
+          <ActionButton
+            verb="remove"
             disabled={busy}
             onClick={() => setConfirmingKpiRevoke(true)}
             variant="ghost"
           >
             <Trash2 size={14} />
-            {text("Revoke acquisition token")}
-          </Button>
+            {text("Remove acquisition token")}
+          </ActionButton>
         ) : null}
       </ActionRow>
       {confirmingKpiRevoke ? (
         <InlineConfirm
-          confirmLabel={text("Revoke acquisition token")}
+          confirmLabel={text("Remove acquisition token")}
           disabled={busy}
           onCancel={() => setConfirmingKpiRevoke(false)}
           onConfirm={revokeKpi}
         >
           {text(
-            "Revoke this token? Any ingest assistant using it stops working until you generate a new one.",
+            "Remove this token? Any ingest assistant using it stops working until you generate a new one.",
           )}
         </InlineConfirm>
       ) : null}
 
       {/* Connection snippets */}
       <h3>{text("Connect your assistant")}</h3>
-      <Hint>
-        {text(
-          "Add the server in Claude running on the same machine as this app (Windows). From WSL it works only with mirrored networking.",
-        )}
-      </Hint>
+      {developerMode ? (
+        <Hint>
+          {text(
+            "Add the server in Claude running on the same machine as this app (Windows). From WSL it works only with mirrored networking.",
+          )}
+        </Hint>
+      ) : null}
       <Hint>
         {text(
           "Example — check the exact command for your assistant's version.",
@@ -506,7 +521,8 @@ export function McpSettings({
           <span className="mcp-snippet-label">
             {text("Claude Code (HTTP)")}
           </span>
-          <Button
+          <ActionButton
+            kind="control"
             aria-label={`${text("Copy")} — ${text("Claude Code (HTTP)")}`}
             className="compact-button"
             onClick={() => copy(httpSnippet)}
@@ -514,7 +530,7 @@ export function McpSettings({
           >
             <Copy size={13} />
             {text("Copy")}
-          </Button>
+          </ActionButton>
         </div>
         <pre className="mcp-snippet" data-hscroll>
           <code>{httpSnippet}</code>
@@ -523,17 +539,23 @@ export function McpSettings({
 
       <div className="mcp-snippet-block">
         <div className="mcp-snippet-head">
-          <span className="mcp-snippet-label">{text("Stdio adapter")}</span>
-          <Button
-            aria-label={`${text("Copy")} — ${text("Stdio adapter")}`}
+          <span className="mcp-snippet-label">{text("Bridge command")}</span>
+          <ActionButton
+            kind="control"
+            aria-label={`${text("Copy")} — ${text("Bridge command")}`}
             className="compact-button"
             onClick={() => copy(stdioSnippet)}
             variant="ghost"
           >
             <Copy size={13} />
             {text("Copy")}
-          </Button>
+          </ActionButton>
         </div>
+        <Hint>
+          {text(
+            "Your assistant launches this command itself; it needs the port and the token.",
+          )}
+        </Hint>
         <pre className="mcp-snippet" data-hscroll>
           <code>{stdioSnippet}</code>
         </pre>
@@ -541,7 +563,7 @@ export function McpSettings({
 
       {error ? (
         <ErrorText>
-          {text("Server command failed")}: {error}
+          {text("Couldn't change the server setting")}: {error}
         </ErrorText>
       ) : null}
     </section>

@@ -10,8 +10,8 @@ export const plText: Record<string, string> = {
     "Któryś raport ma nieczytelną warstwę tekstową (niestandardowa czcionka), więc nie udało się odczytać tabeli akcjonariatu. Luka jest tu oznaczona, zamiast zgadywana.",
   "Speech-to-text for saved video sources. Set the Gemini API key in Credentials.":
     "Zamiana mowy na tekst dla zapisanych źródeł wideo. Klucz API Gemini ustawisz w Poświadczeniach.",
-  "Worker threads per lane. Worker counts apply on the next app launch.":
-    "Liczba wątków roboczych na tor. Zmiany działają po ponownym uruchomieniu aplikacji.",
+  "How many things run at once in the background. Applies after restart.":
+    "Ile rzeczy działa naraz w tle. Działa po ponownym uruchomieniu.",
   // Company health scores — Piotroski F / Altman Z″ (ADR 0083)
   "Company health": "Kondycja spółki",
   "Published-formula health scores over confirmed annual facts. Decision support only.":
@@ -384,16 +384,15 @@ export const plText: Record<string, string> = {
   "Recent evidence": "Najnowsze dowody",
   "Loading…": "Ładowanie…",
   "Data storage": "Przechowywanie danych",
-  "Advanced connection-pool tuning. Changes apply on the next app launch.":
-    "Zaawansowane strojenie puli połączeń. Zmiany działają po następnym uruchomieniu aplikacji.",
-  "Max connections": "Maks. połączeń",
-  "Busy timeout (ms)": "Limit zajętości (ms)",
-  "Acquire timeout (ms)": "Limit oczekiwania (ms)",
+  "How hard the app works on your data at once. Applies after restart.":
+    "Ile pracy naraz na Twoich danych. Działa po ponownym uruchomieniu.",
+  "Parallel work": "Praca równoległa",
+  "Wait when busy": "Czekaj, gdy zajęte",
+  "Wait to start": "Czekaj na start",
   "Reset to defaults": "Przywróć domyślne",
   "Background work": "Praca w tle",
-  "Source workers": "Wątki źródeł",
-  "Autopilot workers": "Wątki autopilota",
-  "AI workers": "Wątki AI",
+  "Source refreshes at once": "Odświeżeń źródeł naraz",
+  "Autopilot tasks at once": "Zadań autopilota naraz",
   "Max concurrent calls per AI provider": "Maks. równoległych wywołań na dostawcę AI",
   "Backups": "Kopie zapasowe",
   "Local data backups. Restore is applied on the next app launch.":
@@ -959,8 +958,8 @@ export const plText: Record<string, string> = {
   "Report history sweep": "Przegląd historii raportów",
   "Shareholder extraction": "Ekstrakcja akcjonariatu",
   "Management holdings extraction": "Ekstrakcja udziałów zarządu",
-  "Price history backfill": "Uzupełnianie historii cen",
-  "Report history backfill": "Uzupełnianie historii raportów",
+  "Price history fetch": "Pobranie historii cen",
+  "Report history fetch": "Pobranie historii raportów",
   "Fundamentals pull": "Pobranie danych fundamentalnych",
   "Autopilot stage": "Etap autopilota",
   "Source refresh": "Odświeżanie źródła",
@@ -1018,7 +1017,6 @@ export const plText: Record<string, string> = {
   "Authenticated Research": "Research uwierzytelniony",
   "Company Registry": "Rejestr spółek",
   "Public Page": "Strona publiczna",
-  "Public JSON": "Publiczny JSON",
   "Authenticated": "Uwierzytelnione",
   "Paywalled": "Za paywallem",
   "Public Web Page": "Publiczna strona WWW",
@@ -1039,7 +1037,7 @@ export const plText: Record<string, string> = {
   "YouTube transcription model": "Model transkrypcji YouTube",
   "YouTube transcription timeout": "Limit czasu transkrypcji YouTube",
   "YouTube transcription credentials": "Poświadczenia transkrypcji YouTube",
-  "Credential kind": "Rodzaj poświadczenia",
+  "Stored in": "Przechowywany w",
   "YouTube transcription disclosure": "Ujawnienie transkrypcji YouTube",
   "YouTube transcription scope": "Zakres transkrypcji YouTube",
   "Gemini is used only for YouTube transcription.": "Gemini jest używany tylko do transkrypcji YouTube.",
@@ -1047,18 +1045,18 @@ export const plText: Record<string, string> = {
   "General AI model": "Ogólny model AI",
   "General AI timeout": "Limit czasu ogólnego AI",
   "Scope": "Zakres",
-  "Gemini transcription model": "Model transkrypcji Gemini",
+  "Transcription quality": "Jakość transkrypcji",
   "Default": "Domyślne",
   "Cheapest supported": "Najtańszy obsługiwany",
-  "Gemini transcription timeout": "Limit czasu transkrypcji Gemini",
+  "Give up after": "Poddaj się po",
   "seconds": "sekund",
   "minutes": "minut",
   "Replace configured key": "Zastąp skonfigurowany klucz",
   "Paste API key": "Wklej klucz API",
   "Open Google AI Studio API keys page": "Otwórz stronę kluczy API Google AI Studio",
   "Development fallback is active through environment configuration.": "Fallback deweloperski jest aktywny przez konfigurację środowiska.",
-  "Credential check failed": "Sprawdzenie poświadczeń nie powiodło się",
-  "Credential command failed": "Polecenie poświadczeń nie powiodło się",
+  "Couldn't read the saved key": "Nie udało się odczytać zapisanego klucza",
+  "Couldn't save that setting": "Nie udało się zapisać ustawienia",
   "Gemini API key is required.": "Klucz API Gemini jest wymagany.",
   "Keyboard shortcuts": "Skróty klawiaturowe",
   "Shortcuts are ignored while typing in fields and editors.": "Skróty są ignorowane podczas pisania w polach i edytorach.",
@@ -1093,8 +1091,8 @@ export const plText: Record<string, string> = {
   "shiftKey": "Shift",
   "metaKey": "Meta",
   "Shortcut conflicts with another enabled action.": "Skrót koliduje z inną włączoną akcją.",
-  "Poll interval": "Interwał odpytywania",
-  "Settings source poll interval": "Interwał odpytywania źródeł w ustawieniach",
+  "Check every": "Sprawdzaj co",
+  "Settings source check interval": "Sprawdzanie źródeł w ustawieniach",
   "On": "Włączone",
   "Feed retention": "Retencja kanału",
   "Cleanup interval": "Interwał czyszczenia",
@@ -1161,7 +1159,6 @@ export const plText: Record<string, string> = {
   "License": "Licencja",
   "Configured": "Skonfigurowane",
   "Not configured": "Nieskonfigurowane",
-  "Credential status": "Status poświadczenia",
   "Clear": "Wyczyść",
   "API key": "Klucz API",
   "API Key": "Klucz API",
@@ -1455,7 +1452,7 @@ export const plText: Record<string, string> = {
   "To review": "Do przeglądu",
   "Coverage map": "Mapa pokrycia",
   "No report": "Brak raportu",
-  "not found in backfill": "nie znaleziono w backfillu",
+  "not found in the fetched history": "nie znaleziono w pobranej historii",
   "all validated": "wszystkie zwalidowane",
   "{v} validated · {n} flagged/divergent": "{v} zwalid. · {n} rozbieżnych",
   "not processed": "nieprzetworzony",
@@ -1484,10 +1481,10 @@ export const plText: Record<string, string> = {
   "Enable automation to extract history.": "Włącz automatyzację, aby czytać starsze raporty.",
   "Extracted {n} · skipped {m}": "Przeczytano {n} · pominięto {m}",
   "History sweep failed": "Przemiatanie historii nie powiodło się",
-  "Backfill failed": "Uzupełnianie nie powiodło się",
+  "History fetch failed": "Pobieranie historii nie powiodło się",
   // Card bfc4c98: NewConnect / unsupported-market backfill failure.
-  "Backfill isn't available for this company's market (NewConnect) yet":
-    "Uzupełnianie historii nie jest jeszcze dostępne dla rynku tej spółki (NewConnect)",
+  "History fetch isn't available for NewConnect companies yet":
+    "Pobieranie historii nie jest jeszcze dostępne dla spółek z NewConnect",
   "No Bankier page was found for this company": "Nie znaleziono strony Bankier dla tej spółki",
   "Couldn't reach Bankier — try again later": "Błąd połączenia z Bankier — spróbuj ponownie później",
   "The page was fetched but couldn't be read": "Pobrano stronę, ale nie udało się jej odczytać",
@@ -1507,10 +1504,10 @@ export const plText: Record<string, string> = {
   "History truncated at the page cap — older filings may be missing.":
     "Historia obcięta na limicie stron — starsze raporty mogą być niedostępne.",
   "link-only — no stored file": "tylko odnośnik — brak pliku",
-  "Backfill history depth": "Głębokość pobierania historii",
-  "Backfill depth presets": "Szybki wybór głębokości historii",
-  "Backfill history depth (slider)": "Głębokość pobierania historii (suwak)",
-  "Backfill history depth in years": "Głębokość pobierania historii w latach",
+  "How far back to fetch": "Jak daleko wstecz pobierać",
+  "History range presets": "Zakresy historii",
+  "How far back to fetch (slider)": "Jak daleko wstecz pobierać (suwak)",
+  "How far back to fetch (years)": "Jak daleko wstecz pobierać (lata)",
   "Years of company history to fetch (1–10).": "Lata historii spółki do pobrania (1–10).",
   // T5.3 (ADR 0077 §6): the history-sweep AI budget control (Settings → AI)
   // and its matching Coverage-footer readout.
@@ -1650,14 +1647,13 @@ export const plText: Record<string, string> = {
   "MCP server": "Serwer MCP",
   "Let an AI assistant read your research through the Model Context Protocol (MCP). The server runs on your machine only and stays off until you turn it on.":
     "Pozwól asystentowi AI czytać Twoje badania przez Model Context Protocol (MCP). Serwer działa wyłącznie na Twoim komputerze i pozostaje wyłączony, dopóki go nie włączysz.",
-  "Enable the server": "Włącz serwer",
-  "Server status": "Stan serwera",
+  "Let assistants connect": "Pozwól asystentom się łączyć",
   "Active": "Aktywny",
   "Stopped": "Zatrzymany",
-  "Allow write tools": "Zezwól na narzędzia zapisu",
-  "Allow acquisition access": "Zezwól na dostęp akwizycyjny",
-  "A separate key for a report-ingest assistant: it sees only the KPI-ingest workflow, never notes, settings or deletes. Off = the key stops working entirely. The ingest tools themselves arrive in a later update.":
-    "Osobny klucz dla asystenta wprowadzającego raporty: widzi wyłącznie proces wprowadzania KPI — nigdy notatek, ustawień ani usuwania. Wyłączony = klucz przestaje działać całkowicie. Same narzędzia wprowadzania pojawią się w kolejnej aktualizacji.",
+  "Allow the assistant to write": "Pozwól asystentowi zapisywać",
+  "Allow report-data processing": "Pozwól przetwarzać dane raportów",
+  "A separate key for a report-ingest assistant: it sees only the report-data workflow (reading captured reports into numbers), never notes, settings or deletes. Off = the key stops working entirely. The ingest tools themselves arrive in a later update.":
+    "Osobny klucz dla asystenta wprowadzającego raporty: widzi wyłącznie proces przetwarzania danych raportów (zamianę przechwyconych raportów na liczby) — nigdy notatek, ustawień ani usuwania. Wyłączony = klucz przestaje działać całkowicie. Same narzędzia wprowadzania pojawią się w kolejnej aktualizacji.",
   "Acquisition token": "Token akwizycyjny",
   "Credential unavailable": "Kredencjał niedostępny",
   "No acquisition token yet — generate one to hand an ingest assistant its own limited key.":
@@ -1665,21 +1661,21 @@ export const plText: Record<string, string> = {
   "Configured, disabled — turn the switch on to activate it.":
     "Skonfigurowany, wyłączony — włącz przełącznik, aby go aktywować.",
   "Acquisition access is active.": "Dostęp akwizycyjny jest aktywny.",
-  "Configured but unavailable — the two tokens collide; rotate one of them.":
-    "Skonfigurowany, ale niedostępny — oba tokeny kolidują; zrotuj jeden z nich.",
+  "Configured but unavailable — both tokens are identical; regenerate one of them.":
+    "Skonfigurowany, ale niedostępny — oba tokeny są identyczne; wygeneruj jeden z nich ponownie.",
   "Configured — it activates when the server starts.":
     "Skonfigurowany — aktywuje się po uruchomieniu serwera.",
   "Copy acquisition token": "Kopiuj token akwizycyjny",
   "Generate acquisition token": "Wygeneruj token akwizycyjny",
   "Regenerate acquisition token": "Wygeneruj nowy token akwizycyjny",
-  "Revoke acquisition token": "Unieważnij token akwizycyjny",
-  "Revoke this token? Any ingest assistant using it stops working until you generate a new one.":
-    "Unieważnić ten token? Każdy asystent wprowadzania, który go używa, przestanie działać, dopóki nie wygenerujesz nowego.",
-  "Writes on": "Zapis włączony",
-  "Read-only": "Tylko odczyt",
-  "Write tools require citations; deletes and settings stay UI-only. Off by default — an assistant can never turn this on itself.":
-    "Narzędzia zapisu wymagają cytowań; usuwanie i ustawienia pozostają wyłącznie w interfejsie. Domyślnie wyłączone — asystent nigdy nie włączy tego samodzielnie.",
-  "Listen port": "Port nasłuchu",
+  "Remove acquisition token": "Usuń token akwizycyjny",
+  "Remove this token? Any ingest assistant using it stops working until you generate a new one.":
+    "Usunąć ten token? Każdy asystent wprowadzania, który go używa, przestanie działać, dopóki nie wygenerujesz nowego.",
+  "Can write": "Może zapisywać",
+  "Read only": "Tylko odczyt",
+  "Every write needs a citation; removing things and changing settings stay in the app. Off by default — an assistant can never turn this on itself.":
+    "Każdy zapis wymaga cytatu; usuwanie i ustawienia zostają w aplikacji. Domyślnie wyłączone — asystent nigdy nie włączy tego samodzielnie.",
+  "Port": "Port",
   "Port must be a whole number between 1024 and 65535.":
     "Port musi być liczbą całkowitą od 1024 do 65535.",
   "The new port applies the next time the server starts.":
@@ -1691,25 +1687,27 @@ export const plText: Record<string, string> = {
     "Brak tokenu — wygeneruj go, aby asystent mógł się połączyć.",
   "Generate token": "Wygeneruj token",
   "Regenerate token": "Wygeneruj token ponownie",
-  "Revoke token": "Unieważnij token",
+  "Remove token": "Usuń token",
   "Copy": "Kopiuj",
   "Copied": "Skopiowano",
   "Copy token": "Kopiuj token",
   "This token is shown once. Copy it now — after you leave this screen it can only be revoked and regenerated, never shown again.":
     "Ten token jest pokazywany tylko raz. Skopiuj go teraz — po opuszczeniu tego ekranu można go jedynie unieważnić i wygenerować ponownie, nigdy pokazać.",
-  "Revoke this token? Any assistant using it stops working until you generate a new one.":
-    "Unieważnić ten token? Każdy asystent, który go używa, przestanie działać, dopóki nie wygenerujesz nowego.",
+  "Remove this token? Any assistant using it stops working until you generate a new one.":
+    "Usunąć ten token? Każdy asystent, który go używa, przestanie działać, dopóki nie wygenerujesz nowego.",
   "Connect your assistant": "Podłącz asystenta",
   "Add the server in Claude running on the same machine as this app (Windows). From WSL it works only with mirrored networking.":
     "Dodaj serwer w Claude uruchomionym na tym samym systemie co aplikacja (Windows). Z WSL zadziała tylko przy sieci lustrzanej (mirrored networking).",
   "Claude Code (HTTP)": "Claude Code (HTTP)",
-  "Stdio adapter": "Adapter stdio",
+  "Bridge command": "Polecenie mostka",
+  "Your assistant launches this command itself; it needs the port and the token.":
+    "Asystent uruchamia to polecenie sam; potrzebuje portu i tokenu.",
   "Example — check the exact command for your assistant's version.":
     "Przykład — sprawdź dokładne polecenie dla wersji Twojego asystenta.",
   "Paste the token where <token> appears.":
     "Wklej token w miejsce <token>.",
   "Server status check failed": "Sprawdzenie stanu serwera nie powiodło się",
-  "Server command failed": "Polecenie serwera nie powiodło się",
+  "Couldn't change the server setting": "Nie udało się zmienić ustawienia serwera",
   "Token command failed": "Polecenie tokenu nie powiodło się",
   // Price context section (v0.53 T5, ADR 0067)
   "Prices as of": "Ceny na dzień",
@@ -2187,4 +2185,21 @@ export const plText: Record<string, string> = {
   "Failed to check later weeks": "Nie udało się sprawdzić kolejnych tygodni",
   "Feed Item": "Wpis z kanału",
   "Official Report": "Raport oficjalny",
+  // ---- F4c Settings ----
+  // Settings language pass (docs/plans/f4c-contracts/s4-settings-pass-banner.md):
+  // net-new copy that has no earlier plText line to rename in place. The
+  // superseded baseline-only strings ("Log level", "Current level", "Rotation",
+  // "Local JSON logs only. No telemetry or remote upload.") are now dead —
+  // reported for the integrator to prune from untranslated-baseline.json.
+  "Detail level": "Poziom szczegółów",
+  "Errors only": "Tylko błędy",
+  "Warnings": "Ostrzeżenia",
+  "Normal": "Zwykły",
+  "Detailed": "Szczegółowy",
+  "Everything": "Wszystko",
+  "History kept": "Zachowana historia",
+  "Activity records stay on this computer. Nothing is sent anywhere.":
+    "Zapis aktywności zostaje na tym komputerze. Nic nie jest wysyłane.",
+  "MB": "MB",
+  // ---- /F4c Settings ----
 };

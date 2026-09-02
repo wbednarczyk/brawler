@@ -33,7 +33,7 @@ test("acquisition credential: UI renders, gate gates, scoped list is empty", asy
   await region.getByRole("button", { name: /MCP/ }).click();
 
   const gateToggle = region.getByRole("switch", {
-    name: /Allow acquisition access|Zezwól na dostęp akwizycyjny/,
+    name: /Allow report-data processing|Pozwól przetwarzać dane raportów/,
   });
   await expect(gateToggle).toBeVisible();
   await expect(
@@ -45,7 +45,7 @@ test("acquisition credential: UI renders, gate gates, scoped list is empty", asy
   });
 
   const serverRunning = await region
-    .getByRole("switch", { name: /Enable the server|Włącz serwer/ })
+    .getByRole("switch", { name: /Let assistants connect|Pozwól asystentom się łączyć/ })
     .isChecked();
   const gateWasOn = await gateToggle.isChecked();
 
@@ -56,7 +56,7 @@ test("acquisition credential: UI renders, gate gates, scoped list is empty", asy
     return;
   }
 
-  const portField = region.getByLabel(/Listen port|Port nasłuchu/);
+  const portField = region.getByLabel(/^Port$/);
   const port = Number.parseInt((await portField.inputValue()) || "8317", 10);
 
   // Enable the gate, mint an acquisition token, capture the one-time reveal.
@@ -101,7 +101,7 @@ test("acquisition credential: UI renders, gate gates, scoped list is empty", asy
     // the same label) and leave the gate exactly as found (off unless it was
     // on before the test).
     const revokeButtons = region.getByRole("button", {
-      name: /Revoke acquisition token|Unieważnij token akwizycyjny/,
+      name: /Remove acquisition token|Usuń token akwizycyjny/,
     });
     await revokeButtons.first().click();
     await revokeButtons.first().click();

@@ -23,8 +23,8 @@ export function TranscriptSettings({
       <h2 id="settings-transcripts-title">{text("Transcripts")}</h2>
       <FieldRow>
         <SelectField
-          aria-label={text("Gemini transcription model")}
-          label={text("Gemini transcription model")}
+          aria-label={text("Transcription quality")}
+          label={text("Transcription quality")}
           value={settings?.aiProviders.youtubeTranscriptionModel ?? "gemini-3.5-flash"}
           onChange={(event) => onYoutubeTranscriptionModelChange(event.target.value)}
         >
@@ -34,8 +34,8 @@ export function TranscriptSettings({
           <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
         </SelectField>
         <SelectField
-          aria-label={text("Gemini transcription timeout")}
-          label={text("Gemini transcription timeout")}
+          aria-label={text("Give up after")}
+          label={text("Give up after")}
           value={settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}
           onChange={(event) => onYoutubeTranscriptionTimeoutChange(Number(event.target.value))}
         >
