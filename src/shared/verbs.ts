@@ -9,6 +9,9 @@
 // F4b S1 (ADR 0104 dec. 3 amendment, 2026-08-30): `edit` (enter edit mode of
 // an existing record, persisted by a later `save`), `confirm`/`reject`
 // (accept/decline a proposed record — proposals only) join the dictionary.
+// F4c S1 (ADR 0104 dec. 3 amendment, 2026-09-02, #410 F4c): `link` (attach a
+// piece of evidence to a question) and `snooze` (defer a reminder) join the
+// dictionary for the Research language pass.
 export type Verb =
   | "open"
   | "apply"
@@ -25,7 +28,9 @@ export type Verb =
   | "resume"
   | "edit"
   | "confirm"
-  | "reject";
+  | "reject"
+  | "link"
+  | "snooze";
 
 export const VERB_LABELS: Record<Verb, { en: string; pl: string }> = {
   open: { en: "Open", pl: "Otwórz" },
@@ -44,4 +49,6 @@ export const VERB_LABELS: Record<Verb, { en: string; pl: string }> = {
   edit: { en: "Edit", pl: "Zmień" },
   confirm: { en: "Confirm", pl: "Potwierdź" },
   reject: { en: "Reject", pl: "Odrzuć" },
+  link: { en: "Link", pl: "Powiąż" },
+  snooze: { en: "Snooze", pl: "Odłóż" },
 };

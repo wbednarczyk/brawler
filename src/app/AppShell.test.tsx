@@ -104,11 +104,16 @@ describe("AppShell — exactly one aria-current across modes and pinned rows", (
 });
 
 // F4b S4 (contract § Decisions #1): Events and Report Season join the
-// Library nav — seven destinations in the documented order, both locales.
-describe("AppShell — Library group lists seven destinations in order, both locales", () => {
+// Library nav. F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 5,
+// plan § Decisions 4): Research joins next to Report Season (both "work"
+// surfaces; Transcripts/Sources stay last as utilities) — eight destinations
+// in the documented order, both locales. `nav.research` = "Research" in BOTH
+// locales (plText.ts:521 keeps the English name in PL). RED today — Research
+// is not yet a Library nav entry (`navigation.ts:88-92`); S3 adds it.
+describe("AppShell — Library group lists eight destinations in order, both locales", () => {
   const LIBRARY_ORDER = {
-    en: ["Companies", "Watchlists", "Alerts", "Events", "Report Season", "Transcripts", "Sources"],
-    pl: ["Spółki", "Listy", "Alerty", "Wydarzenia", "Sezon raportów", "Transkrypcje", "Źródła"],
+    en: ["Companies", "Watchlists", "Alerts", "Events", "Report Season", "Research", "Transcripts", "Sources"],
+    pl: ["Spółki", "Listy", "Alerty", "Wydarzenia", "Sezon raportów", "Research", "Transkrypcje", "Źródła"],
   } as const;
 
   it.each(["en", "pl"] as const)("%s", (locale) => {

@@ -35,7 +35,6 @@ const RAW_CATALOG = [
     figures: { selector: "[data-figure]", min: 3 },
   },
   { screen: "notebook-company", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },
-  { screen: "notebooks-global", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "claims", spec: "visual-notebook-claims.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "quality", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
   { screen: "report-documents", spec: "visual-quality-docs.spec.ts", states: ["default"], tiers: FULL_TIERS },
@@ -58,7 +57,13 @@ const RAW_CATALOG = [
     states: ["default"],
     tiers: M_ONLY,
   },
-  { screen: "research", spec: "visual-research-events.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  {
+    screen: "research",
+    spec: "visual-research-events.spec.ts",
+    states: ["default"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 4 },
+  },
   {
     screen: "events",
     spec: "visual-research-events.spec.ts",
@@ -103,7 +108,13 @@ const RAW_CATALOG = [
     // its segment count once expanded.
     figures: { selector: "[data-figure]", min: 2 },
   },
-  { screen: "settings", spec: "visual-utility.spec.ts", states: ["default"], tiers: FULL_TIERS },
+  {
+    screen: "settings",
+    spec: "visual-utility.spec.ts",
+    states: ["default"],
+    tiers: FULL_TIERS,
+    figures: { selector: "[data-figure]", min: 2 },
+  },
 ];
 
 /** Validates a catalog list: rejects duplicate or empty screen ids and entries with no states. */
