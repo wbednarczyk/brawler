@@ -21,6 +21,7 @@ import { ActionButton, ActionRow, ErrorText, PanelHeader } from "../../ui";
 import { AddQuestionDialog, AddReminderDialog } from "./ResearchDialogs";
 import { ResearchEvidencePanel } from "./ResearchEvidencePanel";
 import { ResearchFoldSection } from "./ResearchFoldSection";
+import { formatEvidenceTitle } from "./researchFormatters";
 import { ResearchQuestionsPanel } from "./ResearchQuestionsPanel";
 import { ResearchRemindersPanel } from "./ResearchRemindersPanel";
 import { ResearchScopeBar } from "./ResearchScopeBar";
@@ -217,6 +218,13 @@ export function ResearchScreen() {
         ? `${link.toType}:${link.toId}`
         : `${link.fromType}:${link.fromId}`,
     ),
+  );
+  // sol fix1 item 6: the linked-evidence removal chip's accessible name is
+  // the evidence's OWN title, not its type (two linked items of the same
+  // type used to collide on "Remove: <type>") — keyed the same way as
+  // `linkedEvidenceKeys` so a link resolves to its evidence item's title.
+  const evidenceTitleByKey = new Map(
+    items.map((item) => [`${item.evidenceType}:${item.sourceId}`, text(formatEvidenceTitle(item))]),
   );
   const visibleItems =
     mode === "watchlist" && selectedWatchlistCompany
@@ -416,6 +424,7 @@ export function ResearchScreen() {
                 <ResearchQuestionsPanel
                   canAdd={Boolean(selectedCompany)}
                   deleteQuestion={deleteQuestion}
+                  evidenceTitleByKey={evidenceTitleByKey}
                   onAdd={openQuestionDialog}
                   questionInFlight={questionInFlight}
                   questionLinks={questionLinks}

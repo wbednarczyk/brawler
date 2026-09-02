@@ -89,7 +89,7 @@ export const en = {
   "error.sourceRefreshFailed": "Source refresh failed",
   "Fundamentals": "Fundamentals",
   "History fetch": "History fetch",
-  "Backfilling…": "Backfilling…",
+  "Fetching history…": "Fetching history…",
   "History fetch failed": "History fetch failed",
   "Fetch the last ~3 years of reports and filings for this company.": "Fetch the last ~3 years of reports and filings for this company.",
   "pages fetched": "pages fetched",

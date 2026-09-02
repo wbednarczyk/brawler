@@ -83,10 +83,9 @@ export function ResearchEvidencePanel({
                   className={isSelected ? "research-company-queue-row selected" : "research-company-queue-row"}
                   key={company.id}
                 >
-                  <button
+                  <ActionButton
                     className="research-company-queue-select"
-                    data-action-kind="control"
-                    type="button"
+                    kind="control"
                     onClick={() => setSelectedWatchlistCompanyId(company.id)}
                   >
                     <span>
@@ -97,7 +96,7 @@ export function ResearchEvidencePanel({
                       {summary?.changedSinceReview ? <strong>{summary.changedSinceReview}</strong> : <strong>0</strong>}
                       {text("Changed")}
                     </span>
-                  </button>
+                  </ActionButton>
                   <ActionRow className="research-company-queue-actions">
                     <ActionButton
                       aria-label={`${text("Company")}: ${company.displayName}`}

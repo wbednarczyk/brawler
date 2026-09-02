@@ -504,7 +504,7 @@ describe("CompanyCoveragePanel", () => {
     const backfill = await screen.findByRole("button", { name: /Fetch older reports/ });
     await userEvent.click(backfill);
     // While in flight the button shows the running label and both actions disable.
-    expect(await screen.findByRole("button", { name: /Backfilling…/ })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: /Fetching history…/ })).toBeDisabled();
 
     resolveBackfill({
       companyId: "company_gpw_cdr",

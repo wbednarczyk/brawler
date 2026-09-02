@@ -105,6 +105,7 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
           feedItems={ctx.feedItems}
           initialSelectedFeedItemId={tool.feedItemId}
           leadWithDetail
+          onOpenTool={ctx.onOpenTool}
         />
       );
     case "dokumenty":
@@ -112,7 +113,7 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
       // 7): the target document scrolls into view + flashes once loaded.
       return <CompanyReportDocumentsPanel companyId={ctx.companyId} highlightDocumentRef={tool.documentId} />;
     case "feed":
-      return <CompanyFeedPanel company={ctx.company} feedItems={ctx.feedItems} />;
+      return <CompanyFeedPanel company={ctx.company} feedItems={ctx.feedItems} onOpenTool={ctx.onOpenTool} />;
     case "notatnik":
       // Deep-link navigation (F4c S2, ADR 0108 amendment): highlight an
       // existing entry or prefill the composer from an origin-attributed

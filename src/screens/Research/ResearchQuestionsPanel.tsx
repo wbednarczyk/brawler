@@ -14,6 +14,12 @@ type ResearchQuestionsPanelProps = {
   selectedQuestion: ResearchQuestion | null;
   selectedQuestionId: string | null;
   questionLinks: EvidenceLink[];
+  /** Linked evidence's own title, keyed `${evidenceType}:${sourceId}` (sol
+   * fix1 item 6) — the removal chip's accessible name reads the evidence's
+   * TITLE, not its type, so two linked items of the same type never collide
+   * on accessible name. Falls back to the type label if a link's evidence
+   * item isn't in the current timeline scope. */
+  evidenceTitleByKey: Map<string, string>;
   canAdd: boolean;
   questionInFlight: boolean;
   onAdd: () => void;
@@ -29,6 +35,7 @@ export function ResearchQuestionsPanel({
   selectedQuestion,
   selectedQuestionId,
   questionLinks,
+  evidenceTitleByKey,
   canAdd,
   questionInFlight,
   onAdd,
@@ -76,15 +83,14 @@ export function ResearchQuestionsPanel({
             className={question.id === selectedQuestionId ? "research-question-row selected" : "research-question-row"}
             key={question.id}
           >
-            <button
+            <ActionButton
               className="research-question-row-main"
-              data-action-kind="control"
-              type="button"
+              kind="control"
               onClick={() => setSelectedQuestionId(question.id)}
             >
               <strong>{question.title}</strong>
               <span>{text(formatQuestionStatus(question.status))}</span>
-            </button>
+            </ActionButton>
             {confirmDeleteQuestionId === question.id ? (
               <InlineConfirm
                 verb="remove"
@@ -131,12 +137,16 @@ export function ResearchQuestionsPanel({
             <div className="research-linked-evidence">
               <span>{text("Linked evidence")}</span>
               {questionLinks.map((link) => {
-                const linkType = text(
-                  formatEvidenceType(link.fromType === "research_question" ? link.toType : link.fromType),
-                );
+                const evidenceType = link.fromType === "research_question" ? link.toType : link.fromType;
+                const evidenceId = link.fromType === "research_question" ? link.toId : link.fromId;
+                // The evidence's own title (sol fix1 item 6) — falls back to
+                // its type only when the item isn't in the current timeline
+                // scope (should not happen in practice; never blank a name).
+                const linkTitle =
+                  evidenceTitleByKey.get(`${evidenceType}:${evidenceId}`) ?? text(formatEvidenceType(evidenceType));
                 return (
                   <ActionButton
-                    aria-label={`${text("Remove")}: ${linkType}`}
+                    aria-label={`${text("Remove")}: ${linkTitle}`}
                     key={link.id}
                     onClick={() => unlinkEvidence(link.id)}
                     verb="remove"

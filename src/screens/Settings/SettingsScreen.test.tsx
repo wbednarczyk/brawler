@@ -367,6 +367,24 @@ describe("Settings screen workflows", () => {
     });
 
     const databaseSection = within(settingsRegion).getByRole("region", { name: "Data storage" });
+
+    // sol fix1 item 2: option labels read as seconds ("1 s" … "60 s") while
+    // the persisted/committed value stays the raw millisecond figure the
+    // API expects — selecting the seconds-labelled option must still emit
+    // the millisecond number, never the display string.
+    await user.selectOptions(within(databaseSection).getByLabelText("Wait when busy"), "1 s");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { dbBusyTimeoutMs: 1000 },
+    });
+    await user.selectOptions(within(databaseSection).getByLabelText("Wait to start"), "30 s");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { dbAcquireTimeoutMs: 30000 },
+    });
+
+    // The Data storage tab now carries at least two `Figure` values (the
+    // busy/acquire timeouts, summarized in seconds below the selects).
+    expect(databaseSection.querySelectorAll("[data-figure]").length).toBeGreaterThanOrEqual(2);
+
     await user.click(within(databaseSection).getByRole("button", { name: "Reset to defaults" }));
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 },

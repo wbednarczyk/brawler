@@ -365,7 +365,7 @@ export function CompanyCoveragePanel({
   // Lean status line (ADR 0077 §3, T3.2): backfill phase while backfilling, then the
   // sweep status. `automation_off` is explicit, never a silent skip.
   const statusLabel = (): string | null => {
-    if (backfilling) return text("Backfilling…");
+    if (backfilling) return text("Fetching history…");
     if (sweeping) return extractingLabel();
     if (reextracting) return reextractingLabel();
     if (modeOff) return text("Automation off");
@@ -682,7 +682,7 @@ export function CompanyCoveragePanel({
             onClick={runBackfill}
           >
             <History size={15} aria-hidden="true" />
-            {backfilling ? text("Backfilling…") : text("Fetch older reports")}
+            {backfilling ? text("Fetching history…") : text("Fetch older reports")}
           </Button>
           <Button
             variant="secondary"

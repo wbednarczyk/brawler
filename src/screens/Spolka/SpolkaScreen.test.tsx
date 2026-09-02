@@ -634,4 +634,44 @@ describe("SpolkaScreen", () => {
     expect(detail.compareDocumentPosition(firstRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // sol fix1 item 3: the F3a "cross-screen actions omitted" comment no
+  // longer holds — the feed panel already knows its OWN company, so a note
+  // draft lands in the SAME company's `notatnik` tool (no cross-screen jump).
+  it("a feed item's Note action opens the notatnik tool prefilled with its draft", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    const feedItem: FeedItem = {
+      id: "feed_0",
+      company: company.qualifiedTicker,
+      type: "Official report",
+      source: "GPW ESPI/EBI",
+      time: "Today 09:12",
+      title: "Report 0",
+      unread: false,
+      saved: false,
+      sourceUrl: "https://example.test/feed/0",
+      language: "pl",
+      publishedAt: "2026-08-20T09:00:00Z",
+      fetchedAt: "2026-08-20T09:00:00Z",
+      attribution: "GPW",
+      summary: "Sample feed item summary.",
+      bodyText: "Body text.",
+      attachments: [],
+      presentationKind: "report",
+    };
+    renderScreen({ feedItems: [feedItem] });
+    await screen.findByText("CD Projekt");
+
+    await user.click(screen.getAllByRole("button", { name: /Report 0/ })[0]);
+    const feedItemFrame = await screen.findByRole("group", { name: "Workshop tool" });
+    expect(feedItemFrame.getAttribute("data-tool")).toBe("feedItem");
+
+    await user.click(within(feedItemFrame).getByRole("button", { name: "Note" }));
+
+    const notatnikFrame = await screen.findByRole("group", { name: "Workshop tool" });
+    expect(notatnikFrame.getAttribute("data-tool")).toBe("notatnik");
+    expect(
+      within(notatnikFrame).getByLabelText<HTMLInputElement>("Notebook note title").value,
+    ).toBe("Report 0");
+  });
 });

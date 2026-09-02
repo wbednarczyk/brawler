@@ -1,5 +1,5 @@
 import type { Company, FeedItem } from "../api/types";
-import type { NotebookToolIntent } from "../screens/Spolka/route";
+import type { NotebookDraft, NotebookToolIntent } from "../screens/Spolka/route";
 import { notebookTagFromFeedValue } from "./notebookForms";
 
 // Shared root for every render site (Inbox, Spółka, Company feed): a
@@ -11,6 +11,37 @@ export function feedItemSummary(item: FeedItem) {
     return "";
   }
   return item.summary.trim() || item.title;
+}
+
+// The origin-attributed draft a feed item seeds into the `notatnik` composer
+// (F4c S2). Extracted so both the cross-company entry point below
+// (`openFeedItemNoteDraft`, which still needs to LOCATE the item's company)
+// and a same-company caller that already knows its company (the Spółka feed
+// tool, sol fix1 item 3) build the identical draft shape — never two forks
+// of this origin-attribution logic.
+export function buildFeedItemNoteDraft(item: FeedItem): NotebookDraft {
+  return {
+    form: {
+      title: item.title,
+      body: item.bodyText || feedItemSummary(item),
+      tags: ["feed", notebookTagFromFeedValue(item.type), notebookTagFromFeedValue(item.source)]
+        .filter(Boolean)
+        .join(", "),
+      kind: "observation",
+      claimStatus: "",
+      eventDate: "",
+      followUpAfter: "",
+      followUpDate: "",
+    },
+    origins: [
+      {
+        sourceType: "feed_item",
+        sourceId: item.id,
+        sourceUrl: item.sourceUrl,
+        label: `${item.source}: ${item.title}`,
+      },
+    ],
+  };
 }
 
 type NotebookControllerInput = {
@@ -39,30 +70,7 @@ export function useNotebookController({ companies, navigateToCompanyNotebook }: 
       return;
     }
 
-    navigateToCompanyNotebook(company.id, {
-      draft: {
-        form: {
-          title: item.title,
-          body: item.bodyText || feedItemSummary(item),
-          tags: ["feed", notebookTagFromFeedValue(item.type), notebookTagFromFeedValue(item.source)]
-            .filter(Boolean)
-            .join(", "),
-          kind: "observation",
-          claimStatus: "",
-          eventDate: "",
-          followUpAfter: "",
-          followUpDate: "",
-        },
-        origins: [
-          {
-            sourceType: "feed_item",
-            sourceId: item.id,
-            sourceUrl: item.sourceUrl,
-            label: `${item.source}: ${item.title}`,
-          },
-        ],
-      },
-    });
+    navigateToCompanyNotebook(company.id, { draft: buildFeedItemNoteDraft(item) });
   }
 
   return {

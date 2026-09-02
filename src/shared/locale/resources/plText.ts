@@ -389,6 +389,10 @@ export const plText: Record<string, string> = {
   "Parallel work": "Praca równoległa",
   "Wait when busy": "Czekaj, gdy zajęte",
   "Wait to start": "Czekaj na start",
+  // Seconds unit suffix (sol fix1 item 2, Figure composition) — identical
+  // abbreviation in both languages, listed explicitly so it never lands in
+  // the untranslated-copy ratchet.
+  "s": "s",
   "Reset to defaults": "Przywróć domyślne",
   "Background work": "Praca w tle",
   "Source refreshes at once": "Odświeżeń źródeł naraz",
@@ -1468,7 +1472,7 @@ export const plText: Record<string, string> = {
     "Pobieranie przynosi raporty, których Brawler jeszcze nie ma; czytanie zamienia zapisane raporty w liczby.",
   "Show the unnamed positions": "Pokaż nienazwane pozycje",
   "Hide the unnamed positions": "Ukryj nienazwane pozycje",
-  "Backfilling…": "Pobieranie…",
+  "Fetching history…": "Pobieranie historii…",
   "Extracting…": "Czytanie…",
   "Queued": "W kolejce",
   "Automation off": "Automatyzacja wyłączona",
@@ -1646,25 +1650,25 @@ export const plText: Record<string, string> = {
   "Stopped": "Zatrzymany",
   "Allow the assistant to write": "Pozwól asystentowi zapisywać",
   "Allow report-data processing": "Pozwól przetwarzać dane raportów",
-  "A separate key for a report-ingest assistant: it sees only the report-data workflow (reading captured reports into numbers), never notes, settings or deletes. Off = the key stops working entirely. The ingest tools themselves arrive in a later update.":
-    "Osobny klucz dla asystenta wprowadzającego raporty: widzi wyłącznie proces przetwarzania danych raportów (zamianę przechwyconych raportów na liczby) — nigdy notatek, ustawień ani usuwania. Wyłączony = klucz przestaje działać całkowicie. Same narzędzia wprowadzania pojawią się w kolejnej aktualizacji.",
-  "Acquisition token": "Token akwizycyjny",
+  "A separate key for a report-data assistant: it sees only the report-data workflow (reading captured reports into numbers), never notes, settings or deletes. Off = the key stops working entirely. The report-data tools themselves arrive in a later update.":
+    "Osobny klucz dla asystenta danych raportów: widzi wyłącznie proces przetwarzania danych raportów (zamianę przechwyconych raportów na liczby) — nigdy notatek, ustawień ani usuwania. Wyłączony = klucz przestaje działać całkowicie. Same narzędzia danych raportów pojawią się w kolejnej aktualizacji.",
+  "Report-data token": "Token do danych raportów",
   "Credential unavailable": "Kredencjał niedostępny",
-  "No acquisition token yet — generate one to hand an ingest assistant its own limited key.":
-    "Brak tokenu akwizycyjnego — wygeneruj go, aby dać asystentowi wprowadzania własny, ograniczony klucz.",
+  "No report-data token yet — generate one to hand a report-data assistant its own limited key.":
+    "Brak tokenu do danych raportów — wygeneruj go, aby dać asystentowi danych raportów własny, ograniczony klucz.",
   "Configured, disabled — turn the switch on to activate it.":
     "Skonfigurowany, wyłączony — włącz przełącznik, aby go aktywować.",
-  "Acquisition access is active.": "Dostęp akwizycyjny jest aktywny.",
+  "Report-data access is active.": "Dostęp do danych raportów jest aktywny.",
   "Configured but unavailable — both tokens are identical; regenerate one of them.":
     "Skonfigurowany, ale niedostępny — oba tokeny są identyczne; wygeneruj jeden z nich ponownie.",
   "Configured — it activates when the server starts.":
     "Skonfigurowany — aktywuje się po uruchomieniu serwera.",
-  "Copy acquisition token": "Kopiuj token akwizycyjny",
-  "Generate acquisition token": "Wygeneruj token akwizycyjny",
-  "Regenerate acquisition token": "Wygeneruj nowy token akwizycyjny",
-  "Remove acquisition token": "Usuń token akwizycyjny",
-  "Remove this token? Any ingest assistant using it stops working until you generate a new one.":
-    "Usunąć ten token? Każdy asystent wprowadzania, który go używa, przestanie działać, dopóki nie wygenerujesz nowego.",
+  "Copy report-data token": "Kopiuj token do danych raportów",
+  "Generate report-data token": "Wygeneruj token do danych raportów",
+  "Regenerate report-data token": "Wygeneruj nowy token do danych raportów",
+  "Remove report-data token": "Usuń token do danych raportów",
+  "Remove this token? Any report-data assistant using it stops working until you generate a new one.":
+    "Usunąć ten token? Każdy asystent danych raportów, który go używa, przestanie działać, dopóki nie wygenerujesz nowego.",
   "Can write": "Może zapisywać",
   "Read only": "Tylko odczyt",
   "Every write needs a citation; removing things and changing settings stay in the app. Off by default — an assistant can never turn this on itself.":

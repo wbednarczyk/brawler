@@ -61,6 +61,7 @@ describe("ResearchQuestionsPanel focus-after-delete", () => {
         selectedQuestion={null}
         selectedQuestionId={null}
         questionLinks={[]}
+        evidenceTitleByKey={new Map()}
         canAdd
         questionInFlight={false}
         onAdd={() => {}}

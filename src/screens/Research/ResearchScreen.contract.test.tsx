@@ -14,7 +14,7 @@ import {
   makeResearchEvidenceItem,
   makeWatchlist,
 } from "../../test/scenarios/entities";
-import type { ResearchEvidenceItem, ResearchQuestion, ResearchReminder } from "../../api/researchTypes";
+import type { EvidenceLink, ResearchEvidenceItem, ResearchQuestion, ResearchReminder } from "../../api/researchTypes";
 
 // F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 4, plan §
 // Decisions 4): contract for the Research language pass — S3 makes every
@@ -101,6 +101,10 @@ const LABELS = {
     reopenQuestion: "Reopen",
     clearSelection: "Clear selection",
     linkToQuestion: "Link to question",
+    // sol fix1 item 6: the linked-evidence removal chip — bare "Remove", the
+    // TITLE suffix (not the type) is what keeps two same-type linked rows
+    // from colliding on accessible name (dense state below).
+    removeLinkedEvidence: "Remove",
   },
   pl: {
     refresh: "Odśwież",
@@ -136,6 +140,7 @@ const LABELS = {
     // Unchanged (plText.ts:567) — only the `kind` (unclassified → control) changes.
     clearSelection: "Wyczyść wybór",
     linkToQuestion: "Powiąż z pytaniem",
+    removeLinkedEvidence: "Usuń",
   },
 } as const;
 
@@ -226,7 +231,12 @@ function evidenceRowInventory(
 
 async function openResearch(
   locale: Locale,
-  overrides: { reminders?: ResearchReminder[]; questions?: ResearchQuestion[]; evidence?: ResearchEvidenceItem[] } = {},
+  overrides: {
+    reminders?: ResearchReminder[];
+    questions?: ResearchQuestion[];
+    evidence?: ResearchEvidenceItem[];
+    evidenceLinks?: EvidenceLink[];
+  } = {},
 ) {
   appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
   appTestState.researchRemindersResponse = overrides.reminders ?? [reminderFixture];
@@ -234,8 +244,9 @@ async function openResearch(
   appTestState.researchEvidenceItemsResponse = overrides.evidence ?? [evidenceFixture];
   // No pre-seeded evidence link matches this question (filtered by
   // endpointId already), but clearing it keeps the state deterministic
-  // rather than relying on that incidental non-match.
-  appTestState.evidenceLinksResponse = [];
+  // rather than relying on that incidental non-match — unless a state
+  // deliberately links evidence to the selected question (sol fix1 item 6).
+  appTestState.evidenceLinksResponse = overrides.evidenceLinks ?? [];
   renderApp({ section: "Research" });
   const region = await screen.findByRole("region", { name: REGION_NAME });
   // Anchor the wait on the evidence row, not the question title — the
@@ -370,13 +381,67 @@ describe("Research action inventory (F4c contract § Research, plan dec. 4)", ()
 // (`reminderRowInventory` et al. above) is what keeps repeated "Snooze"/
 // "Open"/"Open source" actions apart; this is the guard that would catch a
 // regression back to bare labels.
+// sol fix1 item 6: the Research query scopes evidence to the SELECTED
+// company (`buildTimeline`'s `companyMatches`, `src/test/scenarios/runtime.ts:329-331`
+// — a real filter the mock reproduces), so `evidenceFixture2`/`3` (pkn/kgh)
+// never enter this "company" mode state's timeline and can't stand in for a
+// second linked row. A second `cdr`-scoped item with the SAME (default)
+// `evidenceType` gives the linked-evidence removal chip two same-type rows
+// against the auto-selected `questionFixture`. A type-based accessible name
+// (the pre-fix bug) would render both chips as "Remove: Feed item" and fail
+// the uniqueness assertion below; the title-based name (the fix) keeps them
+// apart because the two items' titles differ.
+const evidenceFixtureCdr2: ResearchEvidenceItem = {
+  ...makeResearchEvidenceItem(cdr),
+  id: "evidence_sample_cdr_2",
+  sourceId: "feed_sample_cdr_1",
+  title: `${cdr.name} second evidence on the timeline`,
+};
+
+const questionEvidenceLinks: EvidenceLink[] = [
+  {
+    id: "evlink_dense_1",
+    fromType: "research_question",
+    fromId: questionFixture.id,
+    toType: evidenceFixture.evidenceType,
+    // A link's `toId`/`fromId` are the evidence's DOMAIN source id
+    // (`sourceId`), not the synthetic timeline-row `id` — mirrors
+    // `linkedEvidenceKeys`/`canLink` (ResearchScreen.tsx, ResearchEvidencePanel.tsx).
+    toId: evidenceFixture.sourceId,
+    relationType: "cites",
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: "evlink_dense_2",
+    fromType: "research_question",
+    fromId: questionFixture.id,
+    toType: evidenceFixtureCdr2.evidenceType,
+    toId: evidenceFixtureCdr2.sourceId,
+    relationType: "cites",
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+];
+
 describe("Research action inventory — dense state, accessible-name uniqueness (sol R2 amendment)", () => {
   it.each(LOCALES)("no two buttons share an accessible name (%s)", async (locale) => {
     const region = await openResearch(locale, {
       reminders: [reminderFixture, reminderFixtureClosed],
       questions: [questionFixture, questionFixture2],
-      evidence: [evidenceFixture, evidenceFixture2, evidenceFixture3],
+      evidence: [evidenceFixture, evidenceFixtureCdr2, evidenceFixture2, evidenceFixture3],
+      evidenceLinks: questionEvidenceLinks,
     });
+
+    const t = LABELS[locale];
+    // The links effect fetches asynchronously once the question auto-selects
+    // (useResearchController.ts, keyed on `selectedResearchQuestionId`) — the
+    // chips land a tick after `openResearch` resolves.
+    expect(
+      await within(region).findByRole("button", { name: `${t.removeLinkedEvidence}: ${evidenceFixture.title}` }),
+    ).toBeInTheDocument();
+    expect(
+      within(region).getByRole("button", { name: `${t.removeLinkedEvidence}: ${evidenceFixtureCdr2.title}` }),
+    ).toBeInTheDocument();
+
     const names = collectActionInventory(region, locale).map((entry) => entry.name);
     expect(new Set(names).size).toBe(names.length);
   });

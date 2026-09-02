@@ -398,6 +398,14 @@
     {
       "token": "Notebooks Screen",
       "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "Notebooks screen",
+      "adr": "ADR 0108 amendment (#410 F4c)",
+      "allow": [
+        "docs/product-spec.md",
+        "docs/ui-information-architecture.md"
+      ]
     }
   ]
 }
