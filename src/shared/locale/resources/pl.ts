@@ -67,8 +67,6 @@ export const pl: LocaleResources = {
   "watchlists.description": "Grupy spółek, po których filtrujesz Dziś, Inbox i Sezon raportów. Spółka może być na kilku listach.",
   "alerts.title": "Alerty",
   "alerts.description": "Reguły tego, o czym chcesz wiedzieć, oraz alerty, które już się uruchomiły.",
-  "notebooks.title": "Notatniki",
-  "notebooks.description": "Notatki badawcze uporządkowane według spółek.",
   "events.title": "Wydarzenia",
   "events.description": "Kalendarz wydarzeń spółek z obserwowanych list.",
   "sources.title": "Źródła",

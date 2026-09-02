@@ -101,8 +101,6 @@ const SCREEN_PALETTE_ENTRIES: ReadonlyArray<{ section: Section; labelText: strin
   { section: "Research", labelText: "Research", actionKey: "screen.open.research" },
   { section: "Events", labelText: "Events", actionKey: "screen.open.events" },
   { section: "ReportSeason", labelText: "Report Season", actionKey: "screen.open.reportSeason" },
-  { section: "Notebooks", labelText: "Notebooks", actionKey: "screen.open.notebooks" },
-  { section: "Journal", labelText: "Decision journal", actionKey: "screen.open.journal" },
 ];
 
 /** Builds AppShell's app-level palette commands — a pure function (no React)
@@ -227,7 +225,6 @@ export function AppShell({
     "app.openInbox": () => setActiveSection("Inbox"),
     "app.openCompanies": () => setActiveSection("Companies"),
     "app.openWatchlists": () => setActiveSection("Watchlists"),
-    "app.openNotebooks": () => setActiveSection("Notebooks"),
     "app.openEvents": () => setActiveSection("Events"),
     "app.openTranscripts": () => setActiveSection("Transcripts"),
     "app.openSources": () => setActiveSection("Sources"),
@@ -261,8 +258,6 @@ export function AppShell({
     "company.previousCompany": shortcutActions["company.previousCompany"],
     "company.nextTab": shortcutActions["company.nextTab"],
     "company.previousTab": shortcutActions["company.previousTab"],
-    "notebook.editSelected": shortcutActions["notebook.editSelected"],
-    "notebook.saveCurrent": shortcutActions["notebook.saveCurrent"],
   }), [
     dbRefreshState,
     refreshDatabaseBackedViews,

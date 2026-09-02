@@ -1,5 +1,4 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { openScreen } from "./helpers/harness";
 
 test.describe("browser UI regression smoke", () => {
   test("keeps app chrome fixed and avoids a global application scrollbar", async ({ page }) => {
@@ -30,8 +29,8 @@ test.describe("browser UI regression smoke", () => {
 
     // The sidebar destinations whose screen heading matches the nav label (ADR
     // 0054). The retired cockpit's hosted screens (ADR 0108) are walked by
-    // smoke-walk / screen-walk-extended instead; Notebooks/Research/Events/
-    // ReportSeason are no longer sidebar buttons.
+    // smoke-walk / screen-walk-extended instead; Research/Events/ReportSeason
+    // are no longer sidebar buttons.
     for (const screenName of [
       "Today",
       "Companies",
@@ -113,33 +112,6 @@ test.describe("browser UI regression smoke", () => {
       scrollWidth: element.scrollWidth,
     }));
     expect(gridScroll.scrollWidth).toBeLessThanOrEqual(gridScroll.clientWidth + 1);
-  });
-
-  test("keeps the notebook panes independently usable as a standalone screen", async ({ page }) => {
-    // Notebooks moved off the sidebar (ADR 0054); F3a S3 (ADR 0107 decision 5)
-    // then froze the cockpit's "Add panel" surface that used to host it as a
-    // dashboard tab, and ADR 0108 retired the cockpit outright — it's a
-    // standalone route now, reached via the ⌘K
-    // palette's "Open screen: Notebooks" entry, mounted full-screen in
-    // `.workspace`.
-    await openApp(page);
-    await openScreen(page, "Notebooks");
-
-    const workspace = page.getByLabel("Notebooks workspace");
-    const companyNav = page.getByLabel("Notebook companies");
-
-    // The screen mounts cleanly and stays usable at any pane width. At L (≥760)
-    // the three panes scroll independently; below L the density contract (ADR
-    // 0076 D6, U7) stacks them into one column and the SCREEN becomes the
-    // bounded scroll container, so per-pane scrollability is tier-dependent.
-    await expect(workspace).toBeVisible();
-    await expect(companyNav).toBeVisible();
-    const paneWidth = await page.locator(".workspace").evaluate((el) => el.clientWidth);
-    if (paneWidth >= 760) {
-      await expectScrollable(companyNav);
-    } else {
-      await expectScrollable(page.locator(".notebooks-screen"));
-    }
   });
 
   test("keeps Sources rows compact and expanded rows readable", async ({ page }) => {

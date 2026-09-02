@@ -4,7 +4,6 @@ import * as transcriptsApi from "../api/transcripts";
 import type {
   Company,
   CredentialStatus,
-  NotebookEntry,
   TranscriptJob,
   TranscriptSegment,
   UserSettings,
@@ -15,16 +14,18 @@ import type { DbRefreshState } from "./appTypes";
 import { emptyNotebookForm } from "./notebookForms";
 import { emptyTranscriptJobForm, uniqueTranscriptJobs } from "./transcriptForms";
 import type { NotebookForm } from "../shared/types/notebook";
+import type { NotebookToolIntent } from "../screens/Spolka/route";
 
 type TranscriptControllerInput = {
   geminiCredentialStatus: CredentialStatus | null;
-  refreshNotebookEntries: (companyId: string) => Promise<void>;
+  // The ONE landing point for the Spółka `notatnik` tool (F4c S2, ADR 0108
+  // amendment, sol re-review): company + section + tool as ONE guarded
+  // transition (`useSpolkaNavigate`), never `spolkaTool.openTool`. A note
+  // created from a transcript selection lands there, highlighted.
+  navigateToCompanyNotebook: (companyId: string, intent: NotebookToolIntent) => void;
   selectedTranscriptJobId: string | null;
   selectedTranscriptSegmentIdsByJobId: Record<string, string[]>;
   settings: UserSettings | null;
-  setNotebookEntries: Dispatch<SetStateAction<NotebookEntry[]>>;
-  setSelectedNotebookCompanyId: Dispatch<SetStateAction<string | null>>;
-  setSelectedNotebookScreenEntryId: Dispatch<SetStateAction<string | null>>;
   setSelectedTranscriptJobId: Dispatch<SetStateAction<string | null>>;
   setSelectedTranscriptSegmentIdsByJobId: Dispatch<SetStateAction<Record<string, string[]>>>;
   setTranscriptDeleteInFlight: Dispatch<SetStateAction<string | null>>;
@@ -65,13 +66,10 @@ function withoutKey<T>(record: Record<string, T>, key: string) {
 
 export function useTranscriptController({
   geminiCredentialStatus,
-  refreshNotebookEntries,
+  navigateToCompanyNotebook,
   selectedTranscriptJobId,
   selectedTranscriptSegmentIdsByJobId,
   settings,
-  setNotebookEntries,
-  setSelectedNotebookCompanyId,
-  setSelectedNotebookScreenEntryId,
   setSelectedTranscriptJobId,
   setSelectedTranscriptSegmentIdsByJobId,
   setTranscriptDeleteInFlight,
@@ -396,12 +394,6 @@ export function useTranscriptController({
       },
     })
       .then((created) => {
-        setNotebookEntries((current) => [
-          created,
-          ...current.filter((entry) => entry.id !== created.id),
-        ]);
-        setSelectedNotebookCompanyId(companyId);
-        setSelectedNotebookScreenEntryId(created.id);
         setTranscriptNoteDraftJobId(null);
         setTranscriptNoteForm(emptyNotebookForm());
         setTranscriptNoteErrorByJobId((current) => ({
@@ -412,7 +404,7 @@ export function useTranscriptController({
           ...current,
           [job.id]: [],
         }));
-        void refreshNotebookEntries(companyId);
+        navigateToCompanyNotebook(companyId, { entryId: created.id });
       })
       .catch((error) => {
         setTranscriptNoteErrorByJobId((current) => ({

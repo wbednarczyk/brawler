@@ -52,13 +52,10 @@ function nav(page: Page) {
 
 // Reference opener: the company Notebook tool owns the "existing container
 // query" the Notebook contract row references — the `.notebook-workspace`
-// list∥detail grid in CompanyNotebookSection. NOTE: the palette's global "Open
-// screen: Notebooks" entry opens the GLOBAL NotebooksScreen (a rigid 3-column
-// grid with no container query yet — its contract is a separate cluster task),
-// so the tier behavior is exercised through the Spółka screen's "notatnik"
-// workshop tool instead (F3a S2/S3, ADR 0107), which hosts the SAME
-// `CompanyNotebookPanel` (and its notebook-shared.css query) the retired
-// cockpit's "Notebook" panel used (ADR 0108).
+// list∥detail grid in CompanyNotebookSection. The tier behavior is exercised
+// through the Spółka screen's "notatnik" workshop tool (F3a S2/S3, ADR 0107;
+// the Notebooks-global screen it once shared this contract with retired in
+// F4c S2, ADR 0108 amendment — every deep link now lands here too).
 async function openCompanyNotebook(page: Page): Promise<PaneLocator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.getByRole("button", { name: "Open GPW:CDR" }).click();

@@ -225,7 +225,8 @@ Flow:
 3. The entry appears in the company's chronological list (by decided_at) and joins the company research timeline.
 4. Selecting an entry, the user links supporting evidence — feed items, notes, claims, or events from the company timeline — to the decision.
 5. To correct or revise a past decision, the user records a **Supersede** follow-up (a new entry linked back to the superseded one); the original is never edited or deleted.
-6. Across companies, the user reviews the **global decision journal** ("Journal (all companies)") chronologically, filtered by decision kind and company.
+
+The cross-company global decision journal retired 2026-09-02 (F4c S2, ADR 0108 amendment: 2 entries in 3 months, no real cross-company review use); the per-company tool is the only decision-journal surface, and agent reads across companies stay on MCP.
 
 Acceptance criteria:
 
@@ -349,7 +350,7 @@ Acceptance criteria:
 
 - Searching a known phrase from feed, note, and transcript content returns it and navigates correctly.
 - Results are ranked and grouped by content type with a snippet.
-- The per-workspace search/filter inputs (Inbox, Companies, Notebooks) still work independently.
+- The per-workspace search/filter inputs (Inbox, Companies) still work independently.
 - Search copy is available in English and Polish.
 
 ## Journey: Restore From Backup

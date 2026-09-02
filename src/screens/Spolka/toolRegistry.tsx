@@ -114,7 +114,10 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
     case "feed":
       return <CompanyFeedPanel company={ctx.company} feedItems={ctx.feedItems} />;
     case "notatnik":
-      return <CompanyNotebookPanel company={ctx.company} />;
+      // Deep-link navigation (F4c S2, ADR 0108 amendment): highlight an
+      // existing entry or prefill the composer from an origin-attributed
+      // draft (Inbox/research/search/transcript callers).
+      return <CompanyNotebookPanel company={ctx.company} highlightEntryId={tool.entryId} initialDraft={tool.draft} />;
     case "dziennik":
       return <DecisionJournalPanel company={ctx.company} />;
     case "jakosc":

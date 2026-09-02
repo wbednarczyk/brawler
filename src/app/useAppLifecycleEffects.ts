@@ -5,11 +5,10 @@ import {
   useEffect,
   useRef,
 } from "react";
-import type { Company, FeedItem, NotebookEntry, SourceAdapter } from "../api/types";
+import type { Company, FeedItem, SourceAdapter } from "../api/types";
 import { getSchedulerStatus } from "../api/sources";
 import type { CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import type { Section } from "./navigation";
-import { emptyNotebookForm, notebookFormFromEntry } from "./notebookForms";
 import { handleCloseRequested } from "./handleCloseRequested";
 import type { SpolkaToolHostApi } from "../screens/Spolka/ToolHost";
 
@@ -66,26 +65,15 @@ type AppLifecycleEffectsInput = {
   refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
   refreshLicenseStatus: () => void;
-  refreshNotebookEntries: (companyId: string) => void;
   refreshSettings: () => void;
   refreshSourceAdapters: () => void;
   refreshTranscriptJobs: () => void;
   refreshWatchlistMemberships: () => void;
   refreshWatchlists: () => void;
-  selectedCompanyId: string | null;
   selectedFeedItemId: string | null;
-  selectedNotebookCompanyId: string | null;
-  selectedNotebookEntry: NotebookEntry | null;
-  selectedNotebookScreenEntry: NotebookEntry | null;
   setNextRegistryRefreshAt: Dispatch<SetStateAction<number | null>>;
   setNextSourceRefreshAtByAdapterId: Dispatch<SetStateAction<Record<string, number>>>;
-  setNotebookEditForm: Dispatch<SetStateAction<ReturnType<typeof emptyNotebookForm>>>;
-  setNotebookEditMode: Dispatch<SetStateAction<boolean>>;
-  setNotebookScreenEditForm: Dispatch<SetStateAction<ReturnType<typeof emptyNotebookForm>>>;
-  setNotebookScreenEditMode: Dispatch<SetStateAction<boolean>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
-  setSelectedNotebookCompanyId: Dispatch<SetStateAction<string | null>>;
-  setSelectedNotebookEntryId: Dispatch<SetStateAction<string | null>>;
   sourceAdapters: SourceAdapter[];
   sourceAdaptersRef: MutableRefObject<SourceAdapter[]>;
   /** F3a S2 (ADR 0107): gates a native window-close request the same way as
@@ -123,26 +111,15 @@ export function useAppLifecycleEffects({
   refreshGeminiCredentialStatus,
   refreshHealth,
   refreshLicenseStatus,
-  refreshNotebookEntries,
   refreshSettings,
   refreshSourceAdapters,
   refreshTranscriptJobs,
   refreshWatchlistMemberships,
   refreshWatchlists,
-  selectedCompanyId,
   selectedFeedItemId,
-  selectedNotebookCompanyId,
-  selectedNotebookEntry,
-  selectedNotebookScreenEntry,
   setNextRegistryRefreshAt,
   setNextSourceRefreshAtByAdapterId,
-  setNotebookEditForm,
-  setNotebookEditMode,
-  setNotebookScreenEditForm,
-  setNotebookScreenEditMode,
   setSelectedFeedItemId,
-  setSelectedNotebookCompanyId,
-  setSelectedNotebookEntryId,
   sourceAdapters,
   sourceAdaptersRef,
   spolkaTool,
@@ -345,69 +322,9 @@ export function useAppLifecycleEffects({
   }, [licenseCanUseApp]);
 
   useEffect(() => {
-    if (!licenseCanUseApp) {
-      return;
-    }
-
-    if (!selectedCompanyId) {
-      setSelectedNotebookEntryId(null);
-      setNotebookEditMode(false);
-      return;
-    }
-
-    refreshNotebookEntries(selectedCompanyId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load notebook entries on company change; the non-memoized refreshNotebookEntries and stable setters are intentionally excluded
-  }, [licenseCanUseApp, selectedCompanyId]);
-
-  useEffect(() => {
-    if (
-      !licenseCanUseApp ||
-      activeSection !== "Notebooks" ||
-      companies.length === 0
-    ) {
-      return;
-    }
-
-    const nextCompanyId =
-      selectedNotebookCompanyId &&
-      companies.some((company) => company.id === selectedNotebookCompanyId)
-        ? selectedNotebookCompanyId
-        : companies[0].id;
-
-    if (selectedNotebookCompanyId !== nextCompanyId) {
-      setSelectedNotebookCompanyId(nextCompanyId);
-    }
-
-    refreshNotebookEntries(nextCompanyId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- select + load the notebook company when Notebooks opens; the non-memoized refreshNotebookEntries and stable setter are intentionally excluded
-  }, [licenseCanUseApp, activeSection, companies, selectedNotebookCompanyId]);
-
-  useEffect(() => {
     if (licenseCanUseApp && activeSection === "Companies") {
       refreshCompanyRegistryEntries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh registry entries when Companies opens; the non-memoized refreshCompanyRegistryEntries identity is intentionally excluded
   }, [licenseCanUseApp, activeSection, companies.length]);
-
-  useEffect(() => {
-    if (!selectedNotebookEntry) {
-      setNotebookEditMode(false);
-      setNotebookEditForm(emptyNotebookForm());
-      return;
-    }
-
-    setNotebookEditForm(notebookFormFromEntry(selectedNotebookEntry));
-    setNotebookEditMode(false);
-  }, [selectedNotebookEntry, setNotebookEditForm, setNotebookEditMode]);
-
-  useEffect(() => {
-    if (!selectedNotebookScreenEntry) {
-      setNotebookScreenEditMode(false);
-      setNotebookScreenEditForm(emptyNotebookForm());
-      return;
-    }
-
-    setNotebookScreenEditForm(notebookFormFromEntry(selectedNotebookScreenEntry));
-    setNotebookScreenEditMode(false);
-  }, [selectedNotebookScreenEntry, setNotebookScreenEditForm, setNotebookScreenEditMode]);
 }

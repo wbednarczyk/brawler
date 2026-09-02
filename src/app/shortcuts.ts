@@ -8,7 +8,6 @@ export type AppShortcutId =
   | "app.openCompanies"
   | "app.openWatchlists"
   | "app.openAlerts"
-  | "app.openNotebooks"
   | "app.openEvents"
   | "app.openTranscripts"
   | "app.openSources"
@@ -26,9 +25,7 @@ export type AppShortcutId =
   | "company.nextCompany"
   | "company.previousCompany"
   | "company.nextTab"
-  | "company.previousTab"
-  | "notebook.editSelected"
-  | "notebook.saveCurrent";
+  | "company.previousTab";
 
 export type AppShortcutActionMap = Record<AppShortcutId, () => boolean | void>;
 
@@ -43,11 +40,13 @@ export type AppShortcutReferenceItem = ShortcutReferenceItem & {
   verb: Verb;
 };
 
+// Ctrl+4 is unbound in this slice (F4c S2, ADR 0108 amendment): the
+// Notebooks-global screen it opened is retired; F4c S3 assigns it to
+// Research (`app.openResearch`) — not introduced here.
 const navigationShortcuts = [
   ["app.openInbox", "Open Inbox", "1", "Inbox"],
   ["app.openCompanies", "Open Companies", "2", "Companies"],
   ["app.openWatchlists", "Open Watchlists", "3", "Watchlists"],
-  ["app.openNotebooks", "Open Notebooks", "4", "Notebooks"],
   ["app.openEvents", "Open Events", "5", "Events"],
   ["app.openTranscripts", "Open Transcripts", "6", "Transcripts"],
   ["app.openSources", "Open Sources", "7", "Sources"],
@@ -294,41 +293,6 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     defaultBinding: {
       key: "H",
     },
-    disabled: false,
-    hasCustomBinding: false,
-  },
-  {
-    id: "notebook.editSelected",
-    label: "Open notebook entry editor",
-    group: "Notebooks",
-    scope: "screen",
-    verb: "open",
-    binding: {
-      ctrlKey: true,
-      key: "E",
-    },
-    defaultBinding: {
-      ctrlKey: true,
-      key: "E",
-    },
-    disabled: false,
-    hasCustomBinding: false,
-  },
-  {
-    id: "notebook.saveCurrent",
-    label: "Save notebook edit",
-    group: "Notebooks",
-    scope: "screen",
-    verb: "save",
-    binding: {
-      ctrlKey: true,
-      key: "S",
-    },
-    defaultBinding: {
-      ctrlKey: true,
-      key: "S",
-    },
-    suppressWhenEditable: false,
     disabled: false,
     hasCustomBinding: false,
   },

@@ -65,8 +65,6 @@ export const en = {
   "watchlists.description": "Groups of companies you filter Today, Inbox and Report Season by. A company can be on several lists.",
   "alerts.title": "Alerts",
   "alerts.description": "Rules for what to be told about, and the alerts they've fired.",
-  "notebooks.title": "Notebooks",
-  "notebooks.description": "Company-first research notes for daily notes work.",
   "events.title": "Events",
   "events.description": "Company calendar events across tracked companies.",
   "sources.title": "Sources",
