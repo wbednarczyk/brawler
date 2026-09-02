@@ -144,6 +144,7 @@ export function ResearchEvidencePanel({
         <div className="research-timeline">
           {visibleItems.map((item) => (
             <EvidenceRow
+            linkLabel="Link to question"
               changed={
                 mode === "watchlist"
                   ? item.reviewState.changedSinceWatchlistReview

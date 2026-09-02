@@ -17,6 +17,8 @@ type EvidenceRowProps = {
   onOpenUrl: (url: string) => void;
   onLink: (item: ResearchEvidenceItem) => void;
   canLink: boolean;
+  /** Link-action label (verb `link`): the row is shared by Research ("Link to question") and the Decision journal ("Link to decision"). */
+  linkLabel: string;
 };
 
 export function EvidenceRow({
@@ -27,6 +29,7 @@ export function EvidenceRow({
   onOpenUrl,
   onLink,
   canLink,
+  linkLabel,
 }: EvidenceRowProps) {
   const summary = formatEvidenceSummary(item);
   const attribution = formatEvidenceAttribution(item);
@@ -58,10 +61,10 @@ export function EvidenceRow({
             className="compact-button"
             onClick={() => onLink(item)}
             verb="link"
-            aria-label={`${text("Link to question")}: ${title}`}
+            aria-label={`${text(linkLabel)}: ${title}`}
           >
             <Link size={15} />
-            {text("Link to question")}
+            {text(linkLabel)}
           </ActionButton>
         ) : null}
         <ActionButton

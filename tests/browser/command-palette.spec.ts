@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Global command palette (v0.50 U6): Ctrl/⌘+K opens a shared palette from any
@@ -16,8 +16,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   test("Ctrl+K opens the palette and a listed command navigates", async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     // App-level commands come from the shortcut registry; running one navigates.
@@ -31,8 +30,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   test("Escape closes the palette", async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     await page.keyboard.press("Escape");
@@ -49,8 +47,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   test("the palette lists the global navigation commands from any screen, no Open view entries", async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     await palette.getByLabel("Search commands").fill("Open screen");
@@ -77,8 +74,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await expectNoPageOverflow(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     await palette.getByLabel("Search commands").fill("Open notebook");

@@ -231,6 +231,7 @@ export function DecisionJournalSection({
                 {evidenceCandidates.map((item) => (
                   <EvidenceRow
                     key={item.id}
+                    linkLabel="Link to decision"
                     item={item}
                     changed={false}
                     canLink={!linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`)}

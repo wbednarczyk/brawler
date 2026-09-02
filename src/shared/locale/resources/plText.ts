@@ -2190,6 +2190,7 @@ export const plText: Record<string, string> = {
   "Snooze": "Odłóż",
   "Remove question": "Usuń pytanie",
   "Link to question": "Powiąż z pytaniem",
+  "Link to decision": "Powiąż z decyzją",
   "Mark as answered": "Oznacz jako odpowiedziane",
   "Mark as closed": "Oznacz jako zamknięte",
   "Reminders track follow-ups on claims, questions, and reviews.":
