@@ -125,12 +125,12 @@ export function McpSettings({
     ? `${text("Credential unavailable")}: ${kpiCredentialError}`
     : !kpiConfigured
       ? text(
-          "No acquisition token yet — generate one to hand an ingest assistant its own limited key.",
+          "No report-data token yet — generate one to hand a report-data assistant its own limited key.",
         )
       : !kpiAcquisitionEnabled
         ? text("Configured, disabled — turn the switch on to activate it.")
         : running && kpiEffective
-          ? text("Acquisition access is active.")
+          ? text("Report-data access is active.")
           : running
             ? text(
                 "Configured but unavailable — both tokens are identical; regenerate one of them.",
@@ -228,7 +228,11 @@ export function McpSettings({
   // stale token the app cannot show again.
   const tokenPlaceholder = revealedToken ?? "<token>";
   const httpSnippet = `claude mcp add --transport http brawler http://127.0.0.1:${configuredPort}/mcp --header "Authorization: Bearer ${tokenPlaceholder}"`;
-  const stdioSnippet = `BRAWLER_MCP_TOKEN=${tokenPlaceholder} brawler-mcp-stdio`;
+  // The binary reads `--port`/`--token` (env fallbacks BRAWLER_MCP_PORT/
+  // BRAWLER_MCP_TOKEN — src-tauri/src/bin/brawler-mcp-stdio.rs:17,80-89), so
+  // the copied command carries the CONFIGURED port explicitly instead of
+  // relying on the adapter's compiled-in default (sol fix1 item 1).
+  const stdioSnippet = `brawler-mcp-stdio --port ${configuredPort} --token ${tokenPlaceholder}`;
 
   return (
     <section className="settings-group" aria-labelledby="settings-mcp-title">
@@ -324,7 +328,7 @@ export function McpSettings({
       </div>
       <Hint>
         {text(
-          "A separate key for a report-ingest assistant: it sees only the report-data workflow (reading captured reports into numbers), never notes, settings or deletes. Off = the key stops working entirely. The ingest tools themselves arrive in a later update.",
+          "A separate key for a report-data assistant: it sees only the report-data workflow (reading captured reports into numbers), never notes, settings or deletes. Off = the key stops working entirely. The report-data tools themselves arrive in a later update.",
         )}
       </Hint>
 
@@ -429,7 +433,7 @@ export function McpSettings({
         </InlineConfirm>
       ) : null}
 
-      {tokenStatus?.devFallbackAvailable ? (
+      {developerMode && tokenStatus?.devFallbackAvailable ? (
         <p className="settings-note">
           {text(
             "Development fallback is active through environment configuration.",
@@ -437,21 +441,21 @@ export function McpSettings({
         </p>
       ) : null}
 
-      {/* Acquisition token (ADR 0099 dec. 2) */}
-      <h3>{text("Acquisition token")}</h3>
+      {/* Report-data token (ADR 0099 dec. 2) */}
+      <h3>{text("Report-data token")}</h3>
       <p className="settings-note">{kpiStateNote}</p>
 
       {revealedKpiToken ? (
         <div className="mcp-token-reveal">
           <TextField
-            aria-label={text("Acquisition token")}
-            label={text("Acquisition token")}
+            aria-label={text("Report-data token")}
+            label={text("Report-data token")}
             readOnly
             value={revealedKpiToken}
           />
           <ActionButton
             kind="control"
-            aria-label={text("Copy acquisition token")}
+            aria-label={text("Copy report-data token")}
             onClick={() => copyKpi(revealedKpiToken)}
             variant="action"
           >
@@ -470,8 +474,8 @@ export function McpSettings({
         <ActionButton verb={kpiConfigured ? "refresh" : "create"} disabled={busy} onClick={generateKpi} variant="secondary">
           <KeyRound size={14} />
           {kpiConfigured
-            ? text("Regenerate acquisition token")
-            : text("Generate acquisition token")}
+            ? text("Regenerate report-data token")
+            : text("Generate report-data token")}
         </ActionButton>
         {kpiConfigured && !confirmingKpiRevoke ? (
           <ActionButton
@@ -481,19 +485,19 @@ export function McpSettings({
             variant="ghost"
           >
             <Trash2 size={14} />
-            {text("Remove acquisition token")}
+            {text("Remove report-data token")}
           </ActionButton>
         ) : null}
       </ActionRow>
       {confirmingKpiRevoke ? (
         <InlineConfirm
-          confirmLabel={text("Remove acquisition token")}
+          confirmLabel={text("Remove report-data token")}
           disabled={busy}
           onCancel={() => setConfirmingKpiRevoke(false)}
           onConfirm={revokeKpi}
         >
           {text(
-            "Remove this token? Any ingest assistant using it stops working until you generate a new one.",
+            "Remove this token? Any report-data assistant using it stops working until you generate a new one.",
           )}
         </InlineConfirm>
       ) : null}

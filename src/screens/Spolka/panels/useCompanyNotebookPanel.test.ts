@@ -1,6 +1,6 @@
 import { createElement, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act, waitFor, screen, fireEvent } from "@testing-library/react";
 import type { Company, NotebookEntry } from "../../../api/types";
 import { createNotebookEntry, deleteNotebookEntry, listNotebookEntries } from "../../../api/notebooks";
 import { ToastProvider } from "../../../ui";
@@ -147,7 +147,27 @@ describe("useCompanyNotebookPanel (F4c S2, ADR 0108 amendment)", () => {
   // reversible-destroy capability (ADR 0076 D5) the retired screen carried:
   // immediate delete + undo toast, restoring via a faithful re-create.
   it("deletes the selected entry immediately and restores it faithfully on undo", async () => {
-    const target = entry({ id: "n5", title: "To delete" });
+    const target = entry({
+      id: "n5",
+      title: "To delete",
+      body: "Body to restore",
+      tags: ["thesis", "q3"],
+      kind: "risk",
+      claimStatus: "pending",
+      eventDate: "2026-07-01",
+      followUpAfter: "P1M",
+      followUpDate: "2026-08-01",
+      origins: [
+        {
+          id: "origin_1",
+          createdAt: "2026-06-01T00:00:00Z",
+          sourceType: "feed_item",
+          sourceId: "feed_9",
+          sourceUrl: "https://example.test/feed/9",
+          label: "GPW ESPI/EBI: Q3 report",
+        },
+      ],
+    });
     listNotebookEntriesMock.mockResolvedValue([target]);
     deleteNotebookEntryMock.mockResolvedValue(undefined);
     createNotebookEntryMock.mockResolvedValue(entry({ id: "n6", title: "To delete" }));
@@ -159,6 +179,34 @@ describe("useCompanyNotebookPanel (F4c S2, ADR 0108 amendment)", () => {
 
     await waitFor(() => expect(deleteNotebookEntryMock).toHaveBeenCalledWith("n5"));
     await waitFor(() => expect(result.current.selectedEntry).toBeNull());
+
+    // sol fix1 item 8: trigger the toast's Undo action and assert the
+    // restore call carries the deleted entry's FULL form AND origins — not
+    // merely that the toast/undo affordance exists.
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+
+    await waitFor(() =>
+      expect(createNotebookEntryMock).toHaveBeenCalledWith({
+        companyId: "c1",
+        title: "To delete",
+        body: "Body to restore",
+        bodyFormat: "markdown",
+        tags: ["thesis", "q3"],
+        kind: "risk",
+        claimStatus: "pending",
+        eventDate: "2026-07-01",
+        followUpAfter: "P1M",
+        followUpDate: "2026-08-01",
+        origins: [
+          {
+            sourceType: "feed_item",
+            sourceId: "feed_9",
+            sourceUrl: "https://example.test/feed/9",
+            label: "GPW ESPI/EBI: Q3 report",
+          },
+        ],
+      }),
+    );
   });
 
   // Found by tests/browser/notebooks.spec.ts (create → edit → Save hung: the

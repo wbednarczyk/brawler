@@ -16,11 +16,9 @@ import {
 import type { LocaleKey } from "../shared/locale";
 
 // The full set of app sections. Events, ReportSeason (F4b S4) and Research
-// (F4c S3, contract § Decisions #1/#4) are Library nav destinations; the
-// Notebooks-global/Journal-global screens they used to sit alongside were
-// retired in F4c S2 (ADR 0108 amendment) — Notebooks/Journal here are dead
-// `activeSection` values kept only for the S2 diff's own scope, not reachable
-// from any nav item.
+// (F4c S3, contract § Decisions #1/#4) are Library nav destinations. The
+// Notebooks-global/Journal-global screens retired in F4c S2 (ADR 0108
+// amendment) — their `Section` members retired with them (sol fix1 item 7).
 export type Section =
   | "Today"
   | "Inbox"
@@ -28,15 +26,11 @@ export type Section =
   // destination and, since S3, a Modes item (replaces the old Dashboard
   // bridge): opens the last-viewed company.
   | "Spolka"
-  // Decision journal, all companies (F3a S3, ADR 0107) — a standalone screen
-  // route (palette-only entry point; not a nav item).
-  | "Journal"
   | "ReportSeason"
   | "Companies"
   | "Watchlists"
   | "Alerts"
   | "Research"
-  | "Notebooks"
   | "Events"
   | "Transcripts"
   | "Sources"

@@ -229,7 +229,7 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     ).toBeInTheDocument();
     // Honest transitional copy: the credential exists before its tools do.
     expect(
-      within(region).getByText(/ingest tools themselves arrive in a later update/i),
+      within(region).getByText(/report-data tools themselves arrive in a later update/i),
     ).toBeInTheDocument();
 
     await user.click(gateToggle);
@@ -238,24 +238,24 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     });
   });
 
-  it("manages the acquisition token and refreshes the live server status", async () => {
+  it("manages the report-data token and refreshes the live server status", async () => {
     const user = userEvent.setup();
     renderApp();
     const region = await openMcpSection(user);
 
     expect(
-      within(region).getByText(/No acquisition token yet/i),
+      within(region).getByText(/No report-data token yet/i),
     ).toBeInTheDocument();
 
     await user.click(
-      within(region).getByRole("button", { name: "Generate acquisition token" }),
+      within(region).getByRole("button", { name: "Generate report-data token" }),
     );
     expect(invoke).toHaveBeenCalledWith("regenerate_kpi_acquisition_token");
     // Every rotate/revoke restarts the listener, so the section re-fetches
     // the live status (ADR 0099 dec. 2 — the restart outcome never goes stale).
     expect(invoke).toHaveBeenCalledWith("mcp_status");
     const tokenField = await within(region).findByLabelText<HTMLInputElement>(
-      "Acquisition token",
+      "Report-data token",
     );
     expect(tokenField.value.length).toBeGreaterThan(0);
     // Gate off ⇒ the composed state says configured-but-disabled.
@@ -265,15 +265,31 @@ describe("MCP server settings (M4, ADR 0078)", () => {
 
     // Revoke behind an inline confirm, mirroring the primary token.
     await user.click(
-      within(region).getByRole("button", { name: "Remove acquisition token" }),
+      within(region).getByRole("button", { name: "Remove report-data token" }),
     );
     await user.click(
-      within(region).getByRole("button", { name: "Remove acquisition token" }),
+      within(region).getByRole("button", { name: "Remove report-data token" }),
     );
     expect(invoke).toHaveBeenCalledWith("revoke_kpi_acquisition_token");
     expect(
-      await within(region).findByText(/No acquisition token yet/i),
+      await within(region).findByText(/No report-data token yet/i),
     ).toBeInTheDocument();
+  });
+
+  // sol fix1 item 1: the bridge command is a process the assistant launches
+  // itself, so it must carry the CONFIGURED port, not a compiled-in default.
+  it("carries a non-default port in the copied bridge command", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const region = await openMcpSection(user);
+
+    const portField = within(region).getByLabelText<HTMLInputElement>("Port");
+    await user.clear(portField);
+    await user.type(portField, "9000");
+    await user.tab();
+
+    const snippet = within(region).getByText(/^brawler-mcp-stdio --port/);
+    expect(snippet).toHaveTextContent("brawler-mcp-stdio --port 9000 --token <token>");
   });
 
   it("revoking the primary token refreshes the pill to Stopped (the restart refused)", async () => {

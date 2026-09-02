@@ -92,7 +92,7 @@ export const pl: LocaleResources = {
   "error.sourceRefreshFailed": "Odświeżanie źródeł nie powiodło się",
   "Fundamentals": "Fundamenty",
   "History fetch": "Pobieranie historii",
-  "Backfilling…": "Uzupełnianie…",
+  "Fetching history…": "Pobieranie historii…",
   "History fetch failed": "Pobieranie historii nie powiodło się",
   "Fetch the last ~3 years of reports and filings for this company.": "Pobierz raporty i komunikaty spółki z ostatnich ~3 lat.",
   "pages fetched": "stron pobrano",

@@ -18,11 +18,22 @@ import { plText } from "./resources/plText";
 // `thread(s)`, `adapter`, `stdio`, `backfill`, `telemetry`, `keyring`,
 // `migration`, `endpoint`, `JSON`. Expected red today against the pre-F4c
 // Settings copy (S4 makes it green).
+// sol fix1 item 4: `worker`/`thread`/`adapter`/`migration`/`backfill` widened
+// to `\w*` — the plural-only `s?` forms missed a gerund/inflected leak
+// ("Backfilling…" slipped past `\bbackfill\b` because "Backfilling" has no
+// word boundary right after "backfill"). `\w*` catches every inflected form
+// while still requiring the WHOLE word to start with the forbidden root
+// (never an unrelated identifier that merely contains it as a substring —
+// `\b` still anchors the start).
 const FORBIDDEN =
-  /\b(database|databases|IPC|SQL|runtime|backend|jsdom|localhost|jobs?|pool|workers?|threads?|adapter|stdio|backfill|telemetry|keyring|migration|endpoint|JSON)\b/i;
+  /\b(database|databases|IPC|SQL|runtime|backend|jsdom|localhost|jobs?|pool|worker\w*|thread\w*|adapter\w*|stdio|backfill\w*|telemetry|keyring|migration\w*|endpoint|JSON)\b/i;
 
 function offenders(strings: string[], source: string, pattern: RegExp = FORBIDDEN): string[] {
   return strings.filter((value) => pattern.test(value)).map((value) => `${source}: ${value}`);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // Developer-gated Diagnostics may use implementation terms (ui-authoring.md
@@ -48,7 +59,13 @@ describe("dev-speak guard over user-facing copy", () => {
   it("allowlisted Diagnostics-only keys are called from Diagnostics and nowhere else", () => {
     const files = listTextCallSiteFiles(process.cwd(), SCAN_ROOT, [], { includeDiagnostics: true });
     for (const key of DIAGNOSTICS_ONLY_KEYS) {
-      const callers = files.filter((rel) => readFileSync(join(process.cwd(), rel), "utf8").includes(`"${key}"`));
+      // sol fix1 item 4: match `text(` followed by ANY of the three quote
+      // styles the codebase's `text()` call sites actually use (double,
+      // single, backtick) — the old `includes('"${key}"')` check missed a
+      // key called with `text('…')`/`` text(`…`) ``, silently proving
+      // nothing for it.
+      const callSitePattern = new RegExp(`text\\(\\s*['"\`]${escapeRegExp(key)}['"\`]`);
+      const callers = files.filter((rel) => callSitePattern.test(readFileSync(join(process.cwd(), rel), "utf8")));
       expect(callers.length, `${key}: no live call site — drop it from the table and the allowlist`).toBeGreaterThan(0);
       expect(
         callers.filter((rel) => !rel.startsWith("src/screens/Diagnostics/")),
