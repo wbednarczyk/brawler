@@ -123,7 +123,7 @@ describe("attentionEventLabels — job_failed (epic #40 S3, ADR 0091 dec. 1)", (
       evidenceTitle: "HTTP 503 from query1.finance.yahoo.com",
     });
     expect(attentionEventTitleText(failure, undefined, text)).toBe(
-      "Price history backfill failed — HTTP 503 from query1.finance.yahoo.com",
+      "Price history fetch failed — HTTP 503 from query1.finance.yahoo.com",
     );
   });
 

@@ -1,6 +1,6 @@
 import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
-import { FieldRow, SelectField } from "../../ui";
+import { ActionButton, FieldRow, SelectField } from "../../ui";
 
 type DatabaseSettingsProps = {
   settings: UserSettings | null;
@@ -28,12 +28,12 @@ export function DatabaseSettings({
     <section className="settings-group" aria-labelledby="settings-database-title">
       <h2 id="settings-database-title">{text("Data storage")}</h2>
       <p className="settings-note">
-        {text("Advanced connection-pool tuning. Changes apply on the next app launch.")}
+        {text("How hard the app works on your data at once. Applies after restart.")}
       </p>
       <FieldRow>
         <SelectField
-          aria-label={text("Max connections")}
-          label={text("Max connections")}
+          aria-label={text("Parallel work")}
+          label={text("Parallel work")}
           value={database?.maxConnections ?? 4}
           onChange={(event) => onDbMaxConnectionsChange(Number(event.target.value))}
         >
@@ -44,8 +44,8 @@ export function DatabaseSettings({
           ))}
         </SelectField>
         <SelectField
-          aria-label={text("Busy timeout (ms)")}
-          label={text("Busy timeout (ms)")}
+          aria-label={text("Wait when busy")}
+          label={text("Wait when busy")}
           value={database?.busyTimeoutMs ?? 5000}
           onChange={(event) => onDbBusyTimeoutMsChange(Number(event.target.value))}
         >
@@ -56,8 +56,8 @@ export function DatabaseSettings({
           ))}
         </SelectField>
         <SelectField
-          aria-label={text("Acquire timeout (ms)")}
-          label={text("Acquire timeout (ms)")}
+          aria-label={text("Wait to start")}
+          label={text("Wait to start")}
           value={database?.acquireTimeoutMs ?? 10000}
           onChange={(event) => onDbAcquireTimeoutMsChange(Number(event.target.value))}
         >
@@ -68,9 +68,9 @@ export function DatabaseSettings({
           ))}
         </SelectField>
       </FieldRow>
-      <button type="button" className="secondary-button" onClick={onResetDatabaseSettings}>
+      <ActionButton kind="control" onClick={onResetDatabaseSettings}>
         {text("Reset to defaults")}
-      </button>
+      </ActionButton>
     </section>
   );
 }

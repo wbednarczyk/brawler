@@ -270,7 +270,7 @@ export function SettingsScreen() {
         </div>
 
         {settingsError ? (
-          <ErrorText>Settings command failed: {settingsError}</ErrorText>
+          <ErrorText>{text("Couldn't save that setting")}: {settingsError}</ErrorText>
         ) : null}
       </div>
     </Panel>

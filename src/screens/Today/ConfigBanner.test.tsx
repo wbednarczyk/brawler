@@ -39,7 +39,7 @@ describe("ConfigBanner (ADR 0087 dec. 5)", () => {
             id: "x",
             message: "Provider misconfigured",
             action: {
-              label: "Diagnostics",
+              label: "Sources",
               onClick: () => {
                 clicked = true;
               },
@@ -49,7 +49,7 @@ describe("ConfigBanner (ADR 0087 dec. 5)", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Sources" }));
     expect(clicked).toBe(true);
   });
 });

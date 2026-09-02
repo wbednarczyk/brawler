@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { KeyRound, Save, Trash2 } from "lucide-react";
 import type { LicenseStatus } from "../../api/types";
-import { ActionRow, Button, ErrorText, InfoGrid, TextareaField } from "../../ui";
+import { ActionButton, ActionRow, ErrorText, InfoGrid, TextareaField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type LicenseSettingsProps = {
@@ -51,22 +51,25 @@ export function LicenseSettings({
           onChange={(event) => onLicenseKeyDraftChange(event.target.value)}
         />
         <ActionRow className="credential-actions">
-          <Button
+          <ActionButton
+            verb="save"
             disabled={licenseInFlight || !licenseKeyDraft.trim()}
             type="submit"
-            variant="action"
+            variant="primary"
+            data-ux-primary-action="true"
           >
             {licenseInFlight ? <KeyRound size={14} /> : <Save size={14} />}
             {text("Save license")}
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
+            verb="remove"
             disabled={licenseInFlight}
             onClick={onClearLicenseKey}
             variant="ghost"
           >
             <Trash2 size={14} />
             {text("Clear license")}
-          </Button>
+          </ActionButton>
         </ActionRow>
       </form>
 

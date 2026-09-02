@@ -41,8 +41,8 @@ export function SourceSettings({
         <h2 id="settings-sources-title">{t("settings.sources.title")}</h2>
         <FieldRow>
           <SelectField
-            aria-label={text("Settings source poll interval")}
-            label={text("Poll interval")}
+            aria-label={text("Settings source check interval")}
+            label={text("Check every")}
             value={settings?.pollIntervalSeconds ?? 900}
             onChange={(event) => onPollIntervalChange(Number(event.target.value))}
           >
@@ -56,7 +56,7 @@ export function SourceSettings({
           className="settings-grid"
           items={[
             {
-              label: text("Poll interval"),
+              label: text("Check every"),
               value: formatPollInterval(settings?.pollIntervalSeconds ?? 900),
             },
           ]}
@@ -68,14 +68,15 @@ export function SourceSettings({
           <div
             className="settings-range-control"
             role="group"
-            aria-label={text("Backfill history depth")}
+            aria-label={text("How far back to fetch")}
           >
-            <span className="settings-range-control-label">{text("Backfill history depth")}</span>
-            <SegmentedControl ariaLabel={text("Backfill depth presets")}>
+            <span className="settings-range-control-label">{text("How far back to fetch")}</span>
+            <SegmentedControl ariaLabel={text("History range presets")}>
               {BACKFILL_YEAR_PRESETS.map((preset) => (
                 <SegmentedControlOption
                   key={preset}
                   active={backfillYears === preset}
+                  data-action-kind="control"
                   onClick={() => onBackfillYearsChange(preset)}
                 >
                   {preset}
@@ -84,7 +85,7 @@ export function SourceSettings({
             </SegmentedControl>
             <div className="settings-range-control-custom">
               <RangeField
-                aria-label={text("Backfill history depth (slider)")}
+                aria-label={text("How far back to fetch (slider)")}
                 min={1}
                 max={10}
                 step={1}
@@ -92,7 +93,7 @@ export function SourceSettings({
                 onChange={(event) => onBackfillYearsChange(clampBackfillYears(Number(event.target.value)))}
               />
               <TextField
-                aria-label={text("Backfill history depth in years")}
+                aria-label={text("How far back to fetch (years)")}
                 type="number"
                 min={1}
                 max={10}

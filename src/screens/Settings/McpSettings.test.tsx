@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 import { axe } from "jest-axe";
 import {
+  appTestState,
   expect,
   invoke,
   renderApp,
@@ -32,7 +33,7 @@ describe("MCP server settings (M4, ADR 0078)", () => {
 
     // No token yet: enabling refuses with a surfaced error (never a crash).
     await user.click(
-      within(region).getByRole("switch", { name: "Enable the server" }),
+      within(region).getByRole("switch", { name: "Let assistants connect" }),
     );
     expect(invoke).toHaveBeenCalledWith("set_mcp_enabled", { enabled: true });
     expect(
@@ -58,15 +59,22 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     );
     expect(await within(region).findByText("Active")).toBeInTheDocument();
     expect(
-      within(region).getByRole("switch", { name: "Enable the server" }),
+      within(region).getByRole("switch", { name: "Let assistants connect" }),
     ).toBeChecked();
   });
 
   // v0.52 dogfooding gap: the app runs on Windows and its server is loopback-only,
   // so a Claude in WSL can't reach it under default networking. The connect section
   // must surface where to add the server (same machine / WSL mirrored caveat).
+  // F4c S4: this instruction is developer-gated (docs/plans/f4c-contracts/
+  // s4-settings-pass-banner.md item 1) — a copy-paste snippet caveat, not
+  // product copy every user needs.
   it("shows the same-machine / WSL hint near the connection snippets", async () => {
     const user = userEvent.setup();
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      developerMode: true,
+    };
     renderApp();
     const region = await openMcpSection(user);
 
@@ -137,13 +145,13 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     await within(region).findByText("A token is configured.");
 
     // The trigger opens the InlineConfirm; its confirm affordance carries the
-    // same "Revoke token" label and commits the revoke (the trigger is hidden
+    // same "Remove token" label and commits the revoke (the trigger is hidden
     // while confirming, so only one such button exists at a time).
     await user.click(
-      within(region).getByRole("button", { name: "Revoke token" }),
+      within(region).getByRole("button", { name: "Remove token" }),
     );
     await user.click(
-      within(region).getByRole("button", { name: "Revoke token" }),
+      within(region).getByRole("button", { name: "Remove token" }),
     );
 
     expect(invoke).toHaveBeenCalledWith("revoke_mcp_token");
@@ -158,7 +166,7 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     const region = await openMcpSection(user);
 
     const portField =
-      within(region).getByLabelText<HTMLInputElement>("Listen port");
+      within(region).getByLabelText<HTMLInputElement>("Port");
     await user.clear(portField);
     await user.type(portField, "9000");
     await user.tab();
@@ -189,13 +197,13 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     const region = await openMcpSection(user);
 
     const writesToggle = within(region).getByRole("switch", {
-      name: "Allow write tools",
+      name: "Allow the assistant to write",
     });
     expect(writesToggle).not.toBeChecked();
-    expect(within(region).getByText("Read-only")).toBeInTheDocument();
+    expect(within(region).getByText("Read only")).toBeInTheDocument();
     expect(
       within(region).getByText(
-        /Write tools require citations.*never turn this on itself/i,
+        /Every write needs a citation.*never turn this on itself/i,
       ),
     ).toBeInTheDocument();
 
@@ -213,11 +221,11 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     const region = await openMcpSection(user);
 
     const gateToggle = within(region).getByRole("switch", {
-      name: "Allow acquisition access",
+      name: "Allow report-data processing",
     });
     expect(gateToggle).not.toBeChecked();
     expect(
-      within(region).getByText(/sees only the KPI-ingest workflow/i),
+      within(region).getByText(/sees only the report-data workflow/i),
     ).toBeInTheDocument();
     // Honest transitional copy: the credential exists before its tools do.
     expect(
@@ -257,10 +265,10 @@ describe("MCP server settings (M4, ADR 0078)", () => {
 
     // Revoke behind an inline confirm, mirroring the primary token.
     await user.click(
-      within(region).getByRole("button", { name: "Revoke acquisition token" }),
+      within(region).getByRole("button", { name: "Remove acquisition token" }),
     );
     await user.click(
-      within(region).getByRole("button", { name: "Revoke acquisition token" }),
+      within(region).getByRole("button", { name: "Remove acquisition token" }),
     );
     expect(invoke).toHaveBeenCalledWith("revoke_kpi_acquisition_token");
     expect(
@@ -279,17 +287,17 @@ describe("MCP server settings (M4, ADR 0078)", () => {
     );
     await within(region).findByLabelText("Access token");
     await user.click(
-      within(region).getByRole("switch", { name: "Enable the server" }),
+      within(region).getByRole("switch", { name: "Let assistants connect" }),
     );
     expect(await within(region).findByText("Active")).toBeInTheDocument();
 
     // Revoke: the restart refuses (no token) and the SECTION shows it without
     // a remount — the fresh mcp_status fetch is the fix under test.
     await user.click(
-      within(region).getByRole("button", { name: "Revoke token" }),
+      within(region).getByRole("button", { name: "Remove token" }),
     );
     await user.click(
-      within(region).getByRole("button", { name: "Revoke token" }),
+      within(region).getByRole("button", { name: "Remove token" }),
     );
     expect(await within(region).findByText("Stopped")).toBeInTheDocument();
     expect(

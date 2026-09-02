@@ -36,6 +36,14 @@ import { appShortcutReferenceItems } from "../../app/shortcuts";
 // `Import` (opens the file picker) = `open`, `Apply import` = `apply`
 // (exact dictionary match). (c) Credentials' "Clear" (wipes the stored/draft
 // credential) → `remove`.
+//
+// S4 DEVIATION (stated reason, per f4c-common.md "adjust expected values
+// only with a stated reason"): `copyTerminal` corrected from "Copy — Claude
+// Code (terminal)" to "Copy — Bridge command" — the sol R2 amendment (S4
+// contract "Amendments after sol R2") supersedes the skeleton's plan-dec.-5
+// wording: the stdio snippet is a process invocation the assistant launches
+// itself, not equivalent to `claude mcp add`, so labeling it "Claude Code"
+// would misrepresent it.
 
 const LOCALES = ["en", "pl"] as const;
 type Locale = (typeof LOCALES)[number];
@@ -85,7 +93,7 @@ const LABELS = {
     generateToken: "Generate token",
     generateAcquisitionToken: "Generate acquisition token",
     copyHttp: "Copy — Claude Code (HTTP)",
-    copyTerminal: "Copy — Claude Code (terminal)",
+    copyTerminal: "Copy — Bridge command",
     saveLicense: "Save license",
     clearLicense: "Clear license",
     export: "Export",
@@ -101,7 +109,7 @@ const LABELS = {
     generateToken: "Wygeneruj token",
     generateAcquisitionToken: "Wygeneruj token akwizycyjny",
     copyHttp: "Kopiuj — Claude Code (HTTP)",
-    copyTerminal: "Kopiuj — Claude Code (terminal)",
+    copyTerminal: "Kopiuj — Polecenie mostka",
     saveLicense: "Zapisz licencję",
     clearLicense: "Wyczyść licencję",
     export: "Eksport",

@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
-import { Button, ClearButton } from "../../ui";
+import { ActionButton, ClearButton } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 /**
  * A config-state condition (ADR 0087 dec. 5): a property of the app itself — a
  * source unreachable, a provider misconfigured — stated ONCE as a banner above
  * the stream, never repeated per row. Copy is pre-translated by the producer
- * (typed, product-facing), never a raw error string.
+ * (typed, product-facing), never a raw error string. The one wired condition's
+ * action opens Sources (F4c dec. 6: it was labeled "Diagnostics" but always
+ * opened Sources — every banner action here navigates elsewhere, so the
+ * button it renders is classified `kind="destination"` in this shared spot.
  */
 export type ConfigCondition = {
   id: string;
@@ -42,14 +45,15 @@ export function ConfigBanner({ conditions }: { conditions: ConfigCondition[] }) 
             <span className="today-config-banner-detail">{condition.detail}</span>
           ) : null}
           {condition.action ? (
-            <Button
+            <ActionButton
+              kind="destination"
               className="today-config-banner-action"
               onClick={condition.action.onClick}
               type="button"
               variant="ghost"
             >
               {condition.action.label}
-            </Button>
+            </ActionButton>
           ) : null}
           <ClearButton
             label={text("Dismiss")}
