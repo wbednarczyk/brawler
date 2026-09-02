@@ -20,7 +20,7 @@
 // Pure Makefile read + string checks; no dependencies. Run as the last step of
 // `make check` (so it also guards itself).
 
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -55,6 +55,8 @@ const MANDATORY_SUITES = [
   { target: "check-docs-gates", marker: 'node --test "scripts/check/*.test.mjs"', label: "check-script unit tests (the full scripts/check glob)" },
   { target: "check-docs-gates", marker: "retired-surface", label: "retired-surface manifest gate (live docs vs retired ADR surface)" },
   { target: "check-docs-gates", marker: "file-size-ratchet", label: "file-size ratchet — oversized-file fitness function (ADR 0103)" },
+  { target: "check-visual", marker: "--project=chromium-visual --project=chromium-visual-light", label: "pinned-renderer visual baselines (both projects, #448)" },
+  { target: "check-docs-gates", marker: '"scripts/ux/*.test.mjs"', label: "scripts/ux unit tests (pinned-renderer predicate, contact sheet)" },
 ];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.
@@ -201,6 +203,32 @@ if (workflow === null) {
     }
   }
 }
+}
+
+// (2c) Bare-checkout imports: `check-docs-gates` runs every scripts/check and
+// scripts/ux module (incl. the test globs) in CI WITHOUT `npm ci`, so a bare
+// package import there loads fine locally and dies on the runner ("Cannot find
+// module" — #449, pinned-renderer.mjs requiring @playwright/test). Only `node:`
+// builtins and relative paths are allowed; a script that genuinely needs a
+// dependency is listed here with the target that installs first.
+const BARE_CHECKOUT_IMPORT_EXEMPT = new Set([
+  "scripts/check/engines-floor.mjs", // semver; not run by check-docs-gates
+]);
+for (const dir of ["scripts/check", "scripts/ux"]) {
+  for (const name of readdirSync(resolve(repoRoot, dir))) {
+    if (!name.endsWith(".mjs")) continue;
+    const rel = `${dir}/${name}`;
+    if (BARE_CHECKOUT_IMPORT_EXEMPT.has(rel)) continue;
+    const src = readFileSync(resolve(repoRoot, rel), "utf8");
+    for (const m of src.matchAll(/(?:^import\s[^;]*?\sfrom\s*|^import\s*|\bimport\(\s*|createRequire\([^)]*\)\(\s*)["']([^"']+)["']/gm)) {
+      const spec = m[1];
+      if (spec.startsWith("node:") || spec.startsWith(".") || spec.startsWith("/")) continue;
+      errors.push(
+        `\`${rel}\` imports \`${spec}\` — check-docs-gates runs on a bare checkout (no node_modules), so this dies in CI.\n` +
+          `    Use a node: builtin or a relative module; if the dependency is essential, add the file to BARE_CHECKOUT_IMPORT_EXEMPT with the target that installs it.`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

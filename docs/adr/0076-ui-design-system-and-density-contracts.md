@@ -143,6 +143,14 @@ Updating a baseline is a **deliberate act**: the PR/commit description names whi
 and why (procedure in engineering-workflow.md). A baseline update without a named reason is a
 review rejection.
 
+**Amendment (2026-09-02, #448):** comparison moves from maintainer-WSL-only (`ignoreSnapshots`
+under CI) to a **pinned renderer** — the official Playwright docker image at the locked
+`@playwright/test` version — run identically by `make check-visual` in CI (new required check
+`Visual baselines (pinned renderer)`) and locally, at **zero tolerance** (byte-identical,
+`maxDiffPixelRatio` retired). Baselines regenerate only inside that renderer
+(`make visual-update`); the rm-first ritual is retired. Host runs still execute the specs without
+comparing pixels.
+
 ## Decision 8 — Bilingual template seeds + non-destructive top-up
 
 `TemplateCriterion` carries `{pl, en}` for `label` and `assessment_guidance` (and template

@@ -926,9 +926,9 @@ Two harvested rules (ADR 0045), both from the `v0.47.0` report-diff panel:
 
 **The harness also renders any screen for visual review** — drive a throwaway spec to the screen and `await page.screenshot(...)`. "No GUI in WSL" is not a reason to skip looking at a UI change (see [Engineering Workflow → Definition of Done](engineering-workflow.md#definition-of-done-the-handover-gate)).
 
-Evidence policy: DOM/layout assertions are the pass/fail signal; screenshots and traces are retained only on failure; visual snapshot comparison is deferred until a stable use case justifies it.
+Evidence policy: DOM/layout assertions are the pass/fail signal; screenshots and traces are retained only on failure. Pixel comparison **is** pass/fail evidence, but only inside the pinned renderer (`make check-visual`, #448 — see Visual baseline below).
 
-Do **not** use this layer for: live external source/API testing; real Tauri file dialogs/keychain/taskbar/packaging/WebView2; broad end-to-end coverage of every workflow; or screenshot comparison as pass/fail evidence — those are the live/packaging smoke and native Windows paths.
+Do **not** use this layer for: live external source/API testing; real Tauri file dialogs/keychain/taskbar/packaging/WebView2; or broad end-to-end coverage of every workflow — those are the live/packaging smoke and native Windows paths.
 
 ## Frontend test responsibilities
 
@@ -1036,7 +1036,9 @@ baselines remain the regression mechanism**; the contact sheet is review evidenc
   throws immediately instead of shooting unreviewed evidence.
 - **Evidence capture**: with `BRAWLER_CONTACT_SHEET_DIR` set, the shoot helpers write a PNG +
   JSON metadata sidecar (screen, state, tier, theme, project, build stamp) for the settled locator
-  **before** the existing `toHaveScreenshot` assertion — the assertion still runs and still gates.
+  **before** the existing `toHaveScreenshot` assertion — the assertion still runs, but gates only
+  inside the pinned renderer (`make check-visual`); on the host it executes without comparing, and
+  the contact sheet stays a host evidence/review tool either way.
   Sidecar filenames are unique per worker (`workerIndex` + a per-worker counter), so
   `fullyParallel` workers never race on the same path.
 - **CLI** (`rtk node scripts/ux/contact-sheet.mjs`, or `make ux-contact-sheet`): accepts
@@ -1056,11 +1058,13 @@ rtk make ux-contact-sheet CHANGED=1
 
 - **Baseline updates** (`make visual-update SCREEN=<catalog-id>|ALL=1 REASON="why"`, wrapping
   `npm run visual-update` → `scripts/ux/visual-update-guard.mjs` + `visual-update-core.mjs`):
-  refuses without a `REASON` and exactly one of `SCREEN` (a `catalog.core.mjs` screen id) or
-  `ALL=1` (full repaint). `SCREEN` mode runs `--update-snapshots=all` and hard-fails on any
-  non-target baseline hash change ("sibling drift") or filename-set change; `ALL` mode skips the
-  sibling check and asserts every expected cell exists afterward. Never run outside a deliberate,
-  reviewed visual change.
+  runs inside the pinned renderer (docker required, #448) — the guard refuses to run anywhere
+  else, so there is no rm-first ritual. Refuses without a `REASON` and exactly one of `SCREEN` (a
+  `catalog.core.mjs` screen id) or `ALL=1` (full repaint). `SCREEN` mode runs
+  `--update-snapshots=all` and hard-fails on any non-target baseline hash change ("sibling drift")
+  or filename-set change; `ALL` mode skips the sibling check and asserts every expected cell
+  exists afterward. Never run outside a deliberate, reviewed visual change; a Playwright version
+  bump regenerates baselines in the same PR (the pinned tag moves with it).
 
 ### Escaped-defect interpretation (plan Q7)
 

@@ -3,6 +3,13 @@
 // decision 5): a Playwright snapshot update must never run silently, and must
 // never silently rewrite screens it wasn't asked to touch.
 //
+// Pixel baselines are only ever generated/compared inside the official
+// Playwright docker image pinned to the installed @playwright/test version
+// (#448) — this guard refuses to run outside it; `make visual-update` wraps
+// the invocation in that container. The old "rm the PNGs first" ritual is
+// retired: --update-snapshots=all with zero tolerance rewrites every target
+// cell on its own.
+//
 // Two modes, mutually exclusive:
 //   SCREEN=<catalog id>  — resolves the id via visual-update-core.mjs to its
 //     owning spec, hashes that spec's existing baselines, runs the spec with
@@ -12,7 +19,7 @@
 //     hash change ("sibling drift"), or a missing target cell.
 //   ALL=1 — full repaint: runs both visual projects over every spec with
 //     --update-snapshots=all, then asserts every one of the catalog's
-//     expected cells (76 today) exists on disk. No sibling check (everything
+//     expected cells exists on disk. No sibling check (everything
 //     is a legitimate target).
 // REASON is mandatory in both modes and is printed into the run log so the
 // change description can cite it.
@@ -22,6 +29,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { allExpectedCells, cellFileName, diffSnapshots, resolveScreen, specSnapshotDir } from "./visual-update-core.mjs";
+import { pinnedImage, pinnedRenderer } from "./pinned-renderer.mjs";
 
 const screen = process.env.SCREEN?.trim();
 const allRaw = process.env.ALL?.trim();
@@ -39,6 +47,15 @@ if (!!screen === all || !reason) {
   console.error(
     'Usage: SCREEN=<catalog-id> REASON="why this baseline changed" npm run visual-update\n' +
       '   or: ALL=1 REASON="why this baseline changed" npm run visual-update',
+  );
+  process.exit(1);
+}
+
+if (!pinnedRenderer()) {
+  console.error(
+    "visual-update: baselines are generated only inside the pinned renderer (" +
+      pinnedImage() +
+      ") — run `make visual-update`, which wraps this in docker (#448)",
   );
   process.exit(1);
 }
@@ -67,7 +84,7 @@ function hashDir(dir) {
 }
 
 function runPlaywright(args) {
-  return spawnSync("npx", ["playwright", "test", ...args], { stdio: "inherit" });
+  return spawnSync("node_modules/.bin/playwright", ["test", ...args], { stdio: "inherit" });
 }
 
 if (screen) {

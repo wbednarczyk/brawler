@@ -451,7 +451,11 @@
 
 .facts-matrix {
   width: 100%;
-  border-collapse: collapse;
+  /* Separate borders (#448): with collapsed borders the row divider belongs to
+     the table, so the sticky KPI cell's opaque background nondeterministically
+     paints over it in Chromium (intermittent missing divider). */
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--font-base);
 }
 
@@ -461,6 +465,11 @@
   text-align: right;
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
+  /* Integer row height (#448): with the body line-height (13px × 1.45) rows
+     land on fractional y and the sticky KPI cell — a separate compositor layer,
+     pixel-snapped on its own — draws its divider 1px off the rest of the row
+     (or blurred away) depending on compositing timing. */
+  line-height: 20px;
 }
 
 .facts-matrix thead th {

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { expect, resetPaneSize, setPaneSize, test, type Locator, type Page } from "../helpers/harness";
@@ -11,10 +11,11 @@ import { assertCataloged, findCatalogEntry, type Tier } from "./catalog";
 // `document.fonts.ready` so glyph metrics are stable. Motion is off via the
 // project `reducedMotion: "reduce"` + the global `toHaveScreenshot` default
 // `animations: "disabled"` (playwright.config.ts), which also freezes the
-// Skeleton pulse to its end state. `maxDiffPixelRatio: 0.01` is the ADR tolerance,
-// also set once in the global expect config. Mask only genuinely nondeterministic
-// regions (spinner / live clock) — SAMPLE_NOW is fixed so timestamps are stable,
-// and no masks are currently needed.
+// Skeleton pulse to its end state. Tolerance is zero (#448): baselines are
+// compared and generated only inside the pinned docker renderer, and
+// `assertBaseline` below requires the committed PNG byte-for-byte. Mask only
+// genuinely nondeterministic regions — the clock is fixed at SAMPLE_NOW by the
+// harness fixture, so no masks are currently needed.
 
 export type { Tier };
 
@@ -67,6 +68,28 @@ async function assertFigureMinimum(root: Locator, screen: string, state: string)
 
 function screenshotOptions(opts: ShootOptions): { mask?: Locator[] } {
   return opts.mask ? { mask: opts.mask } : {};
+}
+
+// `toHaveScreenshot` first (it writes the expected/actual/diff artifacts), then,
+// in the pinned renderer, byte equality against the committed PNG: pixelmatch
+// exempts pixels it classifies as anti-aliasing with no knob to disable it, so
+// `maxDiffPixels: 0` alone is not zero tolerance (#448). The second capture
+// spells out the matcher's defaults (css scale, hidden caret, animations off)
+// so both captures render identically; a byte-only mismatch attaches both PNGs
+// (the matcher passed, so it wrote no triplet). Skipped while updating.
+async function assertBaseline(locator: Locator, fileName: string, opts: { mask?: Locator[] }): Promise<void> {
+  await expect(locator).toHaveScreenshot(fileName, opts);
+  const info = test.info();
+  if (info.project.metadata.pinnedRenderer !== true || info.config.updateSnapshots === "all") return;
+  const actual = await locator.screenshot({ ...opts, animations: "disabled", caret: "hide", scale: "css" });
+  const expected = readFileSync(info.snapshotPath(fileName));
+  if (!actual.equals(expected)) {
+    await info.attach(`${fileName}-expected`, { body: expected, contentType: "image/png" });
+    await info.attach(`${fileName}-actual`, { body: actual, contentType: "image/png" });
+  }
+  expect(actual.equals(expected), `${fileName}: pixel-identical baseline required (pinned renderer, #448)`).toBe(
+    true,
+  );
 }
 
 // F4b S2: a non-"default" state gets its own baseline filename — otherwise a
@@ -142,7 +165,7 @@ export async function shootPanel(
     await settle(page);
     await assertFigureMinimum(pane, name, state);
     await writeContactSheetEvidence(page, pane, { screen: name, state, tier });
-    await expect(pane).toHaveScreenshot(snapshotName(name, state, tier), screenshotOptions(opts));
+    await assertBaseline(pane, snapshotName(name, state, tier), screenshotOptions(opts));
     await resetPaneSize(page, pane);
   }
 }
@@ -168,7 +191,7 @@ export async function shootRegion(
   await settle(page);
   await assertFigureMinimum(region, name, state);
   await writeContactSheetEvidence(page, region, { screen: name, state, tier: "M" });
-  await expect(region).toHaveScreenshot(snapshotName(name, state, "M"), screenshotOptions(opts));
+  await assertBaseline(region, snapshotName(name, state, "M"), screenshotOptions(opts));
   await resetPaneSize(page, pane);
 }
 
@@ -188,14 +211,14 @@ export async function shootScreen(
   await settle(page);
   await assertFigureMinimum(workspace, name, state);
   await writeContactSheetEvidence(page, workspace, { screen: name, state, tier: "M" });
-  await expect(workspace).toHaveScreenshot(snapshotName(name, state, "M"), shot);
+  await assertBaseline(workspace, snapshotName(name, state, "M"), shot);
   if (lightPass()) return;
 
   for (const tier of opts.forced ?? []) {
     await setPaneSize(page, { width: TIER_WIDTH[tier], height: TIER_HEIGHT, pane: workspace });
     await settle(page);
     await writeContactSheetEvidence(page, workspace, { screen: name, state, tier });
-    await expect(workspace).toHaveScreenshot(snapshotName(name, state, tier), shot);
+    await assertBaseline(workspace, snapshotName(name, state, tier), shot);
     await resetPaneSize(page, workspace);
   }
 }
