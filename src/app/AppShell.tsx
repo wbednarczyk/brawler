@@ -225,6 +225,7 @@ export function AppShell({
     "app.openInbox": () => setActiveSection("Inbox"),
     "app.openCompanies": () => setActiveSection("Companies"),
     "app.openWatchlists": () => setActiveSection("Watchlists"),
+    "app.openResearch": () => setActiveSection("Research"),
     "app.openEvents": () => setActiveSection("Events"),
     "app.openTranscripts": () => setActiveSection("Transcripts"),
     "app.openSources": () => setActiveSection("Sources"),

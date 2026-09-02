@@ -9,6 +9,7 @@ export type AppShortcutId =
   | "app.openWatchlists"
   | "app.openAlerts"
   | "app.openEvents"
+  | "app.openResearch"
   | "app.openTranscripts"
   | "app.openSources"
   | "app.openSettings"
@@ -40,13 +41,13 @@ export type AppShortcutReferenceItem = ShortcutReferenceItem & {
   verb: Verb;
 };
 
-// Ctrl+4 is unbound in this slice (F4c S2, ADR 0108 amendment): the
-// Notebooks-global screen it opened is retired; F4c S3 assigns it to
-// Research (`app.openResearch`) — not introduced here.
+// Ctrl+4 moved from the retired Notebooks-global screen (F4c S2) to Research
+// (F4c S3, contract § Decisions #4).
 const navigationShortcuts = [
   ["app.openInbox", "Open Inbox", "1", "Inbox"],
   ["app.openCompanies", "Open Companies", "2", "Companies"],
   ["app.openWatchlists", "Open Watchlists", "3", "Watchlists"],
+  ["app.openResearch", "Open Research", "4", "Research"],
   ["app.openEvents", "Open Events", "5", "Events"],
   ["app.openTranscripts", "Open Transcripts", "6", "Transcripts"],
   ["app.openSources", "Open Sources", "7", "Sources"],

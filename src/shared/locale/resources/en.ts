@@ -31,6 +31,7 @@ export const en = {
   "nav.sources": "Sources",
   "nav.events": "Events",
   "nav.reportSeason": "Report Season",
+  "nav.research": "Research",
   "nav.diagnostics": "Diagnostics",
   "nav.settings": "Settings",
   "nav.today": "Today",

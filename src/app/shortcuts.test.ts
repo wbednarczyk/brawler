@@ -9,6 +9,15 @@ import { appShortcutReferenceItems, resolveAppShortcutReferenceItems } from "./s
 // (`appShortcutReferenceItems`), so an unknown id neither crashes nor
 // renders a ghost row in Settings → Keyboard shortcuts (ShortcutSettings.tsx
 // iterates the resolved list, never `Object.keys(shortcutBindings)`).
+// F4c S3 (contract § Decisions #4, sol R2 amendment): Ctrl+4 moves from the
+// retired Notebooks-global screen (F4c S2) to Research.
+describe("app.openResearch — default binding", () => {
+  it("defaults to Ctrl+4", () => {
+    const item = appShortcutReferenceItems.find((entry) => entry.id === "app.openResearch");
+    expect(item?.defaultBinding).toEqual({ ctrlKey: true, key: "4" });
+  });
+});
+
 describe("resolveAppShortcutReferenceItems — unknown persisted ids", () => {
   it("ignores a persisted binding for a retired shortcut id", () => {
     const shortcutBindings = {

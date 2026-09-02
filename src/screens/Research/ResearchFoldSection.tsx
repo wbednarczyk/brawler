@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ActionButton, Figure } from "../../ui";
 
 // U7-D density (ADR 0076 D6): Research secondary sections (review queue, questions)
 // fold to a clickable count chip below their reveal tier and when the pane is
@@ -32,20 +33,22 @@ export function ResearchFoldSection({
 }: ResearchFoldSectionProps) {
   return (
     <div className="research-fold" data-fold={foldTier} data-expanded={expanded || undefined}>
-      <button
+      <ActionButton
         aria-controls={bodyId}
         aria-expanded={expanded}
         className="research-fold-chip"
+        kind="control"
         onClick={onToggle}
         title={toggleTitle}
-        type="button"
       >
         <span aria-hidden="true" className="research-fold-chip-caret">
           {expanded ? "▾" : "▸"}
         </span>
         <span className="research-fold-chip-label">{label}</span>
-        <span className="research-fold-chip-count">{count}</span>
-      </button>
+        <span className="research-fold-chip-count">
+          <Figure value={count} />
+        </span>
+      </ActionButton>
       <div className="research-fold-body" id={bodyId}>
         {children}
       </div>

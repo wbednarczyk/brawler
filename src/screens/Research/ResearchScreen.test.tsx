@@ -24,7 +24,7 @@ describe("Research screen workflows", () => {
     const researchRegion = await screen.findByLabelText("Evidence timeline");
     const firstEvidenceRow = (await within(researchRegion).findAllByRole("article"))[0];
 
-    await user.click(within(firstEvidenceRow).getByTitle("Open evidence"));
+    await user.click(within(firstEvidenceRow).getByRole("button", { name: /^Open:/ }));
 
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
     expect(screen.getAllByText("Current report placeholder for watchlist company").length).toBeGreaterThan(0);
@@ -50,7 +50,7 @@ describe("Research screen workflows", () => {
       within(row).queryByText("AI-generated source-grounded summary."),
     );
     expect(aiRow).toBeDefined();
-    await user.click(within(aiRow as HTMLElement).getByTitle("Open evidence"));
+    await user.click(within(aiRow as HTMLElement).getByRole("button", { name: /^Open:/ }));
 
     // Lands in the Inbox scoped to CDR only — the report item (which a "Saved"
     // status filter would hide) is visible, i.e. no restrictive filter is active.
@@ -128,7 +128,7 @@ describe("Research screen workflows", () => {
     });
     expect(screen.getByText("No evidence for selected filters.")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    await user.click(screen.getByRole("button", { name: "Mark as reviewed" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("mark_research_scope_reviewed", {
@@ -177,7 +177,7 @@ describe("Research screen workflows", () => {
     );
     const feedEvidenceRow = feedEvidenceTitle.closest("article");
     expect(feedEvidenceRow).not.toBeNull();
-    await user.click(within(feedEvidenceRow as HTMLElement).getByTitle("Link evidence"));
+    await user.click(within(feedEvidenceRow as HTMLElement).getByRole("button", { name: /^Link to question:/ }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("create_evidence_link", {
@@ -220,7 +220,7 @@ describe("Research screen workflows", () => {
     const questionEvidenceRow = questionEvidenceTitle.closest("article");
     expect(questionEvidenceRow).not.toBeNull();
 
-    await user.click(within(questionEvidenceRow as HTMLElement).getByTitle("Open evidence"));
+    await user.click(within(questionEvidenceRow as HTMLElement).getByRole("button", { name: /^Open:/ }));
 
     // Landed on the Spółka screen with the research tool raised.
     const company = await screen.findByRole("region", { name: "Company view" });
@@ -241,7 +241,7 @@ describe("Research screen workflows", () => {
     const noteEvidenceRow = noteEvidenceTitle.closest("article");
     expect(noteEvidenceRow).not.toBeNull();
 
-    await user.click(within(noteEvidenceRow as HTMLElement).getByTitle("Open evidence"));
+    await user.click(within(noteEvidenceRow as HTMLElement).getByRole("button", { name: /^Open:/ }));
 
     const company = await screen.findByRole("region", { name: "Company view" });
     const tool = await within(company).findByRole("group", { name: "Workshop tool" });
@@ -258,9 +258,9 @@ describe("Research screen workflows", () => {
     });
 
     // Cascading (ADR 0076 D5): confirm in place, then the delete fires.
-    await user.click(screen.getByRole("button", { name: "Delete research question" }));
+    await user.click(screen.getByRole("button", { name: "Remove question: Will margins recover?" }));
     expect(invoke).not.toHaveBeenCalledWith("delete_research_question", expect.anything());
-    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_research_question", {
@@ -294,7 +294,7 @@ describe("Research screen workflows", () => {
     });
 
     await user.click(screen.getByLabelText("Also mark member companies reviewed"));
-    await user.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    await user.click(screen.getByRole("button", { name: "Mark as reviewed" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("mark_research_scope_reviewed", {
@@ -308,10 +308,11 @@ describe("Research screen workflows", () => {
   });
 
   // Owner decision 2026-08-26 (ADR 0107): the watchlist review queue's
-  // company row gets an explicit "Open company" action that lands on that
-  // company's Spółka screen through the guarded entry
-  // (`openCompanyWorkspaceById`), never a direct state set — and it must
-  // keep the row's existing select-into-the-queue behavior intact.
+  // company row gets an explicit "Company" destination action (F4c S3: noun
+  // label, `kind="destination"`, dec. 4) that lands on that company's Spółka
+  // screen through the guarded entry (`openCompanyWorkspaceById`), never a
+  // direct state set — and it must keep the row's existing select-into-the-
+  // queue behavior intact.
   it("Open company on a watchlist row lands on Spółka", async () => {
     const user = userEvent.setup();
 
@@ -319,7 +320,7 @@ describe("Research screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Watchlist" }));
 
     const reviewQueue = await screen.findByLabelText("Watchlist company review queue");
-    await user.click(within(reviewQueue).getByRole("button", { name: "Open company" }));
+    await user.click(within(reviewQueue).getByRole("button", { name: /^Company:/ }));
 
     const spolka = await screen.findByRole("region", { name: "Company view" });
     expect(spolka).toHaveAttribute("data-company-id", "company_gpw_cdr");
@@ -364,7 +365,7 @@ describe("Research screen workflows", () => {
 
 
     expect(await screen.findByText("Review open claim follow-up")).toBeInTheDocument();
-    await user.click(screen.getByTitle("Snooze reminder"));
+    await user.click(screen.getByRole("button", { name: "Snooze: Review open claim follow-up" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("update_research_reminder", {
@@ -375,7 +376,7 @@ describe("Research screen workflows", () => {
       });
     });
 
-    await user.click(screen.getByTitle("Complete reminder"));
+    await user.click(screen.getByRole("button", { name: "Mark as done: Review open claim follow-up" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("update_research_reminder", {
@@ -386,7 +387,7 @@ describe("Research screen workflows", () => {
       });
     });
 
-    await user.click(await screen.findByTitle("Reopen reminder"));
+    await user.click(await screen.findByRole("button", { name: "Reopen: Review open claim follow-up" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("update_research_reminder", {

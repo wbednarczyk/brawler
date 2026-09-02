@@ -1239,7 +1239,7 @@ export function AppStateRoot({
     () => ({
       "app.openInbox": () => undefined,
       "app.openCompanies": () => undefined,
-      "app.openWatchlists": () => undefined,
+      "app.openWatchlists": () => undefined, "app.openResearch": () => undefined,
       "app.openEvents": () => undefined,
       "app.openTranscripts": () => undefined,
       "app.openSources": () => undefined,

@@ -1,7 +1,7 @@
 import type { Company, Watchlist } from "../../api/types";
 import type { ResearchEvidenceType } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
-import { Checkbox, SelectField } from "../../ui";
+import { ActionButton, Checkbox, SegmentedControl, SegmentedControlOption, SelectField } from "../../ui";
 
 type ResearchScopeBarProps = {
   companies: Company[];
@@ -53,22 +53,22 @@ export function ResearchScopeBar({
 
   return (
     <div role="group" className="research-toolbar" aria-label={text("Research filters")}>
-      <div className="research-mode-switch" aria-label={text("Research mode")}>
-        <button
-          className={mode === "company" ? "research-mode-option active" : "research-mode-option"}
-          type="button"
+      <SegmentedControl ariaLabel={text("Research mode")}>
+        <SegmentedControlOption
+          active={mode === "company"}
+          data-action-kind="control"
           onClick={() => setMode("company")}
         >
           {text("Company")}
-        </button>
-        <button
-          className={mode === "watchlist" ? "research-mode-option active" : "research-mode-option"}
-          type="button"
+        </SegmentedControlOption>
+        <SegmentedControlOption
+          active={mode === "watchlist"}
+          data-action-kind="control"
           onClick={() => setMode("watchlist")}
         >
           {text("Watchlist")}
-        </button>
-      </div>
+        </SegmentedControlOption>
+      </SegmentedControl>
 
       {mode === "company" ? (
         <SelectField
@@ -100,19 +100,23 @@ export function ResearchScopeBar({
 
       <div className="research-filter-group" aria-label={text("Evidence type filters")}>
         {evidenceTypeOptions.map((option) => (
-          <button
+          <ActionButton
             className={selectedEvidenceTypeSet.has(option.value) ? "research-filter active" : "research-filter"}
             key={option.value}
-            type="button"
+            kind="control"
             onClick={() => toggleEvidenceType(option.value)}
           >
             {text(option.label)}
-          </button>
+          </ActionButton>
         ))}
         {selectedEvidenceTypes.length > 0 ? (
-          <button className="research-filter research-filter-clear" type="button" onClick={clearEvidenceTypes}>
+          <ActionButton
+            className="research-filter research-filter-clear"
+            kind="control"
+            onClick={clearEvidenceTypes}
+          >
             {text("All evidence")}
-          </button>
+          </ActionButton>
         ) : null}
       </div>
 

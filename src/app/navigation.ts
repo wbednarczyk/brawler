@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  FlaskConical,
   Home,
   Inbox,
   LayoutPanelTop,
@@ -14,11 +15,12 @@ import {
 } from "lucide-react";
 import type { LocaleKey } from "../shared/locale";
 
-// The full set of app sections. Research and Notebooks are not top-level nav
-// destinations — they are reached via the palette or deep links, but remain
-// valid `activeSection` values because AppStateRoot still renders them.
-// Events and ReportSeason joined the Library nav in F4b S4 (contract §
-// Decisions #1).
+// The full set of app sections. Events, ReportSeason (F4b S4) and Research
+// (F4c S3, contract § Decisions #1/#4) are Library nav destinations; the
+// Notebooks-global/Journal-global screens they used to sit alongside were
+// retired in F4c S2 (ADR 0108 amendment) — Notebooks/Journal here are dead
+// `activeSection` values kept only for the S2 diff's own scope, not reachable
+// from any nav item.
 export type Section =
   | "Today"
   | "Inbox"
@@ -90,6 +92,9 @@ export const navGroups: NavGroup[] = [
       // paths, AppShell.tsx SCREEN_PALETTE_ENTRIES).
       { label: "Events", icon: CalendarDays, localeKey: "nav.events" },
       { label: "ReportSeason", icon: CalendarClock, localeKey: "nav.reportSeason" },
+      // Research (F4c S3, contract § Decisions #4): joins the Library nav —
+      // language pass + labelled actions, not a redesign (owner 28.08).
+      { label: "Research", icon: FlaskConical, localeKey: "nav.research" },
       { label: "Transcripts", icon: Video, localeKey: "nav.transcripts" },
       { label: "Sources", icon: Activity, localeKey: "nav.sources" },
     ],

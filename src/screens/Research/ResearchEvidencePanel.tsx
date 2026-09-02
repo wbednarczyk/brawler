@@ -7,7 +7,7 @@ import type {
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
 import { TickerLabel } from "../../shared/components/TickerLabel";
-import { ActionRow, Button, EmptyState, SectionHeader } from "../../ui";
+import { ActionButton, ActionRow, EmptyState, Figure, SectionHeader } from "../../ui";
 import { EvidenceRow } from "./EvidenceRow";
 
 type CompanySummary = {
@@ -24,6 +24,8 @@ type ResearchEvidencePanelProps = {
   companySummaryById: Map<string, CompanySummary>;
   selectedQuestion: ResearchQuestion | null;
   linkedEvidenceKeys: Set<string>;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
   setSelectedWatchlistCompanyId: (companyId: string | null) => void;
   openCompanyWorkspaceById: (companyId: string) => void;
   resizeResearchPanelWithKeyboard: (
@@ -36,7 +38,6 @@ type ResearchEvidencePanelProps = {
   openEvidence: (item: ResearchEvidenceItem) => void;
   openEvidenceUrl: (url: string) => void;
   linkEvidence: (item: ResearchEvidenceItem) => void;
-  formatTimestamp: (value: string | null | undefined) => string;
   text: (value: string) => string;
 };
 
@@ -50,6 +51,8 @@ export function ResearchEvidencePanel({
   companySummaryById,
   selectedQuestion,
   linkedEvidenceKeys,
+  hasActiveFilters,
+  onClearFilters,
   setSelectedWatchlistCompanyId,
   openCompanyWorkspaceById,
   resizeResearchPanelWithKeyboard,
@@ -59,7 +62,6 @@ export function ResearchEvidencePanel({
   openEvidence,
   openEvidenceUrl,
   linkEvidence,
-  formatTimestamp,
   text,
 }: ResearchEvidencePanelProps) {
   return (
@@ -73,15 +75,17 @@ export function ResearchEvidencePanel({
 
               return (
                 // Outer container is a non-interactive div (not a <button>) so
-                // the "Open company" secondary action can sit alongside the
-                // primary select button without nesting interactives
-                // (ADR 0076 D9, same pattern as CompaniesScreen's company-row).
+                // the "Company" destination action (F4c S3: noun label,
+                // kind="destination", dec. 4) can sit alongside the primary
+                // select button without nesting interactives (ADR 0076 D9,
+                // same pattern as CompaniesScreen's company-row).
                 <div
                   className={isSelected ? "research-company-queue-row selected" : "research-company-queue-row"}
                   key={company.id}
                 >
                   <button
                     className="research-company-queue-select"
+                    data-action-kind="control"
                     type="button"
                     onClick={() => setSelectedWatchlistCompanyId(company.id)}
                   >
@@ -95,16 +99,21 @@ export function ResearchEvidencePanel({
                     </span>
                   </button>
                   <ActionRow className="research-company-queue-actions">
-                    <Button onClick={() => openCompanyWorkspaceById(company.id)} type="button" variant="ghost">
+                    <ActionButton
+                      aria-label={`${text("Company")}: ${company.displayName}`}
+                      kind="destination"
+                      onClick={() => openCompanyWorkspaceById(company.id)}
+                      variant="ghost"
+                    >
                       <Building2 size={14} />
-                      {text("Open company")}
-                    </Button>
+                      {text("Company")}
+                    </ActionButton>
                   </ActionRow>
                 </div>
               );
             })}
             {watchlistCompanies.length === 0 ? (
-              <EmptyState>{text("Selected watchlist has no companies.")}</EmptyState>
+              <EmptyState kind="quiet" reason={text("Selected watchlist has no companies.")} />
             ) : null}
           </div>
           <div
@@ -129,7 +138,7 @@ export function ResearchEvidencePanel({
         <SectionHeader
           className="research-section-evidence"
           description={text("Source items, notes, events, and transcripts for this scope.")}
-          meta={visibleItems.length}
+          meta={<Figure value={visibleItems.length} />}
           title={text("Evidence")}
           variant="accent"
         />
@@ -141,7 +150,6 @@ export function ResearchEvidencePanel({
                   ? item.reviewState.changedSinceWatchlistReview
                   : item.reviewState.changedSinceCompanyReview
               }
-              formatTimestamp={formatTimestamp}
               item={item}
               key={item.id}
               onOpen={openEvidence}
@@ -156,9 +164,21 @@ export function ResearchEvidencePanel({
             />
           ))}
           {visibleItems.length === 0 ? (
-            <EmptyState>
-              {companiesCount === 0 ? text("No companies tracked yet.") : text("No evidence for selected filters.")}
-            </EmptyState>
+            companiesCount === 0 ? (
+              <EmptyState kind="quiet" reason={text("No companies tracked yet.")} />
+            ) : (
+              <EmptyState
+                kind="quiet"
+                reason={text("No evidence for selected filters.")}
+                action={
+                  hasActiveFilters ? (
+                    <ActionButton kind="control" onClick={onClearFilters}>
+                      {text("Clear filters")}
+                    </ActionButton>
+                  ) : undefined
+                }
+              />
+            )
           ) : null}
         </div>
       </div>

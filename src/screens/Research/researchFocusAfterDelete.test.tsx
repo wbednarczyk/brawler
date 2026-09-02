@@ -108,7 +108,6 @@ describe("ResearchRemindersPanel focus-after-delete", () => {
         snoozeReminder={() => {}}
         reopenReminder={() => {}}
         deleteReminder={() => {}}
-        formatTimestamp={() => ""}
         text={(value) => value}
       />
     );
@@ -120,12 +119,12 @@ describe("ResearchRemindersPanel focus-after-delete", () => {
 
     const rows = () => container.querySelectorAll<HTMLElement>(".research-reminder-row");
     // The row article is not focusable; focus its leading action (in-list).
-    (rows()[1].querySelector(".icon-button") as HTMLElement).focus();
+    (rows()[1].querySelector(".compact-button") as HTMLElement).focus();
     act(() => remove("r2"));
 
     expect(rows()).toHaveLength(2);
     // The row now in slot 1 is Three; focus lands on its first action button.
-    expect(document.activeElement).toBe(rows()[1].querySelector(".icon-button"));
+    expect(document.activeElement).toBe(rows()[1].querySelector(".compact-button"));
     expect(rows()[1]).toHaveTextContent("Three");
   });
 });

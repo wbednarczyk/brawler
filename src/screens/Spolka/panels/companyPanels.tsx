@@ -7,7 +7,6 @@ import { NotebookQuarterField } from "../../../shared/components/NotebookQuarter
 import { MarkdownNoteBody } from "../../../shared/components/MarkdownNoteBody";
 import { CompanyNotebookSection } from "../../Companies/CompanyNotebookSection";
 import { FundamentalsPanel as CompanyFundamentalsPanel } from "../../Companies/FundamentalsPanel";
-import { formatDetailTimestamp } from "../../../shared/format/datetime";
 import { emptyNotebookForm } from "../../../app/notebookForms";
 import type { NotebookDraft } from "../route";
 import { useFundamentalsPanel } from "./useFundamentalsPanel";
@@ -215,7 +214,6 @@ export function DecisionJournalPanel({ company }: { company: Company }) {
       cancelSupersede={journal.cancelSupersede}
       setSelectedEntryId={journal.setSelectedEntryId}
       linkEvidence={journal.linkEvidence}
-      formatTimestamp={formatDetailTimestamp}
     />
   );
 }

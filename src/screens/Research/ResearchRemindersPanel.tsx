@@ -1,7 +1,7 @@
 import { Check, Clock3, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { ResearchReminder } from "../../api/researchTypes";
 import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
-import { ActionRow, Button, EmptyState, SectionHeader } from "../../ui";
+import { ActionButton, ActionRow, EmptyState, Figure, SectionHeader } from "../../ui";
 import { formatReminderKind, formatReminderStatus } from "./researchFormatters";
 
 type ResearchRemindersPanelProps = {
@@ -13,7 +13,6 @@ type ResearchRemindersPanelProps = {
   snoozeReminder: (reminderId: string) => void;
   reopenReminder: (reminderId: string) => void;
   deleteReminder: (reminderId: string) => void;
-  formatTimestamp: (value: string | null | undefined) => string;
   text: (value: string) => string;
 };
 
@@ -26,7 +25,6 @@ export function ResearchRemindersPanel({
   snoozeReminder,
   reopenReminder,
   deleteReminder,
-  formatTimestamp,
   text,
 }: ResearchRemindersPanelProps) {
   const visibleReminders = reminders.slice(0, 6);
@@ -34,20 +32,22 @@ export function ResearchRemindersPanel({
   // row's leading action button (ADR 0076 D9); the row article is not focusable.
   const { listRef } = useFocusAfterRemove<HTMLDivElement>(
     visibleReminders.map((reminder) => reminder.id),
-    { rowSelector: ".research-reminder-row", focusSelector: ".icon-button" },
+    { rowSelector: ".research-reminder-row", focusSelector: ".compact-button" },
   );
+  const addReminderButton = (
+    <ActionButton className="compact-button" disabled={reminderInFlight || !canAdd} onClick={onAdd} verb="add">
+      <Plus size={14} />
+      {text("Add reminder")}
+    </ActionButton>
+  );
+
   return (
     <div role="group" className="research-reminders" aria-label={text("Research reminders")}>
       <SectionHeader
-        actions={
-          <Button className="compact-button" disabled={reminderInFlight || !canAdd} onClick={onAdd}>
-            <Plus size={14} />
-            {text("Add reminder")}
-          </Button>
-        }
+        actions={reminders.length > 0 ? addReminderButton : undefined}
         className="research-section-review"
         description={text("Items that need a concrete follow-up action.")}
-        meta={reminders.length}
+        meta={<Figure value={reminders.length} />}
         title={text("Review queue")}
         variant="accent"
       />
@@ -57,51 +57,70 @@ export function ResearchRemindersPanel({
             <div>
               <span>{text(formatReminderKind(reminder.reminderKind))}</span>
               <strong>{reminder.title}</strong>
-              {reminder.dueAt ? <time dateTime={reminder.dueAt}>{formatTimestamp(reminder.dueAt)}</time> : null}
+              {reminder.dueAt ? (
+                <time dateTime={reminder.dueAt}>
+                  <Figure kind="datetime" value={reminder.dueAt} />
+                </time>
+              ) : null}
               {reminder.status !== "open" ? <em>{text(formatReminderStatus(reminder.status))}</em> : null}
             </div>
             <ActionRow className="research-reminder-actions">
               {reminder.status === "open" ? (
                 <>
-                  <Button
-                    className="icon-button"
+                  <ActionButton
+                    aria-label={`${text("Mark as done")}: ${reminder.title}`}
+                    className="compact-button"
                     disabled={reminderInFlight}
                     onClick={() => completeReminder(reminder.id)}
-                    title={text("Complete reminder")}
+                    verb="markAs"
                   >
                     <Check size={15} />
-                  </Button>
-                  <Button
-                    className="icon-button"
+                    {text("Mark as done")}
+                  </ActionButton>
+                  <ActionButton
+                    aria-label={`${text("Snooze")}: ${reminder.title}`}
+                    className="compact-button"
                     disabled={reminderInFlight}
                     onClick={() => snoozeReminder(reminder.id)}
-                    title={text("Snooze reminder")}
+                    verb="snooze"
                   >
                     <Clock3 size={15} />
-                  </Button>
+                    {text("Snooze")}
+                  </ActionButton>
                 </>
               ) : (
-                <Button
-                  className="icon-button"
+                <ActionButton
+                  aria-label={`${text("Reopen")}: ${reminder.title}`}
+                  className="compact-button"
                   disabled={reminderInFlight}
                   onClick={() => reopenReminder(reminder.id)}
-                  title={text("Reopen reminder")}
+                  verb="resume"
                 >
                   <RotateCcw size={15} />
-                </Button>
+                  {text("Reopen")}
+                </ActionButton>
               )}
-              <Button
-                className="icon-button"
+              <ActionButton
+                aria-label={`${text("Remove reminder")}: ${reminder.title}`}
+                className="compact-button"
                 disabled={reminderInFlight}
                 onClick={() => deleteReminder(reminder.id)}
-                title={text("Delete reminder")}
+                verb="remove"
               >
                 <Trash2 size={15} />
-              </Button>
+                {text("Remove reminder")}
+              </ActionButton>
             </ActionRow>
           </article>
         ))}
-        {reminders.length === 0 ? <EmptyState>{text("No research reminders.")}</EmptyState> : null}
+        {reminders.length === 0 ? (
+          <EmptyState
+            kind="invitation"
+            title={text("No research reminders.")}
+            source={text("Reminders track follow-ups on claims, questions, and reviews.")}
+            action={addReminderButton}
+          />
+        ) : null}
       </div>
     </div>
   );
