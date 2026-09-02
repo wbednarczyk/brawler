@@ -1,4 +1,4 @@
-import { test, expect, openApp, openScreen, setPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, setPaneSize, expectNoPageOverflow } from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
 // Density contracts — Notebook + Claims panels (ADR 0076 D6 / U7 cluster C).
@@ -82,58 +82,6 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
     await expect(pane.locator(".notebook-list")).toBeHidden();
     await expect(pane.locator(".notebook-back-to-list")).toBeVisible();
     await expectNoPageOverflow(page);
-  });
-
-  test("global Notebooks screen — S / M / L tier compliance", async ({ page }) => {
-    await openApp(page);
-    await openScreen(page, "Notebooks");
-    const pane = page.locator(".workspace");
-    await expect(pane.locator(".notebooks-screen")).toBeVisible();
-    const screenEl = pane.locator(".notebooks-screen");
-    // Force the clean L layout first, then land on a company with notes so the
-    // note list is populated for the S toggle.
-    await setPaneSize(page, { width: 900, height: 700, pane });
-    await pane.getByRole("button", { name: "Open notebook company: GPW:CDR" }).click();
-    await expect(pane.locator(".notebooks-notes-list .notebook-row").first()).toBeVisible();
-
-    // L: multi-column — company nav ∥ notes ∥ detail; resizers present.
-    {
-      const navBox = await box(pane.locator(".notebooks-company-nav"));
-      const detailBox = await box(pane.locator(".notebooks-detail-pane"));
-      expect(detailBox.x, "detail to the right of the company nav").toBeGreaterThan(navBox.x + navBox.width);
-      expect(Math.abs(detailBox.y - navBox.y), "columns on one row").toBeLessThan(40);
-      await expect(pane.locator(".notebooks-resizer").first()).toBeVisible();
-      await expectNoPageOverflow(page);
-    }
-
-    // M: stacked single column — same left edge, detail below; resizers hidden.
-    await setPaneSize(page, { width: 600, height: 700, pane });
-    {
-      const navBox = await box(pane.locator(".notebooks-company-nav"));
-      const detailBox = await box(pane.locator(".notebooks-detail-pane"));
-      expect(Math.abs(detailBox.x - navBox.x), "detail shares the nav's column").toBeLessThan(6);
-      expect(detailBox.y, "detail stacked below the nav").toBeGreaterThan(navBox.y + 10);
-      await expect(pane.locator(".notebooks-resizer").first()).toBeHidden();
-      await expectNoPageOverflow(page);
-    }
-
-    // S: single column, list OR detail toggled.
-    await setPaneSize(page, { width: 380, height: 700, pane });
-    await expect(screenEl).not.toHaveAttribute("data-detail-open");
-    await expect(pane.locator(".notebooks-company-nav")).toBeVisible();
-    await expect(pane.locator(".notebooks-detail-pane")).toBeHidden();
-    await expectNoPageOverflow(page);
-
-    await pane.locator(".notebooks-notes-list .notebook-row").first().click();
-    await expect(screenEl).toHaveAttribute("data-detail-open", "");
-    await expect(pane.locator(".notebooks-company-nav")).toBeHidden();
-    await expect(pane.locator(".notebooks-detail-pane")).toBeVisible();
-    await expect(pane.locator(".notebooks-back-to-list")).toBeVisible();
-    await expectNoPageOverflow(page);
-
-    await pane.locator(".notebooks-back-to-list").click();
-    await expect(screenEl).not.toHaveAttribute("data-detail-open");
-    await expect(pane.locator(".notebooks-company-nav")).toBeVisible();
   });
 
   test("company Claims — S / M / L / short tiers", async ({ page }) => {

@@ -84,7 +84,11 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByText("F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Shift+F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Open next inbox item")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Open notebook entry editor")).toBeInTheDocument();
+    // F4c S2 (ADR 0108 amendment): the Notebooks-global screen retired —
+    // `app.openNotebooks`/`notebook.editSelected`/`notebook.saveCurrent` are
+    // deleted outright (no ghost rows for a retired id, retiredKeys.test.ts).
+    expect(within(settingsRegion).queryByText(/^Open notebook entry editor$/)).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByText(/^Save notebook edit$/)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Shortcut key Open Inbox"), {
       target: { value: "I" },

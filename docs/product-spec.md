@@ -38,7 +38,7 @@ The feed detail pane is a fixed-width side rail and is treated as a containment 
 
 Milestone 3 introduces the company workspace as the second primary research surface after the Inbox. Opening a company from the Companies screen should show one ticker-focused page with Feed, Notebook, Claims, Transcripts, and Metadata tabs. The first implemented tab is Feed, backed by the same stored feed item model as the Inbox and filtered by the company's exchange-qualified ticker. Notebook, Claims, and Transcripts tabs may begin as placeholders until their dedicated milestones, but the navigation shape should be stable.
 
-Notebooks and Transcripts are implemented Library-nav screens, not placeholders (Milestone 3 scaffolding retired) — see [ui-information-architecture.md § App Shell](ui-information-architecture.md#app-shell) for the current nav spine.
+Transcripts is an implemented Library-nav screen, not a placeholder (Milestone 3 scaffolding retired) — see [ui-information-architecture.md § App Shell](ui-information-architecture.md#app-shell) for the current nav spine. Notebook work is the per-company Spółka `notatnik` tool only; the cross-company Notebooks screen this section originally scoped retired 2026-09-02 (F4c S2, ADR 0108 amendment).
 
 Desktop notifications are out of scope for v1. Portfolio positions, cost basis, and trading workflows are out of scope.
 
@@ -64,7 +64,7 @@ Brightness mode and accent palette are separate user settings. `theme` controls 
 
 ## Watchlists And Companies
 
-Users can maintain multiple watchlists. Companies can be assigned to and removed from watchlists without deleting the company from the local registry. Watchlists should be useful as filters in the Inbox, Events/Calendar, Companies, and Notebooks workspaces. The durable watchlist management workflow belongs in a dedicated Watchlists panel in the left menu. That panel owns creating, renaming, deleting, and selecting watchlists. It also owns adding already-tracked companies to the selected watchlist and removing companies from it. Renaming a watchlist preserves its stable internal watchlist id. Company list rows and the company workspace should only show existing watchlist memberships for scanning and context; they should not expose watchlist create, delete, add, or remove controls. Companies are displayed ticker-first, but canonical storage uses exchange-qualified tickers such as `GPW:CDR` or `NASDAQ:MSFT`.
+Users can maintain multiple watchlists. Companies can be assigned to and removed from watchlists without deleting the company from the local registry. Watchlists should be useful as filters in the Inbox, Events/Calendar, and Companies workspaces. The durable watchlist management workflow belongs in a dedicated Watchlists panel in the left menu. That panel owns creating, renaming, deleting, and selecting watchlists. It also owns adding already-tracked companies to the selected watchlist and removing companies from it. Renaming a watchlist preserves its stable internal watchlist id. Company list rows and the company workspace should only show existing watchlist memberships for scanning and context; they should not expose watchlist create, delete, add, or remove controls. Companies are displayed ticker-first, but canonical storage uses exchange-qualified tickers such as `GPW:CDR` or `NASDAQ:MSFT`.
 
 Watchlists are user-owned company groups. Normal UI copy should describe them in those terms and should not expose storage or architecture language. Future premium alerts may use watchlists as configuration inputs, but alerting is outside the dedicated watchlist-management milestone. M19 should keep backend watchlist boundaries modular and extensible for future features without adding visible placeholders or unused alert-specific fields.
 
@@ -121,7 +121,7 @@ Notebook entries should support:
 
 The first claim-tracking workflow should support management statements such as "the board said X should happen in the near future" and later verify whether the company delivered after one or more quarters. Claim follow-up supports both a follow-up quarter and an exact follow-up date, with quarters emphasized in the UI.
 
-Milestone 4 starts by making the company workspace Notebook tab durable. The first implementation supports listing company notes and creating manual Markdown notes with tags, kind, optional claim status, event date, follow-up quarter, follow-up date, and manual origin. Feed item detail views can create editable note drafts in the main Notebooks pane for the matched tracked company. Saving those drafts preserves `feed_item` origin with source URL and feed item identity.
+Milestone 4 starts by making the company workspace Notebook tab durable. The first implementation supports listing company notes and creating manual Markdown notes with tags, kind, optional claim status, event date, follow-up quarter, follow-up date, and manual origin. Feed item detail views can create editable note drafts, prefilled in the matched company's Spółka `notatnik` tool. Saving those drafts preserves `feed_item` origin with source URL and feed item identity.
 
 Notebook read mode renders common Markdown locally, including headings, paragraphs, lists, blockquotes, inline code, fenced code, bold, and italics. Edit mode remains a plain Markdown text editor.
 
@@ -129,7 +129,7 @@ As of `v0.42.0` ([ADR 0040](adr/0040-management-claims-tracker.md)) the company 
 
 Notebook UX must assume a company can accumulate dozens of notes. The company Notebook tab should prefer a compact selectable list plus a selected-note detail/editor area over large stacked cards. The note creation form should stay out of the way when not needed. Notes should be easy to scan, select, read, and edit without losing context.
 
-The current product assumption is that daily note work will happen primarily in the main Notebooks pane, while the company workspace Notebook tab remains the contextual per-company surface. The main Notebooks pane is company-navigable from its first implementation, making it easy to move between companies, create a manual note for the selected company, see each company's loaded note count or follow-up pressure, filter by kind, claim status, tag, and follow-up scheduling presence, and open the selected company's notes without losing cross-company orientation. This assumption may change after hands-on use.
+Daily note work happens in the company's Spółka `notatnik` tool; every cross-screen entry point (an Inbox feed item, research evidence, global search, a transcript selection) lands its draft there (F4c S2, ADR 0108 amendment — resolved 2026-09-02: the cross-company Notebooks screen this section's earlier assumption anticipated saw no real use, 7 notes across 6 companies in 3 months, and retired).
 
 ## Sources
 

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, BookOpenText, Maximize2, Plus, Save, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, BookOpenText, Maximize2, Plus, Save, Trash2, X } from "lucide-react";
 import type { Company, NotebookEntry } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
@@ -29,6 +29,9 @@ import type {
 // 0107) render the same surface from explicit props.
 export type CompanyNotebookSectionProps = {
   company: Company;
+  /** Deep-link navigation (F4c S2, ADR 0108 amendment, `CompanyReportDocumentsPanel`'s
+   * `highlightDocumentRef` precedent): scroll + flash this entry's row once it renders. */
+  highlightEntryId?: string;
   notebookEntries: NotebookEntry[];
   isComposerOpen: boolean;
   notebookForm: NotebookForm;
@@ -43,6 +46,9 @@ export type CompanyNotebookSectionProps = {
   setSelectedNotebookEntryId: React.Dispatch<React.SetStateAction<string | null>>;
   saveNotebookEntry: (event: React.FormEvent<HTMLFormElement>) => void;
   cancelNotebookEdit: () => void;
+  /** Reversible destroy (ADR 0076 D5): deletes the selected entry immediately
+   * with an undo toast — no blocking confirm dialog. */
+  deleteNotebookEntry: () => void;
   setNotebookEditMode: (value: boolean) => void;
   updateNotebookEditForm: (field: keyof NotebookForm, value: string) => void;
   NotebookDateField: React.ComponentType<NotebookDateLikeFieldProps>;
@@ -53,6 +59,7 @@ export type CompanyNotebookSectionProps = {
 
 export function CompanyNotebookSection({
   company,
+  highlightEntryId,
   notebookEntries,
   isComposerOpen,
   notebookForm,
@@ -67,6 +74,7 @@ export function CompanyNotebookSection({
   setSelectedNotebookEntryId,
   saveNotebookEntry,
   cancelNotebookEdit,
+  deleteNotebookEntry,
   setNotebookEditMode,
   updateNotebookEditForm,
   NotebookDateField,
@@ -77,6 +85,19 @@ export function CompanyNotebookSection({
   const { text } = useLocale();
   // Distraction-free full-screen note authoring (Focus writer, ADR 0054).
   const [writerOpen, setWriterOpen] = useState(false);
+  // Deep-link highlight (F4c S2): fades on its own after the scroll+flash,
+  // same 4s pattern as `CompanyReportDocumentsPanel`'s `activeHighlightRef`.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!highlightEntryId) return undefined;
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-notebook-entry-id="${highlightEntryId}"]`);
+    if (!row) return undefined;
+    row.scrollIntoView?.({ block: "nearest" });
+    setActiveHighlightId(highlightEntryId);
+    const timer = window.setTimeout(() => setActiveHighlightId(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [highlightEntryId, notebookEntries]);
 
   return (
     <div className="company-tab-panel notebook-panel" aria-label={text("Company notebook")}>
@@ -188,7 +209,7 @@ export function CompanyNotebookSection({
       ) : null}
 
       <div className="notebook-workspace" {...(selectedNotebookEntry ? { "data-detail-open": "" } : {})}>
-        <div className="notebook-list" aria-label={text("Notebook entries")}>
+        <div className="notebook-list" aria-label={text("Notebook entries")} ref={listRef}>
           {notebookEntries.map((entry) => (
             <button
               aria-label={`${text("Select notebook entry")}: ${entry.title}`}
@@ -198,6 +219,8 @@ export function CompanyNotebookSection({
               ]
                 .filter(Boolean)
                 .join(" ")}
+              data-notebook-entry-id={entry.id}
+              data-notebook-entry-highlighted={entry.id === activeHighlightId ? "true" : undefined}
               key={entry.id}
               onClick={() => setSelectedNotebookEntryId(entry.id)}
               type="button"
@@ -385,10 +408,16 @@ export function CompanyNotebookSection({
                     <span className="eyebrow">{selectedNotebookEntry.kind.replace("_", " ")}</span>
                     <h3>{selectedNotebookEntry.title}</h3>
                   </div>
-                  <Button className="compact-button" onClick={() => setNotebookEditMode(true)}>
-                    <BookOpenText size={15} />
-                    {text("Edit")}
-                  </Button>
+                  <ActionRow className="notebook-detail-actions">
+                    <Button className="compact-button" onClick={() => setNotebookEditMode(true)}>
+                      <BookOpenText size={15} />
+                      {text("Edit")}
+                    </Button>
+                    <Button className="compact-button" variant="danger" onClick={deleteNotebookEntry}>
+                      <Trash2 size={15} />
+                      {text("Delete")}
+                    </Button>
+                  </ActionRow>
                 </div>
                 <MarkdownNoteBody
                   ariaLabel={text("Selected notebook body")}

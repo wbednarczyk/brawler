@@ -43,7 +43,9 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   // the palette dictionary is app-level navigation only. Assert what's
   // actually still offered: global "Open screen: …" / "Open company: …"
   // entries from any screen — never "Open view: …" or "Open panel: …", both
-  // retired labels.
+  // retired labels. F4c S2 (ADR 0108 amendment): "Open screen: Notebooks" /
+  // "Open screen: Decision journal" retire with the global screens — every
+  // deep link lands on the Spółka `notatnik` tool instead.
   test("the palette lists the global navigation commands from any screen, no Open view entries", async ({ page }) => {
     await openApp(page);
 
@@ -53,6 +55,8 @@ test.describe("command palette", { tag: "@clickable" }, () => {
 
     await palette.getByLabel("Search commands").fill("Open screen");
     await expect(palette.getByRole("button", { name: "Open screen: Research", exact: true })).toBeVisible();
+    await expect(palette.getByRole("button", { name: /^Open screen: Notebooks/ })).toHaveCount(0);
+    await expect(palette.getByRole("button", { name: /^Open screen: Decision journal/ })).toHaveCount(0);
 
     await palette.getByLabel("Search commands").fill("Open company: CDR");
     await expect(

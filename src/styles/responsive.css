@@ -49,7 +49,6 @@
   }
 
   .notebook-workspace,
-  .notebooks-screen,
   .settings-layout,
   .import-export-grid,
   .notebook-form-grid,
@@ -57,21 +56,13 @@
     grid-template-columns: 1fr;
   }
 
-  .notebooks-screen,
   .settings-layout {
     overflow: auto;
   }
 
-  .notebooks-company-nav,
-  .notebooks-notes-list,
-  .notebooks-detail-pane,
   .settings-subnav,
   .settings-tab-panel {
     overflow: visible;
-  }
-
-  .notebooks-resizer {
-    display: none;
   }
 }
 

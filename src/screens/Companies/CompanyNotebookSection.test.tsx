@@ -38,6 +38,7 @@ const baseProps = {
   setSelectedNotebookEntryId: noop,
   saveNotebookEntry: noop,
   cancelNotebookEdit: noop,
+  deleteNotebookEntry: noop,
   updateNotebookEditForm: noop,
   NotebookDateField: DateStub,
   NotebookQuarterField: DateStub,
@@ -133,5 +134,75 @@ describe("CompanyNotebookSection (ADR 0057 dashboard panel)", () => {
     expect(screen.getByText("Watch gross margin trend.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(setNotebookEditMode).toHaveBeenCalledWith(true);
+  });
+
+  // The per-company panel is the ONLY notebook surface after F4c S2 (ADR
+  // 0108 amendment retires the global Notebooks screen) — it must keep the
+  // delete capability the retired screen carried (ADR 0076 D5: reversible,
+  // no blocking confirm).
+  it("deletes the selected note", async () => {
+    const user = userEvent.setup();
+    const deleteNotebookEntry = vi.fn();
+
+    render(
+      <CompanyNotebookSection
+        {...baseProps}
+        notebookEntries={[entry]}
+        isComposerOpen={false}
+        selectedNotebookEntry={entry}
+        notebookEditMode={false}
+        isNotebookEditDirty={false}
+        setComposerOpen={noop}
+        setNotebookEditMode={noop}
+        deleteNotebookEntry={deleteNotebookEntry}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(deleteNotebookEntry).toHaveBeenCalledTimes(1);
+  });
+
+  // Deep-link navigation (F4c S2, ADR 0108 amendment): the Spółka `notatnik`
+  // tool's `entryId` param must actually land on that entry —
+  // `CompanyReportDocumentsPanel`'s `highlightDocumentRef` precedent.
+  it("highlighted entry scrolls into view and is marked", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    render(
+      <CompanyNotebookSection
+        {...baseProps}
+        highlightEntryId="n1"
+        notebookEntries={[entry]}
+        isComposerOpen={false}
+        selectedNotebookEntry={null}
+        notebookEditMode={false}
+        isNotebookEditDirty={false}
+        setComposerOpen={noop}
+        setNotebookEditMode={noop}
+      />,
+    );
+
+    const row = screen.getByRole("button", { name: /Select notebook entry: Margins thesis/ });
+    expect(row).toHaveAttribute("data-notebook-entry-id", "n1");
+    expect(row).toHaveAttribute("data-notebook-entry-highlighted", "true");
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("does not highlight anything when no entry is targeted", () => {
+    render(
+      <CompanyNotebookSection
+        {...baseProps}
+        notebookEntries={[entry]}
+        isComposerOpen={false}
+        selectedNotebookEntry={null}
+        notebookEditMode={false}
+        isNotebookEditDirty={false}
+        setComposerOpen={noop}
+        setNotebookEditMode={noop}
+      />,
+    );
+
+    expect(document.querySelector("[data-notebook-entry-highlighted]")).toBeNull();
   });
 });

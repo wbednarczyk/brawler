@@ -354,6 +354,50 @@
     {
       "token": "event-week-empty",
       "adr": "ADR 0104"
+    },
+    {
+      "token": "NotebooksScreen",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "NotebookEntryEditor",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "NotebooksProvider",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "DecisionJournalGlobalPanel",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "screen.open.notebooks",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "screen.open.journal",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "app.openNotebooks",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "notebook.editSelected",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "notebook.saveCurrent",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "Journal (all companies)",
+      "adr": "ADR 0108 amendment (#410 F4c)"
+    },
+    {
+      "token": "Notebooks Screen",
+      "adr": "ADR 0108 amendment (#410 F4c)"
     }
   ]
 }

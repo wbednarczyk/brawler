@@ -1,4 +1,4 @@
-import { test, expect, openApp, openScreen } from "../helpers/harness";
+import { test, expect, openApp } from "../helpers/harness";
 import { shootPanel } from "./helpers";
 import type { Locator, Page } from "@playwright/test";
 
@@ -28,17 +28,6 @@ test.describe("visual — notebook + claims", () => {
     const pane = await openCompanyTool(page, "Notebook", ".notebook-workspace");
     await expect(pane.locator(".notebook-list")).toBeVisible();
     await shootPanel(page, pane, "notebook-company");
-  });
-
-  test("Notebooks (global screen) across pane tiers", async ({ page }) => {
-    await openApp(page);
-    await openScreen(page, "Notebooks");
-    const pane = page.locator(".workspace");
-    await expect(pane.locator(".notebooks-screen")).toBeVisible();
-    // Land on a company with notes so the list is populated for every tier.
-    await pane.getByRole("button", { name: "Open notebook company: GPW:CDR" }).click();
-    await expect(pane.locator(".notebooks-notes-list .notebook-row").first()).toBeVisible();
-    await shootPanel(page, pane, "notebooks-global");
   });
 
   test("Claims across pane tiers", async ({ page }) => {

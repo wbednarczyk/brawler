@@ -124,6 +124,26 @@ const RETIRED_PLTEXT_KEYS_F4C = [
   "Open notebook entry editor",
   "Save notebook edit",
   "Notebooks",
+  // F4c S2 (contract "Notes from S1"): the non-pattern-named keys that were
+  // ALSO exclusive to the deleted Notebooks-global screen — verified with
+  // `grep -rn 'text("<key>")\|t("<key>")' src` after S2's deletions: zero
+  // live call sites for any of these.
+  "Open notebook company",
+  "notebook entries for",
+  "Show open claims for",
+  "Show follow-ups for",
+  "Open company workspace",
+  "Add companies before using notebooks.",
+  "No notebook companies match this watchlist.",
+  "No company selected",
+  "visible note",
+  "visible notes",
+  "Notebook follow-up summary",
+  "Tag",
+  "tag",
+  "Has follow-up",
+  "No follow-up",
+  "No notes for",
   // Research tooltip-only labels the dec. 3/4 relabel retires (S3):
   // `Mark reviewed` → `Mark as reviewed`; `Delete reminder`/`Delete research
   // question` → `Remove reminder`/`Remove question`; `Snooze reminder` →

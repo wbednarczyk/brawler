@@ -33,7 +33,7 @@ Harvested at the v0.50.0 closure (ADR 0045) — each rule saves a burned ~15-min
 - **frontend component/workflow tests** (Vitest) for every UI state and workflow, not just critical ones;
 - **test-sample-backed integration tests** for source adapters and migrations (parsing, dedupe keys, company matching, error handling, migration safety, data persistence);
 - **browser UI smoke** (Playwright) for layout/scroll/overflow regressions Vitest/jsdom cannot catch — a hard-fail step of `make check`, not periodic;
-- **accessibility guards (two layers):** `src/app/screens.a11y.test.tsx` runs jest-axe over **every** primary screen (Today, Inbox, Companies, Watchlists, Research, Notebooks, Sources, Events, Settings — zero exclusions) in jsdom, catching ARIA/role/structure regressions; the real-browser layer (`expectNoA11yViolations` in `tests/browser/helpers/harness.ts`, `@axe-core/playwright`, WCAG 2.0/2.1 A/AA tags) runs in the smoke-walk per destination and in journeys at key screens, across the full viewport matrix incl. the light-theme project — the only layer that catches real **color-contrast** in both palettes × modes. Best-practice rules (region / heading-order / landmark-*) stay out of scope (structural desktop-workspace choices, not conformance failures);
+- **accessibility guards (two layers):** `src/app/screens.a11y.test.tsx` runs jest-axe over **every** primary screen (Today, Inbox, Companies, Watchlists, Research, Sources, Events, Settings — zero exclusions) in jsdom, catching ARIA/role/structure regressions; the real-browser layer (`expectNoA11yViolations` in `tests/browser/helpers/harness.ts`, `@axe-core/playwright`, WCAG 2.0/2.1 A/AA tags) runs in the smoke-walk per destination and in journeys at key screens, across the full viewport matrix incl. the light-theme project — the only layer that catches real **color-contrast** in both palettes × modes. Best-practice rules (region / heading-order / landmark-*) stay out of scope (structural desktop-workspace choices, not conformance failures);
 - a few **desktop / packaging / live-provider smoke** checks for what only the real runtime, package, or provider can prove — periodic/manual.
 
 ## Sample-data factory and per-test isolation
@@ -910,7 +910,7 @@ Setup and run:
 - `make ui-smoke-clickable` — only the **clickable journeys**: every interaction-driving `test.describe` carries the `@clickable` tag, and this target greps for it (`npm run test:browser:clickable`), leaving out the layout/density/visual walk. Iteration convenience, not a gate — the full suite is the hard-fail step of `make check`. When adding an interaction spec, tag its describe so it joins the subset.
 - **Build-freshness guard** (`tests/browser/global-setup.ts`, bug 2059fd8): the run aborts up front if a **reused** dev server (`reuseExistingServer` is on locally) is serving a stale build — one from another worktree/branch or from before your latest edit — which would false-green visual/density baselines. The config stamps the server with the newest `src/` mtime and `global-setup` refuses to proceed on a mismatch. Fix: stop the stale dev server on port 4321 so a fresh one starts (a normal `make ui-smoke` with no pre-existing server is unaffected).
 
-Use it for repeated layout risks: fixed app chrome + no global scrollbar; independently scrollable panels (Companies, Watchlists, Notebooks, Inbox, Events, Sources); dense row/category sizing; and **viewport regressions across the matrix in `playwright.config.ts`** — compact (1366×768), wide (1920×1080), and the tall/narrow quarter-ultrawide at 100% (1280×1440) and 125% (1024×1152) scaling, per the UI scaling requirement in [CLAUDE.md](../CLAUDE.md).
+Use it for repeated layout risks: fixed app chrome + no global scrollbar; independently scrollable panels (Companies, Watchlists, Inbox, Events, Sources); dense row/category sizing; and **viewport regressions across the matrix in `playwright.config.ts`** — compact (1366×768), wide (1920×1080), and the tall/narrow quarter-ultrawide at 100% (1280×1440) and 125% (1024×1152) scaling, per the UI scaling requirement in [CLAUDE.md](../CLAUDE.md).
 
 How it's wired (assertion-driven, not screenshot-only):
 
@@ -1078,13 +1078,13 @@ Representative manual sweep:
 
 - **Settings:** open every section; subnavigation stays stable; controls readable; the active panel scrolls independently. **Database:** adjust pool values, confirm out-of-range clamps + reset-to-defaults + the "applied on next launch" note.
 - **Appearance:** switch dark/light/system, then `night-neon` / `midnight-horizon`; palette changes tokens without unexpectedly changing brightness mode.
-- **Notebooks:** select company/note, create + edit a long note, tag-filter and clear; company list, note list, and editor scroll independently.
+- **Company Notebook (Spółka `notatnik` tool):** select/edit/delete a note, create a long note; note list and editor scroll independently.
 - **Inbox:** scan rows, change/clear filters and search, open details.
 - **Sources:** adapters grouped by purpose, disabled/review candidates distinct, expanded rows readable, registry search + clear work.
 - **Companies:** create a watchlist, toggle membership on/off, verify feedback/selected states, clear form fields.
 - **Global search:** top-toolbar search → ranked results grouped by content type with snippets → select navigates → field clear returns focus.
 - **Backups/restore:** in Developer Diagnostics, verify status + list, create a backup, exercise restore (warns + applies on relaunch).
-- **Polish locale:** switch to Polish and check labels in Settings, Sources, Notebooks, Companies, licensing.
+- **Polish locale:** switch to Polish and check labels in Settings, Sources, Companies, licensing.
 
 ## Live smoke tests
 
@@ -1190,6 +1190,6 @@ Per-artifact smoke (each: start → window opens → open-core nav available →
 - **.deb / .rpm:** inspect metadata (`dpkg-deb --info/--contents`, `rpm -qip/-qlp`); install on a disposable env; data under `~/.brawler`, not the install path. On WSL/WSLg, command-line startup must not abort with `Could not create default EGL display: EGL_BAD_PARAMETER` (Brawler applies a WSL-only WebKitGTK fallback; if it still fails, capture output and check whether `WEBKIT_DISABLE_DMABUF_RENDERER=1 brawler` changes behavior).
 - **Windows portable zip:** extract; contains only `brawler.exe` + `README-portable-windows.txt`; a `data/` folder + `data/brawler.sqlite3` are created next to the exe.
 
-Primary workflow check: open Inbox/Companies/Watchlists/Notebooks/Events/Sources/Research/Settings; add a company; create a watchlist + add the company; create a notebook entry; export research + settings; import into a fresh data folder; confirm source refresh returns a visible status or recoverable error.
+Primary workflow check: open Inbox/Companies/Watchlists/Events/Sources/Research/Settings; add a company; create a watchlist + add the company; create a notebook entry (Spółka `notatnik` tool); export research + settings; import into a fresh data folder; confirm source refresh returns a visible status or recoverable error.
 
 Known candidate limitations: artifacts are unsigned (OS trust warnings possible); Windows portable relies on the system WebView2 runtime; Linux packages depend on the system WebKitGTK stack; the portable folder / `~/.brawler` must be writable; secrets stay in the OS keychain and may need re-entry after moving a portable folder to another profile/machine.

@@ -10,8 +10,9 @@ records and replays what you wrote, it never grades you.
 A per-company, append-only log of your investment decisions.
 
 **Where:** open the company (the [Spółka screen](company-view.md)) →
-workshop bar → **Open decision journal**. A cross-company view lives in the
-command palette (`Ctrl+K`) as **Open screen: Decision journal**.
+workshop bar → **Open decision journal**. This is the only decision-journal
+surface — a cross-company review screen existed briefly but saw no real use
+and was retired.
 
 **Writing an entry:**
 

@@ -193,12 +193,11 @@ describe("Research screen workflows", () => {
     expect(screen.getByText("Linked evidence")).toBeInTheDocument();
   });
 
-  it("opens research question evidence in the Spółka research tool (not Notebooks)", async () => {
+  it("opens research question evidence in the Spółka research tool", async () => {
     const user = userEvent.setup();
 
     // Clicking a research_question evidence item opens the Spółka `research`
-    // tool (F3a S3, ADR 0107 mapping "preset 'evidence'→research"), never
-    // Notebooks (epic c793ca1).
+    // tool (F3a S3, ADR 0107 mapping "preset 'evidence'→research").
     renderApp({ section: "Research" });
 
     await user.click(await screen.findByRole("button", { name: "Add question" }));
@@ -223,12 +222,30 @@ describe("Research screen workflows", () => {
 
     await user.click(within(questionEvidenceRow as HTMLElement).getByTitle("Open evidence"));
 
-    // Landed on the Spółka screen with the research tool raised, not the
-    // Notebooks screen.
+    // Landed on the Spółka screen with the research tool raised.
     const company = await screen.findByRole("region", { name: "Company view" });
     const tool = await within(company).findByRole("group", { name: "Workshop tool" });
     expect(tool).toHaveAttribute("data-tool", "research");
-    expect(screen.queryByRole("heading", { name: "Notebooks" })).not.toBeInTheDocument();
+  });
+
+  // F4c S2 (ADR 0108 amendment): a `notebooks`-domain evidence row (a
+  // notebook entry linked into the research timeline) lands on the Spółka
+  // `notatnik` tool, never the retired Notebooks-global screen.
+  it("opens a notebooks-domain evidence item in the Spółka notatnik tool", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Research" });
+
+    const researchRegion = await screen.findByLabelText("Evidence timeline");
+    const noteEvidenceTitle = await within(researchRegion).findByText("CDR follow-up note");
+    const noteEvidenceRow = noteEvidenceTitle.closest("article");
+    expect(noteEvidenceRow).not.toBeNull();
+
+    await user.click(within(noteEvidenceRow as HTMLElement).getByTitle("Open evidence"));
+
+    const company = await screen.findByRole("region", { name: "Company view" });
+    const tool = await within(company).findByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "notatnik");
   });
 
   it("confirms in place and deletes a selected research question", async () => {

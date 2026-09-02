@@ -116,8 +116,7 @@
 
 /* Rationale is free Markdown prose — a pathological single long token (a pasted
    filename/URL) must wrap, not blow the pane out (DoD §B). */
-.decision-journal-detail .notebook-read-body,
-.decision-journal-global-row .notebook-read-body {
+.decision-journal-detail .notebook-read-body {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -140,47 +139,4 @@
   .decision-journal-form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-
-/* Global cross-company panel. feed-panel provides the chrome; the body scrolls
-   internally and the rows contain their own content. */
-.decision-journal-global-panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.decision-journal-global-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  min-width: 0;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.decision-journal-global-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.decision-journal-global-row {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-raised) 40%, transparent);
-  min-width: 0;
-}
-
-.decision-journal-global-row-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
 }
