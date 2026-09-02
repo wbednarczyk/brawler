@@ -11,7 +11,9 @@
 # (devshell-image.yml → ghcr.io/wbednarczyk/brawler-devshell) so `nix develop -c`
 # resolves in ~seconds instead of installing Nix per job. If that image is
 # unavailable, the documented fallback is to drop the `container:` line and add
-# an `install-nix-action` step (see mutation-audit.yml) to each job.
+# an `install-nix-action` step (see mutation-audit.yml) to each job. The `visual`
+# job is the documented exception: a plain runner plus the pinned Playwright
+# image via `make check-visual` (#448), not the devshell.
 name: Full check
 
 on:
@@ -283,9 +285,29 @@ jobs:
       - name: Reclaim disk space
         run: rm -rf /opt/hostedtoolcache || true
       - run: make install
-      # Pixel snapshots auto-disable under CI=true (Playwright config); this
-      # asserts behavior/layout, not baselines.
+      # Pixel compare runs only in the pinned renderer (the `visual` job);
+      # shards assert behavior/layout.
       - run: make check-browser SHARD=${{ matrix.shard }}
+
+  # Pixel baselines (#448): the ONLY place screenshots are compared. Plain runner
+  # (docker preinstalled), no devshell container — `make check-visual` runs the
+  # pinned Playwright image itself, so CI and local execute the identical command.
+  visual:
+    name: Visual baselines (pinned renderer)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - run: make check-visual
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: visual-diffs
+          path: test-results/
+          retention-days: 3
+          if-no-files-found: ignore
 
   # Dependency scanning (issue #167). Code-scoped like the other code jobs: a
   # docs-only PR changes no dependency tree. Unlike every other check job this

@@ -63,8 +63,8 @@ export function diffSnapshots(preMap, postMap, targetFiles) {
   const postKeys = new Set(Object.keys(postMap));
 
   // Filename-set equality applies to SIBLINGS only: a target cell may
-  // legitimately (re)appear — the rm-PNGs-first workflow deletes targets
-  // before the run — and a target that FAILED to regenerate is reported via
+  // legitimately (re)appear (e.g. a brand-new catalog cell with no prior
+  // baseline) — and a target that FAILED to regenerate is reported via
   // `missingTarget`, not as a removal. (Gap found on first real per-screen
   // use: a freshly re-shot target counted as "added" drift.)
   const added = [...postKeys].filter((key) => !preKeys.has(key) && !targets.has(key));

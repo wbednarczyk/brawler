@@ -75,6 +75,11 @@ are untouched.
 - **Renamed:** `check-fast` → `check-local`; `make mutants` → `make audit-mutants`; `mutants.yml`
   → `mutation-audit.yml` (gains the risk-path master-push auto-trigger; manual dispatch kept).
 - **New required checks:** `Frontend coverage ratchet`, `Rust coverage ratchet` (decision 4).
+- **Amendment (2026-09-02, #448):** new required context `Visual baselines (pinned renderer)`
+  (`full-check.yml` job `visual`, `make check-visual`) — pixel comparison moves from
+  maintainer-WSL-only to CI, run in the official Playwright image at the locked
+  `@playwright/test` version, zero tolerance. Added to the branch ruleset by the owner after the
+  first green run, before merge.
 - Owner-machine realdata rituals (`realdata-gt-score`, `realdata-extraction-check`,
   `realdata-honesty-check`, `make live-cycle`) stay advisory, on-demand, never required checks.
 - The #182 ESEF/positional ground-truth scorer stays a diagnostic (no precision/recall floor)

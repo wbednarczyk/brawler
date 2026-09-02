@@ -55,6 +55,8 @@ const MANDATORY_SUITES = [
   { target: "check-docs-gates", marker: 'node --test "scripts/check/*.test.mjs"', label: "check-script unit tests (the full scripts/check glob)" },
   { target: "check-docs-gates", marker: "retired-surface", label: "retired-surface manifest gate (live docs vs retired ADR surface)" },
   { target: "check-docs-gates", marker: "file-size-ratchet", label: "file-size ratchet — oversized-file fitness function (ADR 0103)" },
+  { target: "check-visual", marker: "--project=chromium-visual --project=chromium-visual-light", label: "pinned-renderer visual baselines (both projects, #448)" },
+  { target: "check-docs-gates", marker: '"scripts/ux/*.test.mjs"', label: "scripts/ux unit tests (pinned-renderer predicate, contact sheet)" },
 ];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.

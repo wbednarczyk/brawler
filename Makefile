@@ -24,7 +24,14 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
+# Pinned visual renderer (#448): the official Playwright image whose tag is the
+# locked @playwright/test version — pure shell, no host node (see the version
+# comment above). A Playwright bump moves the tag; baselines regenerate with it.
+PLAYWRIGHT_VERSION := $(shell sed -n '/"node_modules\/@playwright\/test": {/{n;s/.*"version": "\([^"]*\)".*/\1/p;}' package-lock.json)
+PLAYWRIGHT_IMAGE := mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
+VISUAL_DOCKER = docker run --rm --init --ipc=host --user "$$(id -u):$$(id -g)" -v $(CURDIR):/work -w /work -e HOME=/tmp -e SCREEN -e ALL -e REASON $(PLAYWRIGHT_IMAGE)
+
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-visual check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -32,7 +39,7 @@ help:
 	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (pre-commit runs this)\n"
 	@printf "  make check-local         Developer inner-loop / pre-handover check (parallel core, no browser) — NOT proof of done\n"
 	@printf "  make check-docs          Docs-only gate: mandatory-read budgets + docs drift, no code suites (pre-commit uses this for docs-only commits)\n"
-	@printf "  make check-rust-lint / check-rust-test / check-frontend-static / check-frontend-test / check-frontend-build / check-browser [SHARD=i/N] / check-docs-gates\n"
+	@printf "  make check-rust-lint / check-rust-test / check-frontend-static / check-frontend-test / check-frontend-build / check-browser [SHARD=i/N] / check-visual / check-docs-gates\n"
 	@printf "                            Granular CI-parity gate targets — each is one full-check.yml job; 'make check' composes them\n"
 	@printf "  make check-commits RANGE=<base>..<head>\n"
 	@printf "                            Validate every commit subject in the range against Conventional Commits\n"
@@ -53,7 +60,7 @@ help:
 	@printf "  make ux-contact-sheet SCREENS=\"a,b\" (or CHANGED=1)\n"
 	@printf "                            Assemble a local HTML contact sheet from the existing visual scenarios (ADR 0081 Q5)\n"
 	@printf "  make visual-update SCREEN=<catalog-id>|ALL=1 REASON=\"why\"\n"
-	@printf "                            Deliberate Playwright baseline update — refuses without REASON and exactly one of SCREEN/ALL\n"
+	@printf "                            Deliberate Playwright baseline update — refuses without REASON and exactly one of SCREEN/ALL; runs in the pinned renderer (docker)\n"
 	@printf "  make test                Run frontend tests inside nix develop\n"
 	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
 	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
@@ -123,6 +130,7 @@ check:
 	$(MAKE) check-frontend-build
 	$(MAKE) types-check
 	$(MAKE) check-browser
+	$(MAKE) check-visual
 	$(MAKE) check-deps
 	$(MAKE) check-docs-gates
 	$(MAKE) coverage-frontend
@@ -165,11 +173,18 @@ check-frontend-build:
 	$(NIX) node scripts/check/font-assets.mjs
 
 # Browser gate: install Chromium, then run Playwright. SHARD=i/N runs one shard
-# (CI matrix); unset runs the whole suite (local parity). Pixel snapshots
-# auto-disable under CI=true inside the Playwright config.
+# (CI matrix); unset runs the whole suite (local parity). Pixel snapshots are
+# compared only inside the pinned renderer (`check-visual`, #448).
 check-browser:
 	$(NIX) npm run test:browser:install
 	$(NIX) $(if $(SHARD),npx playwright test --shard=$(SHARD),npm run test:browser)
+
+# Pixel baselines (#448): the ONLY place screenshots are compared. One command
+# for CI and local — the pinned Playwright image, docker required.
+check-visual:
+	@test -n "$(PLAYWRIGHT_VERSION)" || { printf "check-visual: @playwright/test version not found in package-lock.json\n" >&2; exit 1; }
+	@command -v docker >/dev/null || { printf "check-visual: docker is required (pinned renderer $(PLAYWRIGHT_IMAGE), #448)\n" >&2; exit 69; }
+	$(VISUAL_DOCKER) bash -euo pipefail -c '[ -x node_modules/.bin/playwright ] || npm ci; node_modules/.bin/playwright test --workers=2 --project=chromium-visual --project=chromium-visual-light'
 
 # Dependency-scanning gate (issue #167): known vulnerabilities, yanked crates and
 # license policy on the Rust side (cargo-deny, policy in src-tauri/deny.toml),
@@ -357,12 +372,16 @@ ux-contact-sheet:
 # non-empty REASON and exactly one of SCREEN (a tests/browser/visual/catalog
 # id, exact hash-compared update) or ALL=1 (full repaint sweep), and prints
 # both into the run log for the change description to cite
-# (docs/testing.md § Visual baseline).
+# (docs/testing.md § Visual baseline). Runs in the pinned renderer (#448,
+# docker required) — the guard script itself refuses to run anywhere else, so
+# no rm-first ritual and no host node fallback.
 visual-update:
 	@test -n "$(REASON)" || { printf "Usage: make visual-update SCREEN=<catalog-id> REASON=\"why\" (or ALL=1 REASON=\"why\")\n" >&2; exit 1; }
 	@test -n "$(SCREEN)$(ALL)" || { printf "Usage: make visual-update SCREEN=<catalog-id> REASON=\"why\" (or ALL=1 REASON=\"why\")\n" >&2; exit 1; }
 	@test -z "$(SCREEN)" -o -z "$(ALL)" || { printf "Usage: pass SCREEN or ALL=1, not both\n" >&2; exit 1; }
-	SCREEN="$(SCREEN)" ALL="$(ALL)" REASON="$(REASON)" $(NIX) npm run visual-update
+	@test -n "$(PLAYWRIGHT_VERSION)" || { printf "visual-update: @playwright/test version not found in package-lock.json\n" >&2; exit 1; }
+	@command -v docker >/dev/null || { printf "visual-update: docker is required (pinned renderer $(PLAYWRIGHT_IMAGE), #448)\n" >&2; exit 69; }
+	SCREEN="$(SCREEN)" ALL="$(ALL)" REASON="$(REASON)" $(VISUAL_DOCKER) bash -euo pipefail -c '[ -x node_modules/.bin/playwright ] || npm ci; npm run visual-update'
 
 # Mutation testing of the deterministic cores (ADR 0048, scope per ADR 0049):
 # verifies tests catch behavior changes, not just execute code — the strong

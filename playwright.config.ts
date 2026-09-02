@@ -3,7 +3,18 @@ import { join } from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
 
+import { pinnedRenderer } from "./scripts/ux/pinned-renderer.mjs";
+
 const port = 4321;
+// Inside the pinned Playwright docker image (#448) — the only place pixel
+// baselines are compared; everywhere else the visual specs execute without comparing.
+const pinned = pinnedRenderer();
+// Deterministic rasterization for the pixel compare (#448): partial raster
+// reuses already-rasterized tiles, so the anti-aliasing of curves (rounded
+// borders) depended on frame history and jittered by ±2/255 between identical
+// runs; measured — `--disable-gpu` alone leaves 1–2 cells unstable, the pair
+// gives 3 byte-identical full regenerations.
+const VISUAL_CHROMIUM_ARGS = ["--disable-gpu", "--disable-partial-raster"];
 
 // Build-freshness stamp (bug 2059fd8). `reuseExistingServer` locally can hand the
 // browser suite a dev server started from ANOTHER worktree/branch (or from before
@@ -35,11 +46,15 @@ export default defineConfig({
   expect: {
     timeout: 5_000,
     // All-panels visual baseline (ADR 0076 D7). Only the `tests/browser/visual/**`
-    // specs (chromium-visual / -light projects) call toHaveScreenshot; these
-    // defaults apply the ADR's tolerance and freeze animations to their end state
-    // so the Skeleton pulse / transitions can't flake the pixel compare.
+    // specs (chromium-visual / -light projects) call toHaveScreenshot. Tolerance
+    // is zero (#448): the compare runs only in the pinned renderer, where there
+    // is no font/antialiasing drift to tolerate (pixelmatch's own anti-aliasing
+    // exemption is closed by the byte-equality check in tests/browser/visual/
+    // helpers.ts). Animations freeze at their end state so the Skeleton pulse /
+    // transitions cannot flake the compare.
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixels: 0,
+      threshold: 0,
       animations: "disabled",
     },
   },
@@ -123,17 +138,23 @@ export default defineConfig({
     // never captured 5× across the viewport matrix. Both projects run ONLY the
     // `tests/browser/visual/**` specs (every other project excludes that dir via
     // testIgnore above), on the compact viewport, with motion reduced. Pixel
-    // comparison is skipped under CI (`ignoreSnapshots`) — font antialiasing
-    // differs across machines and the repo is local-first — so CI still EXECUTES
-    // the specs (layout + console gates hold) without a machine-dependent diff.
+    // comparison happens only inside the pinned docker renderer (`make
+    // check-visual`, a required CI check; #448); host runs and the CI shards
+    // still EXECUTE the specs (layout + console gates hold) with
+    // `ignoreSnapshots`. `retries: 0`: a retry could mask nondeterminism the
+    // zero-tolerance compare exists to catch. `metadata.pinnedRenderer` lets the
+    // shoot helpers gate their byte-equality assertion without a second import.
     {
       name: "chromium-visual",
       testMatch: /visual\/.*\.spec\.ts$/,
-      ignoreSnapshots: !!process.env.CI,
+      ignoreSnapshots: !pinned,
+      retries: 0,
+      metadata: { pinnedRenderer: pinned },
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 768 },
         reducedMotion: "reduce",
+        launchOptions: { args: VISUAL_CHROMIUM_ARGS },
       },
     },
     {
@@ -141,12 +162,15 @@ export default defineConfig({
       // at M"); the shoot helpers detect this project by name and skip S/L.
       name: "chromium-visual-light",
       testMatch: /visual\/.*\.spec\.ts$/,
-      ignoreSnapshots: !!process.env.CI,
+      ignoreSnapshots: !pinned,
+      retries: 0,
+      metadata: { pinnedRenderer: pinned },
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 768 },
         reducedMotion: "reduce",
         storageState: "./tests/browser/light-theme.storage.json",
+        launchOptions: { args: VISUAL_CHROMIUM_ARGS },
       },
     },
   ],

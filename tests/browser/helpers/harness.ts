@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
+import { SAMPLE_NOW } from "../../../src/test/scenarios/entities";
+
 // Re-exported so specs/helpers importing the harness (the required entry
 // point) can type against Playwright without a second direct import.
 export type { Locator, Page };
@@ -25,6 +27,8 @@ const IGNORED_CONSOLE = [
 type Fixtures = {
   /** Collected console errors; asserted empty at teardown. */
   consoleErrors: string[];
+  /** Auto fixture: freezes the clock for the visual-baseline projects (#448). */
+  fixedClock: void;
 };
 
 export const test = base.extend<Fixtures>({
@@ -40,6 +44,19 @@ export const test = base.extend<Fixtures>({
 
       const significant = errors.filter((entry) => !IGNORED_CONSOLE.some((re) => re.test(entry)));
       expect(significant, `Unexpected console errors:\n${significant.join("\n")}`).toEqual([]);
+    },
+    { auto: true },
+  ],
+  // Visual baselines must not depend on the wall clock (Today renders
+  // `toLocaleTimeString` in its first render), so the clock is fixed here,
+  // before the test body navigates — a shoot helper would be too late.
+  // `setFixedTime` fixes `Date` while timers run normally (j1 precedent).
+  fixedClock: [
+    async ({ page }, use, testInfo) => {
+      if (testInfo.project.name.startsWith("chromium-visual")) {
+        await page.clock.setFixedTime(SAMPLE_NOW);
+      }
+      await use();
     },
     { auto: true },
   ],
